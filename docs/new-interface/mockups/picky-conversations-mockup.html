@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Picky 최근 대화 목업</title>
+  <style>
+    :root { --blue:#5284FF; --blue-dark:#0054D1; --ink:#131419; --surface:#F9FAFF; --border:#DCDFE6; --border-soft:#EAEBF0; --secondary:#404040; --tertiary:#595959; --white:#FFFFFF; --radius:12px; --shadow:0 24px 64px rgba(25,27,38,.14),0 2px 8px rgba(25,27,38,.06); }
+    * { box-sizing:border-box; }
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; }
+    body { background:#E9EDF3; color:var(--ink); font-family:"SF Pro Display","SF Pro Text","Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+    button, textarea, a { font:inherit; }
+    a { color:inherit; text-decoration:none; }
+    button { cursor:pointer; }
+    button:focus-visible, textarea:focus-visible, a:focus-visible { outline:3px solid var(--ink); outline-offset:3px; }
+    .preview-stage { width:100vw; height:100dvh; display:grid; place-items:center; overflow:hidden; contain:paint; padding:24px; }
+    .app-window { width:1020px; height:720px; display:grid; grid-template-columns:190px minmax(0,1fr); overflow:hidden; border:1px solid rgba(212,210,221,.8); border-radius:18px; background:var(--white); box-shadow:var(--shadow); }
+    .sidebar { display:flex; flex-direction:column; gap:35px; padding:21px 16px 18px; background:var(--surface); border-right:1px solid var(--border-soft); }
+    .traffic-lights { display:flex; gap:7px; padding-left:2px; }
+    .traffic-lights span { width:10px; height:10px; border-radius:50%; }
+    .red { background:#FF5F57; } .yellow { background:#FEBC2E; } .green { background:#28C840; }
+    .brand { display:inline-flex; align-items:center; width:144px; }
+    .brand-logo { display:block; width:100%; height:auto; }
+    .nav-list { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
+    .nav-link { display:flex; align-items:center; gap:10px; min-height:40px; padding:8px 10px; border-radius:9px; color:var(--secondary); font-size:14px; font-weight:600; }
+    .nav-link svg { width:18px; height:18px; stroke-width:2; }
+    .nav-link.active { color:var(--ink); background:#f1f2fb; }
+    .nav-link:hover { background:#f1f2fb; } .nav-link:active { background:#f1f2fb; }
+    .main-panel { display:flex; min-height:0; overflow:hidden; background:var(--white); }
+    .main-content { display:flex; flex:1 1 auto; flex-direction:column; min-height:0; width:780px; margin:0 auto; padding:32px 30px 0; }
+    .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+    h1, h2, p { margin-top:0; }
+    h1 { margin-bottom:0; font-size:28px; line-height:1.2; letter-spacing:-1.4px; font-weight:700; text-wrap:balance; }
+    .page-head p { margin:7px 0 0; color:var(--secondary); font-size:14px; line-height:1.45; text-wrap:pretty; }
+    .timeline { display:flex; flex:1 1 auto; flex-direction:column; min-height:0; margin-top:27px; padding-bottom:24px; overflow-y:auto; overflow-x:hidden; -ms-overflow-style:none; scrollbar-width:none; }
+    .timeline::-webkit-scrollbar { width:0; height:0; }
+    .messages { display:grid; gap:9px; margin-top:auto; padding:0 2px; }
+    .message { display:grid; gap:4px; max-width:82%; }
+    .message.user { justify-self:end; }
+    .message.picky { justify-self:start; }
+    .message-meta { color:var(--tertiary); font-size:11px; font-weight:500; line-height:1.3; }
+    .message.user .message-meta { text-align:right; }
+    .bubble { padding:10px 12px; border-radius:12px; font-size:13px; line-height:1.5; text-wrap:pretty; }
+    .message.picky .bubble { border:1px solid var(--border); border-bottom-left-radius:3px; background:var(--surface); color:var(--ink); }
+    .message.user .bubble { border:1px solid var(--blue); border-bottom-right-radius:3px; background:var(--blue); color:var(--white); }
+    .composer { flex:none; margin:0 -30px; padding:13px 30px 16px; background:var(--white); border-top:1px solid var(--border-soft); }
+    .composer-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:9px; align-items:end; }
+    .composer-field { display:grid; gap:6px; }
+    textarea { display:block; width:100%; min-height:42px; max-height:110px; resize:vertical; padding:10px 11px; border:1px solid var(--border); border-radius:8px; background:var(--white); color:var(--ink); font-size:13px; line-height:1.4; }
+    textarea::placeholder { color:#8D8D97; }
+    .send-button { min-height:42px; padding:9px 14px; border:1px solid var(--blue); border-radius:8px; background:var(--blue); color:var(--white); font-size:13px; font-weight:700; }
+    .send-button:hover { background:var(--blue); }
+    .status { min-height:18px; margin:0; color:var(--tertiary); font-size:12px; line-height:1.4; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media (max-width:850px) {
+      .preview-stage { place-items:start center; padding:16px; }
+      .app-window { width:100%; min-width:0; grid-template-columns:64px minmax(0,1fr); }
+      .sidebar { align-items:center; padding-right:9px; padding-left:9px; }
+      .brand { width:30px; overflow:hidden; }
+      .nav-link { justify-content:center; padding:8px; }
+      .nav-link span { display:none; }
+      .main-content { width:100%; padding:28px 24px 0; }
+      .composer { margin-right:-24px; margin-left:-24px; padding-right:24px; padding-left:24px; }
+      .timeline { padding-bottom:20px; }
+    }
+    @media (max-width:590px) {
+      .preview-stage { padding:0; }
+      .app-window { height:100dvh; border-radius:0; border-right:0; border-left:0; }
+      .main-content { padding:24px 18px 0; }
+      .composer { margin-right:-18px; margin-left:-18px; padding-right:18px; padding-left:18px; }
+      .timeline { padding-bottom:18px; }
+      .page-head { display:block; }
+      .composer-form { grid-template-columns:1fr; }
+      .send-button { width:100%; }
+      .message { max-width:92%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-stage">
+    <main class="app-window" aria-label="Picky 최근 대화 목업">
+      <aside class="sidebar" aria-label="주 메뉴">
+        <div class="traffic-lights" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+        <a class="brand" href="picky-home-mockup.html" aria-label="Picky 대시보드로 이동"><svg class="brand-logo" viewBox="0 0 1940 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <g fill="#6699FF">
+    <path d="M136.16,94.9h132.7c80.38,0,128.9,45.66,128.9,119.38s-48.51,119.38-128.9,119.38h-50.89v83.44h-81.81V94.9ZM260.3,266.12c34.72,0,55.17-19.02,55.17-50.89s-20.45-50.89-55.17-50.89h-43.76v101.78h43.76Z"/>
+    <path d="M425.51,94.9h79.17v322.21h-79.17V94.9Z"/>
+    <path d="M533.65,256c0-93.9,64.44-167.09,164.33-167.09,52.47,0,98.5,21.17,136.25,63.98l-48.33,50.63c-21.63-27.16-50.63-42.35-82.85-42.35-52.93,0-88.38,39.12-88.38,94.82s35.44,94.82,89.76,94.82c36.36,0,65.82-16.11,88.38-44.65l48.33,50.63c-35.9,46.03-87.92,66.28-141.77,66.28-100.34,0-165.71-70.89-165.71-167.09Z"/>
+    <path d="M968.86,289.6h-25.32v127.5h-79.17V94.9h79.17v124.28h25.32l75.95-124.28h92.06l-100.34,157.88,104.03,164.33h-92.98l-78.71-127.5Z"/>
+    <path d="M1252.86,297.89l-115.99-202.99h90.22l36.36,66.74,29.46,57.54,30.84-57.54,36.82-66.74h87.46l-115.99,202.99v119.22h-79.17v-119.22Z"/>
+    <path d="M1873.96,187.45c-12.19-18.42-37.01-23.48-55.43-11.29l-200.27,132.5-68.13-91.38c-13.2-17.71-38.26-21.36-55.98-8.16s-21.37,38.27-8.16,55.98l113.33,152.02,263.34-174.23c18.42-12.19,23.48-37.01,11.29-55.43Z"/>
+    <ellipse cx="1603.03" cy="154.08" rx="40" ry="50"/>
+    <ellipse cx="1711.47" cy="154.08" rx="40" ry="50"/>
+  </g>
+</svg></a>
+        <nav aria-label="Picky 메뉴">
+          <ul class="nav-list">
+            <li><a class="nav-link" href="picky-home-mockup.html" aria-label="대시보드"><i data-lucide="layout-dashboard" aria-hidden="true"></i><span>대시보드</span></a></li>
+            <li><a class="nav-link" href="picky-stats-mockup.html" aria-label="통계"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>통계</span></a></li>
+            <li><a class="nav-link" href="picky-guides-mockup.html" aria-label="가이드 및 업데이트"><i data-lucide="book-open" aria-hidden="true"></i><span>가이드 및 업데이트</span></a></li>
+            <li><a class="nav-link" href="picky-quick-start-mockup.html" aria-label="빠른 시작"><i data-lucide="zap" aria-hidden="true"></i><span>빠른 시작</span></a></li>
+            <li><a class="nav-link" href="picky-plugins-mockup.html" aria-label="플러그인"><i data-lucide="plug" aria-hidden="true"></i><span>플러그인</span></a></li>
+            <li><a class="nav-link active" href="picky-conversations-mockup.html" aria-label="최근 대화" aria-current="page"><i data-lucide="message-square" aria-hidden="true"></i><span>최근 대화</span></a></li>
+            <li><a class="nav-link" href="picky-settings-mockup.html" aria-label="설정"><i data-lucide="settings-2" aria-hidden="true"></i><span>설정</span></a></li>
+          </ul>
+        </nav>
+      </aside>
+      <section class="main-panel" aria-labelledby="page-title">
+        <div class="main-content">
+          <header class="page-head">
+            <div><h1 id="page-title">최근 대화</h1><p>Picky와 나눈 가장 최근 대화를 확인하세요.</p></div>
+          </header>
+          <section id="timeline" class="timeline" aria-label="가장 최근 Picky 대화">
+            <div id="messages" class="messages">
+              <div class="message user"><span class="message-meta">나 · 오늘 10:16</span><div class="bubble">첫 화면의 소개 문장을 조금 더 담백하게 고쳐줘.</div></div>
+              <div class="message picky"><span class="message-meta">Picky · 오늘 10:17</span><div class="bubble">방문자가 바로 이해할 수 있도록, 하는 일과 강점을 한 문장씩 나눠볼게요.</div></div>
+              <div class="message user"><span class="message-meta">나 · 오늘 10:42</span><div class="bubble">좋아. 디자이너가 아닌 사람도 이해할 표현으로 해줘.</div></div>
+            </div>
+          </section>
+          <section class="composer" aria-label="대화 이어가기">
+            <form id="composer-form" class="composer-form">
+              <div class="composer-field">
+                <textarea id="message-input" name="message" rows="1" placeholder="이 대화에 이어서 메시지를 입력하세요." aria-label="메시지" aria-describedby="composer-help"></textarea>
+                <span id="composer-help" class="sr-only">Enter로 보내고 Shift+Enter로 줄바꿈합니다.</span>
+              </div>
+              <button class="send-button" type="submit">보내기</button>
+            </form>
+            <p id="status" class="sr-only" aria-live="polite"></p>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script>
+    window.lucide?.createIcons({ attrs: { "stroke-width": 2 } });
+
+    const timeline = document.querySelector('#timeline');
+    const messages = document.querySelector('#messages');
+    const messageInput = document.querySelector('#message-input');
+    const composerForm = document.querySelector('#composer-form');
+    const status = document.querySelector('#status');
+
+    function appendUserMessage(text) {
+      const message = document.createElement('div');
+      const meta = document.createElement('span');
+      const bubble = document.createElement('div');
+      message.className = 'message user';
+      meta.className = 'message-meta';
+      bubble.className = 'bubble';
+      meta.textContent = '나 · 방금';
+      bubble.textContent = text;
+      message.append(meta, bubble);
+      messages.append(message);
+    }
+
+    composerForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const text = messageInput.value.trim();
+      if (!text) {
+        status.textContent = '보낼 메시지를 입력하세요.';
+        messageInput.focus();
+        return;
+      }
+      appendUserMessage(text);
+      timeline.scrollTop = timeline.scrollHeight;
+      messageInput.value = '';
+      status.textContent = '메시지를 보냈습니다. 예시·목업에서는 Picky의 답장이 생성되지 않습니다.';
+      messageInput.focus();
+    });
+
+    messageInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        composerForm.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>

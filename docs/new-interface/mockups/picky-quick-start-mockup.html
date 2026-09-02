@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Picky 빠른 시작 목업</title>
+  <style>
+    :root { --blue:#5284FF; --blue-dark:#0054D1; --ink:#131419; --surface:#F9FAFF; --border:#DCDFE6; --border-soft:#EAEBF0; --secondary:#404040; --tertiary:#595959; --white:#fff; --radius:12px; --shadow:0 24px 64px rgba(25,27,38,.14),0 2px 8px rgba(25,27,38,.06); }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    html,body { width:100%; height:100%; margin:0; overflow:hidden; }
+    body { background:#E9EDF3; color:var(--ink); font-family:"SF Pro Display","SF Pro Text","Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; -webkit-font-smoothing:antialiased; }
+    button,textarea,a { font:inherit; } a { color:inherit; text-decoration:none; }
+    button { cursor:pointer; } button:focus-visible,textarea:focus-visible,a:focus-visible { outline:3px solid var(--ink); outline-offset:3px; }
+    .preview-stage { width:100vw; height:100dvh; display:grid; place-items:center; overflow:hidden; contain:paint; padding:24px; }
+    .app-window { width:1020px; height:720px; display:grid; grid-template-columns:190px minmax(0,1fr); overflow:hidden; border:1px solid rgba(212,210,221,.8); border-radius:18px; background:var(--white); box-shadow:var(--shadow); }
+    .sidebar { display:flex; flex-direction:column; gap:35px; padding:21px 16px 18px; background:var(--surface); border-right:1px solid var(--border-soft); }
+    .traffic-lights { display:flex; gap:7px; padding-left:2px; } .traffic-lights span { width:10px; height:10px; border-radius:50%; } .red{background:#FF5F57}.yellow{background:#FEBC2E}.green{background:#28C840}
+    .brand { display:inline-flex; align-items:center; width:144px; } .brand-logo { display:block; width:100%; height:auto; }
+    .nav-list { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
+    .nav-link { display:flex; align-items:center; gap:10px; min-height:40px; padding:8px 10px; border-radius:9px; color:var(--secondary); font-size:14px; font-weight:600; }
+    .nav-link svg { width:18px; height:18px; stroke-width:2; } .nav-link.active { color:var(--ink); background:#f1f2fb; } .nav-link:hover { background:#f1f2fb; } .nav-link:active { background:#f1f2fb; }
+    .main-panel { min-height:0; overflow-y:auto; background:var(--white); -ms-overflow-style:none; scrollbar-width:none; } .main-panel::-webkit-scrollbar { width:0; height:0; }
+    .main-content { width:780px; height:100%; min-height:100%; margin:0 auto; padding:32px 30px 24px; }
+    .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; } h1 { margin:0; font-size:28px; line-height:1.2; letter-spacing:-1.4px; font-weight:700; } .page-head p { margin:7px 0 0; color:var(--secondary); font-size:14px; line-height:1.45; }
+    .badge { display:inline-flex; align-items:center; width:fit-content; padding:5px 8px; border:1px solid #C9D8FF; border-radius:999px; background:#F4F7FF; color:var(--blue); font-size:11px; font-weight:600; line-height:1; }
+    .resume-card { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:24px; padding:15px 16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+    .resume-copy { display:grid; gap:3px; } .resume-kicker { color:var(--blue); font-size:12px; font-weight:700; } .resume-title { font-size:14px; font-weight:700; } .resume-meta { color:var(--tertiary); font-size:12px; }
+    .section-title { margin:30px 0 12px; font-size:19px; line-height:1.3; letter-spacing:-.7px; font-weight:700; }
+    .workflow-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .workflow-card { display:flex; flex-direction:column; min-height:184px; padding:18px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+    .workflow-icon { display:grid; place-items:center; width:34px; height:34px; border:1px solid #C9D8FF; border-radius:9px; background:#F4F7FF; color:var(--blue-dark); } .workflow-icon svg { width:18px; height:18px; }
+    .workflow-card h2 { margin:16px 0 0; font-size:16px; line-height:1.3; letter-spacing:-.4px; font-weight:700; } .workflow-card p { margin:6px 0 17px; color:var(--secondary); font-size:13px; line-height:1.45; }
+    .secondary-button,.primary-button,.back-button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:34px; border-radius:8px; font-size:13px; font-weight:650; }
+    .secondary-button { width:fit-content; margin-top:auto; padding:7px 11px; border:1px solid var(--border); background:var(--white); color:var(--blue); } .secondary-button:hover { border-color:var(--blue); background:#F7F9FF; }
+    .action-button { display:inline-flex; align-items:center; gap:5px; width:fit-content; margin-top:auto; padding:6px 11px; white-space:nowrap; border:1px solid var(--border); border-radius:999px; background:var(--white); color:var(--blue); font-size:13px; font-weight:700; }
+    .action-button svg { width:12px; height:12px; fill:currentColor; stroke-width:0; }
+    .action-button:hover { border-color:var(--blue); background:#F7F9FF; }
+    .action-button:active { transform:translateY(1px); }
+    .primary-button { padding:9px 13px; border:1px solid var(--blue); background:var(--blue); color:var(--white); } .primary-button:hover { background:var(--blue); }
+    .view[hidden] { display:none; }
+    #question-view { display:flex; flex-direction:column; min-height:100%; }
+    .workflow-head { display:flex; align-items:center; gap:10px; min-height:32px; } .back-button { padding:0; border:0; background:none; color:var(--blue); } .back-button:hover { text-decoration:underline; } .workflow-head h1 { font-size:22px; } .workflow-head .badge { margin-left:auto; }
+    .progress { margin:24px 0 10px; color:var(--tertiary); font-size:12px; font-weight:600; }
+    .conversation { display:grid; gap:12px; }
+    .bubble { width:fit-content; max-width:570px; padding:12px 14px; border-radius:12px; font-size:14px; line-height:1.5; }
+    .bubble.picky { border:1px solid var(--border); background:var(--surface); color:var(--ink); border-bottom-left-radius:3px; } .bubble.user { justify-self:end; background:var(--blue); color:var(--white); border-bottom-right-radius:3px; }
+    .answer-form { position:sticky; bottom:0; z-index:1; margin-top:auto; padding:13px 0 8px; border-top:1px solid var(--border-soft); background:var(--white); }
+    .answer-composer { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:9px; align-items:end; }
+    .answer-field { display:grid; gap:6px; }
+    textarea { display:block; width:100%; min-height:42px; max-height:110px; resize:vertical; padding:10px 11px; border:1px solid var(--border); border-radius:8px; background:var(--white); color:var(--ink); font-size:13px; line-height:1.4; }
+    textarea::placeholder { color:#8D8D97; }
+    .answer-composer .primary-button { min-height:42px; padding:9px 14px; font-weight:700; }
+    .summary { display:grid; gap:10px; margin-top:8px; padding:16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); } .summary h2 { margin:0; font-size:18px; letter-spacing:-.5px; font-weight:700; } .summary p { margin:0; color:var(--secondary); font-size:13px; line-height:1.45; } .summary-list { display:grid; gap:7px; margin:2px 0 4px; padding:0; list-style:none; } .summary-list li { display:grid; grid-template-columns:104px 1fr; gap:10px; font-size:13px; line-height:1.4; } .summary-list span { color:var(--tertiary); } .success-state { display:grid; place-items:center; min-height:330px; padding:40px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); text-align:center; } .success-icon { display:grid; place-items:center; width:46px; height:46px; margin:auto; border-radius:50%; background:#E9F8EF; color:#108D6F; } .success-icon svg { width:24px; } .success-state h2 { margin:15px 0 0; font-size:20px; font-weight:700; } .success-state p { margin:7px 0 18px; color:var(--secondary); font-size:13px; }
+    .status { margin-top:12px; color:var(--tertiary); font-size:12px; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media (max-width:800px) { .preview-stage { padding:12px; } .app-window { width:100%; grid-template-columns:64px minmax(0,1fr); } .sidebar { align-items:center; padding:21px 9px 18px; } .brand { width:30px; overflow:hidden; } .nav-link { justify-content:center; padding:8px; } .nav-link span { display:none; } .main-content { width:100%; padding:28px 22px 48px; } }
+    @media (max-width:590px) { .workflow-grid { grid-template-columns:1fr; } .page-head { align-items:flex-end; } .resume-card { align-items:flex-start; flex-direction:column; } .answer-composer { grid-template-columns:1fr; } .answer-composer .primary-button { width:100%; } }
+  </style>
+</head>
+<body>
+  <div class="preview-stage">
+    <main class="app-window" aria-label="Picky 빠른 시작 목업">
+      <aside class="sidebar" aria-label="주 메뉴">
+        <div class="traffic-lights" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+        <a class="brand" href="picky-home-mockup.html" aria-label="Picky 대시보드로 이동"><svg class="brand-logo" viewBox="0 0 1940 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <g fill="#6699FF">
+    <path d="M136.16,94.9h132.7c80.38,0,128.9,45.66,128.9,119.38s-48.51,119.38-128.9,119.38h-50.89v83.44h-81.81V94.9ZM260.3,266.12c34.72,0,55.17-19.02,55.17-50.89s-20.45-50.89-55.17-50.89h-43.76v101.78h43.76Z"/>
+    <path d="M425.51,94.9h79.17v322.21h-79.17V94.9Z"/>
+    <path d="M533.65,256c0-93.9,64.44-167.09,164.33-167.09,52.47,0,98.5,21.17,136.25,63.98l-48.33,50.63c-21.63-27.16-50.63-42.35-82.85-42.35-52.93,0-88.38,39.12-88.38,94.82s35.44,94.82,89.76,94.82c36.36,0,65.82-16.11,88.38-44.65l48.33,50.63c-35.9,46.03-87.92,66.28-141.77,66.28-100.34,0-165.71-70.89-165.71-167.09Z"/>
+    <path d="M968.86,289.6h-25.32v127.5h-79.17V94.9h79.17v124.28h25.32l75.95-124.28h92.06l-100.34,157.88,104.03,164.33h-92.98l-78.71-127.5Z"/>
+    <path d="M1252.86,297.89l-115.99-202.99h90.22l36.36,66.74,29.46,57.54,30.84-57.54,36.82-66.74h87.46l-115.99,202.99v119.22h-79.17v-119.22Z"/>
+    <path d="M1873.96,187.45c-12.19-18.42-37.01-23.48-55.43-11.29l-200.27,132.5-68.13-91.38c-13.2-17.71-38.26-21.36-55.98-8.16s-21.37,38.27-8.16,55.98l113.33,152.02,263.34-174.23c18.42-12.19,23.48-37.01,11.29-55.43Z"/>
+    <ellipse cx="1603.03" cy="154.08" rx="40" ry="50"/>
+    <ellipse cx="1711.47" cy="154.08" rx="40" ry="50"/>
+  </g>
+</svg></a>
+        <nav aria-label="Picky 메뉴"><ul class="nav-list">
+          <li><a class="nav-link" href="picky-home-mockup.html" aria-label="대시보드"><i data-lucide="layout-dashboard" aria-hidden="true"></i><span>대시보드</span></a></li>
+          <li><a class="nav-link" href="picky-stats-mockup.html" aria-label="통계"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>통계</span></a></li>
+          <li><a class="nav-link" href="picky-guides-mockup.html" aria-label="가이드 및 업데이트"><i data-lucide="book-open" aria-hidden="true"></i><span>가이드 및 업데이트</span></a></li>
+          <li><a class="nav-link active" href="picky-quick-start-mockup.html" aria-label="빠른 시작" aria-current="page"><i data-lucide="zap" aria-hidden="true"></i><span>빠른 시작</span></a></li>
+          <li><a class="nav-link" href="picky-plugins-mockup.html" aria-label="플러그인"><i data-lucide="plug" aria-hidden="true"></i><span>플러그인</span></a></li>
+          <li><a class="nav-link" href="picky-conversations-mockup.html" aria-label="최근 대화"><i data-lucide="message-square" aria-hidden="true"></i><span>최근 대화</span></a></li>
+          <li><a class="nav-link" href="picky-settings-mockup.html" aria-label="설정"><i data-lucide="settings-2" aria-hidden="true"></i><span>설정</span></a></li>
+        </ul></nav>
+      </aside>
+      <section class="main-panel" aria-labelledby="page-title"><div class="main-content">
+        <section id="selection-view" class="view" aria-labelledby="page-title">
+          <header class="page-head"><div><h1 id="page-title">빠른 시작</h1><p>정해진 흐름으로 새 Pickle 작업을 시작하세요.</p></div></header>
+          <section id="resume-card" class="resume-card" hidden aria-labelledby="resume-title"><div class="resume-copy"><span class="resume-kicker">이어서 하기</span><strong id="resume-title" class="resume-title"></strong><span id="resume-meta" class="resume-meta"></span></div><button id="resume-button" class="secondary-button" type="button">이어서 하기</button></section>
+          <h2 class="section-title">워크플로우 선택</h2>
+          <div id="workflow-grid" class="workflow-grid" aria-label="빠른 시작 워크플로우"></div>
+          <p id="quick-start-status" class="sr-only" aria-live="polite"></p>
+        </section>
+        <section id="question-view" class="view" hidden aria-live="polite" aria-labelledby="workflow-title">
+          <header class="workflow-head"><button id="back-button" class="back-button" type="button" aria-label="모든 워크플로우로 돌아가기">← 모든 워크플로우</button><h1 id="workflow-title"></h1><span class="badge">새 Pickle</span></header>
+          <p id="progress" class="progress"></p>
+          <div id="conversation" class="conversation" aria-label="Pickle 질문과 답변"></div>
+          <form id="answer-form" class="answer-form"><div class="answer-composer"><div class="answer-field"><textarea id="answer-input" name="answer" rows="1" autocomplete="off" required aria-label="답변" aria-describedby="answer-help"></textarea><span id="answer-help" class="sr-only">Enter로 다음 질문으로 이동하고 Shift+Enter로 줄바꿈합니다.</span></div><button class="primary-button" type="submit">다음</button></div></form>
+          <div id="summary" class="summary" hidden></div>
+          <p id="status" class="status" aria-live="polite"></p>
+        </section>
+        <section id="success-view" class="view" hidden aria-live="polite"><div class="success-state"><div><div class="success-icon"><i data-lucide="check" aria-hidden="true"></i></div><h2>Pickle을 시작했어요</h2><p>새 작업을 열었습니다.</p><button id="new-workflow-button" class="secondary-button" type="button">다른 워크플로우 보기</button></div></div></section>
+      </div></section>
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script>
+    window.lucide?.createIcons({ attrs: { "stroke-width": 2 } });
+    const DRAFT_KEY = 'picky.quick-start.draft.v1';
+    const workflows = {
+      landing: { title:'랜딩 페이지 제작', icon:'panels-top-left', description:'제품이나 서비스를 소개하는 웹페이지를 준비합니다.', questions:[
+        { key:'goal', label:'만들려는 페이지의 목적을 적어주세요.', placeholder:'예: 예약을 늘리고 싶어요' },
+        { key:'focus', label:(answers) => /판매|예약/.test(answers.goal || '') ? '소개할 상품 또는 서비스를 적어주세요.' : '가장 먼저 전할 핵심 메시지를 적어주세요.', placeholder:'예: 온라인 포트폴리오 상담' },
+        { key:'audience', label:'주요 방문자는 누구인가요?', placeholder:'예: 처음 상담을 찾는 1인 사업자' }
+      ] },
+      native: { title:'네이티브 앱 제작', icon:'monitor-smartphone', description:'로컬에서 실행할 앱의 기본 범위를 정합니다.', questions:[
+        { key:'purpose', label:'앱으로 해결하려는 일을 적어주세요.', placeholder:'예: 매일 할 일을 빠르게 정리' },
+        { key:'users', label:(answers) => /팀|직원|동료/.test(answers.purpose || '') ? '이 앱을 함께 쓸 팀은 누구인가요?' : '이 앱을 가장 자주 쓸 사람은 누구인가요?', placeholder:'예: 혼자 일하는 디자이너' },
+        { key:'mustHave', label:'처음 버전에 꼭 필요한 기능 하나를 적어주세요.', placeholder:'예: 오늘 할 일 추가와 완료 표시' }
+      ] },
+      guide: { title:'앱 가이드 시작', icon:'book-open-check', description:'현재 쓰는 앱을 목적에 맞춰 익혀봅니다.', questions:[
+        { key:'app', label:'어떤 앱의 가이드가 필요한가요?', placeholder:'예: Notion' },
+        { key:'task', label:(answers) => /Notion/i.test(answers.app || '') ? 'Notion에서 처음 해보고 싶은 일을 적어주세요.' : '그 앱에서 해보고 싶은 일을 적어주세요.', placeholder:'예: 프로젝트 보드를 만들고 싶어요' },
+        { key:'level', label:'지금 사용 경험은 어느 정도인가요?', placeholder:'예: 처음이에요 / 기본 기능은 써봤어요' }
+      ] },
+      files: { title:'파일 정리 시작', icon:'folder-cog', description:'로컬 폴더를 원하는 기준으로 정리합니다.', questions:[
+        { key:'location', label:'정리할 폴더 또는 파일 종류를 적어주세요.', placeholder:'예: 다운로드 폴더의 이미지 파일' },
+        { key:'rule', label:(answers) => /사진|이미지/.test(answers.location || '') ? '사진·이미지를 어떤 기준으로 나눌까요?' : '파일을 어떤 기준으로 나눌까요?', placeholder:'예: 연도와 프로젝트 이름별' },
+        { key:'keep', label:'정리할 때 꼭 남겨야 할 기준이 있나요?', placeholder:'예: 최근 3개월 파일은 그대로 두기' }
+      ] }
+    };
+    const selectionView = document.getElementById('selection-view'); const questionView = document.getElementById('question-view'); const successView = document.getElementById('success-view');
+    const grid = document.getElementById('workflow-grid'); const conversation = document.getElementById('conversation'); const form = document.getElementById('answer-form'); const input = document.getElementById('answer-input'); const summary = document.getElementById('summary'); const status = document.getElementById('status'); const quickStartStatus = document.getElementById('quick-start-status');
+    let activeDraft = null;
+    const formatDate = (value) => new Intl.DateTimeFormat('ko-KR',{ month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value));
+    const readDraft = () => { try { const draft = JSON.parse(localStorage.getItem(DRAFT_KEY)); return draft && workflows[draft.workflowId] ? draft : null; } catch { return null; } };
+    const saveDraft = () => { activeDraft.updatedAt = new Date().toISOString(); localStorage.setItem(DRAFT_KEY, JSON.stringify(activeDraft)); };
+    const show = (view) => { [selectionView,questionView,successView].forEach((item) => item.hidden = item !== view); };
+    const renderGrid = () => { grid.innerHTML = Object.entries(workflows).map(([id, workflow]) => `<article class="workflow-card"><div class="workflow-icon"><i data-lucide="${workflow.icon}" aria-hidden="true"></i></div><h2>${workflow.title}</h2><p>${workflow.description}</p><button class="action-button" type="button" data-workflow="${id}" aria-label="${workflow.title} 시작하기"><i data-lucide="play" aria-hidden="true"></i>시작하기</button></article>`).join(''); window.lucide?.createIcons({ attrs:{ "stroke-width":2 } }); };
+    const renderResume = () => { const draft = readDraft(); const card = document.getElementById('resume-card'); card.hidden = !draft; if (!draft) return; document.getElementById('resume-title').textContent = workflows[draft.workflowId].title; document.getElementById('resume-meta').textContent = `마지막 저장 ${formatDate(draft.updatedAt)}`; document.getElementById('resume-button').dataset.workflow = draft.workflowId; };
+    const showSelection = () => { activeDraft = null; show(selectionView); renderResume(); document.querySelector('[data-workflow]')?.focus(); };
+    const startWorkflow = (workflowId, resume = false) => { const saved = resume ? readDraft() : null; activeDraft = saved && saved.workflowId === workflowId ? saved : { workflowId, answers:{}, step:0, updatedAt:new Date().toISOString() }; show(questionView); renderQuestion(); };
+    const createElement = (tagName, className, text) => { const element = document.createElement(tagName); if (className) element.className = className; if (text !== undefined) element.textContent = text; return element; };
+    const appendBubble = (type, text) => conversation.append(createElement('div', `bubble ${type}`, text));
+    const renderQuestion = () => { const workflow = workflows[activeDraft.workflowId]; const done = activeDraft.step >= workflow.questions.length; document.getElementById('workflow-title').textContent = workflow.title; conversation.replaceChildren(); Object.entries(activeDraft.answers).forEach(([key, value]) => { const question = workflow.questions.find((item) => item.key === key); const questionText = typeof question.label === 'function' ? question.label(activeDraft.answers) : question.label; appendBubble('picky', questionText); appendBubble('user', value); }); summary.hidden = !done; form.hidden = done; status.hidden = !done;
+      if (done) { document.getElementById('progress').textContent = '3 / 3 질문'; summary.replaceChildren(); summary.append(createElement('h2', '', '준비가 됐어요'), createElement('p', '', '입력한 내용을 바탕으로 새 Pickle을 시작할 수 있어요.')); const list = createElement('ul', 'summary-list'); workflow.questions.forEach((question) => { const questionText = typeof question.label === 'function' ? question.label(activeDraft.answers) : question.label; const item = document.createElement('li'); item.append(createElement('span', '', questionText), createElement('strong', '', activeDraft.answers[question.key])); list.append(item); }); const startButton = createElement('button', 'primary-button', 'Pickle 시작'); startButton.id = 'start-pickle-button'; startButton.type = 'button'; summary.append(list, startButton); status.textContent = '질문을 모두 받았습니다.'; startButton.focus(); return; }
+      const question = workflow.questions[activeDraft.step]; const questionText = typeof question.label === 'function' ? question.label(activeDraft.answers) : question.label; document.getElementById('progress').textContent = `${activeDraft.step + 1} / ${workflow.questions.length} 질문`; appendBubble('picky', questionText); input.value = ''; input.placeholder = question.placeholder; status.textContent = ''; input.focus(); };
+    grid.addEventListener('click', (event) => { const button = event.target.closest('.action-button[data-workflow]'); if (!button) return; const workflowId = button.dataset.workflow; window.dispatchEvent(new CustomEvent('picky:start-quick-workflow', { detail: workflowId })); quickStartStatus.textContent = `${workflows[workflowId].title} 워크플로우를 시작했어요.`; });
+    document.getElementById('resume-button').addEventListener('click', (event) => startWorkflow(event.currentTarget.dataset.workflow, true)); document.getElementById('back-button').addEventListener('click', showSelection);
+    form.addEventListener('submit', (event) => { event.preventDefault(); const answer = input.value.trim(); if (!answer) { input.focus(); return; } const workflow = workflows[activeDraft.workflowId]; activeDraft.answers[workflow.questions[activeDraft.step].key] = answer; activeDraft.step += 1; saveDraft(); renderQuestion(); });
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); } });
+    summary.addEventListener('click', (event) => { if (!event.target.closest('#start-pickle-button')) return; localStorage.removeItem(DRAFT_KEY); activeDraft = null; show(successView); document.getElementById('new-workflow-button').focus(); }); document.getElementById('new-workflow-button').addEventListener('click', showSelection);
+    renderGrid(); renderResume();
+  </script>
+</body>
+</html>

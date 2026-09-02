@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Picky 플러그인 목업</title>
+  <style>
+    :root { --blue:#5284FF; --blue-hover:#3D73F5; --blue-dark:#0054D1; --ink:#131419; --surface:#F9FAFF; --border:#DCDFE6; --border-soft:#EAEBF0; --secondary:#404040; --tertiary:#595959; --white:#fff; --success-bg:#D7EEE4; --success:#108D6F; --radius:12px; --shadow:0 24px 64px rgba(25,27,38,.14),0 2px 8px rgba(25,27,38,.06); }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; }
+    body { background:#E9EDF3; color:var(--ink); font-family:"SF Pro Display","SF Pro Text","Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+    button, input, a { font:inherit; } button { cursor:pointer; } a { color:inherit; text-decoration:none; }
+    button:focus-visible, input:focus-visible, a:focus-visible { outline:3px solid var(--ink); outline-offset:3px; }
+    .preview-stage { width:100vw; height:100dvh; display:grid; place-items:center; overflow:hidden; contain:paint; padding:24px; }
+    .app-window { width:1020px; height:720px; display:grid; grid-template-columns:190px minmax(0,1fr); overflow:hidden; border:1px solid rgba(212,210,221,.8); border-radius:18px; background:var(--white); box-shadow:var(--shadow); }
+    .sidebar { display:flex; flex-direction:column; gap:35px; padding:21px 16px 18px; background:var(--surface); border-right:1px solid var(--border-soft); }
+    .traffic-lights { display:flex; gap:7px; padding-left:2px; } .traffic-lights span { width:10px; height:10px; border-radius:50%; } .red { background:#FF5F57; } .yellow { background:#FEBC2E; } .green { background:#28C840; }
+    .brand { display:inline-flex; align-items:center; width:144px; } .brand-logo { display:block; width:100%; height:auto; }
+    .nav-list { display:grid; gap:4px; margin:0; padding:0; list-style:none; } .nav-link { display:flex; align-items:center; gap:10px; min-height:40px; padding:8px 10px; border-radius:9px; color:var(--secondary); font-size:14px; font-weight:600; } .nav-link svg { width:18px; height:18px; stroke-width:2; } .nav-link.active { color:var(--ink); background:#f1f2fb; } .nav-link:hover { background:#f1f2fb; } .nav-link:active { background:#f1f2fb; }
+    .main-panel { min-height:0; overflow-y:auto; background:var(--white); -ms-overflow-style:none; scrollbar-width:none; } .main-panel::-webkit-scrollbar { width:0; height:0; }
+    .main-content { width:780px; margin:0 auto; padding:32px 30px 60px; }
+    .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; } h1 { margin:0; font-size:28px; line-height:1.2; letter-spacing:-1.4px; font-weight:700; } .page-head p { margin:7px 0 0; color:var(--secondary); font-size:14px; line-height:1.45; }
+    .catalog-tools { display:grid; gap:13px; margin-top:25px; padding:15px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+    .search-field { position:relative; display:block; } .search-field svg { position:absolute; top:50%; left:11px; width:17px; height:17px; color:var(--tertiary); pointer-events:none; transform:translateY(-50%); } input[type="search"] { width:100%; height:39px; padding:0 12px 0 37px; border:1px solid var(--border); border-radius:8px; background:var(--white); color:var(--ink); font-size:14px; } input[type="search"]::placeholder { color:#8A8A93; }
+    .filter-row { display:flex; align-items:center; flex-wrap:wrap; gap:7px; } .filter-label { margin-right:2px; color:var(--tertiary); font-size:12px; font-weight:600; } .filter-button { min-height:29px; padding:5px 9px; border:1px solid var(--border); border-radius:999px; background:var(--white); color:var(--secondary); font-size:12px; font-weight:600; } .filter-button:hover { border-color:var(--blue); color:var(--blue); } .filter-button[aria-pressed="true"] { border-color:var(--blue); background:var(--blue); color:var(--white); }
+    .catalog-status { min-height:18px; margin:13px 0 0; color:var(--tertiary); font-size:12px; line-height:1.4; }
+    .plugin-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:12px; }
+    .plugin-card { display:flex; flex-direction:column; min-height:208px; padding:16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--white); }
+    .plugin-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; } .plugin-icon { display:grid; flex:none; place-items:center; width:34px; height:34px; border:1px solid #C9D8FF; border-radius:9px; background:#F4F7FF; color:var(--blue-dark); } .plugin-icon svg { width:18px; height:18px; }
+    .plugin-card h2 { margin:14px 0 0; font-size:16px; line-height:1.3; letter-spacing:-.4px; font-weight:700; } .plugin-card p { margin:5px 0 0; color:var(--secondary); font-size:13px; line-height:1.45; }
+    .plugin-meta { margin:11px 0 0; color:var(--tertiary); font-size:11px; font-weight:600; line-height:1.4; } .plugin-actions { display:flex; gap:7px; margin-top:auto; padding-top:15px; } .plugin-actions > .primary-button, .plugin-actions > .installed-button { width:60px; }
+    .detail-button, .secondary-button, .primary-button, .danger-button { display:inline-flex; align-items:center; justify-content:center; min-height:33px; border-radius:8px; font-size:12px; font-weight:700; } .detail-button { flex:1; padding:7px 10px; border:1px solid var(--border); background:var(--white); color:var(--blue); } .detail-button:hover, .secondary-button:hover { border-color:var(--blue); background:#F7F9FF; } .primary-button { padding:7px 11px; border:1px solid var(--blue); background:var(--blue); color:var(--white); } .primary-button:hover { border-color:var(--blue-hover); background:var(--blue-hover); } .secondary-button { padding:7px 11px; border:1px solid var(--border); background:var(--white); color:var(--secondary); } .danger-button { padding:7px 11px; border:1px solid #F87171; background:var(--white); color:#F87171; } .danger-button:hover { border-color:#F87171; background:#FFF8F8; } .installed-button { display:inline-grid; grid-template-areas:"label"; border-color:var(--border); color:var(--tertiary); } .installed-button .action-label { grid-area:label; } .installed-button .action-label-delete { visibility:hidden; } .installed-button:hover { border-color:#F87171; background:#FFF8F8; color:#F87171; } .installed-button:hover .action-label-installed { visibility:hidden; } .installed-button:hover .action-label-delete { visibility:visible; }
+    .empty-state { display:grid; place-items:center; min-height:255px; margin-top:12px; padding:28px; border:1px dashed var(--border); border-radius:var(--radius); background:var(--surface); text-align:center; } .empty-state h2 { margin:0; font-size:17px; font-weight:700; } .empty-state p { margin:7px 0 14px; color:var(--secondary); font-size:13px; }
+    .feedback { min-height:19px; margin-top:14px; color:var(--success); font-size:12px; font-weight:600; }
+    dialog { width:min(540px,calc(100vw - 48px)); max-width:none; padding:0; overflow:hidden; border:1px solid var(--border); border-radius:16px; background:var(--white); color:var(--ink); box-shadow:0 24px 64px rgba(19,20,25,.28); } dialog::backdrop { background:rgba(19,20,25,.52); }
+    .dialog-body { padding:20px; } .dialog-meta { margin:0; color:var(--tertiary); font-size:12px; font-weight:600; } .dialog-head h2 { margin:7px 0 0; font-size:20px; line-height:1.3; letter-spacing:-.6px; font-weight:700; }
+    .dialog-description { margin:18px 0 0; color:var(--secondary); font-size:14px; line-height:1.55; } .use-case-title { margin:20px 0 8px; font-size:13px; font-weight:700; } .use-case-list { display:grid; gap:7px; margin:0; padding-left:19px; color:var(--secondary); font-size:13px; line-height:1.45; } .dialog-footer { display:flex; justify-content:flex-end; margin-top:22px; padding-top:15px; border-top:1px solid var(--border-soft); }
+    .confirm-dialog { width:min(390px,calc(100vw - 48px)); } .confirm-dialog h2 { margin:0; font-size:18px; letter-spacing:-.5px; } .confirm-dialog p { margin:8px 0 0; color:var(--secondary); font-size:13px; line-height:1.5; } .confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:20px; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media (max-width:850px) { .preview-stage { place-items:start center; padding:16px; } .app-window { width:100%; min-width:0; grid-template-columns:64px minmax(0,1fr); } .sidebar { align-items:center; padding-right:9px; padding-left:9px; } .brand { width:30px; overflow:hidden; } .nav-link { justify-content:center; padding:8px; } .nav-link span { display:none; } .main-content { width:100%; padding:28px 24px 52px; } }
+    @media (max-width:590px) { .plugin-grid { grid-template-columns:1fr; } .page-head { display:block; } .filter-label { width:100%; } }
+  </style>
+</head>
+<body>
+  <div class="preview-stage">
+    <main class="app-window" aria-label="Picky 플러그인 목업">
+      <aside class="sidebar" aria-label="주 메뉴">
+        <div class="traffic-lights" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+        <a class="brand" href="picky-home-mockup.html" aria-label="Picky 대시보드로 이동"><svg class="brand-logo" viewBox="0 0 1940 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <g fill="#6699FF">
+    <path d="M136.16,94.9h132.7c80.38,0,128.9,45.66,128.9,119.38s-48.51,119.38-128.9,119.38h-50.89v83.44h-81.81V94.9ZM260.3,266.12c34.72,0,55.17-19.02,55.17-50.89s-20.45-50.89-55.17-50.89h-43.76v101.78h43.76Z"/>
+    <path d="M425.51,94.9h79.17v322.21h-79.17V94.9Z"/>
+    <path d="M533.65,256c0-93.9,64.44-167.09,164.33-167.09,52.47,0,98.5,21.17,136.25,63.98l-48.33,50.63c-21.63-27.16-50.63-42.35-82.85-42.35-52.93,0-88.38,39.12-88.38,94.82s35.44,94.82,89.76,94.82c36.36,0,65.82-16.11,88.38-44.65l48.33,50.63c-35.9,46.03-87.92,66.28-141.77,66.28-100.34,0-165.71-70.89-165.71-167.09Z"/>
+    <path d="M968.86,289.6h-25.32v127.5h-79.17V94.9h79.17v124.28h25.32l75.95-124.28h92.06l-100.34,157.88,104.03,164.33h-92.98l-78.71-127.5Z"/>
+    <path d="M1252.86,297.89l-115.99-202.99h90.22l36.36,66.74,29.46,57.54,30.84-57.54,36.82-66.74h87.46l-115.99,202.99v119.22h-79.17v-119.22Z"/>
+    <path d="M1873.96,187.45c-12.19-18.42-37.01-23.48-55.43-11.29l-200.27,132.5-68.13-91.38c-13.2-17.71-38.26-21.36-55.98-8.16s-21.37,38.27-8.16,55.98l113.33,152.02,263.34-174.23c18.42-12.19,23.48-37.01,11.29-55.43Z"/>
+    <ellipse cx="1603.03" cy="154.08" rx="40" ry="50"/>
+    <ellipse cx="1711.47" cy="154.08" rx="40" ry="50"/>
+  </g>
+</svg></a>
+        <nav aria-label="Picky 메뉴"><ul class="nav-list">
+          <li><a class="nav-link" href="picky-home-mockup.html" aria-label="대시보드"><i data-lucide="layout-dashboard" aria-hidden="true"></i><span>대시보드</span></a></li>
+          <li><a class="nav-link" href="picky-stats-mockup.html" aria-label="통계"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>통계</span></a></li>
+          <li><a class="nav-link" href="picky-guides-mockup.html" aria-label="가이드 및 업데이트"><i data-lucide="book-open" aria-hidden="true"></i><span>가이드 및 업데이트</span></a></li>
+          <li><a class="nav-link" href="picky-quick-start-mockup.html" aria-label="빠른 시작"><i data-lucide="zap" aria-hidden="true"></i><span>빠른 시작</span></a></li>
+          <li><a class="nav-link active" href="picky-plugins-mockup.html" aria-label="플러그인" aria-current="page"><i data-lucide="plug" aria-hidden="true"></i><span>플러그인</span></a></li>
+          <li><a class="nav-link" href="picky-conversations-mockup.html" aria-label="최근 대화"><i data-lucide="message-square" aria-hidden="true"></i><span>최근 대화</span></a></li>
+          <li><a class="nav-link" href="picky-settings-mockup.html" aria-label="설정"><i data-lucide="settings-2" aria-hidden="true"></i><span>설정</span></a></li>
+        </ul></nav>
+      </aside>
+      <section class="main-panel" aria-labelledby="page-title"><div class="main-content">
+        <header class="page-head"><div><h1 id="page-title">플러그인</h1><p>필요한 기능을 찾아 설치하고 관리하세요.</p></div></header>
+        <section class="catalog-tools" aria-label="플러그인 찾기">
+          <label class="search-field" for="plugin-search"><span class="sr-only">플러그인 검색</span><i data-lucide="search" aria-hidden="true"></i><input id="plugin-search" type="search" placeholder="플러그인 검색" /></label>
+          <div class="filter-row" aria-label="플러그인 카테고리"><span class="filter-label">카테고리</span><button class="filter-button" type="button" data-category="전체" aria-pressed="true">전체</button><button class="filter-button" type="button" data-category="개발" aria-pressed="false">개발</button><button class="filter-button" type="button" data-category="조사" aria-pressed="false">조사</button><button class="filter-button" type="button" data-category="작업 관리" aria-pressed="false">작업 관리</button><button class="filter-button" type="button" data-category="콘텐츠" aria-pressed="false">콘텐츠</button></div>
+        </section>
+        <p id="catalog-status" class="catalog-status" role="status" aria-live="polite"></p>
+        <section id="plugin-grid" class="plugin-grid" aria-label="플러그인 카탈로그"></section>
+        <section id="empty-state" class="empty-state" hidden aria-labelledby="empty-title"><div><h2 id="empty-title">맞는 플러그인을 찾지 못했어요</h2><p>검색어나 카테고리를 바꿔 다시 찾아보세요.</p><button id="clear-filter" class="secondary-button" type="button">필터 지우기</button></div></section>
+        <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+      </div></section>
+    </main>
+  </div>
+
+  <dialog id="detail-dialog" aria-labelledby="detail-title" aria-describedby="detail-description">
+    <div class="dialog-body"><div class="dialog-head"><div><p id="detail-meta" class="dialog-meta"></p><h2 id="detail-title"></h2></div></div><p id="detail-description" class="dialog-description"></p><h3 class="use-case-title">이럴 때 사용해요</h3><ul id="detail-use-cases" class="use-case-list"></ul><div class="dialog-footer"><button id="detail-confirm" class="primary-button" type="button">확인</button></div></div>
+  </dialog>
+  <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
+    <div class="dialog-body"><h2 id="confirm-title">플러그인을 삭제할까요?</h2><p id="confirm-description"></p><div class="confirm-actions"><button id="confirm-cancel" class="secondary-button" type="button">취소</button><button id="confirm-delete" class="danger-button" type="button">삭제</button></div></div>
+  </dialog>
+
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script>
+    const plugins = [
+      { id:'diff-review', name:'Diff review', category:'개발', provider:'Picky Labs', version:'v1.4.0', icon:'git-compare-arrows', installed:true, summary:'변경된 코드를 비교하고 검토할 지점을 정리합니다.', description:'파일 변경 내용을 읽고, 검토가 필요한 차이와 확인 질문을 작업 맥락에 맞춰 정리합니다.', cases:['PR을 열기 전 변경 내용을 빠르게 점검할 때','여러 파일의 수정 범위를 한눈에 비교할 때'] },
+      { id:'ask-user', name:'Ask user question', category:'작업 관리', provider:'Picky Labs', version:'v1.2.1', icon:'message-circle-question', installed:true, summary:'결정이 필요한 순간에 질문을 정리해 확인합니다.', description:'작업을 이어가기 위해 필요한 선택지를 명확한 질문으로 구성하고, 답변을 다음 단계의 맥락으로 남깁니다.', cases:['요구사항이 모호해 먼저 확인할 때','선택지와 추천안을 함께 제시할 때'] },
+      { id:'web-research', name:'Web research', category:'조사', provider:'Context Find', version:'v0.9.3', icon:'search-check', installed:false, summary:'공개 웹 자료를 찾아 출처와 함께 요약합니다.', description:'주제에 맞는 공개 자료를 모아 핵심 근거와 링크를 정리하는 조사 도우미입니다.', cases:['시장이나 경쟁 사례를 빠르게 조사할 때','출처가 필요한 기획 메모를 만들 때'] },
+      { id:'issue-tracker', name:'Issue tracker', category:'작업 관리', provider:'Plane Studio', version:'v2.0.0', icon:'list-checks', installed:false, summary:'작업을 실행 가능한 이슈 목록으로 나눕니다.', description:'대화에서 나온 목표를 작은 작업 단위로 나누고, 우선순위와 완료 기준을 정리합니다.', cases:['큰 계획을 실행 순서로 나눌 때','팀에 전달할 작업 목록을 만들 때'] },
+      { id:'copy-polish', name:'Copy polish', category:'콘텐츠', provider:'Picky Labs', version:'v1.1.2', icon:'text-quote', installed:true, summary:'화면 문구를 목적과 톤에 맞게 다듬습니다.', description:'버튼, 안내문, 빈 상태 등 짧은 제품 문구를 읽기 쉽고 일관된 목소리로 다듬습니다.', cases:['새 화면의 마이크로카피를 준비할 때','기존 안내 문구의 톤을 통일할 때'] },
+      { id:'repo-map', name:'Repository map', category:'개발', provider:'Code Atlas', version:'v0.8.6', icon:'network', installed:false, summary:'프로젝트 구조와 주요 연결점을 빠르게 파악합니다.', description:'코드베이스의 주요 폴더와 진입점을 훑어, 작업 전 필요한 맥락을 짧게 안내합니다.', cases:['처음 보는 저장소에서 수정 범위를 찾을 때','기능과 관련된 파일을 빠르게 탐색할 때'] },
+      { id:'meeting-notes', name:'Meeting notes', category:'콘텐츠', provider:'Note Flow', version:'v1.3.0', icon:'notebook-pen', installed:false, summary:'대화 메모를 결정과 다음 할 일로 정리합니다.', description:'회의나 인터뷰 메모에서 결정 사항, 남은 질문, 다음 행동을 구분해 기록합니다.', cases:['회의 뒤 후속 작업을 정리할 때','흩어진 메모에서 합의 내용을 찾을 때'] },
+      { id:'citation-check', name:'Citation check', category:'조사', provider:'Source Guard', version:'v1.0.4', icon:'badge-check', installed:false, summary:'인용과 링크의 출처 정보를 점검합니다.', description:'문서에 포함된 링크와 인용 문장을 살펴보고, 출처 표기가 필요한 부분을 알려줍니다.', cases:['발행 전 자료의 출처를 확인할 때','리서치 문서의 근거를 보완할 때'] }
+    ];
+    const grid = document.querySelector('#plugin-grid'); const search = document.querySelector('#plugin-search'); const filters = [...document.querySelectorAll('.filter-button')]; const catalogStatus = document.querySelector('#catalog-status'); const emptyState = document.querySelector('#empty-state'); const feedback = document.querySelector('#feedback');
+    const detailDialog = document.querySelector('#detail-dialog'); const confirmDialog = document.querySelector('#confirm-dialog'); const detailConfirm = document.querySelector('#detail-confirm'); const detailTitle = document.querySelector('#detail-title'); const detailMeta = document.querySelector('#detail-meta'); const detailDescription = document.querySelector('#detail-description'); const detailUseCases = document.querySelector('#detail-use-cases');
+    [detailDialog, confirmDialog].forEach((dialog) => dialog.addEventListener('click', (event) => {
+      const { top, right, bottom, left } = dialog.getBoundingClientRect();
+      if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) dialog.close();
+    }));
+    let category = '전체'; let detailPlugin = null; let detailTrigger = null; let deletePlugin = null; let deleteTrigger = null; let focusAfterDetailClose = null; let focusAfterConfirmClose = null;
+
+    const visiblePlugins = () => plugins.filter((plugin) => {
+      const query = search.value.trim().toLowerCase();
+      const searchable = `${plugin.name} ${plugin.category} ${plugin.provider} ${plugin.summary}`.toLowerCase();
+      return (category === '전체' || plugin.category === category) && (!query || searchable.includes(query));
+    });
+    const actionLabel = (plugin) => plugin.installed ? '삭제' : '설치';
+    const render = () => {
+      const visible = visiblePlugins();
+      catalogStatus.textContent = `${visible.length}개의 플러그인${category === '전체' ? '' : ` · ${category}`}`;
+      grid.hidden = visible.length === 0; emptyState.hidden = visible.length !== 0;
+      grid.innerHTML = visible.map((plugin) => `<article class="plugin-card"><div class="plugin-top"><span class="plugin-icon"><i data-lucide="${plugin.icon}" aria-hidden="true"></i></span></div><h2>${plugin.name}</h2><p>${plugin.summary}</p><p class="plugin-meta">${plugin.category} · ${plugin.provider} · ${plugin.version}</p><div class="plugin-actions"><button class="detail-button" type="button" data-detail="${plugin.id}">상세 보기</button>${plugin.installed ? `<button class="danger-button installed-button" type="button" data-action="${plugin.id}" aria-label="${plugin.name} 삭제"><span class="action-label action-label-installed" aria-hidden="true">설치됨</span><span class="action-label action-label-delete" aria-hidden="true">삭제</span></button>` : `<button class="primary-button" type="button" data-action="${plugin.id}">설치</button>`}</div></article>`).join('');
+      window.lucide?.createIcons({ attrs:{ 'stroke-width':2 } });
+    };
+    const showFeedback = (message) => { feedback.textContent = message; };
+    const focusPluginControl = (pluginId, control = 'detail') => {
+      requestAnimationFrame(() => document.querySelector(`[data-${control}="${pluginId}"]`)?.focus());
+    };
+    const populateDetail = (plugin) => {
+      detailPlugin = plugin; detailTitle.textContent = plugin.name; detailMeta.textContent = `${plugin.category} · ${plugin.provider} · ${plugin.version}`; detailDescription.textContent = plugin.description; detailUseCases.replaceChildren(...plugin.cases.map((item) => { const li = document.createElement('li'); li.textContent = item; return li; }));
+    };
+    const openDetail = (plugin, trigger) => { detailTrigger = trigger; populateDetail(plugin); detailDialog.showModal(); detailConfirm.focus(); };
+    const closeDetail = () => detailDialog.close();
+    const openDeleteConfirmation = (plugin, trigger) => { deletePlugin = plugin; deleteTrigger = trigger; document.querySelector('#confirm-description').textContent = `${plugin.name}을(를) 이 목업에서 삭제합니다. 실제 플러그인이나 파일은 변경되지 않습니다.`; confirmDialog.showModal(); document.querySelector('#confirm-cancel').focus(); };
+    const install = (plugin) => {
+      plugin.installed = true;
+      render();
+      populateDetail(plugin);
+      showFeedback(`${plugin.name}을 설치했습니다.`);
+      if (detailDialog.open) {
+        focusAfterDetailClose = { pluginId: plugin.id, control: 'detail' };
+        detailDialog.close();
+      } else focusPluginControl(plugin.id);
+    };
+    const remove = (plugin) => {
+      plugin.installed = false;
+      render();
+      if (detailPlugin === plugin) populateDetail(plugin);
+      showFeedback(`${plugin.name}을 삭제했습니다.`);
+    };
+
+    filters.forEach((button) => button.addEventListener('click', () => { category = button.dataset.category; filters.forEach((item) => item.setAttribute('aria-pressed', String(item === button))); render(); }));
+    search.addEventListener('input', render);
+    document.querySelector('#clear-filter').addEventListener('click', () => { search.value = ''; category = '전체'; filters.forEach((item) => item.setAttribute('aria-pressed', String(item.dataset.category === category))); render(); search.focus(); });
+    grid.addEventListener('click', (event) => {
+      const action = event.target.closest('[data-action]'); const detail = event.target.closest('[data-detail]');
+      if (action) { const plugin = plugins.find((item) => item.id === action.dataset.action); if (plugin.installed) openDeleteConfirmation(plugin, action); else install(plugin); return; }
+      if (detail) { const plugin = plugins.find((item) => item.id === detail.dataset.detail); openDetail(plugin, detail); }
+    });
+    detailConfirm.addEventListener('click', closeDetail);
+    detailDialog.addEventListener('close', () => {
+      const target = focusAfterDetailClose;
+      focusAfterDetailClose = null;
+      if (target) focusPluginControl(target.pluginId, target.control);
+      else if (detailTrigger?.isConnected) detailTrigger.focus();
+    });
+    document.querySelector('#confirm-cancel').addEventListener('click', () => confirmDialog.close());
+    document.querySelector('#confirm-delete').addEventListener('click', () => {
+      if (!deletePlugin) return;
+      const pluginId = deletePlugin.id;
+      if (detailDialog.open) {
+        focusAfterDetailClose = { pluginId, control: 'detail' };
+        detailDialog.close();
+      }
+      remove(deletePlugin);
+      focusAfterConfirmClose = { pluginId, control: 'detail' };
+      confirmDialog.close();
+    });
+    confirmDialog.addEventListener('close', () => {
+      const target = focusAfterConfirmClose;
+      focusAfterConfirmClose = null;
+      if (target) focusPluginControl(target.pluginId, target.control);
+      else if (deleteTrigger?.isConnected) deleteTrigger.focus();
+      deletePlugin = null;
+      deleteTrigger = null;
+    });
+    window.lucide?.createIcons({ attrs:{ 'stroke-width':2 } }); render();
+  </script>
+</body>
+</html>

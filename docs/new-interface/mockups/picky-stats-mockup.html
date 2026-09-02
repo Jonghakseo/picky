@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Picky 통계 목업</title>
+  <style>
+    :root { --blue:#5284FF; --blue-surface:#5284FF; --mint:#65DD96; --review:#087A4A; --ink:#131419; --surface:#F9FAFF; --muted:#8D8D97; --border:#DCDFE6; --border-soft:#EAEBF0; --secondary:#404040; --tertiary:#595959; --link:#5284FF; --link-hover:#5284FF; --focus:var(--ink); --white:#FFF; --radius:12px; --shadow:0 24px 64px rgba(25,27,38,.14),0 2px 8px rgba(25,27,38,.06); }
+    * { box-sizing:border-box; }
+    html,body { width:100%; height:100%; margin:0; overflow:hidden; }
+    body { background:#E9EDF3; color:var(--ink); font-family:"SF Pro Display","SF Pro Text","Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; -webkit-font-smoothing:antialiased; }
+    button,select,a { font:inherit; } a { color:inherit; text-decoration:none; }
+    button:focus-visible,select:focus-visible,a:focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+    .preview-stage { width:100vw; height:100dvh; display:grid; place-items:center; overflow:hidden; contain:paint; padding:24px; }
+    .app-window { width:1020px; height:720px; display:grid; grid-template-columns:190px minmax(0,1fr); overflow:hidden; border:1px solid rgba(212,210,221,.8); border-radius:18px; background:var(--white); box-shadow:var(--shadow); }
+    .sidebar { display:flex; flex-direction:column; gap:35px; padding:21px 16px 18px; background:var(--surface); border-right:1px solid var(--border-soft); }
+    .traffic-lights { display:flex; gap:7px; padding-left:2px; } .traffic-lights span { width:10px; height:10px; border-radius:50%; } .red{background:#FF5F57}.yellow{background:#FEBC2E}.green{background:#28C840}
+    .brand { display:inline-flex; align-items:center; width:144px; } .brand-logo { display:block; width:100%; height:auto; }
+    .nav-list { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
+    .nav-link { display:flex; align-items:center; gap:10px; min-height:40px; padding:8px 10px; border-radius:9px; color:var(--secondary); font-size:14px; font-weight:600; }
+    .nav-link svg { width:18px; height:18px; stroke-width:2; } .nav-link.active { color:var(--ink); background:#f1f2fb; } .nav-link:hover { background:#f1f2fb; } .nav-link:active { background:#f1f2fb; }
+    .main-panel { min-height:0; overflow-y:auto; background:var(--white); -ms-overflow-style:none; scrollbar-width:none; } .main-panel::-webkit-scrollbar { width:0; height:0; }
+    .main-content { width:780px; margin:0 auto; padding:32px 30px 60px; }
+    .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; } h1 { margin:0; font-size:28px; line-height:1.2; letter-spacing:-1.4px; font-weight:700; } .page-head p { margin:7px 0 0; color:var(--secondary); font-size:14px; line-height:1.45; }
+    .filters { display:flex; align-items:end; gap:10px; margin-top:24px; padding:14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+    .filter-field { display:grid; gap:5px; } .filter-field:first-child { flex:1; } label { color:var(--secondary); font-size:12px; font-weight:600; }
+    select { min-width:150px; height:34px; padding:0 30px 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--white); color:var(--ink); font-size:13px; font-weight:500; }
+    .tabs { display:flex; gap:18px; margin-top:30px; border-bottom:1px solid var(--border); } [role="tab"] { position:relative; padding:0 2px 11px; border:0; background:none; color:var(--tertiary); font-size:14px; font-weight:600; cursor:pointer; } [role="tab"][aria-selected="true"] { color:var(--ink); } [role="tab"][aria-selected="true"]::after { position:absolute; right:0; bottom:-1px; left:0; height:2px; background:var(--blue); content:""; }
+    .tabpanel { padding-top:22px; } .tabpanel[hidden] { display:none; }
+    .insight-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; } .insight-card { height:148px; display:flex; flex-direction:column; justify-content:center; gap:4px; padding:14px 16px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--ink); } .insight-card.primary { border-color:var(--blue); background:var(--blue); color:var(--white); } .insight-eyebrow { margin:0; color:inherit; font-size:13px; font-weight:650; line-height:1.3; } .insight-title { margin:0; font-size:21px; line-height:1.24; letter-spacing:-1px; font-weight:720; word-break:keep-all; text-wrap:balance; } .insight-meta { display:flex; flex-wrap:wrap; gap:4px; margin:0; } .insight-badge { display:inline-flex; width:fit-content; padding:4px 8px; border:1px solid rgba(220,223,230,.9); border-radius:999px; background:var(--white); color:inherit; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.2; text-wrap:pretty; } .primary .insight-badge { border-color:rgba(255,255,255,.46); background:rgba(255,255,255,.16); color:var(--white); }
+    .section { margin-top:30px; } h2 { margin:0; font-size:19px; line-height:1.3; letter-spacing:-.7px; font-weight:700; } #work-pattern > h2,#pickle-records > h2 { margin-bottom:12px; } .section-description { margin:5px 0 12px; color:var(--tertiary); font-size:12px; line-height:1.4; }
+    .chart-card,.data-card { border:1px solid var(--border); border-radius:var(--radius); background:var(--white); } .chart-card { padding:16px; } .legend { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px; color:var(--secondary); font-size:12px; } .legend span { display:inline-flex; align-items:center; gap:5px; } .legend i { width:8px; height:8px; border-radius:50%; } .legend .blue-dot{background:var(--blue)}
+    .chart { display:block; width:100%; height:160px; } .chart text { fill:var(--tertiary); font:11px inherit; } .chart .grid { stroke:var(--border-soft); stroke-width:1; } .chart .completed { stroke:var(--blue); } .chart .line { fill:none; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; } .chart .point { stroke:var(--white); stroke-width:2; }
+    .pattern-card { padding:18px; } .pattern-list { display:grid; gap:14px; margin:0; padding:0; list-style:none; } .pattern-row { display:grid; grid-template-columns:112px minmax(0,1fr) 92px; align-items:center; gap:12px; } .pattern-name,.pattern-value { font-size:13px; font-weight:600; } .pattern-name { color:var(--ink); } .pattern-value { color:var(--secondary); text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; } .bar-track { height:10px; overflow:hidden; border-radius:999px; background:var(--surface); } .bar-fill { display:block; height:100%; border-radius:inherit; background:var(--blue); }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    .table-wrap { overflow:hidden; } table { width:100%; border-collapse:collapse; text-align:left; font-size:13px; } th,td { height:42px; padding:0 13px; border-bottom:1px solid var(--border-soft); } tr:last-child td { border-bottom:0; } th { color:var(--tertiary); font-size:12px; font-weight:600; } td { color:var(--secondary); } td:first-child { color:var(--ink); font-weight:600; } .number { text-align:right; font-variant-numeric:tabular-nums; } .pickle-table { table-layout:fixed; } .pickle-table th { height:36px; padding:0 10px; } .pickle-table td { height:48px; padding:0 10px; } .table-caption { margin:8px 0 0; color:var(--tertiary); font-size:12px; font-weight:500; line-height:1.4; text-align:left; } .pickle-table th:nth-child(1),.pickle-table td:nth-child(1) { width:31%; } .pickle-table th:nth-child(2),.pickle-table td:nth-child(2) { width:14%; } .pickle-table th:nth-child(3),.pickle-table td:nth-child(3) { width:13%; } .pickle-table th:nth-child(4),.pickle-table td:nth-child(4) { width:13%; } .pickle-table th:nth-child(5),.pickle-table td:nth-child(5) { width:10%; } .pickle-table th:nth-child(6),.pickle-table td:nth-child(6) { width:19%; }
+    .usage-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; } .usage-card { min-height:96px; padding:15px; border:1px solid var(--border); border-radius:10px; background:var(--surface); } .usage-card strong { display:block; margin-top:8px; font-size:23px; line-height:1; letter-spacing:-1px; font-variant-numeric:tabular-nums; } .usage-card span { color:var(--secondary); font-size:12px; font-weight:600; }
+    .notice { margin-top:12px; padding:10px 12px; border-left:3px solid var(--blue); border-radius:0 8px 8px 0; background:var(--surface); color:var(--secondary); font-size:12px; line-height:1.45; }
+    .empty-state[hidden] { display:none; } .empty-state { display:grid; place-items:center; min-height:350px; padding:40px; border:1px solid var(--border); border-radius:var(--radius); text-align:center; background:var(--surface); } .empty-icon { display:grid; place-items:center; width:44px; height:44px; margin:auto; border-radius:50%; background:var(--white); color:var(--blue); } .empty-icon svg { width:22px; } .empty-state h2 { margin:14px 0 0; font-size:19px; } .empty-state p { max-width:330px; margin:7px 0 18px; color:var(--secondary); font-size:13px; line-height:1.5; } .primary-button { display:inline-flex; align-items:center; gap:6px; padding:9px 13px; border-radius:8px; background:var(--link); color:var(--white); font-size:13px; font-weight:700; } .primary-button:hover { background:var(--link-hover); } .primary-button svg { width:15px; }
+  </style>
+</head>
+<body>
+  <div class="preview-stage">
+    <main class="app-window" aria-label="Picky 통계 목업">
+      <aside class="sidebar" aria-label="주 메뉴">
+        <div class="traffic-lights" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+        <a class="brand" href="picky-home-mockup.html" aria-label="Picky 대시보드로 이동"><svg class="brand-logo" viewBox="0 0 1940 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <g fill="#6699FF">
+    <path d="M136.16,94.9h132.7c80.38,0,128.9,45.66,128.9,119.38s-48.51,119.38-128.9,119.38h-50.89v83.44h-81.81V94.9ZM260.3,266.12c34.72,0,55.17-19.02,55.17-50.89s-20.45-50.89-55.17-50.89h-43.76v101.78h43.76Z"/>
+    <path d="M425.51,94.9h79.17v322.21h-79.17V94.9Z"/>
+    <path d="M533.65,256c0-93.9,64.44-167.09,164.33-167.09,52.47,0,98.5,21.17,136.25,63.98l-48.33,50.63c-21.63-27.16-50.63-42.35-82.85-42.35-52.93,0-88.38,39.12-88.38,94.82s35.44,94.82,89.76,94.82c36.36,0,65.82-16.11,88.38-44.65l48.33,50.63c-35.9,46.03-87.92,66.28-141.77,66.28-100.34,0-165.71-70.89-165.71-167.09Z"/>
+    <path d="M968.86,289.6h-25.32v127.5h-79.17V94.9h79.17v124.28h25.32l75.95-124.28h92.06l-100.34,157.88,104.03,164.33h-92.98l-78.71-127.5Z"/>
+    <path d="M1252.86,297.89l-115.99-202.99h90.22l36.36,66.74,29.46,57.54,30.84-57.54,36.82-66.74h87.46l-115.99,202.99v119.22h-79.17v-119.22Z"/>
+    <path d="M1873.96,187.45c-12.19-18.42-37.01-23.48-55.43-11.29l-200.27,132.5-68.13-91.38c-13.2-17.71-38.26-21.36-55.98-8.16s-21.37,38.27-8.16,55.98l113.33,152.02,263.34-174.23c18.42-12.19,23.48-37.01,11.29-55.43Z"/>
+    <ellipse cx="1603.03" cy="154.08" rx="40" ry="50"/>
+    <ellipse cx="1711.47" cy="154.08" rx="40" ry="50"/>
+  </g>
+</svg></a>
+        <nav aria-label="Picky 메뉴"><ul class="nav-list">
+          <li><a class="nav-link" href="picky-home-mockup.html" aria-label="대시보드"><i data-lucide="layout-dashboard" aria-hidden="true"></i><span>대시보드</span></a></li>
+          <li><a class="nav-link active" href="picky-stats-mockup.html" aria-label="통계" aria-current="page"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>통계</span></a></li>
+          <li><a class="nav-link" href="picky-guides-mockup.html" aria-label="가이드 및 업데이트"><i data-lucide="book-open" aria-hidden="true"></i><span>가이드 및 업데이트</span></a></li>
+          <li><a class="nav-link" href="picky-quick-start-mockup.html" aria-label="빠른 시작"><i data-lucide="zap" aria-hidden="true"></i><span>빠른 시작</span></a></li>
+          <li><a class="nav-link" href="picky-plugins-mockup.html" aria-label="플러그인"><i data-lucide="plug" aria-hidden="true"></i><span>플러그인</span></a></li>
+          <li><a class="nav-link" href="picky-conversations-mockup.html" aria-label="최근 대화"><i data-lucide="message-square" aria-hidden="true"></i><span>최근 대화</span></a></li>
+          <li><a class="nav-link" href="picky-settings-mockup.html" aria-label="설정"><i data-lucide="settings-2" aria-hidden="true"></i><span>설정</span></a></li>
+        </ul></nav>
+      </aside>
+      <section class="main-panel" aria-labelledby="page-title"><div class="main-content">
+        <header class="page-head"><div><h1 id="page-title">통계</h1><p>작업 결과와 AI 사용량을 기간·프로젝트별로 확인하세요.</p></div></header>
+        <div class="filters" aria-label="통계 필터"><div class="filter-field"><label for="period">기간</label><select id="period" aria-label="통계 기간"><option>이번 주</option><option>이번 달</option><option>최근 3개월</option><option>전체</option></select></div><div class="filter-field"><label for="project">프로젝트</label><select id="project" aria-label="프로젝트 필터"><option>모든 프로젝트</option><option>소미랜드 웹사이트</option><option>Picky</option><option>브랜드 리뉴얼</option></select></div></div>
+        <div class="tabs" role="tablist" aria-label="통계 보기"><button id="work-tab" type="button" role="tab" aria-selected="true" aria-controls="work-panel">작업</button><button id="usage-tab" type="button" role="tab" aria-selected="false" aria-controls="usage-panel" tabindex="-1">AI 사용량</button></div>
+        <section id="work-panel" class="tabpanel" role="tabpanel" aria-labelledby="work-tab">
+          <div id="work-data">
+            <div class="insight-grid">
+              <article class="insight-card primary"><p class="insight-eyebrow">이번 주 가장 많이 맡긴 일</p><h2 class="insight-title">수정·개선</h2><p class="insight-meta"><span class="insight-badge">6개 Pickle</span><span class="insight-badge">이번 주 작업의 43%</span></p></article>
+              <article class="insight-card"><p class="insight-eyebrow">가장 깊게 진행한 Pickle</p><h2 class="insight-title">Picky 통계 페이지 구체화</h2><p class="insight-meta"><span class="insight-badge">후속 지시 12</span><span class="insight-badge">Picky 위임 18</span></p></article>
+              <article class="insight-card"><p class="insight-eyebrow">가장 집중한 프로젝트</p><h2 class="insight-title">somiland</h2><p class="insight-meta"><span class="insight-badge">이번 주 7개 Pickle</span></p></article>
+            </div>
+            <section id="work-pattern" class="section" aria-labelledby="work-pattern-title"><h2 id="work-pattern-title">이번 주 맡긴 일</h2><div class="chart-card pattern-card" role="img" aria-label="이번 주 맡긴 일 분포: 수정·개선 6개 Pickle, 43%; 조사·분석 4개 Pickle, 29%; 새로 만들기 3개 Pickle, 21%; 검토·문제 해결 1개 Pickle, 7%."><ul class="pattern-list"><li class="pattern-row"><span class="pattern-name">수정·개선</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100%"></span></span><span class="pattern-value">6개 · 43%</span></li><li class="pattern-row"><span class="pattern-name">조사·분석</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:67%"></span></span><span class="pattern-value">4개 · 29%</span></li><li class="pattern-row"><span class="pattern-name">새로 만들기</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:50%"></span></span><span class="pattern-value">3개 · 21%</span></li><li class="pattern-row"><span class="pattern-name">검토·문제 해결</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:17%"></span></span><span class="pattern-value">1개 · 7%</span></li></ul></div></section>
+            <section id="pickle-records" class="section" aria-labelledby="pickle-records-title"><h2 id="pickle-records-title">Pickle별 작업 기록</h2><div class="data-card table-wrap"><table class="pickle-table"><thead><tr><th scope="col">작업</th><th scope="col">프로젝트</th><th scope="col" class="number">후속 지시</th><th scope="col" class="number">Picky 위임</th><th scope="col" class="number">검토</th><th scope="col">최근 활동</th></tr></thead><tbody><tr><td><span>Picky 통계 페이지 구체화</span></td><td>picky</td><td class="number">12</td><td class="number">18</td><td class="number">4</td><td>오늘 14:32</td></tr><tr><td><span>랜딩 페이지 개선</span></td><td>somiland</td><td class="number">7</td><td class="number">10</td><td class="number">2</td><td>오늘 11:08</td></tr><tr><td><span>잔 주토 캠페인 기획</span></td><td>somiland</td><td class="number">5</td><td class="number">6</td><td class="number">1</td><td>어제 16:09</td></tr><tr><td><span>Signtailor UI 점검</span></td><td>signtailor</td><td class="number">3</td><td class="number">4</td><td class="number">2</td><td>어제 11:48</td></tr></tbody></table></div><p class="table-caption">후속 지시, Picky 위임, 검토는 완료 수가 아니라 각 Pickle 안의 상호작용 횟수입니다.</p></section>
+          </div>
+          <section id="empty-state" class="empty-state" hidden aria-labelledby="empty-title"><div><div class="empty-icon"><i data-lucide="inbox" aria-hidden="true"></i></div><h2 id="empty-title">표시할 Pickle이 없어요</h2><p>선택한 기간과 프로젝트에서 작업 기록을 찾지 못했습니다. 대시보드에서 새 작업을 시작해보세요.</p><a class="primary-button" href="picky-home-mockup.html"><i data-lucide="layout-dashboard" aria-hidden="true"></i>대시보드로 이동</a></div></section>
+        </section>
+        <section id="usage-panel" class="tabpanel" role="tabpanel" aria-labelledby="usage-tab" hidden>
+          <div class="usage-grid"><article class="usage-card"><span>전체 토큰</span><strong>129.4K</strong></article><article class="usage-card"><span>입력 토큰</span><strong>74.1K</strong></article><article class="usage-card"><span>출력·추론 토큰</span><strong>42.8K</strong></article><article class="usage-card"><span>캐시 사용량</span><strong>12.5K</strong></article></div>
+          <section class="section" aria-labelledby="usage-flow-title"><h2 id="usage-flow-title">날짜별 사용량</h2><p class="section-description">7월 15일~21일 기준, 토큰 단위</p><div class="chart-card"><div class="legend" aria-hidden="true"><span><i class="blue-dot"></i>전체 토큰</span></div><svg class="chart" viewBox="0 0 650 160" role="img" aria-labelledby="usage-chart-title usage-chart-description"><title id="usage-chart-title">날짜별 AI 사용량</title><desc id="usage-chart-description">월요일부터 일요일까지 전체 토큰 사용량은 12.4천, 16.8천, 20.2천, 14.5천, 24.9천, 18.7천, 21.9천입니다.</desc><line class="grid" x1="34" y1="18" x2="638" y2="18"/><line class="grid" x1="34" y1="70" x2="638" y2="70"/><line class="grid" x1="34" y1="122" x2="638" y2="122"/><text x="0" y="21">25K</text><text x="0" y="73">12K</text><text x="8" y="125">0</text><polyline class="line completed" points="45,70 140,47 235,33 330,62 425,18 520,42 615,28"/><g class="completed"><circle class="point" cx="45" cy="70" r="4"/><circle class="point" cx="140" cy="47" r="4"/><circle class="point" cx="235" cy="33" r="4"/><circle class="point" cx="330" cy="62" r="4"/><circle class="point" cx="425" cy="18" r="4"/><circle class="point" cx="520" cy="42" r="4"/><circle class="point" cx="615" cy="28" r="4"/></g><text x="38" y="151">월</text><text x="133" y="151">화</text><text x="228" y="151">수</text><text x="323" y="151">목</text><text x="418" y="151">금</text><text x="513" y="151">토</text><text x="608" y="151">일</text></svg></div><p class="notice">비용은 추정하지 않습니다. 연결된 제공업체에서 비용을 확인하세요.</p></section>
+          <section class="section" aria-labelledby="models-title"><h2 id="models-title">모델·제공업체별 사용량</h2><p class="section-description">이 화면에서는 사용량만 제공합니다.</p><div class="data-card table-wrap"><table><caption class="sr-only">모델과 제공업체별 AI 사용량</caption><thead><tr><th scope="col">모델</th><th scope="col">제공업체</th><th scope="col" class="number">입력</th><th scope="col" class="number">출력·추론</th><th scope="col" class="number">캐시</th></tr></thead><tbody><tr><td>Claude Sonnet</td><td>Anthropic</td><td class="number">48.2K</td><td class="number">29.8K</td><td class="number">9.6K</td></tr><tr><td>GPT-4.1</td><td>OpenAI</td><td class="number">19.7K</td><td class="number">11.4K</td><td class="number">2.9K</td></tr><tr><td>Gemini 2.5 Pro</td><td>Google</td><td class="number">6.2K</td><td class="number">1.6K</td><td class="number">0</td></tr></tbody></table></div></section>
+        </section>
+      </div></section>
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script>
+    window.lucide?.createIcons({ attrs: { "stroke-width": 2 } });
+
+    const params = new URLSearchParams(window.location.search);
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    const panels = tabs.map((tab) => document.getElementById(tab.getAttribute('aria-controls')));
+    const activateTab = (tab) => { tabs.forEach((item, index) => { const active = item === tab; item.setAttribute('aria-selected', active); item.tabIndex = active ? 0 : -1; panels[index].hidden = !active; }); };
+    tabs.forEach((tab, index) => { tab.addEventListener('click', () => activateTab(tab)); tab.addEventListener('keydown', (event) => { if (!['ArrowLeft','ArrowRight'].includes(event.key)) return; event.preventDefault(); const next = (index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length; tabs[next].focus(); activateTab(tabs[next]); }); });
+
+    if (params.get('state') === 'empty') {
+      document.getElementById('work-data').hidden = true;
+      document.getElementById('empty-state').hidden = false;
+    } else if (params.get('view') === 'usage') {
+      activateTab(document.getElementById('usage-tab'));
+    }
+  </script>
+</body>
+</html>

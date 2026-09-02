@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Picky 홈 목업</title>
+  <style>
+    :root {
+      --blue: #5284FF;
+      --blue-hover: #3D73F5;
+      --blue-surface: #5284FF;
+      --mint: #65DD96;
+      --ink: #131419;
+      --cool-gray: #F9FAFF;
+      --muted: #8D8D97;
+      --border: #DCDFE6;
+      --border-soft: #EAEBF0;
+      --text-secondary: #404040;
+      --text-tertiary: #808080;
+      --success-bg: #D7EEE4;
+      --success: #108D6F;
+      --white: #FFFFFF;
+      --radius-card: 12px;
+      --radius-pill: 999px;
+      --shadow-window: 0 24px 64px rgba(25, 27, 38, .14), 0 2px 8px rgba(25, 27, 38, .06);
+      --shadow-subtle: 0 8px 24px rgba(25, 27, 38, .045);
+    }
+
+    * { box-sizing: border-box; }
+    html { width: 100%; height: 100%; overflow: hidden; background: #E9EDF3; }
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      margin: 0;
+      color: var(--ink);
+      background: #E9EDF3;
+      font-family: "SF Pro Display", "SF Pro Text", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    button, a { font: inherit; }
+    a { color: inherit; text-decoration: none; }
+    button:focus-visible, a:focus-visible {
+      outline: 3px solid rgba(82, 132, 255, .45);
+      outline-offset: 3px;
+    }
+
+    .preview-stage {
+      width: 100vw;
+      height: 100dvh;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      contain: paint;
+      padding: 40px 24px;
+    }
+    .app-window {
+      width: 1020px;
+      height: 720px;
+      display: grid;
+      grid-template-columns: 190px minmax(0, 1fr);
+      overflow: hidden;
+      background: var(--white);
+      border: 1px solid rgba(212, 210, 221, .8);
+      border-radius: 18px;
+      box-shadow: var(--shadow-window);
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 35px;
+      padding: 21px 16px 18px;
+      background: var(--cool-gray);
+      border-right: 1px solid var(--border-soft);
+    }
+    .traffic-lights { display: flex; gap: 7px; padding-left: 2px; }
+    .traffic-lights span { width: 10px; height: 10px; border-radius: 50%; }
+    .traffic-lights .red { background: #FF5F57; }
+    .traffic-lights .yellow { background: #FEBC2E; }
+    .traffic-lights .green { background: #28C840; }
+
+    .brand { display: inline-flex; align-items: center; width: 144px; }
+    .brand-logo { display: block; width: 100%; height: auto; }
+
+    .nav-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      padding: 8px 10px;
+      border-radius: 9px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .nav-link svg { width: 18px; height: 18px; stroke-width: 2; }
+    .nav-link.active { color: var(--ink); background: #f1f2fb; }
+    .nav-link:hover { background: #f1f2fb; } .nav-link:active { background:#f1f2fb; }
+
+    .main-panel {
+      overflow-y: auto;
+      background: var(--white);
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .main-panel::-webkit-scrollbar { width: 0 !important; height: 0 !important; background: transparent; }
+    .main-panel::-webkit-scrollbar-thumb,
+    .main-panel::-webkit-scrollbar-track { background: transparent; }
+    .main-content { width: 780px; margin: 0 auto; padding: 32px 30px 60px; }
+
+    .greeting {
+      display: flex;
+      align-items: center;
+      gap: 17px;
+      padding: 19px 21px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-subtle);
+    }
+    .greeting .picky-symbol { flex: none; width: 48px; height: 48px; object-fit: contain; }
+    .greeting h1 { margin: 0; font-size: 18px; line-height: 1.32; letter-spacing: -0.5px; font-weight: 700; text-wrap: balance; }
+    .greeting p { margin: 3px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.4; }
+
+    .section { margin-top: 42px; }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+    .section-title { margin: 0; font-size: 24px; letter-spacing: -1px; line-height: 1.2; font-weight: 750; text-wrap: balance; }
+    .section-title-icon { display: block; width: 31px; height: 31px; margin-bottom: 6px; color: var(--blue); stroke-width: 2.25; }
+    .section-link { color: var(--blue); font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .section-link:hover { text-decoration: underline; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .stat-card { height: 148px; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--cool-gray); color: var(--ink); }
+    .stat-card:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+    .stat-card.blue { border-color: var(--blue); background: var(--blue); color: var(--white); }
+    .stat-eyebrow { color: inherit; font-size: 13px; font-weight: 650; line-height: 1.3; }
+    .stat-title { margin: 0; font-size: 21px; font-weight: 720; letter-spacing: -1px; line-height: 1.24; word-break: keep-all; text-wrap: balance; }
+    .stat-meta { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
+    .stat-badge { display: inline-flex; width: fit-content; padding: 4px 8px; border: 1px solid rgba(220, 223, 230, .9); border-radius: var(--radius-pill); background: var(--white); color: inherit; font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600; line-height: 1.2; text-wrap: pretty; }
+    .stat-card.blue .stat-badge { border-color: rgba(255, 255, 255, .46); background: rgba(255, 255, 255, .16); color: var(--white); }
+
+    .updates-carousel { position: relative; }
+    .updates-track {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(246px, .93fr);
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scroll-snap-type: x mandatory;
+      cursor: grab;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .updates-track.dragging { cursor: grabbing; scroll-snap-type: none; }
+    .updates-track.dragging, .updates-track.dragging * { user-select: none; }
+    .updates-track::-webkit-scrollbar { width: 0 !important; height: 0 !important; background: transparent; }
+    .updates-track::-webkit-scrollbar-thumb,
+    .updates-track::-webkit-scrollbar-track { background: transparent; }
+    .update-card { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--cool-gray); scroll-snap-align: start; }
+    .carousel-arrow {
+      position: absolute;
+      top: 50%;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--white);
+      color: var(--blue);
+      box-shadow: 0 4px 12px rgba(25, 27, 38, .12);
+      transform: translateY(-50%);
+    }
+    .carousel-arrow:hover { border-color: var(--blue); background: #F7F9FF; }
+    .carousel-arrow:active { transform: translateY(-50%) translateY(1px); }
+    .carousel-arrow svg { width: 19px; height: 19px; stroke-width: 2.5; }
+    .carousel-arrow.previous { left: 8px; }
+    .carousel-arrow.next { right: 8px; }
+    .carousel-arrow[hidden] { display: none; }
+    .update-visual { aspect-ratio: 16 / 9; background: var(--muted); }
+    .update-body { padding: 12px 13px 13px; }
+    .update-title { margin: 0; font-size: 14px; line-height: 1.35; font-weight: 700; }
+    .update-meta { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; line-height: 1.3; }
+
+    .quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .quick-card {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+      grid-template-rows: 1fr auto auto 1fr auto;
+      column-gap: 14px;
+      aspect-ratio: 2 / 1;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      background: var(--cool-gray);
+    }
+    .quick-thumb { grid-row: 1 / -1; width: 100%; height: 100%; margin: 0; border-radius: 8px; background: var(--muted); }
+    .quick-card h3 { grid-column: 2; grid-row: 2; margin: 0; font-size: 14px; letter-spacing: -.4px; line-height: 1.3; }
+    .quick-card p { grid-column: 2; grid-row: 3; margin: 5px 0 8px; color: var(--text-secondary); font-size: 13px; line-height: 1.45; text-wrap: pretty; }
+    .action-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      grid-column: 2;
+      grid-row: 5;
+      width: fit-content;
+      margin-top: 0;
+      padding: 6px 11px;
+      white-space: nowrap;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      background: var(--white);
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .action-button svg { width: 12px; height: 12px; fill: currentColor; stroke-width: 0; }
+    .action-button:hover { border-color: var(--blue); background: #F7F9FF; }
+    .action-button:active { transform: translateY(1px); }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+    .plugin-list { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--cool-gray); }
+    .plugin-row { display: grid; grid-template-columns: minmax(112px, 1fr) minmax(0, 1.55fr) auto; gap: 12px; align-items: center; min-height: 38px; padding: 0 13px; }
+    .plugin-row + .plugin-row { border-top: 1px solid rgba(220, 223, 230, .7); }
+    .plugin-name { display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 750; }
+    .plugin-info-button { display:grid; place-items:center; width:18px; height:18px; padding:0; border:0; background:none; color:var(--text-tertiary); cursor:pointer; }
+    .plugin-info-button:hover { color:var(--blue); } .plugin-info-button svg { width:14px; height:14px; }
+    .plugin-description { color: var(--text-secondary); font-size: 14px; line-height: 1.3; }
+    .status-badge, .install-button { display:inline-flex; align-items:center; justify-content:center; min-width: 52px; min-height:33px; padding: 6px 9px; border-radius:8px; font-size:12px; font-weight:700; line-height:1; text-align:center; }
+    .status-badge { border: 1px solid var(--border); background: var(--white); color: #595959; }
+    .installed-button { display:inline-grid; grid-template-areas:"label"; }
+    .installed-button .action-label { grid-area:label; }
+    .installed-button .action-label-delete { visibility:hidden; }
+    .installed-button:hover { border-color:#F87171; background:#FFF8F8; color:#F87171; }
+    .installed-button:hover .action-label-installed { visibility:hidden; }
+    .installed-button:hover .action-label-delete { visibility:visible; }
+    .install-button { border: 1px solid var(--blue); background: var(--blue); color: var(--white); }
+    .install-button:hover { border-color: var(--blue-hover); background: var(--blue-hover); }
+    .plugin-confirm-dialog { width:min(390px,calc(100vw - 48px)); max-width:none; padding:0; overflow:hidden; border:1px solid var(--border); border-radius:16px; background:var(--white); color:var(--ink); box-shadow:0 24px 64px rgba(19,20,25,.28); }
+    .plugin-confirm-dialog::backdrop { background:rgba(19,20,25,.52); }
+    .plugin-confirm-body { padding:20px; } .plugin-confirm-body h2 { margin:0; font-size:18px; letter-spacing:-.5px; } .plugin-confirm-body p { margin:8px 0 0; color:var(--text-secondary); font-size:13px; line-height:1.5; }
+    .plugin-confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:20px; }
+    .plugin-confirm-cancel, .plugin-confirm-delete { min-height:33px; padding:7px 11px; border-radius:8px; font-size:12px; font-weight:700; }
+    .plugin-confirm-cancel { border:1px solid var(--border); background:var(--white); color:var(--text-secondary); } .plugin-confirm-cancel:hover { border-color:var(--blue); background:#F7F9FF; }
+    .plugin-confirm-delete { border:1px solid #F87171; background:var(--white); color:#F87171; } .plugin-confirm-delete:hover { background:#FFF8F8; }
+    .plugin-detail-dialog { width:min(540px,calc(100vw - 48px)); max-width:none; padding:0; overflow:hidden; border:1px solid var(--border); border-radius:16px; background:var(--white); color:var(--ink); box-shadow:0 24px 64px rgba(19,20,25,.28); }
+    .plugin-detail-dialog::backdrop { background:rgba(19,20,25,.52); }
+    .plugin-detail-body { padding:20px; } .plugin-detail-meta { margin:0; color:var(--text-tertiary); font-size:12px; font-weight:600; } .plugin-detail-body h2 { margin:7px 0 0; font-size:20px; line-height:1.3; letter-spacing:-.6px; font-weight:700; } .plugin-detail-description { margin:18px 0 0; color:var(--text-secondary); font-size:14px; line-height:1.55; } .plugin-use-case-title { margin:20px 0 8px; font-size:13px; font-weight:700; } .plugin-use-case-list { display:grid; gap:7px; margin:0; padding-left:19px; color:var(--text-secondary); font-size:13px; line-height:1.45; } .plugin-detail-footer { display:flex; justify-content:flex-end; margin-top:22px; padding-top:15px; border-top:1px solid var(--border-soft); } .plugin-detail-confirm { min-height:33px; padding:7px 11px; border:1px solid var(--blue); border-radius:8px; background:var(--blue); color:var(--white); font-size:12px; font-weight:700; } .plugin-detail-confirm:hover { border-color:var(--blue-hover); background:var(--blue-hover); }
+
+    .share-panel { padding-top: 3px; }
+    .share-panel .section-title { margin-bottom: 12px; }
+    .share-copy { max-width: 320px; margin: 0 0 17px; font-size: 14px; font-weight: 600; line-height: 1.4; letter-spacing: -.45px; text-wrap: pretty; }
+    .share-links { display: flex; gap: 8px; }
+    .icon-button { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 50%; background: var(--white); color: var(--text-secondary); }
+    .icon-button:hover { color: var(--blue); border-color: var(--blue); }
+    .icon-button svg { width: 17px; height: 17px; }
+    .icon-button.x-link { background: var(--ink); border-color: var(--ink); color: var(--white); }
+    .icon-button.linkedin-link { background: #0A79B9; border-color: #0A79B9; color: var(--white); }
+
+    [data-fit-text] { overflow: hidden; overflow-wrap: anywhere; }
+
+    /* Desktop mockup only: mobile reflow is intentionally out of scope. */
+  </style>
+</head>
+<body>
+  <div class="preview-stage">
+    <main class="app-window" aria-label="Picky 홈 목업">
+      <aside class="sidebar" aria-label="주 메뉴">
+        <div class="traffic-lights" aria-hidden="true"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+        <a class="brand" href="picky-home-mockup.html" aria-label="Picky 대시보드로 이동"><svg class="brand-logo" viewBox="0 0 1940 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <g fill="#6699FF">
+    <path d="M136.16,94.9h132.7c80.38,0,128.9,45.66,128.9,119.38s-48.51,119.38-128.9,119.38h-50.89v83.44h-81.81V94.9ZM260.3,266.12c34.72,0,55.17-19.02,55.17-50.89s-20.45-50.89-55.17-50.89h-43.76v101.78h43.76Z"/>
+    <path d="M425.51,94.9h79.17v322.21h-79.17V94.9Z"/>
+    <path d="M533.65,256c0-93.9,64.44-167.09,164.33-167.09,52.47,0,98.5,21.17,136.25,63.98l-48.33,50.63c-21.63-27.16-50.63-42.35-82.85-42.35-52.93,0-88.38,39.12-88.38,94.82s35.44,94.82,89.76,94.82c36.36,0,65.82-16.11,88.38-44.65l48.33,50.63c-35.9,46.03-87.92,66.28-141.77,66.28-100.34,0-165.71-70.89-165.71-167.09Z"/>
+    <path d="M968.86,289.6h-25.32v127.5h-79.17V94.9h79.17v124.28h25.32l75.95-124.28h92.06l-100.34,157.88,104.03,164.33h-92.98l-78.71-127.5Z"/>
+    <path d="M1252.86,297.89l-115.99-202.99h90.22l36.36,66.74,29.46,57.54,30.84-57.54,36.82-66.74h87.46l-115.99,202.99v119.22h-79.17v-119.22Z"/>
+    <path d="M1873.96,187.45c-12.19-18.42-37.01-23.48-55.43-11.29l-200.27,132.5-68.13-91.38c-13.2-17.71-38.26-21.36-55.98-8.16s-21.37,38.27-8.16,55.98l113.33,152.02,263.34-174.23c18.42-12.19,23.48-37.01,11.29-55.43Z"/>
+    <ellipse cx="1603.03" cy="154.08" rx="40" ry="50"/>
+    <ellipse cx="1711.47" cy="154.08" rx="40" ry="50"/>
+  </g>
+</svg></a>
+        <nav aria-label="Picky 메뉴">
+          <ul class="nav-list">
+            <li><a class="nav-link active" href="picky-home-mockup.html" aria-label="대시보드" aria-current="page"><i data-lucide="layout-dashboard"></i><span>대시보드</span></a></li>
+            <li><a class="nav-link" href="picky-stats-mockup.html" aria-label="통계"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>통계</span></a></li>
+            <li><a class="nav-link" href="picky-guides-mockup.html" aria-label="가이드 및 업데이트"><i data-lucide="book-open"></i><span>가이드 및 업데이트</span></a></li>
+            <li><a class="nav-link" href="picky-quick-start-mockup.html" aria-label="빠른 시작"><i data-lucide="zap"></i><span>빠른 시작</span></a></li>
+            <li><a class="nav-link" href="picky-plugins-mockup.html" aria-label="플러그인"><i data-lucide="plug"></i><span>플러그인</span></a></li>
+            <li><a class="nav-link" href="picky-conversations-mockup.html" aria-label="최근 대화"><i data-lucide="message-square"></i><span>최근 대화</span></a></li>
+            <li><a class="nav-link" href="picky-settings-mockup.html" aria-label="설정"><i data-lucide="settings-2"></i><span>설정</span></a></li>
+          </ul>
+        </nav>
+      </aside>
+
+      <section class="main-panel" id="home">
+        <div class="main-content">
+          <section class="greeting" aria-labelledby="greeting-title">
+            <svg class="picky-symbol" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <polyline points="102.5 245.67 193.23 367.37 425.04 214.01" fill="none" stroke="#6699FF" stroke-width="80" stroke-linecap="round" stroke-miterlimit="10"/>
+  <g fill="none" stroke="#6699FF" stroke-width="40" stroke-linecap="round" stroke-miterlimit="10">
+    <path d="M214.18,181.16c-13.39,13.42-38.89,14.22-54.22-1.88"/>
+    <path d="M267.85,181.16c13.39,13.42,38.89,14.22,54.22-1.88"/>
+  </g>
+</svg>
+            <div><h1 id="greeting-title">좋은 오후입니다, 다솜님</h1><p>잠깐 스트레칭하고 다음 작업을 시작해볼까요?</p></div>
+          </section>
+
+          <section class="section" id="stats" aria-labelledby="stats-title">
+            <div class="section-heading"><div><i class="section-title-icon" data-lucide="chart-no-axes-combined" aria-hidden="true"></i><h2 class="section-title" id="stats-title">이번 주 Picky와 한 일</h2></div><a class="section-link" href="picky-stats-mockup.html">모두 보기</a></div>
+            <div class="stats-grid">
+              <a class="stat-card blue" href="picky-stats-mockup.html#work-pattern" aria-label="가장 많이 맡긴 일 수정·개선, 6개 Pickle 통계 보기"><span class="stat-eyebrow">가장 많이 맡긴 일</span><strong class="stat-title">수정·개선</strong><span class="stat-meta"><span class="stat-badge">6개 Pickle</span><span class="stat-badge">이번 주 작업의 43%</span></span></a>
+              <a class="stat-card" href="picky-stats-mockup.html#pickle-records" aria-label="가장 깊게 진행한 Pickle, Picky 통계 페이지 구체화 기록 보기"><span class="stat-eyebrow">가장 깊게 진행한 Pickle</span><strong class="stat-title">Picky 통계 페이지 구체화</strong><span class="stat-meta"><span class="stat-badge">후속 지시 12</span><span class="stat-badge">Picky 위임 18</span></span></a>
+              <a class="stat-card" href="picky-stats-mockup.html#pickle-records" aria-label="가장 집중한 프로젝트 somiland 기록 보기"><span class="stat-eyebrow">가장 집중한 프로젝트</span><strong class="stat-title">somiland</strong><span class="stat-meta"><span class="stat-badge">이번 주 7개 Pickle</span></span></a>
+            </div>
+          </section>
+
+          <section class="section" id="updates" aria-labelledby="updates-title">
+            <div class="section-heading"><div><i class="section-title-icon" data-lucide="book-open" aria-hidden="true"></i><h2 class="section-title" id="updates-title">가이드 및 업데이트</h2></div><a class="section-link" href="picky-guides-mockup.html">모두 보기</a></div>
+            <div class="updates-carousel" role="region" aria-roledescription="carousel" aria-label="최근 가이드 및 업데이트">
+              <button class="carousel-arrow previous" type="button" aria-label="이전 가이드 보기" aria-controls="updates-track" hidden><i data-lucide="chevron-left" aria-hidden="true"></i></button>
+              <div class="updates-track" id="updates-track" tabindex="0" aria-label="최근 업데이트">
+                <a class="update-card" href="#updates"><div class="update-visual" aria-hidden="true"></div><div class="update-body"><p class="update-title" data-fit-text data-max-lines="2" data-min-font-size="10">화면 지시가 추가되었습니다</p><p class="update-meta" data-fit-text data-max-lines="2" data-min-font-size="10">1주일 전</p></div></a>
+                <a class="update-card" href="#updates"><div class="update-visual" aria-hidden="true"></div><div class="update-body"><p class="update-title" data-fit-text data-max-lines="2" data-min-font-size="10">보이스 팩이 추가되었습니다</p><p class="update-meta" data-fit-text data-max-lines="2" data-min-font-size="10">3개월 전</p></div></a>
+                <a class="update-card" href="#updates"><div class="update-visual" aria-hidden="true"></div><div class="update-body"><p class="update-title" data-fit-text data-max-lines="2" data-min-font-size="10">워크플로우 시작 가이드</p><p class="update-meta" data-fit-text data-max-lines="2" data-min-font-size="10">4개월 전</p></div></a>
+              </div>
+              <button class="carousel-arrow next" type="button" aria-label="다음 가이드 보기" aria-controls="updates-track"><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+            </div>
+          </section>
+
+          <section class="section" id="quick-start" aria-labelledby="quick-title">
+            <div class="section-heading"><div><i class="section-title-icon" data-lucide="zap" aria-hidden="true"></i><h2 class="section-title" id="quick-title">빠른 시작</h2></div><a class="section-link" href="picky-quick-start-mockup.html">모두 보기</a></div>
+            <div class="quick-grid">
+              <article class="quick-card"><div class="quick-thumb" aria-hidden="true"></div><h3 data-fit-text data-max-lines="2" data-min-font-size="10">랜딩 페이지 제작</h3><p data-fit-text data-max-lines="2" data-min-font-size="10">질의응답 기반 워크플로우로 제품이나 서비스를 소개하는 웹페이지를 만듭니다.</p><button class="action-button" type="button" data-workflow="landing"><i data-lucide="play" aria-hidden="true"></i>시작하기</button></article>
+              <article class="quick-card"><div class="quick-thumb" aria-hidden="true"></div><h3 data-fit-text data-max-lines="2" data-min-font-size="10">네이티브 앱 제작</h3><p data-fit-text data-max-lines="2" data-min-font-size="10">로컬 환경에서 구동되는 네이티브 앱을 대화로 만들어봅니다.</p><button class="action-button" type="button" data-workflow="native"><i data-lucide="play" aria-hidden="true"></i>시작하기</button></article>
+              <article class="quick-card"><div class="quick-thumb" aria-hidden="true"></div><h3 data-fit-text data-max-lines="2" data-min-font-size="10">앱 가이드 시작</h3><p data-fit-text data-max-lines="2" data-min-font-size="10">현재 사용하는 앱을 Picky와 함께 한 단계씩 익혀봅니다.</p><button class="action-button" type="button" data-workflow="guide"><i data-lucide="play" aria-hidden="true"></i>시작하기</button></article>
+              <article class="quick-card"><div class="quick-thumb" aria-hidden="true"></div><h3 data-fit-text data-max-lines="2" data-min-font-size="10">파일 정리 시작</h3><p data-fit-text data-max-lines="2" data-min-font-size="10">로컬 폴더를 원하는 기준에 맞춰 정리하는 작업을 시작합니다.</p><button class="action-button" type="button" data-workflow="files"><i data-lucide="play" aria-hidden="true"></i>시작하기</button></article>
+            </div>
+            <p id="quick-start-status" class="sr-only" aria-live="polite"></p>
+          </section>
+
+          <section class="section" id="plugins" aria-labelledby="plugin-title">
+            <div class="section-heading"><div><i class="section-title-icon" data-lucide="plug" aria-hidden="true"></i><h2 class="section-title" id="plugin-title">추천 플러그인</h2></div><a class="section-link" href="picky-plugins-mockup.html">모두 보기</a></div>
+            <div class="plugin-list">
+              <div class="plugin-row"><div class="plugin-name" data-fit-text data-max-lines="2" data-min-font-size="10">Diff review <button class="plugin-info-button" type="button" data-plugin-info="diff-review" aria-label="Diff review 상세 보기"><i data-lucide="info" aria-hidden="true"></i></button></div><div class="plugin-description" data-fit-text data-max-lines="2" data-min-font-size="10">변경된 코드를 함께 검토합니다</div><button class="status-badge installed-button" type="button" data-plugin-action data-plugin-name="Diff review" aria-label="Diff review 삭제"><span class="action-label action-label-installed" aria-hidden="true">설치됨</span><span class="action-label action-label-delete" aria-hidden="true">삭제</span></button></div>
+              <div class="plugin-row"><div class="plugin-name" data-fit-text data-max-lines="2" data-min-font-size="10">Ask user question <button class="plugin-info-button" type="button" data-plugin-info="ask-user" aria-label="Ask user question 상세 보기"><i data-lucide="info" aria-hidden="true"></i></button></div><div class="plugin-description" data-fit-text data-max-lines="2" data-min-font-size="10">작업에 필요한 정보를 자연스럽게 묻습니다</div><button class="status-badge installed-button" type="button" data-plugin-action data-plugin-name="Ask user question" aria-label="Ask user question 삭제"><span class="action-label action-label-installed" aria-hidden="true">설치됨</span><span class="action-label action-label-delete" aria-hidden="true">삭제</span></button></div>
+              <div class="plugin-row"><div class="plugin-name" data-fit-text data-max-lines="2" data-min-font-size="10">Generative UI <button class="plugin-info-button" type="button" data-plugin-info="generative-ui" aria-label="Generative UI 상세 보기"><i data-lucide="info" aria-hidden="true"></i></button></div><div class="plugin-description" data-fit-text data-max-lines="2" data-min-font-size="10">필요한 화면을 바로 만들 수 있습니다</div><button class="install-button" type="button" data-plugin-action data-plugin-name="Generative UI">설치</button></div>
+              <div class="plugin-row"><div class="plugin-name" data-fit-text data-max-lines="2" data-min-font-size="10">Auto name <button class="plugin-info-button" type="button" data-plugin-info="auto-name" aria-label="Auto name 상세 보기"><i data-lucide="info" aria-hidden="true"></i></button></div><div class="plugin-description" data-fit-text data-max-lines="2" data-min-font-size="10">대화 내용을 알아보기 쉬운 이름으로 정리합니다</div><button class="install-button" type="button" data-plugin-action data-plugin-name="Auto name">설치</button></div>
+            </div>
+          </section>
+          <p id="plugin-status" class="sr-only" role="status" aria-live="polite"></p>
+
+          <dialog id="plugin-confirm-dialog" class="plugin-confirm-dialog" aria-labelledby="plugin-confirm-title" aria-describedby="plugin-confirm-description">
+            <div class="plugin-confirm-body"><h2 id="plugin-confirm-title">플러그인을 삭제할까요?</h2><p id="plugin-confirm-description"></p><div class="plugin-confirm-actions"><button id="plugin-confirm-cancel" class="plugin-confirm-cancel" type="button">취소</button><button id="plugin-confirm-delete" class="plugin-confirm-delete" type="button">삭제</button></div></div>
+          </dialog>
+          <dialog id="plugin-detail-dialog" class="plugin-detail-dialog" aria-labelledby="plugin-detail-title" aria-describedby="plugin-detail-description">
+            <div class="plugin-detail-body"><p id="plugin-detail-meta" class="plugin-detail-meta"></p><h2 id="plugin-detail-title"></h2><p id="plugin-detail-description" class="plugin-detail-description"></p><h3 class="plugin-use-case-title">이럴 때 사용해요</h3><ul id="plugin-detail-use-cases" class="plugin-use-case-list"></ul><div class="plugin-detail-footer"><button id="plugin-detail-confirm" class="plugin-detail-confirm" type="button">확인</button></div></div>
+          </dialog>
+
+          <section class="section share-panel" aria-labelledby="share-title">
+            <i class="section-title-icon" data-lucide="share" aria-hidden="true"></i>
+            <h2 class="section-title" id="share-title">피키 공유하기</h2>
+            <p class="share-copy">Picky가 도움이 됐다면, 주변 사람에게도 알려주세요.</p>
+            <div class="share-links">
+              <a class="icon-button" href="#share" aria-label="공유 링크 복사"><i data-lucide="share"></i></a>
+              <a class="icon-button x-link" href="#share" aria-label="X에 공유"><i data-lucide="twitter"></i></a>
+              <a class="icon-button linkedin-link" href="#share" aria-label="LinkedIn에 공유"><i data-lucide="linkedin"></i></a>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script>
+    lucide.createIcons({ attrs: { "stroke-width": 2 } });
+
+    const fitText = (element) => {
+      const baseSize = Number(element.dataset.fitBase || getComputedStyle(element).fontSize.replace('px', ''));
+      const minSize = Number(element.dataset.minFontSize || 10);
+      const maxLines = Number(element.dataset.maxLines || 2);
+      element.dataset.fitBase = baseSize;
+      element.style.fontSize = `${baseSize}px`;
+
+      let size = baseSize;
+      const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || size * 1.35;
+      const maxHeight = lineHeight * maxLines + 1;
+      while ((element.scrollWidth > element.clientWidth || element.scrollHeight > maxHeight) && size > minSize) {
+        size -= 0.5;
+        element.style.fontSize = `${size}px`;
+      }
+    };
+
+    const fitAllText = () => document.querySelectorAll('[data-fit-text]').forEach(fitText);
+    const scheduleTextFit = () => requestAnimationFrame(fitAllText);
+    new ResizeObserver(scheduleTextFit).observe(document.querySelector('.app-window'));
+    document.fonts.ready.then(scheduleTextFit);
+    scheduleTextFit();
+
+    const updatesTrack = document.querySelector('#updates-track');
+    const previousUpdate = document.querySelector('.carousel-arrow.previous');
+    const nextUpdate = document.querySelector('.carousel-arrow.next');
+
+    const quickStartStatus = document.querySelector('#quick-start-status');
+    document.querySelectorAll('.quick-grid .action-button[data-workflow]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const workflowId = button.dataset.workflow;
+        window.dispatchEvent(new CustomEvent('picky:start-quick-workflow', { detail: workflowId }));
+        quickStartStatus.textContent = `${button.closest('.quick-card').querySelector('h3').textContent} 워크플로우를 시작했어요.`;
+      });
+    });
+
+    const pluginStatus = document.querySelector('#plugin-status');
+    const pluginConfirmDialog = document.querySelector('#plugin-confirm-dialog');
+    const pluginConfirmDescription = document.querySelector('#plugin-confirm-description');
+    const pluginConfirmCancel = document.querySelector('#plugin-confirm-cancel');
+    const pluginConfirmDelete = document.querySelector('#plugin-confirm-delete');
+    let pendingPluginAction = null;
+
+    const setPluginInstalled = (button, installed) => {
+      const pluginName = button.dataset.pluginName;
+      button.className = installed ? 'status-badge installed-button' : 'install-button';
+      button.setAttribute('aria-label', installed ? `${pluginName} 삭제` : `${pluginName} 설치`);
+      button.innerHTML = installed
+        ? '<span class="action-label action-label-installed" aria-hidden="true">설치됨</span><span class="action-label action-label-delete" aria-hidden="true">삭제</span>'
+        : '설치';
+    };
+
+    document.querySelectorAll('[data-plugin-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (!button.classList.contains('installed-button')) {
+          setPluginInstalled(button, true);
+          pluginStatus.textContent = `${button.dataset.pluginName} 플러그인을 설치했습니다.`;
+          return;
+        }
+        pendingPluginAction = button;
+        pluginConfirmDescription.textContent = `${button.dataset.pluginName}을(를) 이 목업에서 삭제합니다. 실제 플러그인이나 파일은 변경되지 않습니다.`;
+        pluginConfirmDialog.showModal();
+        pluginConfirmCancel.focus();
+      });
+    });
+
+    pluginConfirmCancel.addEventListener('click', () => pluginConfirmDialog.close());
+    pluginConfirmDelete.addEventListener('click', () => {
+      if (pendingPluginAction) {
+        const pluginName = pendingPluginAction.dataset.pluginName;
+        setPluginInstalled(pendingPluginAction, false);
+        pluginStatus.textContent = `${pluginName} 플러그인을 삭제했습니다.`;
+      }
+      pluginConfirmDialog.close();
+    });
+    pluginConfirmDialog.addEventListener('click', (event) => {
+      const { top, right, bottom, left } = pluginConfirmDialog.getBoundingClientRect();
+      if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) pluginConfirmDialog.close();
+    });
+    pluginConfirmDialog.addEventListener('close', () => {
+      pendingPluginAction?.focus();
+      pendingPluginAction = null;
+    });
+
+    const recommendedPluginDetails = {
+      'diff-review': { meta:'개발 · Picky Labs · v1.4.0', description:'파일 변경 내용을 읽고, 검토가 필요한 차이와 확인 질문을 작업 맥락에 맞춰 정리합니다.', cases:['PR을 열기 전 변경 내용을 빠르게 점검할 때','여러 파일의 수정 범위를 한눈에 비교할 때'] },
+      'ask-user': { meta:'작업 관리 · Picky Labs · v1.2.1', description:'작업을 이어가기 위해 필요한 선택지를 명확한 질문으로 구성하고, 답변을 다음 단계의 맥락으로 남깁니다.', cases:['요구사항이 모호해 먼저 확인할 때','선택지와 추천안을 함께 제시할 때'] },
+      'generative-ui': { meta:'콘텐츠 · Picky Labs · v1.0.0', description:'작업 맥락과 요구사항을 바탕으로 화면 구성과 사용자 인터페이스 초안을 빠르게 만듭니다.', cases:['새 기능의 화면 구성을 빠르게 검토할 때','구현 전 인터페이스 초안을 만들 때'] },
+      'auto-name': { meta:'작업 관리 · Picky Labs · v1.0.0', description:'대화와 작업 맥락을 바탕으로 내용을 쉽게 구분할 수 있는 이름을 제안합니다.', cases:['여러 대화를 빠르게 구분해야 할 때','작업 기록의 제목을 일관되게 정리할 때'] }
+    };
+    const pluginDetailDialog = document.querySelector('#plugin-detail-dialog');
+    const pluginDetailMeta = document.querySelector('#plugin-detail-meta');
+    const pluginDetailTitle = document.querySelector('#plugin-detail-title');
+    const pluginDetailDescription = document.querySelector('#plugin-detail-description');
+    const pluginDetailUseCases = document.querySelector('#plugin-detail-use-cases');
+    const pluginDetailConfirm = document.querySelector('#plugin-detail-confirm');
+    let pluginDetailTrigger = null;
+
+    document.querySelectorAll('[data-plugin-info]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const detail = recommendedPluginDetails[button.dataset.pluginInfo];
+        pluginDetailTrigger = button;
+        pluginDetailMeta.textContent = detail.meta;
+        pluginDetailTitle.textContent = button.closest('.plugin-name').childNodes[0].textContent.trim();
+        pluginDetailDescription.textContent = detail.description;
+        pluginDetailUseCases.replaceChildren(...detail.cases.map((item) => { const li = document.createElement('li'); li.textContent = item; return li; }));
+        pluginDetailDialog.showModal();
+        pluginDetailConfirm.focus();
+      });
+    });
+    pluginDetailConfirm.addEventListener('click', () => pluginDetailDialog.close());
+    pluginDetailDialog.addEventListener('click', (event) => {
+      const { top, right, bottom, left } = pluginDetailDialog.getBoundingClientRect();
+      if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) pluginDetailDialog.close();
+    });
+    pluginDetailDialog.addEventListener('close', () => pluginDetailTrigger?.focus());
+
+    if (updatesTrack && previousUpdate && nextUpdate) {
+      const syncUpdateArrows = () => {
+        const maxScroll = updatesTrack.scrollWidth - updatesTrack.clientWidth;
+        const hasOverflow = maxScroll > 1;
+        const atStart = updatesTrack.scrollLeft <= 1;
+        const atEnd = updatesTrack.scrollLeft >= maxScroll - 1;
+        previousUpdate.hidden = !hasOverflow || atStart;
+        nextUpdate.hidden = !hasOverflow || atEnd;
+      };
+      const scrollUpdates = (direction) => {
+        updatesTrack.scrollBy({ left: direction * Math.max(200, updatesTrack.clientWidth * .86), behavior: 'auto' });
+      };
+
+      previousUpdate.addEventListener('click', () => scrollUpdates(-1));
+      nextUpdate.addEventListener('click', () => scrollUpdates(1));
+      updatesTrack.addEventListener('scroll', syncUpdateArrows, { passive: true });
+      updatesTrack.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowLeft') { event.preventDefault(); scrollUpdates(-1); }
+        if (event.key === 'ArrowRight') { event.preventDefault(); scrollUpdates(1); }
+      });
+
+      let dragging = false;
+      let moved = false;
+      let suppressClick = false;
+      let pointerStartX = 0;
+      let scrollStart = 0;
+      let activePointerId = null;
+      const endDrag = (event) => {
+        if (!dragging) return;
+        suppressClick = moved;
+        dragging = false;
+        updatesTrack.classList.remove('dragging');
+        if (activePointerId !== null && updatesTrack.hasPointerCapture(activePointerId)) {
+          updatesTrack.releasePointerCapture(activePointerId);
+        }
+        activePointerId = null;
+      };
+
+      updatesTrack.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || event.pointerType === 'touch') return;
+        dragging = true;
+        moved = false;
+        activePointerId = event.pointerId;
+        pointerStartX = event.clientX;
+        scrollStart = updatesTrack.scrollLeft;
+        updatesTrack.setPointerCapture(event.pointerId);
+      });
+      updatesTrack.addEventListener('pointermove', (event) => {
+        if (!dragging || event.pointerId !== activePointerId) return;
+        const distance = event.clientX - pointerStartX;
+        if (Math.abs(distance) > 4) moved = true;
+        if (!moved) return;
+        event.preventDefault();
+        updatesTrack.classList.add('dragging');
+        updatesTrack.scrollLeft = scrollStart - distance;
+      });
+      updatesTrack.addEventListener('pointerup', endDrag);
+      updatesTrack.addEventListener('pointercancel', endDrag);
+      updatesTrack.addEventListener('click', (event) => {
+        if (!suppressClick) return;
+        event.preventDefault();
+        event.stopPropagation();
+        suppressClick = false;
+      }, true);
+
+      new ResizeObserver(syncUpdateArrows).observe(updatesTrack);
+      requestAnimationFrame(syncUpdateArrows);
+    }
+  </script>
+</body>
+</html>

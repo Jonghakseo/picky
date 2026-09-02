@@ -26,7 +26,10 @@ struct PickyHUDDockGroupListSurface<FillShape: Shape>: View {
 enum PickyHUDDockGroupListRelativeTimePresentation {
     private static let formatter = RelativeDateTimeFormatter()
 
-    static func text(for updatedAt: Date, relativeTo now: Date = .now) -> String {
+    /// Returns `nil` when the session has no known timestamp, so the row can
+    /// omit the field instead of rendering a fabricated age.
+    static func text(for updatedAt: Date?, relativeTo now: Date = .now) -> String? {
+        guard let updatedAt else { return nil }
         guard abs(updatedAt.timeIntervalSince(now)) >= 60 else {
             return L10n.t("hud.groupList.time.justNow")
         }
@@ -37,7 +40,7 @@ enum PickyHUDDockGroupListRelativeTimePresentation {
 @MainActor
 struct PickyHUDDockGroupListRowModel: Identifiable {
     let session: PickyHUDDockSession
-    let updatedAt: Date
+    let updatedAt: Date?
 
     var id: String { session.id }
 
@@ -344,7 +347,7 @@ struct PickyHUDDockGroupListView: View {
     var onSetGroupColor: (String, PickyDockGroupColor) -> Void = { _, _ in }
     /// Production uses the current time. Offscreen render fixtures inject a
     /// fixed reference so their row metadata remains deterministic.
-    var relativeTime: (Date) -> String = {
+    var relativeTime: (Date?) -> String? = {
         PickyHUDDockGroupListRelativeTimePresentation.text(for: $0)
     }
     /// Reads identity from the stable panel model, not the SwiftUI value
@@ -1196,7 +1199,7 @@ struct PickyHUDDockGroupListRow: View {
     let isLeavingGroup: Bool
     let minimumHeight: CGFloat
     let metrics: PickyHUDDockMetrics
-    let relativeTime: String
+    let relativeTime: String?
     let isScreenContextArmed: Bool
     let isScreenContextSticky: Bool
     let moveTargetGroups: [PickyDockGroup]

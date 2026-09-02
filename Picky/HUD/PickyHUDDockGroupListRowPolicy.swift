@@ -28,11 +28,14 @@ enum PickyHUDDockGroupListRowProjection {
         memberSessionIDs: [String],
         activeSessionsByID: [String: Session],
         updatedAt: (String) -> Date?,
-        makeRow: (Session, Date) -> Row
+        makeRow: (Session, Date?) -> Row
     ) -> [Row] {
         memberSessionIDs.compactMap { sessionID in
             guard let session = activeSessionsByID[sessionID] else { return nil }
-            return makeRow(session, updatedAt(sessionID) ?? .distantPast)
+            // A missing timestamp stays missing. Substituting a sentinel date
+            // here made `RelativeDateTimeFormatter` render its distance from
+            // `Date.distantPast` as a plausible-looking "2,025 years ago".
+            return makeRow(session, updatedAt(sessionID))
         }
     }
 }
@@ -75,14 +78,14 @@ struct PickyHUDDockGroupListRowPresentation: Equatable {
         title: String,
         statusText: String,
         cwdLeaf: String?,
-        relativeTime: String,
+        relativeTime: String?,
         status: PickySessionStatus,
         canRequestCompaction: Bool
     ) -> Self {
         let normalizedCwdLeaf = cwdLeaf?.trimmingCharacters(in: .whitespacesAndNewlines)
         let location = (normalizedCwdLeaf?.isEmpty == false) ? normalizedCwdLeaf : nil
         let subtitle = subtitle(cwdLeaf: cwdLeaf, relativeTime: relativeTime)
-        let metadata = [relativeTime, location]
+        let metadata = [normalizedRelativeTime(relativeTime), location]
             .compactMap { $0 }
             .joined(separator: ", ")
         let value = [statusText, metadata]
@@ -103,11 +106,18 @@ struct PickyHUDDockGroupListRowPresentation: Equatable {
         )
     }
 
-    static func subtitle(cwdLeaf: String?, relativeTime: String) -> String {
+    static func subtitle(cwdLeaf: String?, relativeTime: String?) -> String {
         let normalizedCwdLeaf = cwdLeaf?.trimmingCharacters(in: .whitespacesAndNewlines)
         let location = (normalizedCwdLeaf?.isEmpty == false) ? normalizedCwdLeaf : nil
-        return [relativeTime, location]
+        // An absent field must drop its separator too, otherwise the row shows
+        // a dangling " · ".
+        return [normalizedRelativeTime(relativeTime), location]
             .compactMap { $0 }
             .joined(separator: " · ")
+    }
+
+    private static func normalizedRelativeTime(_ relativeTime: String?) -> String? {
+        guard let trimmed = relativeTime?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 }

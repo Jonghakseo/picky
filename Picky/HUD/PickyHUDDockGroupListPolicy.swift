@@ -80,7 +80,7 @@ enum PickyHUDDockGroupListPolicy {
         unreadSessionIDs: Set<String>,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat,
-        relativeTime: (Date) -> String
+        relativeTime: (Date?) -> String?
     ) -> CGSize {
         let widthRows = rows.map { row in
             RowWidthContent(
@@ -109,7 +109,7 @@ enum PickyHUDDockGroupListPolicy {
     @MainActor
     static func previewWidth(
         session: PickyHUDDockSession,
-        relativeTime: String,
+        relativeTime: String?,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat
     ) -> CGFloat {

@@ -17,7 +17,7 @@ struct PickyHUDDockGroupListRowPolicyTests {
         title: String = "Refactor the dock rail",
         statusText: String = "Running",
         cwdLeaf: String? = "picky",
-        relativeTime: String = "2 minutes ago",
+        relativeTime: String? = "2 minutes ago",
         status: PickySessionStatus = .running,
         canRequestCompaction: Bool = false
     ) -> PickyHUDDockGroupListRowPresentation {
@@ -153,6 +153,19 @@ struct PickyHUDDockGroupListRowPolicyTests {
         #expect(presentation(status: .failed).accessibilityActions == [.open, .ungroup, .archive])
         #expect(presentation(status: .cancelled).accessibilityActions == [.open, .ungroup, .archive])
     }
+
+    @Test func subtitleDropsTheSeparatorWhenTheRelativeTimeIsMissing() {
+        #expect(PickyHUDDockGroupListRowPresentation.subtitle(cwdLeaf: "picky", relativeTime: nil) == "picky")
+        #expect(PickyHUDDockGroupListRowPresentation.subtitle(cwdLeaf: "picky", relativeTime: "  ") == "picky")
+        #expect(PickyHUDDockGroupListRowPresentation.subtitle(cwdLeaf: nil, relativeTime: nil) == "")
+    }
+
+    @Test func rowWithoutTimestampShowsOnlyItsLocation() {
+        let resolved = presentation(cwdLeaf: "picky", relativeTime: nil)
+
+        #expect(resolved.subtitle == "picky")
+        #expect(resolved.accessibilityValue == "Running, picky")
+    }
 }
 
 struct PickyHUDDockGroupListRowProjectionTests {
@@ -162,7 +175,7 @@ struct PickyHUDDockGroupListRowProjectionTests {
 
     private struct StubRow: Equatable {
         let id: String
-        let updatedAt: Date
+        let updatedAt: Date?
     }
 
     private func project(
@@ -221,7 +234,9 @@ struct PickyHUDDockGroupListRowProjectionTests {
         )
     }
 
-    @Test func missingTimestampsFallBackToDistantPastRatherThanDroppingTheRow() {
+    /// A sentinel date here used to reach `RelativeDateTimeFormatter`, which
+    /// rendered the distance from `Date.distantPast` as "2,025 years ago".
+    @Test func missingTimestampsStayMissingRatherThanDroppingTheRow() {
         let stamped = Date(timeIntervalSince1970: 1_700_000_000)
         let rows = project(
             memberSessionIDs: ["stamped", "unstamped"],
@@ -231,7 +246,12 @@ struct PickyHUDDockGroupListRowProjectionTests {
 
         #expect(rows.map(\.id) == ["stamped", "unstamped"])
         #expect(rows[0].updatedAt == stamped)
-        #expect(rows[1].updatedAt == .distantPast)
+        #expect(rows[1].updatedAt == nil)
+    }
+
+    @MainActor
+    @Test func relativeTimeIsOmittedWhenTheSessionHasNoTimestamp() {
+        #expect(PickyHUDDockGroupListRelativeTimePresentation.text(for: nil) == nil)
     }
 }
 

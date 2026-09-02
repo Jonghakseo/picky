@@ -1175,7 +1175,7 @@ struct PickyHUDMiniPreviewCardView: View {
     }
 
     private var cornerRadius: CGFloat { metrics.groupListPanelCornerRadius }
-    private var resolvedRelativeTime: String {
+    private var resolvedRelativeTime: String? {
         relativeTime ?? PickyHUDDockGroupListRelativeTimePresentation.text(for: session.previewUpdatedAt)
     }
     private var previewWidth: CGFloat {

@@ -44,6 +44,7 @@ struct PickyQuestionBubbleView: View {
                         Text(.init(title))
                             .font(PickyHUDTypography.bodyCompactMedium)
                             .foregroundColor(DS.Colors.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if let bodyText = PickyQuestionBubbleCopy.bodyText(for: request) {
                         Text(.init(bodyText))
@@ -244,6 +245,9 @@ struct PickyQuestionBubbleView: View {
             Text(question.prompt ?? question.label ?? key)
                 .font(PickyHUDTypography.supportingMedium)
                 .foregroundColor(DS.Colors.textPrimary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             switch question.type {
             case .radio:
                 VStack(alignment: .leading, spacing: 4) {
@@ -291,7 +295,6 @@ struct PickyQuestionBubbleView: View {
         Button { answer(.string(option)) } label: {
             Text(option)
                 .multilineTextAlignment(.leading)
-                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, DS.Spacing.sm)
@@ -313,12 +316,16 @@ struct PickyQuestionBubbleView: View {
     private func optionButton(label: String, description: String?, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(PickyHUDTypography.supportingMedium)
+                Text(label)
+                    .font(PickyHUDTypography.supportingMedium)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let description, !description.isEmpty {
                     Text(description)
                         .font(PickyHUDTypography.status)
                         .foregroundColor(DS.Colors.textSecondary)
-                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

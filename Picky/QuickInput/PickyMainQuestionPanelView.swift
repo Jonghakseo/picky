@@ -209,9 +209,11 @@ struct PickyMainQuestionPanelView: View {
     private func formQuestion(_ question: PickyExtensionUiQuestion, index: Int) -> some View {
         let key = PickyAskUserQuestionFormState.key(for: question, index: index)
         return VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
                 markdownText(question.prompt ?? question.label ?? key, color: DS.Colors.textPrimary)
                     .pickyFont(size: 11, weight: .medium)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 if question.required ?? true {
                     Text("*")
                         .pickyFont(size: 11, weight: .medium)
@@ -291,10 +293,13 @@ struct PickyMainQuestionPanelView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     markdownText(label, color: selected ? DS.Colors.accentText : DS.Colors.textPrimary)
                         .pickyFont(size: 11, weight: .medium)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let description, !description.isEmpty {
                         markdownText(description, color: DS.Colors.textSecondary)
                             .pickyFont(size: 10)
-                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)

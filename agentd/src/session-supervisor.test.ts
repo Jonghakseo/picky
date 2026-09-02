@@ -878,6 +878,7 @@ describe("SessionSupervisor", () => {
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     expect(supervisor.isPickleSession(pickle.id)).toBe(true);
+    expect(pickle.notifyMainOnCompletion).toBe(false);
     expect(supervisor.listPickleSessions().map((session) => session.id)).toEqual([pickle.id]);
 
     const updated = await supervisor.steerPickleSession(pickle.id, "추가로 원인도 정리해줘");
@@ -3374,6 +3375,7 @@ describe("SessionSupervisor", () => {
     });
     await supervisor.load();
     const pickle = await supervisor.createPickleFromHandoff(context("bridged pickle"), { title: "Bridged Pickle", instructions: "Investigate" });
+    await supervisor.setNotifyMainOnCompletion(pickle.id, true);
 
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "Bridged answer" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
@@ -3458,6 +3460,8 @@ describe("SessionSupervisor", () => {
     const activeHandle = sideRuntime.handle!;
     const skip = await supervisor.createPickleFromHandoff(context("skip pickle"), { title: "Skip Pickle", instructions: "Investigate skip" });
     const skipHandle = sideRuntime.handle!;
+    await supervisor.setNotifyMainOnCompletion(active.id, true);
+    await supervisor.setNotifyMainOnCompletion(skip.id, true);
 
     activeHandle.emit({ type: "assistant_delta", delta: "Active answer" });
     activeHandle.emit({ type: "status", status: "completed", summary: "Active complete" });
@@ -3497,6 +3501,8 @@ describe("SessionSupervisor", () => {
     const firstHandle = sideRuntime.handle!;
     const second = await supervisor.createPickleFromHandoff(context("second pickle"), { title: "Second Pickle", instructions: "Investigate second" });
     const secondHandle = sideRuntime.handle!;
+    await supervisor.setNotifyMainOnCompletion(first.id, true);
+    await supervisor.setNotifyMainOnCompletion(second.id, true);
 
     firstHandle.emit({ type: "assistant_delta", delta: "First answer" });
     firstHandle.emit({ type: "status", status: "completed", summary: "First complete" });
@@ -5345,6 +5351,7 @@ describe("SessionSupervisor", () => {
     // 2) Main starts the Pickle. The handoff turn has NOT yet emitted
     //    status:completed, and no synthetic acknowledgement is emitted.
     const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    await supervisor.setNotifyMainOnCompletion(pickleSession.id, true);
     await settle();
 
     expect(replies.filter((entry) => entry.contextId === userCtx.id)).toEqual([]);
@@ -5415,6 +5422,7 @@ describe("SessionSupervisor", () => {
     const userCtx = context("피클 시작");
     await supervisor.route(userCtx);
     const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    await supervisor.setNotifyMainOnCompletion(pickleSession.id, true);
 
     // Handoff turn ends BEFORE the Pickle session emits its terminal status.
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });

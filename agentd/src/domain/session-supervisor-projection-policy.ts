@@ -32,7 +32,7 @@ export function buildResumedHandoffPickleSession(input: {
       `pi session: ${input.sessionFilePath}`,
       `source pi session snapshot: ${input.sourceSessionFilePath}`,
     ],
-    notifyMainOnCompletion: true,
+    notifyMainOnCompletion: false,
     tools: [],
     artifacts: input.artifacts,
     changedFiles: [],

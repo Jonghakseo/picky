@@ -309,7 +309,7 @@ export class SessionSupervisor extends EventEmitter {
       const isPickleSession = hasPickleSessionMarkerLog(migratedSession);
       if (isPickleSession) this.pickleSessionIds.add(migratedSession.id);
       const session = isPickleSession && migratedSession.notifyMainOnCompletion === undefined
-        ? { ...migratedSession, notifyMainOnCompletion: true }
+        ? { ...migratedSession, notifyMainOnCompletion: false }
         : migratedSession;
       if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.commitSession(session);
       else this.sessions.set(session.id, session);
@@ -982,7 +982,7 @@ export class SessionSupervisor extends EventEmitter {
     if (sourceSessionFilePath && this.runtime.resume) {
       return this.createPickleFromResumedHandoff(handoffContext, handoff, sourceSessionFilePath);
     }
-    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), { notifyMainOnCompletion: true });
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), { notifyMainOnCompletion: false });
     this.pickleSessionIds.add(session.id);
     await this.appendLog(session.id, `${HANDOFF_PREFIX}${handoff.instructions}`);
     if (handoffContext.cwd) await this.appendLog(session.id, `Picky handoff cwd: ${handoffContext.cwd}`);

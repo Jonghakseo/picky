@@ -172,7 +172,7 @@ describe("SessionSupervisor", () => {
     // revision instead; that rule is covered by `projectionCommitRevision`.
     const startingRevision = session.revision ?? 0;
     await internals.syncSessionMessages(session.id, [
-      { id: "m1", role: "user", text: "first prompt", createdAt: "2026-08-24T00:00:00.000Z" },
+      { id: "m1", kind: "user_text", text: "first prompt", createdAt: "2026-08-24T00:00:00.000Z" },
     ]);
     expect(supervisor.get(session.id)?.revision).toBe(startingRevision + 1);
 

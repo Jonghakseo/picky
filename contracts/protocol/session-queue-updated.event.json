@@ -5,7 +5,7 @@
   "type": "sessionQueueUpdated",
   "sessionId": "session-001",
   "steering": [
-    { "text": "Prioritize tests", "enqueuedAt": "2026-05-05T00:00:03.000Z" }
+    { "text": "Prioritize tests", "enqueuedAt": "2026-05-05T00:00:03.000Z", "attachedImagesCount": 2 }
   ],
   "followUp": [
     { "text": "Summarize after completion", "enqueuedAt": "2026-05-05T00:00:03.000Z" }

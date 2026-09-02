@@ -1825,6 +1825,37 @@ struct PickyConversationCardViewTests {
         #expect(bubble.displayedAttachedImagesLabel == "🖥️ 1 attached")
     }
 
+    @Test func pendingBubbleShowsQueuedScreenContextEvidenceLikeMaterializedUserBubble() {
+        let attached = PickyPendingBubbleView(
+            queueItem: PickyQueueItem(text: "inspect this", enqueuedAt: baseDate, id: "q-1", attachedImagesCount: 2),
+            kind: .followUp
+        )
+        let textOnly = PickyPendingBubbleView(
+            queueItem: PickyQueueItem(text: "inspect this", enqueuedAt: baseDate, id: "q-2"),
+            kind: .followUp
+        )
+        let zeroCount = PickyPendingBubbleView(
+            queueItem: PickyQueueItem(text: "inspect this", enqueuedAt: baseDate, id: "q-3", attachedImagesCount: 0),
+            kind: .steer
+        )
+
+        #expect(attached.displayedAttachedImagesLabel == "🖥️ 2 attached")
+        #expect(textOnly.displayedAttachedImagesLabel == nil)
+        #expect(zeroCount.displayedAttachedImagesLabel == nil)
+    }
+
+    @Test func batchedPendingBubblesKeepPerItemScreenContextEvidence() {
+        let batch = PickyBatchGroupView(
+            items: [
+                PickyQueueItem(text: "first", enqueuedAt: baseDate, id: "q-1", attachedImagesCount: 1),
+                PickyQueueItem(text: "second", enqueuedAt: baseDate, id: "q-2")
+            ],
+            kind: .followUp
+        )
+
+        #expect(batch.items.map { PickyPendingBubbleView(queueItem: $0, kind: .followUp).displayedAttachedImagesLabel } == ["🖥️ 1 attached", nil])
+    }
+
     @Test func userBubblePreviewUsesSameLineAndCharacterLimitsAsAgentResponses() {
         let eightLines = (1...8).map { "line \($0)" }.joined(separator: "\n")
         let nineLines = eightLines + "\nline 9"

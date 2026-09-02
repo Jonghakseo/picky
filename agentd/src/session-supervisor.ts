@@ -2152,6 +2152,7 @@ export class SessionSupervisor extends EventEmitter {
     await this.patch(sessionId, { status: "running", lastSummary: queueSubmissionSummary(handle.isCompacting, "Follow-up queued"), finalAnswer: undefined, thinkingPreview: undefined });
     const delivery = this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "followUp",
+      queueText: prompt.text,
       attachedImagesCount: prompt.imagePaths.length,
       visualDslLease,
     });
@@ -2358,7 +2359,7 @@ export class SessionSupervisor extends EventEmitter {
     sessionId: string,
     text: string,
     originatedBy: "user" | "main_agent",
-    options: { kind: "steering" | "followUp"; attachedImagesCount?: number; visualDslLease?: PickleVisualDslLease },
+    options: { kind: "steering" | "followUp"; queueText?: string; attachedImagesCount?: number; visualDslLease?: PickleVisualDslLease },
   ): PendingQueueDelivery | undefined {
     // Slash commands like /diff, /fix-tests, /name, /compact are not really chat input — they
     // either run an extension overlay, fire a prompt template, or trigger a Picky-intercepted
@@ -2379,6 +2380,7 @@ export class SessionSupervisor extends EventEmitter {
       kind: options.kind,
       text,
       originatedBy,
+      ...(options.queueText && options.queueText !== text ? { queueText: options.queueText } : {}),
       ...(options.attachedImagesCount && options.attachedImagesCount > 0
         ? { attachedImagesCount: options.attachedImagesCount }
         : {}),
@@ -2646,6 +2648,7 @@ export class SessionSupervisor extends EventEmitter {
     const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
     const delivery = this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "steering",
+      queueText: prompt.text,
       attachedImagesCount: prompt.imagePaths.length,
       visualDslLease,
     });

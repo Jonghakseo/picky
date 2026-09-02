@@ -2,7 +2,7 @@ import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickySessionMessage, PickySessionProjectionMutation, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
+import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyQueueItem, PickySessionMessage, PickySessionProjectionMutation, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeTodoStateResolution, ThinkingLevel } from "./runtime/types.js";
@@ -459,6 +459,53 @@ describe("SessionSupervisor", () => {
     expect(events.at(0)).toMatchObject({ sessionId: session.id, steering: [{ text: "first" }], followUp: [] });
     expect(supervisor.get(session.id)?.queuedSteers ?? []).toEqual([]);
     expect((supervisor.get(session.id)?.queuedFollowUps ?? []).map((item) => item.text)).toEqual(["second"]);
+  });
+
+  it("projects queued steer and follow-up screenshot counts through snapshots, events, and persistence", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-queued-attachment-evidence-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    const emitted: Array<{ steering: PickyQueueItem[]; followUp: PickyQueueItem[] }> = [];
+    supervisor.on("queueUpdated", (_sessionId, steering, followUp) => emitted.push({ steering, followUp }));
+    runtime.handle!.isStreaming = true;
+
+    await supervisor.steer(session.id, "inspect this", {
+      ...context("steer with screens"),
+      screenshots: [
+        { id: "s1", label: "Main", path: "/tmp/main.png" },
+        { id: "s2", label: "Secondary", path: "/tmp/secondary.png" },
+      ],
+    });
+    await waitUntil(() => (supervisor.get(session.id)?.queuedSteers?.length ?? 0) === 1);
+    await supervisor.followUp(session.id, "compare these", {
+      ...context("follow-up with screen"),
+      screenshots: [{ id: "s3", label: "Main", path: "/tmp/follow-up.png" }],
+    });
+    await waitUntil(() => (supervisor.get(session.id)?.queuedFollowUps?.length ?? 0) === 1);
+
+    expect(supervisor.get(session.id)?.queuedSteers?.map((item) => item.attachedImagesCount)).toEqual([2]);
+    expect(supervisor.get(session.id)?.queuedFollowUps?.map((item) => item.attachedImagesCount)).toEqual([1]);
+    expect(emitted.at(-1)?.steering.map((item) => item.attachedImagesCount)).toEqual([2]);
+    expect(emitted.at(-1)?.followUp.map((item) => item.attachedImagesCount)).toEqual([1]);
+    const persisted = (await new SessionStore(dir).loadAll()).find((entry) => entry.id === session.id);
+    expect(persisted?.queuedSteers?.map((item) => item.attachedImagesCount)).toEqual([2]);
+    expect(persisted?.queuedFollowUps?.map((item) => item.attachedImagesCount)).toEqual([1]);
+  });
+
+  it("omits queued attachment evidence for a text-only steer", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-queued-attachment-absent-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    runtime.handle!.isStreaming = true;
+
+    await supervisor.steer(session.id, "no screenshots here");
+    await waitUntil(() => (supervisor.get(session.id)?.queuedSteers?.length ?? 0) === 1);
+
+    expect(supervisor.get(session.id)?.queuedSteers?.[0]?.attachedImagesCount).toBeUndefined();
   });
 
   it("emits queue modes only when they change", async () => {

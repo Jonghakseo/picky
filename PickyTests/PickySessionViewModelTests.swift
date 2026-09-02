@@ -5448,6 +5448,18 @@ struct PickySessionViewModelTests {
         #expect(card.followUpMode == .all)
     }
 
+    @MainActor @Test func sessionQueueUpdatedProjectsQueuedScreenContextEvidence() throws {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-screen-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
+        {"id":"event-queue-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"queue-screen-session","steering":[{"id":"steer-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"followUp":[{"id":"follow-plain","text":"later","enqueuedAt":"2026-05-01T00:00:04.000Z"}],"seq":1}
+        """)))
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.queuedSteers.first?.attachedImagesCount == 2)
+        #expect(card.queuedFollowUps.first?.attachedImagesCount == nil)
+    }
+
     @MainActor @Test func sessionUpdatedAfterIncrementalEventDoesNotResetConversationRenderState() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "running"))))

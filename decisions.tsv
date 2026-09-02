@@ -1,0 +1,7 @@
+ts	phase	decision	why	evidence	result
+2026-09-01T10:53:16Z	scope	승인된 순차 구현 범위를 그대로 채택	화면 메타데이터와 실제 복원 가능 참조를 분리하고 일반 composer privacy 계약을 유지하기 위해	/private/tmp/picky-screen-context-handoff.md	scope locked
+2026-09-01T10:53:17Z	architecture	attachedImagesCount를 표시 증거로만 취급	개수만으로는 읽을 수 있는 screenshot reference를 복원할 수 없기 때문에	agentd/src/domain/queue-policy.ts	Unit 1 design approved
+2026-09-02T04:33:23Z	unit-1	새 prompt에 instruction length framing을 추가하고 legacy parser는 fail-closed 처리	사용자 입력과 captured context가 같은 Markdown signature를 포함할 수 있어 정적 heading만으로는 안전하게 분리할 수 없기 때문에	agentd/src/domain/queue-policy.ts; reviewer finding F2	architecture revised
+2026-09-02T04:33:24Z	unit-1	duplicate queue growth에서 기존 identity를 먼저 예약	reconnect 후 동일 텍스트 추가 시 새 pending ID가 이전 FIFO 슬롯을 가로채면 잘못된 user_text가 materialize되기 때문에	agentd/src/domain/queue-policy.ts; reviewer finding F1	architecture revised
+2026-09-02T05:17:55Z	unit-1	동일 길이 duplicate snapshot에서 교체를 추론하지 않음	snapshot만으로 unchanged와 consume+append를 구분할 수 없어 잘못된 첨부 count와 user_text를 새 pending에 귀속할 위험이 있기 때문에	challenger run #13; agentd/src/runtime/types.ts input_delivery	authoritative event policy
+2026-09-02T06:47:53Z	unit-1	큐 텍스트 재투영·프롬프트 framing·tombstone 변경을 폐기하고 count 전달만 남김	범위를 넘은 identity·journaling 변경이 리뷰마다 새로운 race를 만들어 Unit 1 위험이 계속 커졌기 때문에	reviewer runs #15 #17 #19 #21 #23	reverted, minimal scope

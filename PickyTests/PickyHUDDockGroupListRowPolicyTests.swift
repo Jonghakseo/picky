@@ -93,6 +93,37 @@ struct PickyHUDDockGroupListRowPolicyTests {
         )
     }
 
+    // MARK: - Hover ownership
+
+    @Test func pointerEnteringTheQuickActionRailKeepsTheRowHovered() {
+        // Leaving the title click host means the pointer reached the gap the
+        // row leaves open for the quick-action buttons, not that it left the row.
+        let afterExitingTitleHost = PickyHUDDockGroupListRowHoverPolicy.isHovered(
+            current: true,
+            clickHostHovering: false
+        )
+
+        #expect(afterExitingTitleHost)
+        #expect(
+            PickyHUDDockGroupListRowTrailingContent.resolve(
+                isHovered: afterExitingTitleHost,
+                isHighlighted: false,
+                shortcutNumber: 3
+            ) == .quickActions
+        )
+    }
+
+    @Test func clickHostEntryStartsHoverAndTheRowHoverOwnsClearingIt() {
+        #expect(
+            PickyHUDDockGroupListRowHoverPolicy.isHovered(current: false, clickHostHovering: true)
+        )
+        // The row's SwiftUI hover writes `isHovered` directly, so a false there
+        // has to survive a later click-host exit for the same pointer travel.
+        #expect(
+            PickyHUDDockGroupListRowHoverPolicy.isHovered(current: false, clickHostHovering: false) == false
+        )
+    }
+
     // MARK: - Shared action enablement
 
     @Test func stopIsOfferedForLivePicklesAndWithheldForTerminalOnes() {

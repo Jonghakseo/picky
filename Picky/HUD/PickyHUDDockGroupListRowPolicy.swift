@@ -67,6 +67,17 @@ enum PickyHUDDockGroupListRowTrailingContent: Equatable {
     }
 }
 
+/// The row's AppKit click host is split into two frames so the quick-action
+/// rail between them keeps receiving clicks. Its exit event therefore fires
+/// while the pointer is still inside the row, on its way to those buttons.
+/// Only the row's own SwiftUI hover, which spans the whole row including the
+/// rail, may clear the flag.
+enum PickyHUDDockGroupListRowHoverPolicy {
+    static func isHovered(current: Bool, clickHostHovering: Bool) -> Bool {
+        clickHostHovering || current
+    }
+}
+
 struct PickyHUDDockGroupListRowPresentation: Equatable {
     let accessibilityLabel: String
     let accessibilityValue: String

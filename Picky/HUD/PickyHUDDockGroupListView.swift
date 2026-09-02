@@ -1241,7 +1241,12 @@ struct PickyHUDDockGroupListRow: View {
 
     private var rowInteractionHost: some View {
         PickyHUDDockIconClickHost(
-            onHoverChanged: { isHovered = $0 },
+            onHoverChanged: { hovering in
+                isHovered = PickyHUDDockGroupListRowHoverPolicy.isHovered(
+                    current: isHovered,
+                    clickHostHovering: hovering
+                )
+            },
             onOpen: onSelect,
             isScreenContextArmed: isScreenContextArmed,
             isScreenContextSticky: isScreenContextSticky,

@@ -150,25 +150,68 @@ struct PickySessionRecoveryCoordinatorTests {
         #expect(applied == [5])
     }
 
-    @Test func retriesRecoveryAfterBoundedTransactionsArriveWithoutSnapshot() throws {
+    /// The daemon rejects a second recovery for a session it is still serving,
+    /// and that rejection would also orphan the first response. So a stalled
+    /// request escalates to a reconnect instead of asking again.
+    @Test func unansweredRecoveryEscalatesToAReconnectRatherThanAskingAgain() throws {
         var requests: [(sessionID: String, requestID: String)] = []
+        var stalled: [String] = []
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
             applySnapshot: { _, _, _ in },
             applyTransaction: { _ in },
-            requestID: { nextRequest += 1; return "request-\(nextRequest)" },
-            recoveryRetryTransactionThreshold: 2,
-            maximumBufferedTransactions: 10
+            onProjectionStalled: { stalled.append($0) },
+            requestID: { nextRequest += 1; return "request-\(nextRequest)" }
         )
 
         coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 3, revision: 4))
         coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 4, revision: 5))
-        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 5, revision: 6))
 
-        #expect(requests.map(\.requestID) == ["request-1", "request-2"])
-        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == "request-2")
-        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 3)
+        // Buffering alone never issues a second request.
+        #expect(requests.map(\.requestID) == ["request-1"])
+
+        coordinator.recoveryDeadlineElapsed(sessionID: "session-a", requestID: "request-1")
+
+        #expect(stalled == ["session-a"])
+        #expect(requests.map(\.requestID) == ["request-1"])
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == nil)
+        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 0)
+    }
+
+    /// The deadline is never cancelled, so a late one must not disturb a
+    /// session that already recovered.
+    @Test func deadlineForAnAlreadyAnsweredRequestIsANoOp() throws {
+        var stalled: [String] = []
+        var nextRequest = 0
+        let coordinator = PickySessionRecoveryCoordinator(
+            requestSnapshot: { _, _ in },
+            applySnapshot: { _, _, _ in },
+            applyTransaction: { _ in },
+            onProjectionStalled: { stalled.append($0) },
+            requestID: { nextRequest += 1; return "request-\(nextRequest)" }
+        )
+
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 3, revision: 4))
+        coordinator.receive(snapshot: try snapshot(requestID: "request-1", sessionID: "session-a", epoch: "epoch-1", revision: 3))
+
+        coordinator.recoveryDeadlineElapsed(sessionID: "session-a", requestID: "request-1")
+
+        #expect(stalled.isEmpty)
+    }
+
+    @Test func deadlineForAnUnknownSessionIsANoOp() {
+        var stalled: [String] = []
+        let coordinator = PickySessionRecoveryCoordinator(
+            requestSnapshot: { _, _ in },
+            applySnapshot: { _, _, _ in },
+            applyTransaction: { _ in },
+            onProjectionStalled: { stalled.append($0) }
+        )
+
+        coordinator.recoveryDeadlineElapsed(sessionID: "missing", requestID: "request-1")
+
+        #expect(stalled.isEmpty)
     }
 
     @Test func epochChangeReplacesInFlightRecoveryRequestBeforeTheOldResponseArrives() throws {
@@ -191,17 +234,18 @@ struct PickySessionRecoveryCoordinatorTests {
         #expect(coordinator.inFlightRequestID(sessionID: "session-a") == "request-2")
     }
 
-    @Test func bufferLimitResetsRecoveryAndTheNextSnapshotInstallsNormally() throws {
+    @Test func bufferLimitEscalatesAndTheNextSnapshotInstallsNormally() throws {
         var requests: [(sessionID: String, requestID: String)] = []
         var snapshots: [String] = []
         var applied: [Int] = []
+        var stalled: [String] = []
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
             applySnapshot: { snapshot, _, _ in snapshots.append(snapshot.requestId ?? "bootstrap") },
             applyTransaction: { transaction in applied.append(transaction.revision) },
+            onProjectionStalled: { stalled.append($0) },
             requestID: { nextRequest += 1; return "request-\(nextRequest)" },
-            recoveryRetryTransactionThreshold: 10,
             maximumBufferedTransactions: 3
         )
 
@@ -210,6 +254,7 @@ struct PickySessionRecoveryCoordinatorTests {
         coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 2, revision: 3))
         coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 3, revision: 4))
 
+        #expect(stalled == ["session-a"])
         #expect(coordinator.inFlightRequestID(sessionID: "session-a") == nil)
         #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 0)
 
@@ -222,13 +267,15 @@ struct PickySessionRecoveryCoordinatorTests {
         #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 0)
     }
 
-    @Test func recoveryRejectionRetriesOnceThenResetsSoALaterGapCanRecover() throws {
+    @Test func recoveryRejectionRetriesOnceThenEscalates() throws {
         var requests: [(sessionID: String, requestID: String)] = []
+        var stalled: [String] = []
         var nextRequest = 0
         let coordinator = PickySessionRecoveryCoordinator(
             requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
             applySnapshot: { _, _, _ in },
             applyTransaction: { _ in },
+            onProjectionStalled: { stalled.append($0) },
             requestID: { nextRequest += 1; return "request-\(nextRequest)" }
         )
 
@@ -241,6 +288,7 @@ struct PickySessionRecoveryCoordinatorTests {
 
         coordinator.receiveRecoveryFailure(commandID: "request-2")
 
+        #expect(stalled == ["session-a"])
         #expect(coordinator.inFlightRequestID(sessionID: "session-a") == nil)
         #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 0)
 

@@ -24,12 +24,15 @@ final class PickySessionRecoveryCoordinator {
     /// deferred to W6.5.
     typealias SnapshotApplier = (_ snapshot: PickySessionProjectionSnapshot, _ omittedFields: [String], _ origin: SnapshotOrigin) -> Void
     typealias TransactionApplier = (_ transaction: PickySessionProjectionTransaction) -> Void
+    /// Raised when this session's projection can no longer be repaired by
+    /// asking again. Reconnecting the owning daemon replays its bootstrap
+    /// snapshots, which is the one path known to re-seed a stalled cursor.
+    typealias StallHandler = (_ sessionID: String) -> Void
 
     private struct SessionState {
         var cursor = PickySessionRevisionCursor()
         var inFlightRequestID: String?
         var recoveryFailureCount = 0
-        var bufferedTransactionsSinceRecoveryRequest = 0
         var bufferedTransactions: [PickySessionProjectionTransaction] = []
     }
 
@@ -38,29 +41,24 @@ final class PickySessionRecoveryCoordinator {
     private let applySnapshot: SnapshotApplier
     private let applyTransaction: TransactionApplier
     private let makeRequestID: () -> String
-    private let recoveryRetryTransactionThreshold: Int
+    private let onProjectionStalled: StallHandler
     private let maximumBufferedTransactions: Int
-    private let maximumRecoveryRetriesWithoutSnapshot: Int
 
     init(
         requestSnapshot: @escaping SnapshotRequest,
         applySnapshot: @escaping SnapshotApplier,
         applyTransaction: @escaping TransactionApplier,
+        onProjectionStalled: @escaping StallHandler = { _ in },
         requestID: @escaping () -> String = { UUID().uuidString },
-        recoveryRetryTransactionThreshold: Int = 32,
-        maximumBufferedTransactions: Int = 256,
-        maximumRecoveryRetriesWithoutSnapshot: Int = 2
+        maximumBufferedTransactions: Int = 256
     ) {
-        precondition(recoveryRetryTransactionThreshold > 0)
         precondition(maximumBufferedTransactions > 0)
-        precondition(maximumRecoveryRetriesWithoutSnapshot > 0)
         self.requestSnapshot = requestSnapshot
         self.applySnapshot = applySnapshot
         self.applyTransaction = applyTransaction
+        self.onProjectionStalled = onProjectionStalled
         makeRequestID = requestID
-        self.recoveryRetryTransactionThreshold = recoveryRetryTransactionThreshold
         self.maximumBufferedTransactions = maximumBufferedTransactions
-        self.maximumRecoveryRetriesWithoutSnapshot = maximumRecoveryRetriesWithoutSnapshot
     }
 
     func receive(transaction: PickySessionProjectionTransaction) {
@@ -68,6 +66,7 @@ final class PickySessionRecoveryCoordinator {
         let decision = state.cursor.receive(transaction: transaction)
         var transactionToApply: PickySessionProjectionTransaction?
         var requestID: String?
+        var stalled = false
 
         switch decision {
         case .apply:
@@ -86,12 +85,17 @@ final class PickySessionRecoveryCoordinator {
             requestID = beginRecoveryIfNeeded(in: &state)
         case .buffer:
             state.bufferedTransactions.append(transaction)
-            requestID = advanceRecoveryIfNeeded(in: &state)
+            // A recovery request is already outstanding; a second one would be
+            // rejected by the daemon's per-session recovery gate and would also
+            // orphan the first response. Wait for the deadline instead.
+            stalled = state.bufferedTransactions.count > maximumBufferedTransactions
         }
 
+        if stalled { resetBufferedRecoveryState(in: &state) }
         states[transaction.sessionId] = state
         if let transactionToApply { applyTransaction(transactionToApply) }
         if let requestID { requestSnapshot(transaction.sessionId, requestID) }
+        if stalled { onProjectionStalled(transaction.sessionId) }
     }
 
     func receive(snapshot: PickySessionProjectionSnapshot) {
@@ -109,7 +113,6 @@ final class PickySessionRecoveryCoordinator {
         var state = states[snapshot.sessionId] ?? SessionState()
         state.inFlightRequestID = nil
         state.recoveryFailureCount = 0
-        state.bufferedTransactionsSinceRecoveryRequest = 0
         state.cursor = PickySessionRevisionCursor()
         guard case .apply = state.cursor.receive(snapshot: snapshot) else { return }
         install(snapshot: snapshot, origin: .bootstrap, into: &state)
@@ -175,8 +178,12 @@ final class PickySessionRecoveryCoordinator {
             return
         }
 
+        // Retrying an explicit rejection is safe (the daemon already answered,
+        // so its recovery gate is clear), but a second rejection means asking
+        // again will not help.
         resetBufferedRecoveryState(in: &state)
         states[sessionID] = state
+        onProjectionStalled(sessionID)
     }
 
     func inFlightRequestID(sessionID: String) -> String? {
@@ -198,44 +205,24 @@ final class PickySessionRecoveryCoordinator {
         guard state.inFlightRequestID == nil else { return nil }
         let requestID = makeRequestID()
         state.inFlightRequestID = requestID
-        state.bufferedTransactionsSinceRecoveryRequest = 0
         return requestID
     }
 
-    /// Recovery responses are normally immediate on localhost, so continued
-    /// incoming mutations are deterministic proof that the current request is
-    /// not making progress. Replace it once, then discard the bounded replay
-    /// buffer and let a later frame initiate a clean recovery. This prevents a
-    /// lost response from pinning a session in `.buffer` forever.
-    private func advanceRecoveryIfNeeded(in state: inout SessionState) -> String? {
-        guard state.bufferedTransactions.count <= maximumBufferedTransactions else {
-            resetBufferedRecoveryState(in: &state)
-            return nil
-        }
-        guard state.inFlightRequestID != nil else {
-            return beginRecoveryIfNeeded(in: &state)
-        }
-
-        state.bufferedTransactionsSinceRecoveryRequest += 1
-        guard state.bufferedTransactionsSinceRecoveryRequest >= recoveryRetryTransactionThreshold else {
-            return nil
-        }
-
-        state.recoveryFailureCount += 1
-        guard state.recoveryFailureCount < maximumRecoveryRetriesWithoutSnapshot else {
-            resetBufferedRecoveryState(in: &state)
-            return nil
-        }
-
-        state.inFlightRequestID = nil
-        state.cursor.abandonRecoveryRequest()
-        return beginRecoveryIfNeeded(in: &state)
+    /// The daemon never answered the outstanding request. Re-asking is unsafe:
+    /// the daemon's recovery gate rejects a second request while the first is
+    /// still inside its session barrier, and that rejection would also orphan
+    /// the original response. Escalate to a reconnect, whose bootstrap
+    /// snapshots re-seed the cursor unconditionally.
+    func recoveryDeadlineElapsed(sessionID: String, requestID: String) {
+        guard var state = states[sessionID], state.inFlightRequestID == requestID else { return }
+        resetBufferedRecoveryState(in: &state)
+        states[sessionID] = state
+        onProjectionStalled(sessionID)
     }
 
     private func resetBufferedRecoveryState(in state: inout SessionState) {
         state.inFlightRequestID = nil
         state.recoveryFailureCount = 0
-        state.bufferedTransactionsSinceRecoveryRequest = 0
         state.cursor = PickySessionRevisionCursor()
         state.bufferedTransactions.removeAll()
     }

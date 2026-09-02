@@ -40,11 +40,18 @@ protocol PickyChildSessionReleasing: AnyObject {
     func releaseChild(sessionId: String)
 }
 
+/// Lets the projection recovery coordinator escalate a stalled session without
+/// depending on the concrete router type.
+@MainActor
+protocol PickyProjectionOwnerReconnecting: AnyObject {
+    func reconnectProjectionOwner(sessionID: String)
+}
+
 /// Routes Picky commands to the right websocket client. Phase 2 vertical-slice intentionally
 /// keeps a single primary connection alive at all times; child connections are created on
 /// demand and torn down when the Pickle ends or the pool releases the child.
 @MainActor
-final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpawning, PickyChildSessionReleasing {
+final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpawning, PickyChildSessionReleasing, PickyProjectionOwnerReconnecting {
     private let primaryClient: PickyAgentClient
     private let pool: PickyAgentDaemonPool
     private let clientFactory: PickyAgentClientFactoryProtocol
@@ -66,6 +73,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private var capabilityRegistrationWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     private var capabilityRegistrationCommandIDs: [String: String] = [:]
     private var capabilityRegistrationRetryCounts: [String: Int] = [:]
+    private var lastProjectionOwnerReconnects: [String: Date] = [:]
+    private static let projectionOwnerReconnectDebounce: TimeInterval = 30
     private var clientEventKeys: [ObjectIdentifier: String] = [:]
     private let capabilityRegistrationTimeoutNanoseconds: UInt64
     private let capabilityRegistrationRetryBackoffNanoseconds: UInt64
@@ -1454,6 +1463,28 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             bootingChildSessionIds.remove(session.id)
         }
         scheduleDrainPendingChildCommandsIfReady(for: session)
+    }
+
+    /// Drops and re-establishes the connection that owns `sessionID`'s
+    /// projection. Its bootstrap snapshots re-seed every cursor on that
+    /// connection, which is the only repair that does not depend on the daemon
+    /// answering a per-session recovery request.
+    ///
+    /// Debounced per connection: one stalled session must not let a burst of
+    /// sibling stalls tear the same socket down repeatedly.
+    func reconnectProjectionOwner(sessionID: String) {
+        let ownerKey = projectionOwnerKeys[sessionID] ?? "primary"
+        let client: PickyAgentClient? = ownerKey == "primary" ? primaryClient : childClients[sessionID]
+        guard let client else { return }
+        let now = Date()
+        if let last = lastProjectionOwnerReconnects[ownerKey], now.timeIntervalSince(last) < Self.projectionOwnerReconnectDebounce {
+            pickyAgentRouterLog("projection owner reconnect debounced owner=\(ownerKey) session=\(sessionID)")
+            return
+        }
+        lastProjectionOwnerReconnects[ownerKey] = now
+        pickyAgentRouterLog("projection owner reconnect owner=\(ownerKey) session=\(sessionID)")
+        client.disconnect()
+        Task { @MainActor in await client.connect() }
     }
 
     private func stopForwardingEvents(for key: String) {

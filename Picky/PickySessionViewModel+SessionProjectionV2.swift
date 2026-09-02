@@ -5,6 +5,11 @@
 
 import Foundation
 
+/// A recovery response is a localhost round trip. Five seconds is generous for
+/// the daemon's session barrier while still repairing a lost request long
+/// before a person notices the Pickle has stopped moving.
+let sessionProjectionRecoveryDeadlineNanoseconds: UInt64 = 5_000_000_000
+
 extension PickySessionListViewModel {
     static func makeSessionProjectionRecoveryCoordinator(for viewModel: PickySessionListViewModel) -> PickySessionRecoveryCoordinator {
         PickySessionRecoveryCoordinator(
@@ -21,11 +26,19 @@ extension PickySessionListViewModel {
                     } catch {
                         viewModel.lastError = "Session projection recovery failed: \(error.localizedDescription)"
                         viewModel.handleSessionProjectionRecoveryFailure(commandID: requestID)
+                        return
                     }
+                    // Armed only after the frame is on the wire, so transport
+                    // latency never counts against the daemon's answer.
+                    try? await Task.sleep(nanoseconds: sessionProjectionRecoveryDeadlineNanoseconds)
+                    viewModel.handleSessionProjectionRecoveryDeadline(sessionID: sessionID, requestID: requestID)
                 }
             },
             applySnapshot: { [weak viewModel] snapshot, _, origin in viewModel?.applySessionProjectionSnapshot(snapshot, origin: origin) },
-            applyTransaction: { [weak viewModel] transaction in viewModel?.applySessionProjectionTransaction(transaction) }
+            applyTransaction: { [weak viewModel] transaction in viewModel?.applySessionProjectionTransaction(transaction) },
+            onProjectionStalled: { [weak viewModel] sessionID in
+                viewModel?.reconnectStalledProjectionOwner(sessionID: sessionID)
+            }
         )
     }
 

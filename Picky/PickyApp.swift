@@ -154,7 +154,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         recentPickleFolderStore: PickySettingsRecentPickleFolderStore(settingsStore: settingsStore),
         dockLayoutStore: PickySettingsDockLayoutStore(settingsStore: settingsStore),
         manualPickleChildSpawner: hudAgentClientRouter,
-        childSessionReleaser: hudAgentClientRouter
+        childSessionReleaser: hudAgentClientRouter,
+        projectionOwnerReconnector: hudAgentClientRouter
     )
     private lazy var hudOverlayManager = PickyHUDOverlayManager(
         viewModel: hudSessionViewModel,

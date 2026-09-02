@@ -170,6 +170,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let generatedReportDirectory: URL
     private let manualPickleChildSpawner: (any PickyManualPickleChildSpawning)?
     private let childSessionReleaser: (any PickyChildSessionReleasing)?
+    private let projectionOwnerReconnector: (any PickyProjectionOwnerReconnecting)?
     private let archiveCommitDelayNanoseconds: UInt64
     private var archiveCommitTasks: [String: Task<Void, Never>] = [:]
     /// User archive actions are optimistic. Preserve their intent until a
@@ -237,6 +238,7 @@ final class PickySessionListViewModel: ObservableObject {
         generatedReportDirectory: URL = PickyAppSupport.defaultRoot().appendingPathComponent("GeneratedReports", isDirectory: true),
         manualPickleChildSpawner: (any PickyManualPickleChildSpawning)? = nil,
         childSessionReleaser: (any PickyChildSessionReleasing)? = nil,
+        projectionOwnerReconnector: (any PickyProjectionOwnerReconnecting)? = nil,
         archiveCommitDelayNanoseconds: UInt64 = PickyHUDArchiveUndoToastPolicy.durationNanoseconds,
         manualPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
         shellTerminalSessionFactory: ((SessionCard) -> PickyShellTerminalSession)? = nil,
@@ -276,6 +278,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.generatedReportDirectory = generatedReportDirectory
         self.manualPickleChildSpawner = manualPickleChildSpawner
         self.childSessionReleaser = childSessionReleaser
+        self.projectionOwnerReconnector = projectionOwnerReconnector
         self.archiveCommitDelayNanoseconds = archiveCommitDelayNanoseconds
         self.manualPickleSessionIdFactory = manualPickleSessionIdFactory
         self.shellTerminalSessionFactory = shellTerminalSessionFactory ?? { session in
@@ -1938,6 +1941,21 @@ final class PickySessionListViewModel: ObservableObject {
     /// coordinator. Other command errors are ignored by the coordinator.
     func handleSessionProjectionRecoveryFailure(commandID: String?) {
         sessionProjectionRecoveryCoordinator?.receiveRecoveryFailure(commandID: commandID)
+    }
+
+    /// Fired by the recovery deadline armed in the projection v2 wiring. A
+    /// request ID that is no longer outstanding resolves to a no-op inside the
+    /// coordinator, so the deadline never needs cancelling.
+    func handleSessionProjectionRecoveryDeadline(sessionID: String, requestID: String) {
+        sessionProjectionRecoveryCoordinator?.recoveryDeadlineElapsed(sessionID: sessionID, requestID: requestID)
+    }
+
+    /// Last-resort repair for a session whose projection can no longer be
+    /// fixed by asking the daemon again.
+    func reconnectStalledProjectionOwner(sessionID: String) {
+        pickySessionLog("projection stalled, reconnecting owner session=\(sessionID)")
+        lastError = "Picky lost sync with this Pickle and is reconnecting."
+        projectionOwnerReconnector?.reconnectProjectionOwner(sessionID: sessionID)
     }
 
     /// Inner reducer for fully-decoded protocol events. Stays private — reducer

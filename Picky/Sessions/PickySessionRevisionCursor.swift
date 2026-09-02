@@ -11,6 +11,9 @@ enum PickySessionRevisionCursorDecision: Equatable {
     case apply
     case dropStaleOrDuplicate
     case requestRecovery
+    /// The awaited snapshot epoch changed, so the coordinator must abandon
+    /// the correlated request before requesting the replacement epoch.
+    case replaceRecovery
     /// The recovery coordinator owns buffered transactions; the cursor owns
     /// only ordering state and never retains a second copy.
     case buffer
@@ -35,14 +38,24 @@ struct PickySessionRevisionCursor {
 
     mutating func receive(transaction: PickySessionProjectionTransaction) -> PickySessionRevisionCursorDecision {
         guard let epoch, let revision else {
+            if let awaitingSnapshotEpoch, awaitingSnapshotEpoch != transaction.epoch {
+                self.awaitingSnapshotEpoch = transaction.epoch
+                recoveryRequested = true
+                return .replaceRecovery
+            }
             awaitingSnapshotEpoch = transaction.epoch
             if recoveryRequested { return .buffer }
             recoveryRequested = true
             return .requestRecovery
         }
         if let awaitingSnapshotEpoch {
-            if transaction.epoch != awaitingSnapshotEpoch {
+            guard transaction.epoch == awaitingSnapshotEpoch else {
+                // A recovery request for the previous epoch cannot establish
+                // ordering for this transaction. Tell the coordinator to
+                // abandon that request and issue one for the new epoch.
                 self.awaitingSnapshotEpoch = transaction.epoch
+                recoveryRequested = true
+                return .replaceRecovery
             }
             return .buffer
         }

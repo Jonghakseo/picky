@@ -150,6 +150,78 @@ struct PickySessionRecoveryCoordinatorTests {
         #expect(applied == [5])
     }
 
+    @Test func retriesRecoveryAfterBoundedTransactionsArriveWithoutSnapshot() throws {
+        var requests: [(sessionID: String, requestID: String)] = []
+        var nextRequest = 0
+        let coordinator = PickySessionRecoveryCoordinator(
+            requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
+            applySnapshot: { _, _, _ in },
+            applyTransaction: { _ in },
+            requestID: { nextRequest += 1; return "request-\(nextRequest)" },
+            recoveryRetryTransactionThreshold: 2,
+            maximumBufferedTransactions: 10
+        )
+
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 3, revision: 4))
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 4, revision: 5))
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 5, revision: 6))
+
+        #expect(requests.map(\.requestID) == ["request-1", "request-2"])
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == "request-2")
+        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 3)
+    }
+
+    @Test func epochChangeReplacesInFlightRecoveryRequestBeforeTheOldResponseArrives() throws {
+        var requests: [(sessionID: String, requestID: String)] = []
+        var nextRequest = 0
+        let coordinator = PickySessionRecoveryCoordinator(
+            requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
+            applySnapshot: { _, _, _ in },
+            applyTransaction: { _ in },
+            requestID: { nextRequest += 1; return "request-\(nextRequest)" }
+        )
+
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 3, revision: 4))
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-2", baseRevision: 4, revision: 5))
+
+        #expect(requests.map(\.requestID) == ["request-1", "request-2"])
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == "request-2")
+
+        coordinator.receive(snapshot: try snapshot(requestID: "request-1", sessionID: "session-a", epoch: "epoch-1", revision: 3))
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == "request-2")
+    }
+
+    @Test func bufferLimitResetsRecoveryAndTheNextSnapshotInstallsNormally() throws {
+        var requests: [(sessionID: String, requestID: String)] = []
+        var snapshots: [String] = []
+        var applied: [Int] = []
+        var nextRequest = 0
+        let coordinator = PickySessionRecoveryCoordinator(
+            requestSnapshot: { sessionID, requestID in requests.append((sessionID, requestID)) },
+            applySnapshot: { snapshot, _, _ in snapshots.append(snapshot.requestId ?? "bootstrap") },
+            applyTransaction: { transaction in applied.append(transaction.revision) },
+            requestID: { nextRequest += 1; return "request-\(nextRequest)" },
+            recoveryRetryTransactionThreshold: 10,
+            maximumBufferedTransactions: 3
+        )
+
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 0, revision: 1))
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 1, revision: 2))
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 2, revision: 3))
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 3, revision: 4))
+
+        #expect(coordinator.inFlightRequestID(sessionID: "session-a") == nil)
+        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 0)
+
+        coordinator.receive(transaction: try transaction(sessionID: "session-a", epoch: "epoch-1", baseRevision: 4, revision: 5))
+        coordinator.receive(snapshot: try snapshot(requestID: "request-2", sessionID: "session-a", epoch: "epoch-1", revision: 4))
+
+        #expect(requests.map(\.requestID) == ["request-1", "request-2"])
+        #expect(snapshots == ["request-2"])
+        #expect(applied == [5])
+        #expect(coordinator.bufferedTransactionCount(sessionID: "session-a") == 0)
+    }
+
     @Test func recoveryRejectionRetriesOnceThenResetsSoALaterGapCanRecover() throws {
         var requests: [(sessionID: String, requestID: String)] = []
         var nextRequest = 0

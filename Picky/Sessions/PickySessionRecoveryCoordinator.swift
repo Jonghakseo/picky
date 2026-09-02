@@ -29,6 +29,7 @@ final class PickySessionRecoveryCoordinator {
         var cursor = PickySessionRevisionCursor()
         var inFlightRequestID: String?
         var recoveryFailureCount = 0
+        var bufferedTransactionsSinceRecoveryRequest = 0
         var bufferedTransactions: [PickySessionProjectionTransaction] = []
     }
 
@@ -37,17 +38,29 @@ final class PickySessionRecoveryCoordinator {
     private let applySnapshot: SnapshotApplier
     private let applyTransaction: TransactionApplier
     private let makeRequestID: () -> String
+    private let recoveryRetryTransactionThreshold: Int
+    private let maximumBufferedTransactions: Int
+    private let maximumRecoveryRetriesWithoutSnapshot: Int
 
     init(
         requestSnapshot: @escaping SnapshotRequest,
         applySnapshot: @escaping SnapshotApplier,
         applyTransaction: @escaping TransactionApplier,
-        requestID: @escaping () -> String = { UUID().uuidString }
+        requestID: @escaping () -> String = { UUID().uuidString },
+        recoveryRetryTransactionThreshold: Int = 32,
+        maximumBufferedTransactions: Int = 256,
+        maximumRecoveryRetriesWithoutSnapshot: Int = 2
     ) {
+        precondition(recoveryRetryTransactionThreshold > 0)
+        precondition(maximumBufferedTransactions > 0)
+        precondition(maximumRecoveryRetriesWithoutSnapshot > 0)
         self.requestSnapshot = requestSnapshot
         self.applySnapshot = applySnapshot
         self.applyTransaction = applyTransaction
         makeRequestID = requestID
+        self.recoveryRetryTransactionThreshold = recoveryRetryTransactionThreshold
+        self.maximumBufferedTransactions = maximumBufferedTransactions
+        self.maximumRecoveryRetriesWithoutSnapshot = maximumRecoveryRetriesWithoutSnapshot
     }
 
     func receive(transaction: PickySessionProjectionTransaction) {
@@ -61,11 +74,19 @@ final class PickySessionRecoveryCoordinator {
             transactionToApply = transaction
         case .dropStaleOrDuplicate, .discard:
             break
-        case .requestRecovery, .buffer:
+        case .requestRecovery:
             state.bufferedTransactions.append(transaction)
-            if decision == .requestRecovery {
-                requestID = beginRecoveryIfNeeded(in: &state)
-            }
+            requestID = beginRecoveryIfNeeded(in: &state)
+        case .replaceRecovery:
+            state.bufferedTransactions.append(transaction)
+            // The cursor changed epochs, so the in-flight response can never
+            // install. Clear both owners before replacing its request ID.
+            state.inFlightRequestID = nil
+            state.cursor.abandonRecoveryRequest()
+            requestID = beginRecoveryIfNeeded(in: &state)
+        case .buffer:
+            state.bufferedTransactions.append(transaction)
+            requestID = advanceRecoveryIfNeeded(in: &state)
         }
 
         states[transaction.sessionId] = state
@@ -88,6 +109,7 @@ final class PickySessionRecoveryCoordinator {
         var state = states[snapshot.sessionId] ?? SessionState()
         state.inFlightRequestID = nil
         state.recoveryFailureCount = 0
+        state.bufferedTransactionsSinceRecoveryRequest = 0
         state.cursor = PickySessionRevisionCursor()
         guard case .apply = state.cursor.receive(snapshot: snapshot) else { return }
         install(snapshot: snapshot, origin: .bootstrap, into: &state)
@@ -105,7 +127,7 @@ final class PickySessionRecoveryCoordinator {
         switch state.cursor.receive(snapshot: snapshot) {
         case .apply:
             install(snapshot: snapshot, origin: .recovery, into: &state)
-        case .dropStaleOrDuplicate, .requestRecovery, .buffer, .discard:
+        case .dropStaleOrDuplicate, .requestRecovery, .replaceRecovery, .buffer, .discard:
             // The server answered a request but the cursor could not install
             // it (for example, the daemon epoch changed during recovery).
             let nextRequestID = beginRecoveryIfNeeded(in: &state)
@@ -153,9 +175,7 @@ final class PickySessionRecoveryCoordinator {
             return
         }
 
-        state.recoveryFailureCount = 0
-        state.cursor = PickySessionRevisionCursor()
-        state.bufferedTransactions.removeAll()
+        resetBufferedRecoveryState(in: &state)
         states[sessionID] = state
     }
 
@@ -178,7 +198,46 @@ final class PickySessionRecoveryCoordinator {
         guard state.inFlightRequestID == nil else { return nil }
         let requestID = makeRequestID()
         state.inFlightRequestID = requestID
+        state.bufferedTransactionsSinceRecoveryRequest = 0
         return requestID
+    }
+
+    /// Recovery responses are normally immediate on localhost, so continued
+    /// incoming mutations are deterministic proof that the current request is
+    /// not making progress. Replace it once, then discard the bounded replay
+    /// buffer and let a later frame initiate a clean recovery. This prevents a
+    /// lost response from pinning a session in `.buffer` forever.
+    private func advanceRecoveryIfNeeded(in state: inout SessionState) -> String? {
+        guard state.bufferedTransactions.count <= maximumBufferedTransactions else {
+            resetBufferedRecoveryState(in: &state)
+            return nil
+        }
+        guard state.inFlightRequestID != nil else {
+            return beginRecoveryIfNeeded(in: &state)
+        }
+
+        state.bufferedTransactionsSinceRecoveryRequest += 1
+        guard state.bufferedTransactionsSinceRecoveryRequest >= recoveryRetryTransactionThreshold else {
+            return nil
+        }
+
+        state.recoveryFailureCount += 1
+        guard state.recoveryFailureCount < maximumRecoveryRetriesWithoutSnapshot else {
+            resetBufferedRecoveryState(in: &state)
+            return nil
+        }
+
+        state.inFlightRequestID = nil
+        state.cursor.abandonRecoveryRequest()
+        return beginRecoveryIfNeeded(in: &state)
+    }
+
+    private func resetBufferedRecoveryState(in state: inout SessionState) {
+        state.inFlightRequestID = nil
+        state.recoveryFailureCount = 0
+        state.bufferedTransactionsSinceRecoveryRequest = 0
+        state.cursor = PickySessionRevisionCursor()
+        state.bufferedTransactions.removeAll()
     }
 
     private func drainContiguousTransactions(
@@ -197,7 +256,7 @@ final class PickySessionRecoveryCoordinator {
                 applied.append(first)
             case .dropStaleOrDuplicate, .discard:
                 state.bufferedTransactions.removeFirst()
-            case .requestRecovery:
+            case .requestRecovery, .replaceRecovery:
                 return beginRecoveryIfNeeded(in: &state)
             case .buffer:
                 return nil

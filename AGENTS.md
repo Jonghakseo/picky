@@ -150,9 +150,11 @@ exit "$xcode_status"
 
 WindowServer-dependent tests are disabled during ordinary Xcode test runs. They may run exactly once through `scripts/pre-push-checks.sh`, which owns the `PICKY_PRE_PUSH_UI_EFFECT_TESTS=1` opt-in. Do not set that variable for ad-hoc or repeated test commands.
 
-Parallel or subagent-driven `xcodebuild test` runs must use a unique `-derivedDataPath` under `/private/tmp` (for example `/private/tmp/Picky<purpose>DD`); the shared default DerivedData causes build-DB lock collisions (exit 65) when another build is running concurrently. Keeping the `Picky` prefix and `/private/tmp` root lets `scripts/prune-build-artifacts.sh` recover an abandoned path after an interrupted run.
+Agent-driven `xcodebuild` runs use `-derivedDataPath /private/tmp/PickyAgentDD` and **reuse that one path across runs**. Staying out of Xcode's default DerivedData avoids build-DB lock collisions with a developer's GUI builds, and reusing a single path keeps rebuilds incremental. A fresh `mktemp` directory per run costs a full cold build instead (roughly 10 minutes and 2 GB every time), which is why per-run isolation is not the default.
 
-A temporary `-derivedDataPath` is owned by the run that created it and must be torn down when that run finishes. Recursively unregister the directory **before** deleting it, because Picky.app embeds Sparkle's separately registered Updater.app and LaunchServices cannot unregister bundles after their paths disappear:
+Switch to a unique path (`mktemp -d /private/tmp/Picky<purpose>DD.XXXXXX`) only when the shared agent path is actually unavailable: another `xcodebuild` is already running (`pgrep -x xcodebuild`), or a run just failed with a build-DB lock collision (exit 65). Keep the `Picky` prefix and `/private/tmp` root so `scripts/prune-build-artifacts.sh` can recover the path later.
+
+A *unique* path is owned by the run that created it and must be torn down when that run finishes; `/private/tmp/PickyAgentDD` is meant to persist and must be left in place. Recursively unregister a directory **before** deleting it, because Picky.app embeds Sparkle's separately registered Updater.app and LaunchServices cannot unregister bundles after their paths disappear:
 
 ```bash
 DD="$(mktemp -d /private/tmp/PickyVerifyDD.XXXXXX)"
@@ -161,7 +163,7 @@ DD="$(mktemp -d /private/tmp/PickyVerifyDD.XXXXXX)"
 rm -rf "$DD"
 ```
 
-Skipping this is not cosmetic. Each abandoned DerivedData directory keeps roughly 1 GB on disk and leaves a permanent LaunchServices bundle record; accumulated records drive `launchservicesd` into sustained high CPU and starve the Picky main thread, which surfaces as HUD lag with no matching hot path in the app itself. Use `./scripts/prune-build-artifacts.sh` to reclaim directories that earlier runs abandoned.
+Skipping this is not cosmetic. Each abandoned DerivedData directory keeps roughly 1 GB on disk and leaves a permanent LaunchServices bundle record; accumulated records drive `launchservicesd` into sustained high CPU and starve the Picky main thread, which surfaces as HUD lag with no matching hot path in the app itself. Reusing the shared path also helps here: it keeps a single bundle record that gets overwritten rather than one record per run. Use `./scripts/prune-build-artifacts.sh` to reclaim directories that earlier runs abandoned; it protects anything modified within `--keep-hours` (default 24), so an in-flight or recently used shared path is not at risk.
 
 When the full agentd vitest suite fails intermittently, classify before touching code: (1) rerun the failing file alone, (2) rerun the suite with `--no-file-parallelism`, (3) reproduce on a clean HEAD temp worktree (`git worktree add /tmp/picky-verify-<n> HEAD`) three times. Only a failure that survives all three steps implicates the changeset. Remove temp worktrees afterwards.
 

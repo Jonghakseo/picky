@@ -170,7 +170,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let generatedReportDirectory: URL
     private let manualPickleChildSpawner: (any PickyManualPickleChildSpawning)?
     private let childSessionReleaser: (any PickyChildSessionReleasing)?
-    private let projectionOwnerReconnector: (any PickyProjectionOwnerReconnecting)?
+    let projectionOwnerReconnector: (any PickyProjectionOwnerReconnecting)?
     private let archiveCommitDelayNanoseconds: UInt64
     private var archiveCommitTasks: [String: Task<Void, Never>] = [:]
     /// User archive actions are optimistic. Preserve their intent until a
@@ -217,7 +217,9 @@ final class PickySessionListViewModel: ObservableObject {
     /// so storage remains the sole state owner.
     var onSessionProjectionStorageChanged: (() -> Void)?
     private var sessionProjectionStorageCancellable: AnyCancellable?
-    private var sessionProjectionRecoveryCoordinator: PickySessionRecoveryCoordinator?
+    /// Readable from `PickySessionViewModel+SessionProjectionV2.swift`, which
+    /// owns the projection v2 wiring. Writes stay in this file.
+    private(set) var sessionProjectionRecoveryCoordinator: PickySessionRecoveryCoordinator?
     init(
         client: any PickyAgentClient,
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
@@ -1935,27 +1937,6 @@ final class PickySessionListViewModel: ObservableObject {
                 isPrimary: isPrimary
             )
         }
-    }
-
-    /// Routes command-correlated recovery rejections to the per-session
-    /// coordinator. Other command errors are ignored by the coordinator.
-    func handleSessionProjectionRecoveryFailure(commandID: String?) {
-        sessionProjectionRecoveryCoordinator?.receiveRecoveryFailure(commandID: commandID)
-    }
-
-    /// Fired by the recovery deadline armed in the projection v2 wiring. A
-    /// request ID that is no longer outstanding resolves to a no-op inside the
-    /// coordinator, so the deadline never needs cancelling.
-    func handleSessionProjectionRecoveryDeadline(sessionID: String, requestID: String) {
-        sessionProjectionRecoveryCoordinator?.recoveryDeadlineElapsed(sessionID: sessionID, requestID: requestID)
-    }
-
-    /// Last-resort repair for a session whose projection can no longer be
-    /// fixed by asking the daemon again.
-    func reconnectStalledProjectionOwner(sessionID: String) {
-        pickySessionLog("projection stalled, reconnecting owner session=\(sessionID)")
-        lastError = "Picky lost sync with this Pickle and is reconnecting."
-        projectionOwnerReconnector?.reconnectProjectionOwner(sessionID: sessionID)
     }
 
     /// Inner reducer for fully-decoded protocol events. Stays private — reducer

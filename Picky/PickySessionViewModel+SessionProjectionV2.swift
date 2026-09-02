@@ -11,6 +11,27 @@ import Foundation
 let sessionProjectionRecoveryDeadlineNanoseconds: UInt64 = 5_000_000_000
 
 extension PickySessionListViewModel {
+    /// Routes command-correlated recovery rejections to the per-session
+    /// coordinator. Other command errors are ignored by the coordinator.
+    func handleSessionProjectionRecoveryFailure(commandID: String?) {
+        sessionProjectionRecoveryCoordinator?.receiveRecoveryFailure(commandID: commandID)
+    }
+
+    /// Fired by the recovery deadline armed below. A request ID that is no
+    /// longer outstanding resolves to a no-op inside the coordinator, so the
+    /// deadline never needs cancelling.
+    func handleSessionProjectionRecoveryDeadline(sessionID: String, requestID: String) {
+        sessionProjectionRecoveryCoordinator?.recoveryDeadlineElapsed(sessionID: sessionID, requestID: requestID)
+    }
+
+    /// Last-resort repair for a session whose projection can no longer be
+    /// fixed by asking the daemon again.
+    func reconnectStalledProjectionOwner(sessionID: String) {
+        pickySessionLog("projection stalled, reconnecting owner session=\(sessionID)")
+        lastError = "Picky lost sync with this Pickle and is reconnecting."
+        projectionOwnerReconnector?.reconnectProjectionOwner(sessionID: sessionID)
+    }
+
     static func makeSessionProjectionRecoveryCoordinator(for viewModel: PickySessionListViewModel) -> PickySessionRecoveryCoordinator {
         PickySessionRecoveryCoordinator(
             requestSnapshot: { [weak viewModel] sessionID, requestID in

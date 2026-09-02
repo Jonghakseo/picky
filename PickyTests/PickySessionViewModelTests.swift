@@ -1047,6 +1047,26 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.isEmpty)
     }
 
+    @MainActor @Test func clearOnlyStillDiscardsAQueueThatHoldsScreenContext() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter()
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "clear-screen-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
+        {"id":"event-clear-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"clear-screen-session","steering":[],"followUp":[{"id":"follow-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"seq":1}
+        """)))
+
+        // Restore is blocked for screen-attached queues, but the explicitly destructive Clear must
+        // stay available so the user can always discard pending work.
+        try await viewModel.clearQueue(sessionID: "clear-screen-session", kind: .all)
+
+        let command = try #require(client.sentCommands.last)
+        #expect(command.type == .clearQueue)
+        #expect(command.sessionId == "clear-screen-session")
+    }
+
     @MainActor @Test func scopedRestoreIsBlockedWhenAnotherQueueKindHoldsScreenContext() async throws {
         let client = FakePickyAgentClient()
         let draftStore = FakeComposerDraftStore()

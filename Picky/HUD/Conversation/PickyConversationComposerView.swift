@@ -1408,10 +1408,10 @@ struct PickyConversationComposerView: View {
 
     @discardableResult
     private func clearQueuedMessages() -> Bool {
-        guard PickyQueuedInputDraftPolicy.queuedInputText(
+        guard PickyQueuedInputRestoreAvailability.resolve(
             visibleQueue: session.visibleQueue,
             kind: .all
-        ) != nil else { return false }
+        ) == .available else { return false }
         performQueueAction(.restore)
         return true
     }

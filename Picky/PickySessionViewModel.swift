@@ -858,30 +858,49 @@ final class PickySessionListViewModel: ObservableObject {
     @discardableResult
     func restoreQueuedInputsToComposerDraft(sessionID: String, kind: PickyQueueClearKind = .all) -> Bool {
         guard let session = card(sessionID: sessionID) else { return false }
-        let visibleQueue = PickyVisibleQueue(
-            queuedSteers: session.queuedSteers,
-            queuedFollowUps: session.queuedFollowUps,
-            committedUserMessages: PickyComposerMessageContext(messages: session.messages).submittedUserMessages
-        )
-        guard let queuedText = PickyQueuedInputDraftPolicy.queuedInputText(
-            visibleQueue: visibleQueue,
-            kind: kind
-        ) else { return false }
+        let visibleQueue = visibleQueue(for: session)
+        guard PickyQueuedInputRestoreAvailability.resolve(visibleQueue: visibleQueue, kind: kind) == .available,
+              let queuedText = PickyQueuedInputDraftPolicy.queuedInputText(
+                  visibleQueue: visibleQueue,
+                  kind: kind
+              )
+        else { return false }
         appendComposerDraftText(queuedText, sessionID: sessionID)
         return true
     }
 
     func clearQueueRestoringQueuedInputs(sessionID: String, kind: PickyQueueClearKind) async throws {
+        // The daemon's clearQueue discards every kind, so the guard must cover the whole queue.
+        if let session = card(sessionID: sessionID),
+           case .blockedByScreenContext(let attachedImagesCount) = PickyQueuedInputRestoreAvailability.resolve(
+               visibleQueue: visibleQueue(for: session),
+               kind: .all
+           ) {
+            throw PickyQueuedInputRestoreError.blockedByScreenContext(attachedImagesCount: attachedImagesCount)
+        }
         restoreQueuedInputsToComposerDraft(sessionID: sessionID, kind: kind)
         try await clearQueue(sessionID: sessionID, kind: kind)
     }
 
     func abortRestoringQueuedInputs(sessionID: String) async throws {
-        let restoredQueuedInputs = restoreQueuedInputsToComposerDraft(sessionID: sessionID, kind: .all)
-        if restoredQueuedInputs {
+        if let session = card(sessionID: sessionID),
+           let queuedText = PickyQueuedInputDraftPolicy.queuedInputText(
+               visibleQueue: visibleQueue(for: session),
+               kind: .all
+           ) {
+            // Abort is explicitly destructive: retain only text because queued screen context cannot be reconstructed.
+            appendComposerDraftText(queuedText, sessionID: sessionID)
             try? await clearQueue(sessionID: sessionID, kind: .all)
         }
         try await abort(sessionID: sessionID)
+    }
+
+    private func visibleQueue(for session: SessionCard) -> PickyVisibleQueue {
+        PickyVisibleQueue(
+            queuedSteers: session.queuedSteers,
+            queuedFollowUps: session.queuedFollowUps,
+            committedUserMessages: PickyComposerMessageContext(messages: session.messages).submittedUserMessages
+        )
     }
 
     private func syncSlashCommands() {

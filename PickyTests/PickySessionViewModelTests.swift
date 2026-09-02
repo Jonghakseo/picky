@@ -1017,6 +1017,63 @@ struct PickySessionViewModelTests {
         #expect(draftStore.drafts["session-1"] == "revised message")
     }
 
+    @MainActor @Test func screenAttachedQueuedInputsCannotRestoreOrClearThroughRestorePath() async throws {
+        let client = FakePickyAgentClient()
+        let draftStore = FakeComposerDraftStore()
+        draftStore.drafts["queue-screen-session"] = "existing draft"
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-screen-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
+        {"id":"event-queue-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"queue-screen-session","steering":[],"followUp":[{"id":"follow-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"seq":1}
+        """)))
+
+        #expect(viewModel.restoreQueuedInputsToComposerDraft(sessionID: "queue-screen-session") == false)
+        #expect(viewModel.persistedComposerDraft(for: "queue-screen-session") == "existing draft")
+        #expect(viewModel.composerDraftRequest(for: "queue-screen-session") == nil)
+
+        var restoreError: Error?
+        do {
+            try await viewModel.clearQueueRestoringQueuedInputs(sessionID: "queue-screen-session", kind: .all)
+        } catch {
+            restoreError = error
+        }
+
+        #expect(restoreError as? PickyQueuedInputRestoreError == .blockedByScreenContext(attachedImagesCount: 2))
+        #expect(restoreError?.localizedDescription == L10n.t("hud.queue.restore.blockedByScreenContext.error", Int64(2)))
+        #expect(client.sentCommands.isEmpty)
+    }
+
+    @MainActor @Test func scopedRestoreIsBlockedWhenAnotherQueueKindHoldsScreenContext() async throws {
+        let client = FakePickyAgentClient()
+        let draftStore = FakeComposerDraftStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "mixed-queue-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
+        {"id":"event-mixed-queue","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"mixed-queue-session","steering":[{"id":"steer-text","text":"plain steer","enqueuedAt":"2026-05-01T00:00:04.000Z"}],"followUp":[{"id":"follow-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"seq":1}
+        """)))
+
+        var restoreError: Error?
+        do {
+            try await viewModel.clearQueueRestoringQueuedInputs(sessionID: "mixed-queue-session", kind: .steering)
+        } catch {
+            restoreError = error
+        }
+
+        // The daemon clears every queue kind, so a text-only steering restore must not discard the
+        // image-bearing follow-up.
+        #expect(restoreError as? PickyQueuedInputRestoreError == .blockedByScreenContext(attachedImagesCount: 2))
+        #expect(client.sentCommands.isEmpty)
+        #expect(viewModel.persistedComposerDraft(for: "mixed-queue-session").isEmpty)
+    }
+
     @MainActor @Test func clearQueueRestoringQueuedInputsAppendsDraftBeforeClearCommand() async throws {
         let client = FakePickyAgentClient()
         let draftStore = FakeComposerDraftStore()
@@ -1060,6 +1117,27 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.first?.kind == .all)
         #expect(client.sentCommands.last?.sessionId == "running-session")
         #expect(viewModel.sessions.first?.status == .cancelled)
+    }
+
+    @MainActor @Test func abortRestoringScreenAttachedQueuedInputsRecoversOnlyTextBeforeClearingAndAbort() async throws {
+        let client = FakePickyAgentClient()
+        let attachmentStore = FakeComposerAttachmentDraftStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerAttachmentDraftStore: attachmentStore
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "abort-screen-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
+        {"id":"event-abort-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"abort-screen-session","steering":[{"id":"steer-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":1}],"followUp":[],"seq":1}
+        """)))
+
+        try await viewModel.abortRestoringQueuedInputs(sessionID: "abort-screen-session")
+
+        #expect(viewModel.persistedComposerDraft(for: "abort-screen-session") == "inspect this")
+        #expect(viewModel.persistedComposerAttachmentPaths(for: "abort-screen-session").isEmpty)
+        #expect(attachmentStore.attachments["abort-screen-session"] == nil)
+        #expect(client.sentCommands.map(\.type) == [.clearQueue, .abort])
     }
 
     @Test func clearComposerDraftRemovesPersistedDraftAttachmentsAndRequestForSubmittedSession() async throws {

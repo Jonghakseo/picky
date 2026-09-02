@@ -104,6 +104,59 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(PickyQueueDockAction.clear.inFlightLabel == L10n.t("hud.queue.clearing"))
     }
 
+    @Test func queuedInputRestoreAvailabilityBlocksVisibleScreenContextAndIgnoresTextOnlyItems() {
+        let queuedAt = Date(timeIntervalSince1970: 1_000)
+        let textOnly = PickyQueueItem(text: "plain text", enqueuedAt: queuedAt)
+        let screenAttached = PickyQueueItem(
+            text: "inspect this",
+            enqueuedAt: queuedAt.addingTimeInterval(1),
+            attachedImagesCount: 2
+        )
+        let emptyQueue = PickyVisibleQueue(queuedSteers: [], queuedFollowUps: [], committedUserMessages: [])
+        let textQueue = PickyVisibleQueue(queuedSteers: [textOnly], queuedFollowUps: [], committedUserMessages: [])
+        let screenQueue = PickyVisibleQueue(
+            queuedSteers: [textOnly],
+            queuedFollowUps: [screenAttached],
+            committedUserMessages: []
+        )
+
+        #expect(PickyQueuedInputRestoreAvailability.resolve(visibleQueue: emptyQueue) == .unavailable)
+        #expect(PickyQueuedInputRestoreAvailability.resolve(visibleQueue: textQueue) == .available)
+        #expect(PickyQueuedInputRestoreAvailability.resolve(visibleQueue: screenQueue) == .blockedByScreenContext(attachedImagesCount: 2))
+        #expect(PickyQueuedInputRestoreAvailability.resolve(visibleQueue: screenQueue, kind: .steering) == .available)
+    }
+
+    @Test func queueDockDisablesRestoreForScreenContextButKeepsClearAvailable() {
+        let presentation = PickyQueueDockPresentation(
+            visibleQueue: PickyVisibleQueue(
+                queuedSteers: [],
+                queuedFollowUps: [PickyQueueItem(text: "inspect this", enqueuedAt: .now, attachedImagesCount: 2)],
+                committedUserMessages: []
+            ),
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime
+        )
+
+        #expect(presentation.restoreAvailability == .blockedByScreenContext(attachedImagesCount: 2))
+        #expect(!presentation.isRestoreEnabled)
+        #expect(presentation.isClearEnabled)
+        #expect(presentation.restoreHelp == L10n.t("hud.queue.restore.blockedByScreenContext.help", Int64(2)))
+        #expect(presentation.restoreAccessibilityLabel == L10n.t("hud.queue.restore.blockedByScreenContext.accessibilityLabel", Int64(2)))
+
+        let textOnly = PickyQueueDockPresentation(
+            visibleQueue: PickyVisibleQueue(
+                queuedSteers: [PickyQueueItem(text: "plain text", enqueuedAt: .now)],
+                queuedFollowUps: [],
+                committedUserMessages: []
+            ),
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime
+        )
+        #expect(textOnly.restoreAvailability == .available)
+        #expect(textOnly.isRestoreEnabled)
+        #expect(textOnly.isClearEnabled)
+    }
+
     @Test func visibleQueueExcludesCommittedItemsFromBothDockAndDraftRestore() {
         let queuedAt = Date(timeIntervalSince1970: 1_000)
         let staleSteer = PickyQueueItem(text: "committed steer", enqueuedAt: queuedAt)

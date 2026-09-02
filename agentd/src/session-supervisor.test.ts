@@ -167,8 +167,13 @@ describe("SessionSupervisor", () => {
       updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
     };
 
+    // Each family commits an observable change, so each advances the client's
+    // projection chain exactly once. Commits with no observable change hold the
+    // revision instead; that rule is covered by `projectionCommitRevision`.
     const startingRevision = session.revision ?? 0;
-    await internals.syncSessionMessages(session.id, []);
+    await internals.syncSessionMessages(session.id, [
+      { id: "m1", role: "user", text: "first prompt", createdAt: "2026-08-24T00:00:00.000Z" },
+    ]);
     expect(supervisor.get(session.id)?.revision).toBe(startingRevision + 1);
 
     await internals.updateTodoState(session.id, { tasks: [], updatedAt: "2026-08-24T00:00:00.000Z" });

@@ -1,10 +1,10 @@
 import type { PickyActivitySummary, PickyAgentSession, PickyArtifact, PickySessionMessage, PickySessionProjectionMutation } from "../protocol.js";
 import { finalizeTerminalSession, type TerminalRuntimeStatusEvent, type TerminalTransientReset } from "../domain/terminal-session-finalization.js";
 export { buildSessionProjectionMutations } from "../domain/terminal-session-finalization.js";
-export { publishSessionProjectionCommit, type SessionCommit } from "./session-projection-commit-publisher.js";
+export { projectionCommitRevision, publishSessionProjectionCommit, sessionProjectionCommitMutations, type SessionCommit } from "./session-projection-commit-publisher.js";
 import { cleanFinalAnswer } from "../domain/session-summary.js";
 import { hasActivity, zeroActivitySummary } from "../domain/activity-summary.js";
-import { nextRevision } from "../domain/session-revision-policy.js";
+import { projectionCommitRevision } from "./session-projection-commit-publisher.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import type { RuntimeTerminalSnapshot } from "./runtime-event-handler.js";
 import type { SessionMessageTerminalSnapshot } from "../session-message-builder.js";
@@ -96,7 +96,7 @@ export async function finalizeTerminalOperation(
           now,
         })
         : provisional;
-      const after = { ...finalization.nextSession, revision: nextRevision(before.revision ?? 0, true) };
+      const after = { ...finalization.nextSession, revision: projectionCommitRevision(before.revision ?? 0, finalization.mutations) };
 
       // The one terminal persistence effect. No reset, projection event, or notification precedes it.
       await dependencies.save(after);

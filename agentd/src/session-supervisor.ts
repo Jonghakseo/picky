@@ -7,7 +7,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
-import { emitTerminalV1Compatibility, finalizeTerminalOperation, publishSessionProjectionCommit, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
+import { emitTerminalV1Compatibility, finalizeTerminalOperation, projectionCommitRevision, publishSessionProjectionCommit, sessionProjectionCommitMutations, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
 import { SubagentRunUpdater } from "./application/subagent-run-updater.js";
 import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
@@ -2010,10 +2010,12 @@ export class SessionSupervisor extends EventEmitter {
       commit: (id, work) => this.runSessionWrite(id, work),
       applyAssistantRun: async (id, currentAssistantRun) => {
         const before = this.mustGet(id);
-        const after = { ...before, currentAssistantRun, updatedAt: new Date().toISOString(), revision: nextRevision(before.revision ?? 0, true) };
+        const proposed = { ...before, currentAssistantRun, updatedAt: new Date().toISOString() };
+        const mutations = sessionProjectionCommitMutations(before, proposed);
+        const after = { ...proposed, revision: projectionCommitRevision(before.revision ?? 0, mutations) };
         await this.store.save(after);
         this.sessions.set(id, after);
-        publishSessionProjectionCommit(this, before, after, {}, this.sessionProjectionEpoch);
+        publishSessionProjectionCommit(this, before, after, mutations, this.sessionProjectionEpoch);
         this.emit("sessionMeta", after);
       },
     };
@@ -2960,10 +2962,12 @@ export class SessionSupervisor extends EventEmitter {
     const sessionId = typeof sessionOrId === "string" ? sessionOrId : sessionOrId.id; let result: SessionCommit | undefined;
     await this.runSessionWrite(sessionId, async () => {
       const before = this.sessions.get(sessionId); const proposed = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId;
-      const changed = proposed !== before; const after = changed && before ? { ...proposed, revision: nextRevision(before.revision ?? 0, true) } : proposed;
+      const changed = proposed !== before;
+      const mutations = changed && before ? sessionProjectionCommitMutations(before, proposed, options) : [];
+      const after = changed && before ? { ...proposed, revision: projectionCommitRevision(before.revision ?? 0, mutations) } : proposed;
       if (changed) {
         await this.store.save(after); this.sessions.set(sessionId, after);
-        publishSessionProjectionCommit(this, before, after, options, this.sessionProjectionEpoch);
+        publishSessionProjectionCommit(this, before, after, mutations, this.sessionProjectionEpoch);
       }
       result = { before, after, changed };
     });

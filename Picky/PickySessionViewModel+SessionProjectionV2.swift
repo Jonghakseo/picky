@@ -100,7 +100,10 @@ extension PickySessionListViewModel {
         // Match v1 bootstrap/upsert behavior: start git metadata work before
         // the card first renders, and seed notifications for cold snapshots.
         PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
-        PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
+        PickyGitHubPullRequestStatus.prefetchIfNeeded(
+            cwd: card.cwd,
+            artifactURLs: card.artifacts.compactMap(\.url)
+        )
         if previous == nil {
             // Cold snapshots seed terminal dedupe even when the card is archived.
             markNotificationDeliveredIfNeeded(for: card)
@@ -147,7 +150,10 @@ extension PickySessionListViewModel {
         // V2 no longer routes through `upsert`, so retain its cache warming
         // side effect without making card materialization globally observable.
         PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
-        PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
+        PickyGitHubPullRequestStatus.prefetchIfNeeded(
+            cwd: card.cwd,
+            artifactURLs: card.artifacts.compactMap(\.url)
+        )
         if shouldInvalidateSlashCommandCache(previous: previous, incoming: card)
             || invalidatesSlashCommandCache
             || transactionContainsPiSessionPathLog(transaction) {

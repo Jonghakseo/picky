@@ -2106,7 +2106,10 @@ final class PickySessionListViewModel: ObservableObject {
         }
         for card in cards {
             PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
-            PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
+            PickyGitHubPullRequestStatus.prefetchIfNeeded(
+                cwd: card.cwd,
+                artifactURLs: card.artifacts.compactMap(\.url)
+            )
         }
         if snapshot.isComplete {
             pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
@@ -2556,7 +2559,10 @@ final class PickySessionListViewModel: ObservableObject {
         let previousStatus = (sessions + archivedSessions).first(where: { $0.id == card.id })?.status
         PickyPerf.interval("vm_upsert_prefetch_enqueue") {
             PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
-            PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
+            PickyGitHubPullRequestStatus.prefetchIfNeeded(
+                cwd: card.cwd,
+                artifactURLs: card.artifacts.compactMap(\.url)
+            )
         }
         var incoming = card
         PickyPerf.interval("vm_upsert_merge_existing") {

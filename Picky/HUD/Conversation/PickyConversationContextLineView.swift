@@ -309,7 +309,11 @@ struct PickyConversationContextLineView: View {
         // that otherwise happens as each .task fires asynchronously.
         let cachedGit = PickyGitRepositoryStatus.cached(cwd: projection.cwd)
         _gitStatus = State(initialValue: cachedGit)
-        let cachedPR = PickyGitHubPullRequestStatus.cached(cwd: projection.cwd, branch: cachedGit?.branchName)
+        let cachedPR = PickyGitHubPullRequestStatus.cached(
+            cwd: projection.cwd,
+            repositoryURL: cachedGit?.remoteWebURL,
+            branch: cachedGit?.branchName
+        )
         _pullRequestStatus = State(initialValue: cachedPR?.status ?? nil)
     }
 
@@ -391,7 +395,12 @@ struct PickyConversationContextLineView: View {
 
             // SWR step 3: PR — paint cached value, only hit `gh` if cache is missing or stale.
             let branch = freshGit?.branchName
-            let cachedPR = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: branch)
+            let repositoryURL = freshGit?.remoteWebURL
+            let cachedPR = PickyGitHubPullRequestStatus.cached(
+                cwd: session.cwd,
+                repositoryURL: repositoryURL,
+                branch: branch
+            )
             if let cachedPR {
                 PickyPerf.event("context_line_pr_cached_publish")
                 pullRequestStatus = cachedPR.status
@@ -399,7 +408,12 @@ struct PickyConversationContextLineView: View {
             let needsPRFetch = cachedPR == nil || cachedPR?.isStale() == true
             guard needsPRFetch else { return }
             let freshPR = await PickyPerf.interval("context_line_pr_load") {
-                await PickyGitHubPullRequestStatus.load(cwd: session.cwd, branch: branch)
+                await PickyGitHubPullRequestStatus.load(
+                    cwd: session.cwd,
+                    repositoryURL: repositoryURL,
+                    branch: branch,
+                    artifactURLs: session.artifacts.compactMap(\.url)
+                )
             }
             guard !Task.isCancelled else { return }
             PickyPerf.event("context_line_pr_state_publish")

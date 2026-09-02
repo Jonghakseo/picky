@@ -89,6 +89,7 @@ When the user asks about a feature, start here before broad searching:
 - Tool categorizer/activity counts: `agentd/src/domain/tool-categorizer.ts`, `agentd/src/domain/tool-activity.ts`
 - Session policy helpers (user bash format, slash commands, pi session files, handoff pin, main-agent limits): `agentd/src/domain/user-bash-format.ts`, `agentd/src/domain/slash-commands.ts`, `agentd/src/domain/pi-session-files.ts`, `agentd/src/domain/pickle-handoff-context.ts`, `agentd/src/domain/main-agent-policy.ts`, `agentd/src/domain/queue-policy.ts`
 - agentd prompt/context construction: `agentd/src/prompt-builder.ts`, `contracts/prompts/`, `contracts/context/`
+- Main-agent standing rules (Picky CLI, visual overlay DSL, TTS reply style): `agentd/src/domain/picky-runtime-contract.ts`, attached to Pi's system prompt every turn by `agentd/src/runtime/picky-runtime-contract-extension.ts` and wired in `agentd/src/bootstrap.ts`. Never move these back into `buildMainAgentBootstrapPair`: anything in a transcript message is dropped the first time Pi compacts the session.
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
 - Picky CLI / main-agent delegation: `agentd/src/cli.ts`, `agentd/src/application/internal-picky-cli.ts`, `agentd/src/server.ts`
 - Pickle interactive input bridge: `agentd/src/application/ask-user-question-tool.ts`, `agentd/src/application/extension-ui-bridge.ts`

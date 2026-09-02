@@ -38,16 +38,6 @@ describe("neutral prompt builder", () => {
     const pair = buildMainAgentBootstrapPair();
     expect(pair.user).toContain("picky pickle-create");
     expect(pair.user).toContain("picky pickle-list");
-    expect(pair.user).toContain("picky pickle-steer");
-    expect(pair.user).toContain("picky pickle-group-remove");
-    expect(pair.user).toContain("individual tools are retired");
-    expect(pair.user).toContain("`picky settings-list`");
-    expect(pair.user).toContain("`picky settings-get <key>`");
-    expect(pair.user).toContain("`picky settings-set <key> <value>`");
-    expect(pair.user).toContain("dock visibility and size, cursor visibility, and main/Pickle model and thinking-level defaults");
-    expect(pair.user).toContain("only when the user explicitly asks");
-    expect(pair.user).toContain("never change these settings on your own");
-    expect(pair.user).toContain("Never call `picky submit`");
     // Persona + routing thresholds belong in the user-editable AGENTS.md, not
     // hard-coded prompt text.
     expect(pair.user).toContain("AGENTS.md");
@@ -58,59 +48,28 @@ describe("neutral prompt builder", () => {
     expect(pair.user).not.toContain("You are Picky, the always-on assistant");
   });
 
-  it("surfaces typed-text source per turn while runtime guard rails stay in the bootstrap", () => {
+  it("surfaces typed-text source per turn", () => {
     const context = PickyContextPacketSchema.parse({
       ...readJson("context/plain-text.context.json"),
       source: "text",
       transcript: "느으 الرحيم",
     });
 
-    const prompt = buildMainAgentPrompt(context);
+    expect(buildMainAgentPrompt(context).text).toContain("- Source: text");
+  });
+
+  it("keeps standing runtime rules out of the bootstrap message so compaction cannot drop them", () => {
     const pair = buildMainAgentBootstrapPair();
 
-    expect(prompt.text).toContain("- Source: text");
-    expect(pair.user).toContain("deliberate typed input, not speech recognition output");
-    expect(pair.user).toContain("Do not expose internal tool logs verbatim");
-  });
-
-  it("always advertises Pickle CLI capabilities despite retired disabled settings", () => {
-    const pair = buildMainAgentBootstrapPair({
-      disabledBuiltinTools: new Set([
-        "picky_start_pickle",
-        "picky_pickle_sessions",
-        "picky_steer_pickle",
-        "picky_abort_pickle",
-        "picky_manage_pickle_groups",
-      ]),
-    });
-
-    expect(pair.user).toContain("- Create: `picky pickle-create");
-    expect(pair.user).toContain("Inspect/manage: `picky pickle-list");
-    expect(pair.user).toContain("`picky pickle-archive <session-id> --from-main`");
-    expect(pair.user).toContain("Always pass `--from-main`");
-    expect(pair.user).toContain("Reuse: `picky pickle-steer");
-    expect(pair.user).toContain("`picky pickle-abort`");
-    expect(pair.user).toContain("- Groups: `picky pickle-group-list");
-    expect(pair.user).not.toContain("disabled in Settings");
-    expect(pair.user).not.toContain("picky pickle-remove");
-    expect(pair.user).not.toContain("picky pickle-delete");
-  });
-
-  it("gates the inline visual DSL prompt by the screen-overlay identifier", () => {
-    const allEnabled = buildMainAgentBootstrapPair();
-    const overlayDisabled = buildMainAgentBootstrapPair({ disabledBuiltinTools: new Set(["picky_screen_overlay"]) });
-
-    expect(allEnabled.user).toContain("## Picky visual overlay DSL");
-    expect(allEnabled.user).toContain("[RECT: x=<number>");
-    expect(allEnabled.user).toContain("[LINE: x1=<number>");
-    expect(allEnabled.user).toContain("[PATH: d=\"M <x> <y> L <x> <y> C");
-    expect(allEnabled.user).toContain("canonical v1 subset is uppercase M (move), L (line), and C (cubic Bézier)");
-    expect(allEnabled.user).toContain("Elliptical arc A/a is unsupported");
-    expect(allEnabled.user).toContain("PATH does not support `spotlight`");
-    expect(allEnabled.user).toContain("spotlight=true");
-    expect(allEnabled.user).not.toContain("[SPOT" + "LIGHT:");
-    expect(allEnabled.user).toContain("invisible in the user's transcript");
-    expect(overlayDisabled.user).not.toContain("## Picky visual overlay DSL");
+    // These rules moved to the system prompt (`buildPickyRuntimeContract`). Re-adding any of
+    // them here would reintroduce the loss-on-compaction bug this guard exists for.
+    expect(pair.user).not.toContain("[RECT:");
+    expect(pair.user).not.toContain("[LINE:");
+    expect(pair.user).not.toContain("[PATH:");
+    expect(pair.user).not.toContain("## Picky visual overlay DSL");
+    expect(pair.user).not.toContain("Direct reply style for Picky TTS");
+    expect(pair.user).not.toContain("Never call `picky submit`");
+    expect(pair.user).toContain("system prompt on every turn");
   });
 
   it("adds Pickle visual DSL guidance only for an enabled turn with screenshots", () => {
@@ -270,12 +229,8 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).not.toContain("cursorGlobalAppKit");
   });
 
-  it("builds the Picky bootstrap pair with TTS-friendly reply rules and a short OK ack", () => {
+  it("builds the Picky bootstrap pair with a short OK ack", () => {
     const pair = buildMainAgentBootstrapPair();
-    expect(pair.user).toContain("natural sentences in the user's language");
-    expect(pair.user).toContain("no markdown, code blocks, bullet points, or tables");
-    expect(pair.user).toContain("parentheses");
-    expect(pair.user).toContain("`( ... )`");
     expect(pair.user).toContain("This message was not sent by the user");
     expect(pair.assistant).toBe("OK");
   });

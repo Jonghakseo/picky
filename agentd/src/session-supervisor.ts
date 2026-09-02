@@ -793,17 +793,28 @@ export class SessionSupervisor extends EventEmitter {
     this.disabledBuiltinTools = disabled;
     logAgentd("disabled builtin tools configured", { count: disabled.size, changed: same ? 0 : 1 });
     if (same) return;
-    if (this.options.mainCustomToolsBuilder && this.options.mainRuntime?.setCustomTools) {
-      const tools = this.options.mainCustomToolsBuilder(disabled);
-      this.options.mainRuntime.setCustomTools(tools);
-    }
-    // Pointer/annotation identifiers now gate bootstrap prompt content rather than custom
-    // tools. Recreate the main handle for every settings change so its standing DSL guidance
-    // matches the current toggle state as well as the active custom-tool set.
+    // The runtime reads this on the next turn to rebuild its system-prompt contract, so
+    // prompt-gated identifiers take effect without discarding the live session.
+    this.options.onDisabledBuiltinToolsChanged?.(disabled);
+    const customToolsChanged = this.applyMainCustomTools(previous, disabled);
+    if (!customToolsChanged) return;
+    // Pi resolves the custom-tool registry when a handle is created, so a changed tool set is
+    // only observable on a fresh handle. Prompt-only identifiers skip this teardown.
     const currentHandle = this.mainHandle;
     this.detachMainHandleForInterruption();
     if (currentHandle) await this.abortResetMainHandle(currentHandle, "builtin-tools-switch");
     await this.patchMainState({ sessionFilePath: undefined });
+  }
+
+  /** Pushes the refreshed custom-tool list and reports whether the registry actually changed. */
+  private applyMainCustomTools(previous: ReadonlySet<string>, disabled: ReadonlySet<string>): boolean {
+    const builder = this.options.mainCustomToolsBuilder;
+    if (!builder) return false;
+    const nameKey = (tools: ReturnType<typeof builder>): string => tools.map((tool) => tool.name).sort().join("\u0000");
+    const nextTools = builder(disabled);
+    const changed = nameKey(nextTools) !== nameKey(builder(previous));
+    if (this.options.mainRuntime?.setCustomTools) this.options.mainRuntime.setCustomTools(nextTools);
+    return changed;
   }
 
   /** Current value of Picky's TTS toggle for main-agent audio-producing runtimes. */
@@ -1476,7 +1487,6 @@ export class SessionSupervisor extends EventEmitter {
     try {
       await handle.injectInitialBootstrap(buildMainAgentBootstrapPair({
         compactSummary: this.mainState.compactSummary,
-        disabledBuiltinTools: this.disabledBuiltinTools,
       }));
     } catch (error) {
       logAgentd("main bootstrap inject failed", { error: error instanceof Error ? error.message : String(error) });

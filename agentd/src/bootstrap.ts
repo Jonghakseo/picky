@@ -12,6 +12,8 @@ import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
 import type { AgentRuntime } from "./runtime/types.js";
 import { logAgentd } from "./local-log.js";
+import { buildPickyRuntimeContract } from "./domain/picky-runtime-contract.js";
+import { createPickyRuntimeContractExtension } from "./runtime/picky-runtime-contract-extension.js";
 import { EdgeTTSService } from "./edge-tts-service.js";
 import { PiOAuthService } from "./application/pi-oauth-service.js";
 
@@ -172,6 +174,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     : undefined;
   const mainRuntime = primaryMain?.runtime;
   const mainCustomToolsBuilder = primaryMain?.toolsBuilder;
+  const onDisabledBuiltinToolsChanged = primaryMain?.onDisabledBuiltinToolsChanged;
 
   const store = new SessionStore(config.appSupportDir, config.mode === "child" ? { scopeSessionId: config.sessionId } : undefined);
 
@@ -195,6 +198,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     sessionIdFactory,
     forwardPickleCompletionToPrimary,
     mainCustomToolsBuilder,
+    onDisabledBuiltinToolsChanged,
   });
   supervisorRef.current = supervisor;
 
@@ -244,6 +248,8 @@ export function primeSessionIdFactoryForResume(result: ComposeResult): "consumed
 interface PrimaryMainRuntimeBundle {
   runtime: AgentRuntime;
   toolsBuilder: (disabled: ReadonlySet<string>) => ToolDefinition[];
+  /** Lets the supervisor publish toggle changes into the runtime's system-prompt contract. */
+  onDisabledBuiltinToolsChanged: (disabled: ReadonlySet<string>) => void;
 }
 
 function buildPrimaryMainRuntime(
@@ -256,7 +262,7 @@ function buildPrimaryMainRuntime(
   if (overrides.mainRuntimeFactory) {
     const overridden = overrides.mainRuntimeFactory(config, supervisorRef, currentDefaultCwd);
     if (!overridden) return undefined;
-    return { runtime: overridden, toolsBuilder: () => [] };
+    return { runtime: overridden, toolsBuilder: () => [], onDisabledBuiltinToolsChanged: () => {} };
   }
 
   // Picky-specific main-agent tools that are not CLI operations. Pickle delegation itself
@@ -267,6 +273,10 @@ function buildPrimaryMainRuntime(
   ];
   const toolsBuilder = (disabled: ReadonlySet<string>) => allBuiltinTools.filter((tool) => !disabled.has(tool.name));
 
+  // Read at turn time by the contract extension, so a settings toggle reaches the next system
+  // prompt without recreating the main handle.
+  let disabledMainBuiltinTools: ReadonlySet<string> = new Set();
+
   const piMainRuntime = new PiSdkRuntime({
     thinkingLevel: config.mainAgentThinkingLevel,
     modelPattern: config.mainAgentModelPattern,
@@ -275,7 +285,19 @@ function buildPrimaryMainRuntime(
     disableBlockingDialogs: true,
     allowedBlockingDialogMethods: ["askUserQuestion"],
     customTools: toolsBuilder(new Set()),
+    // Standing rules ride the system prompt instead of a transcript message, so compaction,
+    // resume, and stale session files cannot drop them. Pi appends inline extensions after
+    // discovered user extensions, so this runs as a late `before_agent_start` modifier.
+    resourceLoaderOptions: {
+      extensionFactories: [createPickyRuntimeContractExtension(() => buildPickyRuntimeContract(disabledMainBuiltinTools))],
+    },
   });
 
-  return { runtime: piMainRuntime, toolsBuilder };
+  return {
+    runtime: piMainRuntime,
+    toolsBuilder,
+    onDisabledBuiltinToolsChanged: (disabled) => {
+      disabledMainBuiltinTools = disabled;
+    },
+  };
 }

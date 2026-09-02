@@ -6,6 +6,7 @@ import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-
 import { describe, expect, it, vi } from "vitest";
 import * as localLog from "../local-log.js";
 import { PiSdkRuntime, writeFilePathFromRawArgs } from "./pi-sdk-runtime.js";
+import { createPickyRuntimeContractExtension } from "./picky-runtime-contract-extension.js";
 import { modelScopeRevision } from "./pi-model-resolution.js";
 import { PI_MODEL_SCOPE_CONFLICT_CODE, PI_MODEL_SCOPE_CONFLICT_PREFIX, PiModelScopeConflictError } from "./model-scope-errors.js";
 import type { RuntimeEvent } from "./types.js";
@@ -2206,6 +2207,37 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.appendedMessages).toHaveLength(2);
     expect(fakeSession.appendedMessages[0]).toMatchObject({ role: "user" });
     expect(fakeSession.appendedMessages[1]).toMatchObject({ role: "assistant" });
+  });
+
+  it("keeps caller-supplied extensions ahead of the input observer", async () => {
+    // bootstrap.ts hands the main runtime its system-prompt contract extension this way, and
+    // relies on the observer staying last so ordering assumptions elsewhere still hold.
+    const captureFactoryNames = async (options: { resourceLoaderOptions?: { extensionFactories: Array<{ name: string; factory: () => void }> } }): Promise<string[]> => {
+      const fakeSession = new FakeSession();
+      let names: string[] = [];
+      const runtime = new PiSdkRuntime({
+        ...options,
+        getAgentDir: () => "/tmp/.pi/agent",
+        createServices: vi.fn(async (serviceOptions) => {
+          const factories: Array<{ name?: string }> = serviceOptions.resourceLoaderOptions?.extensionFactories ?? [];
+          names = factories.map((entry) => (typeof entry === "function" ? "<anonymous>" : entry.name ?? "<unnamed>"));
+          return { diagnostics: [] };
+        }) as never,
+        createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+        createRuntime: vi.fn(async (factory, createOptions) => {
+          const result = await factory({ cwd: createOptions.cwd, agentDir: createOptions.agentDir, sessionManager: createOptions.sessionManager });
+          return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn(), cwd: createOptions.cwd, newSession: vi.fn(async () => ({ cancelled: false })) };
+        }) as never,
+      });
+      await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+      return names;
+    };
+
+    // Pickle runtimes supply nothing and keep the exact factory list they always had.
+    expect(await captureFactoryNames({})).toEqual(["picky-input-rewrite-observer"]);
+    expect(await captureFactoryNames({
+      resourceLoaderOptions: { extensionFactories: [createPickyRuntimeContractExtension(() => "contract") as never] },
+    })).toEqual(["picky-runtime-contract", "picky-input-rewrite-observer"]);
   });
 
   it("skips bootstrap injection when the session already has messages", async () => {

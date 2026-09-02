@@ -34,6 +34,11 @@ export interface SessionSupervisorOptions {
   // owns the tool registry; supervisor only stores the disabled set and asks
   // for a refreshed list when it changes.
   mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => ToolDefinition[];
+  // Notifies the composition root that the disabled set changed, so the main runtime's
+  // system-prompt contract picks up prompt-gated identifiers on the next turn. Kept separate
+  // from mainCustomToolsBuilder: prompt content and the tool registry have different
+  // invalidation costs, and only the latter needs a fresh handle.
+  onDisabledBuiltinToolsChanged?: (disabled: ReadonlySet<string>) => void;
   /** Test seam for privacy-safe lifecycle evidence; production defaults to logLifecycleEvent. */
   lifecycleEventLogger?: (event: string, fields: Record<string, LogField>) => void;
   /** Injectable timer boundary keeps follow-up stall detection deterministic in tests. */

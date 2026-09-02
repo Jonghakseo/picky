@@ -1,10 +1,47 @@
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+
+interface CapturedPiSdkRuntimeOptions {
+  resourceLoaderOptions?: { extensionFactories?: InlineExtension[] };
+}
+
+const { piSdkRuntimeOptions } = vi.hoisted(() => ({
+  piSdkRuntimeOptions: [] as CapturedPiSdkRuntimeOptions[],
+}));
+
+vi.mock("./runtime/pi-sdk-runtime.js", () => ({
+  PiSdkRuntime: class {
+    constructor(options: CapturedPiSdkRuntimeOptions = {}) {
+      piSdkRuntimeOptions.push(options);
+    }
+
+    setCustomTools(): void {}
+  },
+}));
+
 import { composeAgentdServices, createSingleUseSessionIdFactory, parseAgentdConfig, primeSessionIdFactoryForResume, type AgentdConfig } from "./bootstrap.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { PickyContextPacket } from "./protocol.js";
+
+type BeforeAgentStartHandler = (event: { systemPrompt: string }) => { systemPrompt?: string } | undefined;
+
+async function beforeAgentStartHandlerFrom(options: CapturedPiSdkRuntimeOptions): Promise<BeforeAgentStartHandler> {
+  const extension = options.resourceLoaderOptions?.extensionFactories?.[0];
+  if (!extension) throw new Error("Picky main runtime did not receive a contract extension");
+
+  const factory = typeof extension === "function" ? extension : extension.factory;
+  let handler: BeforeAgentStartHandler | undefined;
+  await factory({
+    on: (event: string, registered: BeforeAgentStartHandler) => {
+      if (event === "before_agent_start") handler = registered;
+    },
+  } as never);
+  if (!handler) throw new Error("Picky contract extension did not register before_agent_start");
+  return handler;
+}
 
 function tmpAppSupportDir(): string {
   return mkdtempSync(join(tmpdir(), "picky-agentd-bootstrap-"));
@@ -119,6 +156,29 @@ describe("composeAgentdServices", () => {
     expect(result.mainRuntime).toBeDefined();
     expect(mainFactory).toHaveBeenCalledOnce();
     expect(result.cwdStabilization).toBeUndefined();
+  });
+
+  it("wires the main runtime contract extension and refreshes its prompt-only overlay rule", async () => {
+    piSdkRuntimeOptions.length = 0;
+    const result = composeAgentdServices(baseConfig({ useMockRuntime: false }));
+    const mainOptions = piSdkRuntimeOptions.find((options) => options.resourceLoaderOptions?.extensionFactories?.length);
+    expect(mainOptions).toBeDefined();
+
+    const beforeAgentStart = await beforeAgentStartHandlerFrom(mainOptions!);
+    const enabledPrompt = beforeAgentStart({ systemPrompt: "Pi base prompt" })?.systemPrompt ?? "";
+    expect(enabledPrompt).toContain("[RECT: x=<number>");
+    expect(enabledPrompt).toContain("[LINE: x1=<number>");
+    expect(enabledPrompt).toContain("[PATH: d=\"M <x> <y>");
+    expect(enabledPrompt).toContain("picky pickle-create");
+    expect(enabledPrompt).toContain("Never call `picky submit`");
+
+    await result.supervisor.setDisabledBuiltinTools(["picky_screen_overlay"]);
+
+    const disabledPrompt = beforeAgentStart({ systemPrompt: "Pi base prompt" })?.systemPrompt ?? "";
+    expect(disabledPrompt).not.toContain("[RECT: x=<number>");
+    expect(disabledPrompt).not.toContain("[LINE: x1=<number>");
+    expect(disabledPrompt).not.toContain("[PATH: d=\"M <x> <y>");
+    expect(disabledPrompt).toContain("Never emit `[RECT:`, `[LINE:`, `[PATH:`, or `[SCREEN:` tags");
   });
 
   it("does not stabilize cwd or build a main runtime in primary mode", () => {

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickySessionMessage, PickySessionProjectionMutation, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
+import { buildPickyRuntimeContract } from "./domain/picky-runtime-contract.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeTodoStateResolution, ThinkingLevel } from "./runtime/types.js";
 import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
@@ -1360,20 +1361,6 @@ describe("SessionSupervisor", () => {
     expect(second.request).toMatchObject({ contextId: "context-second overlay context", contextGeneration: 2 });
   });
 
-  it("injects DSL prompt guidance from the disabled built-in settings set", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-dsl-prompt-"));
-    const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
-
-    await supervisor.route(context("DSL prompt gating"));
-
-    const bootstrap = mainRuntime.handle?.bootstrapInjections[0]?.user ?? "";
-    expect(bootstrap).toContain("## Picky visual overlay DSL");
-    expect(bootstrap).toContain("[RECT: x=<number>");
-    expect(bootstrap).toContain("[LINE: x1=<number>");
-    expect(bootstrap).toContain("[PATH: d=\"M <x> <y>");
-  });
-
   it("prepares visual segments, streams their sentences, and commits at the next opener colon", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-visual-segment-"));
     const mainRuntime = new ManualRuntime();
@@ -1659,6 +1646,49 @@ describe("SessionSupervisor", () => {
 
     expect(annotationEvents).toEqual([]);
     expect(quickReplies).toEqual(["여기입니다."]);
+  });
+
+  it("keeps the live main session when a toggle only changes prompt content", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-toggle-prompt-only-"));
+    const mainRuntime = new ManualRuntime();
+    const published: Array<ReadonlySet<string>> = [];
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), {
+      mainRuntime,
+      // Screen overlay is prompt-gated, so the tool registry is identical either way.
+      mainCustomToolsBuilder: () => [{ name: "read_picky_user_guide" } as never],
+      onDisabledBuiltinToolsChanged: (disabled) => published.push(disabled),
+    });
+    await supervisor.route(context("첫 턴"));
+    await waitUntil(() => mainRuntime.handle !== undefined);
+    const handle = mainRuntime.handle;
+
+    await supervisor.setDisabledBuiltinTools(["picky_screen_overlay"]);
+
+    // The contract is re-sent every turn from the system prompt, so there is no reason to throw
+    // away the conversation just to change prompt text.
+    expect(mainRuntime.handle).toBe(handle);
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(handle?.aborts).toBe(0);
+    expect(published).toHaveLength(1);
+    expect([...published[0]!]).toEqual(["picky_screen_overlay"]);
+  });
+
+  it("recreates the main session when a toggle changes the custom tool registry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-toggle-tool-registry-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), {
+      mainRuntime,
+      mainCustomToolsBuilder: (disabled) =>
+        disabled.has("read_picky_user_guide") ? [] : [{ name: "read_picky_user_guide" } as never],
+    });
+    await supervisor.route(context("첫 턴"));
+    await waitUntil(() => mainRuntime.handle !== undefined);
+    const handle = mainRuntime.handle;
+
+    await supervisor.setDisabledBuiltinTools(["read_picky_user_guide"]);
+
+    // Pi resolves the tool registry when a handle is created, so this one still needs a reset.
+    await waitUntil(() => handle?.aborts === 1);
   });
 
   it("drops DSL overlays after the turn context is replaced", async () => {
@@ -4853,6 +4883,14 @@ describe("SessionSupervisor", () => {
     }
     expect(state.lastRolloverReason).toBe("turn-limit:20");
     expect(state.epochTurnCount).toBe(0);
+
+    // Regression for standing rules being lost to compaction: the bootstrap message that
+    // compaction summarises away must not be the only carrier of the runtime contract.
+    for (const injection of mainRuntime.handle?.bootstrapInjections ?? []) {
+      expect(injection.user).not.toContain("[RECT:");
+      expect(injection.user).not.toContain("Never call `picky submit`");
+    }
+    expect(buildPickyRuntimeContract(new Set())).toContain("[RECT: x=<number>");
   });
 
   it("does not compact the main Pi session while it is still being actively used", async () => {
@@ -5251,7 +5289,7 @@ describe("SessionSupervisor", () => {
     expect(handle.thinkingLevels).toEqual(["xhigh"]);
   });
 
-  it("injects the Picky bootstrap pair on a fresh prewarm so the rules ride the first turn", async () => {
+  it("injects the one-time Picky bootstrap pair on a fresh prewarm", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -5259,7 +5297,9 @@ describe("SessionSupervisor", () => {
     await supervisor.prewarmMainAgent("/tmp/project");
     expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
     const injection = mainRuntime.handle!.bootstrapInjections[0]!;
-    expect(injection.user).toContain("natural sentences in the user's language");
+    expect(injection.user).toContain("one-time bootstrap notice");
+    expect(injection.user).toContain("## Standing Picky persona and routing");
+    expect(injection.user).not.toContain("## Previous Picky epoch summary");
     expect(injection.assistant).toBe("OK");
   });
 

@@ -122,6 +122,17 @@ describe("protocol contract fixtures", () => {
     });
   }
 
+  it("decodes queued attached image evidence and tolerates its absence", () => {
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, "session-queue-updated.event.json"), "utf8"));
+
+    expect(EventEnvelopeSchema.parse(fixture)).toMatchObject({
+      type: "sessionQueueUpdated",
+      steering: [{ attachedImagesCount: 2 }],
+    });
+    expect(EventEnvelopeSchema.parse(fixture)).toMatchObject({ followUp: [{ text: "Summarize after completion" }] });
+    expect((EventEnvelopeSchema.parse(fixture) as { followUp: Array<{ attachedImagesCount?: number }> }).followUp[0]?.attachedImagesCount).toBeUndefined();
+  });
+
   it("keeps the hello fixture protocol and supported versions current", () => {
     const fixture = JSON.parse(readFileSync(join(contractsRoot, "hello.event.json"), "utf8"));
     expect(fixture.protocolVersion).toBe(PROTOCOL_VERSION);

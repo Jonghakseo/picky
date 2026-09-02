@@ -205,6 +205,7 @@ struct PickyQueueDockKindPresentation: Equatable, Identifiable {
 
 struct PickyQueueDockPresentation: Equatable {
     let kinds: [PickyQueueDockKindPresentation]
+    let restoreAvailability: PickyQueuedInputRestoreAvailability
 
     init(
         visibleQueue: PickyVisibleQueue,
@@ -219,10 +220,37 @@ struct PickyQueueDockPresentation: Equatable {
             kinds.append(.init(kind: .followUp, count: visibleQueue.followUps.count, mode: followUpMode))
         }
         self.kinds = kinds
+        restoreAvailability = PickyQueuedInputRestoreAvailability.resolve(visibleQueue: visibleQueue)
     }
 
     var isVisible: Bool {
         !kinds.isEmpty
+    }
+
+    var isRestoreEnabled: Bool {
+        restoreAvailability == .available
+    }
+
+    var isClearEnabled: Bool {
+        isVisible
+    }
+
+    var restoreHelp: String {
+        switch restoreAvailability {
+        case .blockedByScreenContext(let attachedImagesCount):
+            L10n.t("hud.queue.restore.blockedByScreenContext.help", Int64(attachedImagesCount))
+        case .available, .unavailable:
+            L10n.t("hud.queue.restore.help")
+        }
+    }
+
+    var restoreAccessibilityLabel: String {
+        switch restoreAvailability {
+        case .blockedByScreenContext(let attachedImagesCount):
+            L10n.t("hud.queue.restore.blockedByScreenContext.accessibilityLabel", Int64(attachedImagesCount))
+        case .available, .unavailable:
+            L10n.t("hud.queue.restore.accessibilityLabel")
+        }
     }
 
     var accessibilityValue: String {

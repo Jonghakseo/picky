@@ -151,12 +151,17 @@ function toPickySessionMessages(entry: PiSessionEntry): PickySessionMessage[] {
   const createdAt = isoTimestamp(entry.timestamp, entry.message?.timestamp);
   if (role === "user") {
     if (!text) return [];
+    // Pi stores submitted screenshots as image content blocks. Import their count so the HUD keeps
+    // the same attachment evidence it had before the message came back through Pi's JSONL. Only
+    // the count travels; base64 image data stays in the Pi session file.
+    const attachedImagesCount = imageBlockCount(entry.message?.content);
     return [{
       id: `msg-pi-user-${safePiMessageId}`,
       kind: "user_text",
       createdAt,
       originatedBy: "pi_extension",
       text,
+      ...(attachedImagesCount > 0 ? { attachedImagesCount } : {}),
     }];
   }
 
@@ -212,6 +217,10 @@ function toolActivitySnapshot(content: unknown): PickyActivitySummary | undefine
     summary[category] = (summary[category] ?? 0) + 1;
   }
   return hasActivity(summary) ? summary : undefined;
+}
+
+function imageBlockCount(content: unknown): number {
+  return contentBlocks(content).filter((block) => block.type === "image").length;
 }
 
 function contentBlocks(content: unknown): PiContentBlock[] {

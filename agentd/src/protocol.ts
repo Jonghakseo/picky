@@ -248,7 +248,14 @@ export type PickyExtensionUiRequest = z.infer<typeof PickyExtensionUiRequestSche
 
 export const PickyQueueModeSchema = z.enum(["one-at-a-time", "all"]);
 export type PickyQueueMode = z.infer<typeof PickyQueueModeSchema>;
-export const PickyQueueItemSchema = z.object({ id: z.string().optional(), text: z.string(), enqueuedAt: isoTimestamp });
+export const PickyQueueItemSchema = z.object({
+  id: z.string().optional(),
+  text: z.string(),
+  enqueuedAt: isoTimestamp,
+  // Display-only evidence that this queued prompt carries structured screenshots. The queue
+  // projection never contains image data, and a count alone is not a restorable attachment.
+  attachedImagesCount: z.number().int().nonnegative().optional(),
+});
 export type PickyQueueItem = z.infer<typeof PickyQueueItemSchema>;
 export const PickyActivitySummarySchema = z.object({
   read: z.number().int().default(0),

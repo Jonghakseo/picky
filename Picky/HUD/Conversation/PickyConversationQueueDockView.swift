@@ -103,17 +103,16 @@ struct PickyConversationQueueDockView: View {
         title: String,
         color: Color
     ) -> some View {
-        Button(actionInFlight == action ? action.inFlightLabel : title) {
+        let isEnabled = action == .restore ? presentation.isRestoreEnabled : presentation.isClearEnabled
+        return Button(actionInFlight == action ? action.inFlightLabel : title) {
             onAction(action)
         }
         .buttonStyle(.plain)
         .font(PickyHUDTypography.statusSemibold)
-        .foregroundColor(color)
-        .disabled(actionInFlight != nil)
-        .help(L10n.t(action == .restore ? "hud.queue.restore.help" : "hud.queue.clear.help"))
-        .accessibilityLabel(L10n.t(
-            action == .restore ? "hud.queue.restore.accessibilityLabel" : "hud.queue.clear.accessibilityLabel"
-        ))
+        .foregroundColor(isEnabled ? color : DS.Colors.textTertiary)
+        .disabled(actionInFlight != nil || !isEnabled)
+        .help(action == .restore ? presentation.restoreHelp : L10n.t("hud.queue.clear.help"))
+        .accessibilityLabel(action == .restore ? presentation.restoreAccessibilityLabel : L10n.t("hud.queue.clear.accessibilityLabel"))
         .hoverAffordance()
     }
 }

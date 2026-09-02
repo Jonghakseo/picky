@@ -13832,6 +13832,54 @@
         }
       }
     },
+    "hud.queue.restore.blockedByScreenContext.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore queued messages unavailable: %lld attached screen images cannot yet be restored"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기 중인 메시지 복원 불가: 첨부된 화면 이미지 %lld개는 아직 복원할 수 없습니다"
+          }
+        }
+      }
+    },
+    "hud.queue.restore.blockedByScreenContext.error": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore is unavailable because %lld attached screen images cannot yet be restored"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첨부된 화면 이미지 %lld개는 아직 복원할 수 없어 복원을 사용할 수 없습니다"
+          }
+        }
+      }
+    },
+    "hud.queue.restore.blockedByScreenContext.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore is unavailable because %lld attached screen images cannot yet be restored"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첨부된 화면 이미지 %lld개는 아직 복원할 수 없어 복원을 사용할 수 없습니다"
+          }
+        }
+      }
+    },
     "hud.queue.restore.help": {
       "localizations": {
         "en": {

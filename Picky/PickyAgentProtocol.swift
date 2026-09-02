@@ -1077,11 +1077,11 @@ struct PickyQueueItem: Codable, Equatable {
     let text: String
     let enqueuedAt: Date
     let id: String?
+    /// Display-only screenshot count. Never a restorable attachment reference.
+    let attachedImagesCount: Int?
 
-    init(text: String, enqueuedAt: Date, id: String? = nil) {
-        self.text = text
-        self.enqueuedAt = enqueuedAt
-        self.id = id
+    init(text: String, enqueuedAt: Date, id: String? = nil, attachedImagesCount: Int? = nil) {
+        self.text = text; self.enqueuedAt = enqueuedAt; self.id = id; self.attachedImagesCount = attachedImagesCount
     }
 }
 

@@ -57,6 +57,12 @@ struct PickyPendingBubbleView: View {
                     .foregroundColor(DS.Colors.textPrimary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+                if let displayedAttachedImagesLabel {
+                    Text(displayedAttachedImagesLabel)
+                        .font(PickyHUDTypography.minimumMedium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -71,5 +77,12 @@ struct PickyPendingBubbleView: View {
             .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth), alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    /// Mirrors the materialized user bubble so a queued screen-attached prompt shows the same
+    /// evidence while it is still pending. The count never implies a restorable attachment.
+    var displayedAttachedImagesLabel: String? {
+        guard let count = queueItem.attachedImagesCount, count > 0 else { return nil }
+        return "🖥️ \(count) attached"
     }
 }

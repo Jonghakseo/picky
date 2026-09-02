@@ -4,8 +4,8 @@ import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, matchPrevio
 
 const enqueuedAt = "2026-06-03T00:00:00.000Z";
 
-function item(id: string, text: string, queuedAt = "2026-06-02T00:00:00.000Z"): PickyQueueItem {
-  return { id, text, enqueuedAt: queuedAt };
+function item(id: string, text: string, queuedAt = "2026-06-02T00:00:00.000Z", attachedImagesCount?: number): PickyQueueItem {
+  return { id, text, enqueuedAt: queuedAt, ...(attachedImagesCount === undefined ? {} : { attachedImagesCount }) };
 }
 
 function idFactory(ids: string[]): () => string {
@@ -24,6 +24,38 @@ describe("queue policy", () => {
       previous[0],
       item("new-a", "a", enqueuedAt),
     ]);
+  });
+
+  it("carries attached image evidence from a pending delivery into the queue item", () => {
+    expect(queueItems(
+      ["look at this"],
+      enqueuedAt,
+      [],
+      [{ id: "pending-screen", text: "look at this", attachedImagesCount: 2 }],
+      idFactory(["unused"]),
+    )).toEqual([item("pending-screen", "look at this", enqueuedAt, 2)]);
+  });
+
+  it("recognizes a pending delivery whose runtime entry is the built prompt envelope", () => {
+    const queueText = "# Picky steering message\n\n## User steering instruction\n- Source: text\n\ninspect this\n\n## Screenshots\n- Main: /tmp/screen.png";
+
+    expect(queueItems(
+      [queueText],
+      enqueuedAt,
+      [],
+      [{ id: "pending-envelope", text: "inspect this", queueText, attachedImagesCount: 1 }],
+      idFactory(["unused"]),
+    )).toEqual([item("pending-envelope", queueText, enqueuedAt, 1)]);
+  });
+
+  it("omits attached image evidence when the pending delivery had no screenshots", () => {
+    expect(queueItems(
+      ["plain"],
+      enqueuedAt,
+      [],
+      [{ id: "pending-plain", text: "plain" }],
+      idFactory(["unused"]),
+    )).toEqual([item("pending-plain", "plain", enqueuedAt)]);
   });
 
   it("matches existing queue entries from the back when the runtime queue shrinks", () => {
@@ -99,6 +131,8 @@ describe("queue policy", () => {
     expect(sameQueueItems(queue, [item("other", "text")])).toBe(false);
     expect(sameQueueItems(queue, [item("id", "other")])).toBe(false);
     expect(sameQueueItems(queue, [item("id", "text", enqueuedAt)])).toBe(false);
+    expect(sameQueueItems(queue, [item("id", "text", undefined, 1)])).toBe(false);
+    expect(sameQueueItems([item("id", "text", undefined, 1)], [item("id", "text", undefined, 2)])).toBe(false);
     expect(sameQueueItems(queue, [])).toBe(false);
   });
 

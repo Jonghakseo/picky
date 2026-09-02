@@ -926,10 +926,28 @@ struct ProtocolContractTests {
         }
         #expect(sessionId == "session-001")
         #expect(steering.map(\.text) == ["steer"])
+        #expect(steering.first?.attachedImagesCount == nil)
         #expect(followUp.isEmpty)
         #expect(steeringMode == nil)
         #expect(followUpMode == nil)
         #expect(seq == 8)
+    }
+
+    @Test func decodesQueuedAttachedImageCountFromFixture() throws {
+        let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "session-queue-updated.event.json"
+        })
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyEventEnvelope.self,
+            from: Data(contentsOf: fixture)
+        )
+
+        guard case .sessionQueueUpdated(_, let steering, let followUp, _, _, _) = envelope.event else {
+            Issue.record("Expected sessionQueueUpdated")
+            return
+        }
+        #expect(steering.map(\.attachedImagesCount) == [2])
+        #expect(followUp.map(\.attachedImagesCount) == [nil])
     }
 
     @Test func encodesClearQueueCommand() throws {

@@ -3,6 +3,14 @@ import type { PickyQueueItem } from "../protocol.js";
 export interface PendingQueueDeliveryIdentity {
   id: string;
   text: string;
+  /**
+   * Runtime queue text when Pi queued a built prompt envelope rather than the raw user text.
+   * Internal to agentd: it is only used to recognize this delivery inside a runtime queue
+   * snapshot, never projected to the app.
+   */
+  queueText?: string;
+  /** Number of structured screenshots submitted with this delivery. Display evidence only. */
+  attachedImagesCount?: number;
 }
 
 export interface MaterializedQueueDeliveryIdentity extends PendingQueueDeliveryIdentity {
@@ -11,7 +19,6 @@ export interface MaterializedQueueDeliveryIdentity extends PendingQueueDeliveryI
 
 export interface PendingQueueDelivery extends MaterializedQueueDeliveryIdentity {
   originatedBy: "user" | "main_agent";
-  attachedImagesCount?: number;
   visualDslLeaseId?: string;
 }
 
@@ -109,20 +116,33 @@ export function queueItems(
   const pendingByText = new Map<string, PendingQueueDeliveryIdentity[]>();
   for (const delivery of pendingDeliveries) {
     if (previousIds.has(delivery.id)) continue;
-    const entries = pendingByText.get(delivery.text) ?? [];
+    // A screen-attached submission reaches Pi as a built prompt envelope, so the runtime queue
+    // snapshot carries that text instead of the raw instruction.
+    const runtimeText = delivery.queueText ?? delivery.text;
+    const entries = pendingByText.get(runtimeText) ?? [];
     entries.push(delivery);
-    pendingByText.set(delivery.text, entries);
+    pendingByText.set(runtimeText, entries);
   }
   return items.map((text, index) => {
     const previousItem = matched[index];
     if (previousItem) return previousItem;
     const pending = pendingByText.get(text)?.shift();
-    return { id: pending?.id ?? makeId(), text, enqueuedAt };
+    return {
+      id: pending?.id ?? makeId(),
+      text,
+      enqueuedAt,
+      ...(pending?.attachedImagesCount === undefined ? {} : { attachedImagesCount: pending.attachedImagesCount }),
+    };
   });
 }
 
 export function sameQueueItems(left: readonly PickyQueueItem[], right: readonly PickyQueueItem[]): boolean {
-  return left.length === right.length && left.every((item, index) => item.id === right[index]?.id && item.text === right[index]?.text && item.enqueuedAt === right[index]?.enqueuedAt);
+  return left.length === right.length && left.every((item, index) => (
+    item.id === right[index]?.id
+    && item.text === right[index]?.text
+    && item.enqueuedAt === right[index]?.enqueuedAt
+    && item.attachedImagesCount === right[index]?.attachedImagesCount
+  ));
 }
 
 /**

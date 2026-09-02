@@ -14,6 +14,37 @@ struct PickyComposerDraftRequest: Equatable, Identifiable {
     let text: String
 }
 
+enum PickyQueuedInputRestoreAvailability: Equatable {
+    case unavailable
+    case available
+    case blockedByScreenContext(attachedImagesCount: Int)
+
+    static func resolve(
+        visibleQueue: PickyVisibleQueue,
+        kind: PickyQueueClearKind = .all
+    ) -> Self {
+        let items = visibleQueue.items(for: kind)
+        guard !items.isEmpty else { return .unavailable }
+        let attachedImagesCount = items.reduce(0) { partialResult, item in
+            partialResult + max(0, item.attachedImagesCount ?? 0)
+        }
+        return attachedImagesCount > 0
+            ? .blockedByScreenContext(attachedImagesCount: attachedImagesCount)
+            : .available
+    }
+}
+
+enum PickyQueuedInputRestoreError: LocalizedError, Equatable {
+    case blockedByScreenContext(attachedImagesCount: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .blockedByScreenContext(let attachedImagesCount):
+            L10n.t("hud.queue.restore.blockedByScreenContext.error", Int64(attachedImagesCount))
+        }
+    }
+}
+
 enum PickyQueuedInputDraftPolicy {
     static func queuedInputText(
         visibleQueue: PickyVisibleQueue,

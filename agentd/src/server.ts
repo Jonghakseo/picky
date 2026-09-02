@@ -9,7 +9,7 @@ import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compa
 import { ProjectionRecoveryRequestGate } from "./application/session-projection-recovery.js";
 import { SessionProjectionV2Broadcaster } from "./application/session-projection-v2-broadcaster.js";
 import { assertProtocolVersion } from "./application/protocol-version-guard.js";
-import { isLegacySessionProjectionEvent, isV2SessionProjectionEventType, SocketDialectRegistry } from "./application/socket-dialect.js";
+import { isLegacySessionProjectionEvent, isV2SessionProjectionEventType, SocketDialectRegistry, type SocketDialect } from "./application/socket-dialect.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { runtimeControlCommandLogFields } from "./domain/runtime-control-log-fields.js";
 import { sanitizeForJson } from "./domain/sanitize-for-json.js";
@@ -677,7 +677,18 @@ export class AgentdServer {
     return this.options.piOAuth;
   }
   private async registerAppCapabilities(ws: WebSocket, capabilities: string[], bootstrapId: string): Promise<void> {
-    const previousDialect = this.socketDialects.get(ws); const dialect = this.socketDialects.lockFromCapabilities(ws, capabilities);
+    const previousDialect = this.socketDialects.get(ws);
+    let dialect: SocketDialect;
+    try {
+      dialect = this.socketDialects.lockFromCapabilities(ws, capabilities);
+    } catch (error) {
+      logAgentd("app capability registration rejected by socket dialect", {
+        previousDialect,
+        requestedDialect: capabilities.includes("sessionProjectionV2") ? "v2" : "v1",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
     this.appCapabilities.set(ws, new Set(capabilities)); logAgentd("app capabilities registered", { capabilities: capabilities.join(","), dialect });
     await this.v2ProjectionBroadcaster.register(ws, previousDialect, dialect, this.options.supervisor, bootstrapId);
   }

@@ -69,6 +69,21 @@ private final class StubAgentClient: PickyAgentClient {
 }
 
 @MainActor
+private final class CapabilityRegistrationSuspension {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        await withCheckedContinuation { continuations.append($0) }
+    }
+
+    func resume() {
+        let suspended = continuations
+        continuations.removeAll()
+        for continuation in suspended { continuation.resume() }
+    }
+}
+
+@MainActor
 private final class RouterErrorRecorder {
     private(set) var errorsByCommandId: [String: PickyErrorEvent] = [:]
 
@@ -413,6 +428,119 @@ struct PickyAgentClientRouterTests {
         await router.connect()
 
         #expect(primary.connectCalls == 1)
+    }
+
+    @Test func gatesLegacyCommandsUntilCapabilityRegistrationIsSent() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(), supportsSessionProjectionV2: true)
+        let suspension = CapabilityRegistrationSuspension()
+        primary.onSendSuspend = { command in
+            if command.type == .registerAppCapabilities {
+                await suspension.wait()
+            }
+        }
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.map(\.type) == [.registerAppCapabilities] }
+
+        let legacyCommand = PickyCommandEnvelope(id: "cmd-legacy-after-connect", type: .listSessions)
+        async let sent: Void = router.send(legacyCommand)
+        await Task.yield()
+        #expect(primary.sentCommands.map(\.type) == [.registerAppCapabilities])
+
+        suspension.resume()
+        try await sent
+        #expect(primary.sentCommands.map(\.type) == [.registerAppCapabilities, .listSessions])
+    }
+
+    /// A daemon that never completes registration must fail the gated command
+    /// instead of parking it forever.
+    @Test func failsGatedCommandWhenCapabilityRegistrationNeverCompletes() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(
+            primaryClient: primary,
+            pool: pool,
+            clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true,
+            capabilityRegistrationTimeoutNanoseconds: 50_000_000
+        )
+        let suspension = CapabilityRegistrationSuspension()
+        primary.onSendSuspend = { command in
+            if command.type == .registerAppCapabilities {
+                await suspension.wait()
+            }
+        }
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.map(\.type) == [.registerAppCapabilities] }
+
+        await #expect(throws: PickyAgentClientRouterError.self) {
+            try await router.send(PickyCommandEnvelope(id: "cmd-gated", type: .listSessions))
+        }
+        #expect(primary.sentCommands.map(\.type) == [.registerAppCapabilities])
+
+        suspension.resume()
+    }
+
+    /// agentd accepts the registration frame and rejects it afterwards when a
+    /// legacy command already locked the socket dialect. The correlation must
+    /// survive a successful send, otherwise that rejection is swallowed.
+    @Test func reconnectsWhenCapabilityRegistrationIsRejectedAfterSend() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(), supportsSessionProjectionV2: true)
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.map(\.type) == [.registerAppCapabilities] }
+        let registrationID = try #require(primary.sentCommands.first?.id)
+        #expect(primary.disconnectCalls == 0)
+
+        primary.emit(.protocolEvent(makeErrorEnvelope(
+            commandId: registrationID,
+            message: "Socket dialect is locked to v1; cannot change to v2"
+        )))
+
+        try await waitUntil { primary.disconnectCalls == 1 }
+    }
+
+    /// A daemon that rejects every registration must not loop through
+    /// reconnects forever; the retry budget has to survive the successful send
+    /// that always precedes the rejection.
+    @Test func stopsReconnectingAfterRepeatedCapabilityRegistrationRejections() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(
+            primaryClient: primary,
+            pool: pool,
+            clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true,
+            capabilityRegistrationRetryBackoffNanoseconds: 1_000_000
+        )
+
+        await router.connect()
+
+        // One more rejection than the retry budget allows.
+        for attempt in 1...4 {
+            try await waitUntil { primary.sentCommands.filter { $0.type == .registerAppCapabilities }.count == attempt }
+            let registrationID = try #require(primary.sentCommands.last(where: { $0.type == .registerAppCapabilities })?.id)
+            primary.emit(.protocolEvent(makeErrorEnvelope(
+                commandId: registrationID,
+                message: "Socket dialect is locked to v1; cannot change to v2"
+            )))
+            if attempt == 4 { break }
+            try await waitUntil { primary.disconnectCalls == attempt }
+        }
+
+        // The budget is spent, so the fourth rejection must not reconnect again.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(primary.disconnectCalls == 3)
+        #expect(primary.sentCommands.filter { $0.type == .registerAppCapabilities }.count == 4)
     }
 
     @Test func reRegistersAppCapabilitiesWhenPrimaryReconnects() async throws {
@@ -1046,7 +1174,7 @@ struct PickyAgentClientRouterTests {
         #expect(clientFactory.madeClients.count == 2)
         let secondClient = clientFactory.madeClients.last?.client
         #expect(secondClient?.connectCalls == 1)
-        #expect(secondClient?.sentCommands.map(\.id) == ["cmd-follow"])
+        #expect(secondClient?.sentCommands.map(\.type) == [.registerAppCapabilities, .followUp])
     }
 
     @Test func handlesPrimaryPickleHandoffRequestBySpawningChildAndCompletingPrimaryRequest() async throws {

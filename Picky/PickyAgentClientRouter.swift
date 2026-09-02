@@ -55,6 +55,21 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private let supportsSessionProjectionV2: Bool
     private var childClients: [String: PickyAgentClient] = [:]
     private var eventTasks: [String: Task<Void, Never>] = [:]
+    /// Every connection must advertise its capability set before any legacy
+    /// command can select the socket's projection dialect.
+    private enum CapabilityRegistrationState: Equatable {
+        case awaitingConnection
+        case registering
+        case registered
+    }
+    private var capabilityRegistrationStates: [String: CapabilityRegistrationState] = [:]
+    private var capabilityRegistrationWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
+    private var capabilityRegistrationCommandIDs: [String: String] = [:]
+    private var capabilityRegistrationRetryCounts: [String: Int] = [:]
+    private var clientEventKeys: [ObjectIdentifier: String] = [:]
+    private let capabilityRegistrationTimeoutNanoseconds: UInt64
+    private let capabilityRegistrationRetryBackoffNanoseconds: UInt64
+    private static let maximumCapabilityRegistrationRetries = 3
     private var primaryConnectStarted = false
     private var knownChildSessionIds = Set<String>()
     private var bootingChildSessionIds = Set<String>()
@@ -127,6 +142,100 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private struct ChildGeneration: Hashable {
         let sessionId: String
         let value: Int
+    }
+
+    private func sendAfterCapabilityRegistration(
+        _ command: PickyCommandEnvelope,
+        on client: PickyAgentClient
+    ) async throws {
+        if let ownerKey = clientEventKeys[ObjectIdentifier(client)] {
+            try await waitForCapabilityRegistration(ownerKey: ownerKey)
+        }
+        try await client.send(command)
+    }
+
+    /// Gating a command on registration must never outlast the daemon itself.
+    /// Without this bound a daemon that never connects would convert a fast
+    /// `send` failure into an indefinite hang, which is the same stall class
+    /// this gate exists to prevent.
+    private func waitForCapabilityRegistration(ownerKey: String) async throws {
+        guard capabilityRegistrationStates[ownerKey] != .registered else { return }
+        let waiterID = UUID()
+        let timeoutNanoseconds = capabilityRegistrationTimeoutNanoseconds
+        let timeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.cancelCapabilityRegistrationWaiter(ownerKey: ownerKey, waiterID: waiterID)
+        }
+        defer { timeout.cancel() }
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                if self.capabilityRegistrationStates[ownerKey] == .registered {
+                    continuation.resume()
+                    return
+                }
+                self.capabilityRegistrationWaiters[ownerKey, default: [:]][waiterID] = continuation
+            }
+        }, onCancel: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.cancelCapabilityRegistrationWaiter(ownerKey: ownerKey, waiterID: waiterID)
+            }
+        })
+        guard capabilityRegistrationStates[ownerKey] == .registered else {
+            throw PickyAgentClientRouterError.capabilityRegistrationUnavailable(ownerKey: ownerKey)
+        }
+    }
+
+    /// The registration command ID is deliberately retained after a successful
+    /// send. The daemon can still reject it (a legacy command may already have
+    /// locked the socket dialect), and that rejection arrives later as a
+    /// correlated `error` event.
+    ///
+    /// The retry counter is deliberately *not* reset here. A rejection always
+    /// follows a successful send, so resetting on send would let a permanently
+    /// rejecting daemon loop through reconnects forever.
+    private func completeCapabilityRegistration(ownerKey: String) {
+        capabilityRegistrationStates[ownerKey] = .registered
+        let waiters = capabilityRegistrationWaiters.removeValue(forKey: ownerKey).map { Array($0.values) } ?? []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private func cancelCapabilityRegistrationWaiter(ownerKey: String, waiterID: UUID) {
+        let waiter = capabilityRegistrationWaiters[ownerKey]?.removeValue(forKey: waiterID)
+        if capabilityRegistrationWaiters[ownerKey]?.isEmpty == true {
+            capabilityRegistrationWaiters[ownerKey] = nil
+        }
+        waiter?.resume()
+    }
+
+    private func discardCapabilityRegistration(ownerKey: String) {
+        capabilityRegistrationStates[ownerKey] = nil
+        capabilityRegistrationCommandIDs[ownerKey] = nil
+        capabilityRegistrationRetryCounts[ownerKey] = nil
+        let waiters = capabilityRegistrationWaiters.removeValue(forKey: ownerKey).map { Array($0.values) } ?? []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Reconnecting is the only way to clear a wrongly locked socket dialect,
+    /// but an unconditional retry spins disconnect/connect as fast as the
+    /// daemon can reject. Back off and give up loudly instead.
+    private func retryCapabilityRegistration(on client: PickyAgentClient, ownerKey: String, reason: String) {
+        capabilityRegistrationStates[ownerKey] = .awaitingConnection
+        capabilityRegistrationCommandIDs[ownerKey] = nil
+        let attempt = (capabilityRegistrationRetryCounts[ownerKey] ?? 0) + 1
+        capabilityRegistrationRetryCounts[ownerKey] = attempt
+        guard attempt <= Self.maximumCapabilityRegistrationRetries else {
+            pickyAgentRouterLog("capability registration retries exhausted owner=\(ownerKey) reason=\(reason)")
+            broadcast(.recoverableError("Picky agent could not register capabilities (\(reason)). Restart Picky to reconnect."))
+            return
+        }
+        pickyAgentRouterLog("capability registration retry owner=\(ownerKey) attempt=\(attempt) reason=\(reason)")
+        let backoff = capabilityRegistrationRetryBackoffNanoseconds << (attempt - 1)
+        client.disconnect()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: backoff)
+            await client.connect()
+        }
     }
 
     private struct ProjectionBootstrapExpectation {
@@ -267,8 +376,12 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         clientFactory: PickyAgentClientFactoryProtocol = DefaultPickyAgentClientFactory(),
         handoffPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
         permanentDeletionAcknowledgementTimeout: TimeInterval = 5,
-        supportsSessionProjectionV2: Bool = false
+        supportsSessionProjectionV2: Bool = false,
+        capabilityRegistrationTimeoutNanoseconds: UInt64 = 10_000_000_000,
+        capabilityRegistrationRetryBackoffNanoseconds: UInt64 = 1_000_000_000
     ) {
+        self.capabilityRegistrationTimeoutNanoseconds = capabilityRegistrationTimeoutNanoseconds
+        self.capabilityRegistrationRetryBackoffNanoseconds = capabilityRegistrationRetryBackoffNanoseconds
         self.primaryClient = primaryClient
         self.pool = pool
         self.clientFactory = clientFactory
@@ -307,7 +420,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     func send(_ command: PickyCommandEnvelope) async throws {
         if enqueueIfChildIsBooting(command) { return }
-        try await connectedClient(for: command.sessionId).send(command)
+        try await sendAfterCapabilityRegistration(command, on: connectedClient(for: command.sessionId))
     }
 
     /// Primary + every currently cached child client. Children booting in the
@@ -331,7 +444,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             for client in targets {
                 group.addTask {
                     do {
-                        try await client.send(command)
+                        try await self.sendAfterCapabilityRegistration(command, on: client)
                         return .success(())
                     } catch {
                         return .failure(error)
@@ -436,7 +549,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         sessionProducingProjectionConnections.removeAll()
         acceptedProjectionBootstrapCompletions.removeAll()
         for task in eventTasks.values { task.cancel() }
+        for key in eventTasks.keys { discardCapabilityRegistration(ownerKey: key) }
         eventTasks.removeAll()
+        clientEventKeys.removeAll()
         primaryConnectStarted = false
         bootingChildSessionIds.removeAll()
         pendingChildCommands.removeAll()
@@ -535,7 +650,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 // command's send result remains authoritative.
                 updateActiveDrain(sessionId: sessionId, generation: generation, commands: Array(commands.dropFirst(sentCount + 1)))
                 commandIsInFlight = true
-                try await client.send(command)
+                try await sendAfterCapabilityRegistration(command, on: client)
                 commandIsInFlight = false
                 sentCount += 1
 
@@ -609,13 +724,13 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 try await self.waitForSessionUpdated(sessionId: sessionId, timeoutNanoseconds: 5_000_000_000)
             }
             do {
-                try await childClient.send(PickyCommandEnvelope(
+                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                     type: .createPickleFromHandoff,
                     context: request.context,
                     title: request.title,
                     instructions: request.instructions,
                     cwd: request.cwd
-                ))
+                ), on: childClient)
                 try await sessionCreated.value
                 await completePickleHandoff(request, sessionId: sessionId)
             } catch {
@@ -630,14 +745,14 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     private func completePickleHandoff(_ request: PickyPickleHandoffRequest, sessionId: String? = nil, errorMessage: String? = nil) async {
         do {
-            try await primaryClient.send(PickyCommandEnvelope(
+            try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completePickleHandoff,
                 sessionId: sessionId,
                 requestId: request.requestId,
                 title: request.title,
                 cwd: request.cwd,
                 errorMessage: errorMessage
-            ))
+            ), on: primaryClient)
         } catch {
             broadcast(.recoverableError("Failed to complete Pickle handoff: \(error.localizedDescription)"))
         }
@@ -761,17 +876,17 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 guard let sessionId = request.sessionId, let text = request.text else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
                 let commandType: PickyCommandType = request.operation == .steer ? .steer : .followUp
-                try await client.send(PickyCommandEnvelope(type: commandType, sessionId: sessionId, text: text))
+                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(type: commandType, sessionId: sessionId, text: text), on: client)
                 await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId))
             case .abort:
                 guard let sessionId = request.sessionId else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
-                try await client.send(PickyCommandEnvelope(type: .abort, sessionId: sessionId))
+                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(type: .abort, sessionId: sessionId), on: client)
                 await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId))
             case .setArchived:
                 guard let sessionId = request.sessionId, let archived = request.archived else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
-                try await client.send(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionId, archived: archived))
+                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionId, archived: archived), on: client)
                 await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId), delivered: true)
             case .delete:
                 guard let sessionId = request.sessionId,
@@ -808,12 +923,12 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 // the main Picky agent and can followUp on its behalf. The child cannot do this
                 // directly because child daemons have no mainRuntime wired in.
                 guard let sessionId = request.sessionId, let prompt = request.prompt else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                try await primaryClient.send(PickyCommandEnvelope(
+                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                     type: .notifyMainOfPickleCompletion,
                     sessionId: sessionId,
                     cwd: request.cwd,
                     prompt: prompt
-                ))
+                ), on: primaryClient)
                 await completePickleBridge(request, on: responseClient, delivered: true)
             }
         } catch {
@@ -906,7 +1021,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         errorMessage: String? = nil
     ) async {
         do {
-            try await responseClient.send(PickyCommandEnvelope(
+            try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completePickleBridgeRequest,
                 requestId: request.requestId,
                 errorMessage: errorMessage,
@@ -914,7 +1029,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 groups: groups,
                 session: session,
                 delivered: delivered
-            ))
+            ), on: responseClient)
         } catch {
             broadcast(.recoverableError("Failed to complete Pickle bridge request: \(error.localizedDescription)"))
         }
@@ -929,14 +1044,25 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     private func startForwardingEvents(from client: PickyAgentClient, key: String, forwardsLifecycleEvents: Bool) {
         guard eventTasks[key] == nil else { return }
+        clientEventKeys[ObjectIdentifier(client)] = key
+        capabilityRegistrationStates[key] = .awaitingConnection
         eventTasks[key] = Task { [weak self] in
             for await event in client.events {
                 guard let self else { return }
+                // `AsyncStream` ignores task cancellation, so a superseded
+                // connection's loop stays parked on its buffered events and
+                // wakes up later. Without this it would register capabilities
+                // on a dead client and mark the shared owner key `.registered`,
+                // letting the live connection skip its own registration.
+                guard !Task.isCancelled, self.clientEventKeys[ObjectIdentifier(client)] == key else { return }
                 switch event {
                 case .connected:
+                    self.capabilityRegistrationStates[key] = .registering
                     await self.registerAppCapabilities(on: client, ownerKey: key)
                 case .disconnected:
                     self.invalidateProjectionBootstrapExpectation(ownerKey: key)
+                    self.capabilityRegistrationStates[key] = .awaitingConnection
+                    self.capabilityRegistrationCommandIDs[key] = nil
                 case .protocolEvent, .sessionProjectionBootstrapCompletion, .recoverableError:
                     break
                 }
@@ -968,6 +1094,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     // regular fanout so subscribers (HUD viewModel) can also
                     // react if they want to.
                     if case .error(let errorEvent) = envelope.event {
+                        self.handleCapabilityRegistrationFailure(errorEvent, on: client, ownerKey: key)
                         self.dispatchPendingErrorHandler(errorEvent)
                     }
                     if case .ack(let ackEvent) = envelope.event {
@@ -1050,7 +1177,34 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             sessionProducingProjectionConnections = sessionProducingProjectionConnections.filter { $0.ownerKey != ownerKey }
             acceptedProjectionBootstrapCompletions = acceptedProjectionBootstrapCompletions.filter { $0.ownerKey != ownerKey }
         }
-        try? await client.send(command)
+        capabilityRegistrationCommandIDs[ownerKey] = command.id
+        do {
+            // This is intentionally the sole bypass of the connection gate.
+            // Returning from WebSocket send preserves frame order, so queued
+            // commands can only follow this registration frame.
+            try await client.send(command)
+            completeCapabilityRegistration(ownerKey: ownerKey)
+        } catch {
+            // A transport failure is already the client's own reconnect trigger,
+            // so re-arm the gate and let the next `.connected` re-register
+            // rather than racing the transport with a second reconnect loop.
+            pickyAgentRouterLog("capability registration send failed owner=\(ownerKey) error=\(error.localizedDescription)")
+            capabilityRegistrationStates[ownerKey] = .awaitingConnection
+            capabilityRegistrationCommandIDs[ownerKey] = nil
+        }
+    }
+
+    private func handleCapabilityRegistrationFailure(
+        _ error: PickyErrorEvent,
+        on client: PickyAgentClient,
+        ownerKey: String
+    ) {
+        guard let commandID = error.commandId,
+              capabilityRegistrationCommandIDs[ownerKey] == commandID
+        else { return }
+
+        pickyAgentRouterLog("capability registration rejected owner=\(ownerKey) error=\(error.message)")
+        retryCapabilityRegistration(on: client, ownerKey: ownerKey, reason: error.message)
     }
 
     private func handleExternalEntryRequest(_ request: PickyExternalEntryRequest) async {
@@ -1059,27 +1213,27 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 throw PickyAgentClientRouterError.externalEntryProviderUnavailable
             }
             let context = try await provider(request)
-            try await primaryClient.send(PickyCommandEnvelope(
+            try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completeExternalEntryRequest,
                 context: context,
                 requestId: request.requestId
-            ))
+            ), on: primaryClient)
         } catch {
-            try? await primaryClient.send(PickyCommandEnvelope(
+            try? await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completeExternalEntryRequest,
                 requestId: request.requestId,
                 errorMessage: error.localizedDescription
-            ))
+            ), on: primaryClient)
         }
     }
 
     private func handleDockGroupsRequest(requestId: String) async {
         let groups = await dockGroupsProvider?() ?? []
-        try? await primaryClient.send(PickyCommandEnvelope(
+        try? await sendAfterCapabilityRegistration(PickyCommandEnvelope(
             type: .completeDockGroupsRequest,
             requestId: requestId,
             groups: groups
-        ))
+        ), on: primaryClient)
     }
 
     private func handlePushToTalkControlRequest(_ request: PickyPushToTalkControlRequest) async {
@@ -1088,16 +1242,16 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 throw PickyAgentClientRouterError.pushToTalkControlHandlerUnavailable
             }
             try await handler(request)
-            try await primaryClient.send(PickyCommandEnvelope(
+            try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completePushToTalkControlRequest,
                 requestId: request.requestId
-            ))
+            ), on: primaryClient)
         } catch {
-            try? await primaryClient.send(PickyCommandEnvelope(
+            try? await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completePushToTalkControlRequest,
                 requestId: request.requestId,
                 errorMessage: error.localizedDescription
-            ))
+            ), on: primaryClient)
         }
     }
 
@@ -1107,19 +1261,19 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 throw PickyAgentClientRouterError.pickySettingsControlHandlerUnavailable
             }
             let result = try await handler(request)
-            try await primaryClient.send(PickyCommandEnvelope(
+            try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completePickySettingsRequest,
                 requestId: request.requestId,
                 result: result
-            ))
+            ), on: primaryClient)
         } catch {
             let exposureError = error as? PickySettingsCLIExposureError
-            try? await primaryClient.send(PickyCommandEnvelope(
+            try? await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                 type: .completePickySettingsRequest,
                 requestId: request.requestId,
                 errorMessage: exposureError?.message ?? error.localizedDescription,
                 errorCode: exposureError?.code
-            ))
+            ), on: primaryClient)
         }
     }
 
@@ -1305,6 +1459,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private func stopForwardingEvents(for key: String) {
         eventTasks[key]?.cancel()
         eventTasks[key] = nil
+        clientEventKeys = clientEventKeys.filter { $0.value != key }
+        discardCapabilityRegistration(ownerKey: key)
     }
 }
 
@@ -1319,6 +1475,7 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
     case externalEntryProviderUnavailable
     case pushToTalkControlHandlerUnavailable
     case pickySettingsControlHandlerUnavailable
+    case capabilityRegistrationUnavailable(ownerKey: String)
 
     var errorDescription: String? {
         switch self {
@@ -1332,6 +1489,7 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
         case .externalEntryProviderUnavailable: "Picky context provider is not ready for external CLI entry."
         case .pushToTalkControlHandlerUnavailable: "Picky push-to-talk control handler is not ready for external CLI input."
         case .pickySettingsControlHandlerUnavailable: "Picky settings control handler is not ready for external CLI input."
+        case .capabilityRegistrationUnavailable(let ownerKey): "Picky agent connection \(ownerKey) did not register its capabilities in time."
         }
     }
 }

@@ -96,6 +96,28 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("rejects v2 registration after a legacy command has locked the socket to v1", async () => {
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+
+    ws.send(JSON.stringify({ id: "cmd-legacy-before-v2-registration", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    await waitForEvent(ws, "sessionSnapshot");
+    await waitForEvent(ws, "ack");
+
+    ws.send(JSON.stringify({
+      id: "cmd-register-v2-after-legacy",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["sessionProjectionV2", "externalEntry"],
+    }));
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-register-v2-after-legacy",
+      message: "Socket dialect is locked to v1; cannot change to v2",
+    });
+    expect(eventBuffers.get(ws)?.some((event) => event.type === "sessionProjectionSnapshot")).toBe(false);
+    ws.close();
+  });
+
   it("locks older app capabilities to v1 and preserves the bounded bootstrap path", async () => {
     const session = await supervisor.create(context("legacy app projection"));
     const { ws } = await connectWithHello();

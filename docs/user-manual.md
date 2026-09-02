@@ -409,6 +409,7 @@ Header actions:
 | --- | --- |
 | Double-click title | Rename the Pickle. |
 | Click status/Pickle badge | Arm or disarm this Pickle as the next screen-context target. |
+| Click the archive box | Archive the Pickle straight from the header. Also available as `Cmd + Delete`. |
 | Open ellipsis menu | Shows terminal/session actions. |
 
 Renaming sends an internal `/name <new title>` command to the Pickle. You can also type `/name <new title>` directly in the composer.
@@ -536,6 +537,8 @@ Behavior:
 
 The composer bottom action row includes a **Bell** button that toggles **Notify on completion** for the Pickle. When enabled, Picky surfaces a macOS banner (and the main agent picks up the completion event) the moment the Pickle finishes. The same toggle is exposed via `Cmd + N` on the HUD.
 
+New Pickles start with this off, so a burst of background work stays quiet until you ask to be told.
+
 ### 8.10 Inline questions and confirmations
 
 When Pi or an extension asks for input, Picky shows an inline question bubble.
@@ -631,6 +634,7 @@ What you will see:
 
 - While compaction is running, the card shows a **Compacting…** overlay. The composer remains editable and accepts steer or follow-up messages; submitted messages appear in the queue and run in submission order after compaction finishes.
 - Use `Option + Up` if you want to pull those queued messages back into the composer and clear the queue before they run.
+- A queued message that carried screen context shows a `🖥️ N attached` marker, so you can tell which pending messages already have screenshots. The marker is display-only: the screenshots cannot be restored into the composer, so Picky blocks the `Option + Up` restore rather than silently dropping them.
 - On success, a **Session compacted** system bubble appears in the conversation.
 - On failure, an error bubble explains the reason; queued messages are still released so they are not stranded.
 
@@ -665,6 +669,7 @@ These work when a Pickle card/HUD panel is active.
 | Cmd + N | Toggle Notify on completion. |
 | Cmd + E | Toggle the **local-shell utility panel** below the card composer while the conversation stays visible above. It opens directly to a terminal in the Pickle cwd. Distinct from `Cmd + T`, which swaps the entire card body into a Pi terminal. |
 | Cmd + K | Toggle screen-context target for the active Pickle. |
+| Cmd + Delete | Archive the focused Pickle. |
 | Control + T | Toggle thinking blocks. |
 
 Holding Command can reveal shortcut badges on relevant HUD controls.

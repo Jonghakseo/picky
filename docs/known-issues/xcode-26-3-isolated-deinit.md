@@ -166,3 +166,18 @@ Grep the log for `Restarting after unexpected exit`; `xcodebuild` reports
 
 Always build into a toolchain-specific `-derivedDataPath`. Reusing one across
 Xcode versions fails at link time with missing `___swift_coroFrameAllocStub`.
+
+`scripts/pre-push-checks.sh` uses Xcode's default DerivedData, so if anything
+ever built this project with 26.3 the first pinned run hits that link error.
+Clear it once with `xcodebuild -project Picky.xcodeproj -scheme Picky
+-configuration Debug clean`; there is no need to delete the whole DerivedData
+tree.
+
+## Toolchain pin
+
+`scripts/pre-push-checks.sh` exports `DEVELOPER_DIR` itself rather than
+inheriting `xcode-select`, prints the resolved Swift version as its first line,
+and refuses to run on Swift 6.2 or newer. Override the path with
+`PICKY_DEVELOPER_DIR` when Xcode lives somewhere else. The version check exists
+because `/Applications/Xcode.app` can be upgraded in place, which would silently
+reintroduce every failure above.

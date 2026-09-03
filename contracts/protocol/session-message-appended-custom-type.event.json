@@ -1,0 +1,16 @@
+{
+  "id": "event-session-message-appended-custom-type",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-05-05T00:00:00.000Z",
+  "type": "sessionMessageAppended",
+  "sessionId": "session-001",
+  "message": {
+    "id": "message-002",
+    "kind": "system",
+    "createdAt": "2026-05-05T00:00:00.000Z",
+    "originatedBy": "pi_extension",
+    "customType": "bash-async-completion",
+    "text": "[bash_async job-1] build: completed (exit 0) in 42s\nnpm warn deprecated\nLog: /tmp/job-1.log"
+  },
+  "seq": 2
+}

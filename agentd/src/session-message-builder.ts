@@ -77,17 +77,19 @@ export class SessionMessageBuilder {
     });
   }
 
-  async recordExtensionText(sessionId: string, text: string): Promise<void> {
+  async recordExtensionText(sessionId: string, text: string, customType?: string): Promise<void> {
     await this.flushAssistantText(sessionId);
     await this.flushThinking(sessionId);
     const trimmed = text.trim();
     if (!trimmed) return;
+    const trimmedCustomType = customType?.trim();
     await this.appendInternal(sessionId, {
       id: `msg-extension-${randomUUID()}`,
       kind: "system",
       createdAt: this.deps.now(),
       originatedBy: "pi_extension",
       text: trimmed,
+      ...(trimmedCustomType ? { customType: trimmedCustomType } : {}),
     });
   }
 

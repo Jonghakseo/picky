@@ -77,6 +77,10 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     let errorContext: String?
     let errorMessage: String?
     var notifyType: PickyExtensionNotifyType? = nil
+    /// Pi's `customType` for role="custom" extension messages. Any tagged
+    /// message renders as a labeled, collapsible bubble instead of a plain
+    /// system one. Nil for every message Pi did not tag.
+    var customType: String? = nil
     var commandReceipt: PickyCommandReceipt? = nil
     var subagentInvocation: PickySubagentInvocation? = nil
     /// Count of image attachments that travelled with this user_text via the

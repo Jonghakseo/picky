@@ -61,6 +61,16 @@ describe("SessionMessageBuilder", () => {
     expect(messages).toMatchObject([
       { kind: "system", text: "bash_async completed", originatedBy: "pi_extension" },
     ]);
+    expect(messages[0]?.customType).toBeUndefined();
+  });
+
+  it("preserves the Pi customType tag on extension custom messages", async () => {
+    const { builder, messages } = makeBuilder();
+
+    await builder.recordExtensionText("session-1", "[bash_async job-1] build: completed", "bash-async-completion");
+    await builder.recordExtensionText("session-1", "Content fetched", "  ");
+
+    expect(messages.map((message) => message.customType)).toEqual(["bash-async-completion", undefined]);
   });
 
   it("seeds pinned sessions with deterministic intro messages", async () => {

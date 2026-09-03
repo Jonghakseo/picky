@@ -112,7 +112,7 @@ describe("RuntimeEventHandler", () => {
       lastSummary: "Completed answer",
       pinned: true,
     });
-    expect(harness.recordExtensionText).toHaveBeenCalledWith("pickle-1", "subagent finished");
+    expect(harness.recordExtensionText).toHaveBeenCalledWith("pickle-1", "subagent finished", "subagent");
     expect(harness.recordUserText).not.toHaveBeenCalled();
     expect(harness.onInputMessage).not.toHaveBeenCalled();
     expect(harness.patchSession).not.toHaveBeenCalled();

@@ -4505,6 +4505,91 @@
         }
       }
     },
+    "hud.extensionMessage.collapse": {
+      "comment": "Tooltip for folding a Pi extension custom message back to its headline.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse extension message"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확장 메시지 접기"
+          }
+        }
+      }
+    },
+    "hud.extensionMessage.copy": {
+      "comment": "Context menu action that copies the full payload of a Pi extension custom message.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Text"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텍스트 복사"
+          }
+        }
+      }
+    },
+    "hud.extensionMessage.expand": {
+      "comment": "Tooltip for unfolding the hidden detail of a Pi extension custom message.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand extension message"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확장 메시지 펼치기"
+          }
+        }
+      }
+    },
+    "hud.extensionMessage.moreLines": {
+      "comment": "Count of detail lines hidden behind a collapsed extension message. Arg is the line count.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld lines"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld줄"
+          }
+        }
+      }
+    },
+    "hud.extensionMessage.openAsReport": {
+      "comment": "Context menu action that opens a Pi extension custom message in the report viewer.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open as Report"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "리포트로 열기"
+          }
+        }
+      }
+    },
     "hud.inlineTerminal.failed.title": {
       "localizations": {
         "en": {

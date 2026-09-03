@@ -328,6 +328,11 @@ export const PickySessionMessageSchema = z.object({
   errorContext: z.string().optional(),
   errorMessage: z.string().optional(),
   notifyType: PickyExtensionNotifyTypeSchema.optional(),
+  // Pi's `customType` for role="custom" extension messages. Pi labels these in
+  // the terminal and lets extensions register a per-type renderer that honors
+  // an `expanded` flag; preserving the tag lets the HUD apply the same
+  // labeled/collapsible treatment to any extension, present or future.
+  customType: z.string().optional(),
   commandReceipt: PickyCommandReceiptSchema.optional(),
   subagentInvocation: PickySubagentInvocationSchema.optional(),
   // Count of image attachments that travelled with this user_text via the

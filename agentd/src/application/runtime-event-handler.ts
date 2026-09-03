@@ -19,7 +19,7 @@ interface RuntimeMessageJournal {
   cancelExtensionQuestion(sessionId: string, requestId: string): Promise<void>;
   recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void>;
   recordSystemMessage(sessionId: string, text: string): Promise<void>;
-  recordExtensionText(sessionId: string, text: string): Promise<void>;
+  recordExtensionText(sessionId: string, text: string, customType?: string): Promise<void>;
   recordUserText(sessionId: string, text: string, originatedBy: "user" | "main_agent" | "pi_extension"): Promise<void>;
   appendAssistantDelta(sessionId: string, delta: string): void;
   flushAssistantText(sessionId: string, assistantRun?: PickyAssistantRunMetadata): Promise<void>;
@@ -235,7 +235,7 @@ export class RuntimeEventHandler {
   private async recordVisibleInputMessage(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
     if (event.display === false || event.originatedBy === "internal") return;
     if (event.role === "custom") {
-      await this.dependencies.messageBuilder.recordExtensionText(sessionId, event.text);
+      await this.dependencies.messageBuilder.recordExtensionText(sessionId, event.text, event.customType);
       return;
     }
     await this.dependencies.messageBuilder.recordUserText(

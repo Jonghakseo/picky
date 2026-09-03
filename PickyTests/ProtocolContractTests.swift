@@ -51,6 +51,25 @@ struct ProtocolContractTests {
         #expect(legacyTool.resultPreviewRepaired == nil)
     }
 
+    @Test func decodesExtensionCustomTypeOnSystemMessages() throws {
+        let url = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "session-message-appended-custom-type.event.json"
+        })
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder()
+            .decode(PickyEventEnvelope.self, from: Data(contentsOf: url))
+
+        guard case .sessionMessageAppended(_, let message, _) = envelope.event else {
+            Issue.record("Expected sessionMessageAppended event")
+            return
+        }
+        #expect(message.customType == "bash-async-completion")
+
+        let untagged = #"{"id":"m","kind":"system","createdAt":"2026-05-05T00:00:00.000Z","text":"plain"}"#
+        let legacy = try JSONDecoder.pickyAgentProtocolDecoder()
+            .decode(PickySessionMessage.self, from: Data(untagged.utf8))
+        #expect(legacy.customType == nil)
+    }
+
     @Test func decodesEveryProtocolFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixtures = try fixtureURLs(in: "contracts/protocol")

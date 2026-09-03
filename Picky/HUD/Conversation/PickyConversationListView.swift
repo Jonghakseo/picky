@@ -336,6 +336,8 @@ struct PickyConversationListView: View {
                 snapshot.compactFailureBubbleCount += 1
             case .notify:
                 snapshot.notifyBubbleCount += 1
+            case .extensionCustomMessage:
+                snapshot.extensionCustomMessageBubbleCount += 1
             }
         }
         snapshot.showsActivitySummary = snapshot.activitySummaryCount > 0
@@ -543,6 +545,12 @@ struct PickyConversationListView: View {
             PickyNotifyBubbleView(
                 message: message,
                 onOpenAsReport: openMessageReportAction(for: message)
+            )
+        case .extensionCustomMessage(let presentation):
+            PickyExtensionCustomMessageBubbleView(
+                presentation: presentation,
+                onOpenAsReport: openMessageReportAction(for: message),
+                onCopyText: { viewModel.copyMessageText($0) }
             )
         case .systemText:
             PickyAgentBubbleView(
@@ -1095,6 +1103,9 @@ enum PickyConversationBubbleKind: Equatable {
     case compactCompletion
     case compactFailure
     case notify
+    /// Pi `role="custom"` extension output, rendered as a `customType`-labeled
+    /// bubble whose detail collapses behind a disclosure.
+    case extensionCustomMessage(PickyExtensionCustomMessagePresentation)
     /// Plain `system` message rendered through the agent bubble surface.
     case systemText
 
@@ -1123,6 +1134,8 @@ enum PickyConversationBubbleKind: Equatable {
                 self = .compactFailure
             } else if message.notifyType != nil {
                 self = .notify
+            } else if let presentation = PickyExtensionCustomMessagePresentation.make(message: message) {
+                self = .extensionCustomMessage(presentation)
             } else {
                 self = .systemText
             }
@@ -1148,6 +1161,7 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var errorBubbleCount = 0
     var activitySummaryCount = 0
     var notifyBubbleCount = 0
+    var extensionCustomMessageBubbleCount = 0
     var contextUsageFooterCount = 0
     var compactingOverlayCount = 0
     var compactCompletionBubbleCount = 0

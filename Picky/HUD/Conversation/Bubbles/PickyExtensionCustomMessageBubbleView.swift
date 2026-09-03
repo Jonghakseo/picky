@@ -25,8 +25,8 @@ struct PickyExtensionCustomMessageBubbleView: View {
                 header
                 body(for: isExpanded ? presentation.fullText : presentation.previewLines.joined(separator: "\n"))
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10) // design-token-exception: matches the agent and notify bubble inset so text aligns down the conversation column
+            .padding(.vertical, DS.Spacing.space2)
             .frame(
                 maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth),
                 alignment: .leading

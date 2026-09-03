@@ -150,6 +150,8 @@ exit "$xcode_status"
 
 WindowServer-dependent tests are disabled during ordinary Xcode test runs. They may run exactly once through `scripts/pre-push-checks.sh`, which owns the `PICKY_PRE_PUSH_UI_EFFECT_TESTS=1` opt-in. Do not set that variable for ad-hoc or repeated test commands.
 
+Build with **Xcode 16.3** (`/Applications/Xcode.app`). Xcode 26.3 miscompiles the implicit isolated `deinit` that `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` produces: Release crashes `swift-frontend`, and Debug builds corrupt the heap so the app and the XCTest host die with `SIGBUS`. If `xcode-select -p` points elsewhere, prefix commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` rather than changing the global setting. Details and the open blocker are in `docs/known-issues/xcode-26-3-isolated-deinit.md`. Use a toolchain-specific `-derivedDataPath` when comparing Xcode versions; reusing one across versions fails to link.
+
 Agent-driven `xcodebuild` runs use `-derivedDataPath /private/tmp/PickyAgentDD` and **reuse that one path across runs**. Staying out of Xcode's default DerivedData avoids build-DB lock collisions with a developer's GUI builds, and reusing a single path keeps rebuilds incremental. A fresh `mktemp` directory per run costs a full cold build instead (roughly 10 minutes and 2 GB every time), which is why per-run isolation is not the default.
 
 Switch to a unique path (`mktemp -d /private/tmp/Picky<purpose>DD.XXXXXX`) only when the shared agent path is actually unavailable: another `xcodebuild` is already running (`pgrep -x xcodebuild`), or a run just failed with a build-DB lock collision (exit 65). Keep the `Picky` prefix and `/private/tmp` root so `scripts/prune-build-artifacts.sh` can recover the path later.

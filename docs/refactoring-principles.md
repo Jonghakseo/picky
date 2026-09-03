@@ -240,6 +240,24 @@ Pi runtime, model-resolution, and global settings CAS tests characterize the add
 behavior. These pins may only stay level or shrink; a future extraction must move a
 coherent contract or runtime responsibility with its tests.
 
+#### 2026-09-03 dock manual order extraction
+
+The `PickySessionViewModel.swift` ratchet blocked a push at 2884 lines against a
+2879 pin. Rather than reformat the growth away, the dock ordering rules moved to
+`Picky/Sessions/PickyDockManualOrderPolicy.swift`: universe reconciliation,
+drop-index translation over interleaved archived slots, and unarchive promotion
+to the newest slot.
+
+This satisfies 2.3 because it creates an owner for a real invariant. The visible
+space (`sessions.reversed()`) and underlying space conversion previously appeared
+as open-coded `(N - 1) - index` arithmetic at three call sites, and the reason a
+drop index cannot index `manualOrder` directly (archived ids keep their slots)
+lived only in a comment.
+
+The file measured 2853 lines afterwards, so the pin drops to 2860. The 278
+existing `PickySessionViewModelTests` characterize the facade and
+`PickyDockManualOrderPolicyTests` now pins the extracted rules directly.
+
 ## 4. Review checklist
 
 For each structural PR, reviewers should ask:

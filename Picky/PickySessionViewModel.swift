@@ -1721,8 +1721,7 @@ final class PickySessionListViewModel: ObservableObject {
         // ordering by dragging at least once; otherwise let the historical
         // createdAt sort drive placement.
         if !manualOrder.isEmpty {
-            manualOrder.removeAll { $0 == sessionID }
-            manualOrder.insert(sessionID, at: 0)
+            manualOrder = PickyDockManualOrderPolicy.promotedToNewest(manualOrder: manualOrder, sessionID: sessionID)
             manualOrderStore.manualOrder = manualOrder
         }
         applyManualOrder()
@@ -2710,22 +2709,11 @@ final class PickySessionListViewModel: ObservableObject {
             }
             return
         }
-        var order = manualOrder
-        let activeIDs = Set(sessions.map(\.id))
-        let archivedIDs = Set(archivedSessions.map(\.id))
-        let universe = activeIDs.union(archivedIDs)
-        order.removeAll { !universe.contains($0) }
-
-        let knownIDs = Set(order)
-        let missingActiveIDs = sessions
-            .filter { !knownIDs.contains($0.id) }
-            .sortedForHUD() // newest first
-            .map(\.id)
-        if !missingActiveIDs.isEmpty {
-            // Preserve newest-first batch order at the visually-end slot.
-            order.insert(contentsOf: missingActiveIDs, at: 0)
-        }
-
+        let order = PickyDockManualOrderPolicy.reconciled(
+            manualOrder: manualOrder,
+            activeIDsNewestFirst: sessions.sortedForHUD().map(\.id),
+            archivedIDs: Set(archivedSessions.map(\.id))
+        )
         if order != manualOrder {
             manualOrder = order
             manualOrderStore.manualOrder = order
@@ -2752,40 +2740,22 @@ final class PickySessionListViewModel: ObservableObject {
         let visibleCount = sessions.count
         guard visibleCount > 0 else { return false }
 
-        // Visible space is `sessions.reversed()`. Underlying sessions-index =
-        // (N - 1) - visibleIndex.
         guard let underlyingCurrent = sessions.firstIndex(where: { $0.id == sessionID }) else { return false }
-        let visibleCurrent = (visibleCount - 1) - underlyingCurrent
-        let visibleTarget = max(0, min(visibleCount - 1, visibleTargetRaw))
+        let visibleCurrent = PickyDockManualOrderPolicy.underlyingIndex(visibleIndex: underlyingCurrent, count: visibleCount)
+        let visibleTarget = PickyDockManualOrderPolicy.clampedVisibleIndex(visibleTargetRaw, count: visibleCount)
         guard visibleCurrent != visibleTarget else { return false }
-        let underlyingTarget = (visibleCount - 1) - visibleTarget
 
         // Ensure every active session id is present in manualOrder before the
         // move. Otherwise inserting the dragged id by "active-count" index
         // would skip over the newcomer entries that have not been synced yet.
         seedManualOrderIfNeeded()
         applyManualOrder()
-        var order = manualOrder
-        guard let fromOrderIdx = order.firstIndex(of: sessionID) else { return false }
-        order.remove(at: fromOrderIdx)
-
-        // Translate the active-sessions target index into a manualOrder index
-        // by counting active ids encountered. manualOrder may interleave
-        // archived ids (so unarchive restores the user's slot), so a direct
-        // index match would land in the wrong place when those gaps exist.
-        let activeIDs = Set(sessions.map(\.id)).subtracting([sessionID])
-        var activeSeen = 0
-        var insertIdx = order.count
-        for (idx, id) in order.enumerated() {
-            if activeSeen == underlyingTarget {
-                insertIdx = idx
-                break
-            }
-            if activeIDs.contains(id) {
-                activeSeen += 1
-            }
-        }
-        order.insert(sessionID, at: insertIdx)
+        guard let order = PickyDockManualOrderPolicy.moved(
+            manualOrder: manualOrder,
+            sessionID: sessionID,
+            activeIDs: Set(sessions.map(\.id)),
+            underlyingTarget: PickyDockManualOrderPolicy.underlyingIndex(visibleIndex: visibleTarget, count: visibleCount)
+        ) else { return false }
 
         manualOrder = order
         manualOrderStore.manualOrder = order

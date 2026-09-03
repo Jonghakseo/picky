@@ -16,6 +16,12 @@ set -euo pipefail
 #   PICKY_ALLOW_ADHOC=1 ./scripts/run-dev-signed-app.sh  # not recommended for TCC stability
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Fail before quitting the running app if the toolchain is unusable.
+# shellcheck source=scripts/lib/pinned-toolchain.sh
+. "${ROOT_DIR}/scripts/lib/pinned-toolchain.sh"
+picky_require_pinned_toolchain "run-dev-signed-app"
+
 APP_NAME="${PICKY_APP_NAME:-Picky}"
 BUNDLE_ID="${PICKY_BUNDLE_ID:-com.jonghakseo.picky}"
 BUILD_ROOT="${PICKY_PACKAGE_BUILD_DIR:-${ROOT_DIR}/build/dev-signed}"
@@ -178,6 +184,24 @@ DEVELOPMENT_TEAM="$(derive_team_id "${CODE_SIGN_DISPLAY_NAME}" || true)"
 if [[ "${SKIP_QUIT}" != "1" ]]; then
   quit_existing_app
 fi
+
+# Objects built by another toolchain do not link against this one; the failure
+# surfaces as an undefined ___swift_coroFrameAllocStub. Rebuild from scratch
+# when the toolchain changes. This runs after quit_existing_app so the bundle
+# being removed is not the one currently running.
+TOOLCHAIN_STAMP="${BUILD_ROOT}/.toolchain"
+if [[ -d "${BUILD_ROOT}" && "$(cat "${TOOLCHAIN_STAMP}" 2>/dev/null || true)" != "${DEVELOPER_DIR}" ]]; then
+  echo "🧹 Toolchain changed; clearing ${BUILD_ROOT}"
+  if [[ -d "${PACKAGED_APP}" ]]; then
+    # Picky.app embeds Sparkle's separately registered Updater.app, and
+    # LaunchServices cannot unregister bundles once their paths are gone.
+    "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" \
+      -u -R "${PACKAGED_APP}" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${BUILD_ROOT}"
+fi
+mkdir -p "${BUILD_ROOT}"
+printf '%s\n' "${DEVELOPER_DIR}" > "${TOOLCHAIN_STAMP}"
 
 echo "🔐 Building ${APP_NAME}.app with stable development signing..."
 echo "   identity: ${CODE_SIGN_DISPLAY_NAME}"

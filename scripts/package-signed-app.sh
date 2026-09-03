@@ -59,6 +59,11 @@ print_step_timings() {
 trap print_step_timings EXIT
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=scripts/lib/pinned-toolchain.sh
+. "${ROOT_DIR}/scripts/lib/pinned-toolchain.sh"
+picky_require_pinned_toolchain "package-signed-app"
+
 PROJECT_PATH="${PICKY_PROJECT_PATH:-${ROOT_DIR}/Picky.xcodeproj}"
 SCHEME="${PICKY_SCHEME:-Picky}"
 CONFIGURATION="${PICKY_CONFIGURATION:-Release}"

@@ -6,6 +6,33 @@ cd "$ROOT"
 
 HOST_ARCH="$(uname -m)"
 DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
+
+# Pin the toolchain instead of trusting whatever `xcode-select` points at.
+# Swift 6.2 makes deinit of a MainActor-isolated class implicitly isolated, and
+# `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` applies that to nearly every class
+# here. Xcode 26.3 miscompiles it: Release crashes swift-frontend and Debug
+# corrupts the heap, so the test host dies mid-run and this gate fails for
+# reasons unrelated to the change being pushed.
+# See docs/known-issues/xcode-26-3-isolated-deinit.md.
+DEVELOPER_DIR="${PICKY_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+SWIFT_BINARY="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift"
+if [ ! -x "$SWIFT_BINARY" ]; then
+  echo "❌ pre-push: no Xcode toolchain at $DEVELOPER_DIR." >&2
+  echo "   Set PICKY_DEVELOPER_DIR to an Xcode 16.x Contents/Developer path." >&2
+  exit 127
+fi
+export DEVELOPER_DIR
+
+SWIFT_VERSION="$("$SWIFT_BINARY" -version 2>/dev/null |
+  sed -n 's/.*Swift version \([0-9][0-9.]*\).*/\1/p' | head -1)"
+if [ -n "$SWIFT_VERSION" ] &&
+   [ "$(printf '%s\n6.2\n' "$SWIFT_VERSION" | sort -V | head -1)" = "6.2" ]; then
+  echo "❌ pre-push: $DEVELOPER_DIR ships Swift $SWIFT_VERSION." >&2
+  echo "   Swift 6.2+ miscompiles this project's implicit isolated deinit." >&2
+  echo "   See docs/known-issues/xcode-26-3-isolated-deinit.md." >&2
+  exit 1
+fi
+echo "▶ Toolchain: Swift $SWIFT_VERSION ($DEVELOPER_DIR)"
 PRE_PUSH_REFS="$(mktemp "${TMPDIR:-/tmp}/picky-pre-push-refs.XXXXXX")"
 trap 'rm -f "$PRE_PUSH_REFS"' EXIT
 if [ ! -t 0 ]; then

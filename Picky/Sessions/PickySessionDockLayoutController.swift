@@ -19,6 +19,14 @@ final class PickySessionDockLayoutController {
     /// publishing over a newer UI or CLI mutation admitted while suspended.
     private var layoutRevision: UInt64 = 0
 
+    /// Opts out of the isolated deinit the compiler would otherwise synthesize
+    /// for this `@MainActor` class. With a macOS 14.2 deployment target that
+    /// hop goes through `swift_task_deinitOnExecutorMainActorBackDeploy`, whose
+    /// task-local teardown double-frees under Xcode 26.3 and aborts the XCTest
+    /// host mid-run (swiftlang/swift#87316, #88036). This class holds no
+    /// isolated state that deinit needs, so releasing off the hop is safe.
+    nonisolated deinit {}
+
     init(
         store: PickyDockLayoutStoring,
         onSaveError: @escaping (Error) -> Void = { _ in }

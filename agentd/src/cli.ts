@@ -10,6 +10,10 @@ interface SharedOptions {
   json?: boolean;
 }
 
+interface PickleGroupListOptions extends SharedOptions {
+  includeArchived?: boolean;
+}
+
 interface PickleListOptions extends SharedOptions {
   rawJson?: boolean;
   includeArchived?: boolean;
@@ -340,12 +344,14 @@ program
   .command("pickle-group-list")
   .description("List Pickle dock groups defined in the Picky app dock.")
   .option("--json", "Emit the dock groups JSON to stdout")
+  .option("--include-archived", "Include archived Pickle member IDs in main-agent output")
   .addHelpText("after", `
 Examples:
   $ picky pickle-group-list
+  $ picky pickle-group-list --from-main --include-archived
   $ picky pickle-group-list --json
 `)
-  .action(async (options: SharedOptions) => {
+  .action(async (options: PickleGroupListOptions) => {
     await runWithErrorHandling(async () => {
       if (isMainAgentCaller && options.json) fail("--json is not available from the Picky main agent", 64);
       const connection = await loadCliConnection();
@@ -353,7 +359,9 @@ Examples:
         matchEvent: (event) => (event.type === "dockGroupsSnapshot" ? event : null),
       });
       if (snapshot.type !== "dockGroupsSnapshot") return;
-      const groups = snapshot.groups;
+      const groups = isMainAgentCaller && !options.includeArchived
+        ? excludeArchivedGroupMembers(snapshot.groups, (await fetchSessionSnapshot(connection)).sessions)
+        : snapshot.groups;
       if (options.json) {
         process.stdout.write(`${JSON.stringify(groups, null, 2)}\n`);
         return;
@@ -603,6 +611,17 @@ async function runDockGroupMutation(input: {
   });
   if (snapshot.type !== "dockGroupsSnapshot") return;
   process.stdout.write(`Updated Pickle dock groups (${snapshot.groups.length} groups)\n`);
+}
+
+function excludeArchivedGroupMembers(groups: DockGroup[], sessions: PickyAgentSession[]): DockGroup[] {
+  const archivedSessionIds = new Set(
+    sessions.filter((session) => session.archived === true).map((session) => session.id),
+  );
+  if (archivedSessionIds.size === 0) return groups;
+  return groups.map((group) => ({
+    ...group,
+    memberSessionIds: group.memberSessionIds.filter((sessionId) => !archivedSessionIds.has(sessionId)),
+  }));
 }
 
 function formatGroupMemberIDs(sessionIds: string[]): string {

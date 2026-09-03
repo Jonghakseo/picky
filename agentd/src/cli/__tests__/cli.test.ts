@@ -492,6 +492,39 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("group-1\tResearch\tmembers=2");
   });
 
+  it("main-agent group list excludes archived members unless explicitly included", async () => {
+    server.onCommand("listDockGroups", (_, send) => {
+      send({
+        type: "dockGroupsSnapshot",
+        groups: [{
+          id: "group-1",
+          name: "Research",
+          color: 6,
+          memberSessionIds: ["p-active", "p-archived"],
+          collapsed: false,
+        }],
+      });
+    });
+    server.onCommand("listPickles", (_, send) => {
+      send({
+        type: "sessionSnapshot",
+        sessions: [
+          sessionFixture({ id: "p-active", archived: false }),
+          sessionFixture({ id: "p-archived", archived: true }),
+        ],
+      });
+    });
+
+    const visible = await runCli(["pickle-group-list", "--from-main"]);
+    const withArchived = await runCli(["pickle-group-list", "--from-main", "--include-archived"]);
+
+    expect(visible.code).toBe(0);
+    expect(visible.stdout).toContain("members=p-active");
+    expect(visible.stdout).not.toContain("p-archived");
+    expect(withArchived.code).toBe(0);
+    expect(withArchived.stdout).toContain("members=p-active,p-archived");
+  });
+
   it("main-agent group list normalizes and bounds user-controlled fields", async () => {
     const longMemberId = `member-${"x".repeat(200)}`;
     server.onCommand("listDockGroups", (_, send) => {
@@ -505,6 +538,9 @@ describe("picky cli", () => {
           collapsed: false,
         }],
       });
+    });
+    server.onCommand("listPickles", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [] });
     });
 
     const result = await runCli(["pickle-group-list", "--from-main"]);

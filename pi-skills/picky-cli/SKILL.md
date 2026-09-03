@@ -52,7 +52,7 @@ The `picky` CLI is Picky.app's local programmatic interface. It can submit text 
 
 - `picky pickle-archive <session-id>` hides a Pickle from the dock; `picky pickle-unarchive <session-id>` restores it within the retention window.
 
-- `picky pickle-group-list` lists dock groups. Prefer `--json` for programmatic use.
+- `picky pickle-group-list` lists dock groups. Prefer `--json` for programmatic use. Main-agent calls hide archived member IDs by default; pass `--include-archived` only when archived Pickles are relevant.
 
 - `picky pickle-followup <session-id> <text>` sends a follow-up to an existing Pickle.
 

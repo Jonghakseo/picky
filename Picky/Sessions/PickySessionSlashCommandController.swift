@@ -11,10 +11,12 @@ import Foundation
 
 @MainActor
 final class PickySessionSlashCommandController {
+#if compiler(>=6.2)
     /// See `PickySessionDockLayoutController.deinit` for why every `@MainActor`
     /// class an XCTest suite releases inline opts out of the synthesized
     /// isolated deinit (swiftlang/swift#87316, #88036).
     nonisolated deinit {}
+#endif
 
     private let sendCommand: (PickyCommandEnvelope) async throws -> Void
     private let onSendFailure: (String) -> Void

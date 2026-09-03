@@ -119,6 +119,18 @@ struct PickyTerminalFontScalePersister {
 /// retained while their child process flushes and exits.
 @MainActor
 final class PickyTerminalOverlayRecordStore<Record> {
+    #if compiler(>=6.2)
+    // Swift 6.2 makes `deinit` of a global-actor-isolated class implicitly
+    // isolated. On Xcode 26.3 (swiftlang-6.2.4.1.4) the synthesized isolated
+    // deinit of a *generic* @MainActor class crashes `EarlyPerfInliner` at -O,
+    // and the back-deployed isolated-deinit hop double-frees at runtime under
+    // `MACOSX_DEPLOYMENT_TARGET = 14.2` (swiftlang/swift#87316, #88036).
+    // An explicit nonisolated deinit suppresses both. The `compiler` guard
+    // keeps Xcode 16.x building, where `nonisolated deinit` is not yet valid
+    // syntax. Remove once the toolchain ships a fix.
+    nonisolated deinit {}
+    #endif
+
     private struct ActiveRecord {
         let recordID: ObjectIdentifier
         let record: Record

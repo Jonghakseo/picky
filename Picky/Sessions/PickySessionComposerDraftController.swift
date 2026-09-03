@@ -75,10 +75,12 @@ final class PickySessionComposerDraftController {
         case replace
     }
 
+#if compiler(>=6.2)
     /// See `PickySessionDockLayoutController.deinit` for why every `@MainActor`
     /// class an XCTest suite releases inline opts out of the synthesized
     /// isolated deinit (swiftlang/swift#87316, #88036).
     nonisolated deinit {}
+#endif
 
     private let draftStore: PickyComposerDraftStoring
     private let attachmentStore: PickyComposerAttachmentDraftStoring

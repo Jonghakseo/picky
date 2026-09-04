@@ -11,6 +11,26 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Bridges AppKit's window-close command into the display-local SwiftUI
+    /// card state. The HUD panel itself stays alive because it also owns the dock.
+    var onCloseRequested: (() -> Void)?
+
+    override func performClose(_ sender: Any?) {
+        guard let onCloseRequested else {
+            super.performClose(sender)
+            return
+        }
+        onCloseRequested()
+    }
+
+    /// Claim the key-equivalent path explicitly. Immediately after a
+    /// nonactivating panel becomes key, AppKit may route the first Cmd+W here
+    /// instead of through the SwiftUI-installed local keyDown monitor.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handlePickyCloseWindowShortcut(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
     /// Input intent is scoped to one panel. SwiftUI may briefly leave a panel
     /// as its own responder while preserving the mounted native input view;
     /// restore only this responder on the next key event, never when the panel
@@ -48,6 +68,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWi
     }
 
     override func sendEvent(_ event: NSEvent) {
+        if handlePickyCloseWindowShortcut(event) { return }
         if event.type == .leftMouseDown || event.type == .rightMouseDown {
             makeKey()
             if !clickHitsFocusedControl(event) {

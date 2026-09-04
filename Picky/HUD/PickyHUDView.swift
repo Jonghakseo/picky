@@ -15,6 +15,7 @@ struct PickyHUDView: View {
     let viewModel: any PickySessionCommands
     @ObservedObject var dockState: PickyHUDDockState
     var panelIdentifier: NSUserInterfaceItemIdentifier?
+    var closeRequests: AnyPublisher<Void, Never> = Empty().eraseToAnyPublisher()
     /// Display this panel renders on. Used to route notification-driven open
     /// requests to only the screen the user clicked the banner on.
     var displayID: CGDirectDisplayID?
@@ -263,6 +264,7 @@ struct PickyHUDView: View {
             .onChange(of: dockSnapshot.openSessionRequest) { _, request in
                 handleOpenSessionRequest(request)
             }
+            .onReceive(closeRequests) { closeHeldSession() }
             .onChange(of: dockSnapshot.screenContextArmCollapseToken) { _, _ in
                 // Arming a Pickle (one-shot or sticky) from any entry point —
                 // header tap/long-press, dock context menu, ⌘K — collapses

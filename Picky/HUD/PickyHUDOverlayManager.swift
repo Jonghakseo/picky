@@ -527,6 +527,8 @@ final class PickyHUDOverlayManager {
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
         hudPanel.identifier = panelIdentifier
+        let closeRequests = PassthroughSubject<Void, Never>()
+        hudPanel.onCloseRequested = { closeRequests.send() }
         actualPanelVisibilityStore.track(hudPanel, for: displayID)
         hudPanel.onActualVisibilityChanged = { [weak self] isVisible in
             guard !isVisible else { return }
@@ -551,6 +553,7 @@ final class PickyHUDOverlayManager {
             viewModel: viewModel,
             dockState: viewModel.dockState,
             panelIdentifier: panelIdentifier,
+            closeRequests: closeRequests.eraseToAnyPublisher(),
             displayID: displayID,
             placement: placement,
             voiceTargetHitTestRegistry: voiceTargetHitTestRegistry,

@@ -42,6 +42,37 @@ struct PickyPanelKeyboardShortcutTests {
         #expect(window.performCloseCallCount == 1)
     }
 
+    @Test func hudPanelRoutesFirstCloseKeyEquivalentToCardCloseRequest() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 120, height: 80),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        var closeRequestCount = 0
+        panel.onCloseRequested = { closeRequestCount += 1 }
+        let close = try Self.keyEvent(characters: "w", keyCode: 13)
+
+        #expect(panel.performKeyEquivalent(with: close))
+        #expect(closeRequestCount == 1)
+    }
+
+    @Test func hudPanelRoutesDirectFirstCloseEventToCardCloseRequest() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 120, height: 80),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        var closeRequestCount = 0
+        panel.onCloseRequested = { closeRequestCount += 1 }
+        let close = try Self.keyEvent(characters: "w", keyCode: 13)
+
+        panel.sendEvent(close)
+
+        #expect(closeRequestCount == 1)
+    }
+
     private static func keyEvent(
         characters: String,
         modifiers: NSEvent.ModifierFlags = .command,

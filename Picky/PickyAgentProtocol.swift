@@ -62,6 +62,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var delivered: Bool?
     var prompt: String?
     var enabled: Bool?
+    /// Optional for compatibility with app/daemon versions predating new-Pickle bell defaults.
+    var notifyMainOnCompletion: Bool?
     var archived: Bool?
     var defaultCwd: String?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
@@ -130,6 +132,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         delivered: Bool? = nil,
         prompt: String? = nil,
         enabled: Bool? = nil,
+        notifyMainOnCompletion: Bool? = nil,
         archived: Bool? = nil,
         defaultCwd: String? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
@@ -193,6 +196,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.delivered = delivered
         self.prompt = prompt
         self.enabled = enabled
+        self.notifyMainOnCompletion = notifyMainOnCompletion
         self.archived = archived
         self.defaultCwd = defaultCwd
         self.mainAgentThinkingLevel = mainAgentThinkingLevel

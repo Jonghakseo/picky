@@ -8298,13 +8298,61 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Completion notification"
+            "value": "Pickle completion destination"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "완료 알림"
+            "value": "피클 완료 알림 위치"
+          }
+        }
+      }
+    },
+    "settings.notification.completionDestination.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you turn on the bell icon for a Pickle, Picky sends its completion notification to the selected destination. Pickles with the bell turned off won't notify you."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클에서 종 모양 아이콘을 켜면 완료 시 선택한 위치로 알려드려요. 종을 끈 피클은 알리지 않아요."
+          }
+        }
+      }
+    },
+    "settings.notification.toggle.newPicklesBell": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Pickles start with the bell on"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 피클의 종 아이콘 기본으로 켜기"
+          }
+        }
+      }
+    },
+    "settings.notification.toggle.newPicklesBell.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This affects only new Pickles. Existing Pickles keep their current bell setting."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 피클에만 적용돼요. 기존 피클은 현재 종 아이콘 설정을 유지해요."
           }
         }
       }

@@ -181,25 +181,21 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   const sessionIdFactory = config.mode === "child" && config.sessionId
     ? createSingleUseSessionIdFactory(config.sessionId)
     : undefined;
-  // Child daemons cannot followUp the main Picky agent themselves (mainRuntime is undefined per
-  // `8aa986f Make per-Pickle runtime the only Pickle path`). When a per-Pickle bell toggle is on
-  // and that Pickle completes, the supervisor falls back to this forwarder, which routes the
-  // prebuilt prompt through the Picky app to the primary daemon's main agent. Primary daemons
-  // never need the bridge (they own the main runtime in-process) and leave it undefined.
-  const forwardPickleCompletionToPrimary = config.mode === "child"
-    ? async (request: {
-      sessionId: string;
-      prompt: string;
-      cwd?: string;
-      completionId: string;
-      title: string;
-      status: "completed";
-      summary?: string;
-    }) => {
-        if (!appPickleBridgeRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
-        await appPickleBridgeRef.current({ operation: "notifyMainOfPickleCompletion", ...request });
-      }
-    : undefined;
+  // Every Pickle completion goes through the app-owned coordinator so its
+  // Main Picky/macOS/Both destination is honored. This includes external CLI
+  // Pickles hosted by the primary daemon as well as per-Pickle child daemons.
+  const forwardPickleCompletionToPrimary = async (request: {
+    sessionId: string;
+    prompt: string;
+    cwd?: string;
+    completionId: string;
+    title: string;
+    status: "completed";
+    summary?: string;
+  }) => {
+    if (!appPickleBridgeRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
+    await appPickleBridgeRef.current({ operation: "notifyMainOfPickleCompletion", ...request });
+  };
   const supervisor = new SessionSupervisor(runtime, store, {
     taskRouter: config.useMockRuntime ? new ConservativeMockTaskRouter() : undefined,
     mainRuntime,

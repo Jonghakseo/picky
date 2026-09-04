@@ -19,13 +19,15 @@ struct PickyNotificationPreferencesTests {
     @Test func defaultsLeaveCompletedOffAndOthersOn() {
         let defaults = PickyNotificationPreferences.defaults
         #expect(defaults.notifyOnCompleted == false)
+        #expect(defaults.notifyOnCompletionForNewPickles == false)
         #expect(defaults.notifyOnFailed == true)
         #expect(defaults.notifyOnWaitingForInput == true)
     }
 
     @Test func roundTripsThroughJSON() throws {
         let original = PickyNotificationPreferences(
-            notifyOnCompleted: false,
+            completionDestination: .mainPicky,
+            notifyOnCompletionForNewPickles: true,
             notifyOnFailed: true,
             notifyOnWaitingForInput: false
         )
@@ -72,6 +74,7 @@ struct PickyNotificationPreferencesTests {
         #expect(legacyOff.completionDestination == .mainPicky)
         #expect(missing.completionDestination == .mainPicky)
         #expect(future.completionDestination == .mainPicky)
+        #expect(missing.notifyOnCompletionForNewPickles == false)
         #expect(legacyOn.notifyOnFailed == false)
         #expect(legacyOff.notifyOnWaitingForInput == false)
     }
@@ -87,7 +90,8 @@ struct PickyNotificationPreferencesTests {
         settings.defaultCwd = cwd
         settings.worktreeParent = cwd
         settings.notifications = PickyNotificationPreferences(
-            notifyOnCompleted: false,
+            completionDestination: .mainPicky,
+            notifyOnCompletionForNewPickles: true,
             notifyOnFailed: true,
             notifyOnWaitingForInput: false
         )
@@ -96,6 +100,7 @@ struct PickyNotificationPreferencesTests {
         let reloaded = store.load()
         #expect(reloaded.notifications.completionDestination == .mainPicky)
         #expect(reloaded.notifications.notifyOnCompleted == false)
+        #expect(reloaded.notifications.notifyOnCompletionForNewPickles == true)
         #expect(reloaded.notifications.notifyOnFailed == true)
         #expect(reloaded.notifications.notifyOnWaitingForInput == false)
     }

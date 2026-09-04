@@ -7,7 +7,7 @@ import Testing
 @testable import Picky
 
 struct PickySettingsCLIExposureTests {
-    @Test func exposesTheSevenV1CatalogEntriesWithExpectedMetadata() {
+    @Test func exposesNewPickleCompletionDefaultAsReadOnlyMetadata() {
         let entries = PickySettingsCLIExposure.entries
 
         #expect(entries.map(\.key) == [
@@ -17,12 +17,17 @@ struct PickySettingsCLIExposureTests {
             "mainAgent.thinkingLevel",
             "pickleAgent.model",
             "pickleAgent.thinkingLevel",
+            "notifications.newPicklesNotifyOnCompletion",
             "cursor.visible"
         ])
         #expect(entries.first(where: { $0.key == "hud.dockVisible" })?.supportsToggle == true)
         #expect(entries.first(where: { $0.key == "hud.dockSizePreset" })?.choices == ["s", "m", "l"])
-        #expect(entries.filter { !$0.writable }.isEmpty)
-        #expect(entries.filter { !$0.mainAgentAllowed }.isEmpty)
+        let completionDefault = try? PickySettingsCLIExposure.currentValue(
+            for: "notifications.newPicklesNotifyOnCompletion",
+            in: PickySettings.defaults()
+        )
+        #expect(completionDefault == .bool(false))
+        #expect(entries.first(where: { $0.key == "notifications.newPicklesNotifyOnCompletion" })?.writable == false)
     }
 
     @Test func togglesBooleanCatalogValuesAndPreservesPerDisplayVisibilitySemantics() throws {

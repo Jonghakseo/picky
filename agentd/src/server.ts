@@ -553,8 +553,13 @@ export class AgentdServer {
       },
       routeTask: (cmd) => this.options.supervisor.route(cmd.context),
       createTask: (cmd) => this.options.supervisor.create(cmd.context),
-      createEmptyPickleSession: (cmd) => this.options.supervisor.createEmptyPickleSession(cmd.context),
-      createPickleFromHandoff: (cmd) => this.options.supervisor.createPickleFromHandoff(cmd.context, { title: cmd.title, instructions: cmd.instructions, cwd: cmd.cwd }),
+      createEmptyPickleSession: (cmd) => this.options.supervisor.createEmptyPickleSession(cmd.context, cmd.notifyMainOnCompletion ?? false),
+      createPickleFromHandoff: (cmd) => this.options.supervisor.createPickleFromHandoff(cmd.context, {
+        title: cmd.title,
+        instructions: cmd.instructions,
+        cwd: cmd.cwd,
+        notifyMainOnCompletion: cmd.notifyMainOnCompletion ?? false,
+      }),
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id),
       listPickySettings: async (cmd) => {
@@ -904,10 +909,12 @@ export class AgentdServer {
           ...(session ? { sessionId: session.id } : {}),
         });
       } else {
+        const notifyMainOnCompletion = await this.newPicklesNotifyOnCompletionDefault();
         const session = await this.options.supervisor.createPickleFromHandoff(finalContext, {
           title: payload.title!,
           instructions: payload.instructions!,
           ...(payload.cwd ? { cwd: payload.cwd } : {}),
+          notifyMainOnCompletion,
         });
         this.broadcastToCapability("externalEntry", {
           type: "externalEntryAccepted",
@@ -929,6 +936,30 @@ export class AgentdServer {
       const message = error instanceof Error ? error.message : String(error);
       this.send(ws, { type: "externalEntryAck", commandId, kind, errorMessage: message });
     }
+  }
+
+  /**
+   * The primary daemon owns external CLI creation, but the preference belongs
+   * to Picky.app. A missing, invalid, or timed-out app reply must not block
+   * creation, because older app versions do not expose this key.
+   */
+  private async newPicklesNotifyOnCompletionDefault(): Promise<boolean> {
+    try {
+      const result = await this.settingsControl.request({
+        action: "get",
+        key: "notifications.newPicklesNotifyOnCompletion",
+      });
+      if (typeof result.value === "boolean") return result.value;
+      logAgentd("new Pickle completion default unavailable or invalid; using false", {
+        valueType: typeof result.value,
+      });
+    } catch (error) {
+      logAgentd("new Pickle completion default lookup failed; using false", {
+        code: error instanceof SettingsControlError ? error.code : undefined,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return false;
   }
 
   private requestExternalEntryContext(

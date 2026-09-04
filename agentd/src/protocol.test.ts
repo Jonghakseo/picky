@@ -325,6 +325,7 @@ describe("protocol contract fixtures", () => {
           screenshots: [],
           warnings: ["manualPickle=true"],
         },
+        notifyMainOnCompletion: true,
       }),
     ).not.toThrow();
   });
@@ -332,6 +333,7 @@ describe("protocol contract fixtures", () => {
   it("parses Pickle session commands", () => {
     for (const command of [
       { type: "createEmptyPickleSession", context: { ...contextFixture(), source: "system" as const } },
+      { type: "createPickleFromHandoff", context: contextFixture(), title: "Handoff", instructions: "Continue", notifyMainOnCompletion: true },
       { type: "pinPickleSession", context: contextFixture(), title: "Pinned Pi session" },
       { type: "duplicatePickleSession", sessionId: "session-source" },
     ]) {

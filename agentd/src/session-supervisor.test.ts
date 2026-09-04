@@ -939,6 +939,18 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.steerPickleSession(regular.id, "wrong target")).rejects.toThrow(/not a Pickle/);
   });
 
+  it("persists an enabled completion preference for a new handoff Pickle", async () => {
+    const supervisor = await makeSupervisor();
+
+    const pickle = await supervisor.createPickleFromHandoff(
+      context("enabled handoff"),
+      { title: "Enabled Pickle", instructions: "Investigate", notifyMainOnCompletion: true },
+    );
+
+    expect(pickle.notifyMainOnCompletion).toBe(true);
+    expect(supervisor.get(pickle.id)?.notifyMainOnCompletion).toBe(true);
+  });
+
   it("resumes a busy handoff from a snapshot of the source Pi transcript before continuing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-handoff-resume-"));
     const runtime = new ResumableRuntime();
@@ -949,7 +961,7 @@ describe("SessionSupervisor", () => {
 
     const pickle = await supervisor.createPickleFromHandoff(
       contextWithPiSessionFile("continue this work", sourceFilePath),
-      { title: "Continue source", instructions: "continue", cwd: "/tmp/override-project" },
+      { title: "Continue source", instructions: "continue", cwd: "/tmp/override-project", notifyMainOnCompletion: true },
     );
 
     expect(runtime.resumeCalls).toHaveLength(1);
@@ -965,6 +977,7 @@ describe("SessionSupervisor", () => {
     const original = await readFile(sourceFilePath, "utf8");
     expect(copied).toBe(original);
     expect(supervisor.isPickleSession(pickle.id)).toBe(true);
+    expect(pickle.notifyMainOnCompletion).toBe(true);
     expect(pickle.logs).toContain("Picky handoff: continue");
   });
 
@@ -1081,7 +1094,10 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
 
-    const session = await supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined, cwd: "  /tmp/manual-project  " });
+    const session = await supervisor.createEmptyPickleSession(
+      { ...context("manual"), source: "system", transcript: undefined, cwd: "  /tmp/manual-project  " },
+      true,
+    );
 
     expect(runtime.createCalls).toBe(0);
     expect(runtime.prewarmCalls).toBe(1);
@@ -1089,7 +1105,7 @@ describe("SessionSupervisor", () => {
     expect(session.status).toBe("waiting_for_input");
     expect(session.cwd).toBe("/tmp/manual-project");
     expect(session.title).toBe("New Pickle · manual-project");
-    expect(session.notifyMainOnCompletion).toBe(false);
+    expect(session.notifyMainOnCompletion).toBe(true);
     expect(session.currentAssistantRun).toEqual({ model: "anthropic/claude-opus-4-7", thinkingLevel: "high" });
     expect(supervisor.isPickleSession(session.id)).toBe(true);
     expect(supervisor.listPickleSessions().map((pickle) => pickle.id)).toEqual([session.id]);
@@ -1099,6 +1115,17 @@ describe("SessionSupervisor", () => {
     expect(steered.status).toBe("running");
     expect(runtime.handle?.interrupts).toEqual([]);
     expect(runtime.handle?.steers).toEqual(["첫 작업 시작해줘"]);
+  });
+
+  it("defaults an empty Pickle completion preference to false when the command omits it", async () => {
+    const runtime = new ManualRuntime({ supportsPrewarm: true });
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-default-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+
+    const session = await supervisor.createEmptyPickleSession({ ...context("manual default"), source: "system", transcript: undefined });
+
+    expect(session.notifyMainOnCompletion).toBe(false);
   });
 
   it("accepts the first empty Pickle instruction while prewarm is still pending", async () => {
@@ -3409,6 +3436,35 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.prewarmCalls).toBe(1);
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
     expect(mainRuntime.handle?.followUps[0].text).toContain("재조사 완료");
+  });
+
+  it("prefers the app completion bridge when a supervisor also owns the main runtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-primary-pickle-bridge-forward-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const forwarded: Array<{ sessionId: string }> = [];
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), {
+      mainRuntime,
+      forwardPickleCompletionToPrimary: async (request) => {
+        forwarded.push({ sessionId: request.sessionId });
+      },
+    });
+    await supervisor.load();
+    await supervisor.route(context("primary main busy"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+    const prewarmCallsBeforeCompletion = mainRuntime.prewarmCalls;
+    const pickle = await supervisor.createPickleFromHandoff(
+      context("primary-local bridged pickle"),
+      { title: "Primary-local Pickle", instructions: "Investigate", notifyMainOnCompletion: true },
+    );
+
+    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "Primary-local answer" });
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(forwarded).toEqual([{ sessionId: pickle.id }]);
+    expect(mainRuntime.prewarmCalls).toBe(prewarmCallsBeforeCompletion);
   });
 
   it("forwards Pickle completion through the bridge when the supervisor has no main runtime", async () => {

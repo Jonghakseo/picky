@@ -1973,17 +1973,17 @@ describe("AgentdServer", () => {
     const duplicatePickleSession = vi.spyOn(supervisor, "duplicatePickleSession").mockResolvedValue(makeSession({ id: "session-copy" }));
     const { ws } = await connectWithHello();
 
-    ws.send(JSON.stringify({ id: "cmd-empty-pickle", protocolVersion: PROTOCOL_VERSION, type: "createEmptyPickleSession", context: context("manual pickle") }));
+    ws.send(JSON.stringify({ id: "cmd-empty-pickle", protocolVersion: PROTOCOL_VERSION, type: "createEmptyPickleSession", context: context("manual pickle"), notifyMainOnCompletion: true }));
     await waitUntil(() => createEmptyPickleSession.mock.calls.length === 1);
-    ws.send(JSON.stringify({ id: "cmd-handoff-pickle", protocolVersion: PROTOCOL_VERSION, type: "createPickleFromHandoff", context: context("handoff pickle"), title: "Handoff", instructions: "Do it", cwd: "/tmp/product" }));
+    ws.send(JSON.stringify({ id: "cmd-handoff-pickle", protocolVersion: PROTOCOL_VERSION, type: "createPickleFromHandoff", context: context("handoff pickle"), title: "Handoff", instructions: "Do it", cwd: "/tmp/product", notifyMainOnCompletion: true }));
     await waitUntil(() => createPickleFromHandoff.mock.calls.length === 1);
     ws.send(JSON.stringify({ id: "cmd-pin-pickle", protocolVersion: PROTOCOL_VERSION, type: "pinPickleSession", context: context("pin pickle") }));
     await waitUntil(() => pinPickleSession.mock.calls.length === 1);
     ws.send(JSON.stringify({ id: "cmd-duplicate-pickle", protocolVersion: PROTOCOL_VERSION, type: "duplicatePickleSession", sessionId: "session-source" }));
     await waitUntil(() => duplicatePickleSession.mock.calls.length === 1);
 
-    expect(createEmptyPickleSession).toHaveBeenCalledWith(expect.objectContaining({ id: "context-manual pickle" }));
-    expect(createPickleFromHandoff).toHaveBeenCalledWith(expect.objectContaining({ id: "context-handoff pickle" }), { title: "Handoff", instructions: "Do it", cwd: "/tmp/product" });
+    expect(createEmptyPickleSession).toHaveBeenCalledWith(expect.objectContaining({ id: "context-manual pickle" }), true);
+    expect(createPickleFromHandoff).toHaveBeenCalledWith(expect.objectContaining({ id: "context-handoff pickle" }), { title: "Handoff", instructions: "Do it", cwd: "/tmp/product", notifyMainOnCompletion: true });
     expect(pinPickleSession).toHaveBeenCalledWith(expect.objectContaining({ id: "context-pin pickle" }), undefined);
     expect(duplicatePickleSession).toHaveBeenCalledWith("session-source");
     ws.close();
@@ -2671,9 +2671,47 @@ describe("AgentdServer", () => {
     if (ack.type === "externalEntryAck") expect(ack.sessionId).toBeDefined();
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ source: "cli", cwd: "/tmp/cli-pickle-cwd" }),
-      expect.objectContaining({ title: "CLI pickle", instructions: "do the thing", cwd: "/tmp/cli-pickle-cwd" }),
+      expect.objectContaining({ title: "CLI pickle", instructions: "do the thing", cwd: "/tmp/cli-pickle-cwd", notifyMainOnCompletion: false }),
     );
     ws.close();
+  });
+
+  it("createPickleFromExternal snapshots the app-owned new Pickle completion default", async () => {
+    const create = vi.spyOn(supervisor, "createPickleFromHandoff");
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({
+      id: "cmd-register-settings-for-cli-pickle",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["settingsControl"],
+    }));
+    await waitForRegisteredCapability("settingsControl");
+    const cli = await connectWithHello();
+    cli.ws.send(JSON.stringify({
+      id: "cmd-cli-pickle-setting",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "createPickleFromExternal",
+      title: "Configured pickle",
+      instructions: "do the configured thing",
+      captureContext: false,
+    }));
+    const request = await waitForEvent(app.ws, "pickySettingsRequested");
+    expect(request).toMatchObject({ action: "get", key: "notifications.newPicklesNotifyOnCompletion" });
+    if (request.type !== "pickySettingsRequested") throw new Error("expected settings request");
+    app.ws.send(JSON.stringify({
+      id: "cmd-complete-cli-pickle-setting",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickySettingsRequest",
+      requestId: request.requestId,
+      result: { key: "notifications.newPicklesNotifyOnCompletion", value: true },
+    }));
+    await expect(waitForEvent(cli.ws, "externalEntryAck")).resolves.toMatchObject({ commandId: "cmd-cli-pickle-setting", kind: "createPickle" });
+    expect(create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ notifyMainOnCompletion: true }),
+    );
+    app.ws.close();
+    cli.ws.close();
   });
 
   it("submitMainFromExternal with captureContext=true acks with error when no app is registered", async () => {
@@ -2701,7 +2739,7 @@ describe("AgentdServer", () => {
       id: "cmd-register",
       protocolVersion: PROTOCOL_VERSION,
       type: "registerAppCapabilities",
-      capabilities: ["externalEntry"],
+      capabilities: ["externalEntry", "settingsControl"],
     }));
     await waitForRegisteredCapability("externalEntry");
 
@@ -2734,6 +2772,17 @@ describe("AgentdServer", () => {
       context: capturedContext,
     }));
 
+    const settingsRequest = await waitForEvent(appWs, "pickySettingsRequested");
+    expect(settingsRequest).toMatchObject({ action: "get", key: "notifications.newPicklesNotifyOnCompletion" });
+    if (settingsRequest.type !== "pickySettingsRequested") throw new Error("expected settings request");
+    appWs.send(JSON.stringify({
+      id: "cmd-complete-bridged-pickle-setting",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completePickySettingsRequest",
+      requestId: settingsRequest.requestId,
+      result: { key: "notifications.newPicklesNotifyOnCompletion", value: true },
+    }));
+
     const accepted = await waitForEvent(appWs, "externalEntryAccepted");
     expect(accepted).toMatchObject({ commandId: "cmd-cli-pickle-bridge", kind: "createPickle", contextId: "context-cli-bridge", group: "Research" });
     if (accepted.type === "externalEntryAccepted") expect(accepted.sessionId).toBeDefined();
@@ -2743,7 +2792,7 @@ describe("AgentdServer", () => {
     if (ack.type === "externalEntryAck") expect(ack.sessionId).toBeDefined();
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ id: "context-cli-bridge", source: "cli", cwd: "/tmp/captured" }),
-      expect.objectContaining({ title: "Bridge pickle", instructions: "do the bridged thing" }),
+      expect.objectContaining({ title: "Bridge pickle", instructions: "do the bridged thing", notifyMainOnCompletion: true }),
     );
     appWs.close();
     cliWs.close();

@@ -1206,6 +1206,9 @@ struct PickyAgentClientRouterTests {
             pool: pool,
             clientFactory: clientFactory,
             handoffPickleSessionIdFactory: { "pickle-handoff" },
+            notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+                notifyOnCompletionForNewPickles: true
+            )),
             supportsSessionProjectionV2: true
         )
         var projectionSessions: [PickyAgentSession] = []
@@ -1228,6 +1231,7 @@ struct PickyAgentClientRouterTests {
         #expect(childCommand.title == "조사 피클")
         #expect(childCommand.instructions == "Sentry 확인")
         #expect(childCommand.cwd == "/tmp/product/backend")
+        #expect(childCommand.notifyMainOnCompletion == true)
 
         projectionSessions = [PickyAgentSession(
             id: "pickle-handoff",

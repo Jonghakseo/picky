@@ -57,6 +57,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private let clientFactory: PickyAgentClientFactoryProtocol
     private let handoffPickleSessionIdFactory: () -> String
     private let permanentDeletionAcknowledgementTimeout: TimeInterval
+    private let notificationPreferencesProvider: PickyNotificationPreferencesProviding
     /// The router may advertise the v2 socket dialect only when its consumer
     /// is wired to the registry-backed projection storage.
     private let supportsSessionProjectionV2: Bool
@@ -296,6 +297,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         clientFactory: PickyAgentClientFactoryProtocol = DefaultPickyAgentClientFactory(),
         handoffPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
         permanentDeletionAcknowledgementTimeout: TimeInterval = 5,
+        notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyNotificationPreferencesStore(),
         supportsSessionProjectionV2: Bool = false,
         capabilityRegistrationTimeoutNanoseconds: UInt64 = 10_000_000_000,
         capabilityRegistrationRetryBackoffNanoseconds: UInt64 = 1_000_000_000
@@ -307,6 +309,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         self.clientFactory = clientFactory
         self.handoffPickleSessionIdFactory = handoffPickleSessionIdFactory
         self.permanentDeletionAcknowledgementTimeout = permanentDeletionAcknowledgementTimeout
+        self.notificationPreferencesProvider = notificationPreferencesProvider
         self.supportsSessionProjectionV2 = supportsSessionProjectionV2
         // Drop the cached websocket client (and stop its reconnect loop) the moment the pool
         // notices the underlying child daemon has exited. Without this, the legacy receiveLoop
@@ -695,7 +698,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     context: request.context,
                     title: request.title,
                     instructions: request.instructions,
-                    cwd: request.cwd
+                    cwd: request.cwd,
+                    notifyMainOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyOnCompletionForNewPickles
                 ), on: childClient)
                 try await sessionCreated.value
                 await completePickleHandoff(request, sessionId: sessionId)

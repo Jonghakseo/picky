@@ -995,7 +995,7 @@ export class SessionSupervisor extends EventEmitter {
     this.emit("quickReply", contextId, text, metadata);
   }
 
-  async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }): Promise<PickyAgentSession> {
+  async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean }): Promise<PickyAgentSession> {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
     const sourceSessionFilePath = piSessionFilePathFromHandoffTranscript(handoffContext.transcript);
@@ -1003,14 +1003,14 @@ export class SessionSupervisor extends EventEmitter {
     if (sourceSessionFilePath && this.runtime.resume) {
       return this.createPickleFromResumedHandoff(handoffContext, handoff, sourceSessionFilePath);
     }
-    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), { notifyMainOnCompletion: false });
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), { notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false });
     this.pickleSessionIds.add(session.id);
     await this.appendLog(session.id, `${HANDOFF_PREFIX}${handoff.instructions}`);
     if (handoffContext.cwd) await this.appendLog(session.id, `Picky handoff cwd: ${handoffContext.cwd}`);
     return this.mustGet(session.id);
   }
 
-  private async createPickleFromResumedHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }, sourceSessionFilePath: string): Promise<PickyAgentSession> {
+  private async createPickleFromResumedHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean }, sourceSessionFilePath: string): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
     const cwd = normalizeOptionalString(context.cwd);
@@ -1024,6 +1024,7 @@ export class SessionSupervisor extends EventEmitter {
       sessionFilePath: newFilePath,
       sourceSessionFilePath,
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
+      notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
     });
     this.pickleSessionIds.add(id);
     this.sessionContexts.set(id, context);
@@ -1067,7 +1068,7 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  async createEmptyPickleSession(context: PickyContextPacket): Promise<PickyAgentSession> {
+  async createEmptyPickleSession(context: PickyContextPacket, notifyMainOnCompletion = false): Promise<PickyAgentSession> {
     if (!this.runtime.prewarm) throw new Error("Runtime cannot prewarm empty Pickle sessions");
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
@@ -1078,6 +1079,7 @@ export class SessionSupervisor extends EventEmitter {
       title: titleForEmptyPickleSession(pickleContext),
       cwd: pickleContext.cwd,
       now,
+      notifyMainOnCompletion,
     });
     this.pickleSessionIds.add(id);
     this.sessionContexts.set(id, pickleContext);
@@ -1799,7 +1801,7 @@ export class SessionSupervisor extends EventEmitter {
     // Pickle session has not emitted status:completed yet). Sending the followUp now
     // would clobber mainReplyContextId / mainDraft. Park the sessionId and let
     // applyMainRuntimeEvent drain it once the active turn ends.
-    if (this.mainIsProcessing) {
+    if (this.mainIsProcessing && !this.options.forwardPickleCompletionToPrimary) {
       if (!this.pendingPickleCompletions.includes(sessionId) && !this.pickleCompletionNotified.has(sessionId) && !this.pickleCompletionInFlight.has(sessionId)) {
         this.pendingPickleCompletions.push(sessionId);
         logAgentd("Pickle completion deferred", { sessionId, status: session.status, queueLength: this.pendingPickleCompletions.length });
@@ -1820,6 +1822,29 @@ export class SessionSupervisor extends EventEmitter {
     this.pickleCompletionInFlight.add(sessionId);
     try {
       const prompt = buildMainAgentPickleCompletionPrompt(session);
+      // When the app bridge is available it owns destination selection for every
+      // Pickle, including legacy/external Pickles hosted by the primary daemon.
+      // Falling through to the local main runtime is reserved for supervisors
+      // without an app coordinator.
+      if (this.options.forwardPickleCompletionToPrimary) {
+        try {
+          await this.options.forwardPickleCompletionToPrimary({
+            sessionId,
+            prompt: prompt.text,
+            cwd: session.cwd,
+            completionId: `${sessionId}:${session.revision ?? 0}`,
+            title: session.title,
+            status: "completed",
+            summary: session.lastSummary,
+          });
+          this.pickleCompletionNotified.add(sessionId);
+          logAgentd("Pickle completion forwarded to app coordinator", { sessionId, status: session.status });
+        } catch (error) {
+          logAgentd("Pickle completion forward failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+        }
+        return;
+      }
+
       this.mainReplyContextId = sessionId;
       this.mainTurnOverlayContext = undefined;
       this.mainDraft = "";
@@ -1827,30 +1852,7 @@ export class SessionSupervisor extends EventEmitter {
       this.mainVisualNarration.reset();
       const delivery = await this.preparePickyCompletionDelivery(prompt, session.cwd);
       if (!delivery) {
-        // Child daemons have no local main runtime; forward the prebuilt prompt to the primary
-        // daemon through the Picky app bridge so the user's main Picky session still gets a
-        // "Pickle finished" message. Without this, the bell toggle would silently no-op for
-        // every per-Pickle child since the per-Pickle migration removed the in-process
-        // mainRuntime from child supervisors.
-        if (this.options.forwardPickleCompletionToPrimary) {
-          try {
-            await this.options.forwardPickleCompletionToPrimary({
-              sessionId,
-              prompt: prompt.text,
-              cwd: session.cwd,
-              completionId: `${sessionId}:${session.revision ?? 0}`,
-              title: session.title,
-              status: "completed",
-              summary: session.lastSummary,
-            });
-            this.pickleCompletionNotified.add(sessionId);
-            logAgentd("Pickle completion forwarded to primary", { sessionId, status: session.status });
-          } catch (error) {
-            logAgentd("Pickle completion forward failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
-          }
-        } else {
-          logAgentd("Pickle completion delivery unavailable", { sessionId, status: session.status });
-        }
+        logAgentd("Pickle completion delivery unavailable", { sessionId, status: session.status });
         return;
       }
 

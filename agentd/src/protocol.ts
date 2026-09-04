@@ -556,8 +556,8 @@ const CommandBaseSchema = z.object({
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createTask"), context: PickyContextPacketSchema }),
-  CommandBaseSchema.extend({ type: z.literal("createEmptyPickleSession"), context: PickyContextPacketSchema }),
-  CommandBaseSchema.extend({ type: z.literal("createPickleFromHandoff"), context: PickyContextPacketSchema, title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("createEmptyPickleSession"), context: PickyContextPacketSchema, notifyMainOnCompletion: z.boolean().optional() }),
+  CommandBaseSchema.extend({ type: z.literal("createPickleFromHandoff"), context: PickyContextPacketSchema, title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional(), notifyMainOnCompletion: z.boolean().optional() }),
   CommandBaseSchema.extend({ type: z.literal("completePickleHandoff"), requestId: z.string().min(1), sessionId: z.string().min(1).optional(), title: z.string().min(1).optional(), cwd: z.string().optional(), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(PickyAppCapabilitySchema).min(1) }),
   CommandBaseSchema.extend({ type: z.literal("listPickySettings") }),

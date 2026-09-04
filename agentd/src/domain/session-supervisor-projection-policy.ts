@@ -18,6 +18,7 @@ export function buildResumedHandoffPickleSession(input: {
   sessionFilePath: string;
   sourceSessionFilePath: string;
   artifacts: PickyAgentSession["artifacts"];
+  notifyMainOnCompletion: boolean;
 }): PickyAgentSession {
   return {
     id: input.id,
@@ -32,7 +33,7 @@ export function buildResumedHandoffPickleSession(input: {
       `pi session: ${input.sessionFilePath}`,
       `source pi session snapshot: ${input.sourceSessionFilePath}`,
     ],
-    notifyMainOnCompletion: false,
+    notifyMainOnCompletion: input.notifyMainOnCompletion,
     tools: [],
     artifacts: input.artifacts,
     changedFiles: [],
@@ -46,6 +47,7 @@ export function buildEmptyPickleSession(input: {
   title: string;
   cwd: string | undefined;
   now: string;
+  notifyMainOnCompletion: boolean;
 }): PickyAgentSession {
   return {
     id: input.id,
@@ -57,7 +59,7 @@ export function buildEmptyPickleSession(input: {
     updatedAt: input.now,
     lastSummary: "Ready for instructions",
     logs: [],
-    notifyMainOnCompletion: false,
+    notifyMainOnCompletion: input.notifyMainOnCompletion,
     tools: [],
     artifacts: [],
     changedFiles: [],

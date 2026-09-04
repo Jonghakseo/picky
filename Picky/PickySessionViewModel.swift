@@ -495,7 +495,11 @@ final class PickySessionListViewModel: ObservableObject {
         )
         pickySessionLog("create empty Pickle session context=\(context.id) cwd=\(context.cwd ?? "none")")
         do {
-            let command = PickyCommandEnvelope(type: .createEmptyPickleSession, context: context)
+            let command = PickyCommandEnvelope(
+                type: .createEmptyPickleSession,
+                context: context,
+                notifyMainOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyOnCompletionForNewPickles
+            )
             guard let manualPickleChildSpawner else {
                 lastError = PickySessionListViewModelError.pickleRuntimeUnavailable.localizedDescription
                 throw PickySessionListViewModelError.pickleRuntimeUnavailable

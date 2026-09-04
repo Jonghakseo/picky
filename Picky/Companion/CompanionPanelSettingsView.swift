@@ -538,6 +538,20 @@ struct CompanionPanelSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     voiceSubgroupHeader("settings.overlayAndNotifications.subgroup.alerts")
+                    VStack(alignment: .leading, spacing: 0) {
+                        toggleRow(
+                            "settings.notification.toggle.newPicklesBell",
+                            isOn: $viewModel.settings.notifications.notifyOnCompletionForNewPickles,
+                            divider: false
+                        )
+                        Text("settings.notification.toggle.newPicklesBell.note")
+                            .font(PickyHUDTypography.supporting)
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 7)
+                        Divider()
+                            .background(DS.Colors.borderSubtle.opacity(0.3))
+                    }
                     completionNotificationDestinationPicker
                     toggleRow("settings.notification.toggle.onFailure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
                     toggleRow("settings.notification.toggle.onInputRequest", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
@@ -557,6 +571,10 @@ struct CompanionPanelSettingsView: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
+            Text("settings.notification.completionDestination.note")
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(DS.Colors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
             Divider()
                 .background(DS.Colors.borderSubtle.opacity(0.3))
                 .padding(.vertical, 5)

@@ -39,6 +39,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         store: settingsStore,
         persistence: settingsPersistence
     )
+    private lazy var notificationPreferencesStore = PickyNotificationPreferencesStore(settingsStore: settingsStore)
     private var settingsSaveObserver: NSObjectProtocol?
     /// Single bounded snapshot used to distinguish the prior crash/force-quit
     /// from a clean app termination after the next launch.
@@ -144,13 +145,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hudAgentClientRouter = PickyAgentClientRouter(
         primaryClient: hudPrimaryAgentClient,
         pool: agentDaemonPool,
+        notificationPreferencesProvider: notificationPreferencesStore,
         supportsSessionProjectionV2: true
     )
     /// Completion effects are app-owned. The child bridge provides a durable
     /// envelope, while this coordinator snapshots settings and selects Main
     /// Picky, macOS, or both without projection-driven duplicate banners.
     private lazy var completionNotificationCoordinator = PickyCompletionNotificationCoordinator(
-        preferencesProvider: PickyNotificationPreferencesStore(settingsStore: settingsStore),
+        preferencesProvider: notificationPreferencesStore,
         deliverMain: { [weak self] envelope in
             guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
             try await self.hudAgentClientRouter.deliverCompletionToPrimary(envelope)
@@ -161,6 +163,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// Pickle to archive it).
     private lazy var hudSessionViewModel = PickySessionListViewModel(
         client: hudAgentClientRouter,
+        notificationPreferencesProvider: notificationPreferencesStore,
         recentPickleFolderStore: PickySettingsRecentPickleFolderStore(settingsStore: settingsStore),
         dockLayoutStore: PickySettingsDockLayoutStore(settingsStore: settingsStore),
         manualPickleChildSpawner: hudAgentClientRouter,

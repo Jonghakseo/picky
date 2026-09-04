@@ -469,6 +469,8 @@ enum PickyCompletionNotificationDestination: String, Codable, CaseIterable, Iden
 /// while old settings files are migrated to `completionDestination`.
 struct PickyNotificationPreferences: Codable, Equatable {
     var completionDestination: PickyCompletionNotificationDestination
+    /// Default bell state captured only when a new blank or delegated Pickle is created.
+    var notifyOnCompletionForNewPickles: Bool
     var notifyOnFailed: Bool
     var notifyOnWaitingForInput: Bool
 
@@ -482,10 +484,12 @@ struct PickyNotificationPreferences: Codable, Equatable {
 
     init(
         completionDestination: PickyCompletionNotificationDestination = .mainPicky,
+        notifyOnCompletionForNewPickles: Bool = false,
         notifyOnFailed: Bool = true,
         notifyOnWaitingForInput: Bool = true
     ) {
         self.completionDestination = completionDestination
+        self.notifyOnCompletionForNewPickles = notifyOnCompletionForNewPickles
         self.notifyOnFailed = notifyOnFailed
         self.notifyOnWaitingForInput = notifyOnWaitingForInput
     }
@@ -506,6 +510,7 @@ struct PickyNotificationPreferences: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case completionDestination
+        case notifyOnCompletionForNewPickles
         case notifyOnCompleted
         case notifyOnFailed
         case notifyOnWaitingForInput
@@ -520,6 +525,7 @@ struct PickyNotificationPreferences: Codable, Equatable {
                 ? .both
                 : .mainPicky
         }
+        notifyOnCompletionForNewPickles = try container.decodeIfPresent(Bool.self, forKey: .notifyOnCompletionForNewPickles) ?? false
         notifyOnFailed = try container.decodeIfPresent(Bool.self, forKey: .notifyOnFailed) ?? true
         notifyOnWaitingForInput = try container.decodeIfPresent(Bool.self, forKey: .notifyOnWaitingForInput) ?? true
     }
@@ -527,12 +533,14 @@ struct PickyNotificationPreferences: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(completionDestination, forKey: .completionDestination)
+        try container.encode(notifyOnCompletionForNewPickles, forKey: .notifyOnCompletionForNewPickles)
         try container.encode(notifyOnFailed, forKey: .notifyOnFailed)
         try container.encode(notifyOnWaitingForInput, forKey: .notifyOnWaitingForInput)
     }
 
     static let defaults = PickyNotificationPreferences(
         completionDestination: .mainPicky,
+        notifyOnCompletionForNewPickles: false,
         notifyOnFailed: true,
         notifyOnWaitingForInput: true
     )

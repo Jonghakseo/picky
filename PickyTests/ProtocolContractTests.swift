@@ -457,6 +457,19 @@ struct ProtocolContractTests {
 
         #expect(encoded?.contains("\"type\":\"createEmptyPickleSession\"") == true)
         #expect(decoded.type == .createEmptyPickleSession)
+        #expect(decoded.notifyMainOnCompletion == nil)
+
+        let enabled = PickyCommandEnvelope(
+            id: "cmd-handoff",
+            type: .createPickleFromHandoff,
+            context: PickyContextPacket(id: "context-handoff", source: "system", capturedAt: Date(), transcript: nil, selectedText: nil, cwd: nil, activeApp: nil, activeWindow: nil, browser: nil, screenshots: [], warnings: []),
+            title: "Handoff",
+            instructions: "Continue",
+            notifyMainOnCompletion: true
+        )
+        let enabledData = try JSONEncoder.pickyAgentProtocolEncoder().encode(enabled)
+        let enabledDecoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: enabledData)
+        #expect(enabledDecoded.notifyMainOnCompletion == true)
     }
 
     @Test func decodesPayloadBackedSessionEvents() throws {

@@ -411,6 +411,23 @@ struct PickySessionViewModelTests {
         #expect(command.context?.warnings == ["manualPickle=true"])
     }
 
+    @Test func createEmptyPickleSessionSnapshotsNewPickleBellPreference() async throws {
+        let childSpawner = FakeManualPickleChildSpawner()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompletionForNewPickles: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            notificationPreferencesProvider: preferences,
+            manualPickleChildSpawner: childSpawner
+        )
+
+        _ = try await viewModel.createEmptyPickleSession(cwd: "/tmp/manual-project")
+
+        #expect(childSpawner.childClient.sentCommands.first?.notifyMainOnCompletion == true)
+    }
+
     @Test func createEmptyPickleSessionAlwaysSpawnsChild() async throws {
         let primaryClient = FakePickyAgentClient()
         let childSpawner = FakeManualPickleChildSpawner()

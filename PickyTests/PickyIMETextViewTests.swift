@@ -117,6 +117,104 @@ struct PickyIMETextViewTests {
         #expect(textView.string == "ready")
     }
 
+    @Test func markedTextReturnRoutesForwardedNewlineToReturnHandlerWhenOptedIn() throws {
+        let textView = PickyIMENSTextView()
+        textView.routesMarkedTextReturnToReturnHandler = true
+        textView.setMarkedText(
+            "줘",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: 0, length: 0)
+        )
+        var submitCount = 0
+        textView.onReturn = { _ in
+            submitCount += 1
+            return true
+        }
+
+        let handled = textView.handleMarkedTextReturn(Self.returnKeyEvent()) { _ in
+            textView.unmarkText()
+            textView.insertNewline(nil)
+            return true
+        }
+
+        #expect(handled)
+        #expect(submitCount == 1)
+        #expect(textView.string == "줘")
+    }
+
+    @Test func markedTextReturnDoesNotSubmitWhenInputContextOnlyCommitsCandidate() throws {
+        let textView = PickyIMENSTextView()
+        textView.routesMarkedTextReturnToReturnHandler = true
+        textView.setMarkedText(
+            "候補",
+            selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: 0, length: 0)
+        )
+        var submitCount = 0
+        textView.onReturn = { _ in
+            submitCount += 1
+            return true
+        }
+
+        let handled = textView.handleMarkedTextReturn(Self.returnKeyEvent()) { _ in
+            textView.unmarkText()
+            return true
+        }
+
+        #expect(handled)
+        #expect(submitCount == 0)
+        #expect(textView.string == "候補")
+    }
+
+    @Test func markedTextReturnKeepsCommitOnlyBehaviorWithoutOptIn() throws {
+        let textView = PickyIMENSTextView()
+        textView.setMarkedText(
+            "줘",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: 0, length: 0)
+        )
+        var submitCount = 0
+        textView.onReturn = { _ in
+            submitCount += 1
+            return true
+        }
+
+        let handled = textView.handleMarkedTextReturn(Self.returnKeyEvent()) { _ in
+            textView.unmarkText()
+            textView.insertNewline(nil)
+            return true
+        }
+
+        #expect(handled)
+        #expect(submitCount == 0)
+        #expect(textView.string == "줘")
+    }
+
+    @Test func markedTextShiftReturnInsertsNewlineWhenReturnHandlerFallsThrough() throws {
+        let textView = PickyIMENSTextView()
+        textView.routesMarkedTextReturnToReturnHandler = true
+        textView.setMarkedText(
+            "줘",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: 0, length: 0)
+        )
+        var receivedModifiers: NSEvent.ModifierFlags?
+        textView.onReturn = { modifiers in
+            receivedModifiers = modifiers
+            return false
+        }
+
+        let handled = textView.handleMarkedTextReturn(Self.returnKeyEvent(modifiers: .shift)) { _ in
+            textView.unmarkText()
+            textView.insertNewline(nil)
+            return true
+        }
+
+        #expect(handled)
+        #expect(receivedModifiers?.contains(.shift) == true)
+        #expect(textView.string == "줘\n")
+    }
+
     @Test func shiftReturnFallsThroughToNativeNewlineInsertion() throws {
         let textView = PickyIMENSTextView()
         textView.string = "first"

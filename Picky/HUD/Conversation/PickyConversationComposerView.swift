@@ -498,6 +498,7 @@ struct PickyConversationComposerView: View {
                 temporaryHighlightColor: NSColor(DS.Colors.accentText),
                 onMeasuredContentHeight: handleMeasuredEditorContentHeight,
                 onInputChange: applyAutocompleteInput,
+                routesMarkedTextReturnToReturnHandler: true,
                 onReturn: handleComposerReturnKey,
                 onUpArrow: handleComposerUpArrowKey,
                 onDownArrow: { moveAutocompleteSelection(.down) },

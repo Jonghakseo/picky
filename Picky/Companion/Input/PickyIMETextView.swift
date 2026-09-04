@@ -38,6 +38,10 @@ struct PickyIMETextView: NSViewRepresentable {
     var onMeasuredContentHeight: ((CGFloat) -> Void)?
     var onInputChange: ((PickyIMETextInput) -> Void)?
     var onMarkedTextChange: ((Bool) -> Void)?
+    /// Opts submit-style editors into treating the newline command forwarded by
+    /// an IME's marked-text Return as that same Return action after composition.
+    /// Multiline editors keep the existing commit-only behavior by default.
+    var routesMarkedTextReturnToReturnHandler: Bool = false
     var onReturn: ((NSEvent.ModifierFlags) -> Bool)?
     var onUpArrow: ((NSEvent.ModifierFlags) -> Bool)?
     var onDownArrow: (() -> Bool)?
@@ -153,6 +157,7 @@ struct PickyIMETextView: NSViewRepresentable {
         textView.onNativeInputStateChange = { [weak coordinator = context.coordinator] textView in
             coordinator?.scheduleInputChange(from: textView)
         }
+        textView.routesMarkedTextReturnToReturnHandler = routesMarkedTextReturnToReturnHandler
         textView.onReturn = onReturn
         textView.onUpArrow = onUpArrow
         textView.onDownArrow = onDownArrow
@@ -287,7 +292,14 @@ final class PickyIMENSTextView: NSTextView {
     var onEscape: (() -> Bool)?
     var onControlP: ((_ shiftPressed: Bool) -> Void)?
 
-    private var isCommittingMarkedTextWithReturn = false
+    var routesMarkedTextReturnToReturnHandler = false
+
+    private struct MarkedTextReturnState {
+        let modifiers: NSEvent.ModifierFlags
+        var requestedNewline = false
+    }
+
+    private var markedTextReturnState: MarkedTextReturnState?
     private var temporaryHighlightRange: NSRange?
     private var lastReportedMarkedTextState = false
 
@@ -314,6 +326,8 @@ final class PickyIMENSTextView: NSTextView {
         onLayout = nil
         onMarkedTextChange = nil
         onNativeInputStateChange = nil
+        routesMarkedTextReturnToReturnHandler = false
+        markedTextReturnState = nil
         onReturn = nil
         onUpArrow = nil
         onDownArrow = nil
@@ -402,9 +416,14 @@ final class PickyIMENSTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         let isReturn = event.keyCode == Self.returnKeyCode || event.keyCode == Self.keypadReturnKeyCode
         if hasMarkedText() {
-            if isReturn { isCommittingMarkedTextWithReturn = true }
-            let handledByInputContext = inputContext?.handleEvent(event) == true
-            if isReturn { isCommittingMarkedTextWithReturn = false }
+            let handledByInputContext: Bool
+            if isReturn {
+                handledByInputContext = handleMarkedTextReturn(event) { [weak self] event in
+                    self?.inputContext?.handleEvent(event) == true
+                }
+            } else {
+                handledByInputContext = inputContext?.handleEvent(event) == true
+            }
             if handledByInputContext { return }
         }
 
@@ -430,8 +449,39 @@ final class PickyIMENSTextView: NSTextView {
         super.keyDown(with: event)
     }
 
+    /// Runs the marked-text Return through the active input context first.
+    /// Some IMEs commit the marked text and then forward `insertNewline:` for
+    /// the same key. Submit-style editors may route that forwarded command to
+    /// their Return handler, while candidate-only commits and other editors
+    /// preserve the existing commit-only behavior.
+    @discardableResult
+    func handleMarkedTextReturn(
+        _ event: NSEvent,
+        using handleInputContextEvent: (NSEvent) -> Bool
+    ) -> Bool {
+        markedTextReturnState = MarkedTextReturnState(modifiers: event.modifierFlags)
+        let handledByInputContext = handleInputContextEvent(event)
+        let completedState = markedTextReturnState
+        markedTextReturnState = nil
+
+        guard routesMarkedTextReturnToReturnHandler,
+              let completedState,
+              completedState.requestedNewline,
+              !hasMarkedText(),
+              let onReturn
+        else { return handledByInputContext }
+
+        if onReturn(completedState.modifiers) != true {
+            super.insertNewline(nil)
+        }
+        return true
+    }
+
     override func insertNewline(_ sender: Any?) {
-        if isCommittingMarkedTextWithReturn { return }
+        if markedTextReturnState != nil {
+            markedTextReturnState?.requestedNewline = true
+            return
+        }
         super.insertNewline(sender)
     }
 

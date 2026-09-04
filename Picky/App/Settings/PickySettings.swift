@@ -445,17 +445,94 @@ struct PickyFontScales: Codable, Equatable {
     }
 }
 
-/// User-configurable toggles deciding which session status transitions emit a macOS
-/// banner via `PickySystemNotificationCenter`. Completion banners default off because they
-/// fire on every routine finish; failures and input requests stay on so users don't miss
-/// the cases that actually need attention.
+/// Destination for successful Pickle-completion notifications. The per-Pickle
+/// bell remains the opt-in switch; this setting only chooses where an enabled
+/// completion is presented.
+enum PickyCompletionNotificationDestination: String, Codable, CaseIterable, Identifiable {
+    case mainPicky
+    case macOS
+    case both
+
+    var id: String { rawValue }
+
+    var includesMain: Bool { self == .mainPicky || self == .both }
+    var includesMacOS: Bool { self == .macOS || self == .both }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self = Self(rawValue: try container.decode(String.self)) ?? .mainPicky
+    }
+}
+
+/// Successful completion destination plus the unchanged macOS failure/input
+/// toggles. `notifyOnCompleted` remains a source-compatible computed alias
+/// while old settings files are migrated to `completionDestination`.
 struct PickyNotificationPreferences: Codable, Equatable {
-    var notifyOnCompleted: Bool
+    var completionDestination: PickyCompletionNotificationDestination
     var notifyOnFailed: Bool
     var notifyOnWaitingForInput: Bool
 
+    /// Compatibility for callers compiled against the pre-destination setting.
+    /// Completion delivery is now controlled by the Pickle bell, so this value
+    /// only reports whether macOS is one selected destination.
+    var notifyOnCompleted: Bool {
+        get { completionDestination.includesMacOS }
+        set { completionDestination = newValue ? .both : .mainPicky }
+    }
+
+    init(
+        completionDestination: PickyCompletionNotificationDestination = .mainPicky,
+        notifyOnFailed: Bool = true,
+        notifyOnWaitingForInput: Bool = true
+    ) {
+        self.completionDestination = completionDestination
+        self.notifyOnFailed = notifyOnFailed
+        self.notifyOnWaitingForInput = notifyOnWaitingForInput
+    }
+
+    /// Legacy call-site compatibility. Persisted legacy `true` maps to both
+    /// channels, while `false` maps to Main Picky only.
+    init(
+        notifyOnCompleted: Bool,
+        notifyOnFailed: Bool,
+        notifyOnWaitingForInput: Bool
+    ) {
+        self.init(
+            completionDestination: notifyOnCompleted ? .both : .mainPicky,
+            notifyOnFailed: notifyOnFailed,
+            notifyOnWaitingForInput: notifyOnWaitingForInput
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case completionDestination
+        case notifyOnCompleted
+        case notifyOnFailed
+        case notifyOnWaitingForInput
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let destination = try container.decodeIfPresent(PickyCompletionNotificationDestination.self, forKey: .completionDestination) {
+            completionDestination = destination
+        } else {
+            completionDestination = (try container.decodeIfPresent(Bool.self, forKey: .notifyOnCompleted) ?? false)
+                ? .both
+                : .mainPicky
+        }
+        notifyOnFailed = try container.decodeIfPresent(Bool.self, forKey: .notifyOnFailed) ?? true
+        notifyOnWaitingForInput = try container.decodeIfPresent(Bool.self, forKey: .notifyOnWaitingForInput) ?? true
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(completionDestination, forKey: .completionDestination)
+        try container.encode(notifyOnFailed, forKey: .notifyOnFailed)
+        try container.encode(notifyOnWaitingForInput, forKey: .notifyOnWaitingForInput)
+    }
+
     static let defaults = PickyNotificationPreferences(
-        notifyOnCompleted: false,
+        completionDestination: .mainPicky,
         notifyOnFailed: true,
         notifyOnWaitingForInput: true
     )

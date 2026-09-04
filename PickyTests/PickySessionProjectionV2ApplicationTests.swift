@@ -818,7 +818,7 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(!bootstrapViewModel.unreadSessionIDs.contains("bootstrap"))
     }
 
-    @Test func recoveryTerminalSnapshotNotifiesActiveSessionButNotArchivedSession() async throws {
+    @Test func recoveryTerminalSnapshotsNeverEmitCompletedBanners() async throws {
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
             notifyOnFailed: true,
@@ -856,7 +856,7 @@ struct PickySessionProjectionV2ApplicationTests {
         let activeRecovery = try #require(activeClient.sentCommands.first { $0.type == .getSessionProjectionSnapshot })
         apply(snapshot(sessionID: "active", title: "Active", status: .completed, revision: 2, requestID: activeRecovery.requestId), to: activeViewModel)
 
-        #expect(activeNotifications.delivered.map(\.identifier) == ["active:completed"])
+        #expect(activeNotifications.delivered.isEmpty)
     }
 
     @Test func terminalTransactionPublishesPinnedV2BudgetAndPreservesAttentionEffects() throws {

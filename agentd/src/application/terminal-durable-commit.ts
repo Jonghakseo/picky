@@ -29,7 +29,7 @@ export interface TerminalDurableCommitDependencies {
   clearTurnActivity(sessionId: string): void;
   publish(sessionId: string, publication: TerminalCommitPublication, committedActivity: boolean, emittedArtifacts: readonly PickyArtifact[]): Promise<void>;
   isPickleSession(sessionId: string): boolean;
-  notifyPickleCompletion(sessionId: string): Promise<void>;
+  notifyPickleCompletion(sessionId: string, session: PickyAgentSession): Promise<void>;
   logNotificationFailure(sessionId: string, error: unknown): void;
 }
 
@@ -110,9 +110,15 @@ export async function finalizeTerminalOperation(
         mutations: finalization.mutations,
         revision: after.revision ?? 0,
       }, Boolean(activitySnapshot), materialized?.emittedArtifacts ?? []);
-      if (!dependencies.isPickleSession(sessionId)) return;
+      // Completion is produced exactly once from the durable terminal commit,
+      // after save and projection publication. Failed/cancelled/no-turn status
+      // events never enter the success-notification route.
+      if (!dependencies.isPickleSession(sessionId)
+          || after.status !== "completed"
+          || after.notifyMainOnCompletion !== true
+          || event.noTurnRan === true) return;
       try {
-        await dependencies.notifyPickleCompletion(sessionId);
+        await dependencies.notifyPickleCompletion(sessionId, after);
       } catch (error) {
         dependencies.logNotificationFailure(sessionId, error);
       }

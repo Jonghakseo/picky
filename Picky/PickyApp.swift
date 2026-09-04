@@ -146,6 +146,16 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         pool: agentDaemonPool,
         supportsSessionProjectionV2: true
     )
+    /// Completion effects are app-owned. The child bridge provides a durable
+    /// envelope, while this coordinator snapshots settings and selects Main
+    /// Picky, macOS, or both without projection-driven duplicate banners.
+    private lazy var completionNotificationCoordinator = PickyCompletionNotificationCoordinator(
+        preferencesProvider: PickyNotificationPreferencesStore(settingsStore: settingsStore),
+        deliverMain: { [weak self] envelope in
+            guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
+            try await self.hudAgentClientRouter.deliverCompletionToPrimary(envelope)
+        }
+    )
     /// Hoisted out of `hudOverlayManager` so the onboarding coordinator can
     /// also observe it (it needs to detect when the user long-presses the demo
     /// Pickle to archive it).
@@ -241,6 +251,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // The router must have its registry-backed bridge source before the
         // daemon can accept a v2 handoff or CLI request.
         wireDockGroupsProvider(on: hudAgentClientRouter)
+        hudAgentClientRouter.completionNotificationCoordinator = completionNotificationCoordinator
 
         if !Self.isRunningUnitTests {
             // Start the main-thread watchdog as early as possible so any

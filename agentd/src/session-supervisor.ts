@@ -145,6 +145,22 @@ export class SessionSupervisor extends EventEmitter {
   private pickleCompletionNotified = new Set<string>();
   private pickleCompletionInFlight = new Set<string>();
   private pendingPickleCompletions: string[] = [];
+  // Accepted child completion inputs wait here until Pi emits the matching
+  // input_delivery. A busy main runtime queues followUps immediately, but its
+  // current reply context remains untouched until Pi actually starts that
+  // queued input.
+  private pendingExternalPickleCompletions: Array<{
+    sessionId: string;
+    prompt: string;
+    cwd?: string;
+    completionId: string;
+  }> = [];
+  private acceptedExternalPickleCompletionIds = new Set<string>();
+  private externalPickleCompletionAdmissions = new Map<string, Promise<void>>();
+  // Serializes runtime acceptance calls. Pi preserves followUp order, so this
+  // keeps metadata order identical to its later input_delivery order.
+  private externalPickleCompletionAdmissionChain = Promise.resolve();
+  private pickleCompletionDrainPromise?: Promise<void>;
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
@@ -880,8 +896,13 @@ export class SessionSupervisor extends EventEmitter {
     this.mainVisualNarrationTurnToken = `main-turn-${this.mainTurnId}`;
     this.activeMainRuntimeInputId = undefined;
     this.interruptedMainInputIds.clear();
-    if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
+    const pendingCompletionCount = this.pendingPickleCompletions.length + this.pendingExternalPickleCompletions.length;
+    if (pendingCompletionCount > 0) logAgentd("Picky pending Pickle completions cleared", { count: pendingCompletionCount });
     this.pendingPickleCompletions = [];
+    this.pendingExternalPickleCompletions = [];
+    this.acceptedExternalPickleCompletionIds.clear();
+    this.externalPickleCompletionAdmissions.clear();
+    this.externalPickleCompletionAdmissionChain = Promise.resolve();
     this.cancelMainIdleCompaction();
     this.mainInFlightCompaction = false;
     this.mainPendingCompactionContexts = [];
@@ -1613,6 +1634,12 @@ export class SessionSupervisor extends EventEmitter {
       }
       return;
     }
+    if (event.type === "input_delivery") {
+      // Pi emits this when a queued followUp begins, which is the first safe
+      // point to transfer a completion reply context away from the active turn.
+      this.handleExternalPickleCompletionInputDelivery(event);
+      return;
+    }
     if (event.type === "assistant_delta") {
       if (event.inputId && this.interruptedMainInputIds.has(event.inputId)) {
         logAgentd("main interrupted delta suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, deltaChars: event.delta.length, pending: this.interruptedMainInputIds.size });
@@ -1762,14 +1789,12 @@ export class SessionSupervisor extends EventEmitter {
     return projectMainReplyMetadata(this.mainReplyContextId, this.mainContext, this.pickleSessionIds, this.externalPickleReplyContexts);
   }
 
-  private async notifyPickyOfPickleCompletion(sessionId: string): Promise<void> {
-    const session = this.mustGet(sessionId);
+  private async notifyPickyOfPickleCompletion(sessionId: string, committedSession?: PickyAgentSession): Promise<void> {
+    const session = committedSession ?? this.mustGet(sessionId);
+    // The bell is the master opt-in. Missing legacy state remains off, and
+    // only a durable successful terminal commit may emit an envelope.
+    if (session.status !== "completed" || session.notifyMainOnCompletion !== true) return;
     if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
-    if (session.notifyMainOnCompletion === false) {
-      this.pickleCompletionNotified.add(sessionId);
-      logAgentd("Pickle completion notify skipped", { sessionId, status: session.status });
-      return;
-    }
     // Defer when Picky is mid-turn (e.g. the handoff turn that spawned this
     // Pickle session has not emitted status:completed yet). Sending the followUp now
     // would clobber mainReplyContextId / mainDraft. Park the sessionId and let
@@ -1789,11 +1814,9 @@ export class SessionSupervisor extends EventEmitter {
     if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    if (session.notifyMainOnCompletion === false) {
-      this.pickleCompletionNotified.add(sessionId);
-      logAgentd("Pickle completion notify skipped", { sessionId, status: session.status });
-      return;
-    }
+    // Reaching this queue already proves the durable completion observed an
+    // enabled bell. Do not reinterpret a later preference change as recall.
+    if (session.status !== "completed") return;
     this.pickleCompletionInFlight.add(sessionId);
     try {
       const prompt = buildMainAgentPickleCompletionPrompt(session);
@@ -1811,7 +1834,15 @@ export class SessionSupervisor extends EventEmitter {
         // mainRuntime from child supervisors.
         if (this.options.forwardPickleCompletionToPrimary) {
           try {
-            await this.options.forwardPickleCompletionToPrimary({ sessionId, prompt: prompt.text, cwd: session.cwd });
+            await this.options.forwardPickleCompletionToPrimary({
+              sessionId,
+              prompt: prompt.text,
+              cwd: session.cwd,
+              completionId: `${sessionId}:${session.revision ?? 0}`,
+              title: session.title,
+              status: "completed",
+              summary: session.lastSummary,
+            });
             this.pickleCompletionNotified.add(sessionId);
             logAgentd("Pickle completion forwarded to primary", { sessionId, status: session.status });
           } catch (error) {
@@ -1824,6 +1855,8 @@ export class SessionSupervisor extends EventEmitter {
       }
 
       this.pickleCompletionNotified.add(sessionId);
+      // A completion is a new main turn after the preceding turn settled.
+      this.mainTerminalProcessed = false;
       this.mainIsProcessing = true;
       logAgentd("Pickle completion notifying Picky", { sessionId, status: session.status });
       if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
@@ -1833,46 +1866,143 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   /**
-   * Primary-daemon entrypoint for Pickle completions forwarded from a child daemon via the
-   * Picky app bridge (`notifyMainOfPickleCompletion`). The child has already built the user-
-   * facing prompt; we just need to deliver it to the main agent and tag the resulting reply
-   * as a `pickleCompletion` quickReply so the menu-bar surface routes it to the originating
-   * Pickle card. Returns nothing — failures are logged so the bridge response can ack delivery
-   * without blocking on the LLM turn.
+   * Primary-daemon entrypoint for a child completion accepted by the app. The
+   * child is the sole bell owner: reaching this method already means the
+   * durable completed generation had its bell enabled.
    */
-  async deliverMainAgentPickleCompletion(sessionId: string, promptText: string, cwd?: string): Promise<void> {
+  async deliverMainAgentPickleCompletion(
+    requestOrSessionId: {
+      sessionId: string;
+      prompt: string;
+      cwd?: string;
+      completionId?: string;
+      title?: string;
+      status?: string;
+      summary?: string;
+    } | string,
+    legacyPrompt?: string,
+    legacyCwd?: string,
+  ): Promise<void> {
+    const request = typeof requestOrSessionId === "string"
+      ? { sessionId: requestOrSessionId, prompt: legacyPrompt ?? "", cwd: legacyCwd }
+      : requestOrSessionId;
+    if (request.status && request.status !== "completed") return;
+    const completionId = request.completionId ?? `legacy:${request.sessionId}:${request.prompt}`;
+    if (this.acceptedExternalPickleCompletionIds.has(completionId)) return;
+    const existingAdmission = this.externalPickleCompletionAdmissions.get(completionId);
+    if (existingAdmission) return existingAdmission;
+
+    const admission = this.externalPickleCompletionAdmissionChain
+      .catch(() => undefined)
+      .then(() => this.admitExternalPickleCompletion({
+        sessionId: request.sessionId,
+        prompt: request.prompt,
+        cwd: request.cwd,
+        completionId,
+      }))
+      .then(() => { this.acceptedExternalPickleCompletionIds.add(completionId); });
+    this.externalPickleCompletionAdmissions.set(completionId, admission);
+    this.externalPickleCompletionAdmissionChain = admission.catch(() => undefined);
+    try {
+      await admission;
+    } finally {
+      if (this.externalPickleCompletionAdmissions.get(completionId) === admission) {
+        this.externalPickleCompletionAdmissions.delete(completionId);
+      }
+    }
+  }
+
+  private async admitExternalPickleCompletion(request: { sessionId: string; prompt: string; cwd?: string; completionId: string }): Promise<void> {
     if (!this.options.mainRuntime) {
-      logAgentd("Pickle completion forwarded notify rejected", { sessionId, reason: "no main runtime" });
+      logAgentd("Pickle completion forwarded notify rejected", { sessionId: request.sessionId, reason: "no main runtime" });
       throw new Error("Main runtime is not configured for Pickle completion delivery");
     }
-    const prompt: BuiltPrompt = { text: promptText, imagePaths: [] };
+
+    const wasMainProcessing = this.mainIsProcessing;
+    const prompt: BuiltPrompt = { text: request.prompt, imagePaths: [] };
+    // Register before followUp because the runtime may emit input_delivery
+    // during the acceptance call. Remove this exact entry on rejection so a
+    // retry is not deduped or matched to stale metadata.
+    this.pendingExternalPickleCompletions.push(request);
+    if (!wasMainProcessing) this.activateExternalPickleCompletionContext(request.sessionId);
+
+    try {
+      const delivery = await this.preparePickyCompletionDelivery(prompt, request.cwd);
+      if (!delivery) throw new Error("Main agent handle is unavailable");
+      if (!wasMainProcessing) this.mainIsProcessing = true;
+      if (delivery.sendAsFollowUp) {
+        await delivery.handle.followUp(prompt);
+      } else {
+        // The freshly-created runtime receives its initial prompt before the
+        // supervisor subscribes, so no input_delivery will arrive here. Its
+        // idle context was activated above and must not block later queued
+        // completion metadata.
+        this.pendingExternalPickleCompletions = this.pendingExternalPickleCompletions.filter((completion) => completion.completionId !== request.completionId);
+      }
+      logAgentd("Pickle completion forwarded notify accepted", {
+        sessionId: request.sessionId,
+        completionId: request.completionId,
+        queued: wasMainProcessing ? 1 : 0,
+      });
+    } catch (error) {
+      this.pendingExternalPickleCompletions = this.pendingExternalPickleCompletions.filter((completion) => completion.completionId !== request.completionId);
+      if (!wasMainProcessing) {
+        this.externalPickleReplyContexts.delete(request.sessionId);
+        this.mainIsProcessing = false;
+      }
+      logAgentd("Pickle completion forwarded followUp failed", {
+        sessionId: request.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  private activateExternalPickleCompletionContext(sessionId: string): void {
     this.mainReplyContextId = sessionId;
     this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
     this.mainVisualNarration.reset();
     this.externalPickleReplyContexts.add(sessionId);
-    const delivery = await this.preparePickyCompletionDelivery(prompt, cwd);
-    if (!delivery) {
-      this.externalPickleReplyContexts.delete(sessionId);
-      logAgentd("Pickle completion forwarded notify dropped", { sessionId, reason: "no main handle" });
-      throw new Error("Main agent handle is unavailable");
-    }
-    this.mainIsProcessing = true;
-    logAgentd("Pickle completion forwarded notify delivering", { sessionId, promptChars: prompt.text.length, sendAsFollowUp: delivery.sendAsFollowUp ? 1 : 0 });
-    if (delivery.sendAsFollowUp) {
-      // Fire-and-forget: the LLM turn may take seconds, and the bridge caller (child daemon)
-      // should not wait on it. Errors are logged for forensics.
-      void delivery.handle.followUp(prompt).catch((error) => {
-        logAgentd("Pickle completion forwarded followUp failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
-      });
-    }
+  }
+
+  private handleExternalPickleCompletionInputDelivery(event: Extract<RuntimeEvent, { type: "input_delivery" }>): void {
+    const completion = this.pendingExternalPickleCompletions[0];
+    if (!completion
+      || event.role !== "user"
+      || event.originatedBy !== "internal"
+      || event.text !== completion.prompt) return;
+
+    this.pendingExternalPickleCompletions.shift();
+    this.activateExternalPickleCompletionContext(completion.sessionId);
+    this.mainTerminalProcessed = false;
+    logAgentd("Pickle completion forwarded notify started", {
+      sessionId: completion.sessionId,
+      completionId: completion.completionId,
+      queueLength: this.pendingExternalPickleCompletions.length,
+    });
   }
 
   private schedulePickleCompletionDrain(): void {
-    void this.drainPendingPickleCompletions().catch((error) => {
+    void this.runPickleCompletionDrain().catch((error) => {
       logAgentd("Pickle completion drain failed", { error: error instanceof Error ? error.message : String(error) });
     });
+  }
+
+  private runPickleCompletionDrain(): Promise<void> {
+    if (this.pickleCompletionDrainPromise) return this.pickleCompletionDrainPromise;
+    const drain = this.drainPendingPickleCompletions();
+    this.pickleCompletionDrainPromise = drain;
+    void drain.then(
+      () => {
+        if (this.pickleCompletionDrainPromise === drain) this.pickleCompletionDrainPromise = undefined;
+      },
+      () => {
+        if (this.pickleCompletionDrainPromise === drain) this.pickleCompletionDrainPromise = undefined;
+      },
+    );
+    return drain;
   }
 
   private async drainPendingPickleCompletions(): Promise<void> {
@@ -1897,22 +2027,9 @@ export class SessionSupervisor extends EventEmitter {
 
   async setNotifyMainOnCompletion(sessionId: string, enabled: boolean): Promise<PickyAgentSession> {
     if (!this.isPickleSession(sessionId)) throw new Error(`Session is not a Pickle: ${sessionId}`);
+    // Completion notification policy is snapshotted by notifyPickyOfPickleCompletion
+    // at the durable terminal commit. A later toggle affects only future turns.
     await this.patch(sessionId, { notifyMainOnCompletion: enabled });
-    // Disabling means "never surface this completion to Picky". Drop it from the deferred queue
-    // now so the drain loop cannot stop on it after an active sibling flips mainIsProcessing
-    // back to true. Without this, a [skip, active] queue order is fine but [active, skip] would
-    // strand the skip entry forever because drain exits as soon as the active entry sets
-    // mainIsProcessing=true. Notify queue push order across sibling Pickle completions is
-    // non-deterministic (it depends on which RuntimeEventHandler microtask chain progresses
-    // first), so we cannot rely on a particular ordering here.
-    if (!enabled) {
-      const queueIndex = this.pendingPickleCompletions.indexOf(sessionId);
-      if (queueIndex >= 0) {
-        this.pendingPickleCompletions.splice(queueIndex, 1);
-        this.pickleCompletionNotified.add(sessionId);
-        logAgentd("Pickle completion dequeued via setNotifyMainOnCompletion", { sessionId, queueLength: this.pendingPickleCompletions.length });
-      }
-    }
     return this.mustGet(sessionId);
   }
 

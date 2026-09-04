@@ -24,10 +24,18 @@ export interface SessionSupervisorOptions {
   // MAIN_AGENT_COMPACT_IDLE_MS; tests lower it to avoid waiting on real-time timers.
   mainCompactionIdleMs?: number;
   // Child daemons have no `mainRuntime` of their own, so they cannot followUp the main Picky
-  // agent directly. When set, `deliverPickleCompletionToMain` falls back to this callback to
-  // forward the prebuilt prompt through the Picky app to the primary daemon, which owns the
-  // main agent. Returning successfully marks the Pickle as notified.
-  forwardPickleCompletionToPrimary?: (request: { sessionId: string; prompt: string; cwd?: string }) => Promise<void>;
+  // agent directly. When set, `deliverPickleCompletionToMain` forwards one
+  // durable completion envelope through the app, which selects macOS/Main
+  // channels before optionally delivering to the primary daemon.
+  forwardPickleCompletionToPrimary?: (request: {
+    sessionId: string;
+    prompt: string;
+    cwd?: string;
+    completionId: string;
+    title: string;
+    status: "completed";
+    summary?: string;
+  }) => Promise<void>;
   // Builds the customTools array to apply to the main runtime after the user
   // toggles built-in tool availability. Called with the current disabled set;
   // returns the filtered ToolDefinition[] that should be active. bootstrap.ts

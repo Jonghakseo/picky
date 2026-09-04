@@ -65,7 +65,16 @@ export type AppPickleBridgeRequest =
   | { operation: "setArchived"; sessionId: string; archived: boolean }
   | { operation: "delete"; sessionId: string }
   | { operation: "manageGroups"; groupAction: "list" | "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup"; groupId?: string; name?: string; sessionIds?: string[] }
-  | { operation: "notifyMainOfPickleCompletion"; sessionId: string; prompt: string; cwd?: string };
+  | {
+    operation: "notifyMainOfPickleCompletion";
+    sessionId: string;
+    prompt: string;
+    cwd?: string;
+    completionId?: string;
+    title?: string;
+    status?: "completed" | "failed" | "cancelled" | "queued" | "running" | "waiting_for_input" | "blocked";
+    summary?: string;
+  };
 
 export interface AppPickleBridgeResult {
   sessions?: PickyAgentSession[];
@@ -624,7 +633,15 @@ export class AgentdServer {
       duplicatePickleSession: (cmd) => this.options.supervisor.duplicatePickleSession(cmd.sessionId),
       pinPickleSession: (cmd) => this.options.supervisor.pinPickleSession(cmd.context, cmd.title),
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
-      notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion(cmd.sessionId, cmd.prompt, cmd.cwd),
+      notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion({
+        sessionId: cmd.sessionId,
+        prompt: cmd.prompt,
+        cwd: cmd.cwd,
+        completionId: cmd.completionId,
+        title: cmd.title,
+        status: cmd.status,
+        summary: cmd.summary,
+      }),
       setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
       deleteSession: async (cmd) => {
         await this.options.supervisor.deleteSession(cmd.sessionId);
@@ -1169,7 +1186,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "manageDockGroups":
       return { commandId: command.id, type: command.type, action: command.groupAction, groupId: command.groupId, sessions: command.sessionIds?.length, caller: command.caller };
     case "notifyMainOfPickleCompletion":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId, promptChars: command.prompt.length, cwd: command.cwd };
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, completionId: command.completionId, promptChars: command.prompt.length, cwd: command.cwd };
     case "followUp":
     case "steer":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, textChars: command.text.length, contextId: command.context?.id, screenshots: command.context?.screenshots.length };

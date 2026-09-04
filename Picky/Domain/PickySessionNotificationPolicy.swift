@@ -36,13 +36,11 @@ struct PickySessionNotificationPolicy {
     ) -> Notification? {
         switch input.status {
         case .completed:
-            guard !input.pinned else { return nil }
-            guard preferences.notifyOnCompleted else { return nil }
-            return Notification(
-                key: "\(input.sessionID):completed",
-                title: localizer("notif.session.completed.title"),
-                body: input.lastSummary.isEmpty ? input.title : input.lastSummary
-            )
+            // Successful completion effects are emitted from the durable child
+            // completion envelope and routed once by the app coordinator. A
+            // projection update can arrive cold, duplicate, or out of order,
+            // so it must never independently create a completion banner.
+            return nil
         case .failed:
             guard preferences.notifyOnFailed else { return nil }
             return Notification(
@@ -68,7 +66,7 @@ struct PickySessionNotificationPolicy {
         case .completed, .failed, .cancelled:
             return []
         case .queued, .running, .waiting_for_input, .blocked:
-            return ["\(sessionID):completed", "\(sessionID):failed"]
+            return ["\(sessionID):failed"]
         }
     }
 }

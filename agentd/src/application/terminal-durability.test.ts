@@ -103,13 +103,14 @@ describe("terminal durability", () => {
       await supervisor.load();
       const session = await supervisor.create(context);
       (supervisor as unknown as { pickleSessionIds: Set<string> }).pickleSessionIds.add(session.id);
+      await supervisor.setNotifyMainOnCompletion(session.id, true);
       const internals = supervisor as unknown as SupervisorInternals;
 
       await internals.applyRuntimeEvent(session.id, { type: "assistant_delta", delta: "committed answer" });
       await internals.applyRuntimeEvent(session.id, { type: "status", status: "completed", finalAnswer: "committed answer" });
 
       expect(notifications).toEqual([session.id]);
-      expect(supervisor.get(session.id)).toMatchObject({ status: "completed", finalAnswer: "committed answer", revision: (session.revision ?? 0) + 1 });
+      expect(supervisor.get(session.id)).toMatchObject({ status: "completed", finalAnswer: "committed answer", revision: (session.revision ?? 0) + 2 });
       expect((await store.loadAll()).find((candidate) => candidate.id === session.id)).toMatchObject({ status: "completed", finalAnswer: "committed answer" });
     } finally {
       await rm(root, { recursive: true, force: true });

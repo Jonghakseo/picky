@@ -61,6 +61,21 @@ struct PickyNotificationPreferencesTests {
         #expect(settings.notifications == .defaults)
     }
 
+    @Test func migratesLegacyCompletionToggleToDestination() throws {
+        let decoder = JSONDecoder()
+        let legacyOn = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"notifyOnCompleted":true,"notifyOnFailed":false,"notifyOnWaitingForInput":true}"#.utf8))
+        let legacyOff = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"notifyOnCompleted":false,"notifyOnFailed":true,"notifyOnWaitingForInput":false}"#.utf8))
+        let missing = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"notifyOnFailed":true,"notifyOnWaitingForInput":true}"#.utf8))
+        let future = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"completionDestination":"future","notifyOnFailed":true,"notifyOnWaitingForInput":true}"#.utf8))
+
+        #expect(legacyOn.completionDestination == .both)
+        #expect(legacyOff.completionDestination == .mainPicky)
+        #expect(missing.completionDestination == .mainPicky)
+        #expect(future.completionDestination == .mainPicky)
+        #expect(legacyOn.notifyOnFailed == false)
+        #expect(legacyOff.notifyOnWaitingForInput == false)
+    }
+
     @Test func newSettingsWithToggleStateRoundTripThroughDisk() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -79,6 +94,7 @@ struct PickyNotificationPreferencesTests {
         try store.save(settings)
 
         let reloaded = store.load()
+        #expect(reloaded.notifications.completionDestination == .mainPicky)
         #expect(reloaded.notifications.notifyOnCompleted == false)
         #expect(reloaded.notifications.notifyOnFailed == true)
         #expect(reloaded.notifications.notifyOnWaitingForInput == false)

@@ -175,6 +175,7 @@ struct PickyConversationHeaderProjection {
     let currentAssistantRun: PickyAssistantRunMetadata?
     let piSessionFilePath: String?
     let notifyMainOnCompletion: Bool?
+    var notifyOnCompletion: Bool { notifyMainOnCompletion == true }
 
     init(metaStore: PickySessionMetaStore) {
         guard case .loaded(let metadata) = metaStore.metadataState else {
@@ -218,6 +219,7 @@ struct PickyConversationComposerProjection {
     let status: PickySessionStatus
     let lastSummary: String
     let notifyMainOnCompletion: Bool?
+    var notifyOnCompletion: Bool { notifyMainOnCompletion == true }
     let currentAssistantRun: PickyAssistantRunMetadata?
     let messageContext: PickyComposerMessageContext
     let queuedSteers: [PickyQueueItem]

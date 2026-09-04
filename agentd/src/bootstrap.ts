@@ -187,7 +187,15 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   // prebuilt prompt through the Picky app to the primary daemon's main agent. Primary daemons
   // never need the bridge (they own the main runtime in-process) and leave it undefined.
   const forwardPickleCompletionToPrimary = config.mode === "child"
-    ? async (request: { sessionId: string; prompt: string; cwd?: string }) => {
+    ? async (request: {
+      sessionId: string;
+      prompt: string;
+      cwd?: string;
+      completionId: string;
+      title: string;
+      status: "completed";
+      summary?: string;
+    }) => {
         if (!appPickleBridgeRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
         await appPickleBridgeRef.current({ operation: "notifyMainOfPickleCompletion", ...request });
       }

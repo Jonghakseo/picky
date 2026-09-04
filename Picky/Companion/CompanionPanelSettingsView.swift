@@ -269,7 +269,7 @@ struct CompanionPanelSettingsView: View {
                 ? L10n.t("settings.summary.cursorOn")
                 : L10n.t("settings.summary.cursorOff")
             let n = settings.notifications
-            let alertsOn = [n.notifyOnCompleted, n.notifyOnFailed, n.notifyOnWaitingForInput]
+            let alertsOn = [n.completionDestination.includesMacOS, n.notifyOnFailed, n.notifyOnWaitingForInput]
                 .filter { $0 }
                 .count
             return L10n.t("settings.summary.overlayAndNotifications", cursor, alertsOn, 3)
@@ -538,11 +538,28 @@ struct CompanionPanelSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     voiceSubgroupHeader("settings.overlayAndNotifications.subgroup.alerts")
-                    toggleRow("settings.notification.toggle.onSuccess", isOn: $viewModel.settings.notifications.notifyOnCompleted, divider: true)
+                    completionNotificationDestinationPicker
                     toggleRow("settings.notification.toggle.onFailure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
                     toggleRow("settings.notification.toggle.onInputRequest", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
                 }
             }
+        }
+    }
+
+    private var completionNotificationDestinationPicker: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            fieldLabel("settings.notification.completionDestination")
+            Picker("settings.notification.completionDestination", selection: $viewModel.settings.notifications.completionDestination) {
+                Text("settings.notification.destination.mainPicky").tag(PickyCompletionNotificationDestination.mainPicky)
+                Text("settings.notification.destination.macOS").tag(PickyCompletionNotificationDestination.macOS)
+                Text("settings.notification.destination.both").tag(PickyCompletionNotificationDestination.both)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+                .background(DS.Colors.borderSubtle.opacity(0.3))
+                .padding(.vertical, 5)
         }
     }
 

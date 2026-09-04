@@ -8293,6 +8293,40 @@
         }
       }
     },
+    "settings.notification.completionDestination": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completion notification"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 알림"
+          }
+        }
+      }
+    },
+    "settings.notification.destination.mainPicky": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Main Picky" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "메인 Picky" } }
+      }
+    },
+    "settings.notification.destination.macOS": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "macOS" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "macOS" } }
+      }
+    },
+    "settings.notification.destination.both": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Both" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "둘 다" } }
+      }
+    },
     "settings.oauth.body": {
       "localizations": {
         "en": {
@@ -11603,13 +11637,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Do not notify Picky on completion (⌘N)"
+            "value": "Do not send a completion notification (⌘N)"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "완료 시 Picky에 알리지 않기 (⌘N)"
+            "value": "완료 알림 보내지 않기 (⌘N)"
           }
         }
       }
@@ -11619,13 +11653,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notify Picky on completion (⌘N)"
+            "value": "Send a completion notification (⌘N)"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "완료 시 Picky에 알리기 (⌘N)"
+            "value": "완료 알림 보내기 (⌘N)"
           }
         }
       }

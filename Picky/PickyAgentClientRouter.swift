@@ -268,6 +268,10 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// Provides app-owned dock groups for `picky pickle-group-list` and main-agent queries.
     var dockGroupsProvider: (() async -> [PickyDockGroupPayload])?
 
+    /// The app owns completion presentation policy. The router only supplies
+    /// the child bridge transport and the primary-daemon delivery boundary.
+    var completionNotificationCoordinator: PickyCompletionNotificationCoordinator?
+
     /// Registry-backed CLI read model. This is intentionally a read-only
     /// provider: the router never decodes or applies v2 projection mutations.
     var pickleSessionSummariesProvider: (() -> [PickyAgentSession])?
@@ -335,8 +339,49 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     func send(_ command: PickyCommandEnvelope) async throws {
+        // Bell state belongs only to the child session. Unlike input, do not
+        // report a queued boot-time update as accepted before that child has
+        // persisted it.
+        if command.type == .setNotifyMainOnCompletion {
+            guard let sessionID = command.sessionId,
+                  knownChildSessionIds.contains(sessionID) || pool.endpoint(for: sessionID) != nil else {
+                throw PickyAgentClientRouterError.unknownChildSession(sessionId: command.sessionId ?? "")
+            }
+            let target = try await connectedClient(for: sessionID)
+            if let rejection = try await sendAwaitingError(
+                command,
+                requireAcknowledgement: true,
+                on: target
+            ) {
+                throw PickyAgentClientRouterError.bridgeCommandRejected(rejection.message)
+            }
+            return
+        }
         if enqueueIfChildIsBooting(command) { return }
         try await sendAfterCapabilityRegistration(command, on: connectedClient(for: command.sessionId))
+    }
+
+    /// Completion envelopes are always consumed by the primary supervisor,
+    /// even though their `sessionId` belongs to a child daemon.
+    func deliverCompletionToPrimary(_ envelope: PickyCompletionNotificationEnvelope) async throws {
+        let rejection = try await sendAwaitingError(
+            PickyCommandEnvelope(
+                type: .notifyMainOfPickleCompletion,
+                sessionId: envelope.sessionID,
+                title: envelope.title,
+                cwd: envelope.cwd,
+                prompt: envelope.prompt,
+                completionId: envelope.completionId,
+                status: envelope.status,
+                summary: envelope.summary
+            ),
+            timeout: 5,
+            requireAcknowledgement: true,
+            on: primaryClient
+        )
+        if let rejection {
+            throw PickyAgentClientRouterError.bridgeCommandRejected(rejection.message)
+        }
     }
 
     /// Primary + every currently cached child client. Children booting in the
@@ -411,7 +456,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     func sendAwaitingError(
         _ command: PickyCommandEnvelope,
         timeout: TimeInterval = 1.0,
-        requireAcknowledgement: Bool = false
+        requireAcknowledgement: Bool = false,
+        on targetClient: PickyAgentClient? = nil
     ) async throws -> PickyErrorEvent? {
         let commandId = command.id
         // The handler MUST be installed before `send` is dispatched. agentd
@@ -438,7 +484,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             pendingErrorHandlers[commandId] = { resume(.success($0)) }
             Task { @MainActor in
                 do {
-                    try await self.send(command)
+                    if let targetClient {
+                        try await self.sendAfterCapabilityRegistration(command, on: targetClient)
+                    } else {
+                        try await self.send(command)
+                    }
                 } catch {
                     // Transport-level send failure — propagate it so the
                     // caller's `catch` block can surface a real error.
@@ -835,9 +885,18 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 ))
                 await completePickleBridge(request, on: responseClient, groups: groups)
             case .notifyMainOfPickleCompletion:
-                // Forward the child-built completion prompt to the primary daemon, which owns
-                // the main Picky agent and can followUp on its behalf. The child cannot do this
-                // directly because child daemons have no mainRuntime wired in.
+                // New children provide a durable completion envelope. The app
+                // chooses destination before any primary-agent prompt is sent.
+                let projectedSession = request.sessionId.flatMap { self.pickleSessionSummary(id: $0) }
+                if let envelope = request.completionEnvelope(projectedSession: projectedSession),
+                   let coordinator = completionNotificationCoordinator {
+                    _ = try await coordinator.route(envelope)
+                    await completePickleBridge(request, on: responseClient, delivered: true)
+                    return
+                }
+                // Retain a narrow transport fallback for router clients that
+                // predate the app-owned coordinator. Installed apps always
+                // configure it during launch.
                 guard let sessionId = request.sessionId, let prompt = request.prompt else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
                     type: .notifyMainOfPickleCompletion,

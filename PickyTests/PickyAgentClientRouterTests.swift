@@ -256,6 +256,10 @@ private func makePickleBridgeRequestEvent(
     text: String? = nil,
     prompt: String? = nil,
     cwd: String? = nil,
+    completionId: String? = nil,
+    title: String? = nil,
+    status: String? = nil,
+    summary: String? = nil,
     groupAction: String? = nil,
     groupId: String? = nil,
     name: String? = nil,
@@ -267,6 +271,10 @@ private func makePickleBridgeRequestEvent(
     if let text { fields += ", \"text\": \"\(text)\"" }
     if let prompt { fields += ", \"prompt\": \"\(prompt)\"" }
     if let cwd { fields += ", \"cwd\": \"\(cwd)\"" }
+    if let completionId { fields += ", \"completionId\": \"\(completionId)\"" }
+    if let title { fields += ", \"title\": \"\(title)\"" }
+    if let status { fields += ", \"status\": \"\(status)\"" }
+    if let summary { fields += ", \"summary\": \"\(summary)\"" }
     if let groupAction { fields += ", \"groupAction\": \"\(groupAction)\"" }
     if let groupId { fields += ", \"groupId\": \"\(groupId)\"" }
     if let name { fields += ", \"name\": \"\(name)\"" }
@@ -1259,6 +1267,17 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            completionDestination: .mainPicky,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        router.completionNotificationCoordinator = PickyCompletionNotificationCoordinator(
+            preferencesProvider: preferences,
+            notificationCenter: PickyNoopNotificationCenter(),
+            deliverMain: { envelope in try await router.deliverCompletionToPrimary(envelope) }
+        )
+        await router.connect()
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-completion", cwd: "/tmp/ws")
         _ = try await poolFactory.waitForRunner(sessionId: "pickle-completion")
@@ -1270,7 +1289,11 @@ struct PickyAgentClientRouterTests {
             operation: "notifyMainOfPickleCompletion",
             sessionId: "pickle-completion",
             prompt: "Pickle finished prompt",
-            cwd: "/tmp/ws"
+            cwd: "/tmp/ws",
+            completionId: "pickle-completion:12",
+            title: "Pickle completion",
+            status: "completed",
+            summary: "Finished cleanly"
         )))
 
         try await waitUntil { primary.sentCommands.contains { $0.type == .notifyMainOfPickleCompletion } }
@@ -1278,12 +1301,30 @@ struct PickyAgentClientRouterTests {
         #expect(notify.sessionId == "pickle-completion")
         #expect(notify.prompt == "Pickle finished prompt")
         #expect(notify.cwd == "/tmp/ws")
+        #expect(notify.completionId == "pickle-completion:12")
+        #expect(notify.status == .completed)
+        #expect(notify.summary == "Finished cleanly")
+        #expect(!child.sentCommands.contains { $0.type == .completePickleBridgeRequest })
 
+        primary.emit(.protocolEvent(makeAckEnvelope(commandId: notify.id)))
         try await waitUntil { child.sentCommands.contains { $0.type == .completePickleBridgeRequest } }
         let ack = try #require(child.sentCommands.first { $0.type == .completePickleBridgeRequest })
         #expect(ack.requestId == "bridge-request-1")
         #expect(ack.delivered == true)
         #expect(primary.sentCommands.allSatisfy { $0.type != .completePickleBridgeRequest })
+
+        let bellUpdate = Task { try await router.send(PickyCommandEnvelope(type: .setNotifyMainOnCompletion, sessionId: "pickle-completion", enabled: false)) }
+        try await waitUntil {
+            child.sentCommands.contains {
+                $0.type == .setNotifyMainOnCompletion
+                    && $0.sessionId == "pickle-completion"
+                    && $0.enabled == false
+            }
+        }
+        #expect(!primary.sentCommands.contains { $0.type == .setNotifyMainOnCompletion })
+        let childBell = try #require(child.sentCommands.last(where: { $0.type == .setNotifyMainOnCompletion }))
+        child.emit(.protocolEvent(makeAckEnvelope(commandId: childBell.id)))
+        try await bellUpdate.value
     }
 
     @Test func releaseChildDisconnectsAndAsksPoolToTerminate() async throws {

@@ -1,0 +1,12 @@
+{
+  "id": "cmd-completion-001",
+  "protocolVersion": "2026-08-25",
+  "type": "notifyMainOfPickleCompletion",
+  "sessionId": "session-001",
+  "completionId": "session-001:8",
+  "title": "Investigate notification routing",
+  "status": "completed",
+  "summary": "Notification routing is complete.",
+  "prompt": "Pickle finished.",
+  "cwd": "/tmp/project"
+}

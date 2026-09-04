@@ -583,7 +583,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == nil)
     }
 
-    @MainActor @Test func eventSequenceDrivesExpectedStatusChanges() {
+    @MainActor @Test func eventSequenceKeepsWaitingAlertButNeverEmitsCompletedBanner() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -600,7 +600,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.status == .completed)
         #expect(viewModel.sessions.first?.lastSummary == "Done")
         #expect(notifications.delivered.map(\.title).contains(L10n.t("notif.session.waiting.title")))
-        #expect(notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
+        #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
     }
 
     @MainActor @Test func slimTodoStateUpdatesApplyAndClearWithoutReplacingSession() {
@@ -1389,7 +1389,7 @@ struct PickySessionViewModelTests {
         #expect(card.lastRequestText == "계속 진행해줘.")
     }
 
-    @MainActor @Test func terminalNotificationsAreDeduplicated() {
+    @MainActor @Test func repeatedCompletedProjectionUpdatesNeverEmitBanners() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -1401,10 +1401,10 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done again"))))
 
-        #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.count == 1)
+        #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.isEmpty)
     }
 
-    @MainActor @Test func terminalNotificationResetsAfterSessionRunsAgain() {
+    @MainActor @Test func laterCompletedProjectionGenerationNeverEmitsBanner() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -1417,7 +1417,7 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Running again"))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Second done", updatedAt: "2026-05-01T00:00:10.000Z"))))
 
-        #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.count == 2)
+        #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.isEmpty)
     }
 
     @MainActor @Test func snapshotHydrationDoesNotNotifyHistoricalCompletedSessions() {
@@ -1429,7 +1429,7 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.isEmpty)
     }
 
-    @MainActor @Test func snapshotTransitionFromRunningToCompletedDeliversNotification() {
+    @MainActor @Test func snapshotTransitionFromRunningToCompletedNeverEmitsBanner() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -1441,7 +1441,7 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Running"))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:10.000Z"))))
 
-        #expect(notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
+        #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
     }
 
     @MainActor @Test func pinnedPickleSessionDoesNotDeliverCompletedNotification() {
@@ -1606,7 +1606,7 @@ struct PickySessionViewModelTests {
         #expect(card.status == .running)
     }
 
-    @MainActor @Test func unpinnedAfterFollowUpDeliversCompletedNotification() {
+    @MainActor @Test func unpinnedAfterFollowUpProjectionNeverEmitsCompletedBanner() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -1620,7 +1620,7 @@ struct PickySessionViewModelTests {
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:20.000Z", pinned: false))))
 
         #expect(viewModel.sessions.first?.pinned == false)
-        #expect(notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
+        #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
     }
 
     @Test func hudStatusToneMatchesPickleColorRules() throws {
@@ -5590,7 +5590,7 @@ struct PickySessionViewModelTests {
         #expect(card.tools.map(\.toolCallId) == ["t-1"])
     }
 
-    @MainActor @Test func sessionMetaUpdatedBeforeHydrationDeliversTerminalNotificationAfterSnapshot() {
+    @MainActor @Test func sessionMetaUpdatedBeforeHydrationNeverEmitsTerminalBannerAfterSnapshot() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -5618,7 +5618,7 @@ struct PickySessionViewModelTests {
             updatedAt: "2026-05-01T00:00:05.000Z"
         ))))
 
-        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.count == 1)
+        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.isEmpty)
     }
 
     @MainActor @Test func sessionMetaUpdatedBeforeHydrationDiscardsStaleTerminalAfterNewerRunningSnapshot() throws {
@@ -5722,7 +5722,7 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.filter { $0.identifier == "deleted:completed" }.isEmpty)
     }
 
-    @MainActor @Test func sessionUpdatedBeforeHydrationDeliversTerminalNotification() {
+    @MainActor @Test func sessionUpdatedBeforeHydrationNeverEmitsTerminalBanner() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -5747,10 +5747,10 @@ struct PickySessionViewModelTests {
             updatedAt: "2026-05-01T00:00:05.000Z"
         ))))
 
-        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.count == 1)
+        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.isEmpty)
     }
 
-    @MainActor @Test func sessionMetaUpdatedAfterHydrationDeliversTerminalNotification() {
+    @MainActor @Test func sessionMetaUpdatedAfterHydrationNeverEmitsTerminalBanner() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
             notifyOnCompleted: true,
@@ -5774,7 +5774,7 @@ struct PickySessionViewModelTests {
             updatedAt: "2026-05-01T00:00:05.000Z"
         ))))
 
-        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.count == 1)
+        #expect(notifications.delivered.filter { $0.identifier == "terminal-race:completed" }.isEmpty)
     }
 
     @MainActor @Test func sessionMetaUpdatedBeforeHydrationDoesNotCreateAnEmptyConversation() {

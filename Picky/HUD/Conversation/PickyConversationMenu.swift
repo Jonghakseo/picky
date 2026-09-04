@@ -124,7 +124,7 @@ struct PickyConversationMenu: View {
 
     private var notifyMainOnCompletionBinding: Binding<Bool> {
         Binding(
-            get: { session.notifyMainOnCompletion == true },
+            get: { session.notifyOnCompletion },
             set: { enabled in
                 Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
             }

@@ -97,6 +97,10 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var mode: PickyRuntimeModelScopeMode?
     var patterns: [String]?
     var expectedRevision: String?
+    /// Stable durable terminal identity for a Pickle completion bridge request.
+    var completionId: String?
+    var status: PickySessionStatus?
+    var summary: String?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -156,7 +160,10 @@ struct PickyCommandEnvelope: Codable, Equatable {
         thinkingLevel: PickyMainAgentThinkingLevel? = nil,
         mode: PickyRuntimeModelScopeMode? = nil,
         patterns: [String]? = nil,
-        expectedRevision: String? = nil
+        expectedRevision: String? = nil,
+        completionId: String? = nil,
+        status: PickySessionStatus? = nil,
+        summary: String? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -217,6 +224,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.mode = mode
         self.patterns = patterns
         self.expectedRevision = expectedRevision
+        self.completionId = completionId
+        self.status = status
+        self.summary = summary
     }
 }
 
@@ -1172,6 +1182,12 @@ struct PickyTodoState: Codable, Equatable {
 }
 
 struct PickyAgentSession: Codable, Equatable, Identifiable {
+    /// Channel-neutral presentation name. The stored/wire field below remains
+    /// `notifyMainOnCompletion` for one compatibility epoch.
+    var notifyOnCompletion: Bool? {
+        get { notifyMainOnCompletion }
+        set { notifyMainOnCompletion = newValue }
+    }
     let id: String
     let title: String
     var status: PickySessionStatus

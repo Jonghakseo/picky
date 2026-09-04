@@ -10,56 +10,22 @@ import XCTest
 @testable import Picky
 
 final class PickySessionNotificationPolicyTests: XCTestCase {
-    func testCompletedNotificationUsesSummaryAndHonorsPreference() {
+    func testCompletedProjectionNeverCreatesACompetingNotification() {
         let input = PickySessionNotificationPolicy.Input(
             sessionID: "session-1",
-            title: "Fallback title",
+            title: "Pickle title",
             status: .completed,
             lastSummary: "Done summary"
         )
 
-        XCTAssertEqual(
-            PickySessionNotificationPolicy.notification(
-                for: input,
-                preferences: PickyNotificationPreferences(
-                    notifyOnCompleted: true,
-                    notifyOnFailed: true,
-                    notifyOnWaitingForInput: true
-                )
-            ),
-            PickySessionNotificationPolicy.Notification(
-                key: "session-1:completed",
-                title: L10n.t("notif.session.completed.title"),
-                body: "Done summary"
+        XCTAssertNil(PickySessionNotificationPolicy.notification(
+            for: input,
+            preferences: PickyNotificationPreferences(
+                completionDestination: .both,
+                notifyOnFailed: true,
+                notifyOnWaitingForInput: true
             )
-        )
-
-        XCTAssertNil(PickySessionNotificationPolicy.notification(for: input, preferences: .defaults))
-    }
-
-    func testCompletedNotificationFallsBackToTitleAndSkipsPinnedSessions() {
-        let preferences = PickyNotificationPreferences(
-            notifyOnCompleted: true,
-            notifyOnFailed: true,
-            notifyOnWaitingForInput: true
-        )
-        let unpinned = PickySessionNotificationPolicy.Input(
-            sessionID: "session-1",
-            title: "Pickle title",
-            status: .completed,
-            lastSummary: "",
-            pinned: false
-        )
-        let pinned = PickySessionNotificationPolicy.Input(
-            sessionID: "session-1",
-            title: "Pickle title",
-            status: .completed,
-            lastSummary: "Pinned summary",
-            pinned: true
-        )
-
-        XCTAssertEqual(PickySessionNotificationPolicy.notification(for: unpinned, preferences: preferences)?.body, "Pickle title")
-        XCTAssertNil(PickySessionNotificationPolicy.notification(for: pinned, preferences: preferences))
+        ))
     }
 
     func testFailedNotificationUsesFallbackBodyAndHonorsPreference() {
@@ -217,7 +183,7 @@ final class PickySessionNotificationPolicyTests: XCTestCase {
         for status in [PickySessionStatus.queued, .running, .waiting_for_input, .blocked] {
             XCTAssertEqual(
                 PickySessionNotificationPolicy.terminalDedupKeysToReset(sessionID: "session-1", status: status),
-                ["session-1:completed", "session-1:failed"]
+                ["session-1:failed"]
             )
         }
         for status in [PickySessionStatus.completed, .failed, .cancelled] {

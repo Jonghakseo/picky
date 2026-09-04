@@ -411,7 +411,7 @@ struct PickyConversationComposerView: View {
                     color: notifyOnCompletionColor
                 )
             }
-            .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: session.notifyMainOnCompletion == true))
+            .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: session.notifyOnCompletion))
             .overlay(alignment: .topTrailing) {
                 PickyShortcutKeyBadge(label: "N")
                     .fixedSize()
@@ -423,7 +423,7 @@ struct PickyConversationComposerView: View {
             }
             .help(notifyOnCompletionHelpText)
             .accessibilityLabel(L10n.t("hud.composer.notify.accessibilityLabel"))
-            .accessibilityValue(session.notifyMainOnCompletion == true ? "On" : "Off")
+            .accessibilityValue(session.notifyOnCompletion ? "On" : "Off")
         }
     }
 
@@ -461,19 +461,19 @@ struct PickyConversationComposerView: View {
     }
 
     var notifyOnCompletionIconName: String {
-        PickyComposerLabelPolicy.notifyOnCompletionIconName(enabled: session.notifyMainOnCompletion == true)
+        PickyComposerLabelPolicy.notifyOnCompletionIconName(enabled: session.notifyOnCompletion)
     }
 
     var notifyOnCompletionHelpText: String {
-        PickyComposerLabelPolicy.notifyOnCompletionHelpText(enabled: session.notifyMainOnCompletion == true)
+        PickyComposerLabelPolicy.notifyOnCompletionHelpText(enabled: session.notifyOnCompletion)
     }
 
     private var notifyOnCompletionColor: Color {
-        session.notifyMainOnCompletion == true ? DS.Colors.accentText : DS.Colors.textTertiary
+        session.notifyOnCompletion ? DS.Colors.accentText : DS.Colors.textTertiary
     }
 
     private func toggleNotifyOnCompletion() {
-        let enabled = !(session.notifyMainOnCompletion == true)
+        let enabled = !session.notifyOnCompletion
         Task { try? await commands.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
     }
 

@@ -3419,7 +3419,15 @@ describe("SessionSupervisor", () => {
     // bridge instead.
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-bridge-forward-"));
     const sideRuntime = new ManualRuntime();
-    const forwarded: Array<{ sessionId: string; prompt: string; cwd?: string }> = [];
+    const forwarded: Array<{
+      sessionId: string;
+      prompt: string;
+      cwd?: string;
+      completionId: string;
+      title: string;
+      status: "completed";
+      summary?: string;
+    }> = [];
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), {
       forwardPickleCompletionToPrimary: async (request) => {
         forwarded.push(request);
@@ -3437,6 +3445,9 @@ describe("SessionSupervisor", () => {
     expect(forwarded[0].sessionId).toBe(pickle.id);
     expect(forwarded[0].prompt).toContain("Bridged answer");
     expect(forwarded[0].prompt).toContain(`Title: ${pickle.title}`);
+    expect(forwarded[0].completionId).toBe(`${pickle.id}:${supervisor.get(pickle.id)?.revision}`);
+    expect(forwarded[0].title).toBe(pickle.title);
+    expect(forwarded[0].status).toBe("completed");
     // Once forwarded the supervisor must not double-notify on later terminal restatements.
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
@@ -3490,56 +3501,174 @@ describe("SessionSupervisor", () => {
     expect(quickReplies[0].text).toContain("피클이 끝났어요");
   });
 
-  it("drops a queued Pickle completion immediately when its notification is disabled mid-queue", async () => {
-    // Regression: the deferred queue's order across sibling Pickle completions is
-    // non-deterministic — both RuntimeEventHandler.applyEvent microtask chains race after
-    // `firstHandle.emit(completed)` and `secondHandle.emit(completed)`. When the order ended up
-    // as [active, skip], drainPendingPickleCompletions delivered the active entry first, that
-    // flipped mainIsProcessing back to true via followUp, and the drain loop exited before it
-    // could pop the skip entry — leaving it stranded in the queue forever. setNotifyMainOnCompletion
-    // now removes the disabled entry from the queue at the call site so the drain never sees it.
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-disable-dequeue-"));
-    const sideRuntime = new ManualRuntime();
+  it("serializes simultaneous idle external completions before main-handle preparation", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-external-completion-idle-fifo-"));
+    const runtime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
+    let releaseHandle!: (handle: RuntimeSessionHandle) => void;
+    let markPreparationStarted!: () => void;
+    const preparationStarted = new Promise<void>((resolve) => { markPreparationStarted = resolve; });
+    const pendingHandle = new Promise<RuntimeSessionHandle>((resolve) => { releaseHandle = resolve; });
+    mainRuntime.prewarm = async () => {
+      markPreparationStarted();
+      return pendingHandle;
+    };
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
-    await supervisor.route(context("main busy"));
-    const mainHandle = mainRuntime.handle!;
-    mainHandle.emit({ type: "status", status: "running", summary: "Main busy" });
-    await settle();
 
-    const active = await supervisor.createPickleFromHandoff(context("active pickle"), { title: "Active Pickle", instructions: "Investigate active" });
-    const activeHandle = sideRuntime.handle!;
-    const skip = await supervisor.createPickleFromHandoff(context("skip pickle"), { title: "Skip Pickle", instructions: "Investigate skip" });
-    const skipHandle = sideRuntime.handle!;
-    await supervisor.setNotifyMainOnCompletion(active.id, true);
-    await supervisor.setNotifyMainOnCompletion(skip.id, true);
+    const first = supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-first", completionId: "child-first:1", prompt: "first completion", status: "completed" });
+    await preparationStarted;
+    const second = supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-second", completionId: "child-second:1", prompt: "second completion", status: "completed" });
+    const handle = new ManualHandle("picky");
+    releaseHandle(handle);
+    await Promise.all([first, second]);
 
-    activeHandle.emit({ type: "assistant_delta", delta: "Active answer" });
-    activeHandle.emit({ type: "status", status: "completed", summary: "Active complete" });
-    skipHandle.emit({ type: "assistant_delta", delta: "Skip answer" });
-    skipHandle.emit({ type: "status", status: "completed", summary: "Skip complete" });
-    await waitUntil(() => (supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions.length === 2);
-
-    // Force the [active, skip] order regardless of how the two microtask chains finished by
-    // rewriting the queue in place. The disabled entry must be discarded by the call below.
-    const queue = (supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions;
-    queue.splice(0, queue.length, active.id, skip.id);
-
-    await supervisor.setNotifyMainOnCompletion(skip.id, false);
-    expect((supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions).toEqual([active.id]);
-
-    mainHandle.emit({ type: "status", status: "completed", summary: "Main complete", finalAnswer: "Main answer" });
-    await settle();
-
-    expect(mainHandle.followUps).toHaveLength(1);
-    expect(mainHandle.followUps[0].text).toContain(active.title);
-    expect(mainHandle.followUps[0].text).toContain("Active answer");
-    expect((supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions).toEqual([]);
+    // Both calls are accepted immediately by Pi's followUp queue, but the
+    // second admission cannot overwrite the idle completion's active context.
+    expect(handle.followUps.map((prompt) => prompt.text)).toEqual(["first completion", "second completion"]);
+    expect((supervisor as unknown as { mainReplyContextId: string }).mainReplyContextId).toBe("child-first");
   });
 
-  it("continues draining Pickle completion notifications after a skipped queued item", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-drain-skip-"));
+  it("waits for runtime followUp acceptance without waiting for the resulting turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-external-completion-acceptance-"));
+    const runtime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const handle = new ManualHandle("picky");
+    let releasePrewarm!: () => void;
+    let markPrewarmStarted!: () => void;
+    const prewarmStarted = new Promise<void>((resolve) => { markPrewarmStarted = resolve; });
+    const prewarmGate = new Promise<void>((resolve) => { releasePrewarm = resolve; });
+    mainRuntime.prewarm = async () => {
+      markPrewarmStarted();
+      await prewarmGate;
+      return handle;
+    };
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    let releaseAcceptance!: () => void;
+    const acceptanceGate = new Promise<void>((resolve) => { releaseAcceptance = resolve; });
+    handle.onFollowUp = async () => { await acceptanceGate; };
+    let settled = false;
+    const delivery = supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-acceptance", completionId: "child-acceptance:1", prompt: "accepted prompt", status: "completed" }).then(() => { settled = true; });
+    await prewarmStarted;
+    releasePrewarm();
+    await waitUntil(() => handle.followUps.length === 1);
+    expect(settled).toBe(false);
+    releaseAcceptance();
+    await delivery;
+    expect(settled).toBe(true);
+  });
+
+  it("accepts simultaneous busy external completions and switches reply context on input_delivery FIFO", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-external-completion-busy-fifo-"));
+    const runtime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    const quickReplies: Array<{ contextId: string; replyKind?: string }> = [];
+    supervisor.on("quickReply", (contextId, _text, metadata = {}) => quickReplies.push({ contextId, replyKind: metadata.replyKind }));
+    await supervisor.route(context("primary busy"));
+    const mainHandle = mainRuntime.handle!;
+    mainHandle.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+
+    await Promise.all([
+      supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-a", completionId: "child-a:4", prompt: "first completion", status: "completed" }),
+      supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-b", completionId: "child-b:7", prompt: "second completion", status: "completed" }),
+    ]);
+    expect(mainHandle.followUps.map((prompt) => prompt.text)).toEqual(["first completion", "second completion"]);
+
+    mainHandle.emit({ type: "input_delivery", role: "user", text: "first completion", originatedBy: "internal", queueKind: "followUp" });
+    mainHandle.emit({ type: "assistant_delta", delta: "first reply" });
+    mainHandle.emit({ type: "status", status: "completed", summary: "done" });
+    await waitUntil(() => quickReplies.length === 1);
+    expect(quickReplies[0]).toMatchObject({ contextId: "child-a", replyKind: "pickleCompletion" });
+
+    mainHandle.emit({ type: "input_delivery", role: "user", text: "second completion", originatedBy: "internal", queueKind: "followUp" });
+    mainHandle.emit({ type: "assistant_delta", delta: "second reply" });
+    mainHandle.emit({ type: "status", status: "completed", summary: "done" });
+    await waitUntil(() => quickReplies.length === 2);
+    expect(quickReplies[1]).toMatchObject({ contextId: "child-b", replyKind: "pickleCompletion" });
+  });
+
+  it("returns a runtime acceptance failure and admits the later completion", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-external-completion-rejection-"));
+    const runtime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    await supervisor.route(context("primary busy"));
+    const mainHandle = mainRuntime.handle!;
+    mainHandle.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+    mainHandle.onFollowUp = async (_handle, prompt) => {
+      if (prompt.text === "rejected completion") throw new Error("runtime rejected completion");
+    };
+
+    const rejected = supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-rejected", completionId: "child-rejected:1", prompt: "rejected completion", status: "completed" });
+    const later = supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-later", completionId: "child-later:1", prompt: "later completion", status: "completed" });
+    await expect(rejected).rejects.toThrow("runtime rejected completion");
+    await later;
+    expect(mainHandle.followUps.map((prompt) => prompt.text)).toEqual(["rejected completion", "later completion"]);
+    expect((supervisor as unknown as { pendingExternalPickleCompletions: Array<{ completionId: string }> }).pendingExternalPickleCompletions.map((completion) => completion.completionId)).toEqual(["child-later:1"]);
+  });
+
+  it("shares an in-flight duplicate rejection and permits a later retry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-external-completion-duplicate-rejection-"));
+    const runtime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    await supervisor.route(context("primary busy"));
+    const mainHandle = mainRuntime.handle!;
+    mainHandle.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+
+    let rejectAcceptance!: (error: Error) => void;
+    const acceptance = new Promise<void>((_resolve, reject) => { rejectAcceptance = reject; });
+    mainHandle.onFollowUp = async (_handle, prompt) => {
+      if (prompt.text === "duplicate completion") await acceptance;
+    };
+
+    const request = { sessionId: "child-duplicate", completionId: "child-duplicate:1", prompt: "duplicate completion", status: "completed" };
+    const original = supervisor.deliverMainAgentPickleCompletion(request);
+    await waitUntil(() => mainHandle.followUps.length === 1);
+    const duplicate = supervisor.deliverMainAgentPickleCompletion(request);
+    let duplicateSettled = false;
+    void duplicate.finally(() => { duplicateSettled = true; }).catch(() => undefined);
+    await settle();
+    expect(duplicateSettled).toBe(false);
+
+    rejectAcceptance(new Error("shared runtime rejection"));
+    const results = await Promise.allSettled([original, duplicate]);
+    expect(results).toEqual([
+      expect.objectContaining({ status: "rejected", reason: expect.objectContaining({ message: "shared runtime rejection" }) }),
+      expect.objectContaining({ status: "rejected", reason: expect.objectContaining({ message: "shared runtime rejection" }) }),
+    ]);
+
+    mainHandle.onFollowUp = undefined;
+    await supervisor.deliverMainAgentPickleCompletion(request);
+    expect(mainHandle.followUps.map((prompt) => prompt.text)).toEqual(["duplicate completion", "duplicate completion"]);
+  });
+
+  it("accepts a later completion generation from the same Pickle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-external-completion-generations-"));
+    const runtime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+    await supervisor.route(context("primary busy"));
+    const mainHandle = mainRuntime.handle!;
+    mainHandle.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+
+    await supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-generation", completionId: "child-generation:4", prompt: "generation four", status: "completed" });
+    await supervisor.deliverMainAgentPickleCompletion({ sessionId: "child-generation", completionId: "child-generation:5", prompt: "generation five", status: "completed" });
+    expect(mainHandle.followUps.map((prompt) => prompt.text)).toEqual(["generation four", "generation five"]);
+  });
+
+  it("keeps a completion accepted before a later bell disable", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-snapshot-bell-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
@@ -3549,27 +3678,17 @@ describe("SessionSupervisor", () => {
     mainHandle.emit({ type: "status", status: "running", summary: "Main busy" });
     await settle();
 
-    const first = await supervisor.createPickleFromHandoff(context("first pickle"), { title: "First Pickle", instructions: "Investigate first" });
-    const firstHandle = sideRuntime.handle!;
-    const second = await supervisor.createPickleFromHandoff(context("second pickle"), { title: "Second Pickle", instructions: "Investigate second" });
-    const secondHandle = sideRuntime.handle!;
-    await supervisor.setNotifyMainOnCompletion(first.id, true);
-    await supervisor.setNotifyMainOnCompletion(second.id, true);
+    const pickle = await supervisor.createPickleFromHandoff(context("snapshot pickle"), { title: "Snapshot Pickle", instructions: "Investigate" });
+    await supervisor.setNotifyMainOnCompletion(pickle.id, true);
+    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "Completed before toggle" });
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Complete" });
+    await waitUntil(() => (supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions.includes(pickle.id));
 
-    firstHandle.emit({ type: "assistant_delta", delta: "First answer" });
-    firstHandle.emit({ type: "status", status: "completed", summary: "First complete" });
-    secondHandle.emit({ type: "assistant_delta", delta: "Second answer" });
-    secondHandle.emit({ type: "status", status: "completed", summary: "Second complete" });
-    await waitUntil(() => (supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions.length === 2);
-
-    await supervisor.setNotifyMainOnCompletion(first.id, false);
-    mainHandle.emit({ type: "status", status: "completed", summary: "Main complete", finalAnswer: "Main answer" });
-    await settle();
-
-    expect(mainHandle.followUps).toHaveLength(1);
-    expect(mainHandle.followUps[0].text).toContain(second.title);
-    expect(mainHandle.followUps[0].text).toContain("Second answer");
-    expect((supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions).toEqual([]);
+    await supervisor.setNotifyMainOnCompletion(pickle.id, false);
+    expect((supervisor as unknown as { pendingPickleCompletions: string[] }).pendingPickleCompletions).toContain(pickle.id);
+    mainHandle.emit({ type: "status", status: "completed", summary: "Main complete" });
+    await waitUntil(() => mainHandle.followUps.length === 1);
+    expect(mainHandle.followUps[0].text).toContain("Completed before toggle");
   });
 
   it("does not let a late empty terminal event overwrite a cancelled session", async () => {
@@ -6283,7 +6402,7 @@ describe("SessionSupervisor", () => {
     await internals.patch(session.id, { pinned: true });
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "old answer" });
-    await waitUntil(() => internals.pickleCompletionNotified.has(session.id));
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
 
     // Pi's agent_start was ignored because this Pickle was already completed. The Pi adapter
     // supplies turnActive from session.isStreaming so the subsequent hidden custom event still
@@ -6311,7 +6430,7 @@ describe("SessionSupervisor", () => {
     await internals.patch(session.id, { pinned: true });
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "completed answer" });
-    await waitUntil(() => internals.pickleCompletionNotified.has(session.id));
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
 
     runtime.handle?.emit({ type: "input_message", role: "custom", text: "subagent status update", originatedBy: "pi_extension", customType: "subagent", turnActive: false });
     await settle();
@@ -6322,7 +6441,7 @@ describe("SessionSupervisor", () => {
       lastSummary: "completed answer",
       pinned: true,
     });
-    expect(internals.pickleCompletionNotified.has(session.id)).toBe(true);
+    expect(internals.pickleCompletionNotified.has(session.id)).toBe(false);
     expect(supervisor.get(session.id)?.messages?.at(-1)).toMatchObject({ kind: "system", text: "subagent status update", originatedBy: "pi_extension" });
   });
 
@@ -8769,7 +8888,7 @@ class ManualHandle implements RuntimeSessionHandle {
   slashCommands: RuntimeSlashCommand[] = [];
   assistantRunMetadata?: RuntimeAssistantRunMetadata;
   todoStateResolution?: RuntimeTodoStateResolution;
-  onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
+  onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void | Promise<void>;
   onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onCompact?: (handle: ManualHandle, customInstructions?: string) => void | Promise<void>;
   onUserBash?: (handle: ManualHandle, command: string, options?: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void }) => void | Promise<void>;
@@ -8784,7 +8903,7 @@ class ManualHandle implements RuntimeSessionHandle {
       this.queuedFollowUpTexts.push(prompt.text);
       this.emit({ type: "queue_update", steering: [...this.steers], followUp: [...this.queuedFollowUpTexts] });
     }
-    this.onFollowUp?.(this, prompt);
+    await this.onFollowUp?.(this, prompt);
   }
   async interrupt(prompt: BuiltPrompt): Promise<void> {
     this.interrupts.push(prompt);

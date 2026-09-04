@@ -260,6 +260,62 @@ struct ProtocolContractTests {
         #expect(decoded.context?.id == "context-test-001")
     }
 
+    @Test func decodesDurableCompletionEnvelopeAndLegacyCompletionCommand() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let fixture = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "notify-main-of-pickle-completion.command.json"
+        })
+        let durable = try decoder.decode(PickyCommandEnvelope.self, from: Data(contentsOf: fixture))
+        let legacy = try decoder.decode(PickyCommandEnvelope.self, from: Data(#"{"id":"cmd-legacy","protocolVersion":"2026-08-25","type":"notifyMainOfPickleCompletion","sessionId":"session-legacy","prompt":"done"}"#.utf8))
+
+        #expect(durable.completionId == "session-001:8")
+        #expect(durable.title == "Investigate notification routing")
+        #expect(durable.status == .completed)
+        #expect(durable.summary == "Notification routing is complete.")
+        #expect(legacy.completionId == nil)
+        #expect(legacy.status == nil)
+    }
+
+    @Test func normalizesLegacyCompletionBridgeUsingProjectedSessionMetadata() throws {
+        let request = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyPickleBridgeRequest.self,
+            from: Data(#"{"requestId":"legacy-bridge-42","operation":"notifyMainOfPickleCompletion","sessionId":"session-legacy","prompt":"done"}"#.utf8)
+        )
+        let projected = PickyAgentSession(
+            id: "session-legacy",
+            title: "Projected Pickle",
+            status: PickySessionStatus.completed,
+            cwd: "/tmp/project",
+            createdAt: Date(),
+            updatedAt: Date(),
+            lastSummary: "Projected summary",
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: [],
+            notifyMainOnCompletion: true
+        )
+
+        let envelope = try #require(request.completionEnvelope(projectedSession: projected))
+        #expect(envelope.completionId == "legacy:legacy-bridge-42")
+        #expect(envelope.title == "Projected Pickle")
+        #expect(envelope.summary == "Projected summary")
+        #expect(envelope.bellEnabled)
+        #expect(envelope.status == .completed)
+    }
+
+    @Test func normalizesLegacyCompletionBridgeWithoutProjectionAsBellEnabled() throws {
+        let request = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyPickleBridgeRequest.self,
+            from: Data(#"{"requestId":"legacy-missing-projection","operation":"notifyMainOfPickleCompletion","sessionId":"session-legacy","prompt":"done"}"#.utf8)
+        )
+
+        let envelope = try #require(request.completionEnvelope(projectedSession: nil))
+        #expect(envelope.completionId == "legacy:legacy-missing-projection")
+        #expect(envelope.title == "session-legacy")
+        #expect(envelope.bellEnabled)
+    }
+
     @Test func encodesSetupPackageCommand() throws {
         let command = PickyCommandEnvelope(
             id: "cmd-package-setup",

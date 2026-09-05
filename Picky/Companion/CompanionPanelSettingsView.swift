@@ -556,7 +556,7 @@ struct CompanionPanelSettingsView: View {
                             .font(PickyHUDTypography.supporting)
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, 7)
+                            .padding(.bottom, DS.Spacing.space2)
                         Divider()
                             .background(DS.Colors.borderSubtle.opacity(0.3))
                     }

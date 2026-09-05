@@ -5,6 +5,7 @@ import { stat } from "node:fs/promises";
 import { extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
+import { PickleCompletionCoordinator, type ExternalPickleCompletionRequest } from "./application/pickle-completion-coordinator.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { emitTerminalV1Compatibility, finalizeTerminalOperation, projectionCommitRevision, publishSessionProjectionCommit, sessionProjectionCommitMutations, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
@@ -16,7 +17,7 @@ import { awaitPendingRuntimeHandle, createPendingRuntimeHandle } from "./applica
 import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./application/pinned-session-source.js";
 import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
 import { mapExtensionUiRequest, summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
@@ -59,11 +60,6 @@ import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_M
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
-type PickleCompletionChannelSnapshot = Readonly<{
-  notifyMainOnCompletion: boolean;
-  notifyMacOSOnCompletion: boolean;
-}>;
-
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -141,32 +137,10 @@ export class SessionSupervisor extends EventEmitter {
   private interruptedMainInputIds = new Set<string>();
   private pickleSessionIds = new Set<string>();
   // Session ids that this supervisor does NOT host locally but that should still be tagged as
-  // Pickle-completion contexts when the main agent's reply turn ends. Populated by
-  // `deliverMainAgentPickleCompletion` (primary daemon entrypoint for child-forwarded Pickle
-  // completions) and consumed by the quickReply emit in `applyMainRuntimeEvent`. Tracked
-  // separately from `pickleSessionIds` because the latter doubles as a "this supervisor owns the
-  // session" hint for routing/filter paths that must not match foreign session ids.
+  // Pickle-completion contexts when the main agent's reply turn ends. The completion
+  // coordinator owns admission and delivery state; this set only projects reply metadata.
   private externalPickleReplyContexts = new Set<string>();
-  private pickleCompletionNotified = new Set<string>();
-  private pickleCompletionInFlight = new Set<string>();
-  private pickleCompletionChannelSnapshots = new Map<string, PickleCompletionChannelSnapshot>();
-  private pendingPickleCompletions: string[] = [];
-  // Accepted child completion inputs wait here until Pi emits the matching
-  // input_delivery. A busy main runtime queues followUps immediately, but its
-  // current reply context remains untouched until Pi actually starts that
-  // queued input.
-  private pendingExternalPickleCompletions: Array<{
-    sessionId: string;
-    prompt: string;
-    cwd?: string;
-    completionId: string;
-  }> = [];
-  private acceptedExternalPickleCompletionIds = new Set<string>();
-  private externalPickleCompletionAdmissions = new Map<string, Promise<void>>();
-  // Serializes runtime acceptance calls. Pi preserves followUp order, so this
-  // keeps metadata order identical to its later input_delivery order.
-  private externalPickleCompletionAdmissionChain = Promise.resolve();
-  private pickleCompletionDrainPromise?: Promise<void>;
+  private readonly pickleCompletionCoordinator: PickleCompletionCoordinator;
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
@@ -241,6 +215,7 @@ export class SessionSupervisor extends EventEmitter {
       emit: (event, payload) => this.emit(event, payload),
       log: (message, data) => logAgentd(message, data),
     });
+    this.pickleCompletionCoordinator = this.createPickleCompletionCoordinator(options);
     this.sessionIdFactory = options.sessionIdFactory ?? (() => `session-${randomUUID()}`);
     this.pickleSessionTitleRefresher = new PickleSessionTitleRefresher({ isPickleSession: (sessionId) => this.isPickleSession(sessionId), getSession: (sessionId) => this.sessions.get(sessionId), patchSession: (sessionId, patch) => this.patch(sessionId, patch) });
     this.artifactMaterializer = new ArtifactMaterializer();
@@ -299,7 +274,7 @@ export class SessionSupervisor extends EventEmitter {
       applyQueueUpdate: (sessionId, steering, followUp) => this.applyQueueUpdate(sessionId, steering, followUp),
       incrementActivity: (sessionId, category) => this.incrementActivity(sessionId, category),
       commitTurnActivity: (sessionId) => this.commitTurnActivity(sessionId),
-      notifyPickleCompletion: (sessionId) => this.notifyPickyOfPickleCompletion(sessionId),
+      notifyPickleCompletion: (sessionId) => this.pickleCompletionCoordinator.notifyLocalCompletion(sessionId),
       isPickleSession: (sessionId) => this.pickleSessionIds.has(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
       onInputMessage: (sessionId, event) => this.handleRuntimeInputMessage(sessionId, event),
@@ -322,6 +297,22 @@ export class SessionSupervisor extends EventEmitter {
       logLifecycle: (event, sessionId, handle, fields) => this.followUpLifecycleDiagnostics.logLifecycle(event, sessionId, handle, fields),
     });
   }
+  private createPickleCompletionCoordinator(options: SessionSupervisorOptions): PickleCompletionCoordinator {
+    return new PickleCompletionCoordinator({
+      session: (sessionId) => this.sessions.get(sessionId),
+      isMainProcessing: () => this.mainIsProcessing,
+      hasMainRuntime: () => this.options.mainRuntime !== undefined,
+      forwardCompletion: options.forwardPickleCompletionToPrimary,
+      prepareMainDelivery: (prompt, cwd) => this.preparePickyCompletionDelivery(prompt, cwd),
+      activateLocalReplyContext: (sessionId) => this.activateLocalPickleCompletionContext(sessionId),
+      activateExternalReplyContext: (sessionId) => this.activateExternalPickleCompletionContext(sessionId),
+      deactivateExternalReplyContext: (sessionId) => this.externalPickleReplyContexts.delete(sessionId),
+      setMainProcessing: (processing) => { this.mainIsProcessing = processing; },
+      resetMainTerminal: () => { this.mainTerminalProcessed = false; },
+      log: (message, fields) => logAgentd(message, fields),
+    });
+  }
+
   async load(): Promise<void> {
     this.mainState = normalizeMainAgentState(await this.store.loadMainAgentState());
     const persisted = await this.store.loadAll();
@@ -908,14 +899,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainVisualNarrationTurnToken = `main-turn-${this.mainTurnId}`;
     this.activeMainRuntimeInputId = undefined;
     this.interruptedMainInputIds.clear();
-    const pendingCompletionCount = this.pendingPickleCompletions.length + this.pendingExternalPickleCompletions.length;
-    if (pendingCompletionCount > 0) logAgentd("Picky pending Pickle completions cleared", { count: pendingCompletionCount });
-    this.pendingPickleCompletions = [];
-    this.pickleCompletionChannelSnapshots.clear();
-    this.pendingExternalPickleCompletions = [];
-    this.acceptedExternalPickleCompletionIds.clear();
-    this.externalPickleCompletionAdmissions.clear();
-    this.externalPickleCompletionAdmissionChain = Promise.resolve();
+    this.pickleCompletionCoordinator.reset();
     this.cancelMainIdleCompaction();
     this.mainInFlightCompaction = false;
     this.mainPendingCompactionContexts = [];
@@ -1658,7 +1642,7 @@ export class SessionSupervisor extends EventEmitter {
     if (event.type === "input_delivery") {
       // Pi emits this when a queued followUp begins, which is the first safe
       // point to transfer a completion reply context away from the active turn.
-      this.handleExternalPickleCompletionInputDelivery(event);
+      this.pickleCompletionCoordinator.handleExternalInputDelivery(event);
       return;
     }
     if (event.type === "assistant_delta") {
@@ -1796,7 +1780,7 @@ export class SessionSupervisor extends EventEmitter {
         } else {
           this.emit("mainTurnSettled", this.mainReplyContextId);
         }
-        this.schedulePickleCompletionDrain();
+        this.pickleCompletionCoordinator.scheduleLocalDrain();
         this.mainVisualNarration.reset();
         this.mainAssistantDeltaSeen = false;
         // Drain input buffered during a compaction, then re-arm the idle timer if a threshold is met.
@@ -1810,251 +1794,33 @@ export class SessionSupervisor extends EventEmitter {
     return projectMainReplyMetadata(this.mainReplyContextId, this.mainContext, this.pickleSessionIds, this.externalPickleReplyContexts);
   }
 
-  private async notifyPickyOfPickleCompletion(sessionId: string, committedSession?: PickyAgentSession): Promise<void> {
-    const session = committedSession ?? this.mustGet(sessionId);
-    // Snapshot both destinations from the durable successful terminal commit.
-    // Later toggles apply only to a future generation.
-    if (session.status !== "completed") return;
-    const channels = this.pickleCompletionChannelSnapshots.get(sessionId) ?? {
-      notifyMainOnCompletion: session.notifyMainOnCompletion === true,
-      notifyMacOSOnCompletion: session.notifyMacOSOnCompletion === true,
-    };
-    if (!channels.notifyMainOnCompletion && !channels.notifyMacOSOnCompletion) return;
-    this.pickleCompletionChannelSnapshots.set(sessionId, channels);
-    if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
-    // Defer when Picky is mid-turn (e.g. the handoff turn that spawned this
-    // Pickle session has not emitted status:completed yet). Sending the followUp now
-    // would clobber mainReplyContextId / mainDraft. Park the sessionId and let
-    // applyMainRuntimeEvent drain it once the active turn ends.
-    if (this.mainIsProcessing && !this.options.forwardPickleCompletionToPrimary) {
-      if (!this.pendingPickleCompletions.includes(sessionId) && !this.pickleCompletionNotified.has(sessionId) && !this.pickleCompletionInFlight.has(sessionId)) {
-        this.pendingPickleCompletions.push(sessionId);
-        logAgentd("Pickle completion deferred", { sessionId, status: session.status, queueLength: this.pendingPickleCompletions.length });
-      }
-      return;
-    }
-    await this.deliverPickleCompletionToMain(sessionId, channels);
-  }
-
-  private async deliverPickleCompletionToMain(sessionId: string, channelSnapshot?: PickleCompletionChannelSnapshot): Promise<void> {
-    this.pendingPickleCompletions = this.pendingPickleCompletions.filter((pendingSessionId) => pendingSessionId !== sessionId);
-    if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    // Reaching this queue already proves the durable completion observed an
-    // enabled bell. Do not reinterpret a later preference change as recall.
-    if (session.status !== "completed") return;
-    const channels = channelSnapshot ?? this.pickleCompletionChannelSnapshots.get(sessionId) ?? {
-      notifyMainOnCompletion: session.notifyMainOnCompletion === true,
-      notifyMacOSOnCompletion: session.notifyMacOSOnCompletion === true,
-    };
-    if (!channels.notifyMainOnCompletion && !channels.notifyMacOSOnCompletion) return;
-    this.pickleCompletionInFlight.add(sessionId);
-    try {
-      const prompt = buildMainAgentPickleCompletionPrompt(session);
-      // When the app bridge is available it owns destination selection for every
-      // Pickle, including legacy/external Pickles hosted by the primary daemon.
-      // Falling through to the local main runtime is reserved for supervisors
-      // without an app coordinator.
-      if (this.options.forwardPickleCompletionToPrimary) {
-        try {
-          await this.options.forwardPickleCompletionToPrimary({
-            sessionId,
-            prompt: prompt.text,
-            cwd: session.cwd,
-            completionId: `${sessionId}:${session.revision ?? 0}`,
-            title: session.title,
-            status: "completed",
-            summary: session.lastSummary,
-            notifyMainOnCompletion: channels.notifyMainOnCompletion,
-            notifyMacOSOnCompletion: channels.notifyMacOSOnCompletion,
-          });
-          this.pickleCompletionNotified.add(sessionId);
-          logAgentd("Pickle completion forwarded to app coordinator", { sessionId, status: session.status });
-        } catch (error) {
-          logAgentd("Pickle completion forward failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
-        }
-        return;
-      }
-
-      if (!channels.notifyMainOnCompletion) {
-        logAgentd("Pickle macOS completion delivery unavailable without app coordinator", { sessionId });
-        return;
-      }
-      this.mainReplyContextId = sessionId;
-      this.mainTurnOverlayContext = undefined;
-      this.mainDraft = "";
-      this.mainAssistantDeltaSeen = false;
-      this.mainVisualNarration.reset();
-      const delivery = await this.preparePickyCompletionDelivery(prompt, session.cwd);
-      if (!delivery) {
-        logAgentd("Pickle completion delivery unavailable", { sessionId, status: session.status });
-        return;
-      }
-
-      this.pickleCompletionNotified.add(sessionId);
-      // A completion is a new main turn after the preceding turn settled.
-      this.mainTerminalProcessed = false;
-      this.mainIsProcessing = true;
-      logAgentd("Pickle completion notifying Picky", { sessionId, status: session.status });
-      if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
-    } finally {
-      this.pickleCompletionInFlight.delete(sessionId);
-    }
-  }
-
   /**
    * Primary-daemon entrypoint for a child completion accepted by the app. The
    * child is the sole bell owner: reaching this method already means the
    * durable completed generation had its bell enabled.
    */
-  async deliverMainAgentPickleCompletion(
-    requestOrSessionId: {
-      sessionId: string;
-      prompt: string;
-      cwd?: string;
-      completionId?: string;
-      title?: string;
-      status?: string;
-      summary?: string;
-      notifyMainOnCompletion?: boolean;
-      notifyMacOSOnCompletion?: boolean;
-    } | string,
+  deliverMainAgentPickleCompletion(
+    requestOrSessionId: ExternalPickleCompletionRequest | string,
     legacyPrompt?: string,
     legacyCwd?: string,
   ): Promise<void> {
-    const request = typeof requestOrSessionId === "string"
-      ? { sessionId: requestOrSessionId, prompt: legacyPrompt ?? "", cwd: legacyCwd }
-      : requestOrSessionId;
-    if (request.status && request.status !== "completed") return;
-    const completionId = request.completionId ?? `legacy:${request.sessionId}:${request.prompt}`;
-    if (this.acceptedExternalPickleCompletionIds.has(completionId)) return;
-    const existingAdmission = this.externalPickleCompletionAdmissions.get(completionId);
-    if (existingAdmission) return existingAdmission;
-
-    const admission = this.externalPickleCompletionAdmissionChain
-      .catch(() => undefined)
-      .then(() => this.admitExternalPickleCompletion({
-        sessionId: request.sessionId,
-        prompt: request.prompt,
-        cwd: request.cwd,
-        completionId,
-      }))
-      .then(() => { this.acceptedExternalPickleCompletionIds.add(completionId); });
-    this.externalPickleCompletionAdmissions.set(completionId, admission);
-    this.externalPickleCompletionAdmissionChain = admission.catch(() => undefined);
-    try {
-      await admission;
-    } finally {
-      if (this.externalPickleCompletionAdmissions.get(completionId) === admission) {
-        this.externalPickleCompletionAdmissions.delete(completionId);
-      }
-    }
+    return this.pickleCompletionCoordinator.deliverExternalCompletion(requestOrSessionId, legacyPrompt, legacyCwd);
   }
 
-  private async admitExternalPickleCompletion(request: { sessionId: string; prompt: string; cwd?: string; completionId: string }): Promise<void> {
-    if (!this.options.mainRuntime) {
-      logAgentd("Pickle completion forwarded notify rejected", { sessionId: request.sessionId, reason: "no main runtime" });
-      throw new Error("Main runtime is not configured for Pickle completion delivery");
-    }
-
-    const wasMainProcessing = this.mainIsProcessing;
-    const prompt: BuiltPrompt = { text: request.prompt, imagePaths: [] };
-    // Register before followUp because the runtime may emit input_delivery
-    // during the acceptance call. Remove this exact entry on rejection so a
-    // retry is not deduped or matched to stale metadata.
-    this.pendingExternalPickleCompletions.push(request);
-    if (!wasMainProcessing) this.activateExternalPickleCompletionContext(request.sessionId);
-
-    try {
-      const delivery = await this.preparePickyCompletionDelivery(prompt, request.cwd);
-      if (!delivery) throw new Error("Main agent handle is unavailable");
-      if (!wasMainProcessing) this.mainIsProcessing = true;
-      if (delivery.sendAsFollowUp) {
-        await delivery.handle.followUp(prompt);
-      } else {
-        // The freshly-created runtime receives its initial prompt before the
-        // supervisor subscribes, so no input_delivery will arrive here. Its
-        // idle context was activated above and must not block later queued
-        // completion metadata.
-        this.pendingExternalPickleCompletions = this.pendingExternalPickleCompletions.filter((completion) => completion.completionId !== request.completionId);
-      }
-      logAgentd("Pickle completion forwarded notify accepted", {
-        sessionId: request.sessionId,
-        completionId: request.completionId,
-        queued: wasMainProcessing ? 1 : 0,
-      });
-    } catch (error) {
-      this.pendingExternalPickleCompletions = this.pendingExternalPickleCompletions.filter((completion) => completion.completionId !== request.completionId);
-      if (!wasMainProcessing) {
-        this.externalPickleReplyContexts.delete(request.sessionId);
-        this.mainIsProcessing = false;
-      }
-      logAgentd("Pickle completion forwarded followUp failed", {
-        sessionId: request.sessionId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    }
-  }
-
-  private activateExternalPickleCompletionContext(sessionId: string): void {
+  private activateLocalPickleCompletionContext(sessionId: string): void {
     this.mainReplyContextId = sessionId;
     this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
     this.mainVisualNarration.reset();
+  }
+
+  private activateExternalPickleCompletionContext(sessionId: string): void {
+    this.activateLocalPickleCompletionContext(sessionId);
     this.externalPickleReplyContexts.add(sessionId);
   }
 
-  private handleExternalPickleCompletionInputDelivery(event: Extract<RuntimeEvent, { type: "input_delivery" }>): void {
-    const completion = this.pendingExternalPickleCompletions[0];
-    if (!completion
-      || event.role !== "user"
-      || event.originatedBy !== "internal"
-      || event.text !== completion.prompt) return;
-
-    this.pendingExternalPickleCompletions.shift();
-    this.activateExternalPickleCompletionContext(completion.sessionId);
-    this.mainTerminalProcessed = false;
-    logAgentd("Pickle completion forwarded notify started", {
-      sessionId: completion.sessionId,
-      completionId: completion.completionId,
-      queueLength: this.pendingExternalPickleCompletions.length,
-    });
-  }
-
-  private schedulePickleCompletionDrain(): void {
-    void this.runPickleCompletionDrain().catch((error) => {
-      logAgentd("Pickle completion drain failed", { error: error instanceof Error ? error.message : String(error) });
-    });
-  }
-
-  private runPickleCompletionDrain(): Promise<void> {
-    if (this.pickleCompletionDrainPromise) return this.pickleCompletionDrainPromise;
-    const drain = this.drainPendingPickleCompletions();
-    this.pickleCompletionDrainPromise = drain;
-    void drain.then(
-      () => {
-        if (this.pickleCompletionDrainPromise === drain) this.pickleCompletionDrainPromise = undefined;
-      },
-      () => {
-        if (this.pickleCompletionDrainPromise === drain) this.pickleCompletionDrainPromise = undefined;
-      },
-    );
-    return drain;
-  }
-
-  private async drainPendingPickleCompletions(): Promise<void> {
-    while (!this.mainIsProcessing) {
-      const sessionId = this.pendingPickleCompletions.shift();
-      if (!sessionId) return;
-      logAgentd("Pickle completion draining", { sessionId, queueLength: this.pendingPickleCompletions.length });
-      await this.deliverPickleCompletionToMain(sessionId);
-    }
-  }
-
-  private async preparePickyCompletionDelivery(prompt: ReturnType<typeof buildMainAgentPickleCompletionPrompt>, cwd?: string): Promise<{ handle: RuntimeSessionHandle; sendAsFollowUp: boolean } | undefined> {
+  private async preparePickyCompletionDelivery(prompt: BuiltPrompt, cwd?: string): Promise<{ handle: RuntimeSessionHandle; sendAsFollowUp: boolean } | undefined> {
     if (this.mainHandle) return { handle: this.mainHandle, sendAsFollowUp: true };
     if (!this.options.mainRuntime) return undefined;
     if (this.mainHandlePromise) return { handle: await this.mainHandlePromise, sendAsFollowUp: true };
@@ -2114,11 +1880,7 @@ export class SessionSupervisor extends EventEmitter {
     this.pendingPostCompactionReloadIds.delete(sessionId);
     this.lastEmittedSteeringMode.delete(sessionId);
     this.lastEmittedFollowUpMode.delete(sessionId);
-    this.pickleCompletionNotified.delete(sessionId);
-    this.pickleCompletionInFlight.delete(sessionId);
-    this.pickleCompletionChannelSnapshots.delete(sessionId);
-    const pendingIndex = this.pendingPickleCompletions.indexOf(sessionId);
-    if (pendingIndex >= 0) this.pendingPickleCompletions.splice(pendingIndex, 1);
+    this.pickleCompletionCoordinator.clearLocalTracking(sessionId);
     this.externalPickleReplyContexts.delete(sessionId);
     logAgentd("session deleted", { sessionId });
   }
@@ -2232,19 +1994,8 @@ export class SessionSupervisor extends EventEmitter {
 
   private async preparePickleSessionForUserInput(sessionId: string): Promise<void> {
     if (!this.isPickleSession(sessionId)) return;
-    this.clearPickleCompletionTracking(sessionId);
+    this.pickleCompletionCoordinator.clearLocalTracking(sessionId);
     if (this.mustGet(sessionId).pinned) await this.patch(sessionId, { pinned: false });
-  }
-
-  private clearPickleCompletionTracking(sessionId: string): void {
-    this.pickleCompletionNotified.delete(sessionId);
-    this.pickleCompletionInFlight.delete(sessionId);
-    this.pickleCompletionChannelSnapshots.delete(sessionId);
-    const queueIndex = this.pendingPickleCompletions.indexOf(sessionId);
-    if (queueIndex >= 0) {
-      this.pendingPickleCompletions.splice(queueIndex, 1);
-      logAgentd("Pickle completion dequeued", { sessionId, queueLength: this.pendingPickleCompletions.length });
-    }
   }
 
   async setTerminalSessionTailEnabled(sessionId: string, enabled: boolean): Promise<void> {
@@ -3060,7 +2811,7 @@ export class SessionSupervisor extends EventEmitter {
     this.pendingPostCompactionReloadIds.delete(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     this.messageBuilder.onSessionRemoved(sessionId);
-    if (this.isPickleSession(sessionId)) this.clearPickleCompletionTracking(sessionId);
+    if (this.isPickleSession(sessionId)) this.pickleCompletionCoordinator.clearLocalTracking(sessionId);
     await this.patch(sessionId, buildRuntimeSessionReplacementPatch({
       cwd,
       title: this.isPickleSession(sessionId)
@@ -3105,7 +2856,7 @@ export class SessionSupervisor extends EventEmitter {
       materialize: this.artifactMaterializer.materializeTerminalArtifacts.bind(this.artifactMaterializer), save: this.store.save.bind(this.store), setSession: this.sessions.set.bind(this.sessions),
       rehydrateMessageSession: this.messageBuilder.commitTerminalSession.bind(this.messageBuilder), resetTerminalAssistantDraft: this.runtimeEventHandler.resetTerminalAssistantDraft.bind(this.runtimeEventHandler), resetTerminalThinkingDraft: this.runtimeEventHandler.resetTerminalThinkingDraft.bind(this.runtimeEventHandler), resetTerminalThinkingActive: this.runtimeEventHandler.resetTerminalThinkingActive.bind(this.runtimeEventHandler), clearTerminalPendingThinkingFlush: this.runtimeEventHandler.clearTerminalPendingThinkingFlush.bind(this.runtimeEventHandler), markTerminalRunProcessed: this.runtimeEventHandler.markTerminalRunProcessed.bind(this.runtimeEventHandler), clearTurnActivity: this.turnActivity.delete.bind(this.turnActivity),
       publish: async (id, publication, activity, artifacts) => { if (publication.mutations.length > 0) this.emit("sessionProjectionTransaction", id, publication.before, publication.after, publication.mutations, this.sessionProjectionEpoch); await emitTerminalV1Compatibility({ nextSeq: this.nextSeq.bind(this), chainEmit: this.chainEmit.bind(this), emitMessageAppended: (session, message, seq) => this.emit("messageAppended", session, message, seq), emitMessageRemoved: (session, messageId, seq) => this.emit("messageRemoved", session, messageId, seq), emitMessageReplaced: (session, messageId, message, seq) => this.emit("messageReplaced", session, messageId, message, seq), emitActivityUpdated: (session, value, seq) => this.emit("activityUpdated", session, value, seq), emitSessionMeta: (value) => this.emit("sessionMeta", value), emitArtifact: (session, artifact) => this.emit("artifact", session, artifact) }, id, publication.before, publication.after, activity, artifacts); },
-      isPickleSession: this.isPickleSession.bind(this), notifyPickleCompletion: this.notifyPickyOfPickleCompletion.bind(this),
+      isPickleSession: this.isPickleSession.bind(this), notifyPickleCompletion: this.pickleCompletionCoordinator.notifyLocalCompletion.bind(this.pickleCompletionCoordinator),
       logNotificationFailure: (id, error) => { logAgentd("Pickle completion notification failed after terminal commit", { sessionId: id, error: error instanceof Error ? error.message : String(error) }); },
     };
   }

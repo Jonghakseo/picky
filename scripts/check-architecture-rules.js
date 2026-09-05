@@ -409,7 +409,7 @@ function projectionTrappingDictionaryFiles() {
 // 138 is the independently recounted post-waitUntil ceiling. The baseline may
 // shrink with future conversions, but must never rise above this proven count.
 const SETTLE_PUMP_HARD_CEILING = 138;
-const SETTLE_PUMP_BASELINE = 138;
+const SETTLE_PUMP_BASELINE = 132;
 
 function settlePumpBaselineExceedsCeiling(baseline) {
   return baseline > SETTLE_PUMP_HARD_CEILING;

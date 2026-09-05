@@ -6,6 +6,8 @@ import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { PROTOCOL_VERSION, PickyAgentSessionMetaSchema, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionMeta, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compactSessionForAppSnapshot, eventPayloadByteLength, minimalSessionForAppSnapshot, truncateText } from "./application/app-session-snapshot-policy.js";
+import { deliverPickleCompletion, PickleBridgeRequestCoordinator, type AppPickleBridgeRequest, type AppPickleBridgeResult, type AppPickleHandoffRequest, type AppPickleHandoffResult } from "./application/pickle-completion-bridge.js";
+export type { AppPickleBridgeRequest, AppPickleBridgeResult, AppPickleHandoffRequest, AppPickleHandoffResult } from "./application/pickle-completion-bridge.js";
 import { ProjectionRecoveryRequestGate } from "./application/session-projection-recovery.js";
 import { SessionProjectionV2Broadcaster } from "./application/session-projection-v2-broadcaster.js";
 import { assertProtocolVersion } from "./application/protocol-version-guard.js";
@@ -45,46 +47,6 @@ type ParsedCommand = ReturnType<typeof parseCommand>;
 type CommandHandlerMap = {
   [Type in ParsedCommand["type"]]: (command: Extract<ParsedCommand, { type: Type }>) => unknown;
 };
-export interface AppPickleHandoffRequest {
-  context: PickyContextPacket;
-  title: string;
-  instructions: string;
-  cwd: string;
-}
-
-export interface AppPickleHandoffResult {
-  sessionId: string;
-  title: string;
-  cwd?: string;
-}
-
-export type AppPickleBridgeRequest =
-  | { operation: "listSessions" }
-  | { operation: "steer" | "followUp"; sessionId: string; text: string }
-  | { operation: "abort"; sessionId: string }
-  | { operation: "setArchived"; sessionId: string; archived: boolean }
-  | { operation: "delete"; sessionId: string }
-  | { operation: "manageGroups"; groupAction: "list" | "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup"; groupId?: string; name?: string; sessionIds?: string[] }
-  | {
-    operation: "notifyMainOfPickleCompletion";
-    sessionId: string;
-    prompt: string;
-    cwd?: string;
-    completionId?: string;
-    title?: string;
-    status?: "completed" | "failed" | "cancelled" | "queued" | "running" | "waiting_for_input" | "blocked";
-    summary?: string;
-    notifyMainOnCompletion?: boolean;
-    notifyMacOSOnCompletion?: boolean;
-  };
-
-export interface AppPickleBridgeResult {
-  sessions?: PickyAgentSession[];
-  groups?: DockGroup[];
-  session?: PickyAgentSession;
-  delivered?: boolean;
-}
-
 export const APP_PICKLE_HANDOFF_UNAVAILABLE = "Picky app handoff unavailable";
 const APP_PICKLE_HANDOFF_TIMEOUT = "Picky app handoff timed out";
 export const APP_EXTERNAL_ENTRY_UNAVAILABLE = "Picky app external entry unavailable";
@@ -105,7 +67,7 @@ export class AgentdServer {
   private readonly projectionRecoveryRequestGate = new ProjectionRecoveryRequestGate();
   private readonly v2ProjectionBroadcaster = new SessionProjectionV2Broadcaster<WebSocket>({ sockets: () => this.clients, getDialect: (socket) => this.socketDialects.get(socket), send: (socket, payload) => { this.send(socket, payload); }, close: (socket) => socket.close(1011, "Session projection bootstrap failed") });
   private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
-  private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; app: WebSocket }>();
+  private readonly pickleBridgeRequests: PickleBridgeRequestCoordinator<WebSocket>;
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
@@ -136,6 +98,10 @@ export class AgentdServer {
     this.settingsControl = new SettingsControlBroker({
       firstSettingsControlApp: () => this.firstClientWithCapability("settingsControl"),
       send: (ws, event) => { this.send(ws, event); },
+    });
+    this.pickleBridgeRequests = new PickleBridgeRequestCoordinator({
+      firstApp: () => this.firstClientWithCapability("pickleBridge"),
+      send: (app, requestId, request) => { this.send(app, { type: "pickleBridgeRequested", requestId, ...request }); },
     });
   }
 
@@ -223,17 +189,7 @@ export class AgentdServer {
   }
 
   async requestPickleBridgeFromApp(request: AppPickleBridgeRequest, timeoutMs = 5_000): Promise<AppPickleBridgeResult> {
-    const client = this.firstClientWithCapability("pickleBridge");
-    if (!client) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
-    const requestId = `pickle-bridge-${randomUUID()}`;
-    return await new Promise<AppPickleBridgeResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingPickleBridgeRequests.delete(requestId);
-        reject(new Error(APP_PICKLE_HANDOFF_TIMEOUT));
-      }, timeoutMs);
-      this.pendingPickleBridgeRequests.set(requestId, { resolve, reject, timer, app: client });
-      this.send(client, { type: "pickleBridgeRequested", requestId, ...request });
-    });
+    return this.pickleBridgeRequests.request(request, APP_PICKLE_HANDOFF_UNAVAILABLE, APP_PICKLE_HANDOFF_TIMEOUT, timeoutMs);
   }
 
   async stop(): Promise<void> {
@@ -242,11 +198,7 @@ export class AgentdServer {
       pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
     }
     this.pendingPickleHandoffs.clear();
-    for (const pending of this.pendingPickleBridgeRequests.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
-    }
-    this.pendingPickleBridgeRequests.clear();
+    this.pickleBridgeRequests.rejectAll(APP_PICKLE_HANDOFF_UNAVAILABLE);
     this.externalEntryStopping = true;
     for (const pending of this.pendingExternalEntries.values()) {
       clearTimeout(pending.timer);
@@ -326,12 +278,7 @@ export class AgentdServer {
       // may be mid-creation across a transient ws drop, and its completion send
       // waits for reconnect and arrives on the new socket (matched by requestId).
       // The per-request timeout timer still bounds a recipient that never returns.
-      for (const [requestId, pending] of this.pendingPickleBridgeRequests) {
-        if (pending.app !== ws) continue;
-        clearTimeout(pending.timer);
-        pending.reject(new Error(APP_PICKLE_HANDOFF_UNAVAILABLE));
-        this.pendingPickleBridgeRequests.delete(requestId);
-      }
+      this.pickleBridgeRequests.rejectForApp(ws, APP_PICKLE_HANDOFF_UNAVAILABLE);
       if (lostCapabilities?.has("externalEntry")) {
         for (const [requestId, pending] of this.pendingExternalEntries) {
           clearTimeout(pending.timer);
@@ -646,17 +593,7 @@ export class AgentdServer {
       pinPickleSession: (cmd) => this.options.supervisor.pinPickleSession(cmd.context, cmd.title),
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
       setNotifyMacOSOnCompletion: (cmd) => this.options.supervisor.setNotifyMacOSOnCompletion(cmd.sessionId, cmd.enabled),
-      notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion({
-        sessionId: cmd.sessionId,
-        prompt: cmd.prompt,
-        cwd: cmd.cwd,
-        completionId: cmd.completionId,
-        title: cmd.title,
-        status: cmd.status,
-        summary: cmd.summary,
-        notifyMainOnCompletion: cmd.notifyMainOnCompletion,
-        notifyMacOSOnCompletion: cmd.notifyMacOSOnCompletion,
-      }),
+      notifyMainOfPickleCompletion: (cmd) => deliverPickleCompletion(this.options.supervisor, cmd),
       setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
       deleteSession: async (cmd) => {
         await this.options.supervisor.deleteSession(cmd.sessionId);
@@ -793,15 +730,7 @@ export class AgentdServer {
   }
 
   private completePendingPickleBridgeRequest(command: Extract<ReturnType<typeof parseCommand>, { type: "completePickleBridgeRequest" }>): void {
-    const pending = this.pendingPickleBridgeRequests.get(command.requestId);
-    if (!pending) throw new Error(`Unknown Pickle bridge request: ${command.requestId}`);
-    this.pendingPickleBridgeRequests.delete(command.requestId);
-    clearTimeout(pending.timer);
-    if (command.errorMessage) {
-      pending.reject(new Error(command.errorMessage));
-      return;
-    }
-    pending.resolve({ sessions: command.sessions, groups: command.groups, session: command.session, delivered: command.delivered });
+    this.pickleBridgeRequests.complete(command);
   }
 
   private async createPickleFromMainCli(

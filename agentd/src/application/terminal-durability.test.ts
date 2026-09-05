@@ -42,9 +42,6 @@ type SupervisorInternals = {
   patchChains: { has(key: string): boolean };
   emitChains: Map<string, Promise<void>>;
   sessionSeq: Map<string, number>;
-  pickleCompletionNotified: Set<string>;
-  pickleCompletionInFlight: Set<string>;
-  pendingPickleCompletions: string[];
   applyQueueUpdateWithModes(sessionId: string, steering: readonly string[], followUp: readonly string[], steeringMode: "one-at-a-time", followUpMode: "one-at-a-time"): Promise<void>;
 };
 
@@ -320,9 +317,6 @@ function transientSnapshot(internals: SupervisorInternals, sessionId: string): u
       patchChainPending: internals.patchChains.has(sessionId),
       emitChainPending: internals.emitChains.has(sessionId),
       sequence: internals.sessionSeq.get(sessionId),
-      completionNotified: internals.pickleCompletionNotified.has(sessionId),
-      completionInFlight: internals.pickleCompletionInFlight.has(sessionId),
-      pendingCompletions: [...internals.pendingPickleCompletions],
     },
   };
 }

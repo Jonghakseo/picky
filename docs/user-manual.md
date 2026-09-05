@@ -543,7 +543,7 @@ The composer bottom action row includes two independent controls for successful 
 
 Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles. Settings → Overlay & Notifications supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
 
-New Pickles start with this off, so a burst of background work stays quiet until you ask to be told.
+Both defaults are off on a fresh install, so background work stays quiet until you enable a channel.
 
 ### 8.10 Inline questions and confirmations
 

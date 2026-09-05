@@ -536,7 +536,12 @@ Behavior:
 
 ### 8.9 Notify on completion
 
-The composer bottom action row includes a **Bell** button that toggles **Notify on completion** for the Pickle. When enabled, Picky surfaces a macOS banner (and the main agent picks up the completion event) the moment the Pickle finishes. The same toggle is exposed via `Cmd + N` on the HUD.
+The composer bottom action row includes two independent controls for successful completion:
+
+- **Picky icon**: report completion to Main Picky.
+- **Bell**: show a macOS completion notification. `Cmd + N` toggles only this channel.
+
+Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles. Settings → Overlay & Notifications supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
 
 New Pickles start with this off, so a burst of background work stays quiet until you ask to be told.
 
@@ -607,7 +612,8 @@ The Pickle card menu contains:
 
 | Menu item | Description |
 | --- | --- |
-| Notify on completion | Toggle whether completion notifies the main Picky flow. |
+| Report completion to Main Picky | Toggle whether successful completion is reported to Main Picky. |
+| Notify in macOS when complete | Toggle the Pickle's macOS success notification independently. |
 
 **SESSION**
 
@@ -663,7 +669,7 @@ These work when a Pickle card/HUD panel is active.
 
 | Shortcut | Action |
 | --- | --- |
-| Cmd + W | Close the open Pickle card. |
+| Cmd + W | Close the open Pickle card, including immediately after it gains focus; keep the dock and session running. |
 | Escape | Close an open folder member list first, otherwise close the card when no text input is focused. |
 | Return | Open the highlighted row while a folder member list is open, otherwise focus the active composer when no text input is focused. |
 | Up / Down | Move the highlight in an open folder member list, when no text input is focused. |
@@ -673,7 +679,7 @@ These work when a Pickle card/HUD panel is active.
 | Cmd + R | Open latest agent response as a report. |
 | Cmd + T | Toggle inline Pi terminal. |
 | Cmd + Shift + T | Open separate Pi terminal overlay. |
-| Cmd + N | Toggle Notify on completion. |
+| Cmd + N | Toggle the Pickle's macOS completion notification only. |
 | Cmd + E | Toggle the **local-shell utility panel** below the card composer while the conversation stays visible above. It opens directly to a terminal in the Pickle cwd. Distinct from `Cmd + T`, which swaps the entire card body into a Pi terminal. |
 | Cmd + K | Toggle screen-context target for the active Pickle. |
 | Cmd + Delete | Archive the focused Pickle. |
@@ -830,6 +836,8 @@ Existing consumers of `.sessions[].id`, title, status, or artifact links should 
 | `mainAgent.thinkingLevel` | enum | Same applied/pending semantics as the model key. |
 | `pickleAgent.model` | string pattern | Affects newly created Pickles only. |
 | `pickleAgent.thinkingLevel` | enum | Affects newly created Pickles only. |
+| `notifications.newPicklesNotifyMainOnCompletion` | bool, read-only | New-Pickle default for reporting completion to Main Picky; change it in Settings. |
+| `notifications.newPicklesNotifyMacOSOnCompletion` | bool, read-only | New-Pickle default for macOS completion notifications; change it in Settings. |
 
 `settings-list` prints each key's type, allowed values, and current value; `--json` returns the full catalog for scripting. `settings-set` responses distinguish `persisted` (written to `settings.json`) from `applied` (live in the running app/daemon). API keys, git chip actions, and other sensitive fields are intentionally not exposed through the CLI.
 
@@ -995,9 +1003,12 @@ While the Mac App Store is the frontmost app, Picky temporarily hides the cursor
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| On success | Off | Show macOS banner when a session completes. |
+| Report new Pickles to Main Picky when complete | Off | Default Main Picky completion reporting for newly created Pickles. |
+| Notify in macOS when new Pickles complete | Off | Default macOS completion notification for newly created Pickles. |
 | On failure | On | Show banner when a session fails. |
 | On input request | On | Show banner when a session waits for user input. |
+
+The two completion defaults are independent and do not modify existing Pickles. Change an existing Pickle's controls in its composer or conversation menu. Upgrading preserves the former **On success** setting as the macOS default for future Pickles.
 
 ### 13.8 Updates
 

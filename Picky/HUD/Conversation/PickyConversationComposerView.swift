@@ -337,7 +337,7 @@ struct PickyConversationComposerView: View {
                 if effectiveBashMode != .none {
                     bashModeBadge
                 } else {
-                    notifyOrDropButton
+                    completionNotificationOrDropControls
                     terminalButton
                 }
             }
@@ -390,7 +390,7 @@ struct PickyConversationComposerView: View {
     }
 
     @ViewBuilder
-    private var notifyOrDropButton: some View {
+    private var completionNotificationOrDropControls: some View {
         if isFileDropTargeted {
             toolbarIcon(
                 systemName: "doc.badge.plus",
@@ -403,27 +403,13 @@ struct PickyConversationComposerView: View {
                 .help(L10n.t("hud.composer.drop.help"))
                 .accessibilityLabel(L10n.t("hud.composer.drop.accessibilityLabel"))
         } else {
-            Button {
-                toggleNotifyOnCompletion()
-            } label: {
-                toolbarIcon(
-                    systemName: notifyOnCompletionIconName,
-                    color: notifyOnCompletionColor
-                )
-            }
-            .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: session.notifyOnCompletion))
-            .overlay(alignment: .topTrailing) {
-                PickyShortcutKeyBadge(label: "N")
-                    .fixedSize()
-                    .offset(x: 9, y: -7)
-                    .opacity(isCommandShortcutHintVisible ? 1 : 0)
-                    .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
-                    .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
-                    .allowsHitTesting(false)
-            }
-            .help(notifyOnCompletionHelpText)
-            .accessibilityLabel(L10n.t("hud.composer.notify.accessibilityLabel"))
-            .accessibilityValue(session.notifyOnCompletion ? "On" : "Off")
+            PickyCompletionNotificationControlsView(
+                notifyMainOnCompletion: session.notifyMainOnCompletion == true,
+                notifyMacOSOnCompletion: session.notifyMacOSOnCompletion == true,
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                onToggleMain: toggleMainPickyCompletion,
+                onToggleMacOS: toggleMacOSCompletionNotification
+            )
         }
     }
 
@@ -460,21 +446,14 @@ struct PickyConversationComposerView: View {
             .contentShape(Rectangle())
     }
 
-    var notifyOnCompletionIconName: String {
-        PickyComposerLabelPolicy.notifyOnCompletionIconName(enabled: session.notifyOnCompletion)
-    }
-
-    var notifyOnCompletionHelpText: String {
-        PickyComposerLabelPolicy.notifyOnCompletionHelpText(enabled: session.notifyOnCompletion)
-    }
-
-    private var notifyOnCompletionColor: Color {
-        session.notifyOnCompletion ? DS.Colors.accentText : DS.Colors.textTertiary
-    }
-
-    private func toggleNotifyOnCompletion() {
-        let enabled = !session.notifyOnCompletion
+    private func toggleMainPickyCompletion() {
+        let enabled = !(session.notifyMainOnCompletion == true)
         Task { try? await commands.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
+    }
+
+    private func toggleMacOSCompletionNotification() {
+        let enabled = !(session.notifyMacOSOnCompletion == true)
+        Task { try? await commands.setNotifyMacOSOnCompletion(sessionID: session.id, enabled: enabled) }
     }
 
     private var composerEditor: some View {

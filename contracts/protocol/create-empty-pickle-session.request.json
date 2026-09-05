@@ -3,6 +3,7 @@
   "protocolVersion": "2026-08-25",
   "type": "createEmptyPickleSession",
   "notifyMainOnCompletion": true,
+  "notifyMacOSOnCompletion": true,
   "context": {
     "id": "context-manual-pickle-001",
     "source": "system",

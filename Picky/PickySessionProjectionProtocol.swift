@@ -68,6 +68,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
     let contextUsage: FieldUpdate<PickyContextUsage>
     let currentAssistantRun: FieldUpdate<PickyAssistantRunMetadata>
     let notifyMainOnCompletion: FieldUpdate<Bool>
+    let notifyMacOSOnCompletion: FieldUpdate<Bool>
     let archived: FieldUpdate<Bool>
     let archivedAt: FieldUpdate<Date>
     let pinned: FieldUpdate<Bool>
@@ -75,7 +76,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary
         case thinkingPreview, messageJournalAvailable, contextUsage, currentAssistantRun
-        case notifyMainOnCompletion, archived, archivedAt, pinned
+        case notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned
     }
 
     init(from decoder: Decoder) throws {
@@ -103,6 +104,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         contextUsage = try FieldUpdate.decode(from: container, forKey: .contextUsage, allowsClear: true)
         currentAssistantRun = try FieldUpdate.decode(from: container, forKey: .currentAssistantRun, allowsClear: true)
         notifyMainOnCompletion = try FieldUpdate.decode(from: container, forKey: .notifyMainOnCompletion, allowsClear: true)
+        notifyMacOSOnCompletion = try FieldUpdate.decode(from: container, forKey: .notifyMacOSOnCompletion, allowsClear: true)
         archived = try FieldUpdate.decode(from: container, forKey: .archived, allowsClear: true)
         archivedAt = try FieldUpdate.decode(from: container, forKey: .archivedAt, allowsClear: true)
         pinned = try FieldUpdate.decode(from: container, forKey: .pinned, allowsClear: true)
@@ -293,7 +295,7 @@ struct PickySessionProjectionSnapshot: Decodable, Equatable {
         "lastSummary", "thinkingPreview", "finalAnswer", "logs", "tools", "todoState",
         "subagentRuns", "artifacts", "changedFiles", "messages", "messageJournalAvailable",
         "queuedSteers", "queuedFollowUps", "steeringMode", "followUpMode", "activitySummary",
-        "contextUsage", "currentAssistantRun", "pendingExtensionUiRequest", "notifyMainOnCompletion",
+        "contextUsage", "currentAssistantRun", "pendingExtensionUiRequest", "notifyMainOnCompletion", "notifyMacOSOnCompletion",
         "archived", "archivedAt", "pinned",
     ]
 

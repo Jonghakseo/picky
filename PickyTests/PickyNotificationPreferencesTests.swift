@@ -2,13 +2,6 @@
 //  PickyNotificationPreferencesTests.swift
 //  PickyTests
 //
-//  Unit tests for the notification toggle plumbing introduced alongside the
-//  Settings-tab "Notifications" section. End-to-end coverage of how
-//  `PickySessionListViewModel` consults these toggles lives in
-//  `PickySessionViewModelTests.swift`; this file only exercises the
-//  preference value type, the JSON migration, and the settings-store
-//  observer wired into `PickyNotificationPreferencesStore`.
-//
 
 import Foundation
 import Testing
@@ -16,18 +9,18 @@ import Testing
 
 @Suite("PickyNotificationPreferences")
 struct PickyNotificationPreferencesTests {
-    @Test func defaultsLeaveCompletedOffAndOthersOn() {
+    @Test func defaultsLeaveNewPickleCompletionChannelsOffAndOthersOn() {
         let defaults = PickyNotificationPreferences.defaults
-        #expect(defaults.notifyOnCompleted == false)
-        #expect(defaults.notifyOnCompletionForNewPickles == false)
+        #expect(defaults.notifyMainOnCompletionForNewPickles == false)
+        #expect(defaults.notifyMacOSOnCompletionForNewPickles == false)
         #expect(defaults.notifyOnFailed == true)
         #expect(defaults.notifyOnWaitingForInput == true)
     }
 
     @Test func roundTripsThroughJSON() throws {
         let original = PickyNotificationPreferences(
-            completionDestination: .mainPicky,
-            notifyOnCompletionForNewPickles: true,
+            notifyMainOnCompletionForNewPickles: true,
+            notifyMacOSOnCompletionForNewPickles: true,
             notifyOnFailed: true,
             notifyOnWaitingForInput: false
         )
@@ -39,9 +32,6 @@ struct PickyNotificationPreferencesTests {
     }
 
     @Test func legacySettingsWithoutNotificationsKeyDecodeUsingDefaults() throws {
-        // settings.json files written before the toggles shipped do not contain a
-        // `notifications` key. Decoding must fall back to the all-on defaults so
-        // existing users keep seeing the same banners they had before.
         let legacyJSON = """
         {
             "appearance": "dark",
@@ -63,20 +53,36 @@ struct PickyNotificationPreferencesTests {
         #expect(settings.notifications == .defaults)
     }
 
-    @Test func migratesLegacyCompletionToggleToDestination() throws {
+    @Test func migratesReleasedMacOSCompletionToggleToFuturePickleDefaultOnly() throws {
         let decoder = JSONDecoder()
         let legacyOn = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"notifyOnCompleted":true,"notifyOnFailed":false,"notifyOnWaitingForInput":true}"#.utf8))
         let legacyOff = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"notifyOnCompleted":false,"notifyOnFailed":true,"notifyOnWaitingForInput":false}"#.utf8))
         let missing = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"notifyOnFailed":true,"notifyOnWaitingForInput":true}"#.utf8))
-        let future = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"completionDestination":"future","notifyOnFailed":true,"notifyOnWaitingForInput":true}"#.utf8))
 
-        #expect(legacyOn.completionDestination == .both)
-        #expect(legacyOff.completionDestination == .mainPicky)
-        #expect(missing.completionDestination == .mainPicky)
-        #expect(future.completionDestination == .mainPicky)
-        #expect(missing.notifyOnCompletionForNewPickles == false)
+        #expect(legacyOn.notifyMainOnCompletionForNewPickles == false)
+        #expect(legacyOn.notifyMacOSOnCompletionForNewPickles == true)
+        #expect(legacyOff.notifyMacOSOnCompletionForNewPickles == false)
+        #expect(missing.notifyMainOnCompletionForNewPickles == false)
+        #expect(missing.notifyMacOSOnCompletionForNewPickles == false)
         #expect(legacyOn.notifyOnFailed == false)
         #expect(legacyOff.notifyOnWaitingForInput == false)
+    }
+
+    @Test func migratesUnreleasedDestinationAndMasterToTwoFutureDefaults() throws {
+        let decoder = JSONDecoder()
+        let both = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"completionDestination":"both","notifyOnCompletionForNewPickles":true}"#.utf8))
+        let disabled = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"completionDestination":"both","notifyOnCompletionForNewPickles":false}"#.utf8))
+        let missingDestination = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"notifyOnCompletionForNewPickles":true}"#.utf8))
+        let unknownDestination = try decoder.decode(PickyNotificationPreferences.self, from: Data(#"{"completionDestination":"future","notifyOnCompletionForNewPickles":true}"#.utf8))
+
+        #expect(both.notifyMainOnCompletionForNewPickles)
+        #expect(both.notifyMacOSOnCompletionForNewPickles)
+        #expect(disabled.notifyMainOnCompletionForNewPickles == false)
+        #expect(disabled.notifyMacOSOnCompletionForNewPickles == false)
+        #expect(missingDestination.notifyMainOnCompletionForNewPickles)
+        #expect(missingDestination.notifyMacOSOnCompletionForNewPickles == false)
+        #expect(unknownDestination.notifyMainOnCompletionForNewPickles)
+        #expect(unknownDestination.notifyMacOSOnCompletionForNewPickles == false)
     }
 
     @Test func newSettingsWithToggleStateRoundTripThroughDisk() throws {
@@ -90,17 +96,16 @@ struct PickyNotificationPreferencesTests {
         settings.defaultCwd = cwd
         settings.worktreeParent = cwd
         settings.notifications = PickyNotificationPreferences(
-            completionDestination: .mainPicky,
-            notifyOnCompletionForNewPickles: true,
+            notifyMainOnCompletionForNewPickles: true,
+            notifyMacOSOnCompletionForNewPickles: true,
             notifyOnFailed: true,
             notifyOnWaitingForInput: false
         )
         try store.save(settings)
 
         let reloaded = store.load()
-        #expect(reloaded.notifications.completionDestination == .mainPicky)
-        #expect(reloaded.notifications.notifyOnCompleted == false)
-        #expect(reloaded.notifications.notifyOnCompletionForNewPickles == true)
+        #expect(reloaded.notifications.notifyMainOnCompletionForNewPickles == true)
+        #expect(reloaded.notifications.notifyMacOSOnCompletionForNewPickles == true)
         #expect(reloaded.notifications.notifyOnFailed == true)
         #expect(reloaded.notifications.notifyOnWaitingForInput == false)
     }
@@ -119,14 +124,15 @@ struct PickyNotificationPreferencesStoreTests {
         settings.defaultCwd = cwd
         settings.worktreeParent = cwd
         settings.notifications = PickyNotificationPreferences(
-            notifyOnCompleted: false,
+            notifyMainOnCompletionForNewPickles: false,
+            notifyMacOSOnCompletionForNewPickles: false,
             notifyOnFailed: true,
             notifyOnWaitingForInput: true
         )
         try settingsStore.save(settings)
 
         let store = PickyNotificationPreferencesStore(settingsStore: settingsStore)
-        #expect(store.notificationPreferences.notifyOnCompleted == false)
+        #expect(store.notificationPreferences.notifyMacOSOnCompletionForNewPickles == false)
     }
 
     @Test func refreshesAfterPickySettingsDidSavePost() async throws {
@@ -140,24 +146,24 @@ struct PickyNotificationPreferencesStoreTests {
         settings.defaultCwd = cwd
         settings.worktreeParent = cwd
         settings.notifications = PickyNotificationPreferences(
-            notifyOnCompleted: true,
+            notifyMainOnCompletionForNewPickles: false,
+            notifyMacOSOnCompletionForNewPickles: true,
             notifyOnFailed: true,
             notifyOnWaitingForInput: true
         )
         try settingsStore.save(settings)
 
         let store = PickyNotificationPreferencesStore(settingsStore: settingsStore)
-        #expect(store.notificationPreferences.notifyOnCompleted == true)
+        #expect(store.notificationPreferences.notifyMacOSOnCompletionForNewPickles == true)
 
-        settings.notifications.notifyOnCompleted = false
+        settings.notifications.notifyMacOSOnCompletionForNewPickles = false
         try settingsStore.save(settings)
         await MainActor.run {
             NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
         }
-        // The observer is registered on the main queue; settle before reading back.
         try await Task.sleep(nanoseconds: 50_000_000)
 
-        #expect(store.notificationPreferences.notifyOnCompleted == false)
+        #expect(store.notificationPreferences.notifyMacOSOnCompletionForNewPickles == false)
     }
 }
 
@@ -172,6 +178,6 @@ struct PickyStubNotificationPreferencesTests {
         let stub = PickyStubNotificationPreferences()
         stub.notificationPreferences.notifyOnFailed = false
         #expect(stub.notificationPreferences.notifyOnFailed == false)
-        #expect(stub.notificationPreferences.notifyOnCompleted == PickyNotificationPreferences.defaults.notifyOnCompleted)
+        #expect(stub.notificationPreferences.notifyMacOSOnCompletionForNewPickles == PickyNotificationPreferences.defaults.notifyMacOSOnCompletionForNewPickles)
     }
 }

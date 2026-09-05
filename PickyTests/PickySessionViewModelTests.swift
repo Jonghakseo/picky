@@ -411,10 +411,11 @@ struct PickySessionViewModelTests {
         #expect(command.context?.warnings == ["manualPickle=true"])
     }
 
-    @Test func createEmptyPickleSessionSnapshotsNewPickleBellPreference() async throws {
+    @Test func createEmptyPickleSessionSnapshotsBothCompletionDefaults() async throws {
         let childSpawner = FakeManualPickleChildSpawner()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
-            notifyOnCompletionForNewPickles: true
+            notifyMainOnCompletionForNewPickles: true,
+            notifyMacOSOnCompletionForNewPickles: true
         ))
         let viewModel = PickySessionListViewModel(
             client: FakePickyAgentClient(),
@@ -426,6 +427,7 @@ struct PickySessionViewModelTests {
         _ = try await viewModel.createEmptyPickleSession(cwd: "/tmp/manual-project")
 
         #expect(childSpawner.childClient.sentCommands.first?.notifyMainOnCompletion == true)
+        #expect(childSpawner.childClient.sentCommands.first?.notifyMacOSOnCompletion == true)
     }
 
     @Test func createEmptyPickleSessionAlwaysSpawnsChild() async throws {
@@ -5132,6 +5134,24 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.notifyMainOnCompletion == false)
     }
 
+    @MainActor @Test func notifyMacOSToggleSendsCommandAndUpdatesSession() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "session-notify-macos",
+            status: "running",
+            updatedAt: "2026-05-01T00:00:05.000Z",
+            notifyMacOSOnCompletion: false
+        ))))
+
+        try await viewModel.setNotifyMacOSOnCompletion(sessionID: "session-notify-macos", enabled: true)
+
+        #expect(client.sentCommands.last?.type == .setNotifyMacOSOnCompletion)
+        #expect(client.sentCommands.last?.sessionId == "session-notify-macos")
+        #expect(client.sentCommands.last?.enabled == true)
+        #expect(viewModel.sessions.first?.notifyMacOSOnCompletion == true)
+    }
+
     @Test func reportBuilderAndPrExtractionUseOnlyExplicitUrls() async throws {
         let session = PickyAgentSession.fixture(lastSummary: "Opened https://github.com/acme/repo/pull/42", status: .completed)
         let markdown = PickyArtifactReportBuilder().markdown(for: session)
@@ -6036,15 +6056,17 @@ private enum EventJSON {
         cwd: String = testProjectCwd,
         piSessionFilePath: String? = nil,
         notifyMainOnCompletion: Bool? = nil,
+        notifyMacOSOnCompletion: Bool? = nil,
         pinned: Bool? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
         let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
         let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
+        let encodedMacOSNotify = notifyMacOSOnCompletion.map { ",\"notifyMacOSOnCompletion\":\($0)" } ?? ""
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedPinned)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedMacOSNotify)\(encodedPinned)}}
         """
     }
 

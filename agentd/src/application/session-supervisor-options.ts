@@ -35,6 +35,8 @@ export interface SessionSupervisorOptions {
     title: string;
     status: "completed";
     summary?: string;
+    notifyMainOnCompletion: boolean;
+    notifyMacOSOnCompletion: boolean;
   }) => Promise<void>;
   // Builds the customTools array to apply to the main runtime after the user
   // toggles built-in tool availability. Called with the current disabled set;

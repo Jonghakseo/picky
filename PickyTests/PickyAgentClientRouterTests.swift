@@ -260,6 +260,8 @@ private func makePickleBridgeRequestEvent(
     title: String? = nil,
     status: String? = nil,
     summary: String? = nil,
+    notifyMainOnCompletion: Bool? = nil,
+    notifyMacOSOnCompletion: Bool? = nil,
     groupAction: String? = nil,
     groupId: String? = nil,
     name: String? = nil,
@@ -275,6 +277,8 @@ private func makePickleBridgeRequestEvent(
     if let title { fields += ", \"title\": \"\(title)\"" }
     if let status { fields += ", \"status\": \"\(status)\"" }
     if let summary { fields += ", \"summary\": \"\(summary)\"" }
+    if let notifyMainOnCompletion { fields += ", \"notifyMainOnCompletion\": \(notifyMainOnCompletion ? "true" : "false")" }
+    if let notifyMacOSOnCompletion { fields += ", \"notifyMacOSOnCompletion\": \(notifyMacOSOnCompletion ? "true" : "false")" }
     if let groupAction { fields += ", \"groupAction\": \"\(groupAction)\"" }
     if let groupId { fields += ", \"groupId\": \"\(groupId)\"" }
     if let name { fields += ", \"name\": \"\(name)\"" }
@@ -1207,7 +1211,8 @@ struct PickyAgentClientRouterTests {
             clientFactory: clientFactory,
             handoffPickleSessionIdFactory: { "pickle-handoff" },
             notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
-                notifyOnCompletionForNewPickles: true
+                notifyMainOnCompletionForNewPickles: true,
+                notifyMacOSOnCompletionForNewPickles: true
             )),
             supportsSessionProjectionV2: true
         )
@@ -1232,6 +1237,7 @@ struct PickyAgentClientRouterTests {
         #expect(childCommand.instructions == "Sentry 확인")
         #expect(childCommand.cwd == "/tmp/product/backend")
         #expect(childCommand.notifyMainOnCompletion == true)
+        #expect(childCommand.notifyMacOSOnCompletion == true)
 
         projectionSessions = [PickyAgentSession(
             id: "pickle-handoff",
@@ -1271,13 +1277,7 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
-        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
-            completionDestination: .mainPicky,
-            notifyOnFailed: true,
-            notifyOnWaitingForInput: true
-        ))
         router.completionNotificationCoordinator = PickyCompletionNotificationCoordinator(
-            preferencesProvider: preferences,
             notificationCenter: PickyNoopNotificationCenter(),
             deliverMain: { envelope in try await router.deliverCompletionToPrimary(envelope) }
         )
@@ -1297,7 +1297,9 @@ struct PickyAgentClientRouterTests {
             completionId: "pickle-completion:12",
             title: "Pickle completion",
             status: "completed",
-            summary: "Finished cleanly"
+            summary: "Finished cleanly",
+            notifyMainOnCompletion: true,
+            notifyMacOSOnCompletion: false
         )))
 
         try await waitUntil { primary.sentCommands.contains { $0.type == .notifyMainOfPickleCompletion } }
@@ -1308,6 +1310,8 @@ struct PickyAgentClientRouterTests {
         #expect(notify.completionId == "pickle-completion:12")
         #expect(notify.status == .completed)
         #expect(notify.summary == "Finished cleanly")
+        #expect(notify.notifyMainOnCompletion == true)
+        #expect(notify.notifyMacOSOnCompletion == false)
         #expect(!child.sentCommands.contains { $0.type == .completePickleBridgeRequest })
 
         primary.emit(.protocolEvent(makeAckEnvelope(commandId: notify.id)))

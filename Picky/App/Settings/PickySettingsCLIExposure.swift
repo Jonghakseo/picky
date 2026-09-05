@@ -40,7 +40,8 @@ enum PickySettingsCLIExposure {
         .init(key: "mainAgent.thinkingLevel", type: .enum, choices: PickyMainAgentThinkingLevel.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Main agent thinking level."),
         .init(key: "pickleAgent.model", type: .string, choices: nil, writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Default model pattern for new Pickles."),
         .init(key: "pickleAgent.thinkingLevel", type: .enum, choices: PickyPickleAgentThinkingLevel.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Default thinking level for new Pickles."),
-        .init(key: "notifications.newPicklesNotifyOnCompletion", type: .bool, choices: nil, writable: false, mainAgentAllowed: false, supportsToggle: false, restartRequired: false, description: "Whether new Pickles start with completion notifications enabled."),
+        .init(key: "notifications.newPicklesNotifyMainOnCompletion", type: .bool, choices: nil, writable: false, mainAgentAllowed: false, supportsToggle: false, restartRequired: false, description: "Whether new Pickles report completion to Main Picky."),
+        .init(key: "notifications.newPicklesNotifyMacOSOnCompletion", type: .bool, choices: nil, writable: false, mainAgentAllowed: false, supportsToggle: false, restartRequired: false, description: "Whether new Pickles send a macOS completion notification."),
         .init(key: "cursor.visible", type: .bool, choices: nil, writable: true, mainAgentAllowed: true, supportsToggle: true, restartRequired: false, description: "Show or hide the Picky cursor.")
     ]
 
@@ -75,7 +76,8 @@ enum PickySettingsCLIExposure {
         case "mainAgent.thinkingLevel": return .string(settings.mainAgentThinkingLevel.rawValue)
         case "pickleAgent.model": return .string(settings.pickleAgentModelPattern)
         case "pickleAgent.thinkingLevel": return .string(settings.pickleAgentThinkingLevel.rawValue)
-        case "notifications.newPicklesNotifyOnCompletion": return .bool(settings.notifications.notifyOnCompletionForNewPickles)
+        case "notifications.newPicklesNotifyMainOnCompletion": return .bool(settings.notifications.notifyMainOnCompletionForNewPickles)
+        case "notifications.newPicklesNotifyMacOSOnCompletion": return .bool(settings.notifications.notifyMacOSOnCompletionForNewPickles)
         case "cursor.visible": return .bool(settings.cursor.showPiCursor)
         default:
             throw error("SETTINGS_KEY_UNKNOWN", "Unknown Picky setting key: \(key)")

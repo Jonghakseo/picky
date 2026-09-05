@@ -282,6 +282,7 @@ extension PickyRegistrySessionProjectionStorage {
         apply(patch.contextUsage, to: &metadata.contextUsage)
         apply(patch.currentAssistantRun, to: &metadata.currentAssistantRun)
         apply(patch.notifyMainOnCompletion, to: &metadata.notifyMainOnCompletion)
+        apply(patch.notifyMacOSOnCompletion, to: &metadata.notifyMacOSOnCompletion)
         apply(patch.archived, to: &metadata.archived)
         apply(patch.archivedAt, to: &metadata.archivedAt)
         apply(patch.pinned, to: &metadata.pinned)

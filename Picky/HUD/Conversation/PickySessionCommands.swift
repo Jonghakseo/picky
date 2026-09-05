@@ -53,6 +53,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func cycleThinkingLevel(sessionID: String) async throws
     func cycleModel(sessionID: String, direction: PickyModelCycleDirection) async throws
     func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws
+    func setNotifyMacOSOnCompletion(sessionID: String, enabled: Bool) async throws
     func thinkingBlocksHidden(sessionID: String) -> Bool
     func isTodoProgressExpanded(sessionID: String, isComplete: Bool) -> Bool
     func setTodoProgressExpanded(_ isExpanded: Bool, sessionID: String)
@@ -175,7 +176,7 @@ struct PickyConversationHeaderProjection {
     let currentAssistantRun: PickyAssistantRunMetadata?
     let piSessionFilePath: String?
     let notifyMainOnCompletion: Bool?
-    var notifyOnCompletion: Bool { notifyMainOnCompletion == true }
+    let notifyMacOSOnCompletion: Bool?
 
     init(metaStore: PickySessionMetaStore) {
         guard case .loaded(let metadata) = metaStore.metadataState else {
@@ -189,6 +190,7 @@ struct PickyConversationHeaderProjection {
         currentAssistantRun = metadata.currentAssistantRun
         piSessionFilePath = metadata.piSessionFilePath
         notifyMainOnCompletion = metadata.notifyMainOnCompletion
+        notifyMacOSOnCompletion = metadata.notifyMacOSOnCompletion
     }
 
     init(card: PickyConversationSessionCard) {
@@ -200,6 +202,7 @@ struct PickyConversationHeaderProjection {
         currentAssistantRun = card.currentAssistantRun
         piSessionFilePath = card.piSessionFilePath
         notifyMainOnCompletion = card.notifyMainOnCompletion
+        notifyMacOSOnCompletion = card.notifyMacOSOnCompletion
     }
 
     var canRequestDockCompaction: Bool {
@@ -219,7 +222,7 @@ struct PickyConversationComposerProjection {
     let status: PickySessionStatus
     let lastSummary: String
     let notifyMainOnCompletion: Bool?
-    var notifyOnCompletion: Bool { notifyMainOnCompletion == true }
+    let notifyMacOSOnCompletion: Bool?
     let currentAssistantRun: PickyAssistantRunMetadata?
     let messageContext: PickyComposerMessageContext
     let queuedSteers: [PickyQueueItem]
@@ -239,6 +242,7 @@ struct PickyConversationComposerProjection {
         status = metadata.status
         lastSummary = metadata.lastSummary ?? ""
         notifyMainOnCompletion = metadata.notifyMainOnCompletion
+        notifyMacOSOnCompletion = metadata.notifyMacOSOnCompletion
         currentAssistantRun = metadata.currentAssistantRun
         messageContext = conversationStore.composerMessageContext
         let queue = queueStore.queueState.loadedValue
@@ -254,6 +258,7 @@ struct PickyConversationComposerProjection {
         status = card.status
         lastSummary = card.lastSummary
         notifyMainOnCompletion = card.notifyMainOnCompletion
+        notifyMacOSOnCompletion = card.notifyMacOSOnCompletion
         currentAssistantRun = card.currentAssistantRun
         messageContext = PickyComposerMessageContext(messages: card.messages)
         queuedSteers = card.queuedSteers

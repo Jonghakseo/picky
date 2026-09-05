@@ -931,6 +931,7 @@ describe("SessionSupervisor", () => {
 
     expect(supervisor.isPickleSession(pickle.id)).toBe(true);
     expect(pickle.notifyMainOnCompletion).toBe(false);
+    expect(pickle.notifyMacOSOnCompletion).toBe(false);
     expect(supervisor.listPickleSessions().map((session) => session.id)).toEqual([pickle.id]);
 
     const updated = await supervisor.steerPickleSession(pickle.id, "추가로 원인도 정리해줘");
@@ -944,11 +945,12 @@ describe("SessionSupervisor", () => {
 
     const pickle = await supervisor.createPickleFromHandoff(
       context("enabled handoff"),
-      { title: "Enabled Pickle", instructions: "Investigate", notifyMainOnCompletion: true },
+      { title: "Enabled Pickle", instructions: "Investigate", notifyMainOnCompletion: true, notifyMacOSOnCompletion: true },
     );
 
     expect(pickle.notifyMainOnCompletion).toBe(true);
     expect(supervisor.get(pickle.id)?.notifyMainOnCompletion).toBe(true);
+    expect(supervisor.get(pickle.id)?.notifyMacOSOnCompletion).toBe(true);
   });
 
   it("resumes a busy handoff from a snapshot of the source Pi transcript before continuing", async () => {
@@ -961,7 +963,7 @@ describe("SessionSupervisor", () => {
 
     const pickle = await supervisor.createPickleFromHandoff(
       contextWithPiSessionFile("continue this work", sourceFilePath),
-      { title: "Continue source", instructions: "continue", cwd: "/tmp/override-project", notifyMainOnCompletion: true },
+      { title: "Continue source", instructions: "continue", cwd: "/tmp/override-project", notifyMainOnCompletion: true, notifyMacOSOnCompletion: true },
     );
 
     expect(runtime.resumeCalls).toHaveLength(1);
@@ -978,6 +980,7 @@ describe("SessionSupervisor", () => {
     expect(copied).toBe(original);
     expect(supervisor.isPickleSession(pickle.id)).toBe(true);
     expect(pickle.notifyMainOnCompletion).toBe(true);
+    expect(pickle.notifyMacOSOnCompletion).toBe(true);
     expect(pickle.logs).toContain("Picky handoff: continue");
   });
 
@@ -1034,6 +1037,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => (supervisor.get(source.id)?.messages ?? []).some((message) => message.kind === "agent_text"));
     await supervisor.setNotifyMainOnCompletion(source.id, false);
+    await supervisor.setNotifyMacOSOnCompletion(source.id, true);
 
     const fork = await supervisor.duplicatePickleSession(source.id);
 
@@ -1043,6 +1047,7 @@ describe("SessionSupervisor", () => {
       sourceMessages.map((message) => ({ id: message.id, kind: message.kind, text: message.text })),
     );
     expect(fork.notifyMainOnCompletion).toBe(false);
+    expect(fork.notifyMacOSOnCompletion).toBe(true);
   });
 
   it("snapshots a streaming source by trimming a partial trailing JSONL line before resuming", async () => {
@@ -1097,6 +1102,7 @@ describe("SessionSupervisor", () => {
     const session = await supervisor.createEmptyPickleSession(
       { ...context("manual"), source: "system", transcript: undefined, cwd: "  /tmp/manual-project  " },
       true,
+      true,
     );
 
     expect(runtime.createCalls).toBe(0);
@@ -1106,6 +1112,7 @@ describe("SessionSupervisor", () => {
     expect(session.cwd).toBe("/tmp/manual-project");
     expect(session.title).toBe("New Pickle · manual-project");
     expect(session.notifyMainOnCompletion).toBe(true);
+    expect(session.notifyMacOSOnCompletion).toBe(true);
     expect(session.currentAssistantRun).toEqual({ model: "anthropic/claude-opus-4-7", thinkingLevel: "high" });
     expect(supervisor.isPickleSession(session.id)).toBe(true);
     expect(supervisor.listPickleSessions().map((pickle) => pickle.id)).toEqual([session.id]);
@@ -1126,6 +1133,7 @@ describe("SessionSupervisor", () => {
     const session = await supervisor.createEmptyPickleSession({ ...context("manual default"), source: "system", transcript: undefined });
 
     expect(session.notifyMainOnCompletion).toBe(false);
+    expect(session.notifyMacOSOnCompletion).toBe(false);
   });
 
   it("accepts the first empty Pickle instruction while prewarm is still pending", async () => {
@@ -3467,6 +3475,36 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.prewarmCalls).toBe(prewarmCallsBeforeCompletion);
   });
 
+  it("forwards a macOS-only completion with its durable channel snapshot", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-macos-only-completion-"));
+    const sideRuntime = new ManualRuntime();
+    const forwarded: Array<{ notifyMainOnCompletion: boolean; notifyMacOSOnCompletion: boolean }> = [];
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), {
+      forwardPickleCompletionToPrimary: async (request) => {
+        forwarded.push({
+          notifyMainOnCompletion: request.notifyMainOnCompletion,
+          notifyMacOSOnCompletion: request.notifyMacOSOnCompletion,
+        });
+      },
+    });
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(
+      context("macOS-only pickle"),
+      {
+        title: "macOS-only Pickle",
+        instructions: "Investigate",
+        notifyMainOnCompletion: false,
+        notifyMacOSOnCompletion: true,
+      },
+    );
+
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => forwarded.length === 1);
+    await supervisor.setNotifyMacOSOnCompletion(pickle.id, false);
+
+    expect(forwarded).toEqual([{ notifyMainOnCompletion: false, notifyMacOSOnCompletion: true }]);
+  });
+
   it("forwards Pickle completion through the bridge when the supervisor has no main runtime", async () => {
     // Regression: per-Pickle child daemons removed the in-process mainRuntime, which silently
     // broke the bell-icon "Notify on completion" because `deliverPickleCompletionToMain` would
@@ -3483,6 +3521,8 @@ describe("SessionSupervisor", () => {
       title: string;
       status: "completed";
       summary?: string;
+      notifyMainOnCompletion: boolean;
+      notifyMacOSOnCompletion: boolean;
     }> = [];
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), {
       forwardPickleCompletionToPrimary: async (request) => {
@@ -3504,6 +3544,8 @@ describe("SessionSupervisor", () => {
     expect(forwarded[0].completionId).toBe(`${pickle.id}:${supervisor.get(pickle.id)?.revision}`);
     expect(forwarded[0].title).toBe(pickle.title);
     expect(forwarded[0].status).toBe("completed");
+    expect(forwarded[0].notifyMainOnCompletion).toBe(true);
+    expect(forwarded[0].notifyMacOSOnCompletion).toBe(false);
     // Once forwarded the supervisor must not double-notify on later terminal restatements.
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();

@@ -9,72 +9,82 @@ import Testing
 @Suite("PickyCompletionNotificationCoordinator")
 @MainActor
 struct PickyCompletionNotificationCoordinatorTests {
-    @Test func routesOnlySelectedDestinationForEnabledCompletedEnvelope() async throws {
-        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
-            completionDestination: .both,
-            notifyOnFailed: true,
-            notifyOnWaitingForInput: true
-        ))
-        let notifications = PickyNoopNotificationCenter()
-        var mainDeliveries: [PickyCompletionNotificationEnvelope] = []
-        let coordinator = PickyCompletionNotificationCoordinator(
-            preferencesProvider: preferences,
-            notificationCenter: notifications,
-            deliverMain: { mainDeliveries.append($0) }
-        )
-        let envelope = completionEnvelope()
+    @Test func routesExactlyTheSnapshottedCompletionChannels() async throws {
+        let cases: [(Bool, Bool, PickyCompletionNotificationRoutingPolicy.Channels)] = [
+            (false, false, []),
+            (true, false, [.mainPicky]),
+            (false, true, [.macOS]),
+            (true, true, [.mainPicky, .macOS]),
+        ]
 
-        let channels = try await coordinator.route(envelope)
+        for (notifyMain, notifyMacOS, expected) in cases {
+            let notifications = PickyNoopNotificationCenter()
+            var mainDeliveries: [PickyCompletionNotificationEnvelope] = []
+            let coordinator = PickyCompletionNotificationCoordinator(
+                notificationCenter: notifications,
+                deliverMain: { mainDeliveries.append($0) }
+            )
+            let envelope = completionEnvelope(notifyMain: notifyMain, notifyMacOS: notifyMacOS)
 
-        #expect(channels == [.mainPicky, .macOS])
-        #expect(mainDeliveries == [envelope])
-        #expect(notifications.delivered.map(\.identifier) == ["session-1:4"])
+            let channels = try await coordinator.route(envelope)
+
+            #expect(channels == expected)
+            #expect(mainDeliveries == (notifyMain ? [envelope] : []))
+            #expect(notifications.delivered.map(\.identifier) == (notifyMacOS ? ["session-1:4"] : []))
+        }
     }
 
     @Test func deduplicatesAcceptedChannelsButRetriesFailedMainDelivery() async throws {
-        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
-            completionDestination: .both,
-            notifyOnFailed: true,
-            notifyOnWaitingForInput: true
-        ))
         let notifications = PickyNoopNotificationCenter()
         var attempts = 0
         let coordinator = PickyCompletionNotificationCoordinator(
-            preferencesProvider: preferences,
             notificationCenter: notifications,
             deliverMain: { _ in
                 attempts += 1
                 if attempts == 1 { throw TestError.failed }
             }
         )
+        let envelope = completionEnvelope(notifyMain: true, notifyMacOS: true)
 
-        await #expect(throws: TestError.self) { try await coordinator.route(completionEnvelope()) }
-        _ = try await coordinator.route(completionEnvelope())
-        _ = try await coordinator.route(completionEnvelope())
+        await #expect(throws: TestError.self) { try await coordinator.route(envelope) }
+        _ = try await coordinator.route(envelope)
+        _ = try await coordinator.route(envelope)
 
         #expect(attempts == 2)
         #expect(notifications.delivered.count == 1)
     }
 
-    @Test func policySuppressesBellOffAndNonCompletedEffects() {
-        #expect(PickyCompletionNotificationRoutingPolicy.channels(
-            bellEnabled: false,
-            status: .completed,
-            destination: .both
-        ).isEmpty)
-        #expect(PickyCompletionNotificationRoutingPolicy.channels(
-            bellEnabled: true,
-            status: .failed,
-            destination: .both
-        ).isEmpty)
-        #expect(PickyCompletionNotificationRoutingPolicy.channels(
-            bellEnabled: true,
-            status: .completed,
-            destination: .macOS
-        ) == [.macOS])
+    @Test func coalescesConcurrentMainDeliveriesForTheSameCompletion() async throws {
+        var attempts = 0
+        let coordinator = PickyCompletionNotificationCoordinator(
+            notificationCenter: PickyNoopNotificationCenter(),
+            deliverMain: { _ in
+                attempts += 1
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        )
+        let envelope = completionEnvelope(notifyMain: true, notifyMacOS: false)
+
+        async let first = coordinator.route(envelope)
+        async let second = coordinator.route(envelope)
+        let results = try await [first, second]
+
+        #expect(results == [[.mainPicky], [.mainPicky]])
+        #expect(attempts == 1)
     }
 
-    private func completionEnvelope() -> PickyCompletionNotificationEnvelope {
+    @Test func policySuppressesNonCompletedEffects() {
+        #expect(PickyCompletionNotificationRoutingPolicy.channels(
+            notifyMainOnCompletion: true,
+            notifyMacOSOnCompletion: true,
+            status: .failed
+        ).isEmpty)
+    }
+
+    private func completionEnvelope(
+        notifyMain: Bool,
+        notifyMacOS: Bool
+    ) -> PickyCompletionNotificationEnvelope {
         PickyCompletionNotificationEnvelope(
             completionId: "session-1:4",
             sessionID: "session-1",
@@ -83,7 +93,8 @@ struct PickyCompletionNotificationCoordinatorTests {
             summary: "Finished cleanly",
             prompt: "Pickle finished",
             cwd: "/tmp/project",
-            bellEnabled: true
+            notifyMainOnCompletion: notifyMain,
+            notifyMacOSOnCompletion: notifyMacOS
         )
     }
 

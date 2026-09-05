@@ -272,6 +272,8 @@ struct ProtocolContractTests {
         #expect(durable.title == "Investigate notification routing")
         #expect(durable.status == .completed)
         #expect(durable.summary == "Notification routing is complete.")
+        #expect(durable.notifyMainOnCompletion == true)
+        #expect(durable.notifyMacOSOnCompletion == true)
         #expect(legacy.completionId == nil)
         #expect(legacy.status == nil)
     }
@@ -300,11 +302,12 @@ struct ProtocolContractTests {
         #expect(envelope.completionId == "legacy:legacy-bridge-42")
         #expect(envelope.title == "Projected Pickle")
         #expect(envelope.summary == "Projected summary")
-        #expect(envelope.bellEnabled)
+        #expect(envelope.notifyMainOnCompletion)
+        #expect(envelope.notifyMacOSOnCompletion == false)
         #expect(envelope.status == .completed)
     }
 
-    @Test func normalizesLegacyCompletionBridgeWithoutProjectionAsBellEnabled() throws {
+    @Test func normalizesLegacyCompletionBridgeWithoutProjectionAsMainOnly() throws {
         let request = try JSONDecoder.pickyAgentProtocolDecoder().decode(
             PickyPickleBridgeRequest.self,
             from: Data(#"{"requestId":"legacy-missing-projection","operation":"notifyMainOfPickleCompletion","sessionId":"session-legacy","prompt":"done"}"#.utf8)
@@ -313,7 +316,8 @@ struct ProtocolContractTests {
         let envelope = try #require(request.completionEnvelope(projectedSession: nil))
         #expect(envelope.completionId == "legacy:legacy-missing-projection")
         #expect(envelope.title == "session-legacy")
-        #expect(envelope.bellEnabled)
+        #expect(envelope.notifyMainOnCompletion)
+        #expect(envelope.notifyMacOSOnCompletion == false)
     }
 
     @Test func encodesSetupPackageCommand() throws {
@@ -465,11 +469,13 @@ struct ProtocolContractTests {
             context: PickyContextPacket(id: "context-handoff", source: "system", capturedAt: Date(), transcript: nil, selectedText: nil, cwd: nil, activeApp: nil, activeWindow: nil, browser: nil, screenshots: [], warnings: []),
             title: "Handoff",
             instructions: "Continue",
-            notifyMainOnCompletion: true
+            notifyMainOnCompletion: true,
+            notifyMacOSOnCompletion: true
         )
         let enabledData = try JSONEncoder.pickyAgentProtocolEncoder().encode(enabled)
         let enabledDecoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: enabledData)
         #expect(enabledDecoded.notifyMainOnCompletion == true)
+        #expect(enabledDecoded.notifyMacOSOnCompletion == true)
     }
 
     @Test func decodesPayloadBackedSessionEvents() throws {

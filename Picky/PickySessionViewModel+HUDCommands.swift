@@ -19,6 +19,18 @@ extension PickySessionListViewModel: PickyGitChipActionViewModelDispatch, PickyS
         activeSessionCard(sessionID: sessionID)
     }
 
+    func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws {
+        pickySessionLog("set notify main on completion session=\(sessionID) enabled=\(enabled)")
+        try await client.send(PickyCommandEnvelope(type: .setNotifyMainOnCompletion, sessionId: sessionID, enabled: enabled))
+        updateCompletionNotificationProjection(sessionID: sessionID, notifyMain: enabled)
+    }
+
+    func setNotifyMacOSOnCompletion(sessionID: String, enabled: Bool) async throws {
+        pickySessionLog("set notify macOS on completion session=\(sessionID) enabled=\(enabled)")
+        try await client.send(PickyCommandEnvelope(type: .setNotifyMacOSOnCompletion, sessionId: sessionID, enabled: enabled))
+        updateCompletionNotificationProjection(sessionID: sessionID, notifyMacOS: enabled)
+    }
+
     func shellTerminalSession(sessionID: String) -> PickyShellTerminalSession {
         guard let session = card(sessionID: sessionID) else {
             preconditionFailure("Extended terminal requires an active session")

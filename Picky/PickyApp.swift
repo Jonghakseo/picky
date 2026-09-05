@@ -148,11 +148,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         notificationPreferencesProvider: notificationPreferencesStore,
         supportsSessionProjectionV2: true
     )
-    /// Completion effects are app-owned. The child bridge provides a durable
-    /// envelope, while this coordinator snapshots settings and selects Main
-    /// Picky, macOS, or both without projection-driven duplicate banners.
+    /// Completion effects are app-owned. The durable child envelope already
+    /// contains the selected Main Picky and macOS channels.
     private lazy var completionNotificationCoordinator = PickyCompletionNotificationCoordinator(
-        preferencesProvider: notificationPreferencesStore,
         deliverMain: { [weak self] envelope in
             guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
             try await self.hudAgentClientRouter.deliverCompletionToPrimary(envelope)

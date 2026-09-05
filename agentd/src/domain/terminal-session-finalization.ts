@@ -216,7 +216,7 @@ function artifactAndPresentationMutations(before: Readonly<PickyAgentSession>, a
 
 function changedMetaPatch(before: Readonly<PickyAgentSession>, after: PickyAgentSession): Extract<PickySessionProjectionMutation, { type: "metaPatch" }>['patch'] {
   const patch: Extract<PickySessionProjectionMutation, { type: "metaPatch" }>['patch'] = {};
-  const fields = ["id", "title", "status", "cwd", "piSessionFilePath", "createdAt", "updatedAt", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage", "currentAssistantRun", "notifyMainOnCompletion", "archived", "archivedAt", "pinned"] as const;
+  const fields = ["id", "title", "status", "cwd", "piSessionFilePath", "createdAt", "updatedAt", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage", "currentAssistantRun", "notifyMainOnCompletion", "notifyMacOSOnCompletion", "archived", "archivedAt", "pinned"] as const;
   for (const field of fields) {
     if (same(before[field], after[field])) continue;
     const value = after[field];

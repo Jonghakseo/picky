@@ -59,6 +59,11 @@ import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_M
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
+type PickleCompletionChannelSnapshot = Readonly<{
+  notifyMainOnCompletion: boolean;
+  notifyMacOSOnCompletion: boolean;
+}>;
+
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
@@ -144,6 +149,7 @@ export class SessionSupervisor extends EventEmitter {
   private externalPickleReplyContexts = new Set<string>();
   private pickleCompletionNotified = new Set<string>();
   private pickleCompletionInFlight = new Set<string>();
+  private pickleCompletionChannelSnapshots = new Map<string, PickleCompletionChannelSnapshot>();
   private pendingPickleCompletions: string[] = [];
   // Accepted child completion inputs wait here until Pi emits the matching
   // input_delivery. A busy main runtime queues followUps immediately, but its
@@ -324,10 +330,16 @@ export class SessionSupervisor extends EventEmitter {
       const migratedSession = withPiSessionFileFromLogs(persistedSession);
       const isPickleSession = hasPickleSessionMarkerLog(migratedSession);
       if (isPickleSession) this.pickleSessionIds.add(migratedSession.id);
-      const session = isPickleSession && migratedSession.notifyMainOnCompletion === undefined
-        ? { ...migratedSession, notifyMainOnCompletion: false }
+      const session = isPickleSession
+        ? {
+            ...migratedSession,
+            notifyMainOnCompletion: migratedSession.notifyMainOnCompletion ?? false,
+            notifyMacOSOnCompletion: migratedSession.notifyMacOSOnCompletion ?? false,
+          }
         : migratedSession;
-      if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.commitSession(session);
+      if (session.piSessionFilePath !== persistedSession.piSessionFilePath
+          || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion
+          || session.notifyMacOSOnCompletion !== persistedSession.notifyMacOSOnCompletion) await this.commitSession(session);
       else this.sessions.set(session.id, session);
       this.messageBuilder.hydrateSession(session.id, session.messages);
       if (this.pickleSessionIds.has(session.id)) void this.pickleSessionTitleRefresher.refresh(session.id);
@@ -899,6 +911,7 @@ export class SessionSupervisor extends EventEmitter {
     const pendingCompletionCount = this.pendingPickleCompletions.length + this.pendingExternalPickleCompletions.length;
     if (pendingCompletionCount > 0) logAgentd("Picky pending Pickle completions cleared", { count: pendingCompletionCount });
     this.pendingPickleCompletions = [];
+    this.pickleCompletionChannelSnapshots.clear();
     this.pendingExternalPickleCompletions = [];
     this.acceptedExternalPickleCompletionIds.clear();
     this.externalPickleCompletionAdmissions.clear();
@@ -995,7 +1008,7 @@ export class SessionSupervisor extends EventEmitter {
     this.emit("quickReply", contextId, text, metadata);
   }
 
-  async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean }): Promise<PickyAgentSession> {
+  async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean }): Promise<PickyAgentSession> {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
     const sourceSessionFilePath = piSessionFilePathFromHandoffTranscript(handoffContext.transcript);
@@ -1003,14 +1016,17 @@ export class SessionSupervisor extends EventEmitter {
     if (sourceSessionFilePath && this.runtime.resume) {
       return this.createPickleFromResumedHandoff(handoffContext, handoff, sourceSessionFilePath);
     }
-    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), { notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false });
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), {
+      notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
+      notifyMacOSOnCompletion: handoff.notifyMacOSOnCompletion ?? false,
+    });
     this.pickleSessionIds.add(session.id);
     await this.appendLog(session.id, `${HANDOFF_PREFIX}${handoff.instructions}`);
     if (handoffContext.cwd) await this.appendLog(session.id, `Picky handoff cwd: ${handoffContext.cwd}`);
     return this.mustGet(session.id);
   }
 
-  private async createPickleFromResumedHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean }, sourceSessionFilePath: string): Promise<PickyAgentSession> {
+  private async createPickleFromResumedHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean }, sourceSessionFilePath: string): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
     const cwd = normalizeOptionalString(context.cwd);
@@ -1025,6 +1041,7 @@ export class SessionSupervisor extends EventEmitter {
       sourceSessionFilePath,
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
       notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
+      notifyMacOSOnCompletion: handoff.notifyMacOSOnCompletion ?? false,
     });
     this.pickleSessionIds.add(id);
     this.sessionContexts.set(id, context);
@@ -1068,7 +1085,7 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  async createEmptyPickleSession(context: PickyContextPacket, notifyMainOnCompletion = false): Promise<PickyAgentSession> {
+  async createEmptyPickleSession(context: PickyContextPacket, notifyMainOnCompletion = false, notifyMacOSOnCompletion = false): Promise<PickyAgentSession> {
     if (!this.runtime.prewarm) throw new Error("Runtime cannot prewarm empty Pickle sessions");
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
@@ -1080,6 +1097,7 @@ export class SessionSupervisor extends EventEmitter {
       cwd: pickleContext.cwd,
       now,
       notifyMainOnCompletion,
+      notifyMacOSOnCompletion,
     });
     this.pickleSessionIds.add(id);
     this.sessionContexts.set(id, pickleContext);
@@ -1231,7 +1249,7 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(id);
   }
 
-  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean } = {}): Promise<PickyAgentSession> {
+  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean } = {}): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
     const session = buildVisibleSession({
@@ -1240,6 +1258,7 @@ export class SessionSupervisor extends EventEmitter {
       cwd: context.cwd,
       now,
       notifyMainOnCompletion: options.notifyMainOnCompletion,
+      notifyMacOSOnCompletion: options.notifyMacOSOnCompletion,
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
     });
     this.sessionContexts.set(id, context);
@@ -1793,9 +1812,15 @@ export class SessionSupervisor extends EventEmitter {
 
   private async notifyPickyOfPickleCompletion(sessionId: string, committedSession?: PickyAgentSession): Promise<void> {
     const session = committedSession ?? this.mustGet(sessionId);
-    // The bell is the master opt-in. Missing legacy state remains off, and
-    // only a durable successful terminal commit may emit an envelope.
-    if (session.status !== "completed" || session.notifyMainOnCompletion !== true) return;
+    // Snapshot both destinations from the durable successful terminal commit.
+    // Later toggles apply only to a future generation.
+    if (session.status !== "completed") return;
+    const channels = this.pickleCompletionChannelSnapshots.get(sessionId) ?? {
+      notifyMainOnCompletion: session.notifyMainOnCompletion === true,
+      notifyMacOSOnCompletion: session.notifyMacOSOnCompletion === true,
+    };
+    if (!channels.notifyMainOnCompletion && !channels.notifyMacOSOnCompletion) return;
+    this.pickleCompletionChannelSnapshots.set(sessionId, channels);
     if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
     // Defer when Picky is mid-turn (e.g. the handoff turn that spawned this
     // Pickle session has not emitted status:completed yet). Sending the followUp now
@@ -1808,10 +1833,10 @@ export class SessionSupervisor extends EventEmitter {
       }
       return;
     }
-    await this.deliverPickleCompletionToMain(sessionId);
+    await this.deliverPickleCompletionToMain(sessionId, channels);
   }
 
-  private async deliverPickleCompletionToMain(sessionId: string): Promise<void> {
+  private async deliverPickleCompletionToMain(sessionId: string, channelSnapshot?: PickleCompletionChannelSnapshot): Promise<void> {
     this.pendingPickleCompletions = this.pendingPickleCompletions.filter((pendingSessionId) => pendingSessionId !== sessionId);
     if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
     const session = this.sessions.get(sessionId);
@@ -1819,6 +1844,11 @@ export class SessionSupervisor extends EventEmitter {
     // Reaching this queue already proves the durable completion observed an
     // enabled bell. Do not reinterpret a later preference change as recall.
     if (session.status !== "completed") return;
+    const channels = channelSnapshot ?? this.pickleCompletionChannelSnapshots.get(sessionId) ?? {
+      notifyMainOnCompletion: session.notifyMainOnCompletion === true,
+      notifyMacOSOnCompletion: session.notifyMacOSOnCompletion === true,
+    };
+    if (!channels.notifyMainOnCompletion && !channels.notifyMacOSOnCompletion) return;
     this.pickleCompletionInFlight.add(sessionId);
     try {
       const prompt = buildMainAgentPickleCompletionPrompt(session);
@@ -1836,6 +1866,8 @@ export class SessionSupervisor extends EventEmitter {
             title: session.title,
             status: "completed",
             summary: session.lastSummary,
+            notifyMainOnCompletion: channels.notifyMainOnCompletion,
+            notifyMacOSOnCompletion: channels.notifyMacOSOnCompletion,
           });
           this.pickleCompletionNotified.add(sessionId);
           logAgentd("Pickle completion forwarded to app coordinator", { sessionId, status: session.status });
@@ -1845,6 +1877,10 @@ export class SessionSupervisor extends EventEmitter {
         return;
       }
 
+      if (!channels.notifyMainOnCompletion) {
+        logAgentd("Pickle macOS completion delivery unavailable without app coordinator", { sessionId });
+        return;
+      }
       this.mainReplyContextId = sessionId;
       this.mainTurnOverlayContext = undefined;
       this.mainDraft = "";
@@ -1881,6 +1917,8 @@ export class SessionSupervisor extends EventEmitter {
       title?: string;
       status?: string;
       summary?: string;
+      notifyMainOnCompletion?: boolean;
+      notifyMacOSOnCompletion?: boolean;
     } | string,
     legacyPrompt?: string,
     legacyCwd?: string,
@@ -2029,9 +2067,13 @@ export class SessionSupervisor extends EventEmitter {
 
   async setNotifyMainOnCompletion(sessionId: string, enabled: boolean): Promise<PickyAgentSession> {
     if (!this.isPickleSession(sessionId)) throw new Error(`Session is not a Pickle: ${sessionId}`);
-    // Completion notification policy is snapshotted by notifyPickyOfPickleCompletion
-    // at the durable terminal commit. A later toggle affects only future turns.
     await this.patch(sessionId, { notifyMainOnCompletion: enabled });
+    return this.mustGet(sessionId);
+  }
+
+  async setNotifyMacOSOnCompletion(sessionId: string, enabled: boolean): Promise<PickyAgentSession> {
+    if (!this.isPickleSession(sessionId)) throw new Error(`Session is not a Pickle: ${sessionId}`);
+    await this.patch(sessionId, { notifyMacOSOnCompletion: enabled });
     return this.mustGet(sessionId);
   }
 
@@ -2074,6 +2116,7 @@ export class SessionSupervisor extends EventEmitter {
     this.lastEmittedFollowUpMode.delete(sessionId);
     this.pickleCompletionNotified.delete(sessionId);
     this.pickleCompletionInFlight.delete(sessionId);
+    this.pickleCompletionChannelSnapshots.delete(sessionId);
     const pendingIndex = this.pendingPickleCompletions.indexOf(sessionId);
     if (pendingIndex >= 0) this.pendingPickleCompletions.splice(pendingIndex, 1);
     this.externalPickleReplyContexts.delete(sessionId);
@@ -2196,6 +2239,7 @@ export class SessionSupervisor extends EventEmitter {
   private clearPickleCompletionTracking(sessionId: string): void {
     this.pickleCompletionNotified.delete(sessionId);
     this.pickleCompletionInFlight.delete(sessionId);
+    this.pickleCompletionChannelSnapshots.delete(sessionId);
     const queueIndex = this.pendingPickleCompletions.indexOf(sessionId);
     if (queueIndex >= 0) {
       this.pendingPickleCompletions.splice(queueIndex, 1);

@@ -115,7 +115,7 @@ export async function finalizeTerminalOperation(
       // events never enter the success-notification route.
       if (!dependencies.isPickleSession(sessionId)
           || after.status !== "completed"
-          || after.notifyMainOnCompletion !== true
+          || (after.notifyMainOnCompletion !== true && after.notifyMacOSOnCompletion !== true)
           || event.noTurnRan === true) return;
       try {
         await dependencies.notifyPickleCompletion(sessionId, after);

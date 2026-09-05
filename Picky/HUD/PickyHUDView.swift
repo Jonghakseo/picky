@@ -1178,7 +1178,7 @@ struct PickyHUDView: View {
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
         ), let activeCard {
-            toggleNotifyOnCompletion(session: activeCard)
+            toggleMacOSNotifyOnCompletion(session: activeCard)
             return true
         }
 
@@ -1316,9 +1316,9 @@ struct PickyHUDView: View {
         }
     }
 
-    private func toggleNotifyOnCompletion(session: PickyConversationSessionCard) {
-        let enabled = !(session.notifyMainOnCompletion == true)
-        Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
+    private func toggleMacOSNotifyOnCompletion(session: PickyConversationSessionCard) {
+        let enabled = !(session.notifyMacOSOnCompletion == true)
+        Task { try? await viewModel.setNotifyMacOSOnCompletion(sessionID: session.id, enabled: enabled) }
     }
 
     private func openLatestAgentResponseReport(sessionID: String) {

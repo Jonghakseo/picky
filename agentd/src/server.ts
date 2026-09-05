@@ -74,6 +74,8 @@ export type AppPickleBridgeRequest =
     title?: string;
     status?: "completed" | "failed" | "cancelled" | "queued" | "running" | "waiting_for_input" | "blocked";
     summary?: string;
+    notifyMainOnCompletion?: boolean;
+    notifyMacOSOnCompletion?: boolean;
   };
 
 export interface AppPickleBridgeResult {
@@ -553,12 +555,17 @@ export class AgentdServer {
       },
       routeTask: (cmd) => this.options.supervisor.route(cmd.context),
       createTask: (cmd) => this.options.supervisor.create(cmd.context),
-      createEmptyPickleSession: (cmd) => this.options.supervisor.createEmptyPickleSession(cmd.context, cmd.notifyMainOnCompletion ?? false),
+      createEmptyPickleSession: (cmd) => this.options.supervisor.createEmptyPickleSession(
+        cmd.context,
+        cmd.notifyMainOnCompletion ?? false,
+        cmd.notifyMacOSOnCompletion ?? false,
+      ),
       createPickleFromHandoff: (cmd) => this.options.supervisor.createPickleFromHandoff(cmd.context, {
         title: cmd.title,
         instructions: cmd.instructions,
         cwd: cmd.cwd,
         notifyMainOnCompletion: cmd.notifyMainOnCompletion ?? false,
+        notifyMacOSOnCompletion: cmd.notifyMacOSOnCompletion ?? false,
       }),
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id),
@@ -638,6 +645,7 @@ export class AgentdServer {
       duplicatePickleSession: (cmd) => this.options.supervisor.duplicatePickleSession(cmd.sessionId),
       pinPickleSession: (cmd) => this.options.supervisor.pinPickleSession(cmd.context, cmd.title),
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
+      setNotifyMacOSOnCompletion: (cmd) => this.options.supervisor.setNotifyMacOSOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion({
         sessionId: cmd.sessionId,
         prompt: cmd.prompt,
@@ -646,6 +654,8 @@ export class AgentdServer {
         title: cmd.title,
         status: cmd.status,
         summary: cmd.summary,
+        notifyMainOnCompletion: cmd.notifyMainOnCompletion,
+        notifyMacOSOnCompletion: cmd.notifyMacOSOnCompletion,
       }),
       setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
       deleteSession: async (cmd) => {
@@ -909,12 +919,22 @@ export class AgentdServer {
           ...(session ? { sessionId: session.id } : {}),
         });
       } else {
-        const notifyMainOnCompletion = await this.newPicklesNotifyOnCompletionDefault();
+        const [notifyMainOnCompletion, notifyMacOSOnCompletion] = await Promise.all([
+          this.newPicklesCompletionDefault(
+            "notifications.newPicklesNotifyMainOnCompletion",
+            "Main Picky",
+          ),
+          this.newPicklesCompletionDefault(
+            "notifications.newPicklesNotifyMacOSOnCompletion",
+            "macOS",
+          ),
+        ]);
         const session = await this.options.supervisor.createPickleFromHandoff(finalContext, {
           title: payload.title!,
           instructions: payload.instructions!,
           ...(payload.cwd ? { cwd: payload.cwd } : {}),
           notifyMainOnCompletion,
+          notifyMacOSOnCompletion,
         });
         this.broadcastToCapability("externalEntry", {
           type: "externalEntryAccepted",
@@ -943,18 +963,17 @@ export class AgentdServer {
    * to Picky.app. A missing, invalid, or timed-out app reply must not block
    * creation, because older app versions do not expose this key.
    */
-  private async newPicklesNotifyOnCompletionDefault(): Promise<boolean> {
+  private async newPicklesCompletionDefault(key: string, channel: string): Promise<boolean> {
     try {
-      const result = await this.settingsControl.request({
-        action: "get",
-        key: "notifications.newPicklesNotifyOnCompletion",
-      });
+      const result = await this.settingsControl.request({ action: "get", key });
       if (typeof result.value === "boolean") return result.value;
       logAgentd("new Pickle completion default unavailable or invalid; using false", {
+        channel,
         valueType: typeof result.value,
       });
     } catch (error) {
       logAgentd("new Pickle completion default lookup failed; using false", {
+        channel,
         code: error instanceof SettingsControlError ? error.code : undefined,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1221,7 +1240,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "followUp":
     case "steer":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, textChars: command.text.length, contextId: command.context?.id, screenshots: command.context?.screenshots.length };
-    case "setNotifyMainOnCompletion":
+    case "setNotifyMainOnCompletion": case "setNotifyMacOSOnCompletion":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "setSessionArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };

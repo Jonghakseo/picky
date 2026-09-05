@@ -498,7 +498,8 @@ final class PickySessionListViewModel: ObservableObject {
             let command = PickyCommandEnvelope(
                 type: .createEmptyPickleSession,
                 context: context,
-                notifyMainOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyOnCompletionForNewPickles
+                notifyMainOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyMainOnCompletionForNewPickles,
+                notifyMacOSOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyMacOSOnCompletionForNewPickles
             )
             guard let manualPickleChildSpawner else {
                 lastError = PickySessionListViewModelError.pickleRuntimeUnavailable.localizedDescription
@@ -1113,15 +1114,6 @@ final class PickySessionListViewModel: ObservableObject {
     func clearQueue(sessionID: String, kind: PickyQueueClearKind) async throws {
         pickySessionLog("clear queue session=\(sessionID) kind=\(kind.rawValue)")
         try await client.send(PickyCommandEnvelope(type: .clearQueue, sessionId: sessionID, kind: kind))
-    }
-
-    func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws {
-        pickySessionLog("set notify main on completion session=\(sessionID) enabled=\(enabled)")
-        try await client.send(PickyCommandEnvelope(type: .setNotifyMainOnCompletion, sessionId: sessionID, enabled: enabled))
-        mutateSession(sessionID: sessionID) { card in
-            card.notifyMainOnCompletion = enabled
-            card.updatedAt = Date()
-        }
     }
 
     func answerExtensionUi(sessionID: String, requestID: String, value: JSONValue) async throws {
@@ -2662,6 +2654,14 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func upsertSession(_ card: SessionCard, archived: Bool) {
         sessionProjectionStorage.upsertSession(card, archived: archived)
+    }
+
+    func updateCompletionNotificationProjection(sessionID: String, notifyMain: Bool? = nil, notifyMacOS: Bool? = nil) {
+        mutateSession(sessionID: sessionID) { card in
+            if let notifyMain { card.notifyMainOnCompletion = notifyMain }
+            if let notifyMacOS { card.notifyMacOSOnCompletion = notifyMacOS }
+            card.updatedAt = Date()
+        }
     }
 
     private func mutateSession(sessionID: String, mutate: (inout SessionCard) -> Void) {

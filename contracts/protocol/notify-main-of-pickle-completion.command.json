@@ -7,6 +7,8 @@
   "title": "Investigate notification routing",
   "status": "completed",
   "summary": "Notification routing is complete.",
+  "notifyMainOnCompletion": true,
+  "notifyMacOSOnCompletion": true,
   "prompt": "Pickle finished.",
   "cwd": "/tmp/project"
 }

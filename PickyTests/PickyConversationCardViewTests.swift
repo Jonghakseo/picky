@@ -816,21 +816,13 @@ struct PickyConversationCardViewTests {
         #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.steer"))
     }
 
-    @Test func composerShowsNotifyOnCompletionState() {
-        let viewModel = makeViewModel()
-        let enabledComposer = PickyConversationComposerView(
-            session: makeConversationSession(status: .running, notifyMainOnCompletion: true),
-            viewModel: viewModel
-        )
-        let disabledComposer = PickyConversationComposerView(
-            session: makeConversationSession(status: .running, notifyMainOnCompletion: false),
-            viewModel: viewModel
-        )
-
-        #expect(enabledComposer.notifyOnCompletionIconName == "bell.fill")
-        #expect(enabledComposer.notifyOnCompletionHelpText == L10n.t("hud.composer.notify.on.help"))
-        #expect(disabledComposer.notifyOnCompletionIconName == "bell.slash")
-        #expect(disabledComposer.notifyOnCompletionHelpText == L10n.t("hud.composer.notify.off.help"))
+    @Test func composerShowsIndependentCompletionDestinationStates() {
+        #expect(PickyComposerLabelPolicy.notifyMainOnCompletionHelpText(enabled: true) == L10n.t("hud.composer.notifyMain.on.help"))
+        #expect(PickyComposerLabelPolicy.notifyMainOnCompletionHelpText(enabled: false) == L10n.t("hud.composer.notifyMain.off.help"))
+        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionIconName(enabled: true) == "bell.fill")
+        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionIconName(enabled: false) == "bell.slash")
+        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionHelpText(enabled: true) == L10n.t("hud.composer.notifyMacOS.on.help"))
+        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionHelpText(enabled: false) == L10n.t("hud.composer.notifyMacOS.off.help"))
     }
 
     @Test func composerStopButtonOnlyShowsForActiveTurns() {
@@ -2704,6 +2696,7 @@ private func makeConversationSession(
     artifacts: [PickyArtifact] = [],
     logs: [String] = [],
     notifyMainOnCompletion: Bool? = nil,
+    notifyMacOSOnCompletion: Bool? = nil,
     lastSummary: String = "summary"
 ) -> PickySessionListViewModel.SessionCard {
     PickySessionListViewModel.SessionCard.fromAgentSession(
@@ -2728,7 +2721,8 @@ private func makeConversationSession(
             activitySummary: activitySummary,
             contextUsage: contextUsage,
             pendingExtensionUiRequest: pendingExtensionUiRequest,
-            notifyMainOnCompletion: notifyMainOnCompletion
+            notifyMainOnCompletion: notifyMainOnCompletion,
+            notifyMacOSOnCompletion: notifyMacOSOnCompletion
         )
     )
 }

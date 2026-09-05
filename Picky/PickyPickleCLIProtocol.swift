@@ -62,6 +62,8 @@ struct PickyPickleBridgeRequest: Decodable, Equatable {
     let title: String?
     let status: PickySessionStatus?
     let summary: String?
+    let notifyMainOnCompletion: Bool?
+    let notifyMacOSOnCompletion: Bool?
     let groupAction: PickyDockGroupManagementAction?
     let groupId: String?
     let name: String?
@@ -84,7 +86,8 @@ struct PickyPickleBridgeRequest: Decodable, Equatable {
             summary: summary ?? projectedSession?.lastSummary,
             prompt: prompt,
             cwd: cwd,
-            bellEnabled: true
+            notifyMainOnCompletion: notifyMainOnCompletion ?? true,
+            notifyMacOSOnCompletion: notifyMacOSOnCompletion ?? false
         )
     }
 }
@@ -97,5 +100,6 @@ struct PickyCompletionNotificationEnvelope: Equatable {
     let summary: String?
     let prompt: String?
     let cwd: String?
-    let bellEnabled: Bool
+    let notifyMainOnCompletion: Bool
+    let notifyMacOSOnCompletion: Bool
 }

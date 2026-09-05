@@ -4846,6 +4846,18 @@
         }
       }
     },
+    "hud.menu.notifyMainOnCompletion": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Report completion to Main Picky" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고" } }
+      }
+    },
+    "hud.menu.notifyMacOSOnCompletion": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Notify in macOS when complete" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 macOS 알림" } }
+      }
+    },
     "hud.menu.stopSession": {
       "localizations": {
         "en": {
@@ -8293,86 +8305,52 @@
         }
       }
     },
-    "settings.notification.completionDestination": {
+    "settings.notification.toggle.newPicklesMain": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pickle completion destination"
+            "value": "Report new Pickles to Main Picky when complete"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클 완료 알림 위치"
+            "value": "새 피클 완료 시 Main Picky에 보고"
           }
         }
       }
     },
-    "settings.notification.completionDestination.note": {
+    "settings.notification.toggle.newPicklesMacOS": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When you turn on the bell icon for a Pickle, Picky sends its completion notification to the selected destination. Pickles with the bell turned off won't notify you."
+            "value": "Notify in macOS when new Pickles complete"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클에서 종 모양 아이콘을 켜면 완료 시 선택한 위치로 알려드려요. 종을 끈 피클은 알리지 않아요."
+            "value": "새 피클 완료 시 macOS 알림"
           }
         }
       }
     },
-    "settings.notification.toggle.newPicklesBell": {
+    "settings.notification.toggle.newPickles.note": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New Pickles start with the bell on"
+            "value": "These defaults affect only new Pickles. Existing Pickles keep their current completion settings."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새 피클의 종 아이콘 기본으로 켜기"
+            "value": "새 피클에만 적용돼요. 기존 피클은 현재 완료 알림 설정을 유지해요."
           }
         }
-      }
-    },
-    "settings.notification.toggle.newPicklesBell.note": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This affects only new Pickles. Existing Pickles keep their current bell setting."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "새 피클에만 적용돼요. 기존 피클은 현재 종 아이콘 설정을 유지해요."
-          }
-        }
-      }
-    },
-    "settings.notification.destination.mainPicky": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Main Picky" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "메인 Picky" } }
-      }
-    },
-    "settings.notification.destination.macOS": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "macOS" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "macOS" } }
-      }
-    },
-    "settings.notification.destination.both": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Both" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "둘 다" } }
       }
     },
     "settings.oauth.body": {
@@ -11664,52 +11642,40 @@
         }
       }
     },
-    "hud.composer.notify.accessibilityLabel": {
+    "hud.composer.notifyMain.accessibilityLabel": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notify on completion"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "완료 시 알림"
-          }
-        }
+        "en": { "stringUnit": { "state": "translated", "value": "Report completion to Main Picky" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고" } }
       }
     },
-    "hud.composer.notify.off.help": {
+    "hud.composer.notifyMain.off.help": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Do not send a completion notification (⌘N)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "완료 알림 보내지 않기 (⌘N)"
-          }
-        }
+        "en": { "stringUnit": { "state": "translated", "value": "Do not report completion to Main Picky" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고하지 않기" } }
       }
     },
-    "hud.composer.notify.on.help": {
+    "hud.composer.notifyMain.on.help": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Send a completion notification (⌘N)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "완료 알림 보내기 (⌘N)"
-          }
-        }
+        "en": { "stringUnit": { "state": "translated", "value": "Report completion to Main Picky" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고하기" } }
+      }
+    },
+    "hud.composer.notifyMacOS.accessibilityLabel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "macOS completion notification" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "macOS 완료 알림" } }
+      }
+    },
+    "hud.composer.notifyMacOS.off.help": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Do not send a macOS completion notification (⌘N)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "macOS 완료 알림 보내지 않기 (⌘N)" } }
+      }
+    },
+    "hud.composer.notifyMacOS.on.help": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Send a macOS completion notification (⌘N)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "macOS 완료 알림 보내기 (⌘N)" } }
       }
     },
     "hud.composer.placeholder.compacting": {

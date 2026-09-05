@@ -445,15 +445,12 @@ struct PickyFontScales: Codable, Equatable {
     }
 }
 
-/// Destination for successful Pickle-completion notifications. The per-Pickle
-/// bell remains the opt-in switch; this setting only chooses where an enabled
-/// completion is presented.
-enum PickyCompletionNotificationDestination: String, Codable, CaseIterable, Identifiable {
+/// Unreleased completion-destination setting retained only to decode local
+/// development settings written before the two explicit defaults shipped.
+private enum PickyLegacyCompletionNotificationDestination: String, Decodable {
     case mainPicky
     case macOS
     case both
-
-    var id: String { rawValue }
 
     var includesMain: Bool { self == .mainPicky || self == .both }
     var includesMacOS: Bool { self == .macOS || self == .both }
@@ -464,86 +461,84 @@ enum PickyCompletionNotificationDestination: String, Codable, CaseIterable, Iden
     }
 }
 
-/// Successful completion destination plus the unchanged macOS failure/input
-/// toggles. `notifyOnCompleted` remains a source-compatible computed alias
-/// while old settings files are migrated to `completionDestination`.
+/// Defaults captured only when a new Pickle is created. Existing Pickles own
+/// their independent Main Picky and macOS completion settings.
 struct PickyNotificationPreferences: Codable, Equatable {
-    var completionDestination: PickyCompletionNotificationDestination
-    /// Default bell state captured only when a new blank or delegated Pickle is created.
-    var notifyOnCompletionForNewPickles: Bool
+    var notifyMainOnCompletionForNewPickles: Bool
+    var notifyMacOSOnCompletionForNewPickles: Bool
     var notifyOnFailed: Bool
     var notifyOnWaitingForInput: Bool
 
-    /// Compatibility for callers compiled against the pre-destination setting.
-    /// Completion delivery is now controlled by the Pickle bell, so this value
-    /// only reports whether macOS is one selected destination.
+    /// Source compatibility for settings callers from the released global
+    /// macOS success toggle. It now controls only the future-Pickle default.
     var notifyOnCompleted: Bool {
-        get { completionDestination.includesMacOS }
-        set { completionDestination = newValue ? .both : .mainPicky }
+        get { notifyMacOSOnCompletionForNewPickles }
+        set { notifyMacOSOnCompletionForNewPickles = newValue }
     }
 
     init(
-        completionDestination: PickyCompletionNotificationDestination = .mainPicky,
-        notifyOnCompletionForNewPickles: Bool = false,
+        notifyMainOnCompletionForNewPickles: Bool = false,
+        notifyMacOSOnCompletionForNewPickles: Bool = false,
         notifyOnFailed: Bool = true,
         notifyOnWaitingForInput: Bool = true
     ) {
-        self.completionDestination = completionDestination
-        self.notifyOnCompletionForNewPickles = notifyOnCompletionForNewPickles
+        self.notifyMainOnCompletionForNewPickles = notifyMainOnCompletionForNewPickles
+        self.notifyMacOSOnCompletionForNewPickles = notifyMacOSOnCompletionForNewPickles
         self.notifyOnFailed = notifyOnFailed
         self.notifyOnWaitingForInput = notifyOnWaitingForInput
     }
 
-    /// Legacy call-site compatibility. Persisted legacy `true` maps to both
-    /// channels, while `false` maps to Main Picky only.
     init(
         notifyOnCompleted: Bool,
         notifyOnFailed: Bool,
         notifyOnWaitingForInput: Bool
     ) {
         self.init(
-            completionDestination: notifyOnCompleted ? .both : .mainPicky,
+            notifyMacOSOnCompletionForNewPickles: notifyOnCompleted,
             notifyOnFailed: notifyOnFailed,
             notifyOnWaitingForInput: notifyOnWaitingForInput
         )
     }
 
     enum CodingKeys: String, CodingKey {
-        case completionDestination
-        case notifyOnCompletionForNewPickles
-        case notifyOnCompleted
+        case notifyMainOnCompletionForNewPickles
+        case notifyMacOSOnCompletionForNewPickles
         case notifyOnFailed
         case notifyOnWaitingForInput
+        // Released global macOS completion toggle. It seeds future Pickles only.
+        case notifyOnCompleted
+        // Unreleased local-development keys.
+        case completionDestination
+        case notifyOnCompletionForNewPickles
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let destination = try container.decodeIfPresent(PickyCompletionNotificationDestination.self, forKey: .completionDestination) {
-            completionDestination = destination
+        let legacyDestination = try container.decodeIfPresent(PickyLegacyCompletionNotificationDestination.self, forKey: .completionDestination)
+        let legacyNewPicklesEnabled = try container.decodeIfPresent(Bool.self, forKey: .notifyOnCompletionForNewPickles)
+
+        notifyMainOnCompletionForNewPickles = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletionForNewPickles)
+            ?? (legacyNewPicklesEnabled == true && (legacyDestination ?? .mainPicky).includesMain)
+        if let explicitMacOS = try container.decodeIfPresent(Bool.self, forKey: .notifyMacOSOnCompletionForNewPickles) {
+            notifyMacOSOnCompletionForNewPickles = explicitMacOS
+        } else if legacyDestination != nil || legacyNewPicklesEnabled != nil {
+            notifyMacOSOnCompletionForNewPickles = legacyNewPicklesEnabled == true && legacyDestination?.includesMacOS == true
         } else {
-            completionDestination = (try container.decodeIfPresent(Bool.self, forKey: .notifyOnCompleted) ?? false)
-                ? .both
-                : .mainPicky
+            notifyMacOSOnCompletionForNewPickles = try container.decodeIfPresent(Bool.self, forKey: .notifyOnCompleted) ?? false
         }
-        notifyOnCompletionForNewPickles = try container.decodeIfPresent(Bool.self, forKey: .notifyOnCompletionForNewPickles) ?? false
         notifyOnFailed = try container.decodeIfPresent(Bool.self, forKey: .notifyOnFailed) ?? true
         notifyOnWaitingForInput = try container.decodeIfPresent(Bool.self, forKey: .notifyOnWaitingForInput) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(completionDestination, forKey: .completionDestination)
-        try container.encode(notifyOnCompletionForNewPickles, forKey: .notifyOnCompletionForNewPickles)
+        try container.encode(notifyMainOnCompletionForNewPickles, forKey: .notifyMainOnCompletionForNewPickles)
+        try container.encode(notifyMacOSOnCompletionForNewPickles, forKey: .notifyMacOSOnCompletionForNewPickles)
         try container.encode(notifyOnFailed, forKey: .notifyOnFailed)
         try container.encode(notifyOnWaitingForInput, forKey: .notifyOnWaitingForInput)
     }
 
-    static let defaults = PickyNotificationPreferences(
-        completionDestination: .mainPicky,
-        notifyOnCompletionForNewPickles: false,
-        notifyOnFailed: true,
-        notifyOnWaitingForInput: true
-    )
+    static let defaults = PickyNotificationPreferences()
 }
 
 /// User-configurable behavior toggles for the Pi cursor buddy overlay.

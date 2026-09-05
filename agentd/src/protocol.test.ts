@@ -326,14 +326,35 @@ describe("protocol contract fixtures", () => {
           warnings: ["manualPickle=true"],
         },
         notifyMainOnCompletion: true,
+        notifyMacOSOnCompletion: true,
       }),
     ).not.toThrow();
+  });
+
+  it("preserves independent completion channels in session metadata", () => {
+    const parsed = PickyAgentSessionSchema.parse({
+      id: "session-dual-notification",
+      title: "Dual notification",
+      status: "running",
+      createdAt: "2026-09-04T00:00:00.000Z",
+      updatedAt: "2026-09-04T00:00:00.000Z",
+      logs: [],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      notifyMainOnCompletion: false,
+      notifyMacOSOnCompletion: true,
+    });
+
+    expect(parsed.notifyMainOnCompletion).toBe(false);
+    expect(parsed.notifyMacOSOnCompletion).toBe(true);
   });
 
   it("parses Pickle session commands", () => {
     for (const command of [
       { type: "createEmptyPickleSession", context: { ...contextFixture(), source: "system" as const } },
-      { type: "createPickleFromHandoff", context: contextFixture(), title: "Handoff", instructions: "Continue", notifyMainOnCompletion: true },
+      { type: "createPickleFromHandoff", context: contextFixture(), title: "Handoff", instructions: "Continue", notifyMainOnCompletion: true, notifyMacOSOnCompletion: true },
+      { type: "setNotifyMacOSOnCompletion", sessionId: "session-source", enabled: true },
       { type: "pinPickleSession", context: contextFixture(), title: "Pinned Pi session" },
       { type: "duplicatePickleSession", sessionId: "session-source" },
     ]) {

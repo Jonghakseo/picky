@@ -46,6 +46,7 @@ export function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): 
     activitySummary: session.activitySummary,
     contextUsage: session.contextUsage,
     notifyMainOnCompletion: session.notifyMainOnCompletion,
+    notifyMacOSOnCompletion: session.notifyMacOSOnCompletion,
     archived: session.archived,
     archivedAt: session.archivedAt,
     pinned: session.pinned,

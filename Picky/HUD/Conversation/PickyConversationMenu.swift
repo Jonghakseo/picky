@@ -60,7 +60,8 @@ struct PickyConversationMenu: View {
         }
 
         Section("SETTINGS") {
-            Toggle("Notify on completion", isOn: notifyMainOnCompletionBinding)
+            Toggle("hud.menu.notifyMainOnCompletion", isOn: notifyMainOnCompletionBinding)
+            Toggle("hud.menu.notifyMacOSOnCompletion", isOn: notifyMacOSOnCompletionBinding)
         }
 
         Section("SESSION") {
@@ -124,9 +125,18 @@ struct PickyConversationMenu: View {
 
     private var notifyMainOnCompletionBinding: Binding<Bool> {
         Binding(
-            get: { session.notifyOnCompletion },
+            get: { session.notifyMainOnCompletion == true },
             set: { enabled in
                 Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
+            }
+        )
+    }
+
+    private var notifyMacOSOnCompletionBinding: Binding<Bool> {
+        Binding(
+            get: { session.notifyMacOSOnCompletion == true },
+            set: { enabled in
+                Task { try? await viewModel.setNotifyMacOSOnCompletion(sessionID: session.id, enabled: enabled) }
             }
         )
     }

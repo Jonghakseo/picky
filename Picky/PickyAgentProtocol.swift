@@ -62,8 +62,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var delivered: Bool?
     var prompt: String?
     var enabled: Bool?
-    /// Optional for compatibility with app/daemon versions predating new-Pickle bell defaults.
+    /// Optional for compatibility with app/daemon versions predating new-Pickle defaults.
     var notifyMainOnCompletion: Bool?
+    var notifyMacOSOnCompletion: Bool?
     var archived: Bool?
     var defaultCwd: String?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
@@ -133,6 +134,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         prompt: String? = nil,
         enabled: Bool? = nil,
         notifyMainOnCompletion: Bool? = nil,
+        notifyMacOSOnCompletion: Bool? = nil,
         archived: Bool? = nil,
         defaultCwd: String? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
@@ -197,6 +199,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.prompt = prompt
         self.enabled = enabled
         self.notifyMainOnCompletion = notifyMainOnCompletion
+        self.notifyMacOSOnCompletion = notifyMacOSOnCompletion
         self.archived = archived
         self.defaultCwd = defaultCwd
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
@@ -300,6 +303,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case answerExtensionUi
     case answerMainExtensionUi
     case setNotifyMainOnCompletion
+    case setNotifyMacOSOnCompletion
     case setSessionArchived
     case deleteSession
     case notifyMainOfPickleCompletion
@@ -1186,12 +1190,6 @@ struct PickyTodoState: Codable, Equatable {
 }
 
 struct PickyAgentSession: Codable, Equatable, Identifiable {
-    /// Channel-neutral presentation name. The stored/wire field below remains
-    /// `notifyMainOnCompletion` for one compatibility epoch.
-    var notifyOnCompletion: Bool? {
-        get { notifyMainOnCompletion }
-        set { notifyMainOnCompletion = newValue }
-    }
     let id: String
     let title: String
     var status: PickySessionStatus
@@ -1221,12 +1219,13 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var currentAssistantRun: PickyAssistantRunMetadata? = nil
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
+    var notifyMacOSOnCompletion: Bool? = nil
     var archived: Bool? = nil, archivedAt: Date? = nil
     var pinned: Bool? = nil
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
         case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
-        case pendingExtensionUiRequest, notifyMainOnCompletion, archived, archivedAt, pinned
+        case pendingExtensionUiRequest, notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned
     }
     init(
         id: String,
@@ -1256,6 +1255,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         currentAssistantRun: PickyAssistantRunMetadata? = nil,
         pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
         notifyMainOnCompletion: Bool? = nil,
+        notifyMacOSOnCompletion: Bool? = nil,
         archived: Bool? = nil, archivedAt: Date? = nil,
         pinned: Bool? = nil
     ) {
@@ -1286,6 +1286,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.currentAssistantRun = currentAssistantRun
         self.pendingExtensionUiRequest = pendingExtensionUiRequest
         self.notifyMainOnCompletion = notifyMainOnCompletion
+        self.notifyMacOSOnCompletion = notifyMacOSOnCompletion
         self.archived = archived
         self.archivedAt = archivedAt
         self.pinned = pinned
@@ -1320,6 +1321,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         currentAssistantRun = try container.decodeIfPresent(PickyAssistantRunMetadata.self, forKey: .currentAssistantRun)
         pendingExtensionUiRequest = try container.decodeIfPresent(PickyExtensionUiRequest.self, forKey: .pendingExtensionUiRequest)
         notifyMainOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletion)
+        notifyMacOSOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMacOSOnCompletion)
         archived = try container.decodeIfPresent(Bool.self, forKey: .archived)
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned)

@@ -21,7 +21,8 @@ final class PickySessionNotificationPolicyTests: XCTestCase {
         XCTAssertNil(PickySessionNotificationPolicy.notification(
             for: input,
             preferences: PickyNotificationPreferences(
-                completionDestination: .both,
+                notifyMainOnCompletionForNewPickles: true,
+                notifyMacOSOnCompletionForNewPickles: true,
                 notifyOnFailed: true,
                 notifyOnWaitingForInput: true
             )

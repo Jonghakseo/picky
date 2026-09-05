@@ -7,7 +7,7 @@ import Testing
 @testable import Picky
 
 struct PickySettingsCLIExposureTests {
-    @Test func exposesNewPickleCompletionDefaultAsReadOnlyMetadata() {
+    @Test func exposesNewPickleCompletionDefaultsAsReadOnlyMetadata() {
         let entries = PickySettingsCLIExposure.entries
 
         #expect(entries.map(\.key) == [
@@ -17,17 +17,24 @@ struct PickySettingsCLIExposureTests {
             "mainAgent.thinkingLevel",
             "pickleAgent.model",
             "pickleAgent.thinkingLevel",
-            "notifications.newPicklesNotifyOnCompletion",
+            "notifications.newPicklesNotifyMainOnCompletion",
+            "notifications.newPicklesNotifyMacOSOnCompletion",
             "cursor.visible"
         ])
         #expect(entries.first(where: { $0.key == "hud.dockVisible" })?.supportsToggle == true)
         #expect(entries.first(where: { $0.key == "hud.dockSizePreset" })?.choices == ["s", "m", "l"])
-        let completionDefault = try? PickySettingsCLIExposure.currentValue(
-            for: "notifications.newPicklesNotifyOnCompletion",
+        let mainDefault = try? PickySettingsCLIExposure.currentValue(
+            for: "notifications.newPicklesNotifyMainOnCompletion",
             in: PickySettings.defaults()
         )
-        #expect(completionDefault == .bool(false))
-        #expect(entries.first(where: { $0.key == "notifications.newPicklesNotifyOnCompletion" })?.writable == false)
+        let macOSDefault = try? PickySettingsCLIExposure.currentValue(
+            for: "notifications.newPicklesNotifyMacOSOnCompletion",
+            in: PickySettings.defaults()
+        )
+        #expect(mainDefault == .bool(false))
+        #expect(macOSDefault == .bool(false))
+        #expect(entries.first(where: { $0.key == "notifications.newPicklesNotifyMainOnCompletion" })?.writable == false)
+        #expect(entries.first(where: { $0.key == "notifications.newPicklesNotifyMacOSOnCompletion" })?.writable == false)
     }
 
     @Test func togglesBooleanCatalogValuesAndPreservesPerDisplayVisibilitySemantics() throws {

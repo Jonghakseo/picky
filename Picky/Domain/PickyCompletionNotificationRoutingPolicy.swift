@@ -16,14 +16,14 @@ enum PickyCompletionNotificationRoutingPolicy {
     }
 
     static func channels(
-        bellEnabled: Bool,
-        status: PickySessionStatus,
-        destination: PickyCompletionNotificationDestination
+        notifyMainOnCompletion: Bool,
+        notifyMacOSOnCompletion: Bool,
+        status: PickySessionStatus
     ) -> Channels {
-        guard bellEnabled, status == .completed else { return [] }
+        guard status == .completed else { return [] }
         var result: Channels = []
-        if destination.includesMain { result.insert(.mainPicky) }
-        if destination.includesMacOS { result.insert(.macOS) }
+        if notifyMainOnCompletion { result.insert(.mainPicky) }
+        if notifyMacOSOnCompletion { result.insert(.macOS) }
         return result
     }
 

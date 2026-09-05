@@ -192,6 +192,8 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     title: string;
     status: "completed";
     summary?: string;
+    notifyMainOnCompletion: boolean;
+    notifyMacOSOnCompletion: boolean;
   }) => {
     if (!appPickleBridgeRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
     await appPickleBridgeRef.current({ operation: "notifyMainOfPickleCompletion", ...request });

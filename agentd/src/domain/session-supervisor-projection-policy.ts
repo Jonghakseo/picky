@@ -19,6 +19,7 @@ export function buildResumedHandoffPickleSession(input: {
   sourceSessionFilePath: string;
   artifacts: PickyAgentSession["artifacts"];
   notifyMainOnCompletion: boolean;
+  notifyMacOSOnCompletion: boolean;
 }): PickyAgentSession {
   return {
     id: input.id,
@@ -34,6 +35,7 @@ export function buildResumedHandoffPickleSession(input: {
       `source pi session snapshot: ${input.sourceSessionFilePath}`,
     ],
     notifyMainOnCompletion: input.notifyMainOnCompletion,
+    notifyMacOSOnCompletion: input.notifyMacOSOnCompletion,
     tools: [],
     artifacts: input.artifacts,
     changedFiles: [],
@@ -48,6 +50,7 @@ export function buildEmptyPickleSession(input: {
   cwd: string | undefined;
   now: string;
   notifyMainOnCompletion: boolean;
+  notifyMacOSOnCompletion: boolean;
 }): PickyAgentSession {
   return {
     id: input.id,
@@ -60,6 +63,7 @@ export function buildEmptyPickleSession(input: {
     lastSummary: "Ready for instructions",
     logs: [],
     notifyMainOnCompletion: input.notifyMainOnCompletion,
+    notifyMacOSOnCompletion: input.notifyMacOSOnCompletion,
     tools: [],
     artifacts: [],
     changedFiles: [],
@@ -91,6 +95,7 @@ export function buildDuplicatedPickleSession(input: {
       `pi session: ${input.sessionFilePath}`,
     ],
     notifyMainOnCompletion: input.source.notifyMainOnCompletion ?? false,
+    notifyMacOSOnCompletion: input.source.notifyMacOSOnCompletion ?? false,
     tools: [],
     artifacts: [],
     changedFiles: [],
@@ -122,6 +127,7 @@ export function buildPinnedPickleSession(input: {
     logs: input.logs,
     piSessionFilePath: input.sessionFilePath,
     notifyMainOnCompletion: false,
+    notifyMacOSOnCompletion: false,
     pinned: true,
     tools: [],
     artifacts: input.artifacts,
@@ -136,6 +142,7 @@ export function buildVisibleSession(input: {
   cwd: string | undefined;
   now: string;
   notifyMainOnCompletion: boolean | undefined;
+  notifyMacOSOnCompletion: boolean | undefined;
   artifacts: PickyAgentSession["artifacts"];
 }): PickyAgentSession {
   return {
@@ -148,6 +155,7 @@ export function buildVisibleSession(input: {
     updatedAt: input.now,
     logs: [],
     ...(input.notifyMainOnCompletion === undefined ? {} : { notifyMainOnCompletion: input.notifyMainOnCompletion }),
+    ...(input.notifyMacOSOnCompletion === undefined ? {} : { notifyMacOSOnCompletion: input.notifyMacOSOnCompletion }),
     tools: [],
     artifacts: input.artifacts,
     changedFiles: [],

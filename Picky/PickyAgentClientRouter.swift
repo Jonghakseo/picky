@@ -342,13 +342,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     func send(_ command: PickyCommandEnvelope) async throws {
-        // Bell state belongs only to the child session. Unlike input, do not
-        // report a queued boot-time update as accepted before that child has
-        // persisted it.
-        if command.type == .setNotifyMainOnCompletion {
-            guard let sessionID = command.sessionId,
-                  knownChildSessionIds.contains(sessionID) || pool.endpoint(for: sessionID) != nil else {
-                throw PickyAgentClientRouterError.unknownChildSession(sessionId: command.sessionId ?? "")
+        // Completion preferences belong to the authoritative session owner.
+        // Await persistence for live, retired, and primary-hosted Pickles.
+        if command.type == .setNotifyMainOnCompletion || command.type == .setNotifyMacOSOnCompletion {
+            guard let sessionID = command.sessionId else {
+                throw PickyAgentClientRouterError.unknownChildSession(sessionId: "")
             }
             let target = try await connectedClient(for: sessionID)
             if let rejection = try await sendAwaitingError(
@@ -374,6 +372,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 title: envelope.title,
                 cwd: envelope.cwd,
                 prompt: envelope.prompt,
+                notifyMainOnCompletion: envelope.notifyMainOnCompletion,
+                notifyMacOSOnCompletion: envelope.notifyMacOSOnCompletion,
                 completionId: envelope.completionId,
                 status: envelope.status,
                 summary: envelope.summary
@@ -699,7 +699,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     title: request.title,
                     instructions: request.instructions,
                     cwd: request.cwd,
-                    notifyMainOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyOnCompletionForNewPickles
+                    notifyMainOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyMainOnCompletionForNewPickles,
+                    notifyMacOSOnCompletion: notificationPreferencesProvider.notificationPreferences.notifyMacOSOnCompletionForNewPickles
                 ), on: childClient)
                 try await sessionCreated.value
                 await completePickleHandoff(request, sessionId: sessionId)

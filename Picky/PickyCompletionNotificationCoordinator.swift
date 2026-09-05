@@ -11,30 +11,32 @@ import Foundation
 final class PickyCompletionNotificationCoordinator {
     typealias MainDelivery = (PickyCompletionNotificationEnvelope) async throws -> Void
 
-    private let preferencesProvider: PickyNotificationPreferencesProviding
+    private struct MainDeliveryAttempt {
+        let id: UUID
+        let task: Task<Void, Error>
+    }
+
     private let notificationCenter: PickyNotificationDelivering
     private let deliverMain: MainDelivery
     private var acceptedChannels = Set<String>()
+    private var mainDeliveriesInFlight: [String: MainDeliveryAttempt] = [:]
 
     init(
-        preferencesProvider: PickyNotificationPreferencesProviding,
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
         deliverMain: @escaping MainDelivery
     ) {
-        self.preferencesProvider = preferencesProvider
         self.notificationCenter = notificationCenter
         self.deliverMain = deliverMain
     }
 
-    /// Snapshots settings once, then records each accepted channel independently.
+    /// Records each channel from the durable completion snapshot independently.
     /// A repeated bridge request never repeats an accepted effect, while a main
     /// delivery that throws remains eligible for retry on the next request.
     func route(_ envelope: PickyCompletionNotificationEnvelope) async throws -> PickyCompletionNotificationRoutingPolicy.Channels {
-        let destination = preferencesProvider.notificationPreferences.completionDestination
         let channels = PickyCompletionNotificationRoutingPolicy.channels(
-            bellEnabled: envelope.bellEnabled,
-            status: envelope.status,
-            destination: destination
+            notifyMainOnCompletion: envelope.notifyMainOnCompletion,
+            notifyMacOSOnCompletion: envelope.notifyMacOSOnCompletion,
+            status: envelope.status
         )
 
         if channels.contains(.macOS), accept(channel: "macos", completionId: envelope.completionId) {
@@ -46,11 +48,43 @@ final class PickyCompletionNotificationCoordinator {
             )
         }
 
-        if channels.contains(.mainPicky), !acceptedChannels.contains(channelKey("main", completionId: envelope.completionId)) {
-            try await deliverMain(envelope)
-            acceptedChannels.insert(channelKey("main", completionId: envelope.completionId))
+        if channels.contains(.mainPicky) {
+            try await deliverMainOnce(envelope)
         }
         return channels
+    }
+
+    private func deliverMainOnce(_ envelope: PickyCompletionNotificationEnvelope) async throws {
+        let key = channelKey("main", completionId: envelope.completionId)
+        guard !acceptedChannels.contains(key) else { return }
+
+        let attempt: MainDeliveryAttempt
+        if let inFlight = mainDeliveriesInFlight[key] {
+            attempt = inFlight
+        } else {
+            let created = MainDeliveryAttempt(
+                id: UUID(),
+                task: Task { try await deliverMain(envelope) }
+            )
+            mainDeliveriesInFlight[key] = created
+            attempt = created
+        }
+
+        do {
+            try await attempt.task.value
+            finishMainDelivery(key: key, attemptID: attempt.id, accepted: true)
+        } catch {
+            finishMainDelivery(key: key, attemptID: attempt.id, accepted: false)
+            throw error
+        }
+    }
+
+    private func finishMainDelivery(key: String, attemptID: UUID, accepted: Bool) {
+        guard mainDeliveriesInFlight[key]?.id == attemptID else { return }
+        if accepted {
+            acceptedChannels.insert(key)
+        }
+        mainDeliveriesInFlight[key] = nil
     }
 
     private func accept(channel: String, completionId: String) -> Bool {

@@ -268,7 +268,8 @@ struct PickyConversationHeaderRenderGalleryTests {
                 content: AnyView(PickyConversationComposerRenderScene(
                     id: "composer-option-follow-up",
                     draft: "현재 작업이 끝나면 결과를 요약해 주세요",
-                    isOptionModifierPressed: true
+                    isOptionModifierPressed: true,
+                    notifyMacOSOnCompletion: true
                 ))
             ),
             Scene(
@@ -277,7 +278,8 @@ struct PickyConversationHeaderRenderGalleryTests {
                 content: AnyView(PickyConversationComposerRenderScene(
                     id: "composer-long-model",
                     draft: "긴 모델명에서도 전송 버튼을 유지해 주세요",
-                    model: "google/gemini-3-pro-preview-long-model-name"
+                    model: "google/gemini-3-pro-preview-long-model-name",
+                    notifyMainOnCompletion: true
                 ))
             ),
             Scene(
@@ -285,7 +287,9 @@ struct PickyConversationHeaderRenderGalleryTests {
                 appearance: .dark,
                 content: AnyView(PickyConversationComposerRenderScene(
                     id: "composer-four-lines",
-                    draft: "첫 번째 줄\n두 번째 줄\n세 번째 줄\n네 번째 줄"
+                    draft: "첫 번째 줄\n두 번째 줄\n세 번째 줄\n네 번째 줄",
+                    notifyMainOnCompletion: true,
+                    notifyMacOSOnCompletion: true
                 ))
             ),
             Scene(
@@ -503,7 +507,9 @@ private struct PickyConversationComposerRenderScene: View {
         id: String,
         draft: String,
         isOptionModifierPressed: Bool = false,
-        model: String = "openai-codex/gpt-5.6"
+        model: String = "openai-codex/gpt-5.6",
+        notifyMainOnCompletion: Bool = false,
+        notifyMacOSOnCompletion: Bool = false
     ) {
         let date = Date(timeIntervalSince1970: 1_775_000_000)
         let session = PickySessionListViewModel.SessionCard.fromAgentSession(
@@ -548,7 +554,8 @@ private struct PickyConversationComposerRenderScene: View {
                     thinkingLevel: .high
                 ),
                 pendingExtensionUiRequest: nil,
-                notifyMainOnCompletion: false
+                notifyMainOnCompletion: notifyMainOnCompletion,
+                notifyMacOSOnCompletion: notifyMacOSOnCompletion
             )
         )
         let viewModel = PickySessionListViewModel(

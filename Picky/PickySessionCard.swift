@@ -40,6 +40,7 @@ struct PickySessionCard: Equatable, Identifiable {
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var piSessionFilePath: String?
     var notifyMainOnCompletion: Bool?
+    var notifyMacOSOnCompletion: Bool? = nil
     var pinned: Bool
     /// Daemon-side archive flag mirrored from `PickyAgentSession.archived`.
     /// Snapshot hydration hoists this into the local `manuallyArchivedSessionIDs`
@@ -243,6 +244,7 @@ extension PickySessionCard {
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.piSessionFilePath ?? session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
+        self.notifyMacOSOnCompletion = session.notifyMacOSOnCompletion
         self.pinned = session.pinned ?? false
         self.archived = session.archived ?? false
         self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
@@ -296,6 +298,7 @@ extension PickySessionCard {
         if result.piSessionFilePath == nil { result.piSessionFilePath = piSessionFilePath }
         if result.currentAssistantRun == nil { result.currentAssistantRun = currentAssistantRun }
         if result.notifyMainOnCompletion == nil { result.notifyMainOnCompletion = notifyMainOnCompletion }
+        if result.notifyMacOSOnCompletion == nil { result.notifyMacOSOnCompletion = notifyMacOSOnCompletion }
         result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection
         result.isMainAgentHandoff = result.isMainAgentHandoff || isMainAgentHandoff
         return result

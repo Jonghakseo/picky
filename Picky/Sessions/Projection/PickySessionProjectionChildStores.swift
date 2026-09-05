@@ -35,6 +35,7 @@ struct PickySessionMetadata: Equatable {
     var contextUsage: PickyContextUsage?
     var currentAssistantRun: PickyAssistantRunMetadata?
     var notifyMainOnCompletion: Bool?
+    var notifyMacOSOnCompletion: Bool?
     var archived: Bool?
     var archivedAt: Date?
     var pinned: Bool?
@@ -54,6 +55,7 @@ struct PickySessionMetadata: Equatable {
         contextUsage = session.contextUsage
         currentAssistantRun = session.currentAssistantRun
         notifyMainOnCompletion = session.notifyMainOnCompletion
+        notifyMacOSOnCompletion = session.notifyMacOSOnCompletion
         archived = session.archived
         self.archivedAt = session.archivedAt ?? archivedAt
         pinned = session.pinned
@@ -77,6 +79,7 @@ struct PickySessionMetadata: Equatable {
         contextUsage = card.contextUsage
         currentAssistantRun = card.currentAssistantRun
         notifyMainOnCompletion = card.notifyMainOnCompletion
+        notifyMacOSOnCompletion = card.notifyMacOSOnCompletion
         archived = card.archived
         self.archivedAt = archivedAt
         pinned = card.pinned

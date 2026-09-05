@@ -1,0 +1,10 @@
+ts	phase	decision	why	evidence	result
+2026-09-04T14:51:52Z	design	기존 Main 완료 플래그를 유지하고 macOS 완료 플래그를 별도 추가	배포된 피클 종의 Main Picky 의미를 그대로 보존하면서 네 가지 조합을 표현하기 위해	Picky/PickyAgentProtocol.swift; agentd/src/protocol.ts	approved
+2026-09-04T14:51:52Z	migration	기존 Main 상태는 그대로 두고 전역 macOS 성공 설정은 새 피클 기본값만 seed	사용자가 배포 상태와 기존 설정의 업그레이드 범위를 명시해서	/private/tmp/picky-dual-completion-controls-plan.md	approved
+2026-09-04T14:51:52Z	routing	완료 시 두 채널을 envelope 값으로 고정하고 Settings를 다시 읽지 않음	완료 후 토글과 busy/retry가 이미 수락된 목적지를 바꾸지 않아야 해서	/private/tmp/picky-dual-completion-controls-plan.md	approved
+2026-09-04T15:39:00Z	compatibility	외부 CLI의 두 신규 기본값은 병렬 조회하고 각 실패는 false로 독립 fallback	구버전 앱이나 응답 timeout에서 생성 지연을 30초로 늘리지 않기 위해	agentd/src/server.ts; agentd/src/server.test.ts	implemented
+2026-09-04T15:43:00Z	architecture	Composer 알림 버튼과 ViewModel HUD 명령을 기존 책임 경계로 분리	이번 변경이 새 file-size guard 실패를 만들지 않도록	Picky/HUD/Conversation/PickyCompletionNotificationControlsView.swift; Picky/PickySessionViewModel+HUDCommands.swift	validated
+2026-09-04T15:46:00Z	visual	기존 gallery scene에 off/off, Main-only, macOS-only, both 상태를 배치	production component의 독립 선택 상태와 dark/light 정렬을 직접 확인하기 위해	build/render-gallery/conversation-composer	validated
+2026-09-04T16:01:00Z	routing	Main 완료 전달을 completion별 in-flight task로 coalesce하고 attempt token으로 cleanup	MainActor reentrancy 중 중복 bridge가 동일 완료를 두 번 전달하는 race가 재현되어	Picky/PickyCompletionNotificationCoordinator.swift; /private/tmp/PickyCompletionRaceProbe.swift	fixed
+2026-09-04T16:01:00Z	migration	unknown 또는 누락된 intermediate destination을 Main Picky로 tolerant migration	이전 개발 빌드 설정이 전체 defaults로 reset되거나 Main 기본값을 잃지 않도록	Picky/App/Settings/PickySettings.swift; PickyTests/PickyNotificationPreferencesTests.swift	fixed
+2026-09-04T16:02:00Z	validation	reviewer가 지적한 commandLogFields line limit를 기존 switch style로 복구	실제 agentd ESLint max-lines-per-function를 통과시키기 위해	agentd/src/server.ts; cd agentd && pnpm run lint	validated

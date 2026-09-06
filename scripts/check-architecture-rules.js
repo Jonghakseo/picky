@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -837,7 +838,8 @@ function checkFileSizeRatchet() {
     }
   }
 
-  checkSwiftTypeGroupRatchet(swiftFiles, thresholds.swift);
+  const groups = checkSwiftTypeGroupRatchet(swiftFiles, thresholds.swift);
+  checkRatchetPinsDidNotIncrease(groups, thresholds);
 }
 
 // `Foo.swift` plus every `Foo+Role.swift` extension file form one type group.
@@ -857,28 +859,70 @@ const SWIFT_TYPE_GROUP_RATCHET = new Map([
   ["PickyAgentClientRouter", 1471],
 ]);
 
-function checkSwiftTypeGroupRatchet(swiftFiles, threshold) {
+function swiftExtensionBlockLineCount(source, stem) {
+  const lines = stripSwiftCommentsAndStrings(source).split("\n");
+  const opener = new RegExp(`^extension\\s+${stem.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\s*(?::[^\\{]*)?\\{`);
+  let count = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!opener.test(lines[index])) continue;
+    let depth = 0;
+    for (; index < lines.length; index += 1) {
+      for (const character of lines[index]) {
+        if (character === "{") depth += 1;
+        if (character === "}") depth -= 1;
+      }
+      count += 1;
+      if (depth === 0) break;
+    }
+  }
+  return count;
+}
+
+function swiftTypeGroups(swiftFiles) {
   const groups = new Map();
   for (const file of swiftFiles) {
     const relative = rel(file);
     const stem = swiftTypeGroupStem(relative);
-    const group = groups.get(stem) ?? { lines: 0, files: [] };
+    const group = groups.get(stem) ?? { lines: 0, files: [], extensionContributors: [] };
     group.lines += lineCount(file);
     group.files.push(relative);
     groups.set(stem, group);
   }
 
+  const stems = new Set([
+    ...SWIFT_TYPE_GROUP_RATCHET.keys(),
+    ...[...groups].filter(([, group]) => group.files.length >= 2).map(([stem]) => stem),
+  ]);
+  for (const stem of stems) {
+    const group = groups.get(stem) ?? { lines: 0, files: [], extensionContributors: [] };
+    for (const file of swiftFiles) {
+      const relative = rel(file);
+      if (swiftTypeGroupStem(relative) === stem) continue;
+      const extensionLines = swiftExtensionBlockLineCount(fs.readFileSync(file, "utf8"), stem);
+      if (extensionLines === 0) continue;
+      group.lines += extensionLines;
+      group.extensionContributors.push(`${relative} (${extensionLines} extension lines)`);
+    }
+    groups.set(stem, group);
+  }
+  return groups;
+}
+
+function checkSwiftTypeGroupRatchet(swiftFiles, threshold) {
+  const groups = swiftTypeGroups(swiftFiles);
   for (const [stem, group] of groups) {
-    if (group.files.length < 2) continue;
+    if (group.files.length < 2 && !SWIFT_TYPE_GROUP_RATCHET.has(stem)) continue;
+    const contributors = group.extensionContributors.length === 0 ? "" : ` Extension blocks: ${group.extensionContributors.join(", ")}.`;
     const allowedMax = SWIFT_TYPE_GROUP_RATCHET.get(stem);
     if (allowedMax !== undefined) {
-      if (group.lines > allowedMax) addError(`Swift type group ${stem} grew to ${group.lines} lines across ${group.files.length} files, above ratchet ${allowedMax}. Move a coherent responsibility to its own owner; do not raise the ratchet or add another +Extension file.`);
+      if (group.lines > allowedMax) addError(`Swift type group ${stem} grew to ${group.lines} lines across ${group.files.length} files, above ratchet ${allowedMax}. Move a coherent responsibility to its own owner; do not raise the ratchet or add another +Extension file.${contributors}`);
       continue;
     }
     if (group.lines > threshold) {
-      addError(`Swift type group ${stem} spans ${group.lines} lines across ${group.files.join(", ")}, above the ${threshold}-line limit. +Extension files do not reduce facade size; split by owner or add a pinned entry in SWIFT_TYPE_GROUP_RATCHET.`);
+      addError(`Swift type group ${stem} spans ${group.lines} lines across ${group.files.join(", ")}, above the ${threshold}-line limit. +Extension files do not reduce facade size; split by owner or add a pinned entry in SWIFT_TYPE_GROUP_RATCHET.${contributors}`);
     }
   }
+  return groups;
 }
 
 function checkSwiftTypeGroupRatchetFixtures() {
@@ -892,6 +936,68 @@ function checkSwiftTypeGroupRatchetFixtures() {
     const actual = swiftTypeGroupStem(input);
     if (actual !== expected) addError(`Type-group ratchet self-test: ${input} resolved to ${actual}, expected ${expected}.`);
   }
+  const extensions = `
+extension CompanionManager {
+  func first() {}
+  func second() {}
+}
+extension Other {
+  func ignored() {}
+}
+`;
+  if (swiftExtensionBlockLineCount(extensions, "CompanionManager") !== 4) {
+    addError("Type-group ratchet self-test failed to count a top-level CompanionManager extension block.");
+  }
+}
+
+function extractRatchetPins(source) {
+  const entries = (text, prefix) => [...text.matchAll(/\[\s*["']([^"']+)["']\s*,\s*(\d+)\s*\]/g)]
+    .map(([, name, pin]) => [`${prefix}:${name}`, Number(pin)]);
+  const groups = source.match(/const SWIFT_TYPE_GROUP_RATCHET = new Map\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
+  const files = source.match(/function checkFileSizeRatchet\(\) \{[\s\S]*?const allowlist = new Map\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
+  return new Map([...entries(groups, "group"), ...entries(files, "file")]);
+}
+
+function ratchetPinChanges(baseSource, currentSource, isStillAboveThreshold) {
+  const basePins = extractRatchetPins(baseSource);
+  const currentPins = extractRatchetPins(currentSource);
+  return [...basePins].flatMap(([entry, basePin]) => {
+    const currentPin = currentPins.get(entry);
+    if (currentPin !== undefined && currentPin > basePin) return [`${entry} pin increased from ${basePin} to ${currentPin}.`];
+    if (currentPin === undefined && isStillAboveThreshold(entry)) return [`${entry} pin was removed while it remains above its size threshold.`];
+    return [];
+  });
+}
+
+function checkRatchetPinsDidNotIncrease(groups, thresholds) {
+  const baseRef = process.env.PICKY_ARCH_GUARD_BASE_REF || (() => {
+    try { return execFileSync("git", ["rev-parse", "--verify", "--quiet", "origin/main"], { cwd: root, encoding: "utf8" }).trim() ? "origin/main" : undefined; } catch { return undefined; }
+  })();
+  if (!baseRef) {
+    console.log("ratchet pin history check skipped: no base ref");
+    return;
+  }
+  let baseSource;
+  try { baseSource = execFileSync("git", ["show", `${baseRef}:scripts/check-architecture-rules.js`], { cwd: root, encoding: "utf8" }); } catch {
+    addError(`Unable to read ratchet pins from ${baseRef}.`);
+    return;
+  }
+  const isStillAboveThreshold = (entry) => {
+    const [kind, name] = entry.split(":", 2);
+    if (kind === "group") return (groups.get(name)?.lines ?? 0) > thresholds.swift;
+    const file = path.join(root, name);
+    return fs.existsSync(file) && lineCount(file) > (name.endsWith(".swift") ? thresholds.swift : thresholds.ts);
+  };
+  for (const change of ratchetPinChanges(baseSource, read("scripts/check-architecture-rules.js"), isStillAboveThreshold)) addError(`Ratchet history check: ${change}`);
+}
+
+function checkRatchetPinFixtures() {
+  const base = `const SWIFT_TYPE_GROUP_RATCHET = new Map([["Group", 10]]);\nfunction checkFileSizeRatchet() { const allowlist = new Map([["File.swift", 20]]); }`;
+  const current = `const SWIFT_TYPE_GROUP_RATCHET = new Map([["Group", 11]]);\nfunction checkFileSizeRatchet() { const allowlist = new Map([]); }`;
+  const pins = extractRatchetPins(base);
+  if (pins.get("group:Group") !== 10 || pins.get("file:File.swift") !== 20) addError("Ratchet pin self-test failed to extract numeric pins.");
+  const changes = ratchetPinChanges(base, current, (entry) => entry === "file:File.swift");
+  if (changes.length !== 2) addError("Ratchet pin self-test failed to reject a raised or removed active pin.");
 }
 
 function finish() {
@@ -918,6 +1024,7 @@ function main() {
   } else {
     checkGuardPatternFixtures();
     checkSwiftTypeGroupRatchetFixtures();
+    checkRatchetPinFixtures();
     // Self-verification runs with the normal gate too: the pre-push hook never
     // passes `--self-test`, so rename detection and baseline drift would
     // otherwise never be enforced automatically.

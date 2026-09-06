@@ -1210,8 +1210,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 bootstrapID: completion.bootstrapId,
                 epoch: completion.epoch,
                 membership: Set(completion.sessionIds),
-                childIsLive: isPrimary || childConnectionIsLive(ownerKey: ownerKey),
-                additionalOwnedSessionIDs: Set(sessionOwnerKeys.compactMap { $0.value == ownerKey ? $0.key : nil })
+                childIsLive: isPrimary || childConnectionIsLive(ownerKey: ownerKey)
             )
             switch outcome {
             case .discard(let reason):

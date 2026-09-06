@@ -84,8 +84,8 @@ struct PickyProjectionOwnershipLedger: Equatable {
         Set(ownerKeysBySessionID.compactMap { $0.value == ownerKey ? $0.key : nil })
     }
 
-    /// Clears per-connection correlation while keeping session ownership and
-    /// the last primary epoch, which must survive a socket reconnect.
+    /// A full disconnect keeps session ownership only and clears per-connection
+    /// correlation, the known primary epoch, and retired-child guards.
     mutating func disconnectAll() {
         bootstrapExpectations.removeAll()
         knownPrimaryEpoch = nil
@@ -157,15 +157,12 @@ struct PickyProjectionOwnershipLedger: Equatable {
     /// then computes which of this owner's records the completed index no longer
     /// lists. `childIsLive` reports whether the router still holds a live,
     /// non-retired child connection for a child owner; primary passes `true`.
-    /// `additionalOwnedSessionIDs` lets the router include records it tracks
-    /// outside this ledger under the same owner.
     mutating func acceptCompletion(
         ownerKey: String,
         bootstrapID: String,
         epoch: String,
         membership: Set<String>,
-        childIsLive: Bool,
-        additionalOwnedSessionIDs: Set<String> = []
+        childIsLive: Bool
     ) -> CompletionOutcome {
         guard let expectation = bootstrapExpectations[ownerKey],
               expectation.connectionGeneration == connectionGenerations[ownerKey],
@@ -186,7 +183,7 @@ struct PickyProjectionOwnershipLedger: Equatable {
         } else {
             knownPrimaryEpoch = epoch
         }
-        let ownedIDs = sessionIDs(ownedBy: ownerKey).union(additionalOwnedSessionIDs)
+        let ownedIDs = sessionIDs(ownedBy: ownerKey)
         var removed = ownedIDs.subtracting(membership)
         if isPrimary {
             removed.subtract(retiredChildIDsAwaitingPrimaryEpochChange(completionEpoch: epoch))

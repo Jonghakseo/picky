@@ -66,7 +66,7 @@ export class SessionSupervisor extends EventEmitter {
   private readonly runtimeEventHandler: RuntimeEventHandler;
   private readonly subagentRunUpdater: SubagentRunUpdater;
   private readonly pickleSessionTitleRefresher: PickleSessionTitleRefresher;
-  private pickleSessionIds = new Set<string>();
+  private readonly pickleSessionIds = new Set<string>();
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();

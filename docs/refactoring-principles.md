@@ -315,6 +315,13 @@ Per-file pins remain. A group pin may only drop; the intended way to satisfy it 
 2.4 (move a state cluster to its own owner), not another extension file. See
 `docs/architecture-maintainability-review.md` F1 for the extraction order.
 
+Since the 2026-09-06 self-healing pass, top-level `extension <Stem> { ... }` blocks
+in any other production file also count toward the stem's group, so renaming an
+extension file cannot move lines out of a facade. `checkRatchetPinsDidNotIncrease`
+compares every file and group pin against `origin/main` (or
+`PICKY_ARCH_GUARD_BASE_REF`) and fails on a raised pin or on a removed pin whose
+target is still above threshold.
+
 #### 2026-09-06 main-agent coordinator extraction
 
 `SessionSupervisor` owned both Pickle session orchestration and the always-on main

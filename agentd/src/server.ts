@@ -16,6 +16,7 @@ import type { SessionSupervisor } from "./session-supervisor.js";
 import { runtimeControlCommandLogFields } from "./domain/runtime-control-log-fields.js";
 import { sanitizeForJson } from "./domain/sanitize-for-json.js";
 import { logAgentd } from "./local-log.js";
+import { awaitPickleSessionTerminal } from "./application/pickle-terminal-waiter.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
 import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./application/package-operations.js";
@@ -507,13 +508,16 @@ export class AgentdServer {
         cmd.notifyMainOnCompletion ?? false,
         cmd.notifyMacOSOnCompletion ?? false,
       ),
-      createPickleFromHandoff: (cmd) => this.options.supervisor.createPickleFromHandoff(cmd.context, {
-        title: cmd.title,
-        instructions: cmd.instructions,
-        cwd: cmd.cwd,
-        notifyMainOnCompletion: cmd.notifyMainOnCompletion ?? false,
-        notifyMacOSOnCompletion: cmd.notifyMacOSOnCompletion ?? false,
-      }),
+      createPickleFromHandoff: async (cmd) => {
+        const session = await this.options.supervisor.createPickleFromHandoff(cmd.context, {
+          title: cmd.title,
+          instructions: cmd.instructions,
+          cwd: cmd.cwd,
+          notifyMainOnCompletion: cmd.notifyMainOnCompletion ?? false,
+          notifyMacOSOnCompletion: cmd.notifyMacOSOnCompletion ?? false,
+        });
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(session) });
+      },
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id),
       listPickySettings: async (cmd) => {
@@ -540,15 +544,15 @@ export class AgentdServer {
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
       createPickleFromMain: (cmd) => this.createPickleFromMainCli(ws, cmd),
-      listPickles: async () => {
+      listPickles: async (cmd) => {
         const result = await this.requestPickleBridgeFromApp({ operation: "listSessions" });
-        this.send(ws, { type: "sessionSnapshot", sessions: (result.sessions ?? []).map(protocolSession) });
+        this.send(ws, { type: "pickleSessionsSnapshot", commandId: cmd.id, sessions: (result.sessions ?? []).map(protocolSession) });
       },
       getPickle: async (cmd) => {
         const result = await this.requestPickleBridgeFromApp({ operation: "listSessions" });
         const session = result.sessions?.find((candidate) => candidate.id === cmd.sessionId);
         if (!session) throw new Error(`Pickle session not found: ${cmd.sessionId}`);
-        this.send(ws, { type: "sessionUpdated", session: protocolSession(session) });
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(session) });
       },
       controlPickle: async (cmd) => {
         if ((cmd.pickleAction === "steer" || cmd.pickleAction === "followUp") && !cmd.text) {
@@ -558,16 +562,18 @@ export class AgentdServer {
           ? { operation: "abort", sessionId: cmd.sessionId }
           : { operation: cmd.pickleAction, sessionId: cmd.sessionId, text: cmd.text! });
         if (!result.session) throw new Error(`No Pickle session returned for ${cmd.pickleAction}: ${cmd.sessionId}`);
-        this.send(ws, { type: "sessionUpdated", session: protocolSession(result.session) });
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(result.session) });
       },
       setPickleArchived: async (cmd) => {
-        await this.requestPickleBridgeFromApp({ operation: "setArchived", sessionId: cmd.sessionId, archived: cmd.archived });
-        this.send(ws, { type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
+        const result = await this.requestPickleBridgeFromApp({ operation: "setArchived", sessionId: cmd.sessionId, archived: cmd.archived });
+        if (!result.session) throw new Error(`No Pickle session returned for setArchived: ${cmd.sessionId}`);
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: { ...protocolSession(result.session), archived: cmd.archived } });
       },
       deletePickle: async (cmd) => {
         const result = await this.requestPickleBridgeFromApp({ operation: "delete", sessionId: cmd.sessionId });
-        this.send(ws, { type: "sessionSnapshot", sessions: (result.sessions ?? []).map(protocolSession) });
+        this.send(ws, { type: "pickleSessionsSnapshot", commandId: cmd.id, sessions: (result.sessions ?? []).map(protocolSession) });
       },
+      awaitPickleSessionTerminal: (cmd) => awaitPickleSessionTerminal(this.options.supervisor, ws, cmd.sessionId, (session) => { this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(session) }); }),
       listDockGroups: async () => {
         const groups = await this.requestDockGroups();
         this.send(ws, { type: "dockGroupsSnapshot", groups });
@@ -590,7 +596,10 @@ export class AgentdServer {
       completePushToTalkControlRequest: (cmd) => this.completePendingPushToTalkControl(cmd),
       completeExternalEntryRequest: (cmd) => this.completePendingExternalEntry(cmd),
       duplicatePickleSession: (cmd) => this.options.supervisor.duplicatePickleSession(cmd.sessionId),
-      pinPickleSession: (cmd) => this.options.supervisor.pinPickleSession(cmd.context, cmd.title),
+      pinPickleSession: async (cmd) => {
+        const session = await this.options.supervisor.pinPickleSession(cmd.context, cmd.title);
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(session) });
+      },
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
       setNotifyMacOSOnCompletion: (cmd) => this.options.supervisor.setNotifyMacOSOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => deliverPickleCompletion(this.options.supervisor, cmd),
@@ -1175,9 +1184,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };
     case "setGlobalModelScope":
       return { commandId: command.id, type: command.type, mode: command.mode, patterns: command.patterns?.length, expectedRevision: command.expectedRevision };
-    case "deleteSession":
-    case "deletePickle":
-    case "getPickle":
+    case "deleteSession": case "deletePickle": case "getPickle": case "awaitPickleSessionTerminal":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, caller: command.caller };
     case "controlPickle":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, action: command.pickleAction, textChars: command.text?.length, caller: command.caller };
@@ -1283,12 +1290,12 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "mainAgentSessionInfoUpdated":
       return { eventId: event.id, type: event.type, hasSessionFile: event.sessionFilePath ? 1 : 0, hasCwd: event.cwd ? 1 : 0 };
     case "sessionSnapshot": return { eventId: event.id, type: event.type, sessions: event.sessions.length };
-    case "sessionProjectionTransaction":
-    case "sessionProjectionSnapshot":
+    case "pickleSessionsSnapshot": return { eventId: event.id, type: event.type, commandId: event.commandId, sessions: event.sessions.length };
+    case "pickleSessionUpdated": return { eventId: event.id, type: event.type, commandId: event.commandId, sessionId: event.session.id, status: event.session.status };
+    case "sessionProjectionTransaction": case "sessionProjectionSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, revision: event.revision };
     case "sessionProjectionBootstrapComplete": return { eventId: event.id, type: event.type, epoch: event.epoch, bootstrapId: event.bootstrapId, sessionCount: event.sessionIds.length };
-    case "sessionUpdated":
-    case "sessionMetaUpdated":
+    case "sessionUpdated": case "sessionMetaUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };
     case "sessionArchivedAuthoritative":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, archived: event.archived ? 1 : 0 };

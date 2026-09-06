@@ -589,6 +589,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("controlPickle"), pickleAction: z.enum(["steer", "followUp", "abort"]), sessionId: z.string().min(1), text: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setPickleArchived"), sessionId: z.string().min(1), archived: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("deletePickle"), sessionId: z.string().min(1) }),
+  // Replies with `pickleSessionUpdated` once the primary-hosted session reaches a terminal status.
+  CommandBaseSchema.extend({ type: z.literal("awaitPickleSessionTerminal"), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("listDockGroups") }),
   CommandBaseSchema.extend({
     type: z.literal("manageDockGroups"),
@@ -962,6 +964,10 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     instructions: z.string().optional(),
     cwd: z.string().optional(),
   }),
+  // CLI/external replies for Pickle bridge commands. Addressed to the requesting
+  // socket only and never part of the app's session projection stream.
+  EventBaseSchema.extend({ type: z.literal("pickleSessionsSnapshot"), commandId: z.string().min(1), sessions: z.array(PickyAgentSessionSchema) }),
+  EventBaseSchema.extend({ type: z.literal("pickleSessionUpdated"), commandId: z.string().min(1), session: PickyAgentSessionSchema }),
   EventBaseSchema.extend({
     type: z.literal("externalEntryAck"),
     commandId: z.string().min(1),

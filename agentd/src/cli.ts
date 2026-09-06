@@ -65,8 +65,8 @@ interface PickleCreateOptions extends SharedOptions {
   wait?: boolean;
 }
 
-type SessionSnapshotEvent = Extract<EventEnvelope, { type: "sessionSnapshot" }>;
-type SessionArchivedAuthoritativeEvent = Extract<EventEnvelope, { type: "sessionArchivedAuthoritative" }>;
+type PickleSessionsSnapshotEvent = Extract<EventEnvelope, { type: "pickleSessionsSnapshot" }>;
+type PickleSessionUpdatedEvent = Extract<EventEnvelope, { type: "pickleSessionUpdated" }>;
 
 // Set from the explicit `--from-main` flag in a preAction hook. The Picky main
 // agent identifies itself per invocation; ambient environment variables are
@@ -151,6 +151,7 @@ Examples:
       }
       const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
         matchAck: matchExternalEntryAckParsed("submitMain"),
+        afterAck: awaitTerminalAfterAck,
         matchReply: matchMainReplyForContext,
       });
       printWaitResult(ack, replyText, options.json, "Submitted to main session");
@@ -211,6 +212,7 @@ async function createEmptyPickle(
   }
   const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
     matchAck: matchExternalEntryAckParsed("createPickle"),
+    afterAck: awaitTerminalAfterAck,
     matchReply: matchPickleFinalAnswerForSession,
   });
   printWaitResult(ack, replyText, options.json, "Created empty Pickle");
@@ -235,6 +237,7 @@ async function createNamedPickle(
   }
   const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
     matchAck: matchExternalEntryAckParsed("createPickle"),
+    afterAck: awaitTerminalAfterAck,
     matchReply: matchPickleFinalAnswerForSession,
   });
   printWaitResult(ack, replyText, options.json, "Created Pickle");
@@ -576,7 +579,7 @@ Examples:
       const connection = await loadCliConnection();
       await ensureSessionIsSteerable(connection, sessionId, "abort");
       await sendCommand(connection, { type: "controlPickle", pickleAction: "abort", sessionId, ...callerFields }, {
-        matchEvent: (event) => isSessionUpdateFor(event, sessionId) ? event : null,
+        matchEvent: matchPickleSessionUpdated,
         timeoutMs: 4_000,
       });
       process.stdout.write(`Abort requested for ${sessionId}\n`);
@@ -590,7 +593,7 @@ async function sendPickleInput(
   text: string,
 ): Promise<void> {
   await sendCommand(connection, { type: "controlPickle", pickleAction: type, sessionId, text, ...callerFields }, {
-    matchEvent: (event) => isSessionUpdateFor(event, sessionId) ? event : null,
+    matchEvent: matchPickleSessionUpdated,
     timeoutMs: 4_000,
   });
 }
@@ -674,16 +677,18 @@ async function fetchSessionByID(connection: Awaited<ReturnType<typeof loadCliCon
     const snapshot = await fetchSessionSnapshot(connection);
     return snapshot.sessions.find((session) => session.id === sessionId);
   }
-  const event = await sendCommand(connection, { type: "getPickle", sessionId, ...callerFields }, {
-    matchEvent: (candidate) => candidate.type === "sessionUpdated" && candidate.session.id === sessionId ? candidate : null,
-  });
-  return event.type === "sessionUpdated" ? event.session : undefined;
+  const event = await sendCommand(connection, { type: "getPickle", sessionId, ...callerFields }, { matchEvent: matchPickleSessionUpdated });
+  return event.session;
 }
 
-async function fetchSessionSnapshot(connection: Awaited<ReturnType<typeof loadCliConnection>>): Promise<SessionSnapshotEvent> {
+async function fetchSessionSnapshot(connection: Awaited<ReturnType<typeof loadCliConnection>>): Promise<PickleSessionsSnapshotEvent> {
   return await sendCommand(connection, { type: "listPickles", ...callerFields }, {
-    matchEvent: (event) => (event.type === "sessionSnapshot" ? event as SessionSnapshotEvent : null),
+    matchEvent: (event, commandId) => (event.type === "pickleSessionsSnapshot" && event.commandId === commandId ? event : null),
   });
+}
+
+function matchPickleSessionUpdated(event: EventEnvelope, commandId: string): PickleSessionUpdatedEvent | null {
+  return event.type === "pickleSessionUpdated" && event.commandId === commandId ? event : null;
 }
 
 async function fetchDockGroups(connection: Awaited<ReturnType<typeof loadCliConnection>>): Promise<DockGroup[]> {
@@ -804,17 +809,11 @@ function truncateCliText(value: string, maxChars: number): string {
   return value.length <= maxChars ? value : `${sliceUtf16Safe(value, maxChars - 1)}…`;
 }
 
-async function setPickleArchiveState(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, archived: boolean): Promise<SessionArchivedAuthoritativeEvent> {
-  return await sendCommand(connection, { type: "setPickleArchived", sessionId, archived, ...callerFields }, {
-    matchEvent: (event) => {
-      if (event.type !== "sessionArchivedAuthoritative") return null;
-      const archiveEvent = event as SessionArchivedAuthoritativeEvent;
-      return archiveEvent.sessionId === sessionId && archiveEvent.archived === archived ? archiveEvent : null;
-    },
-  });
+async function setPickleArchiveState(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, archived: boolean): Promise<PickleSessionUpdatedEvent> {
+  return await sendCommand(connection, { type: "setPickleArchived", sessionId, archived, ...callerFields }, { matchEvent: matchPickleSessionUpdated });
 }
 
-function printArchiveStateResult(event: SessionArchivedAuthoritativeEvent, asJson: boolean | undefined, message: string): void {
+function printArchiveStateResult(event: PickleSessionUpdatedEvent, asJson: boolean | undefined, message: string): void {
   if (asJson) {
     process.stdout.write(`${JSON.stringify(event, null, 2)}\n`);
     return;
@@ -961,13 +960,12 @@ function matchMainReplyForContext(event: EventEnvelope, ack: ExternalEntryAck): 
   if (event.type === "quickReply" && (event as { contextId?: string }).contextId === ack.contextId) {
     return (event as { text?: string }).text ?? "";
   }
-  if (ack.sessionId && isSessionUpdate(event)) {
-    const session = event.session;
-    if (session?.id === ack.sessionId && (session.status === "completed" || session.status === "failed" || session.status === "cancelled")) {
-      return session.finalAnswer ?? session.lastSummary ?? "";
-    }
-  }
-  return null;
+  return matchPickleFinalAnswerForSession(event, ack);
+}
+
+/** Second command for `--wait`: the daemon replies once the acked Pickle reaches a terminal status. */
+function awaitTerminalAfterAck(ack: ExternalEntryAck): { type: "awaitPickleSessionTerminal"; sessionId: string } | undefined {
+  return ack.sessionId ? { type: "awaitPickleSessionTerminal", sessionId: ack.sessionId } : undefined;
 }
 
 /**
@@ -975,21 +973,13 @@ function matchMainReplyForContext(event: EventEnvelope, ack: ExternalEntryAck): 
  * reaches a terminal status and surface its final answer.
  */
 function matchPickleFinalAnswerForSession(event: EventEnvelope, ack: ExternalEntryAck): string | null {
-  if (!ack.sessionId || !isSessionUpdate(event)) return null;
+  if (!ack.sessionId || event.type !== "pickleSessionUpdated") return null;
   const session = event.session;
-  if (session?.id !== ack.sessionId) return null;
+  if (session.id !== ack.sessionId) return null;
   if (session.status === "completed" || session.status === "failed" || session.status === "cancelled") {
     return session.finalAnswer ?? session.lastSummary ?? "";
   }
   return null;
-}
-
-function isSessionUpdate(event: EventEnvelope): event is Extract<EventEnvelope, { type: "sessionUpdated" | "sessionMetaUpdated" }> {
-  return event.type === "sessionUpdated" || event.type === "sessionMetaUpdated";
-}
-
-function isSessionUpdateFor(event: EventEnvelope, sessionId: string): event is Extract<EventEnvelope, { type: "sessionUpdated" | "sessionMetaUpdated" }> {
-  return isSessionUpdate(event) && event.session.id === sessionId;
 }
 
 function printAck(ack: ExternalEntryAck | EventEnvelope, asJson: boolean | undefined, defaultMessage: string): void {

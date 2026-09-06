@@ -171,7 +171,7 @@ function configuredWaitForIdleTimeoutMs(): number {
 
 async function sendPickyCommand(
   connection: PickyAgentdConnectionInfo,
-  payload: Record<string, unknown>,
+  command: { id: string } & Record<string, unknown>,
 ): Promise<PickyAgentSessionSummary> {
   const WebSocketCtor = (globalThis as unknown as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
   if (!WebSocketCtor) throw new Error("This Node.js runtime does not expose global WebSocket.");
@@ -187,19 +187,19 @@ async function sendPickyCommand(
     }, 10_000);
 
     ws.addEventListener("open", () => {
-      ws.send(JSON.stringify(payload));
+      ws.send(JSON.stringify(command));
     });
 
     ws.addEventListener("message", (event) => {
       const payload = parseEventData(event.data);
       if (!payload) return;
-      if (payload.type === "error") {
+      if (payload.type === "error" && payload.commandId === command.id) {
         clearTimeout(timeout);
         ws.close();
         reject(new Error(typeof payload.message === "string" ? payload.message : "picky-agentd returned an error"));
         return;
       }
-      if (payload.type === "sessionUpdated" && payload.session && typeof payload.session.id === "string") {
+      if (payload.type === "pickleSessionUpdated" && payload.commandId === command.id && payload.session && typeof payload.session.id === "string") {
         clearTimeout(timeout);
         ws.close();
         resolve({ id: payload.session.id, title: String(payload.session.title || "Picky task"), status: String(payload.session.status || "queued") });

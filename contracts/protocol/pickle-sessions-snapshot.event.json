@@ -1,0 +1,22 @@
+{
+  "id": "event-pickle-sessions-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-05-01T00:00:01.000Z",
+  "type": "pickleSessionsSnapshot",
+  "commandId": "cmd-list-pickles-001",
+  "sessions": [
+    {
+      "id": "session-001",
+      "title": "Summarize the current work",
+      "status": "completed",
+      "cwd": "/Users/example/project",
+      "createdAt": "2026-05-01T00:00:00.000Z",
+      "updatedAt": "2026-05-01T00:00:01.000Z",
+      "lastSummary": "Done",
+      "logs": [],
+      "tools": [],
+      "artifacts": [],
+      "changedFiles": []
+    }
+  ]
+}

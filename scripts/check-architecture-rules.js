@@ -266,6 +266,7 @@ function checkProtocolParity() {
 // only permitted TypeScript-only protocol members. Remove an entry when the app
 // adopts the message; the guard errors if an entry is present in Swift.
 const EXTERNAL_ONLY_PROTOCOL_COMMANDS = new Set([
+  "awaitPickleSessionTerminal",
   "createPickleFromExternal",
   "submitMainFromExternal",
   "listPickySettings",
@@ -275,6 +276,8 @@ const EXTERNAL_ONLY_PROTOCOL_COMMANDS = new Set([
 ]);
 const EXTERNAL_ONLY_PROTOCOL_EVENTS = new Set([
   "dockGroupsSnapshot",
+  "pickleSessionsSnapshot",
+  "pickleSessionUpdated",
   "externalEntryAck",
   "pickySettingsAck",
   "pushToTalkControlAck",

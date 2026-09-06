@@ -1,0 +1,21 @@
+{
+  "id": "event-pickle-session-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-05-01T00:00:01.000Z",
+  "type": "pickleSessionUpdated",
+  "commandId": "cmd-await-terminal-001",
+  "session": {
+    "id": "session-001",
+    "title": "Summarize the current work",
+    "status": "completed",
+    "cwd": "/Users/example/project",
+    "createdAt": "2026-05-01T00:00:00.000Z",
+    "updatedAt": "2026-05-01T00:00:01.000Z",
+    "lastSummary": "Done",
+    "finalAnswer": "Summary written to docs/summary.md",
+    "logs": [],
+    "tools": [],
+    "artifacts": [],
+    "changedFiles": []
+  }
+}

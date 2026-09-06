@@ -151,7 +151,8 @@ function installFakeWebSocket(sentPayloads: unknown[], openedUrls: string[]): vo
       setTimeout(() => {
         this.listeners.message?.({
           data: JSON.stringify({
-            type: "sessionUpdated",
+            type: "pickleSessionUpdated",
+            commandId: payload.id,
             session: { id: "session-pinned", title: payload.title ?? "Pinned", status: "completed" },
           }),
         });

@@ -1972,6 +1972,7 @@ describe("AgentdServer", () => {
     const pinPickleSession = vi.spyOn(supervisor, "pinPickleSession");
     const duplicatePickleSession = vi.spyOn(supervisor, "duplicatePickleSession").mockResolvedValue(makeSession({ id: "session-copy" }));
     const { ws } = await connectWithHello();
+    trackEvents(ws);
 
     ws.send(JSON.stringify({ id: "cmd-empty-pickle", protocolVersion: PROTOCOL_VERSION, type: "createEmptyPickleSession", context: context("manual pickle"), notifyMainOnCompletion: true, notifyMacOSOnCompletion: true }));
     await waitUntil(() => createEmptyPickleSession.mock.calls.length === 1);
@@ -1981,6 +1982,9 @@ describe("AgentdServer", () => {
     await waitUntil(() => pinPickleSession.mock.calls.length === 1);
     ws.send(JSON.stringify({ id: "cmd-duplicate-pickle", protocolVersion: PROTOCOL_VERSION, type: "duplicatePickleSession", sessionId: "session-source" }));
     await waitUntil(() => duplicatePickleSession.mock.calls.length === 1);
+
+    const handoffReply = await waitForEvent(ws, "pickleSessionUpdated");
+    expect(handoffReply).toMatchObject({ commandId: "cmd-handoff-pickle", session: { title: "Handoff" } });
 
     expect(createEmptyPickleSession).toHaveBeenCalledWith(expect.objectContaining({ id: "context-manual pickle" }), true, true);
     expect(createPickleFromHandoff).toHaveBeenCalledWith(expect.objectContaining({ id: "context-handoff pickle" }), { title: "Handoff", instructions: "Do it", cwd: "/tmp/product", notifyMainOnCompletion: true, notifyMacOSOnCompletion: true });
@@ -2417,33 +2421,33 @@ describe("AgentdServer", () => {
     const listRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
     expect(listRequest).toMatchObject({ operation: "listSessions" });
     if (listRequest.type !== "pickleBridgeRequested") throw new Error("expected list bridge request");
-    const listSnapshot = waitForEvent(cli.ws, "sessionSnapshot");
+    const listSnapshot = waitForEvent(cli.ws, "pickleSessionsSnapshot");
     app.ws.send(JSON.stringify({ id: "cmd-complete-cli-list", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: listRequest.requestId, sessions: [session] }));
-    await expect(listSnapshot).resolves.toMatchObject({ sessions: [expect.objectContaining({ id: "pickle-cli" })] });
+    await expect(listSnapshot).resolves.toMatchObject({ commandId: "cmd-cli-list", sessions: [expect.objectContaining({ id: "pickle-cli" })] });
 
     cli.ws.send(JSON.stringify({ id: "cmd-cli-steer", protocolVersion: PROTOCOL_VERSION, type: "controlPickle", caller: "mainAgent", pickleAction: "steer", sessionId: "pickle-cli", text: "focus" }));
     const steerRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
     expect(steerRequest).toMatchObject({ operation: "steer", sessionId: "pickle-cli", text: "focus" });
     if (steerRequest.type !== "pickleBridgeRequested") throw new Error("expected steer bridge request");
-    const steerUpdate = waitForEvent(cli.ws, "sessionUpdated");
+    const steerUpdate = waitForEvent(cli.ws, "pickleSessionUpdated");
     app.ws.send(JSON.stringify({ id: "cmd-complete-cli-steer", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: steerRequest.requestId, session }));
-    await expect(steerUpdate).resolves.toMatchObject({ session: { id: "pickle-cli" } });
+    await expect(steerUpdate).resolves.toMatchObject({ commandId: "cmd-cli-steer", session: { id: "pickle-cli" } });
 
     cli.ws.send(JSON.stringify({ id: "cmd-cli-archive", protocolVersion: PROTOCOL_VERSION, type: "setPickleArchived", caller: "mainAgent", sessionId: "pickle-cli", archived: true }));
     const archiveRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
     expect(archiveRequest).toMatchObject({ operation: "setArchived", sessionId: "pickle-cli", archived: true });
     if (archiveRequest.type !== "pickleBridgeRequested") throw new Error("expected archive bridge request");
-    const archiveAck = waitForEvent(cli.ws, "sessionArchivedAuthoritative");
-    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-archive", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: archiveRequest.requestId, delivered: true }));
-    await expect(archiveAck).resolves.toMatchObject({ sessionId: "pickle-cli", archived: true });
+    const archiveAck = waitForEvent(cli.ws, "pickleSessionUpdated");
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-archive", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: archiveRequest.requestId, session, delivered: true }));
+    await expect(archiveAck).resolves.toMatchObject({ commandId: "cmd-cli-archive", session: { id: "pickle-cli", archived: true } });
 
     cli.ws.send(JSON.stringify({ id: "cmd-cli-delete", protocolVersion: PROTOCOL_VERSION, type: "deletePickle", caller: "mainAgent", sessionId: "pickle-cli" }));
     const deleteRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
     expect(deleteRequest).toMatchObject({ operation: "delete", sessionId: "pickle-cli" });
     if (deleteRequest.type !== "pickleBridgeRequested") throw new Error("expected delete bridge request");
-    const deleteSnapshot = waitForEvent(cli.ws, "sessionSnapshot");
+    const deleteSnapshot = waitForEvent(cli.ws, "pickleSessionsSnapshot");
     app.ws.send(JSON.stringify({ id: "cmd-complete-cli-delete", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: deleteRequest.requestId, sessions: [], delivered: true }));
-    await expect(deleteSnapshot).resolves.toMatchObject({ sessions: [] });
+    await expect(deleteSnapshot).resolves.toMatchObject({ commandId: "cmd-cli-delete", sessions: [] });
 
     app.ws.close();
     cli.ws.close();
@@ -2469,7 +2473,7 @@ describe("AgentdServer", () => {
     const request = await waitForEvent(app.ws, "pickleBridgeRequested");
     expect(request).toMatchObject({ operation: "abort", sessionId: "pickle-1" });
     if (request.type !== "pickleBridgeRequested") throw new Error("expected abort bridge request");
-    const update = waitForEvent(cli.ws, "sessionUpdated");
+    const update = waitForEvent(cli.ws, "pickleSessionUpdated");
     app.ws.send(JSON.stringify({
       id: "cmd-complete-cli-abort",
       protocolVersion: PROTOCOL_VERSION,

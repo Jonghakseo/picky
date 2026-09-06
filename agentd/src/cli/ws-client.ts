@@ -99,16 +99,18 @@ export async function sendCommand<T extends EventEnvelope>(
  *
  * Used by `picky submit --wait` and `picky pickle-create --wait` to keep the
  * websocket open past the initial ack so we can capture the assistant turn that
- * arrives as `quickReply` (main agent path) or as a terminal `sessionUpdated`
- * (Pickle path). The ack matcher returns the parsed ack payload; the reply
- * matcher inspects every later event and returns the assistant text once it
- * recognises the matching context/session id.
+ * arrives as `quickReply` (main agent path) or as a terminal `pickleSessionUpdated`
+ * (Pickle path). The ack matcher returns the parsed ack payload; `afterAck` may
+ * return a follow-up command (such as `awaitPickleSessionTerminal`) that is sent
+ * on the same socket; the reply matcher inspects every later event and returns
+ * the assistant text once it recognises the matching context/session id.
  */
 export async function sendCommandAndWaitForReply<Ack>(
   connection: PickyCliConnection,
   command: { type: string; [key: string]: unknown },
   options: {
     matchAck: (event: EventEnvelope, commandId: string) => Ack | null;
+    afterAck?: (ack: Ack) => { type: string; [key: string]: unknown } | undefined;
     matchReply: (event: EventEnvelope, ack: Ack) => string | null;
     ackTimeoutMs?: number;
     replyTimeoutMs?: number;
@@ -123,6 +125,7 @@ export async function sendCommandAndWaitForReply<Ack>(
   return await new Promise<{ ack: Ack; replyText: string }>((resolve, reject) => {
     let settled = false;
     let ackPayload: Ack | undefined;
+    let followUpCommandId: string | undefined;
     let activeTimer = setTimeout(() => {
       finish(() => reject(new PickyCliTimeoutError(`${command.type} ack`, ackTimeoutMs)));
     }, ackTimeoutMs);
@@ -150,11 +153,12 @@ export async function sendCommandAndWaitForReply<Ack>(
     ws.on("message", (data) => {
       let event: EventEnvelope;
       try { event = JSON.parse(data.toString()) as EventEnvelope; } catch { return; }
-      if (event.type === "error" && (event as { commandId?: string }).commandId === commandId) {
+      const errorCommandId = event.type === "error" ? (event as { commandId?: string }).commandId : undefined;
+      if (errorCommandId !== undefined && (errorCommandId === commandId || errorCommandId === followUpCommandId)) {
         finish(() => reject(new PickyCliServerError(
           (event as { code: string }).code,
           (event as { message: string }).message,
-          commandId,
+          errorCommandId,
         )));
         return;
       }
@@ -166,6 +170,15 @@ export async function sendCommandAndWaitForReply<Ack>(
           activeTimer = setTimeout(() => {
             finish(() => reject(new PickyCliTimeoutError(`${command.type} reply`, replyTimeoutMs)));
           }, replyTimeoutMs);
+          const followUp = options.afterAck?.(matched);
+          if (followUp) {
+            followUpCommandId = `cli-${randomUUID()}`;
+            try {
+              ws.send(JSON.stringify({ id: followUpCommandId, protocolVersion: PROTOCOL_VERSION, ...followUp }));
+            } catch (error) {
+              finish(() => reject(new PickyCliConnectionError(`Failed to send ${followUp.type}: ${(error as Error).message}`, error)));
+            }
+          }
         }
         return;
       }

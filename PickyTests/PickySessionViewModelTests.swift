@@ -1339,18 +1339,6 @@ struct PickySessionViewModelTests {
         #expect(card.lastRequestText == "Scope?: Project \u{00B7} Items?: Rule \u{00B7} Note: ok")
     }
 
-    @MainActor @Test func extensionUiAnswerLogLineUpdatesLastRequestText() throws {
-        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: 계속 진행해줘."))))
-        #expect(viewModel.sessions.first?.lastRequestText == "계속 진행해줘.")
-
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "extension ui answer: Stop and review"))))
-
-        let card = try #require(viewModel.sessions.first)
-        #expect(card.lastRequestText == "Stop and review")
-    }
-
     @MainActor @Test func sessionUpdateClearsPendingExtensionUiRequestWhenIncomingHasNone() throws {
         // Reproduces the askUserQuestion form sticking around after Submit: a stale sessionUpdated
         // that was queued by the daemon before it processed the answer arrives after Picky's local
@@ -1389,8 +1377,7 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func answerExtensionUiKeepsPriorRequestTextWhenUserCancels() async throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: 계속 진행해줘."))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input", lastRequest: "계속 진행해줘."))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.askUserQuestionRequest())))
 
         try await viewModel.cancelExtensionUi(sessionID: "session-1", requestID: "ui-form")
@@ -1892,9 +1879,7 @@ struct PickySessionViewModelTests {
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,
             pinned: false,
-            archived: false,
-            hasRuntimeDetachedFollowUpRejection: false,
-            isMainAgentHandoff: false
+            archived: false
         )
         #expect(card.elapsedDescription(now: now) == "3h 0m")
         #expect(card.elapsedSinceUpdate(now: now) == "<1m")
@@ -4384,14 +4369,18 @@ struct PickySessionViewModelTests {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             status: "running",
-            logs: ["Picky handoff: initial screen check", "steer: summarize the failing case"]
+            logs: ["Picky handoff: initial screen check", "steer: summarize the failing case"],
+            lastRequest: "summarize the failing case"
         ))))
 
         let expectedCompactCwd = testProjectCwd.replacingOccurrences(of: NSHomeDirectory(), with: "~", options: .anchored)
         #expect(viewModel.sessions.first?.lastRequestText == "summarize the failing case")
         #expect(viewModel.sessions.first?.compactCwdDescription == expectedCompactCwd)
 
+        // Log copy alone must not change the request; the typed field does.
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: include CWD in the HUD"))))
+        #expect(viewModel.sessions.first?.lastRequestText == "summarize the failing case")
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", lastRequest: "include CWD in the HUD"))))
         #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")
     }
 
@@ -6042,16 +6031,18 @@ private enum EventJSON {
         piSessionFilePath: String? = nil,
         notifyMainOnCompletion: Bool? = nil,
         notifyMacOSOnCompletion: Bool? = nil,
-        pinned: Bool? = nil
+        pinned: Bool? = nil,
+        lastRequest: String? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        let encodedLastRequest = lastRequest.map { ",\"lastRequest\":{\"source\":\"steer\",\"text\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))}" } ?? ""
         let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
         let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         let encodedMacOSNotify = notifyMacOSOnCompletion.map { ",\"notifyMacOSOnCompletion\":\($0)" } ?? ""
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedMacOSNotify)\(encodedPinned)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedMacOSNotify)\(encodedPinned)\(encodedLastRequest)}}
         """
     }
 
@@ -6310,7 +6301,7 @@ private extension PickySessionListViewModel.SessionCard {
             tools: [], artifacts: artifacts, changedFiles: [], messages: [], queuedSteers: [], queuedFollowUps: [],
             steeringMode: .oneAtATime, followUpMode: .oneAtATime, activitySummary: .zero,
             pendingExtensionUiRequest: nil, piSessionFilePath: nil, notifyMainOnCompletion: nil,
-            pinned: false, archived: false, hasRuntimeDetachedFollowUpRejection: false, isMainAgentHandoff: false
+            pinned: false, archived: false
         )
     }
 }

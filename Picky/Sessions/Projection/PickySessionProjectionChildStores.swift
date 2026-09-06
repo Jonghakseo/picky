@@ -39,6 +39,7 @@ struct PickySessionMetadata: Equatable {
     var archived: Bool?
     var archivedAt: Date?
     var pinned: Bool?
+    var lastRequest: PickySessionLastRequest?
 
     init(session: PickyAgentSession, revision: Int = 0, archivedAt: Date? = nil) {
         id = session.id
@@ -59,6 +60,7 @@ struct PickySessionMetadata: Equatable {
         archived = session.archived
         self.archivedAt = session.archivedAt ?? archivedAt
         pinned = session.pinned
+        lastRequest = session.lastRequest
     }
 
     /// W4's v1 façade boundary supplies an already-built card. `finalAnswer`
@@ -83,6 +85,7 @@ struct PickySessionMetadata: Equatable {
         archived = card.archived
         self.archivedAt = archivedAt
         pinned = card.pinned
+        lastRequest = card.lastRequestText.map { PickySessionLastRequest(source: .followUp, text: $0) }
     }
 }
 

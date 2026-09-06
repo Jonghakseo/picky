@@ -37,13 +37,17 @@ extension PickySessionListViewModel {
         incomingCard.messages = previousCard.messages
         incomingCard.tools = previousCard.tools
         incomingCard.logPreview = previousCard.logPreview
-        incomingCard.lastRequestText = previousCard.lastRequestText
-        incomingCard.lastRequestAt = previousCard.lastRequestAt
+        if let request = session.lastRequest?.text, request != previousCard.lastRequestText {
+            // The daemon confirmed a newer request; stamp it like the live path does.
+            incomingCard.lastRequestText = request
+            incomingCard.lastRequestAt = Date()
+        } else {
+            incomingCard.lastRequestText = previousCard.lastRequestText
+            incomingCard.lastRequestAt = previousCard.lastRequestAt
+        }
         if session.piSessionFilePath == nil {
             incomingCard.piSessionFilePath = previousCard.piSessionFilePath
         }
-        incomingCard.hasRuntimeDetachedFollowUpRejection = previousCard.hasRuntimeDetachedFollowUpRejection
-        incomingCard.isMainAgentHandoff = previousCard.isMainAgentHandoff
         incomingCard.queuedSteers = previousCard.queuedSteers
         incomingCard.queuedFollowUps = previousCard.queuedFollowUps
         incomingCard.steeringMode = previousCard.steeringMode

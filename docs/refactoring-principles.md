@@ -386,3 +386,21 @@ tests inject sessions through `sessionUpdated` fixtures. The TypeScript schemas
 for those 15 events are retained, marked wire-dead, until the Swift decoder,
 `PickySessionListViewModel` v1 apply path, router `sessionCache`, and the test
 fixtures move to v2 projection injection in one change.
+
+#### 2026-09-06 typed `lastRequest` replaces log-prefix parsing
+
+The app reconstructed "what the user last asked" by matching daemon log copy
+(`steer: `, `follow-up: `, `Picky handoff: `, `extension ui answer: `, `source
+transcript:`), with the prefix table duplicated in `Picky/Domain/PickyLogPrefixes.swift`
+and `agentd/src/domain/log-prefixes.ts`. The daemon already knows the source at
+write time, so `PickyAgentSession.lastRequest { source, text }` is now a persisted,
+meta-patched field (`contracts/projection/session-field-ownership.json`), produced
+by `sessionWithAppendedLog`, pinned-session creation, and terminal session sync.
+
+Swift reads only the typed field: `SessionCard.init(session:)`, the v2 meta patch
+(`applyProjectionLastRequest` keeps the optimistic `lastRequestAt` stamp), and the
+v1 meta path. The Swift prefix table and `requestText(fromLogLine:)` are deleted.
+Two derived flags that were parsed from logs but never rendered
+(`hasRuntimeDetachedFollowUpRejection`, `isMainAgentHandoff`) were removed rather
+than typed. `isDisplayableLogPreview` and `isRuntimeReattachLogLine` remain as
+presentation-only filters over the human-readable journal.

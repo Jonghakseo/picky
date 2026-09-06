@@ -1,9 +1,8 @@
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
-import { EXTENSION_ANSWER_PREFIX, FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
+import { prefixedUserInputFromLogLine } from "./domain/log-prefixes.js";
 import { piSessionFilePathFromLogLine } from "./domain/pi-session-files.js";
-import { userInputFromLogLine } from "./domain/session-text-policy.js";
 import type { PickyAgentSession } from "./protocol.js";
 
 /// Derives the session that results from appending one log line: the line
@@ -15,9 +14,10 @@ export function sessionWithAppendedLog(
   now = new Date().toISOString(),
 ): PickyAgentSession {
   const piSessionFilePath = piSessionFilePathFromLogLine(line);
-  const userInput = userInputFromLogLine(line, [STEER_PREFIX, FOLLOWUP_PREFIX, HANDOFF_PREFIX, EXTENSION_ANSWER_PREFIX]);
+  const userInput = prefixedUserInputFromLogLine(line);
+  const requestText = userInput?.text.trim();
   const linkArtifacts = userInput
-    ? extractSessionLinkArtifacts(userInput).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url))
+    ? extractSessionLinkArtifacts(userInput.text).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url))
     : [];
   return {
     ...session,
@@ -25,6 +25,7 @@ export function sessionWithAppendedLog(
     changedFiles: mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(line)),
     artifacts: mergeArtifacts(session.artifacts, linkArtifacts),
     ...(piSessionFilePath ? { piSessionFilePath } : {}),
+    ...(userInput && requestText ? { lastRequest: { source: userInput.source, text: requestText } } : {}),
     updatedAt: now,
   };
 }

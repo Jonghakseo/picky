@@ -32,6 +32,26 @@ describe("sessionWithAppendedLog", () => {
     expect(session.logs).toEqual(["first"]);
   });
 
+  it("records the typed last request for user-input journal lines and leaves it untouched otherwise", () => {
+    const steered = sessionWithAppendedLog(makeSession(), "steer: focus on the failing test ", NOW);
+    expect(steered.lastRequest).toEqual({ source: "steer", text: "focus on the failing test" });
+
+    const followedUp = sessionWithAppendedLog(steered, "follow-up: now add a regression test", NOW);
+    expect(followedUp.lastRequest).toEqual({ source: "followUp", text: "now add a regression test" });
+
+    const answered = sessionWithAppendedLog(followedUp, "extension ui answer: Scope?: Project", NOW);
+    expect(answered.lastRequest).toEqual({ source: "extensionAnswer", text: "Scope?: Project" });
+
+    const handoff = sessionWithAppendedLog(answered, "Picky handoff: continue the investigation", NOW);
+    expect(handoff.lastRequest).toEqual({ source: "handoff", text: "continue the investigation" });
+
+    const unrelated = sessionWithAppendedLog(handoff, "pi session: /tmp/session.jsonl", NOW);
+    expect(unrelated.lastRequest).toEqual({ source: "handoff", text: "continue the investigation" });
+
+    const blank = sessionWithAppendedLog(handoff, "steer:   ", NOW);
+    expect(blank.lastRequest).toEqual({ source: "handoff", text: "continue the investigation" });
+  });
+
   it("merges changed files disclosed by the log line", () => {
     const session = makeSession({ changedFiles: [{ path: "kept.ts", status: "M" }] });
 

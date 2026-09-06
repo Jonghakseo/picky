@@ -185,6 +185,7 @@ extension PickyRegistrySessionProjectionStorage {
         switch mutation {
         case .metaPatch(let patch):
             apply(patch, to: &metadata, conversationStore: store.conversationStore)
+            if case .set(let request) = patch.lastRequest { store.applyProjectionLastRequest(request) }
         case .messageAppend(let message):
             _ = store.conversationStore.messageStore(message: message)
         case .messageReplace(_, let message):
@@ -286,6 +287,7 @@ extension PickyRegistrySessionProjectionStorage {
         apply(patch.archived, to: &metadata.archived)
         apply(patch.archivedAt, to: &metadata.archivedAt)
         apply(patch.pinned, to: &metadata.pinned)
+        apply(patch.lastRequest, to: &metadata.lastRequest)
     }
 
     private func apply<Value>(_ update: FieldUpdate<Value>, to value: inout Value) {

@@ -72,11 +72,12 @@ struct PickySessionMetaPatch: Decodable, Equatable {
     let archived: FieldUpdate<Bool>
     let archivedAt: FieldUpdate<Date>
     let pinned: FieldUpdate<Bool>
+    let lastRequest: FieldUpdate<PickySessionLastRequest>
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary
         case thinkingPreview, messageJournalAvailable, contextUsage, currentAssistantRun
-        case notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned
+        case notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
     }
 
     init(from decoder: Decoder) throws {
@@ -108,6 +109,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         archived = try FieldUpdate.decode(from: container, forKey: .archived, allowsClear: true)
         archivedAt = try FieldUpdate.decode(from: container, forKey: .archivedAt, allowsClear: true)
         pinned = try FieldUpdate.decode(from: container, forKey: .pinned, allowsClear: true)
+        lastRequest = try FieldUpdate.decode(from: container, forKey: .lastRequest, allowsClear: true)
     }
 }
 

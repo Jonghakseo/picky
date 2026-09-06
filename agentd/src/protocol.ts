@@ -344,6 +344,14 @@ export const PickySessionMessageSchema = z.object({
 });
 export type PickySessionMessage = z.infer<typeof PickySessionMessageSchema>;
 
+export const PickySessionLastRequestSourceSchema = z.enum(["steer", "followUp", "handoff", "extensionAnswer", "transcript"]);
+export type PickySessionLastRequestSource = z.infer<typeof PickySessionLastRequestSourceSchema>;
+export const PickySessionLastRequestSchema = z.object({
+  source: PickySessionLastRequestSourceSchema,
+  text: z.string(),
+});
+export type PickySessionLastRequest = z.infer<typeof PickySessionLastRequestSchema>;
+
 export const PickyAgentSessionSchema = z.object({
   id: z.string(),
   revision: z.number().int().nonnegative().default(0),
@@ -383,6 +391,9 @@ export const PickyAgentSessionSchema = z.object({
   archived: z.boolean().optional(),
   archivedAt: isoTimestamp.optional(),
   pinned: z.boolean().optional(),
+  // Newest user-authored input the daemon accepted for this session, typed so
+  // clients never reconstruct it from log-line prefixes.
+  lastRequest: PickySessionLastRequestSchema.optional(),
 });
 
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
@@ -419,6 +430,7 @@ export const PickySessionMetaPatchSchema = z.object({
   archived: z.union([z.boolean(), z.null()]).optional(),
   archivedAt: z.union([isoTimestamp, z.null()]).optional(),
   pinned: z.union([z.boolean(), z.null()]).optional(),
+  lastRequest: z.union([PickySessionLastRequestSchema, z.null()]).optional(),
 }).strict();
 export type PickySessionMetaPatch = z.infer<typeof PickySessionMetaPatchSchema>;
 

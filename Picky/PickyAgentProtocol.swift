@@ -1221,10 +1221,13 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var notifyMacOSOnCompletion: Bool? = nil
     var archived: Bool? = nil, archivedAt: Date? = nil
     var pinned: Bool? = nil
+    /// Newest user-authored input the daemon accepted, typed by the daemon so the
+    /// app never reconstructs it from log-line prefixes.
+    var lastRequest: PickySessionLastRequest? = nil
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
         case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
-        case pendingExtensionUiRequest, notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned
+        case pendingExtensionUiRequest, notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
     }
     init(
         id: String,
@@ -1256,7 +1259,8 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         notifyMainOnCompletion: Bool? = nil,
         notifyMacOSOnCompletion: Bool? = nil,
         archived: Bool? = nil, archivedAt: Date? = nil,
-        pinned: Bool? = nil
+        pinned: Bool? = nil,
+        lastRequest: PickySessionLastRequest? = nil
     ) {
         self.id = id
         self.title = title
@@ -1289,6 +1293,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.archived = archived
         self.archivedAt = archivedAt
         self.pinned = pinned
+        self.lastRequest = lastRequest
     }
 
     init(from decoder: Decoder) throws {
@@ -1324,7 +1329,17 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         archived = try container.decodeIfPresent(Bool.self, forKey: .archived)
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned)
+        lastRequest = try container.decodeIfPresent(PickySessionLastRequest.self, forKey: .lastRequest)
     }
+}
+
+struct PickySessionLastRequest: Codable, Equatable {
+    enum Source: String, Codable, Equatable {
+        case steer, followUp, handoff, extensionAnswer, transcript
+    }
+
+    var source: Source
+    var text: String
 }
 
 enum PickySessionStatus: String, Codable, Equatable {

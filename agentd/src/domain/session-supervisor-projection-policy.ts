@@ -126,6 +126,7 @@ export function buildPinnedPickleSession(input: {
     finalAnswer: "Pinned from an idle Pi session. No Pickle run has been started yet.",
     logs: input.logs,
     piSessionFilePath: input.sessionFilePath,
+    ...(input.context.transcript?.trim() ? { lastRequest: { source: "transcript" as const, text: input.context.transcript.trim() } } : {}),
     notifyMainOnCompletion: false,
     notifyMacOSOnCompletion: false,
     pinned: true,

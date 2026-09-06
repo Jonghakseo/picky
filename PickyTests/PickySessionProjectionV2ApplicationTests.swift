@@ -592,7 +592,7 @@ struct PickySessionProjectionV2ApplicationTests {
         ) == .setAndResolvePending(true))
     }
 
-    @Test func bootstrapSnapshotHydratesPresentationFromAuthoritativeLogs() throws {
+    @Test func bootstrapSnapshotHydratesPresentationFromAuthoritativeFields() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
         let incoming = snapshot(
@@ -600,18 +600,35 @@ struct PickySessionProjectionV2ApplicationTests {
             title: "Hydrated",
             status: .running,
             revision: 1,
-            extraProjectionFields: ",\"logs\":[\"steer: Resume the investigation\",\"pi session: /tmp/pi-session.jsonl\",\"Latest output\"],\"tools\":[]"
+            extraProjectionFields: ",\"logs\":[\"steer: Resume the investigation\",\"pi session: /tmp/pi-session.jsonl\",\"Latest output\"],\"tools\":[],\"lastRequest\":{\"source\":\"steer\",\"text\":\"Resume the investigation\"}"
         )
         let expected = PickySessionListViewModel.SessionCard.fromAgentSession(incoming.projection)
 
         apply(incoming, to: viewModel)
 
         let card = try #require(viewModel.sessions.first)
-        #expect(card.logPreview == expected.logPreview)
+        #expect(card.logPreview == "Latest output")
+        #expect(card.lastRequestText == "Resume the investigation")
         #expect(card.lastRequestText == expected.lastRequestText)
         #expect(card.piSessionFilePath == expected.piSessionFilePath)
-        #expect(card.hasRuntimeDetachedFollowUpRejection == expected.hasRuntimeDetachedFollowUpRejection)
-        #expect(card.isMainAgentHandoff == expected.isMainAgentHandoff)
+    }
+
+    @Test func metaPatchLastRequestUpdatesTheCardWithoutParsingLogs() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(sessionID: "session-a", title: "Typed", status: .running, revision: 1), to: viewModel)
+
+        apply(transaction(
+            sessionID: "session-a",
+            baseRevision: 1,
+            revision: 2,
+            mutations: #"[{"type":"logAppend","line":"steer: log copy must not be parsed"},{"type":"metaPatch","patch":{"lastRequest":{"source":"followUp","text":"Typed follow-up"}}}]"#
+        ), to: viewModel)
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.lastRequestText == "Typed follow-up")
+        #expect(card.lastRequestAt != nil)
+        #expect(card.logPreview == "steer: log copy must not be parsed")
     }
 
     @Test func replacementTransactionClearsEverySessionResetCollectionAndPresentation() throws {

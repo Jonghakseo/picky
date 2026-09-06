@@ -128,9 +128,7 @@ final class PickySessionStore {
             notifyMainOnCompletion: metadata.notifyMainOnCompletion,
             notifyMacOSOnCompletion: metadata.notifyMacOSOnCompletion,
             pinned: metadata.pinned ?? false,
-            archived: metadata.archived ?? false,
-            hasRuntimeDetachedFollowUpRejection: presentation.hasRuntimeDetachedFollowUpRejection,
-            isMainAgentHandoff: presentation.isMainAgentHandoff
+            archived: metadata.archived ?? false
         )
     }
 
@@ -185,7 +183,8 @@ final class PickySessionStore {
             notifyMacOSOnCompletion: metadata.notifyMacOSOnCompletion,
             archived: metadata.archived,
             archivedAt: metadata.archivedAt,
-            pinned: metadata.pinned
+            pinned: metadata.pinned,
+            lastRequest: metadata.lastRequest
         )
     }
 
@@ -263,19 +262,16 @@ final class PickySessionStore {
         if PickySessionListViewModel.SessionCard.isDisplayableLogPreview(line) {
             presentation.logPreview = line
         }
-        if PickySessionListViewModel.SessionCard.isMainAgentHandoffLogLine(line) {
-            presentation.isMainAgentHandoff = true
-        }
         if let piSessionFilePath = PickySessionListViewModel.SessionCard.piSessionFilePath(fromLogLine: line) {
             presentation.piSessionFilePath = piSessionFilePath
         }
-        if let requestText = PickySessionListViewModel.SessionCard.requestText(fromLogLine: line) {
-            presentation.lastRequestText = requestText
-            presentation.lastRequestAt = Date()
-        }
-        if PickySessionListViewModel.SessionCard.isRuntimeDetachedFollowUpRejection(line) {
-            presentation.hasRuntimeDetachedFollowUpRejection = true
-        }
+    }
+
+    /// The daemon confirmed a user request; keep the optimistic local timestamp
+    /// semantics that the log-line path used to provide.
+    func applyProjectionLastRequest(_ request: PickySessionLastRequest) {
+        presentation.lastRequestText = request.text
+        presentation.lastRequestAt = Date()
     }
 
     func applyProjectionTool(_ tool: PickyToolActivity) {
@@ -291,8 +287,6 @@ final class PickySessionStore {
         presentation.logPreview = card.logPreview
         presentation.lastRequestText = card.lastRequestText
         presentation.piSessionFilePath = card.piSessionFilePath
-        presentation.hasRuntimeDetachedFollowUpRejection = card.hasRuntimeDetachedFollowUpRejection
-        presentation.isMainAgentHandoff = card.isMainAgentHandoff
     }
 
     func replaceTerminalSyncOutcome(_ outcome: PickyTerminalSessionSyncOutcome?) {
@@ -313,17 +307,13 @@ private struct PickySessionCardPresentation {
     var lastRequestAt: Date?
     var piSessionFilePath: String?
     var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
-    var hasRuntimeDetachedFollowUpRejection: Bool
-    var isMainAgentHandoff: Bool
 
     static let empty = Self(
         logPreview: "",
         lastRequestText: nil,
         lastRequestAt: nil,
         piSessionFilePath: nil,
-        lastTerminalSyncOutcome: nil,
-        hasRuntimeDetachedFollowUpRejection: false,
-        isMainAgentHandoff: false
+        lastTerminalSyncOutcome: nil
     )
 
     init(card: PickySessionListViewModel.SessionCard) {
@@ -332,8 +322,6 @@ private struct PickySessionCardPresentation {
         lastRequestAt = card.lastRequestAt
         piSessionFilePath = card.piSessionFilePath
         lastTerminalSyncOutcome = card.lastTerminalSyncOutcome
-        hasRuntimeDetachedFollowUpRejection = card.hasRuntimeDetachedFollowUpRejection
-        isMainAgentHandoff = card.isMainAgentHandoff
     }
 
     private init(
@@ -341,17 +329,13 @@ private struct PickySessionCardPresentation {
         lastRequestText: String?,
         lastRequestAt: Date?,
         piSessionFilePath: String?,
-        lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?,
-        hasRuntimeDetachedFollowUpRejection: Bool,
-        isMainAgentHandoff: Bool
+        lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
     ) {
         self.logPreview = logPreview
         self.lastRequestText = lastRequestText
         self.lastRequestAt = lastRequestAt
         self.piSessionFilePath = piSessionFilePath
         self.lastTerminalSyncOutcome = lastTerminalSyncOutcome
-        self.hasRuntimeDetachedFollowUpRejection = hasRuntimeDetachedFollowUpRejection
-        self.isMainAgentHandoff = isMainAgentHandoff
     }
 }
 

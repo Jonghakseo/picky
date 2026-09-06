@@ -48,8 +48,6 @@ struct PickySessionCard: Equatable, Identifiable {
     /// archived Pickles correctly. Live `sessionUpdated` events keep using the
     /// local intent set to avoid mid-flight unarchive flicker.
     var archived: Bool
-    var hasRuntimeDetachedFollowUpRejection: Bool
-    var isMainAgentHandoff: Bool
 
     var activeTool: PickyToolActivity? {
         tools.last { $0.isActive }
@@ -224,9 +222,9 @@ extension PickySessionCard {
         self.lastSummary = session.lastSummary ?? ""
         self.thinkingPreview = session.thinkingPreview
         self.logPreview = session.logs.reversed().first(where: Self.isDisplayableLogPreview) ?? session.tools.last?.preview ?? ""
-        self.lastRequestText = Self.lastRequestText(from: session.logs)
-        // Logs do not carry per-line wall-clock timestamps, so leave nil for resumed sessions
-        // and let elapsedSinceLastRequest() fall back to updatedAt.
+        self.lastRequestText = session.lastRequest?.text
+        // The daemon's request record carries no wall-clock timestamp, so leave nil for
+        // resumed sessions and let elapsedSinceLastRequest() fall back to updatedAt.
         self.lastRequestAt = nil
         self.tools = session.tools
         self.todoState = session.todoState
@@ -247,8 +245,6 @@ extension PickySessionCard {
         self.notifyMacOSOnCompletion = session.notifyMacOSOnCompletion
         self.pinned = session.pinned ?? false
         self.archived = session.archived ?? false
-        self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
-        self.isMainAgentHandoff = session.logs.contains(where: Self.isMainAgentHandoffLogLine)
     }
 
     func merged(with incoming: Self, preserveConversationState: Bool = false) -> Self {
@@ -299,8 +295,6 @@ extension PickySessionCard {
         if result.currentAssistantRun == nil { result.currentAssistantRun = currentAssistantRun }
         if result.notifyMainOnCompletion == nil { result.notifyMainOnCompletion = notifyMainOnCompletion }
         if result.notifyMacOSOnCompletion == nil { result.notifyMacOSOnCompletion = notifyMacOSOnCompletion }
-        result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection
-        result.isMainAgentHandoff = result.isMainAgentHandoff || isMainAgentHandoff
         return result
     }
 
@@ -342,51 +336,18 @@ extension PickySessionCard {
             && path != "unavailable"
     }
 
+    /// Presentation-only filters over the daemon's human-readable log journal.
+    /// Semantic state (`lastRequest`, `piSessionFilePath`) arrives as typed
+    /// session fields; only preview selection still inspects log copy.
     static func isDisplayableLogPreview(_ line: String) -> Bool {
         let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !normalized.hasPrefix("extension ui:") && !normalized.hasPrefix(PickyLogPrefixes.extensionAnswer.trimmingCharacters(in: .whitespaces))
+        return !normalized.hasPrefix("extension ui:") && !normalized.hasPrefix("extension ui answer:")
     }
 
     static func isRuntimeReattachLogLine(_ line: String) -> Bool {
         line.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .hasPrefix("runtime reattached from pi session:")
-    }
-
-
-    static func isMainAgentHandoffLogLine(_ line: String) -> Bool {
-        line.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .hasPrefix(PickyLogPrefixes.handoff)
-    }
-
-    static func lastRequestText(from logs: [String]) -> String? {
-        logs.reversed().compactMap(requestText(fromLogLine:)).first
-    }
-
-    static func requestText(fromLogLine line: String) -> String? {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        for prefix in [PickyLogPrefixes.steer, PickyLogPrefixes.followUp, PickyLogPrefixes.handoff, PickyLogPrefixes.extensionAnswer] {
-            if trimmed.hasPrefix(prefix) {
-                return normalizedRequestText(String(trimmed.dropFirst(prefix.count)))
-            }
-        }
-
-        let transcriptPrefix = "source transcript:"
-        if line.hasPrefix(transcriptPrefix) {
-            return normalizedRequestText(String(line.dropFirst(transcriptPrefix.count)))
-        }
-        return nil
-    }
-
-    private static func normalizedRequestText(_ text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    static func isRuntimeDetachedFollowUpRejection(_ line: String) -> Bool {
-        (line.localizedCaseInsensitiveContains("follow-up rejected:") || line.localizedCaseInsensitiveContains("steer rejected:"))
-            && line.localizedCaseInsensitiveContains("Runtime session is not attached after daemon restart")
     }
 }
 

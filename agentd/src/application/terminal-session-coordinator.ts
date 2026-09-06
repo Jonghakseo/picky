@@ -174,7 +174,7 @@ export class TerminalSessionCoordinator {
     const patch: Partial<PickyAgentSession> = {
       thinkingPreview: undefined,
       ...(latestAssistantText ? { lastSummary: latestAssistantText } : {}),
-      ...(latestUserText ? { logs: appendUniqueLog(this.deps.getSessionOrThrow(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`) } : {}),
+      ...(latestUserText ? { logs: appendUniqueLog(this.deps.getSessionOrThrow(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`), lastRequest: { source: "followUp" as const, text: latestUserText } } : {}),
     };
     if (runtimeStreaming) {
       patch.status = "running";
@@ -218,6 +218,7 @@ export class TerminalSessionCoordinator {
         const latestUserText = [...messagesToImport].reverse().find((message) => message.kind === "user_text")?.text?.trim();
         if (latestUserText) {
           patch.logs = appendUniqueLog(this.deps.getSessionOrThrow(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`);
+          patch.lastRequest = { source: "followUp", text: latestUserText };
           patch.finalAnswer = undefined;
           patch.thinkingPreview = undefined;
         }

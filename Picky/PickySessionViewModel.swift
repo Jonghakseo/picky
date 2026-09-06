@@ -2208,21 +2208,8 @@ final class PickySessionListViewModel: ObservableObject {
             if SessionCard.isDisplayableLogPreview(line) {
                 card.logPreview = line
             }
-            if SessionCard.isMainAgentHandoffLogLine(line) {
-                card.isMainAgentHandoff = true
-            }
             if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
                 card.piSessionFilePath = piSessionFilePath
-            }
-            if let requestText = SessionCard.requestText(fromLogLine: line) {
-                card.lastRequestText = requestText
-                // Log lines arrive when the daemon broadcasts them, which is essentially
-                // when the request was issued — Date() here is close enough to the real
-                // wall-clock time of the request to drive the REQUEST row's stamp.
-                card.lastRequestAt = Date()
-            }
-            if SessionCard.isRuntimeDetachedFollowUpRejection(line) {
-                card.hasRuntimeDetachedFollowUpRejection = true
             }
             card.updatedAt = Date()
         }

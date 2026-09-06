@@ -223,6 +223,8 @@ _2026-09-06 진행 상황:_
 
 ### P1-3. 로그 접두어 파싱을 typed 필드로 대체한다 (F4)
 
+_2026-09-06: `PickyAgentSession.lastRequest { source, text }`를 추가하고 daemon이 `sessionWithAppendedLog`·pinned 세션·terminal sync에서 채운다. Swift는 `session.lastRequest`와 metaPatch로만 읽으며 `PickyLogPrefixes.swift`, `requestText(fromLogLine:)`은 삭제. 렌더되지 않던 `hasRuntimeDetachedFollowUpRejection`·`isMainAgentHandoff`(둘 다 로그 접두어에서만 파생)는 소비자가 없어 제거. 남은 로그 문자열 검사는 presentation 전용 두 개(`isDisplayableLogPreview`, `isRuntimeReattachLogLine`)와 `piSessionFilePath(fromLogLine:)`(daemon도 같은 로그로 typed 필드를 채우므로 fallback)뿐이다._
+
 - `PickySessionCard.requestText(fromLogLine:)`, `isMainAgentHandoffLogLine`, `isRuntimeReattachLogLine`, `isDisplayableLogPreview`가 필요로 하는 정보를 `PickyAgentSession` 또는 메시지 저널의 명시적 필드(`lastRequest: { source, text }`, `reattachedFromPiSession`, `logEntry.kind`)로 승격한다.
 - 그 다음 `PickyLogPrefixes.swift`/`log-prefixes.ts` 쌍을 삭제한다. i18n plan의 "semantic code" 완료 조건과 같은 작업이다.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
-import { ExtensionUiBridge, PickyOverlayUnsupportedError } from "./application/extension-ui-bridge.js";
+import { ExtensionUiBridge, PickyOverlayUnsupportedError } from "./runtime/extension-ui-bridge.js";
 
 describe("ExtensionUiBridge", () => {
   it("resolves confirm requests from app answers", async () => {

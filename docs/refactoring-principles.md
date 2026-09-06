@@ -404,3 +404,17 @@ Two derived flags that were parsed from logs but never rendered
 (`hasRuntimeDetachedFollowUpRejection`, `isMainAgentHandoff`) were removed rather
 than typed. `isDisplayableLogPreview` and `isRuntimeReattachLogLine` remain as
 presentation-only filters over the human-readable journal.
+
+#### 2026-09-06 Pi SDK import boundary
+
+Six `application/` modules imported `@earendil-works/*` directly, and
+`runtime/types.ts` leaked `ToolDefinition` and `AutocompleteItem` into the
+adapter interface, so an SDK upgrade could touch orchestration code. The modules
+are Pi adapters by 2.2 (they implement Pi's tool, extension UI, OAuth, package
+manager, and RPC surfaces), so they moved to `runtime/` unchanged. `runtime/types.ts`
+now exposes `RuntimeCustomTool` (opaque alias) and reuses the protocol's
+`PickyAutocompleteItem`, which is structurally identical to Pi's item type.
+
+`checkPiSdkImportBoundary` fails any non-test file outside `agentd/src/runtime/`
+and `agentd/src/bootstrap.ts` that imports, dynamically imports, or
+`import.meta.resolve`s an `@earendil-works/*` package.

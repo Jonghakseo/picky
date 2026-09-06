@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PickyExtensionError, PickyOverlayUnsupportedError } from "./application/extension-ui-bridge.js";
+import { PickyExtensionError, PickyOverlayUnsupportedError } from "./runtime/extension-ui-bridge.js";
 import { classifyExtensionCrash, installExtensionCrashGuard } from "./extension-crash-guard.js";
 
 const home = os.homedir();

@@ -230,6 +230,8 @@ _2026-09-06: `PickyAgentSession.lastRequest { source, text }`를 추가하고 da
 
 ### P1-4. Pi SDK 타입을 runtime 경계 안으로 되돌린다 (F5)
 
+_2026-09-06 완료: `application/`의 Pi 어댑터 6개(`ask-user-question-tool`, `user-guide-tool`, `extension-ui-bridge`, `pi-oauth-service`, `package-operations`, `pi-extension-command-runner`)를 `runtime/`으로 이동. `runtime/types.ts`는 `AutocompleteItem` 대신 프로토콜의 `PickyAutocompleteItem`을 쓰고 `ToolDefinition`은 `RuntimeCustomTool`로 감싼다. 가드 `checkPiSdkImportBoundary`가 `runtime/`·`bootstrap.ts` 밖의 `@earendil-works/*` import를 error로 낸다._
+
 - `runtime/types.ts`에서 `ToolDefinition`, `AutocompleteItem`을 Picky 자체 타입으로 감싼다(필요한 필드만).
 - `application/` 6개 파일의 SDK import를 `runtime/`이 제공하는 팩토리/타입으로 교체한다. `ask-user-question-tool.ts`, `user-guide-tool.ts`는 `defineTool`을 `runtime/pi-capabilities.ts` 쪽 헬퍼로 옮기면 된다.
 - 가드의 `application/`에도 `@earendil-works/*` import 금지 규칙을 추가한다(현재는 `domain/`만 검사).

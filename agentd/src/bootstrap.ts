@@ -6,8 +6,8 @@ import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
-import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
-import { createReadPickyUserGuideTool, readPickyUserGuide } from "./application/user-guide-tool.js";
+import { createPickyAskUserQuestionTool } from "./runtime/ask-user-question-tool.js";
+import { createReadPickyUserGuideTool, readPickyUserGuide } from "./runtime/user-guide-tool.js";
 import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-cwd.js";
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
 import type { AgentRuntime } from "./runtime/types.js";
@@ -15,7 +15,7 @@ import { logAgentd } from "./local-log.js";
 import { buildPickyRuntimeContract } from "./domain/picky-runtime-contract.js";
 import { createPickyRuntimeContractExtension } from "./runtime/picky-runtime-contract-extension.js";
 import { EdgeTTSService } from "./edge-tts-service.js";
-import { PiOAuthService } from "./application/pi-oauth-service.js";
+import { PiOAuthService } from "./runtime/pi-oauth-service.js";
 
 export type AgentdMode = "primary" | "child";
 

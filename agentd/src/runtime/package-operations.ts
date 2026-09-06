@@ -6,8 +6,8 @@ import { DefaultPackageManager, getAgentDir, SettingsManager, type ProgressEvent
 import type { WebSocket } from "ws";
 import { resolveNpmCommand } from "../domain/npm-command.js";
 import { logAgentd } from "../local-log.js";
-import { CronPackageLifecycle, isCronPackageSource, type CronLifecycleResult } from "./cron-package-lifecycle.js";
-import { CancellablePackageProcessController, installCancellablePackageCommands } from "./package-process-controller.js";
+import { CronPackageLifecycle, isCronPackageSource, type CronLifecycleResult } from "../application/cron-package-lifecycle.js";
+import { CancellablePackageProcessController, installCancellablePackageCommands } from "../application/package-process-controller.js";
 
 export interface PackageManager {
   installAndPersist(source: string): Promise<void>;

@@ -454,6 +454,41 @@ function checkAgentdDomainImports() {
   }
 }
 
+// Pi SDK packages may be imported only by the runtime adapter layer and the
+// composition root. Application, domain, transport, and CLI code must go
+// through `runtime/types.ts` so an SDK upgrade stays inside the adapter.
+const PI_SDK_IMPORT_PATTERN = /from\s+["']@earendil-works\/[^"']+["']|import\s*\(\s*["']@earendil-works\/[^"']+["']\s*\)|import\.meta\.resolve\(\s*["']@earendil-works\//;
+const PI_SDK_IMPORT_ALLOWED_PREFIXES = ["agentd/src/runtime/", "agentd/src/bootstrap.ts"];
+
+function checkPiSdkImportBoundary() {
+  for (const file of walk("agentd/src", (candidate) => candidate.endsWith(".ts") && !candidate.endsWith(".test.ts") && !rel(candidate).includes("/__tests__/"))) {
+    const relative = rel(file);
+    if (PI_SDK_IMPORT_ALLOWED_PREFIXES.some((prefix) => relative.startsWith(prefix))) continue;
+    if (PI_SDK_IMPORT_PATTERN.test(fs.readFileSync(file, "utf8"))) {
+      addError(`${relative} imports a Pi SDK package; only agentd/src/runtime/ and bootstrap.ts may depend on @earendil-works/*. Route the dependency through runtime/types.ts or move the adapter into runtime/.`);
+    }
+  }
+}
+
+function checkPiSdkImportBoundaryFixtures() {
+  const blocked = [
+    'import { defineTool } from "@earendil-works/pi-coding-agent";',
+    'import type { AutocompleteItem } from "@earendil-works/pi-tui";',
+    'const runtime = await import("@earendil-works/pi-coding-agent");',
+    'fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"))',
+  ];
+  const allowed = [
+    'import type { RuntimeCustomTool } from "../runtime/types.js";',
+    'import { z } from "zod";',
+  ];
+  for (const fixture of blocked) {
+    if (!PI_SDK_IMPORT_PATTERN.test(fixture)) addError(`Pi SDK boundary self-test failed to block: ${fixture}`);
+  }
+  for (const fixture of allowed) {
+    if (PI_SDK_IMPORT_PATTERN.test(fixture)) addError(`Pi SDK boundary self-test incorrectly blocked: ${fixture}`);
+  }
+}
+
 function checkInteractionReducerMutationBoundary() {
   const allowedFiles = new Set([
     "Picky/Interaction/PickyInteractionReducer.swift",
@@ -890,6 +925,8 @@ function main() {
     checkProtocolMessageSetParity();
     checkSwiftDomainImports();
     checkAgentdDomainImports();
+    checkPiSdkImportBoundaryFixtures();
+    checkPiSdkImportBoundary();
     checkInteractionReducerMutationBoundary();
     checkSecretCodingKeys();
     checkSessionProjectionRules();

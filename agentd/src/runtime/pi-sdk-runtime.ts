@@ -15,7 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import { ExtensionUiBridge, type DialogMethod } from "../application/extension-ui-bridge.js";
+import { ExtensionUiBridge, type DialogMethod } from "../runtime/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage, subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";

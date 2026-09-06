@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { WebSocket } from "ws";
-import { CRON_PACKAGE_SOURCE } from "./cron-package-lifecycle.js";
+import { CRON_PACKAGE_SOURCE } from "../application/cron-package-lifecycle.js";
 import { createDefaultPackageManager, PackageOperations, type PackageManager } from "./package-operations.js";
 
 function packageManager(overrides: Partial<PackageManager> = {}): PackageManager {

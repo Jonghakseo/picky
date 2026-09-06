@@ -154,16 +154,16 @@ agentd/src/
   task-router.ts                        mock conservative router for mock runtime
   local-log.ts                          daemon logging
 
-  application/
+  application/                          Pi-SDK-free orchestration (guard-enforced)
     internal-picky-cli.ts               Primary-only local CLI wrapper/PATH installation
+    main-agent-coordinator.ts           always-on main agent lifecycle and reply guards
     pointer-overlay-request.ts          validated Picky pointer overlay requests
     overlay-context-resolver.ts         overlay app/window context resolution
-    ask-user-question-tool.ts           Pickle ask_user_question bridge
     pi-session-syncer.ts                Pi session JSONL/history sync helpers
     runtime-event-handler.ts            normalized runtime event state transitions
     artifact-materializer.ts            terminal artifacts/reports/PR extraction
-    extension-ui-bridge.ts              Pi extension UI bridge
     extension-ui-request-mapper.ts      pure request mapping
+    pickle-terminal-waiter.ts           CLI --wait replies from projection commits
 
   domain/
     artifacts.ts                        artifact merge helpers
@@ -175,10 +175,16 @@ agentd/src/
     session-title.ts                    title generation
     tool-activity.ts                    tool activity merge/summary helpers
 
-  runtime/
-    types.ts                            runtime handle interfaces
+  runtime/                              the only layer (with bootstrap.ts) that imports @earendil-works/*
+    types.ts                            runtime handle interfaces and boundary types (RuntimeCustomTool)
     mock-runtime.ts                     UI/test mock runtime
     pi-sdk-runtime.ts                   Pi SDK adapter (deferred split)
+    ask-user-question-tool.ts           Pickle ask_user_question Pi tool
+    user-guide-tool.ts                  read_picky_user_guide Pi tool
+    extension-ui-bridge.ts              Pi ExtensionUIContext implementation
+    pi-oauth-service.ts                 Pi model OAuth adapter
+    package-operations.ts               Pi package manager adapter
+    pi-extension-command-runner.ts      Pi RPC child runner
 ```
 
 `SessionSupervisor` remains the stable facade for app-visible operations: `load`, `list`, `get`, `route`, `create`, `followUp`, `steer`, `abort`, `answerExtensionUi`, and artifact/report materialization through the application-layer stores.

@@ -1,6 +1,5 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { LogField } from "../local-log.js";
-import type { AgentRuntime } from "../runtime/types.js";
+import type { AgentRuntime, RuntimeCustomTool } from "../runtime/types.js";
 import type { TaskRouter } from "../task-router.js";
 
 export interface ReloadPluginsSummary {
@@ -43,7 +42,7 @@ export interface SessionSupervisorOptions {
   // returns the filtered ToolDefinition[] that should be active. bootstrap.ts
   // owns the tool registry; supervisor only stores the disabled set and asks
   // for a refreshed list when it changes.
-  mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => ToolDefinition[];
+  mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => RuntimeCustomTool[];
   // Notifies the composition root that the disabled set changed, so the main runtime's
   // system-prompt contract picks up prompt-gated identifiers on the next turn. Kept separate
   // from mainCustomToolsBuilder: prompt content and the tool registry have different

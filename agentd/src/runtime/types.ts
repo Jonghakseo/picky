@@ -1,5 +1,11 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import type { PickyAutocompleteItem } from "../protocol.js";
+
+/**
+ * Opaque handle for a tool registered into the Pi runtime. Only `runtime/`
+ * builds these (with Pi's `defineTool`); application code passes them through.
+ */
+export type RuntimeCustomTool = ToolDefinition;
 import type { BuiltPrompt } from "../prompt-builder.js";
 import type { ModelCycleDirection, PickyQueueMode, PickySubagentInvocation, PickySubagentRun, PickySubagentToolSummary, PickyTodoState } from "../protocol.js";
 
@@ -24,10 +30,10 @@ export interface RuntimeAutocompleteQuery {
 export interface RuntimeAutocompleteSuggestions {
   generation: number;
   prefix?: string;
-  items: AutocompleteItem[];
+  items: PickyAutocompleteItem[];
 }
 export interface RuntimeAutocompleteApplyRequest extends RuntimeAutocompleteQuery {
-  item: AutocompleteItem;
+  item: PickyAutocompleteItem;
   prefix: string;
 }
 export interface RuntimeAutocompleteCompletion {
@@ -256,7 +262,7 @@ export interface AgentRuntime {
   resume?(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   setThinkingLevel?(level: ThinkingLevel): void;
   setModelPattern?(pattern?: string): boolean;
-  setCustomTools?(tools: ToolDefinition[]): void;
+  setCustomTools?(tools: RuntimeCustomTool[]): void;
   listAvailableModels?(options?: { cwd?: string }): Promise<RuntimeModelOption[]>;
   /** Writes Pi global enabledModels with an opaque compare-and-swap revision. */
   setGlobalModelScope?(change: RuntimeGlobalModelScopeChange): Promise<void>;

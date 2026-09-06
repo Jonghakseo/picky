@@ -1,4 +1,4 @@
-import { PickyExtensionError } from "./application/extension-ui-bridge.js";
+import { PickyExtensionError } from "./runtime/extension-ui-bridge.js";
 import { logAgentd } from "./local-log.js";
 
 const EXTENSION_PATH_PATTERNS: readonly RegExp[] = [

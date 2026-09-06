@@ -92,7 +92,8 @@ When the user asks about a feature, start here before broad searching:
 - Main-agent standing rules (Picky CLI, visual overlay DSL, TTS reply style): `agentd/src/domain/picky-runtime-contract.ts`, attached to Pi's system prompt every turn by `agentd/src/runtime/picky-runtime-contract-extension.ts` and wired in `agentd/src/bootstrap.ts`. Never move these back into `buildMainAgentBootstrapPair`: anything in a transcript message is dropped the first time Pi compacts the session.
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
 - Picky CLI / main-agent delegation: `agentd/src/cli.ts`, `agentd/src/application/internal-picky-cli.ts`, `agentd/src/server.ts`
-- Pickle interactive input bridge: `agentd/src/application/ask-user-question-tool.ts`, `agentd/src/application/extension-ui-bridge.ts`
+- Pickle interactive input bridge: `agentd/src/runtime/ask-user-question-tool.ts`, `agentd/src/runtime/extension-ui-bridge.ts`
+- Pi SDK adapters (tools, extension UI, OAuth, package manager, RPC runner): `agentd/src/runtime/`. Only `runtime/` and `bootstrap.ts` may import `@earendil-works/*`; application code depends on `agentd/src/runtime/types.ts` (guard-enforced)
 - Pi session sync: `agentd/src/application/pi-session-syncer.ts`
 - Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/PickyArtifactReporter.swift`, `Picky/HUD/PickyReportViewer.swift`
 - Pi extension handoff command: `pi-extensions/picky-handoff/`

@@ -14,7 +14,7 @@ import { sanitizeForJson } from "./domain/sanitize-for-json.js";
 import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
-import type { PiOAuthHandling } from "./application/pi-oauth-service.js";
+import type { PiOAuthHandling } from "./runtime/pi-oauth-service.js";
 
 let server: AgentdServer;
 let port: number;

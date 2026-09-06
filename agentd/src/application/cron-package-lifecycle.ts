@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import { PiExtensionCommandRunner, type PiExtensionCommandRunResult } from "./pi-extension-command-runner.js";
+import { PiExtensionCommandRunner, type PiExtensionCommandRunResult } from "../runtime/pi-extension-command-runner.js";
 
 const execFileAsync = promisify(execFile);
 export const CRON_PACKAGE_SOURCE = "npm:@ryan_nookpi/pi-extension-cron";

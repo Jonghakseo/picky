@@ -111,7 +111,7 @@ struct CompanionPanelStatusView: View {
             backChevron
                 .padding(.bottom, 8)
 
-            CompanionPanelMessagesView(companionManager: companionManager)
+            CompanionPanelMessagesView(companionManager: companionManager, conversation: companionManager.mainConversation)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

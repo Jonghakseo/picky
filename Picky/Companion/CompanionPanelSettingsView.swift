@@ -17,6 +17,7 @@ import SwiftUI
 struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var mainConversation: PickyMainAgentConversationStore
     /// Archive membership and commands are deliberately narrow so Settings
     /// observes the registry list rather than the global session façade.
     let archiveMembership: any PickySessionArchiveMembership
@@ -62,12 +63,14 @@ struct CompanionPanelSettingsView: View {
     init(
         viewModel: PickySettingsViewModel,
         companionManager: CompanionManager,
+        mainConversation: PickyMainAgentConversationStore,
         archiveMembership: any PickySessionArchiveMembership,
         archiveCommands: any PickySessionArchiveCommands,
         route: Binding<CompanionPanelSettingsRoute>
     ) {
         self.viewModel = viewModel
         self.companionManager = companionManager
+        self.mainConversation = mainConversation
         self.archiveMembership = archiveMembership
         self.archiveCommands = archiveCommands
         _route = route
@@ -758,7 +761,7 @@ struct CompanionPanelSettingsView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 fieldLabel(label)
-                if companionManager.isLoadingMainAgentModelOptions {
+                if mainConversation.isLoadingModelOptions {
                     ProgressView()
                         .controlSize(.small)
                         .scaleEffect(0.65)
@@ -769,7 +772,7 @@ struct CompanionPanelSettingsView: View {
                 if shouldShowSavedOption {
                     Text(L10n.t("settings.field.modelOption.saved", savedValue)).tag(savedValue)
                 }
-                ForEach(companionManager.mainAgentModelOptions) { option in
+                ForEach(mainConversation.modelOptions) { option in
                     Text(option.displayName).tag(option.pattern)
                 }
             }
@@ -789,13 +792,13 @@ struct CompanionPanelSettingsView: View {
     private var shouldShowSavedMainAgentModelOption: Bool {
         let saved = viewModel.settings.mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !saved.isEmpty else { return false }
-        return !companionManager.mainAgentModelOptions.contains { $0.pattern == saved }
+        return !mainConversation.modelOptions.contains { $0.pattern == saved }
     }
 
     private var shouldShowSavedPickleModelOption: Bool {
         let saved = viewModel.settings.pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !saved.isEmpty else { return false }
-        return !companionManager.mainAgentModelOptions.contains { $0.pattern == saved }
+        return !mainConversation.modelOptions.contains { $0.pattern == saved }
     }
 
     private var shortcutsSection: some View {

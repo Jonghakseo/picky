@@ -58,17 +58,13 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var hasActiveVisualNarration = false
     @Published private(set) var activeVisualNarrationSegmentID: String?
     @Published private(set) var hasActivePointVisualNarration = false
-    @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
+    /// Main-agent transcript, Pi session location, and model options. Observe
+    /// it directly from views.
+    let mainConversation = PickyMainAgentConversationStore()
     @Published private(set) var mainLiveActivities: [PickyMainActivity] = [] {
         didSet { updateMainCancelPillPresentation() }
     }
     @Published private(set) var mainPendingQuestion: PickyExtensionUiRequest?
-    /// Most recent Picky main-agent Pi session location reported by
-    /// picky-agentd. Used by the Status → Recent conversation sub-page to expose "Open in Pi" / "Copy
-    /// resume command" affordances so users can drop into a real Pi TUI
-    /// against the same session file the daemon is driving. Both fields can be
-    /// nil before the daemon has started a real Pi session for the main agent.
-    @Published private(set) var mainAgentSessionInfo: PickyMainAgentSessionInfo = .init()
     @Published private(set) var isSendingDirectMessage = false
     @Published private(set) var isResettingMainAgentSession = false
     @Published private(set) var directMessageError: String?
@@ -105,8 +101,6 @@ final class CompanionManager: ObservableObject {
             cancelInkCapture()
         }
     }
-    @Published private(set) var mainAgentModelOptions: [PickyMainAgentModelOption] = []
-    @Published private(set) var isLoadingMainAgentModelOptions = false
     @Published private(set) var screenContextTargetSessionID: String?
     private var screenContextTargetLabel: String?
 
@@ -293,6 +287,11 @@ final class CompanionManager: ObservableObject {
         self.annotationSceneMonitor?.onOutput = { [weak self] output in
             self?.applyAnnotationSceneMonitorOutput(output)
         }
+        mainConversationCancellable = mainConversation.$messages
+            .dropFirst()
+            .sink { [weak self] messages in
+                self?.quickInputPanelManager.updateRecentMessages(messages)
+            }
     }
 
     /// The currently running AI response task, if any. Cancelled when the user
@@ -379,6 +378,7 @@ final class CompanionManager: ObservableObject {
     private var dictationErrorCancellable: AnyCancellable?
     private var settingsChangeCancellable: AnyCancellable?
     private var permissionCancellables = Set<AnyCancellable>()
+    private var mainConversationCancellable: AnyCancellable?
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
     /// Scheduled hide for transient cursor mode — cancelled if the user
     /// speaks again before the delay elapses.
@@ -800,12 +800,12 @@ final class CompanionManager: ObservableObject {
     }
 
     func refreshMainAgentModelOptions() {
-        isLoadingMainAgentModelOptions = true
+        mainConversation.beginLoadingModelOptions()
         Task {
             do {
                 try await agentClient.send(PickyCommandEnvelope(type: .listMainAgentModels))
             } catch {
-                await MainActor.run { self.isLoadingMainAgentModelOptions = false }
+                mainConversation.failLoadingModelOptions()
                 print("⚠️ Failed to list Picky models: \(error.localizedDescription)")
             }
         }
@@ -1235,7 +1235,7 @@ final class CompanionManager: ObservableObject {
         }
         // Push the current transcript before creating/showing the hosting view
         // so the first Quick Input frame is already anchored at the last turn.
-        quickInputPanelManager.updateRecentMessages(mainAgentMessages)
+        quickInputPanelManager.updateRecentMessages(mainConversation.messages)
         quickInputPanelManager.presentPanel(
             near: event.mouseLocation,
             recipient: PickyQuickInputRecipientPolicy.resolve(screenContextTargetSessionID: selectionStore.screenContextTargetSessionID, targetLabel: screenContextTargetLabel)
@@ -2208,8 +2208,7 @@ final class CompanionManager: ObservableObject {
                 .mainAgentSessionReset,
                 correlation: PickyInteractionCorrelation(source: .system)
             )
-            mainAgentMessages = []
-            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
+            mainConversation.clearMessages()
             clearMainActivitiesImmediately()
             mainPendingQuestion = nil
             latestAgentSessionSummary = "Started a new Messages session"
@@ -2325,14 +2324,12 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(contextID: accepted.contextId, sessionID: sessionId, source: .agent)
             )
         case .mainMessagesSnapshot(let messages):
-            mainAgentMessages = Array(messages.suffix(100))
-            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
+            mainConversation.replaceMessages(messages)
             // Snapshot fires on session load/reset for the whole transcript,
             // so do not auto-dispatch deep links here — we would re-open
             // panels for stale replies the user already saw.
         case .mainMessageAppended(let message):
-            mainAgentMessages = Array((mainAgentMessages + [message]).suffix(100))
-            quickInputPanelManager.updateRecentMessages(mainAgentMessages)
+            mainConversation.appendMessage(message)
             autoDispatchPickyDeepLinkIfPresent(in: message)
         case .mainActivityUpdated(let activity):
             guard let activity else {
@@ -2349,10 +2346,9 @@ final class CompanionManager: ObservableObject {
                 mainPendingQuestion = nil
             }
         case .mainAgentSessionInfoUpdated(let sessionFilePath, let cwd):
-            mainAgentSessionInfo = PickyMainAgentSessionInfo(sessionFilePath: sessionFilePath, cwd: cwd)
+            mainConversation.updateSessionInfo(sessionFilePath: sessionFilePath, cwd: cwd)
         case .mainAgentModelsSnapshot(let models):
-            mainAgentModelOptions = models
-            isLoadingMainAgentModelOptions = false
+            mainConversation.applyModelOptions(models)
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
         case .annotationOverlayRequested(let request):

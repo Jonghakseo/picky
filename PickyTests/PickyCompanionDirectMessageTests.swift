@@ -86,7 +86,7 @@ struct PickyCompanionDirectMessageTests {
 
         #expect(didReset)
         #expect(client.sentCommands.map(\.type) == [.resetMainAgent])
-        #expect(manager.mainAgentMessages.isEmpty)
+        #expect(manager.mainConversation.messages.isEmpty)
         #expect(manager.quickInputPanelManager.viewModelForTesting.recentMessages.isEmpty)
         #expect(manager.latestAgentSessionSummary == "Started a new Messages session")
     }

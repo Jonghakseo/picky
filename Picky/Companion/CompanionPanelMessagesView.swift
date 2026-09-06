@@ -10,6 +10,7 @@ import SwiftUI
 
 struct CompanionPanelMessagesView: View {
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var conversation: PickyMainAgentConversationStore
     @State private var draftMessage = ""
     /// Brief checkmark on the "Copy resume command" button after a successful
     /// copy, so the user gets visible feedback without needing a toast.
@@ -30,11 +31,11 @@ struct CompanionPanelMessagesView: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 14) {
-                        if companionManager.mainAgentMessages.isEmpty {
+                        if conversation.messages.isEmpty {
                             emptyState
                         } else {
                             LazyVStack(alignment: .leading, spacing: 14) {
-                                ForEach(companionManager.mainAgentMessages) { message in
+                                ForEach(conversation.messages) { message in
                                     PickyMainAgentTranscriptRow(message: message)
                                 }
                             }
@@ -54,10 +55,10 @@ struct CompanionPanelMessagesView: View {
                     // down rather than flashing the oldest message first.
                     scrollToBottom(proxy: proxy, animated: false)
                 }
-                .onChange(of: companionManager.mainAgentMessages.count) { _ in
+                .onChange(of: conversation.messages.count) { _ in
                     scrollToBottom(proxy: proxy, animated: true)
                 }
-                .onChange(of: companionManager.mainAgentMessages.last?.id) { _ in
+                .onChange(of: conversation.messages.last?.id) { _ in
                     // Catches in-place edits to the trailing message (e.g. streaming
                     // updates that keep the count the same but mutate the last entry).
                     scrollToBottom(proxy: proxy, animated: true)
@@ -120,7 +121,7 @@ struct CompanionPanelMessagesView: View {
                 .hoverAffordance()
             }
 
-            if companionManager.mainAgentSessionInfo.canOpenInPi {
+            if conversation.sessionInfo.canOpenInPi {
                 mainAgentEscapeRow
             }
         }
@@ -222,7 +223,7 @@ struct CompanionPanelMessagesView: View {
     }
 
     private func openMainAgentInPi() {
-        let info = companionManager.mainAgentSessionInfo
+        let info = conversation.sessionInfo
         guard let path = info.sessionFilePath, !path.isEmpty else { return }
         do {
             _ = try PickyTerminalOverlayPresenter.shared.openTerminal(
@@ -239,7 +240,7 @@ struct CompanionPanelMessagesView: View {
     }
 
     private func copyMainAgentResumeCommand() {
-        let info = companionManager.mainAgentSessionInfo
+        let info = conversation.sessionInfo
         guard let path = info.sessionFilePath, !path.isEmpty else { return }
         let command = PickyPiTerminalCommand.makeCliResumeCommand(sessionFilePath: path, cwd: info.cwd)
         NSPasteboard.general.clearContents()

@@ -196,6 +196,7 @@ struct CompanionPanelView: View {
                     CompanionPanelSettingsView(
                         viewModel: settingsViewModel,
                         companionManager: companionManager,
+                        mainConversation: companionManager.mainConversation,
                         archiveMembership: sessionListViewModel.sessionRegistry,
                         archiveCommands: sessionListViewModel,
                         route: settingsRouteBinding

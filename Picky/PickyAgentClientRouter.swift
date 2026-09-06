@@ -95,23 +95,10 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// storage and never apply projection mutations in this router.
     private var sessionCache: [String: PickyAgentSession] = [:]
     private var sessionOwnerKeys: [String: String] = [:]
-    /// V2 snapshots do not populate the legacy cache, so maintain their owner
-    /// provenance independently for owner-scoped bootstrap reconciliation.
-    private var projectionOwnerKeys: [String: String] = [:]
-    private var projectionConnectionGenerations: [String: Int] = [:]
-    private var projectionBootstrapExpectations: [String: ProjectionBootstrapExpectation] = [:]
-    /// Last primary epoch observed on this daemon process. It intentionally
-    /// survives a socket reconnect so released-child ownership can distinguish
-    /// a reconnect from a daemon restart.
-    private var knownPrimaryProjectionEpoch: String?
-    /// A released child is transferred to primary ownership, but primary
-    /// membership exclusion is not authoritative until a different primary
-    /// epoch proves a daemon restart rehydrated the shared store.
-    private var retiredChildPrimaryOwnerships: [String: RetiredChildPrimaryOwnership] = [:]
-    /// Child membership completion is destructive only after this connection
-    /// generation has produced its configured session snapshot.
-    private var sessionProducingProjectionConnections = Set<ProjectionConnectionKey>()
-    private var acceptedProjectionBootstrapCompletions = Set<ProjectionBootstrapCompletionKey>()
+    /// Owner-scoped bootstrap reconciliation rules for v2 projection frames.
+    /// The ledger is pure; this router feeds it connection facts and applies
+    /// its decisions to transport state.
+    private var projectionOwnership = PickyProjectionOwnershipLedger()
     private var sessionProjectionWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     /// Commands typed against a freshly spawned Pickle before the child runtime has left
     /// `.queued`. They are drained in order once the child emits its first non-queued
@@ -153,33 +140,6 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private struct ChildGeneration: Hashable {
         let sessionId: String
         let value: Int
-    }
-
-    private struct ProjectionBootstrapExpectation {
-        let connectionGeneration: Int
-        let bootstrapID: String
-        var epoch: String?
-        /// A bootstrap that observes more than one epoch cannot prove a
-        /// coherent membership cutover. It remains poisoned until reconnect.
-        var failed = false
-    }
-
-    private struct ProjectionConnectionKey: Hashable {
-        let ownerKey: String
-        let connectionGeneration: Int
-    }
-
-    private struct RetiredChildPrimaryOwnership {
-        /// `nil` is intentionally conservative: without a known release epoch,
-        /// a primary completion cannot prove the child record was rehydrated.
-        let primaryEpochAtRelease: String?
-    }
-
-    private struct ProjectionBootstrapCompletionKey: Hashable {
-        let ownerKey: String
-        let connectionGeneration: Int
-        let bootstrapID: String
-        let epoch: String
     }
 
     private struct ChildCommandDrain {
@@ -512,11 +472,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     func disconnect() {
-        projectionBootstrapExpectations.removeAll()
-        knownPrimaryProjectionEpoch = nil
-        retiredChildPrimaryOwnerships.removeAll()
-        sessionProducingProjectionConnections.removeAll()
-        acceptedProjectionBootstrapCompletions.removeAll()
+        projectionOwnership.disconnectAll()
         for task in eventTasks.values { task.cancel() }
         for key in eventTasks.keys { discardCapabilityRegistration(ownerKey: key) }
         eventTasks.removeAll()
@@ -667,12 +623,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             bootingChildSessionIds.remove(sessionId)
             throw error
         }
-        // A same-ID respawn returns ownership only after the pool has
-        // successfully recreated the child. Its current-generation snapshot
-        // is still required before completion reconciliation becomes
-        // destructive.
-        projectionOwnerKeys[sessionId] = childEventKey(sessionId)
-        retiredChildPrimaryOwnerships[sessionId] = nil
+        projectionOwnership.assignChildOwnership(sessionID: sessionId, childOwnerKey: childEventKey(sessionId))
         let client = clientFactory.makeClient(endpoint: endpoint.url, token: endpoint.token)
         childClients[sessionId] = client
         startForwardingEvents(from: client, key: childEventKey(sessionId), forwardsLifecycleEvents: false)
@@ -791,17 +742,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         knownChildSessionIds.remove(sessionId)
         retiredChildSessionIds.insert(sessionId)
         retiredChildGenerations.insert(generation)
-        // The primary supervisor hydrates scoped child session metadata only
-        // after a daemon restart. Transfer ownership now, but retain the
-        // current primary epoch so a same-process socket reconnect cannot
-        // falsely prune this still-live child record.
-        let childOwnerKey = childEventKey(sessionId)
-        if projectionOwnerKeys[sessionId] == childOwnerKey {
-            projectionOwnerKeys[sessionId] = "primary"
-            retiredChildPrimaryOwnerships[sessionId] = RetiredChildPrimaryOwnership(
-                primaryEpochAtRelease: knownPrimaryProjectionEpoch
-            )
-        }
+        projectionOwnership.releaseChildToPrimary(sessionID: sessionId, childOwnerKey: childEventKey(sessionId))
     }
 
     private func failPendingChildCommands(sessionId: String, generation: ChildGeneration) {
@@ -1147,15 +1088,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             capabilities: capabilities
         )
         if supportsSessionProjectionV2 {
-            let generation = (projectionConnectionGenerations[ownerKey] ?? 0) + 1
-            projectionConnectionGenerations[ownerKey] = generation
-            projectionBootstrapExpectations[ownerKey] = ProjectionBootstrapExpectation(
-                connectionGeneration: generation,
-                bootstrapID: command.id,
-                epoch: nil
-            )
-            sessionProducingProjectionConnections = sessionProducingProjectionConnections.filter { $0.ownerKey != ownerKey }
-            acceptedProjectionBootstrapCompletions = acceptedProjectionBootstrapCompletions.filter { $0.ownerKey != ownerKey }
+            projectionOwnership.beginBootstrap(ownerKey: ownerKey, bootstrapID: command.id)
         }
         capabilityRegistrationCommandIDs[ownerKey] = command.id
         do {
@@ -1259,125 +1192,51 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     ) -> ProjectionBootstrapEventDisposition {
         switch event {
         case .sessionProjectionSnapshot(let snapshot):
-            if rememberProjectionSnapshotOwnership(snapshot, ownerKey: ownerKey) {
-                onSessionProjectionSnapshotReceived?(ownerKey == "primary")
+            let isOwnChildSession = ownerKey.hasPrefix("child:") && ownerKey == childEventKey(snapshot.sessionId)
+            switch projectionOwnership.recordSnapshot(sessionID: snapshot.sessionId, epoch: snapshot.epoch, ownerKey: ownerKey, isOwnChildSession: isOwnChildSession) {
+            case .accepted:
+                if isOwnChildSession { bootingChildSessionIds.remove(snapshot.sessionId) }
+                onSessionProjectionSnapshotReceived?(ownerKey == PickyProjectionOwnershipLedger.primaryOwnerKey)
+            case .epochMismatch:
+                logDiscardedProjectionBootstrapCompletion(ownerKey: ownerKey, reason: "snapshot epoch mismatch")
+            case .noCurrentBootstrap, .ownedElsewhere:
+                break
             }
             return .forwardOriginal
         case .sessionProjectionBootstrapComplete(let completion):
-            guard let expectation = projectionBootstrapExpectations[ownerKey],
-                  expectation.connectionGeneration == projectionConnectionGenerations[ownerKey],
-                  expectation.bootstrapID == completion.bootstrapId,
-                  !expectation.failed
-            else {
-                logDiscardedProjectionBootstrapCompletion(ownerKey: ownerKey, reason: "stale or bootstrapId mismatch")
-                return .consume
-            }
-            guard expectation.epoch == nil || expectation.epoch == completion.epoch else {
-                logDiscardedProjectionBootstrapCompletion(ownerKey: ownerKey, reason: "epoch mismatch")
-                return .consume
-            }
-            let key = ProjectionBootstrapCompletionKey(
+            let isPrimary = ownerKey == PickyProjectionOwnershipLedger.primaryOwnerKey
+            let outcome = projectionOwnership.acceptCompletion(
                 ownerKey: ownerKey,
-                connectionGeneration: expectation.connectionGeneration,
                 bootstrapID: completion.bootstrapId,
-                epoch: completion.epoch
+                epoch: completion.epoch,
+                membership: Set(completion.sessionIds),
+                childIsLive: isPrimary || childConnectionIsLive(ownerKey: ownerKey),
+                additionalOwnedSessionIDs: Set(sessionOwnerKeys.compactMap { $0.value == ownerKey ? $0.key : nil })
             )
-            guard acceptedProjectionBootstrapCompletions.insert(key).inserted else {
-                logDiscardedProjectionBootstrapCompletion(ownerKey: ownerKey, reason: "duplicate")
+            switch outcome {
+            case .discard(let reason):
+                logDiscardedProjectionBootstrapCompletion(ownerKey: ownerKey, reason: reason)
                 return .consume
-            }
-            guard completionMayReconcileMembership(ownerKey: ownerKey) else {
-                // A booting child may complete an empty index before its first
-                // scoped snapshot. Consume it for correlation, never prune.
+            case .acceptedWithoutReconcile:
                 return .consume
+            case .reconcile(let removedSessionIDs):
+                return .forwardAcceptedCompletion(.sessionProjectionBootstrapCompletion(
+                    removedSessionIDs: removedSessionIDs,
+                    isPrimary: isPrimary
+                ))
             }
-            if ownerKey == "primary" {
-                knownPrimaryProjectionEpoch = completion.epoch
-            }
-            let membership = Set(completion.sessionIds)
-            let ownedIDs = Set(sessionOwnerKeys.compactMap { $0.value == ownerKey ? $0.key : nil })
-                .union(projectionOwnerKeys.compactMap { $0.value == ownerKey ? $0.key : nil })
-            let removedSessionIDs = ownedIDs.subtracting(membership)
-                .subtracting(retiredChildIDsAwaitingPrimaryEpochChange(completion: completion, ownerKey: ownerKey))
-            if ownerKey == "primary" {
-                retirePrimaryEpochGuardsSatisfied(by: completion.epoch)
-            }
-            return .forwardAcceptedCompletion(.sessionProjectionBootstrapCompletion(
-                removedSessionIDs: removedSessionIDs,
-                isPrimary: ownerKey == "primary"
-            ))
         default:
             return .forwardOriginal
         }
     }
 
-    @discardableResult
-    private func rememberProjectionSnapshotOwnership(_ snapshot: PickySessionProjectionSnapshot, ownerKey: String) -> Bool {
-        guard var expectation = projectionBootstrapExpectations[ownerKey],
-              expectation.connectionGeneration == projectionConnectionGenerations[ownerKey]
-        else { return false }
-        if let expectedEpoch = expectation.epoch, expectedEpoch != snapshot.epoch {
-            expectation.failed = true
-            projectionBootstrapExpectations[ownerKey] = expectation
-            logDiscardedProjectionBootstrapCompletion(ownerKey: ownerKey, reason: "snapshot epoch mismatch")
-            return false
-        }
-        expectation.epoch = snapshot.epoch
-        projectionBootstrapExpectations[ownerKey] = expectation
-        if ownerKey == "primary" {
-            knownPrimaryProjectionEpoch = snapshot.epoch
-        }
-        // Owners are assigned by the source connection, never inferred from an
-        // ID that a child happens to report. Do not silently transfer one.
-        guard projectionOwnerKeys[snapshot.sessionId] == nil || projectionOwnerKeys[snapshot.sessionId] == ownerKey else { return false }
-        projectionOwnerKeys[snapshot.sessionId] = ownerKey
-        if ownerKey.hasPrefix("child:"), ownerKey == childEventKey(snapshot.sessionId) {
-            sessionProducingProjectionConnections.insert(ProjectionConnectionKey(
-                ownerKey: ownerKey,
-                connectionGeneration: expectation.connectionGeneration
-            ))
-            bootingChildSessionIds.remove(snapshot.sessionId)
-        }
-        return true
-    }
-
-    private func retiredChildIDsAwaitingPrimaryEpochChange(
-        completion: PickySessionProjectionBootstrapComplete,
-        ownerKey: String
-    ) -> Set<String> {
-        guard ownerKey == "primary" else { return [] }
-        return Set(retiredChildPrimaryOwnerships.compactMap { sessionID, ownership in
-            guard let releaseEpoch = ownership.primaryEpochAtRelease,
-                  releaseEpoch != completion.epoch else {
-                return sessionID
-            }
-            return nil
-        })
-    }
-
-    private func retirePrimaryEpochGuardsSatisfied(by completionEpoch: String) {
-        retiredChildPrimaryOwnerships = retiredChildPrimaryOwnerships.filter {
-            $0.value.primaryEpochAtRelease == completionEpoch
-        }
-    }
-
-    private func completionMayReconcileMembership(ownerKey: String) -> Bool {
-        guard ownerKey != "primary" else { return true }
-        guard let sessionID = ownerKey.split(separator: ":", maxSplits: 1).last.map(String.init),
-              childClients[sessionID] != nil,
-              !retiredChildSessionIds.contains(sessionID),
-              let expectation = projectionBootstrapExpectations[ownerKey]
-        else { return false }
-        return sessionProducingProjectionConnections.contains(ProjectionConnectionKey(
-            ownerKey: ownerKey,
-            connectionGeneration: expectation.connectionGeneration
-        ))
+    private func childConnectionIsLive(ownerKey: String) -> Bool {
+        guard let sessionID = ownerKey.split(separator: ":", maxSplits: 1).last.map(String.init) else { return false }
+        return childClients[sessionID] != nil && !retiredChildSessionIds.contains(sessionID)
     }
 
     private func invalidateProjectionBootstrapExpectation(ownerKey: String) {
-        projectionBootstrapExpectations[ownerKey] = nil
-        sessionProducingProjectionConnections = sessionProducingProjectionConnections.filter { $0.ownerKey != ownerKey }
-        acceptedProjectionBootstrapCompletions = acceptedProjectionBootstrapCompletions.filter { $0.ownerKey != ownerKey }
+        projectionOwnership.invalidateBootstrap(ownerKey: ownerKey)
     }
 
     private func logDiscardedProjectionBootstrapCompletion(ownerKey: String, reason: String) {
@@ -1431,8 +1290,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// Debounced per connection: one stalled session must not let a burst of
     /// sibling stalls tear the same socket down repeatedly.
     func reconnectProjectionOwner(sessionID: String) {
-        let ownerKey = projectionOwnerKeys[sessionID] ?? "primary"
-        let client: PickyAgentClient? = ownerKey == "primary" ? primaryClient : childClients[sessionID]
+        let ownerKey = projectionOwnership.ownerKey(for: sessionID)
+        let client: PickyAgentClient? = ownerKey == PickyProjectionOwnershipLedger.primaryOwnerKey ? primaryClient : childClients[sessionID]
         guard let client else { return }
         let now = Date()
         if let last = lastProjectionOwnerReconnects[ownerKey], now.timeIntervalSince(last) < Self.projectionOwnerReconnectDebounce {

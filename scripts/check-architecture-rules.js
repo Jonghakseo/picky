@@ -851,7 +851,7 @@ const SWIFT_TYPE_GROUP_RATCHET = new Map([
   ["PickySessionViewModel", 3667],
   ["PickyHUDOverlayManager", 2449],
   ["PickyHUDDockRailView", 1771],
-  ["PickyAgentClientRouter", 1612],
+  ["PickyAgentClientRouter", 1471],
 ]);
 
 function checkSwiftTypeGroupRatchet(swiftFiles, threshold) {

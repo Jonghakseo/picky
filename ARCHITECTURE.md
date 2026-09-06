@@ -41,7 +41,7 @@ local Pi environment
   - ~/.pi/agent settings, skills, extensions, MCP bridge, tools, memory
 ```
 
-`picky-agentd` runs as a child process of `Picky.app` for the current MVP. It writes connection info under Picky app support so Pi extensions can discover the running daemon.
+`picky-agentd` runs as a child process of `Picky.app`. The primary daemon owns the fixed port and the main agent; each manual Pickle can additionally run in its own child daemon bound to the Pickle's cwd. Ownership of session projections across those connections is decided by `PickyProjectionOwnershipLedger`; see `docs/per-pickle-daemon-topology.md`. The primary writes connection info under Picky app support so Pi extensions can discover it.
 
 ## 4. Main data flows
 

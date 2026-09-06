@@ -238,6 +238,8 @@ _2026-09-06 완료: `application/`의 Pi 어댑터 6개(`ask-user-question-tool`
 
 ### P1-5. 라우터의 소유권 규칙을 순수 정책으로 추출하고 토폴로지를 문서화한다 (F6)
 
+_2026-09-06 완료: `PickyProjectionOwnershipLedger`(순수 struct)가 owner 배정·세대/epoch 상관·prune 범위·released child 가드를 소유하고 8개 단위 테스트가 known-issue의 실패 시나리오를 직접 고정한다. 라우터는 transport 사실(child live 여부)만 넘긴다. `docs/per-pickle-daemon-topology.md` 신설._
+
 - `PickyAgentClientRouter`의 owner/generation/epoch 판정을 `Picky/Sessions/Projection/PickyProjectionOwnershipPolicy.swift`(순수 struct, 입력 → 결정) 로 뽑는다. `PickyAgentClientRouterTests` 2,642줄 중 소유권 시나리오가 그 정책의 단위 테스트가 된다.
 - `docs/per-pickle-daemon-topology.md`를 새로 쓰고 `ARCHITECTURE.md` 3절에서 링크한다. 내용: primary/child 역할, 환경변수 계약, spawn/ready/exit 생명주기, 소유권 이전 규칙.
 

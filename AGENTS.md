@@ -80,6 +80,7 @@ When the user asks about a feature, start here before broad searching:
 - Session selection/archive state: `Picky/Sessions/PickySessionSelectionStore.swift`, `Picky/Sessions/`
 - Pi terminal overlay / resume command: `Picky/Sessions/PickyTerminalOverlay.swift`, `Picky/PickySessionViewModel.swift`, search `openTerminalOverlay` or `copyTerminalResumeCommand`
 - Interaction state/effects: `Picky/Interaction/`
+- Per-Pickle daemon topology and session ownership rules: `docs/per-pickle-daemon-topology.md`, `Picky/Sessions/Projection/PickyProjectionOwnershipLedger.swift`, `Picky/PickyAgentDaemonPool.swift`
 - Pointer overlay validation/resolution: `Picky/PointerOverlay/`, `agentd/src/application/pointer-overlay-request.ts`, `agentd/src/application/overlay-context-resolver.ts`, `agentd/src/domain/pointer-validation.ts`
 - App-daemon protocol/client: `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, `Picky/PickyAgentClientRouter.swift`, `Picky/PickyAgentDaemonLauncher.swift`, `Picky/PickyAgentDaemonPool.swift`
 - agentd entry/composition: `agentd/src/index.ts`

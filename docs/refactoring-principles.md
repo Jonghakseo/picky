@@ -309,7 +309,7 @@ headroom, lower-only:
 | `PickySessionViewModel` | 8 | 3667 |
 | `PickyHUDOverlayManager` | 2 | 2449 |
 | `PickyHUDDockRailView` | 2 | 1771 |
-| `PickyAgentClientRouter` | 2 | 1612 |
+| `PickyAgentClientRouter` | 2 | 1471 (re-pinned after ownership ledger extraction) |
 
 Per-file pins remain. A group pin may only drop; the intended way to satisfy it is
 2.4 (move a state cluster to its own owner), not another extension file. See
@@ -418,3 +418,20 @@ now exposes `RuntimeCustomTool` (opaque alias) and reuses the protocol's
 `checkPiSdkImportBoundary` fails any non-test file outside `agentd/src/runtime/`
 and `agentd/src/bootstrap.ts` that imports, dynamically imports, or
 `import.meta.resolve`s an `@earendil-works/*` package.
+
+#### 2026-09-06 projection ownership ledger
+
+`PickyAgentClientRouter` decided cross-daemon session ownership (owner
+assignment, bootstrap generation/epoch correlation, prune scope, released-child
+guards) inside seven private dictionaries next to socket and drain state. Those
+are durable rules by 2.2 and previously proved only through router integration
+tests. They moved verbatim into `Picky/Sessions/Projection/PickyProjectionOwnershipLedger.swift`,
+a value type with `recordSnapshot` / `acceptCompletion` / `releaseChildToPrimary`
+/ `assignChildOwnership` entry points; the router passes in the one transport
+fact the rules need (`childIsLive`) and applies the returned decision.
+
+`PickyProjectionOwnershipLedgerTests` pins each historical race from
+`docs/known-issues/cross-daemon-session-ownership.md` directly, and
+`PickyAgentClientRouterTests` (2.6k lines) passed unchanged, which is the
+characterization gate 2.3 asks for. The topology itself is now documented in
+`docs/per-pickle-daemon-topology.md`.

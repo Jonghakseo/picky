@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { titleFromContext } from "../domain/session-title.js";
-import { compactSessionsForSnapshot } from "../server.js";
 import { RuntimeEventHandler } from "../application/runtime-event-handler.js";
 import type { PickyAgentSession, PickyContextPacket } from "../protocol.js";
 
@@ -83,36 +82,4 @@ describe("picky agentd known bugs (failing reproductions)", () => {
     expect(session.status).toBe("cancelled");
   });
 
-  it("[BUG 3] compactSessionsForSnapshot reorders 'important' logs to the front, breaking the HUD timeline's chronological order", () => {
-    // compactSnapshotLogs builds [...important, ...recent] then dedupes. When an important
-    // log appears mid-transcript, it gets pulled to the start of the snapshot and ends up
-    // before older non-important entries that originally preceded it.
-    const logs = [
-      ...Array.from({ length: 20 }, (_, index) => `noisy log ${index}`),
-      "steer: keep this important log",
-      ...Array.from({ length: 5 }, (_, index) => `tail log ${index}`),
-    ];
-    const session: PickyAgentSession = {
-      id: "session-order",
-      title: "Order check",
-      status: "running",
-      cwd: "/tmp",
-      createdAt: "2026-05-03T00:00:00.000Z",
-      updatedAt: "2026-05-03T00:00:01.000Z",
-      logs,
-      tools: [],
-      artifacts: [],
-      changedFiles: [],
-    };
-
-    const [compact] = compactSessionsForSnapshot([session]);
-    const steerIndex = compact.logs.indexOf("steer: keep this important log");
-    const earlierEntryIndex = compact.logs.indexOf("noisy log 15");
-
-    expect(steerIndex).toBeGreaterThan(-1);
-    expect(earlierEntryIndex).toBeGreaterThan(-1);
-    // 'noisy log 5' chronologically came BEFORE the steer line, so it should also come
-    // before in the snapshot. The compactor reorders them.
-    expect(earlierEntryIndex).toBeLessThan(steerIndex);
-  });
 });

@@ -273,7 +273,6 @@ enum PickyCommandType: String, Codable, Equatable {
     case followUp
     case steer
     case abort
-    case listSessions
     case listMainMessages
     case listMainAgentModels
     case getPiOAuthStatus
@@ -299,7 +298,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case listRewindTargets
     case getSessionDiff
     case rewindSession
-    case getSession, getSessionProjectionSnapshot
+    case getSessionProjectionSnapshot
     case answerExtensionUi
     case answerMainExtensionUi
     case setNotifyMainOnCompletion

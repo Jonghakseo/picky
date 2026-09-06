@@ -646,7 +646,6 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("followUp"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional(), visualDslEnabled: z.boolean().optional() }),
   CommandBaseSchema.extend({ type: z.literal("steer"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional(), visualDslEnabled: z.boolean().optional() }),
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),
-  CommandBaseSchema.extend({ type: z.literal("listSessions") }),
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
   CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
   CommandBaseSchema.extend({ type: z.literal("getPiOAuthStatus"), providerId: PiOAuthProviderIdSchema }),
@@ -696,7 +695,6 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listRewindTargets"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("getSessionDiff"), sessionId: z.string(), view: PickySessionDiffViewSchema, requestId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   // Recovery snapshots are unicast only and require a socket already locked to
   // the v2 projection dialect.
   CommandBaseSchema.extend({ type: z.literal("getSessionProjectionSnapshot"), requestId: z.string().min(1), sessionId: z.string().min(1) }),
@@ -874,6 +872,10 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     requestId: z.string().min(1),
     reloadedHandleCount: z.number().int().nonnegative(),
   }),
+  // Wire-dead since the v1 dialect removal: picky-agentd no longer emits any of the
+  // legacy session projection events below. Their schemas remain only because
+  // Picky.app still decodes them; delete both sides together (see
+  // docs/architecture-maintainability-review.md, P1-2c).
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   PickySessionProjectionTransactionEventSchema,
   PickySessionProjectionSnapshotEventSchema,

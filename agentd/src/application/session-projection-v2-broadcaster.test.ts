@@ -64,7 +64,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     let snapshotListener: ((projection: PickyAgentSession, projectionEpoch: string) => void) | undefined;
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => sockets,
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: () => { throw new Error("successful bootstrap must not close the socket"); },
     });
@@ -81,7 +81,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     };
 
     broadcaster.bind(supervisor);
-    await broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-001");
+    await broadcaster.register(socket, supervisor, "register-v2-001");
     sessions.set(live.id, live);
     snapshotListener?.(live, epoch);
 
@@ -103,13 +103,13 @@ describe("SessionProjectionV2Broadcaster", () => {
     const sent: Array<{ type: string; epoch?: string; bootstrapId?: string; sessionIds?: string[] }> = [];
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => [socket],
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: () => { throw new Error("empty bootstrap must not close the socket"); },
     });
     const supervisor = supervisorFor({ sessions: new Map() });
 
-    await broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-empty");
+    await broadcaster.register(socket, supervisor, "register-v2-empty");
 
     expect(sent).toEqual([{
       type: "sessionProjectionBootstrapComplete",
@@ -137,13 +137,13 @@ describe("SessionProjectionV2Broadcaster", () => {
     const sent: Array<{ type: string; sessionIds?: string[] }> = [];
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => [socket],
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: () => { throw new Error("purged empty bootstrap must not close the socket"); },
     });
 
     broadcaster.bind(supervisor);
-    await broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-purged");
+    await broadcaster.register(socket, supervisor, "register-v2-purged");
 
     expect(supervisor.get("expired-archived-session")).toBeUndefined();
     expect(sent).toEqual([expect.objectContaining({
@@ -162,7 +162,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     let snapshotListener: ((projection: PickyAgentSession, projectionEpoch: string) => void) | undefined;
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => sockets,
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: () => { throw new Error("a deleted bootstrap session must not close the socket"); },
     });
@@ -179,7 +179,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     };
 
     broadcaster.bind(supervisor);
-    await broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-deleted");
+    await broadcaster.register(socket, supervisor, "register-v2-deleted");
     sessions.set(live.id, live);
     snapshotListener?.(live, epoch);
 
@@ -198,7 +198,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     const sent: Array<{ type: string }> = [];
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => sockets,
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: () => {},
     });
@@ -211,7 +211,7 @@ describe("SessionProjectionV2Broadcaster", () => {
       },
     });
 
-    const registration = broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-disconnecting");
+    const registration = broadcaster.register(socket, supervisor, "register-v2-disconnecting");
     await entered.promise;
     broadcaster.unregister(socket);
     sockets.delete(socket);
@@ -230,7 +230,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     let snapshotListener: ((projection: PickyAgentSession, projectionEpoch: string) => void) | undefined;
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => [socket],
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: (candidate) => { closed.push(candidate); },
     });
@@ -247,7 +247,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     };
 
     broadcaster.bind(supervisor);
-    await expect(broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-epoch-mismatch")).rejects.toThrow("Session projection epoch changed during bootstrap");
+    await expect(broadcaster.register(socket, supervisor, "register-v2-epoch-mismatch")).rejects.toThrow("Session projection epoch changed during bootstrap");
 
     expect(sent).toEqual([expect.objectContaining({ type: "sessionProjectionSnapshot", sessionId: initial.id })]);
     expect(closed).toEqual([socket]);
@@ -263,7 +263,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     let snapshotListener: ((projection: PickyAgentSession, projectionEpoch: string) => void) | undefined;
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => sockets,
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: (candidate) => { closed.push(candidate); },
     });
@@ -279,7 +279,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     };
 
     broadcaster.bind(supervisor);
-    await expect(broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-failed")).rejects.toThrow("projection barrier failed");
+    await expect(broadcaster.register(socket, supervisor, "register-v2-failed")).rejects.toThrow("projection barrier failed");
     snapshotListener?.(session("must-not-direct-send"), epoch);
 
     expect(closed).toEqual([socket]);
@@ -297,7 +297,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     let snapshotListener: ((projection: PickyAgentSession, projectionEpoch: string) => void) | undefined;
     const broadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => sockets,
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: (_, payload) => { sent.push(payload); },
       close: (candidate) => { closed.push(candidate); },
     });
@@ -314,7 +314,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     };
 
     broadcaster.bind(supervisor);
-    const registration = broadcaster.register(socket, "negotiating", "v2", supervisor, "register-v2-overflow");
+    const registration = broadcaster.register(socket, supervisor, "register-v2-overflow");
     await entered.promise;
     for (let index = 0; index <= MAX_BOOTSTRAP_QUEUE_FRAMES; index += 1) snapshotListener?.(session(`queued-${index}`), epoch);
     snapshotListener?.(session("must-not-direct-send-after-overflow"), epoch);
@@ -328,7 +328,7 @@ describe("SessionProjectionV2Broadcaster", () => {
     const byteOverflowClosed: TestSocket[] = [];
     const byteBroadcaster = new SessionProjectionV2Broadcaster<TestSocket>({
       sockets: () => [byteOverflowSocket],
-      getDialect: () => "v2",
+      isSubscribed: () => true,
       send: () => { throw new Error("overflowed queue must not send"); },
       close: (candidate) => { byteOverflowClosed.push(candidate); },
     });
@@ -343,11 +343,11 @@ describe("SessionProjectionV2Broadcaster", () => {
       },
     });
     byteBroadcaster.bind(byteSupervisor);
-    const byteRegistration = byteBroadcaster.register(byteOverflowSocket, "negotiating", "v2", byteSupervisor, "register-v2-byte-overflow");
+    const byteRegistration = byteBroadcaster.register(byteOverflowSocket, byteSupervisor, "register-v2-byte-overflow");
     await byteEntered.promise;
     byteBroadcaster.broadcastTransaction(
       [byteOverflowSocket],
-      () => "v2",
+      () => true,
       () => { throw new Error("overflowed queue must not send"); },
       initial.id,
       initial,

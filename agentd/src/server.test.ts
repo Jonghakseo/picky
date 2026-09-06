@@ -9,9 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket, type PickyExtensionUiRequest } from "./protocol.js";
 import { MockRuntime, type MockRuntimeSession } from "./runtime/mock-runtime.js";
 import { PI_MODEL_SCOPE_CONFLICT_CODE, PiModelScopeConflictError } from "./runtime/model-scope-errors.js";
-import { AgentdServer, commandLogFields, compactSessionsForSnapshot, createDefaultPackageManager } from "./server.js";
+import { AgentdServer, commandLogFields, createDefaultPackageManager } from "./server.js";
 import { sanitizeForJson } from "./domain/sanitize-for-json.js";
-import { boundedSessionForAppHydration } from "./application/app-session-snapshot-policy.js";
 import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -68,77 +67,34 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("keeps negotiating sockets free of legacy session projection broadcasts", async () => {
+  it("keeps unsubscribed sockets free of session projection frames", async () => {
     const { ws } = await connectWithHello();
     trackEvents(ws);
 
-    await supervisor.create(context("negotiating projection"));
-    ws.send(JSON.stringify({ id: "cmd-negotiating-control", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
-    await waitForEvent(ws, "ack");
-
-    expect(eventBuffers.get(ws)?.filter((event) => event.type === "sessionUpdated" || event.type === "sessionMetaUpdated")).toEqual([]);
-    ws.close();
-  });
-
-  it("locks no-capability CLI projection commands to v1", async () => {
-    const session = await supervisor.create(context("legacy cli projection"));
-    const { ws } = await connectWithHello();
-    trackEvents(ws);
-
-    ws.send(JSON.stringify({ id: "cmd-legacy-cli-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await expect(waitForEvent(ws, "sessionSnapshot")).resolves.toMatchObject({ sessions: [{ id: session.id }] });
-    await waitForEvent(ws, "ack");
-
+    const session = await supervisor.create(context("unsubscribed projection"));
     await (supervisor as unknown as {
       patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
     }).patch(session.id, { status: "completed" });
-    await expect(waitForEvent(ws, "sessionMetaUpdated")).resolves.toMatchObject({ session: { id: session.id, status: "completed" } });
+    ws.send(JSON.stringify({ id: "cmd-unsubscribed-control", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
+    await waitForEvent(ws, "ack");
+
+    expect(eventBuffers.get(ws)?.filter((event) => isProjectionFrame(event))).toEqual([]);
     ws.close();
   });
 
-  it("rejects v2 registration after a legacy command has locked the socket to v1", async () => {
+  it("registers app capabilities without projection when sessionProjectionV2 is absent", async () => {
+    await supervisor.create(context("capability without projection"));
     const { ws } = await connectWithHello();
     trackEvents(ws);
 
-    ws.send(JSON.stringify({ id: "cmd-legacy-before-v2-registration", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(ws, "sessionSnapshot");
+    ws.send(JSON.stringify({ id: "cmd-register-no-projection", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
     await waitForEvent(ws, "ack");
-
-    ws.send(JSON.stringify({
-      id: "cmd-register-v2-after-legacy",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["sessionProjectionV2", "externalEntry"],
-    }));
-    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
-      commandId: "cmd-register-v2-after-legacy",
-      message: "Socket dialect is locked to v1; cannot change to v2",
-    });
-    expect(eventBuffers.get(ws)?.some((event) => event.type === "sessionProjectionSnapshot")).toBe(false);
+    await expect(nextEventWithin(ws, 50)).resolves.toBeUndefined();
+    expect(eventBuffers.get(ws)?.filter((event) => isProjectionFrame(event))).toEqual([]);
     ws.close();
   });
 
-  it("locks older app capabilities to v1 and preserves the bounded bootstrap path", async () => {
-    const session = await supervisor.create(context("legacy app projection"));
-    const { ws } = await connectWithHello();
-    trackEvents(ws);
-
-    ws.send(JSON.stringify({
-      id: "cmd-register-legacy-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(ws, "ack");
-    expect(eventBuffers.get(ws)?.some((event) => event.type === "sessionProjectionBootstrapComplete")).toBe(false);
-    ws.send(JSON.stringify({ id: "cmd-legacy-app-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await expect(waitForEvent(ws, "sessionSnapshot")).resolves.toMatchObject({ sessions: [{ id: session.id, messages: [] }] });
-    await expect(waitForEvent(ws, "sessionUpdated")).resolves.toMatchObject({ session: { id: session.id } });
-    await waitForEvent(ws, "ack");
-    ws.close();
-  });
-
-  it("bootstraps v2 sockets before one revision transaction per changed commit without legacy frames", async () => {
+  it("bootstraps subscribed sockets before one revision transaction per changed commit", async () => {
     const first = await supervisor.create(context("first v2 projection"));
     const second = await supervisor.create(context("second v2 projection"));
     const { ws } = await connectWithHello();
@@ -182,7 +138,6 @@ describe("AgentdServer", () => {
     if (transaction.type === "sessionProjectionTransaction") {
       expect(transaction.epoch).toBe(snapshots[0]?.epoch);
     }
-    expect(eventBuffers.get(ws)?.filter((event) => event.type === "sessionUpdated" || event.type === "sessionMetaUpdated" || event.type === "sessionSnapshot")).toEqual([]);
 
     await (supervisor as unknown as {
       patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
@@ -190,19 +145,19 @@ describe("AgentdServer", () => {
     await expect(nextEventWithin(ws, 50)).resolves.toBeUndefined();
 
     ws.send(JSON.stringify({
-      id: "cmd-reregister-v1-app",
+      id: "cmd-reregister-without-projection",
       protocolVersion: PROTOCOL_VERSION,
       type: "registerAppCapabilities",
       capabilities: ["pickleBridge"],
     }));
     await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
-      commandId: "cmd-reregister-v1-app",
-      message: "Socket dialect is locked to v2; cannot change to v1",
+      commandId: "cmd-reregister-without-projection",
+      message: "Socket already subscribed to sessionProjectionV2; re-registration must keep the capability",
     });
     ws.close();
   });
 
-  it("emits one terminal projection transaction to v2 while retaining v1-only legacy replay", async () => {
+  it("emits one terminal projection transaction per terminal commit", async () => {
     const session = await supervisor.create(context("terminal v2 projection"));
     await waitUntil(() => supervisor.get(session.id)?.status === "running");
     const { ws } = await connectWithHello();
@@ -219,11 +174,10 @@ describe("AgentdServer", () => {
       mutations: expect.arrayContaining([{ type: "metaPatch", patch: expect.objectContaining({ status: "completed" }) }]),
     });
     await expect(nextEventWithin(ws, 50)).resolves.toBeUndefined();
-    expect(eventBuffers.get(ws)?.filter((event) => isLegacyProjection(event))).toEqual([]);
     ws.close();
   });
 
-  it("delivers empty /new collection replacements to v2 sockets without legacy session frames", async () => {
+  it("delivers empty /new collection replacements as projection mutations", async () => {
     const session = await supervisor.create(context("session replacement v2 projection"));
 
     const { ws } = await connectWithHello();
@@ -250,15 +204,11 @@ describe("AgentdServer", () => {
         { type: "artifactsSet", artifacts: [] },
       ]),
     });
-    expect(eventBuffers.get(ws)?.filter((event) => isLegacyProjection(event))).toEqual([]);
     ws.close();
   });
 
-  it("delivers sessionResourcesReloaded to both v1 and v2 sockets", async () => {
+  it("delivers sessionResourcesReloaded to unsubscribed and subscribed sockets", async () => {
     const v1 = await connectWithHello();
-    v1.ws.send(JSON.stringify({ id: "cmd-lock-resources-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(v1.ws, "sessionSnapshot");
-    await waitForEvent(v1.ws, "ack");
 
     const v2 = await connectWithHello();
     await registerV2(v2.ws, "cmd-register-resources-v2");
@@ -273,11 +223,8 @@ describe("AgentdServer", () => {
     v2.ws.close();
   });
 
-  it("delivers terminalSessionSyncOutcome to both v1 and v2 sockets", async () => {
+  it("delivers terminalSessionSyncOutcome to unsubscribed and subscribed sockets", async () => {
     const v1 = await connectWithHello();
-    v1.ws.send(JSON.stringify({ id: "cmd-lock-terminal-outcome-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(v1.ws, "sessionSnapshot");
-    await waitForEvent(v1.ws, "ack");
 
     const v2 = await connectWithHello();
     await registerV2(v2.ws, "cmd-register-terminal-outcome-v2");
@@ -305,11 +252,8 @@ describe("AgentdServer", () => {
     v2.ws.close();
   });
 
-  it("delivers non-blocking editor text requests to v2 without replaying interactive UI", async () => {
+  it("delivers non-blocking editor text requests as standalone events without replaying interactive UI", async () => {
     const v1 = await connectWithHello();
-    v1.ws.send(JSON.stringify({ id: "cmd-lock-editor-text-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(v1.ws, "sessionSnapshot");
-    await waitForEvent(v1.ws, "ack");
 
     const v2 = await connectWithHello();
     await registerV2(v2.ws, "cmd-register-editor-text-v2");
@@ -335,11 +279,11 @@ describe("AgentdServer", () => {
       title: "Continue?",
       createdAt: "2026-08-26T00:00:01.000Z",
     } satisfies PickyExtensionUiRequest;
-    const v1Interactive = waitForEvent(v1.ws, "extensionUiRequest");
+    const unexpectedV1Interactive = nextEventWithin(v1.ws, 50);
     const unexpectedV2Interactive = nextEventWithin(v2.ws, 50);
     supervisor.emit("extensionUiRequest", interactiveRequest);
 
-    await expect(v1Interactive).resolves.toMatchObject({ type: "extensionUiRequest", request: interactiveRequest });
+    await expect(unexpectedV1Interactive).resolves.toBeUndefined();
     await expect(unexpectedV2Interactive).resolves.toBeUndefined();
     v1.ws.close();
     v2.ws.close();
@@ -365,12 +309,9 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("rejects recovery snapshots before a socket locks v2", async () => {
-    const session = await supervisor.create(context("v1 recovery rejected"));
+  it("rejects recovery snapshots from sockets that never subscribed to session projection", async () => {
+    const session = await supervisor.create(context("unsubscribed recovery rejected"));
     const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({ id: "cmd-v1-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(ws, "sessionSnapshot");
-    await waitForEvent(ws, "ack");
 
     ws.send(JSON.stringify({
       id: "recovery-v1",
@@ -381,367 +322,8 @@ describe("AgentdServer", () => {
     }));
     await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
       commandId: "recovery-v1",
-      message: "Session projection recovery requires v2 socket dialect",
+      message: "Session projection recovery requires a sessionProjectionV2 subscriber socket",
     });
-    ws.close();
-  });
-
-  it("broadcasts bounded patch metadata while full snapshots retain journal hydration", async () => {
-    const { ws } = await connectWithHello();
-    // An unregistered CLI locks v1 on its first legacy projection command.
-    ws.send(JSON.stringify({ id: "cmd-lock-thin-meta-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(ws, "sessionSnapshot");
-    await waitForEvent(ws, "ack");
-    const session = await supervisor.create(context("thin metadata update"));
-    const message = {
-      id: "message-hydration",
-      kind: "agent_text" as const,
-      createdAt: "2026-08-25T00:00:00.000Z",
-      text: "Retain this in the reconnect snapshot",
-    };
-    const largeLog = "x".repeat(1_000_000);
-    const accumulatedTools = Array.from({ length: 200 }, (_, index) => ({
-      toolCallId: `tool-${index}`,
-      name: "bash",
-      status: "succeeded" as const,
-      preview: "p".repeat(400),
-    }));
-    await (supervisor as unknown as {
-      upsert(session: PickyAgentSession, options: { emitSession: boolean }): Promise<void>;
-    }).upsert({ ...session, messages: [message], logs: [largeLog], tools: accumulatedTools }, { emitSession: false });
-
-    const metaUpdate = nextEvent(ws);
-    await (supervisor as unknown as {
-      patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
-    }).patch(session.id, { status: "completed", lastSummary: "Done" });
-
-    await expect(metaUpdate).resolves.toMatchObject({
-      type: "sessionMetaUpdated",
-      session: { id: session.id, status: "completed", lastSummary: "Done" },
-    });
-    const event = await metaUpdate;
-    if (event.type === "sessionMetaUpdated") {
-      expect(event.session).not.toHaveProperty("messages");
-      expect(event.session).not.toHaveProperty("logs");
-      expect(event.session).not.toHaveProperty("tools");
-      expect(Buffer.byteLength(JSON.stringify(event))).toBeLessThan(2_000);
-    }
-
-    ws.send(JSON.stringify({ id: "cmd-list-thin-meta", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    const snapshot = await waitForEvent(ws, "sessionSnapshot");
-    expect(snapshot).toMatchObject({
-      sessions: [{ id: session.id, messages: [message] }],
-    });
-    if (snapshot.type === "sessionSnapshot") {
-      const hydratedSession = snapshot.sessions.find((candidate) => candidate.id === session.id);
-      expect(hydratedSession?.logs).toEqual([`${"x".repeat(600)}…`]);
-      expect(hydratedSession?.tools).toHaveLength(accumulatedTools.length);
-    }
-    ws.close();
-  });
-
-  it("hydrates registered app sessions without exceeding the WebSocket frame budget", async () => {
-    const sessions = makeLargeSessionSnapshotFixtures();
-    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
-
-    const { ws } = await connectWithHello();
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    ws.on("message", captureFrame);
-    ws.send(JSON.stringify({
-      id: "cmd-register-large-snapshot-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    ws.send(JSON.stringify({ id: "cmd-list-large-app-snapshot", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitUntil(() => rawFrames.some((frame) => {
-      const event = JSON.parse(frame) as EventEnvelope;
-      return event.type === "ack" && event.commandId === "cmd-list-large-app-snapshot";
-    }));
-    ws.off("message", captureFrame);
-
-    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
-    const snapshot = events.find((event) => event.type === "sessionSnapshot");
-    const hydrationEvents = events.filter((event) => event.type === "sessionUpdated");
-    expect(snapshot).toMatchObject({
-      type: "sessionSnapshot",
-      sessions: sessions.map((session) => ({ id: session.id, messages: [], messageJournalAvailable: false })),
-    });
-    expect(hydrationEvents).toHaveLength(sessions.length);
-    expect(hydrationEvents).toEqual(expect.arrayContaining(sessions.map((session) => expect.objectContaining({
-      type: "sessionUpdated",
-      session: expect.objectContaining({ id: session.id, messages: session.messages }),
-    }))));
-    expect(events.findIndex((event) => event.type === "sessionSnapshot")).toBeLessThan(events.findIndex((event) => event.type === "sessionUpdated"));
-    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
-    ws.close();
-  });
-
-  it("records a deterministic 94-session registered-app bootstrap budget", async () => {
-    const sessions = makeNormalSessionBootstrapFixtures();
-    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
-
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({
-      id: "cmd-register-bootstrap-budget-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(ws, "ack");
-
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    ws.on("message", captureFrame);
-    ws.send(JSON.stringify({ id: "cmd-list-bootstrap-budget", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitUntil(() => rawFrames.some((frame) => {
-      const event = JSON.parse(frame) as EventEnvelope;
-      return event.type === "ack" && event.commandId === "cmd-list-bootstrap-budget";
-    }));
-    ws.off("message", captureFrame);
-
-    const replayFrames = rawFrames
-      .map((frame) => ({ frame, event: JSON.parse(frame) as EventEnvelope }))
-      .filter(({ event }) => event.type === "sessionSnapshot" || event.type === "sessionUpdated");
-    const budget = {
-      frameCount: replayFrames.length,
-      maxSingleFrameBytes: Math.max(...replayFrames.map(({ frame }) => Buffer.byteLength(frame, "utf8"))),
-      totalEncodedBytes: replayFrames.reduce((total, { frame }) => total + Buffer.byteLength(frame, "utf8"), 0),
-    };
-
-    expect(replayFrames.map(({ event }) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
-    expect(budget).toEqual({
-      frameCount: 95,
-      maxSingleFrameBytes: 48_455,
-      totalEncodedBytes: 120_043,
-    });
-    // Exact fixture bytes ratchet projection changes; keep this independent transport cap.
-    expect(budget.maxSingleFrameBytes).toBeLessThan(8 * 1024 * 1024);
-    expect(sessions.map((session) => boundedSessionForAppHydration(PickyAgentSessionSchema.parse(session)).omittedFields)).toEqual(Array.from({ length: 94 }, () => []));
-    ws.close();
-  });
-
-  it("reuses the bounded bootstrap route after registered-app reconnect", async () => {
-    const sessions = makeNormalSessionBootstrapFixtures();
-    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
-
-    const first = await connectWithHello();
-    first.ws.send(JSON.stringify({
-      id: "cmd-register-bootstrap-reconnect-first-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(first.ws, "ack");
-    first.ws.close();
-    await once(first.ws, "close");
-
-    const replacement = await connectWithHello();
-    replacement.ws.send(JSON.stringify({
-      id: "cmd-register-bootstrap-reconnect-replacement-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(replacement.ws, "ack");
-
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    replacement.ws.on("message", captureFrame);
-    replacement.ws.send(JSON.stringify({ id: "cmd-list-bootstrap-reconnect", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitUntil(() => rawFrames.some((frame) => {
-      const event = JSON.parse(frame) as EventEnvelope;
-      return event.type === "ack" && event.commandId === "cmd-list-bootstrap-reconnect";
-    }));
-    replacement.ws.off("message", captureFrame);
-
-    const replayFrames = rawFrames
-      .map((frame) => ({ frame, event: JSON.parse(frame) as EventEnvelope }))
-      .filter(({ event }) => event.type === "sessionSnapshot" || event.type === "sessionUpdated");
-    const budget = {
-      frameCount: replayFrames.length,
-      maxSingleFrameBytes: Math.max(...replayFrames.map(({ frame }) => Buffer.byteLength(frame, "utf8"))),
-      totalEncodedBytes: replayFrames.reduce((total, { frame }) => total + Buffer.byteLength(frame, "utf8"), 0),
-    };
-
-    expect(replayFrames.map(({ event }) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
-    expect(budget).toEqual({ frameCount: 95, maxSingleFrameBytes: 48_455, totalEncodedBytes: 120_043 });
-    expect(budget.maxSingleFrameBytes).toBeLessThan(8 * 1024 * 1024);
-    expect(sessions.map((session) => boundedSessionForAppHydration(PickyAgentSessionSchema.parse(session)).omittedFields)).toEqual(Array.from({ length: 94 }, () => []));
-    replacement.ws.close();
-  });
-
-  it("reuses the bounded bootstrap route after deletion for registered app clients", async () => {
-    const sessions = makeNormalSessionBootstrapFixtures();
-    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
-    vi.spyOn(supervisor, "deleteSession").mockResolvedValue();
-
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({
-      id: "cmd-register-delete-bootstrap-budget-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(ws, "ack");
-
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    ws.on("message", captureFrame);
-    ws.send(JSON.stringify({
-      id: "cmd-delete-bootstrap-budget",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "deleteSession",
-      sessionId: "deleted-session",
-    }));
-    await waitUntil(() => rawFrames.some((frame) => {
-      const event = JSON.parse(frame) as EventEnvelope;
-      return event.type === "ack" && event.commandId === "cmd-delete-bootstrap-budget";
-    }));
-    ws.off("message", captureFrame);
-
-    const replayEvents = rawFrames
-      .map((frame) => JSON.parse(frame) as EventEnvelope)
-      .filter((event) => event.type === "sessionSnapshot" || event.type === "sessionUpdated");
-    expect(replayEvents.map((event) => event.type)).toEqual(["sessionSnapshot", ...Array(94).fill("sessionUpdated")]);
-    ws.close();
-  });
-
-  it("keeps the aggregate legacy snapshot for unregistered clients", async () => {
-    const sessions = makeNormalSessionBootstrapFixtures();
-    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
-
-    const { ws } = await connectWithHello();
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    ws.on("message", captureFrame);
-    ws.send(JSON.stringify({ id: "cmd-list-bootstrap-budget-legacy", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitUntil(() => rawFrames.some((frame) => {
-      const event = JSON.parse(frame) as EventEnvelope;
-      return event.type === "ack" && event.commandId === "cmd-list-bootstrap-budget-legacy";
-    }));
-    ws.off("message", captureFrame);
-
-    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
-    const snapshots = events.filter((event) => event.type === "sessionSnapshot");
-    expect(snapshots).toHaveLength(1);
-    expect(events.filter((event) => event.type === "sessionUpdated")).toHaveLength(0);
-    expect(snapshots[0]).toMatchObject({ type: "sessionSnapshot", sessions: sessions.map((session) => ({ id: session.id })) });
-    ws.close();
-  });
-
-  it("degrades a single oversized session hydration instead of exceeding the app frame budget", async () => {
-    const oversizedSession: PickyAgentSession = {
-      id: "oversized-single-session",
-      title: "Oversized single session",
-      status: "completed",
-      createdAt: "2026-08-25T00:00:00.000Z",
-      updatedAt: "2026-08-25T00:00:01.000Z",
-      logs: [],
-      tools: [],
-      artifacts: [],
-      changedFiles: [],
-      messages: [{
-        id: "oversized-single-message",
-        kind: "agent_text",
-        createdAt: "2026-08-25T00:00:01.000Z",
-        text: "m".repeat(9 * 1024 * 1024),
-      }],
-    };
-    vi.spyOn(supervisor, "list").mockReturnValue([oversizedSession]);
-
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({
-      id: "cmd-register-oversized-session-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(ws, "ack");
-
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    ws.on("message", captureFrame);
-    ws.send(JSON.stringify({ id: "cmd-list-oversized-session", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(ws, "ack");
-    ws.off("message", captureFrame);
-
-    const hydration = rawFrames
-      .map((frame) => JSON.parse(frame) as EventEnvelope)
-      .find((event) => event.type === "sessionUpdated");
-    expect(hydration).toMatchObject({
-      type: "sessionUpdated",
-      session: { id: oversizedSession.id, messages: [], messageJournalAvailable: false },
-    });
-    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
-    ws.close();
-  });
-
-  it("bounds registered app session snapshots broadcast after deletion", async () => {
-    const sessions = makeLargeSessionSnapshotFixtures();
-    vi.spyOn(supervisor, "list").mockReturnValue(sessions);
-    vi.spyOn(supervisor, "deleteSession").mockResolvedValue();
-
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({
-      id: "cmd-register-delete-snapshot-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(ws, "ack");
-
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    ws.on("message", captureFrame);
-    ws.send(JSON.stringify({
-      id: "cmd-delete-large-snapshot-session",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "deleteSession",
-      sessionId: "deleted-session",
-    }));
-    await waitForEvent(ws, "ack");
-    ws.off("message", captureFrame);
-
-    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
-    expect(events.filter((event) => event.type === "sessionSnapshot")).toHaveLength(1);
-    expect(events.filter((event) => event.type === "sessionUpdated")).toHaveLength(sessions.length);
-    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
-    ws.close();
-  });
-
-  it("returns a bounded error instead of an empty authoritative snapshot when metadata cannot fit", async () => {
-    const oversizedMetadataSession = makeSession({
-      id: "s".repeat(9 * 1024 * 1024),
-      title: "Oversized metadata session",
-    });
-    vi.spyOn(supervisor, "list").mockReturnValue([oversizedMetadataSession]);
-
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({
-      id: "cmd-register-oversized-metadata-app",
-      protocolVersion: PROTOCOL_VERSION,
-      type: "registerAppCapabilities",
-      capabilities: ["pickleBridge"],
-    }));
-    await waitForEvent(ws, "ack");
-
-    const rawFrames: string[] = [];
-    const captureFrame = (data: WebSocket.RawData) => rawFrames.push(data.toString());
-    ws.on("message", captureFrame);
-    ws.send(JSON.stringify({ id: "cmd-list-oversized-metadata", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(ws, "ack");
-    ws.off("message", captureFrame);
-
-    const events = rawFrames.map((frame) => JSON.parse(frame) as EventEnvelope);
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "error",
-      code: "session_snapshot_too_large",
-    }));
-    expect(events.some((event) => event.type === "sessionSnapshot")).toBe(false);
-    expect(events.some((event) => event.type === "sessionUpdated")).toBe(false);
-    expect(Math.max(...rawFrames.map((frame) => Buffer.byteLength(frame, "utf8")))).toBeLessThan(8 * 1024 * 1024);
     ws.close();
   });
 
@@ -1159,10 +741,10 @@ describe("AgentdServer", () => {
     const { ws } = await connectWithHello();
     const types: string[] = [];
     ws.on("message", (data) => types.push((JSON.parse(data.toString()) as EventEnvelope).type));
-    ws.send(JSON.stringify({ id: "cmd-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    ws.send(JSON.stringify({ id: "cmd-list", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
     await waitUntil(() => types.includes("ack"));
-    expect(types.indexOf("sessionSnapshot")).toBeGreaterThanOrEqual(0);
-    expect(types.indexOf("sessionSnapshot")).toBeLessThan(types.indexOf("ack"));
+    expect(types.indexOf("mainMessagesSnapshot")).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf("mainMessagesSnapshot")).toBeLessThan(types.indexOf("ack"));
     ws.close();
   });
 
@@ -1179,10 +761,10 @@ describe("AgentdServer", () => {
     const { ws } = await connectWithHello();
     ws.send("not json");
     expect((await nextEvent(ws)).type).toBe("error");
-    ws.send(JSON.stringify({ id: "cmd-list", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
+    ws.send(JSON.stringify({ id: "cmd-list", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
     const snapshot = await nextEvent(ws);
-    expect(snapshot.type).toBe("sessionSnapshot");
-    if (snapshot.type === "sessionSnapshot") expect(snapshot.sessions).toEqual([]);
+    expect(snapshot.type).toBe("mainMessagesSnapshot");
+    if (snapshot.type === "mainMessagesSnapshot") expect(snapshot.messages).toEqual([]);
     ws.close();
   });
 
@@ -1884,66 +1466,6 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("broadcasts toolActivityUpdated events", async () => {
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({ id: "cmd-lock-tool-events-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(ws, "sessionSnapshot");
-    await waitForEvent(ws, "ack");
-    const pendingToolEvent = waitForEvent(ws, "toolActivityUpdated");
-
-    supervisor.emit("toolActivityUpdated", "session-tools", { toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" });
-
-    await expect(pendingToolEvent).resolves.toMatchObject({
-      type: "toolActivityUpdated",
-      sessionId: "session-tools",
-      tool: { toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" },
-    });
-    ws.close();
-  });
-
-  it("broadcasts slim todo state updates including clear", async () => {
-    const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({ id: "cmd-lock-todo-events-v1", protocolVersion: PROTOCOL_VERSION, type: "listSessions" }));
-    await waitForEvent(ws, "sessionSnapshot");
-    await waitForEvent(ws, "ack");
-    const pendingUpdate = waitForEvent(ws, "sessionTodoStateUpdated");
-    supervisor.emit("todoStateUpdated", "session-todo", {
-      tasks: [{ id: "todo-1", content: "Implement HUD", status: "in_progress" }],
-      updatedAt: "2026-07-14T01:00:00.000Z",
-    }, 4);
-
-    await expect(pendingUpdate).resolves.toMatchObject({
-      type: "sessionTodoStateUpdated",
-      sessionId: "session-todo",
-      todoState: { tasks: [{ id: "todo-1", status: "in_progress" }] },
-      seq: 4,
-    });
-
-    const pendingClear = waitForEvent(ws, "sessionTodoStateUpdated");
-    supervisor.emit("todoStateUpdated", "session-todo", undefined, 5);
-    await expect(pendingClear).resolves.toMatchObject({
-      type: "sessionTodoStateUpdated",
-      sessionId: "session-todo",
-      todoState: null,
-      seq: 5,
-    });
-    ws.close();
-  });
-
-  it("broadcasts sessionArchivedAuthoritative when setSessionArchived runs (regression for picky_unarchive_pickle not reaching the dock)", async () => {
-    const session = await supervisor.create(context("to be archived"));
-    const { ws } = await connectWithHello();
-
-    ws.send(JSON.stringify({ id: "cmd-archive", protocolVersion: PROTOCOL_VERSION, type: "setSessionArchived", sessionId: session.id, archived: true }));
-    const archivedAuth = await waitForEvent(ws, "sessionArchivedAuthoritative");
-    expect(archivedAuth).toMatchObject({ type: "sessionArchivedAuthoritative", sessionId: session.id, archived: true });
-
-    ws.send(JSON.stringify({ id: "cmd-unarchive", protocolVersion: PROTOCOL_VERSION, type: "setSessionArchived", sessionId: session.id, archived: false }));
-    const unarchivedAuth = await waitForEvent(ws, "sessionArchivedAuthoritative");
-    expect(unarchivedAuth).toMatchObject({ type: "sessionArchivedAuthoritative", sessionId: session.id, archived: false });
-    ws.close();
-  });
-
   it("passes optional steer context through to the supervisor", async () => {
     const session = await supervisor.create(context("initial"));
     const steer = vi.spyOn(supervisor, "steer");
@@ -2625,7 +2147,7 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("locks submitMainFromExternal CLI sockets to v1 for created and terminal session projections", async () => {
+  it("answers awaitPickleSessionTerminal for a CLI-created Pickle without any projection frames", async () => {
     const { ws } = await connectWithHello();
     trackEvents(ws);
 
@@ -2637,24 +2159,23 @@ describe("AgentdServer", () => {
       captureContext: false,
     }));
 
-    const created = await waitForEvent(ws, "sessionUpdated");
-    expect(created).toMatchObject({ session: { status: "queued" } });
-    if (created.type !== "sessionUpdated") throw new Error("Expected a session update");
-    const sessionId = created.session.id;
+    const ack = await waitForEvent(ws, "externalEntryAck");
+    expect(ack).toMatchObject({ commandId: "cmd-cli-submit-wait-projection", kind: "submitMain" });
+    if (ack.type !== "externalEntryAck" || !ack.sessionId) throw new Error("Expected an ack carrying the created session id");
+    const sessionId = ack.sessionId;
 
-    await expect(waitForEvent(ws, "externalEntryAck")).resolves.toMatchObject({
-      commandId: "cmd-cli-submit-wait-projection",
-      kind: "submitMain",
-      sessionId,
-    });
+    ws.send(JSON.stringify({ id: "cmd-cli-await-terminal", protocolVersion: PROTOCOL_VERSION, type: "awaitPickleSessionTerminal", sessionId }));
+    await waitForMatchingEvent(ws, (event) => event.type === "ack" && event.commandId === "cmd-cli-await-terminal");
+    await expect(nextEventWithin(ws, 50)).resolves.toBeUndefined();
 
     await (supervisor as unknown as {
       patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
     }).patch(sessionId, { status: "completed" });
-    await expect(waitForMatchingEvent(
-      ws,
-      (event) => event.type === "sessionMetaUpdated" && event.session.id === sessionId && event.session.status === "completed",
-    )).resolves.toMatchObject({ session: { id: sessionId, status: "completed" } });
+    await expect(waitForEvent(ws, "pickleSessionUpdated")).resolves.toMatchObject({
+      commandId: "cmd-cli-await-terminal",
+      session: { id: sessionId, status: "completed" },
+    });
+    expect(eventBuffers.get(ws)?.filter((event) => isProjectionFrame(event))).toEqual([]);
     ws.close();
   });
 
@@ -3050,83 +2571,6 @@ describe("AgentdServer", () => {
     void route;
   });
 
-  it("compacts large session payloads for session snapshots", () => {
-    const session = makeSession({
-      piSessionFilePath: "/tmp/explicit-picky.jsonl",
-      logs: [
-        "pi session: /tmp/picky.jsonl",
-        "source transcript:\n" + "질문 ".repeat(1_000),
-        "steer: keep this visible in the HUD",
-        ...Array.from({ length: 80 }, (_, index) => `extension ui: setWidget ${index}`),
-        "latest useful log",
-      ],
-      tools: Array.from({ length: 320 }, (_, index) => ({
-        toolCallId: `tool-${index}`,
-        name: "bash",
-        status: "succeeded" as const,
-        preview: "very long tool preview ".repeat(1_000),
-      })),
-      changedFiles: Array.from({ length: 80 }, (_, index) => ({
-        path: `file-${index}.txt`,
-        status: "modified",
-        summary: "large summary ".repeat(1_000),
-      })),
-      finalAnswer: "large final answer ".repeat(1_000),
-      // 15 user_text turns, each followed by 9 assistant messages (thinking + activity + text).
-      // The snapshot must slice from the 10th-last user turn onward to match the HUD's
-      // visibleMessages window so the first sessionUpdated arrives without a layout shift.
-      messages: Array.from({ length: 150 }, (_, index) => ({
-        id: `msg-${index}`,
-        kind: (index % 10 === 0 ? "user_text" : "agent_text") as "user_text" | "agent_text",
-        createdAt: "2026-05-03T00:00:00.000Z",
-        text: `message ${index} ${"large text ".repeat(1_000)}`,
-      })),
-    });
-
-    const [compact] = compactSessionsForSnapshot([session]);
-
-    expect(compact.piSessionFilePath).toBe("/tmp/explicit-picky.jsonl");
-    expect(compact.logs.length).toBeLessThanOrEqual(16);
-    expect(compact.logs).toContain("pi session: /tmp/picky.jsonl");
-    expect(compact.logs).toContain("steer: keep this visible in the HUD");
-    expect(compact.logs.at(-1)).toBe("latest useful log");
-    expect(compact.tools.length).toBeLessThanOrEqual(200);
-    expect(compact.tools.length).toBeGreaterThan(12);
-    expect(compact.tools.at(-1)?.preview?.length).toBeLessThanOrEqual(241);
-    expect(compact.changedFiles.length).toBeLessThanOrEqual(20);
-    expect(compact.changedFiles.at(-1)?.summary?.length).toBeLessThanOrEqual(241);
-    expect(compact.finalAnswer?.length).toBeLessThanOrEqual(1_501);
-    // 15 user turns total → snapshot keeps the last 10 user turns and everything after
-    // (msg-50 onward = 100 messages). Earlier history is dropped.
-    expect(compact.messages?.length).toBe(100);
-    expect(compact.messages?.[0]?.id).toBe("msg-50");
-    expect(compact.messages?.[0]?.kind).toBe("user_text");
-    expect(compact.messages?.filter((m) => m.kind === "user_text").length).toBe(10);
-    // User-visible message text is sent in full — the snapshot only trims the message
-    // window, never per-message bodies, so the report viewer cannot show a truncated
-    // copy that lingers between the initial sessionSnapshot and the next sessionUpdated event.
-    const lastMessageText = compact.messages?.at(-1)?.text ?? "";
-    expect(lastMessageText.endsWith("…")).toBe(false);
-    expect(lastMessageText.length).toBeGreaterThan(10_000);
-  });
-
-  it("returns all messages when fewer than the user-turn window exists", () => {
-    const session = makeSession({
-      messages: [
-        { id: "m1", kind: "system", createdAt: "2026-05-03T00:00:00.000Z", text: "hello" },
-        { id: "m2", kind: "user_text", createdAt: "2026-05-03T00:00:00.000Z", text: "first" },
-        { id: "m3", kind: "agent_text", createdAt: "2026-05-03T00:00:00.000Z", text: "reply" },
-        { id: "m4", kind: "user_text", createdAt: "2026-05-03T00:00:00.000Z", text: "second" },
-        { id: "m5", kind: "agent_text", createdAt: "2026-05-03T00:00:00.000Z", text: "reply" },
-      ],
-    });
-
-    const [compact] = compactSessionsForSnapshot([session]);
-
-    // Only 2 user turns (< window of 10) → snapshot keeps everything, including the
-    // leading system message, so the HUD's visibleMessages fallback path matches.
-    expect(compact.messages?.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m4", "m5"]);
-  });
 });
 
 function fakeEdgeClient(): EdgeTTSClient {
@@ -3223,8 +2667,8 @@ function trackEvents(ws: WebSocket): void {
   });
 }
 
-function isLegacyProjection(event: EventEnvelope): boolean {
-  return ["sessionSnapshot", "sessionUpdated", "sessionMetaUpdated"].includes(event.type);
+function isProjectionFrame(event: EventEnvelope): boolean {
+  return ["sessionProjectionSnapshot", "sessionProjectionTransaction", "sessionProjectionBootstrapComplete"].includes(event.type);
 }
 
 async function waitForEvent(ws: WebSocket, type: EventEnvelope["type"], timeoutMs = 2_000): Promise<EventEnvelope> {

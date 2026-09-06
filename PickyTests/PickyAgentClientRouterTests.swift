@@ -457,14 +457,14 @@ struct PickyAgentClientRouterTests {
         await router.connect()
         try await waitUntil { primary.sentCommands.map(\.type) == [.registerAppCapabilities] }
 
-        let legacyCommand = PickyCommandEnvelope(id: "cmd-legacy-after-connect", type: .listSessions)
+        let legacyCommand = PickyCommandEnvelope(id: "cmd-legacy-after-connect", type: .listMainMessages)
         async let sent: Void = router.send(legacyCommand)
         await Task.yield()
         #expect(primary.sentCommands.map(\.type) == [.registerAppCapabilities])
 
         suspension.resume()
         try await sent
-        #expect(primary.sentCommands.map(\.type) == [.registerAppCapabilities, .listSessions])
+        #expect(primary.sentCommands.map(\.type) == [.registerAppCapabilities, .listMainMessages])
     }
 
     /// A daemon that never completes registration must fail the gated command
@@ -491,7 +491,7 @@ struct PickyAgentClientRouterTests {
         try await waitUntil { primary.sentCommands.map(\.type) == [.registerAppCapabilities] }
 
         await #expect(throws: PickyAgentClientRouterError.self) {
-            try await router.send(PickyCommandEnvelope(id: "cmd-gated", type: .listSessions))
+            try await router.send(PickyCommandEnvelope(id: "cmd-gated", type: .listMainMessages))
         }
         #expect(primary.sentCommands.map(\.type) == [.registerAppCapabilities])
 

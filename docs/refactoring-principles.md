@@ -355,3 +355,34 @@ in the pre-push hook without loading zod. Self-test fixtures cover referenced
 schema identifiers inside a union, `case a, b` lists, explicit raw values, and
 grouped `case "a", "b":` decoder arms. Fixture coverage in `contracts/protocol`
 (83 of 139 message types) is a separate follow-up.
+
+#### 2026-09-06 v1 session projection dialect removal (daemon side)
+
+Two session projection dialects coexisted on the wire: v1 whole-session
+broadcasts (`sessionSnapshot`, `sessionUpdated`, per-collection `session*Updated`
+events, 16 types) and v2 revisioned projections. The CLI and the `picky-handoff`
+extension were the only remaining v1 consumers, and they used the v1 event names
+merely as request/response envelopes for app-bridge commands.
+
+Changes:
+
+- CLI/handoff replies are dedicated, requester-addressed events
+  (`pickleSessionsSnapshot`, `pickleSessionUpdated`). `--wait` flows send
+  `awaitPickleSessionTerminal`, answered from supervisor projection commits
+  (`application/pickle-terminal-waiter.ts`), so external waiters never depend on
+  the app's projection dialect. `pickle-create --wait` had been silently broken
+  (a negotiating socket never received v1 broadcasts) and is now covered by the
+  real-daemon CLI e2e test.
+- `application/socket-dialect.ts` is gone. Projection frames go only to sockets
+  that registered `sessionProjectionV2`; re-registering without it is an error.
+  `listSessions`/`getSession` and the app snapshot compaction/hydration policies
+  were deleted with the v1 broadcasts.
+- The supervisor's internal EventEmitter events (`session`, `messageAppended`,
+  ...) stay: they are the daemon's domain event bus and are consumed by tests
+  and by the terminal waiter, not wire events.
+
+Deferred (P1-2c): Swift still decodes and applies the v1 events, and ~330 Swift
+tests inject sessions through `sessionUpdated` fixtures. The TypeScript schemas
+for those 15 events are retained, marked wire-dead, until the Swift decoder,
+`PickySessionListViewModel` v1 apply path, router `sessionCache`, and the test
+fixtures move to v2 projection injection in one change.

@@ -4,14 +4,13 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
-import { PROTOCOL_VERSION, PickyAgentSessionMetaSchema, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionMeta, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
-import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForAppHydration, compactSessionForAppSnapshot, eventPayloadByteLength, minimalSessionForAppSnapshot, truncateText } from "./application/app-session-snapshot-policy.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import { deliverPickleCompletion, PickleBridgeRequestCoordinator, type AppPickleBridgeRequest, type AppPickleBridgeResult, type AppPickleHandoffRequest, type AppPickleHandoffResult } from "./application/pickle-completion-bridge.js";
 export type { AppPickleBridgeRequest, AppPickleBridgeResult, AppPickleHandoffRequest, AppPickleHandoffResult } from "./application/pickle-completion-bridge.js";
 import { ProjectionRecoveryRequestGate } from "./application/session-projection-recovery.js";
 import { SessionProjectionV2Broadcaster } from "./application/session-projection-v2-broadcaster.js";
 import { assertProtocolVersion } from "./application/protocol-version-guard.js";
-import { isLegacySessionProjectionEvent, isV2SessionProjectionEventType, SocketDialectRegistry, type SocketDialect } from "./application/socket-dialect.js";
+import { isSessionProjectionEventType } from "./application/session-projection-v2-broadcaster.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { runtimeControlCommandLogFields } from "./domain/runtime-control-log-fields.js";
 import { sanitizeForJson } from "./domain/sanitize-for-json.js";
@@ -64,9 +63,10 @@ export class AgentdServer {
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
-  private readonly socketDialects = new SocketDialectRegistry();
+  /** Sockets that registered `sessionProjectionV2`; only they receive session projection frames. */
+  private readonly projectionSubscribers = new Set<WebSocket>();
   private readonly projectionRecoveryRequestGate = new ProjectionRecoveryRequestGate();
-  private readonly v2ProjectionBroadcaster = new SessionProjectionV2Broadcaster<WebSocket>({ sockets: () => this.clients, getDialect: (socket) => this.socketDialects.get(socket), send: (socket, payload) => { this.send(socket, payload); }, close: (socket) => socket.close(1011, "Session projection bootstrap failed") });
+  private readonly v2ProjectionBroadcaster = new SessionProjectionV2Broadcaster<WebSocket>({ sockets: () => this.clients, isSubscribed: (socket) => this.projectionSubscribers.has(socket), send: (socket, payload) => { this.send(socket, payload); }, close: (socket) => socket.close(1011, "Session projection bootstrap failed") });
   private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private readonly pickleBridgeRequests: PickleBridgeRequestCoordinator<WebSocket>;
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
@@ -124,21 +124,10 @@ export class AgentdServer {
     });
 
     this.v2ProjectionBroadcaster.bind(this.options.supervisor);
-    this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session: protocolSession(session) }));
-    this.options.supervisor.on("sessionMeta", (session) => this.broadcast({ type: "sessionMetaUpdated", session: protocolSessionMeta(session) }));
-    this.options.supervisor.on("sessionArchivedAuthoritative", (sessionId: string, archived: boolean) => this.broadcast({ type: "sessionArchivedAuthoritative", sessionId, archived }));
     this.options.supervisor.on("resourcesReloaded", (sessionId) => this.broadcast({ type: "sessionResourcesReloaded", sessionId }));
-    this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
-    this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
-    this.options.supervisor.on("toolActivityUpdated", (sessionId, tool) => this.broadcast({ type: "toolActivityUpdated", sessionId, tool }));
-    this.options.supervisor.on("todoStateUpdated", (sessionId, todoState, seq) => this.broadcast({ type: "sessionTodoStateUpdated", sessionId, todoState: todoState ?? null, seq }));
-    this.options.supervisor.on("subagentRunsUpdated", (sessionId, runs, seq) => this.broadcast({ type: "sessionSubagentRunsUpdated", sessionId, runs, seq }));
-    this.options.supervisor.on("queueUpdated", (sessionId, steering, followUp, steeringMode, followUpMode, seq) => this.broadcast({ type: "sessionQueueUpdated", sessionId, steering, followUp, steeringMode, followUpMode, seq }));
-    this.options.supervisor.on("activityUpdated", (sessionId, activitySummary, seq) => this.broadcast({ type: "sessionActivityUpdated", sessionId, activitySummary, seq }));
-    this.options.supervisor.on("messageAppended", (sessionId, message, seq) => this.broadcast({ type: "sessionMessageAppended", sessionId, message, seq }));
-    this.options.supervisor.on("messagesImported", (sessionId, messages, seq) => this.broadcast({ type: "sessionMessagesImported", sessionId, messages, seq }));
-    this.options.supervisor.on("messageReplaced", (sessionId, messageId, message, seq) => this.broadcast({ type: "sessionMessageReplaced", sessionId, messageId, message, seq }));
-    this.options.supervisor.on("messageRemoved", (sessionId, messageId, seq) => this.broadcast({ type: "sessionMessageRemoved", sessionId, messageId, seq }));
+    // Interactive extension UI reaches the app as projection mutations; the fire-and-forget
+    // composer control is the only request that still travels as a standalone event.
+    this.options.supervisor.on("extensionUiRequest", (request) => { if (request.method === "set_editor_text") this.broadcast({ type: "extensionUiRequest", request }); });
     this.options.supervisor.on("sessionRewound", (sessionId: string, editorText: string | undefined, removedIds: string[]) => this.broadcast({ type: "sessionRewound", sessionId, ...(editorText !== undefined ? { editorText } : {}), removedIds }));
     this.options.supervisor.on("quickReply", (contextId, text, metadata = {}) => this.broadcast({ type: "quickReply", contextId, text, ...metadata }));
     this.options.supervisor.on("mainTurnSettled", (contextId) => this.broadcast({ type: "mainTurnSettled", contextId }));
@@ -158,7 +147,6 @@ export class AgentdServer {
 
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("annotationOverlayRequested", (request) => this.broadcast({ type: "annotationOverlayRequested", request }));
-    this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
       type: "terminalSessionSyncOutcome",
       sessionId,
@@ -272,7 +260,7 @@ export class AgentdServer {
     this.clients.add(ws);
     logAgentd("ws connected", { clients: this.clients.size });
     ws.on("close", () => {
-      this.v2ProjectionBroadcaster.unregister(ws); this.clients.delete(ws);
+      this.v2ProjectionBroadcaster.unregister(ws); this.projectionSubscribers.delete(ws); this.clients.delete(ws);
       const lostCapabilities = this.appCapabilities.get(ws);
       this.appCapabilities.delete(ws);
       // Pickle handoffs are intentionally NOT rejected on socket close: the app
@@ -349,12 +337,7 @@ export class AgentdServer {
 
   // eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior.
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
-    this.socketDialects.lockLegacyProjectionCommand(ws, command.type);
     const handlers: CommandHandlerMap = {
-      listSessions: () => {
-        const sessions = compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession);
-        this.sendSessionSnapshot(ws, sessions);
-      },
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),
       getPiOAuthStatus: async (cmd) => {
@@ -491,14 +474,8 @@ export class AgentdServer {
         const session = await this.options.supervisor.rewindToEntry(cmd.sessionId, cmd.entryId);
         this.broadcast({ type: "sessionUpdated", session: protocolSession(session) });
       },
-      getSession: (cmd) => {
-        const session = this.options.supervisor.get(cmd.sessionId);
-        if (!session) throw new Error(`Unknown session: ${cmd.sessionId}`);
-        this.send(ws, { type: "sessionUpdated", session: protocolSession(session) });
-      },
-      // Recovery frames are v2-only until the W6.5 atomic cutover.
       getSessionProjectionSnapshot: (cmd) => {
-        if (this.socketDialects.get(ws) !== "v2") throw new Error("Session projection recovery requires v2 socket dialect");
+        if (!this.projectionSubscribers.has(ws)) throw new Error("Session projection recovery requires a sessionProjectionV2 subscriber socket");
         return this.projectionRecoveryRequestGate.send(ws, { withSessionProjectionBarrier: (sessionId, work) => this.options.supervisor.withSessionProjectionBarrier(sessionId, work), send: (payload) => { this.send(ws, payload); } }, cmd);
       },
       routeTask: (cmd) => this.options.supervisor.route(cmd.context),
@@ -604,12 +581,7 @@ export class AgentdServer {
       setNotifyMacOSOnCompletion: (cmd) => this.options.supervisor.setNotifyMacOSOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => deliverPickleCompletion(this.options.supervisor, cmd),
       setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
-      deleteSession: async (cmd) => {
-        await this.options.supervisor.deleteSession(cmd.sessionId);
-        // V2 has no deletion mutation. Retain this v1 fallback until an external deletion producer exists.
-        const sessions = compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession);
-        this.broadcastSessionSnapshot(sessions);
-      },
+      deleteSession: (cmd) => this.options.supervisor.deleteSession(cmd.sessionId),
       cycleSessionThinkingLevel: (cmd) => this.options.supervisor.cycleSessionThinkingLevel(cmd.sessionId),
       listSessionRuntimeOptions: async (cmd) => {
         const options = await this.options.supervisor.listSessionRuntimeOptions(cmd.sessionId);
@@ -655,65 +627,16 @@ export class AgentdServer {
     return this.options.piOAuth;
   }
   private async registerAppCapabilities(ws: WebSocket, capabilities: string[], bootstrapId: string): Promise<void> {
-    const previousDialect = this.socketDialects.get(ws);
-    let dialect: SocketDialect;
-    try {
-      dialect = this.socketDialects.lockFromCapabilities(ws, capabilities);
-    } catch (error) {
-      logAgentd("app capability registration rejected by socket dialect", {
-        previousDialect,
-        requestedDialect: capabilities.includes("sessionProjectionV2") ? "v2" : "v1",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
+    const subscribes = capabilities.includes("sessionProjectionV2");
+    const wasSubscribed = this.projectionSubscribers.has(ws);
+    if (wasSubscribed && !subscribes) {
+      logAgentd("app capability registration rejected", { reason: "sessionProjectionV2 subscription cannot be dropped by re-registration" });
+      throw new Error("Socket already subscribed to sessionProjectionV2; re-registration must keep the capability");
     }
-    this.appCapabilities.set(ws, new Set(capabilities)); logAgentd("app capabilities registered", { capabilities: capabilities.join(","), dialect });
-    await this.v2ProjectionBroadcaster.register(ws, previousDialect, dialect, this.options.supervisor, bootstrapId);
-  }
-  private sendSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
-    if (this.socketDialects.get(ws) !== "v1") return;
-    if (this.appCapabilities.has(ws)) {
-      this.sendAppSessionSnapshot(ws, sessions);
-      return;
-    }
-    this.send(ws, { type: "sessionSnapshot", sessions });
-  }
-  private broadcastSessionSnapshot(sessions: PickyAgentSessionParsed[]): void {
-    for (const client of this.clients) this.sendSessionSnapshot(client, sessions);
-  }
-  private sendAppSessionSnapshot(ws: WebSocket, sessions: PickyAgentSessionParsed[]): void {
-    const lightweightSessions = sessions.map(compactSessionForAppSnapshot);
-    const lightweightPayload = { type: "sessionSnapshot", sessions: lightweightSessions } as const;
-    if (eventPayloadByteLength(lightweightPayload) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
-      this.send(ws, lightweightPayload);
-    } else {
-      const minimalSessions = sessions.map(minimalSessionForAppSnapshot);
-      const minimalPayload = { type: "sessionSnapshot", sessions: minimalSessions } as const;
-      if (eventPayloadByteLength(minimalPayload) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
-        logAgentd("app session snapshot reduced to minimal metadata", { sessions: sessions.length });
-        this.send(ws, minimalPayload);
-      } else {
-        logAgentd("app session snapshot metadata exceeds frame budget", { sessions: sessions.length });
-        this.send(ws, {
-          type: "error",
-          code: "session_snapshot_too_large",
-          message: "Session metadata exceeds the safe app transport limit.",
-        });
-        return;
-      }
-    }
-
-    for (const session of sessions) {
-      const hydration = boundedSessionForAppHydration(session);
-      if (hydration.omittedFields.length > 0) {
-        logAgentd("app session hydration reduced to frame budget", {
-          sessionId: session.id,
-          omittedFields: hydration.omittedFields.join(","),
-        });
-      }
-      if (!hydration.session) continue;
-      this.send(ws, { type: "sessionUpdated", session: hydration.session });
-    }
+    this.appCapabilities.set(ws, new Set(capabilities)); logAgentd("app capabilities registered", { capabilities: capabilities.join(","), projection: subscribes ? 1 : 0 });
+    if (!subscribes || wasSubscribed) return;
+    this.projectionSubscribers.add(ws);
+    await this.v2ProjectionBroadcaster.register(ws, this.options.supervisor, bootstrapId);
   }
   private firstClientWithCapability(capability: string): WebSocket | undefined {
     for (const client of this.clients) {
@@ -1024,7 +947,6 @@ export class AgentdServer {
     let type: string | undefined;
     let clients = 0;
     for (const client of this.clients) {
-      if (isLegacySessionProjectionEvent(event) && this.socketDialects.get(client) !== "v1") continue;
       const sent = this.send(client, event);
       bytes = sent.bytes;
       type = sent.type;
@@ -1048,7 +970,7 @@ export class AgentdServer {
   }
 
   private send(ws: WebSocket, payload: EventPayload): { bytes: number; type: string } {
-    if ((isLegacySessionProjectionEvent(payload) && this.socketDialects.get(ws) !== "v1") || (isV2SessionProjectionEventType(payload.type) && this.socketDialects.get(ws) !== "v2")) return { bytes: 0, type: payload.type };
+    if (isSessionProjectionEventType(payload.type) && !this.projectionSubscribers.has(ws)) return { bytes: 0, type: payload.type };
     const event: EventEnvelope = sanitizeForJson({ id: `event-${randomUUID()}`, protocolVersion: PROTOCOL_VERSION, timestamp: new Date().toISOString(), ...payload } as EventEnvelope);
     const json = JSON.stringify(event);
     logAgentd("event sent", eventLogFields(event));
@@ -1199,7 +1121,6 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "setTerminalSessionTailEnabled":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "abort":
-    case "getSession":
     case "getSessionProjectionSnapshot":
     case "listSlashCommands":
     case "getAutocompleteCapabilities":
@@ -1238,7 +1159,6 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, count: command.disabledBuiltinTools.length };
     case "setMainAgentTTSEnabled":
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
-    case "listSessions":
     case "listPickles":
     case "listDockGroups":
     case "listMainMessages":
@@ -1375,113 +1295,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
   }
 }
 
-const SNAPSHOT_LOG_LIMIT = 16;
-const SNAPSHOT_IMPORTANT_LOG_LIMIT = 6;
-const SNAPSHOT_LOG_CHAR_LIMIT = 600;
-const SNAPSHOT_TOOL_LIMIT = 200;
-const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 240;
-const SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT = 240;
-const SNAPSHOT_CHANGED_FILE_LIMIT = 20;
-const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 240;
-// Keep in sync with `PickyConversationHistoryWindowPolicy.baseTurnCount` in
-// Picky/HUD/Conversation/PickyConversationHistoryWindowPolicy.swift: the HUD
-// renders "from the 10th-last user_text message onward", so the initial
-// snapshot must include at least that window. Otherwise the snapshot lands with
-// fewer turns than the next sessionUpdated, and the conversation list visibly
-// reflows once the full session arrives.
-const SNAPSHOT_VISIBLE_USER_TURN_COUNT = 10;
-const SNAPSHOT_FINAL_ANSWER_CHAR_LIMIT = 1_500;
-const SNAPSHOT_LAST_SUMMARY_CHAR_LIMIT = 700;
-
-export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): PickyAgentSession[] {
-  return sessions.map((session) => ({
-    ...session,
-    lastSummary: session.lastSummary ? truncateText(session.lastSummary, SNAPSHOT_LAST_SUMMARY_CHAR_LIMIT) : session.lastSummary,
-    finalAnswer: session.finalAnswer ? truncateText(session.finalAnswer, SNAPSHOT_FINAL_ANSWER_CHAR_LIMIT) : session.finalAnswer,
-    thinkingPreview: session.thinkingPreview ? truncateText(session.thinkingPreview, SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT) : session.thinkingPreview,
-    logs: compactSnapshotLogs(session.logs),
-    tools: compactSnapshotTools(session.tools),
-    changedFiles: compactSnapshotChangedFiles(session.changedFiles),
-    messages: compactSnapshotMessages(session.messages),
-  }));
-}
-
-// Snapshot mirrors the HUD's visible window so the initial snapshot and the next
-// full `sessionUpdated` render the same set of messages — no layout shift when
-// the full session arrives. Per-message bodies are still sent in full so the
-// report viewer never shows a truncated copy that lingers between the initial
-// sessionSnapshot and the next sessionUpdated/messageReplaced event.
-function compactSnapshotMessages(messages: PickyAgentSession["messages"]): PickyAgentSession["messages"] {
-  if (!messages || messages.length === 0) return messages;
-  const userTurnIndices: number[] = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    if (messages[index]!.kind === "user_text") userTurnIndices.push(index);
-  }
-  if (userTurnIndices.length <= SNAPSHOT_VISIBLE_USER_TURN_COUNT) return messages;
-  const firstVisibleUserIndex = userTurnIndices[userTurnIndices.length - SNAPSHOT_VISIBLE_USER_TURN_COUNT]!;
-  return messages.slice(firstVisibleUserIndex);
-}
-
-function compactSnapshotLogs(logs: string[]): string[] {
-  if (logs.length <= SNAPSHOT_LOG_LIMIT && logs.every((line) => line.length <= SNAPSHOT_LOG_CHAR_LIMIT)) return logs;
-
-  // Pick up to N most-recent important indices, scanning newest-first so the latest
-  // important entries win when capped.
-  const importantIndices = new Set<number>();
-  for (let index = logs.length - 1; index >= 0 && importantIndices.size < SNAPSHOT_IMPORTANT_LOG_LIMIT; index -= 1) {
-    if (isImportantSnapshotLog(logs[index]!)) importantIndices.add(index);
-  }
-
-  const recentSlots = Math.max(SNAPSHOT_LOG_LIMIT - importantIndices.size, 0);
-  const recentStart = logs.length - recentSlots;
-
-  // Walk the original array in order so important entries that fall outside the recent
-  // window stay at their original chronological position rather than being prepended.
-  const kept: string[] = [];
-  for (let index = 0; index < logs.length; index += 1) {
-    if (index >= recentStart || importantIndices.has(index)) kept.push(logs[index]!);
-  }
-  return kept.slice(-SNAPSHOT_LOG_LIMIT).map(truncateSnapshotLogLine);
-}
-
-function compactSnapshotTools(tools: PickyAgentSession["tools"]): PickyAgentSession["tools"] {
-  return tools.slice(-SNAPSHOT_TOOL_LIMIT).map((tool) => ({
-    ...tool,
-    preview: tool.preview ? truncateText(tool.preview, SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT) : tool.preview,
-  }));
-}
-
-function compactSnapshotChangedFiles(changedFiles: PickyAgentSession["changedFiles"]): PickyAgentSession["changedFiles"] {
-  return changedFiles.slice(-SNAPSHOT_CHANGED_FILE_LIMIT).map((file) => ({
-    ...file,
-    summary: file.summary ? truncateText(file.summary, SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT) : file.summary,
-  }));
-}
-
-function isImportantSnapshotLog(line: string): boolean {
-  const trimmed = line.trimStart();
-  return trimmed.startsWith("pi session: ")
-    || trimmed.startsWith("- Session file: ")
-    || trimmed.startsWith("source transcript:")
-    || trimmed.startsWith(FOLLOWUP_PREFIX)
-    || trimmed.startsWith(STEER_PREFIX)
-    || trimmed.startsWith("steer rejected:")
-    || trimmed.startsWith(HANDOFF_PREFIX)
-    || trimmed.includes("Runtime session is not attached after daemon restart")
-    || trimmed.includes("Runtime not attached after daemon restart");
-}
-
 function protocolSession(session: PickyAgentSession): PickyAgentSessionParsed {
   return PickyAgentSessionSchema.parse(session);
-}
-
-function protocolSessionMeta(session: PickyAgentSession): PickyAgentSessionMeta {
-  const { messages: _, logs: __, tools: ___, ...meta } = session;
-  return PickyAgentSessionMetaSchema.parse(meta);
-}
-
-function truncateSnapshotLogLine(line: string): string {
-  return truncateText(line, SNAPSHOT_LOG_CHAR_LIMIT);
 }
 
 type RemoveEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;

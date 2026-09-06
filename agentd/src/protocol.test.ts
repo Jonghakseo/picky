@@ -1015,6 +1015,6 @@ describe("protocol contract fixtures", () => {
   });
 
   it("rejects invalid protocol versions", () => {
-    expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listSessions" })).toThrow(/Invalid literal value/);
+    expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listMainMessages" })).toThrow(/Invalid literal value/);
   });
 });

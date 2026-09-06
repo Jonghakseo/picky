@@ -93,7 +93,7 @@ struct PickyAgentClientTests {
         )
         await client.connect()
         if case .connected? = try await nextPickyAgentClientEvent(from: client.events) {} else { Issue.record("Expected connected after hello") }
-        try await client.send(PickyCommandEnvelope(id: "cmd-list-001", type: .listSessions))
+        try await client.send(PickyCommandEnvelope(id: "cmd-list-001", type: .listMainMessages))
 
         #expect(task.didResume)
         #expect(factory.requestedURL?.host == "127.0.0.1")
@@ -103,7 +103,7 @@ struct PickyAgentClientTests {
             Issue.record("Expected string command")
             return
         }
-        #expect(text.contains("\"type\":\"listSessions\"") || text.contains("\"type\" : \"listSessions\""))
+        #expect(text.contains("\"type\":\"listMainMessages\"") || text.contains("\"type\" : \"listMainMessages\""))
     }
 
     @Test func sendWaitsForHelloWhenCommandFollowsConnectImmediately() async throws {
@@ -115,7 +115,7 @@ struct PickyAgentClientTests {
 
         await client.connect()
         let sendTask = Task {
-            try await client.send(PickyCommandEnvelope(id: "cmd-list-after-connect", type: .listSessions))
+            try await client.send(PickyCommandEnvelope(id: "cmd-list-after-connect", type: .listMainMessages))
         }
         try await Task.sleep(nanoseconds: 50_000_000)
         #expect(task.sentMessages.isEmpty)
@@ -318,7 +318,7 @@ struct PickyAgentClientTests {
 
         await client.connect()
         await #expect(throws: PickyAgentClientError.disconnected) {
-            try await client.send(PickyCommandEnvelope(id: "cmd-list-early", type: .listSessions))
+            try await client.send(PickyCommandEnvelope(id: "cmd-list-early", type: .listMainMessages))
         }
         #expect(task.sentMessages.isEmpty)
     }

@@ -1,6 +1,5 @@
 import { PickyAgentSessionSchema, type PickyAgentSession, type PickyAgentSessionParsed, type PickySessionProjectionMutation } from "../protocol.js";
 import { APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT, boundedSessionForProjectionSnapshot, eventPayloadByteLength } from "./app-session-snapshot-policy.js";
-import type { SocketDialect } from "./socket-dialect.js";
 
 export const MAX_BOOTSTRAP_QUEUE_FRAMES = 1_024;
 export const MAX_BOOTSTRAP_QUEUE_BYTES = APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT;
@@ -56,9 +55,16 @@ export interface SessionProjectionV2Supervisor {
 
 export interface SessionProjectionV2SocketDependencies<Socket extends object> {
   sockets(): Iterable<Socket>;
-  getDialect(socket: Socket): SocketDialect;
+  isSubscribed(socket: Socket): boolean;
   send(socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload): void;
   close(socket: Socket): void;
+}
+
+const SESSION_PROJECTION_EVENT_TYPES = new Set(["sessionProjectionSnapshot", "sessionProjectionTransaction", "sessionProjectionBootstrapComplete"]);
+
+/** Frames that only `sessionProjectionV2` subscribers may receive. */
+export function isSessionProjectionEventType(type: string): boolean {
+  return SESSION_PROJECTION_EVENT_TYPES.has(type);
 }
 
 /**
@@ -74,15 +80,15 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
 
   bind(supervisor: SessionProjectionV2Supervisor): void {
     supervisor.on("sessionProjectionTransaction", (sessionId, before, after, mutations, epoch) => {
-      this.broadcastTransaction(this.sockets.sockets(), this.sockets.getDialect, this.sockets.send, sessionId, before, after, mutations, epoch);
+      this.broadcastTransaction(this.sockets.sockets(), this.sockets.isSubscribed, this.sockets.send, sessionId, before, after, mutations, epoch);
     });
     supervisor.on("sessionProjectionSnapshot", (session, epoch) => {
-      this.broadcastSnapshot(this.sockets.sockets(), this.sockets.getDialect, this.sockets.send, session, epoch);
+      this.broadcastSnapshot(this.sockets.sockets(), this.sockets.isSubscribed, this.sockets.send, session, epoch);
     });
   }
 
-  async register(socket: Socket, previousDialect: SocketDialect, dialect: SocketDialect, supervisor: SessionProjectionV2Supervisor, bootstrapId: string): Promise<void> {
-    if (previousDialect !== "negotiating" || dialect !== "v2") return;
+  /** Bootstraps a newly subscribed socket; callers guarantee this runs once per socket. */
+  async register(socket: Socket, supervisor: SessionProjectionV2Supervisor, bootstrapId: string): Promise<void> {
     const state: V2BootstrapState = {
       phase: "active",
       bootstrapId,
@@ -157,17 +163,17 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
 
   broadcastSnapshot(
     sockets: Iterable<Socket>,
-    getDialect: (socket: Socket) => SocketDialect,
+    isSubscribed: (socket: Socket) => boolean,
     send: (socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload) => void,
     session: PickyAgentSession,
     epoch: string,
   ): void {
-    this.broadcast(sockets, getDialect, send, this.snapshot(session, epoch));
+    this.broadcast(sockets, isSubscribed, send, this.snapshot(session, epoch));
   }
 
   broadcastTransaction(
     sockets: Iterable<Socket>,
-    getDialect: (socket: Socket) => SocketDialect,
+    isSubscribed: (socket: Socket) => boolean,
     send: (socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload) => void,
     sessionId: string,
     before: PickyAgentSession,
@@ -175,7 +181,7 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
     mutations: readonly PickySessionProjectionMutation[],
     epoch: string,
   ): void {
-    this.broadcast(sockets, getDialect, send, {
+    this.broadcast(sockets, isSubscribed, send, {
       type: "sessionProjectionTransaction",
       sessionId,
       epoch,
@@ -203,12 +209,12 @@ export class SessionProjectionV2Broadcaster<Socket extends object> {
 
   private broadcast(
     sockets: Iterable<Socket>,
-    getDialect: (socket: Socket) => SocketDialect,
+    isSubscribed: (socket: Socket) => boolean,
     send: (socket: Socket, payload: V2ProjectionPayload | V2ProjectionBootstrapCompletePayload) => void,
     payload: V2ProjectionPayload,
   ): void {
     for (const socket of sockets) {
-      if (getDialect(socket) !== "v2") continue;
+      if (!isSubscribed(socket)) continue;
       const bootstrap = this.bootstrapStates.get(socket);
       if (bootstrap?.phase === "failed") continue;
       if (bootstrap) {

@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT,
-  boundedSessionForAppHydration,
   boundedSessionForProjectionSnapshot,
   eventPayloadByteLength,
   minimalSessionForAppSnapshot,
-  sessionUpdatedPayloadFitsAppFrame,
 } from "./app-session-snapshot-policy.js";
 import { PROTOCOL_VERSION, PickyAgentSessionSchema, type PickyAgentSessionParsed } from "../protocol.js";
 
@@ -33,40 +31,6 @@ function oversizedText(sizeInMiB: number): string {
 }
 
 describe("app session snapshot policy", () => {
-  it("keeps a normal hydration unchanged", () => {
-    const original = session();
-
-    expect(boundedSessionForAppHydration(original)).toEqual({
-      session: original,
-      omittedFields: [],
-    });
-  });
-
-  it("degrades oversized hydrations in the documented field order", () => {
-    expect(boundedSessionForAppHydration(session({
-      subagentRuns: [{ runId: 1, agent: "worker", task: oversizedText(9), status: "running", startedAt: "2026-08-24T00:00:00.000Z" }],
-    })).omittedFields).toEqual(["subagentRuns"]);
-
-    expect(boundedSessionForAppHydration(session({
-      subagentRuns: [{ runId: 1, agent: "worker", task: oversizedText(3), status: "running", startedAt: "2026-08-24T00:00:00.000Z" }],
-      tools: [{ toolCallId: "tool", name: "bash", status: "running", preview: oversizedText(9) }],
-    })).omittedFields).toEqual(["subagentRuns", "tools"]);
-
-    const messages = [{ id: "message", kind: "agent_text" as const, createdAt: "2026-08-24T00:00:00.000Z", text: oversizedText(9) }];
-    const withoutMessages = boundedSessionForAppHydration(session({ messages }));
-    expect(withoutMessages.omittedFields).toEqual(["subagentRuns", "tools", "messages"]);
-    expect(withoutMessages.session?.messageJournalAvailable).toBe(false);
-
-    const oversizedQueue = [{ id: "queued", text: oversizedText(9), enqueuedAt: "2026-08-24T00:00:00.000Z" }];
-    const minimal = boundedSessionForAppHydration(session({ queuedSteers: oversizedQueue }));
-    expect(minimal.omittedFields).toEqual(["subagentRuns", "tools", "messages", "extendedMetadata"]);
-    expect(minimal.session).toEqual(minimalSessionForAppSnapshot(session({ queuedSteers: oversizedQueue })));
-
-    expect(boundedSessionForAppHydration(session({
-      id: oversizedText(9),
-    }))).toEqual({ omittedFields: ["entireSession"] });
-  });
-
   it("truncates title and path fields in minimal snapshots", () => {
     const result = minimalSessionForAppSnapshot(session({
       title: "t".repeat(501),
@@ -83,7 +47,7 @@ describe("app session snapshot policy", () => {
   });
 
   it("measures the UTF-8 encoded event envelope against the safe payload limit", () => {
-    const payload = { type: "sessionUpdated" as const, session: session({ title: "한글😀".repeat(200) }) };
+    const payload = { type: "sessionProjectionSnapshot" as const, sessionId: "snapshot-policy-session", epoch: "epoch", revision: 0, complete: true, omittedFields: [], projection: session({ title: "한글😀".repeat(200) }) };
     const measured = eventPayloadByteLength(payload);
     const expected = Buffer.byteLength(JSON.stringify({
       id: "event-00000000-0000-0000-0000-000000000000",
@@ -94,8 +58,7 @@ describe("app session snapshot policy", () => {
 
     expect(measured).toBe(expected);
     expect(measured).toBeGreaterThan(JSON.stringify(payload).length);
-    expect(sessionUpdatedPayloadFitsAppFrame(session())).toBe(true);
-    expect(eventPayloadByteLength({ type: "sessionUpdated", session: session({ id: oversizedText(9) }) })).toBeGreaterThan(APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT);
+    expect(eventPayloadByteLength({ ...payload, projection: session({ id: oversizedText(9) }) })).toBeGreaterThan(APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT);
   });
 
   it("uses the app hydration omission order for bounded projection snapshots", () => {

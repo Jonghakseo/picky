@@ -341,14 +341,6 @@ private final class FirstResponderProbeView: NSView {
 @Suite(.serialized)
 @MainActor
 struct PickySessionViewModelTests {
-    @Test func startRequestsPersistedSessionsOnConnect() async throws {
-        let client = FakePickyAgentClient()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.start()
-
-        try await waitForCommand(.listSessions, in: client)
-    }
-
     @MainActor @Test func hidesDockUntilInitialSessionSnapshotArrives() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
@@ -700,9 +692,9 @@ struct PickySessionViewModelTests {
     // (`viewModel.start()` → `for await event in client.events` → `apply`,
     // plus the `Task { client.connect() }` lifecycle) still forwards stream
     // events into the same reducer the migrated tests exercise. If this layer
-    // regresses (e.g. someone changes the event loop, drops `.connected`
-    // handling, or stops sending `listSessions` on connect), the reducer-direct
-    // tests would stay green; these smoke tests are what flags it.
+    // regresses (e.g. someone changes the event loop or drops `.connected`
+    // handling), the reducer-direct tests would stay green; these smoke tests
+    // are what flags it.
 
     @Test func transportForwardsStreamEventsIntoReducer() async throws {
         let client = FakePickyAgentClient()
@@ -716,17 +708,21 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.status == .running)
     }
 
-    @Test func transportConnectArmsInitialSnapshotAndAsksForSessions() async throws {
+    @Test func transportConnectArmsInitialSnapshotLoader() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        var reconnects = 0
+        let reconnectObserver = viewModel.autocompleteEvents.sink { if $0 == .reconnected { reconnects += 1 } }
+        defer { reconnectObserver.cancel() }
         viewModel.start()
 
         // start() schedules `Task { await client.connect() }`, and our fake
-        // connect emits `.connected`. The reducer then arms the initial
-        // snapshot loader and asynchronously sends `.listSessions` so the dock
-        // does not appear empty before the daemon has answered.
-        try await wait { client.sentCommands.contains { $0.type == .listSessions } }
-        #expect(client.sentCommands.contains { $0.type == .listSessions })
+        // connect emits `.connected`. The reducer arms the initial snapshot
+        // loader; the router's capability registration drives the daemon's
+        // projection bootstrap, so the view model sends no session list request.
+        try await wait { reconnects == 1 }
+        #expect(viewModel.isLoadingInitialSessionSnapshot)
+        #expect(client.sentCommands.isEmpty)
 
         // Once an (empty) snapshot lands the loader flips off via the same
         // reducer path that the unit tests verify directly.
@@ -736,17 +732,13 @@ struct PickySessionViewModelTests {
         try await wait { viewModel.isLoadingInitialSessionSnapshot == false }
         #expect(viewModel.isLoadingInitialSessionSnapshot == false)
 
-        // Now actually prove the re-arm: a second .connected (simulating a
-        // daemon reconnect after we already have an empty snapshot) must flip
-        // the loader back on AND issue another listSessions so the dock
-        // doesn't get stuck thinking it's already loaded. Without this step
-        // the test would pass even if .connected stopped arming the loader,
-        // because isLoadingInitialSessionSnapshot defaults to true on init.
-        let listSessionsBefore = client.sentCommands.filter { $0.type == .listSessions }.count
+        // A second .connected (daemon reconnect after an empty snapshot) must
+        // flip the loader back on so the dock does not think it is already
+        // loaded. Without this step the test would pass even if .connected
+        // stopped arming the loader, because the flag defaults to true on init.
         client.emit(.connected)
-        try await wait { client.sentCommands.filter { $0.type == .listSessions }.count > listSessionsBefore }
+        try await wait { reconnects == 2 }
         #expect(viewModel.isLoadingInitialSessionSnapshot)
-        #expect(client.sentCommands.filter { $0.type == .listSessions }.count == listSessionsBefore + 1)
     }
 
     @MainActor @Test func sessionsRemainOrderedByCreationTimeAcrossStatusChanges() {
@@ -5941,13 +5933,6 @@ struct PickySessionViewModelTests {
 }
 
 @MainActor
-private func waitForCommand(_ type: PickyCommandType, in client: FakePickyAgentClient) async throws {
-    for _ in 0..<20 {
-        if client.sentCommands.contains(where: { $0.type == type }) { return }
-        try await Task.sleep(nanoseconds: 100_000_000)
-    }
-    #expect(client.sentCommands.contains { $0.type == type })
-}
 
 /// Fixed-deadline pause. PREFER `wait(until:)` for new tests — settle() exists
 /// only for the two legacy patterns that polling cannot express:

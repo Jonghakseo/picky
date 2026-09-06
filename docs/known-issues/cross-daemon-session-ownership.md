@@ -5,9 +5,11 @@ Status: resolved by Session Projection v2. Production advertises
 authoritative membership/deletion path. BUG-3-2 router-cache eviction is also
 fixed.
 
-The legacy v1 `sessionSnapshot` fallback still uses whole-list replacement, so
-this document remains useful as historical context for old-dialect debugging.
-It is not an open production redesign item.
+picky-agentd no longer emits the v1 session projection events at all (the socket
+dialect registry was removed on 2026-09-06), so the whole-list replacement path in
+`PickySessionViewModel.applySessionSnapshot` is unreachable in production and is
+scheduled for deletion together with its decoder. This document remains useful as
+historical context only.
 
 ## Historical symptom
 

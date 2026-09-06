@@ -212,6 +212,11 @@ _2026-09-06: 선택지 B(메시지 집합 parity 검사)를 `checkProtocolMessag
 
 ### P1-2. v1 dialect를 CLI에서 걷어내고 삭제한다 (F3)
 
+_2026-09-06 진행 상황:_
+- _2a 완료: CLI·handoff 확장은 `pickleSessionsSnapshot`/`pickleSessionUpdated` 응답과 `awaitPickleSessionTerminal`로 전환. `pickle-create --wait`는 이전에 negotiating 소켓이 v1 브로드캐스트를 받지 못해 실제로는 동작하지 않았던 경로였고, 이제 실제 데몬 e2e 테스트로 검증됨._
+- _2b 완료: agentd에서 `socket-dialect.ts`, v1 브로드캐스트 14종, `listSessions`/`getSession` 명령, app snapshot 압축 정책을 제거. 세션 projection은 `sessionProjectionV2` 구독 소켓에만 전달._
+- _2c 미착수: Swift `PickyEvent` v1 디코드 case 15종, `PickySessionListViewModel`의 v1 apply 경로(약 350줄), 라우터 `sessionCache` 미러, 그리고 이를 fixture로 쓰는 Swift 테스트 약 330개(`PickySessionViewModelTests` 315건)가 남아 있다. 테스트가 `sessionUpdated` JSON으로 세션을 주입하므로, v2 `sessionProjectionSnapshot` 주입 헬퍼와 recovery coordinator 배선을 테스트 setup에 넣는 별도 작업이 필요하다. 그 전까지 TS 스키마 15종은 wire-dead 상태로 유지(`protocol.ts` 주석 참조)._
+
 - `cli.ts`가 `sessionProjectionV2`를 등록하고 `sessionProjectionSnapshot/Transaction`으로 세션을 읽도록 바꾼다.
 - 그 후 `socket-dialect.ts`, `server.ts`의 dialect 분기, `PickySessionListViewModel`의 `.sessionSnapshot/.sessionUpdated` 분기, 라우터의 `sessionCache`, 프로토콜의 v1 이벤트 16종을 제거한다.
 - `known-issues/cross-daemon-session-ownership.md`가 "v1은 historical debugging 용"이라고 이미 선언했으므로 제품 리스크는 낮다.

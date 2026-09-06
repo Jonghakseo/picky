@@ -1897,9 +1897,9 @@ final class PickySessionListViewModel: ObservableObject {
     ///
     /// Tests use this entry point directly so reducer assertions stay
     /// deterministic and free of `Task.sleep`-based settling. The `.connected`
-    /// and `.disconnected` cases mutate loader state and spawn a `Task` to
-    /// send `listSessions`, so this is not a pure reducer; treat it as the
-    /// canonical event-application seam, called once per delivered event.
+    /// and `.disconnected` cases mutate loader state, so this is not a pure
+    /// reducer; treat it as the canonical event-application seam, called once
+    /// per delivered event.
     func apply(_ event: PickyClientEvent) {
         beginDockStateMutation()
         defer { endDockStateMutation() }
@@ -1914,10 +1914,6 @@ final class PickySessionListViewModel: ObservableObject {
             }
             lastError = nil
             autocompleteEvents.send(.reconnected)
-            Task {
-                pickySessionLog("send listSessions for initial snapshot")
-                try? await client.send(PickyCommandEnvelope(type: .listSessions))
-            }
         case .disconnected:
             pickySessionLog("client disconnected")
             lastError = "Disconnected from picky-agentd"

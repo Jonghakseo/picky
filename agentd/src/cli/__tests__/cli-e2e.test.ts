@@ -151,21 +151,19 @@ describe("picky CLI against a real agentd server", () => {
     });
   });
 
-  it("waits for a terminal thin session update after creating a Pickle", async () => {
-    // Regression: the CLI must recognise terminal sessionMetaUpdated events after
-    // sessionUpdated was split into a thin metadata stream.
+  it("waits for the terminal pickleSessionUpdated reply after creating a Pickle", async () => {
+    // The CLI never subscribes to session projection; `--wait` relies on the
+    // daemon answering `awaitPickleSessionTerminal` once the session finishes.
     type ServerSend = {
       send(socket: WebSocket, payload: { type: string; sessionId?: string; session?: PickyAgentSession }): unknown;
     };
     const privateServer = server as unknown as ServerSend;
     const originalSend = privateServer.send.bind(server);
     let terminalPatch: Promise<void> | undefined;
-    const terminalEvents: string[] = [];
+    const sentTypes: string[] = [];
     vi.spyOn(privateServer, "send").mockImplementation((socket, payload) => {
       const result = originalSend(socket, payload);
-      if (payload.type === "sessionUpdated" || payload.type === "sessionMetaUpdated") {
-        if (payload.session?.status === "completed") terminalEvents.push(payload.type);
-      }
+      sentTypes.push(payload.type);
       if (payload.type === "externalEntryAck" && payload.sessionId && !terminalPatch) {
         // Queue after the ack frame, so the child CLI has installed its --wait
         // reply matcher before it receives the terminal event.
@@ -183,7 +181,8 @@ describe("picky CLI against a real agentd server", () => {
     await terminalPatch;
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Thin terminal answer");
-    expect(terminalEvents).toEqual(["sessionMetaUpdated"]);
+    expect(sentTypes.filter((type) => type === "pickleSessionUpdated")).toEqual(["pickleSessionUpdated"]);
+    expect(sentTypes.some((type) => type.startsWith("sessionProjection") || type === "sessionUpdated" || type === "sessionMetaUpdated")).toBe(false);
   });
 
   it("reports a missing Pickle from the real getPickle handler", async () => {

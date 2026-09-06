@@ -13,17 +13,6 @@ export const APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT = APP_EVENT_FRAME_BYTE_LIMIT - AP
 export const APP_SNAPSHOT_TITLE_CHAR_LIMIT = 500;
 export const APP_SNAPSHOT_PATH_CHAR_LIMIT = 2_000;
 
-export function compactSessionForAppSnapshot(session: PickyAgentSessionParsed): PickyAgentSessionParsed {
-  return protocolSession({
-    ...session,
-    logs: [],
-    tools: [],
-    subagentRuns: [],
-    messages: [],
-    messageJournalAvailable: false,
-  });
-}
-
 export function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): PickyAgentSessionParsed {
   return protocolSession({
     id: session.id,
@@ -53,21 +42,11 @@ export function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): 
   });
 }
 
-export function boundedSessionForAppHydration(session: PickyAgentSessionParsed): {
-  session?: PickyAgentSessionParsed;
-  omittedFields: string[];
-} {
-  return boundedSessionForFrame(session, (candidate) => ({ type: "sessionUpdated", session: candidate }), {
-    minimal: minimalSessionForAppSnapshot,
-    minimalOmittedFields: ["subagentRuns", "tools", "messages", "extendedMetadata"],
-  });
-}
-
 /**
- * Reuses the P0 hydration field-drop order while measuring the actual dormant
- * v2 recovery envelope. Unlike app hydration, every omission here names a
- * persisted session field so Swift can clear or mark that child store
- * unavailable instead of silently retaining stale data.
+ * Drops large child sections in a fixed order until the projection snapshot
+ * fits the app frame budget. Every omission names a persisted session field so
+ * Swift can clear or mark that child store unavailable instead of silently
+ * retaining stale data.
  */
 export function boundedSessionForProjectionSnapshot(
   session: PickyAgentSessionParsed,
@@ -122,10 +101,6 @@ function boundedSessionForFrame(
     return { session: minimalSession, omittedFields: fallback.minimalOmittedFields };
   }
   return { omittedFields: ["entireSession"] };
-}
-
-export function sessionUpdatedPayloadFitsAppFrame(session: PickyAgentSessionParsed): boolean {
-  return eventPayloadByteLength({ type: "sessionUpdated", session }) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT;
 }
 
 export function eventPayloadByteLength(payload: EventPayload): number {

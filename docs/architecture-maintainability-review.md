@@ -204,6 +204,8 @@ _작성일: 2026-09-06 · 기준 커밋: `a739298ad`_
 
 ### P1-1. 프로토콜을 단일 소스에서 생성한다 (F2)
 
+_2026-09-06: 선택지 B(메시지 집합 parity 검사)를 `checkProtocolMessageSetParity`로 구현. CLI 전용 메시지 11개는 명시 allowlist로 pin. 생성(선택지 A)과 fixture 커버리지(83/139)는 미착수._
+
 - 선택지 A: `protocol.ts`(zod)에서 JSON Schema를 뽑고, 그로부터 Swift Codable을 생성하는 스크립트를 `scripts/`에 둔다. 생성물 diff를 CI에서 검사한다.
 - 선택지 B: 생성이 부담이면 최소한 **메시지 집합 parity 검사**를 가드에 추가한다. TS `z.literal` 집합과 Swift enum case 집합을 비교해 누락을 CI에서 잡는다. 수십 줄이면 된다.
 - 어느 쪽이든 165개 메시지 자체를 줄이는 방향으로 리뷰한다. `list*`/`get*` 조회 계열과 `*Snapshot` 응답 이벤트가 상당수 `sessionProjectionTransaction` 하나로 대체 가능한지 검토한다.

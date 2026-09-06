@@ -337,3 +337,21 @@ main-turn tests become timing-dependent).
 `session-supervisor.ts` measured 1991 lines afterwards, so its pin drops from
 3000 to 1992. `main-agent-coordinator.ts` is 1021 lines and sits under the
 1500-line limit without a pin.
+
+#### 2026-09-06 protocol message-set parity
+
+The app-daemon protocol is hand-mirrored (`agentd/src/protocol.ts` zod unions and
+`Picky/PickyAgentProtocol.swift`), and the only automated parity check was the
+version string. `checkProtocolMessageSetParity` now compares the discriminator
+sets directly: every `PickyCommandType` raw value and every `case "..."` the
+`PickyEvent` decoder matches must exist in the TypeScript union, and every
+TypeScript member must exist in Swift unless it is pinned in the external-only
+allowlist (CLI-facing commands such as `submitMainFromExternal` and ack events
+such as `pickySettingsAck`). An allowlist entry that Swift later adopts, or that
+TypeScript drops, is itself an error so the list cannot rot.
+
+The check is text-based on purpose: it keeps the guard dependency-free and runs
+in the pre-push hook without loading zod. Self-test fixtures cover referenced
+schema identifiers inside a union, `case a, b` lists, explicit raw values, and
+grouped `case "a", "b":` decoder arms. Fixture coverage in `contracts/protocol`
+(83 of 139 message types) is a separate follow-up.

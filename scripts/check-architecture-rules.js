@@ -261,6 +261,153 @@ function checkProtocolParity() {
   }
 }
 
+// Message types the daemon accepts or emits only for the local `picky` CLI and
+// other external clients. Picky.app never sends or decodes them, so they are the
+// only permitted TypeScript-only protocol members. Remove an entry when the app
+// adopts the message; the guard errors if an entry is present in Swift.
+const EXTERNAL_ONLY_PROTOCOL_COMMANDS = new Set([
+  "createPickleFromExternal",
+  "submitMainFromExternal",
+  "listPickySettings",
+  "getPickySettings",
+  "setPickySettings",
+  "listDockGroups",
+]);
+const EXTERNAL_ONLY_PROTOCOL_EVENTS = new Set([
+  "dockGroupsSnapshot",
+  "externalEntryAck",
+  "pickySettingsAck",
+  "pushToTalkControlAck",
+]);
+
+// Reads the `type: z.literal("...")` discriminators of a zod discriminated union,
+// following identifiers that reference schemas declared elsewhere in the file.
+function zodUnionTypeLiterals(source, unionName) {
+  const header = `export const ${unionName} = z.discriminatedUnion("type", [`;
+  const start = source.indexOf(header);
+  if (start === -1) return undefined;
+  let index = start + header.length - 1;
+  let depth = 0;
+  for (; index < source.length; index += 1) {
+    if (source[index] === "[") depth += 1;
+    else if (source[index] === "]") {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  const body = source.slice(start + header.length, index);
+  const types = new Set();
+  for (const match of body.matchAll(/type:\s*z\.literal\("([A-Za-z0-9_]+)"\)/g)) types.add(match[1]);
+  for (const match of body.matchAll(/^\s*([A-Za-z0-9_]+),?\s*$/gm)) {
+    const referenced = source.match(new RegExp(String.raw`const ${match[1]}\s*=[\s\S]*?type:\s*z\.literal\("([A-Za-z0-9_]+)"\)`));
+    if (referenced) types.add(referenced[1]);
+    else addError(`Could not resolve zod schema ${match[1]} referenced by ${unionName}.`);
+  }
+  return types;
+}
+
+// Raw values of a `String` enum, honoring `case a, b` lists and `case a = "raw"`.
+function swiftStringEnumRawValues(source, enumName) {
+  const match = source.match(new RegExp(String.raw`enum ${enumName}: String[^{]*\{([\s\S]*?)\n\}`));
+  if (!match) return undefined;
+  const values = new Set();
+  for (const line of stripSwiftCommentsAndStrings(match[1]).split("\n")) {
+    const caseLine = line.match(/^\s*case\s+(.+)$/);
+    if (!caseLine) continue;
+    for (const entry of caseLine[1].split(",")) {
+      const name = entry.trim().match(/^([A-Za-z0-9_]+)(?:\s*=\s*(.*))?$/);
+      if (!name) continue;
+      if (name[2] !== undefined) {
+        const raw = match[1].match(new RegExp(String.raw`case[^\n]*\b${name[1]}\s*=\s*"([^"]+)"`));
+        values.add(raw ? raw[1] : name[1]);
+      } else {
+        values.add(name[1]);
+      }
+    }
+  }
+  return values;
+}
+
+// Event type strings matched by `PickyEvent.init(type:decoder:)` and its decode helpers.
+function swiftDecodedEventTypes(source) {
+  const start = source.indexOf("init(type: String, decoder: Decoder) throws");
+  if (start === -1) return undefined;
+  const end = source.indexOf("\n}\n", start);
+  const types = new Set();
+  for (const match of source.slice(start, end).matchAll(/^\s*case\s+((?:"[A-Za-z0-9_]+",?\s*)+):/gm)) {
+    for (const literal of match[1].matchAll(/"([A-Za-z0-9_]+)"/g)) types.add(literal[1]);
+  }
+  return types;
+}
+
+function checkProtocolMessageSetParity() {
+  const ts = read("agentd/src/protocol.ts");
+  const swift = read("Picky/PickyAgentProtocol.swift");
+  const tsCommands = zodUnionTypeLiterals(ts, "CommandEnvelopeSchema");
+  const tsEvents = zodUnionTypeLiterals(ts, "EventEnvelopeVariantSchema");
+  const swiftCommands = swiftStringEnumRawValues(swift, "PickyCommandType");
+  const swiftEvents = swiftDecodedEventTypes(swift);
+  if (!tsCommands || !tsEvents) addError("Could not locate CommandEnvelopeSchema/EventEnvelopeVariantSchema in agentd/src/protocol.ts.");
+  if (!swiftCommands || !swiftEvents) addError("Could not locate PickyCommandType or the PickyEvent decoder in Picky/PickyAgentProtocol.swift.");
+  if (!tsCommands || !tsEvents || !swiftCommands || !swiftEvents) return;
+
+  const compare = (kind, tsSet, swiftSet, externalOnly) => {
+    for (const type of swiftSet) {
+      if (!tsSet.has(type)) addError(`Swift ${kind} "${type}" has no TypeScript schema in agentd/src/protocol.ts. Add both sides and a contracts/protocol fixture in the same change.`);
+      if (externalOnly.has(type)) addError(`Protocol ${kind} "${type}" is listed as external-only but Picky.app defines it; remove it from the external-only allowlist.`);
+    }
+    for (const type of tsSet) {
+      if (!swiftSet.has(type) && !externalOnly.has(type)) addError(`TypeScript ${kind} "${type}" is missing from Picky/PickyAgentProtocol.swift. Mirror it in Swift, or add it to the external-only allowlist if only the CLI uses it.`);
+    }
+    for (const type of externalOnly) {
+      if (!tsSet.has(type)) addError(`External-only ${kind} "${type}" no longer exists in agentd/src/protocol.ts; remove it from the allowlist.`);
+    }
+  };
+  compare("command", tsCommands, swiftCommands, EXTERNAL_ONLY_PROTOCOL_COMMANDS);
+  compare("event", tsEvents, swiftEvents, EXTERNAL_ONLY_PROTOCOL_EVENTS);
+}
+
+function checkProtocolMessageSetParityFixtures() {
+  const tsFixture = [
+    "const ReferencedSchema = Base.extend({",
+    '  type: z.literal("referenced"),',
+    "});",
+    'export const SampleSchema = z.discriminatedUnion("type", [',
+    '  Base.extend({ type: z.literal("inline"), payload: z.array(z.string()) }),',
+    "  ReferencedSchema,",
+    "]);",
+  ].join("\n");
+  const tsTypes = zodUnionTypeLiterals(tsFixture, "SampleSchema");
+  if (!tsTypes || [...tsTypes].sort().join(",") !== "inline,referenced") addError("Protocol parity self-test: zod union extraction drifted.");
+
+  const swiftEnumFixture = [
+    "enum SampleType: String, Codable, Equatable {",
+    "    case alpha",
+    "    case beta, gamma",
+    '    case delta = "deltaRaw"',
+    "    // case commented",
+    "    var label: String { rawValue }",
+    "}",
+  ].join("\n");
+  const swiftValues = swiftStringEnumRawValues(swiftEnumFixture, "SampleType");
+  if (!swiftValues || [...swiftValues].sort().join(",") !== "alpha,beta,deltaRaw,gamma") addError("Protocol parity self-test: Swift enum extraction drifted.");
+
+  const swiftDecoderFixture = [
+    "    init(type: String, decoder: Decoder) throws {",
+    "        switch type {",
+    '        case "one": return .one',
+    '        case "two", "three":',
+    "            return .grouped",
+    '        default: throw DecodingError.dataCorruptedError("unknown")',
+    "        }",
+    "    }",
+    "}",
+    "",
+  ].join("\n");
+  const swiftTypes = swiftDecodedEventTypes(swiftDecoderFixture);
+  if (!swiftTypes || [...swiftTypes].sort().join(",") !== "one,three,two") addError("Protocol parity self-test: Swift event decoder extraction drifted.");
+}
+
 function checkSwiftDomainImports() {
   const disallowed = new Set([
     "SwiftUI",
@@ -736,6 +883,8 @@ function main() {
     checkSessionProjectionGuardFixtures();
     checkPermissionPromptAPIUsage();
     checkProtocolParity();
+    checkProtocolMessageSetParityFixtures();
+    checkProtocolMessageSetParity();
     checkSwiftDomainImports();
     checkAgentdDomainImports();
     checkInteractionReducerMutationBoundary();

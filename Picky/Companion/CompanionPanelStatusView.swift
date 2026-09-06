@@ -19,6 +19,7 @@ enum CompanionPanelStatusRoute: Hashable {
 
 struct CompanionPanelStatusView: View {
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var permissions: PickyPermissionMonitor
     @ObservedObject var settingsViewModel: PickySettingsViewModel
     @EnvironmentObject private var updaterController: PickyUpdaterController
     @Binding var route: CompanionPanelStatusRoute
@@ -47,7 +48,7 @@ struct CompanionPanelStatusView: View {
     private var indexContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             staleShellCommandBanner
-            if companionManager.allPrerequisitesMet {
+            if permissions.allGranted {
                 readyRow
                 Divider()
                     .background(DS.Colors.borderSubtle.opacity(0.4))
@@ -68,9 +69,9 @@ struct CompanionPanelStatusView: View {
                 // Feedback affordance during onboarding lives in the footer
                 // bug glyph; the prerequisites surface no longer competes
                 // with it for attention here.
-                CompanionPanelPrerequisitesCopyView(companionManager: companionManager)
+                CompanionPanelPrerequisitesCopyView()
                     .padding(.bottom, 14)
-                CompanionPanelPrerequisitesView(companionManager: companionManager)
+                CompanionPanelPrerequisitesView(permissions: permissions)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

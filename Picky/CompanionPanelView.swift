@@ -51,6 +51,7 @@ enum CompanionPanelTab: String, CaseIterable, Identifiable {
 
 struct CompanionPanelView: View {
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var permissions: PickyPermissionMonitor
     /// Shared with the HUD dock. The Settings → Pickle screen renders the
     /// archived-Pickle list (with restore/delete affordances) directly off
     /// this view model, so the menu bar panel needs the same instance the HUD
@@ -90,7 +91,7 @@ struct CompanionPanelView: View {
             // stays reachable through the footer bug glyph so the user never
             // has to discover the tab bar to escape. Extensions/Settings reappear
             // as soon as every prerequisite is satisfied.
-            if companionManager.allPrerequisitesMet {
+            if permissions.allGranted {
                 CompanionPanelTabBar(
                     selectedTab: selectedTabBinding,
                     onTapActiveTab: popActiveTabToRoot
@@ -137,8 +138,8 @@ struct CompanionPanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: CompanionPanelMetrics.cornerRadius, style: .continuous))
         .frame(width: CompanionPanelMetrics.panelWidth, height: CompanionPanelMetrics.panelHeight)
         .background(Color.clear)
-        .onAppear { handlePrerequisitesChanged(companionManager.allPrerequisitesMet) }
-        .onChange(of: companionManager.allPrerequisitesMet) { _, newValue in
+        .onAppear { handlePrerequisitesChanged(permissions.allGranted) }
+        .onChange(of: permissions.allGranted) { _, newValue in
             handlePrerequisitesChanged(newValue)
         }
     }
@@ -153,6 +154,7 @@ struct CompanionPanelView: View {
         if navigator.statusRoute == .messages {
             CompanionPanelStatusView(
                 companionManager: companionManager,
+                permissions: permissions,
                 settingsViewModel: settingsViewModel,
                 route: statusRouteBinding
             )
@@ -164,6 +166,7 @@ struct CompanionPanelView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 CompanionPanelStatusView(
                     companionManager: companionManager,
+                    permissions: permissions,
                     settingsViewModel: settingsViewModel,
                     route: statusRouteBinding
                 )

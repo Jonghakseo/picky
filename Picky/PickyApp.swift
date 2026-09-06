@@ -322,14 +322,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // Auto-open the panel only when the user still needs to finish macOS
         // permissions setup. Mirrors what the prerequisites surface gates on so
         // launch matches the panel's own visibility logic.
-        if !companionManager.allPrerequisitesMet {
+        if !companionManager.permissions.allGranted {
             menuBarPanelManager?.showPanelOnLaunch()
         }
         // Show the interactive demo on a fresh install (or whenever the user
         // hits "Replay onboarding" in Settings). Prerequisites take priority
         // so the user fixes blockers before we hand them a guided tour they
         // can't actually complete.
-        if companionManager.allPrerequisitesMet && onboardingActivator.shouldShowOnboarding {
+        if companionManager.permissions.allGranted && onboardingActivator.shouldShowOnboarding {
             // Cursor-bubble onboarding: no takeover panel, guidance lives in the
             // Picky cursor's speech bubble, real shortcut/dictation pipelines
             // fire as usual and submissions are intercepted before the daemon.

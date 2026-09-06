@@ -8,11 +8,9 @@
 //
 
 import AppKit
-import AVFoundation
 import Combine
 import Foundation
 import OSLog
-import ScreenCaptureKit
 import SwiftUI
 
 // Shared only by CompanionManager's speech-lifecycle extension; the manager remains
@@ -75,17 +73,9 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var isResettingMainAgentSession = false
     @Published private(set) var directMessageError: String?
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
-    @Published private(set) var hasAccessibilityPermission = false
-    @Published private(set) var hasScreenRecordingPermission = false
-    @Published private(set) var hasMicrophonePermission = false
-    @Published private(set) var hasScreenContentPermission = false
-    /// Developer override: when `PICKY_FORCE_PERMISSIONS_MISSING=1` is set, every
-    /// macOS permission flag is reported as false regardless of the actual system
-    /// state, so the panel renders the full setup surface without anyone having
-    /// to revoke real permissions. The underlying side effects (PTT monitor,
-    /// screen capture) still follow real macOS state because there's no safe way
-    /// to simulate a denial there. Mirrors `PICKY_AGENTD_RUNTIME=mock`.
-    private let forcePermissionsMissing: Bool = ProcessInfo.processInfo.environment["PICKY_FORCE_PERMISSIONS_MISSING"] == "1"
+    /// Owner of the macOS permission flags. Observe it directly from views;
+    /// CompanionManager only reacts to its transitions (event tap, cursor overlay).
+    let permissions: PickyPermissionMonitor
     /// Onboarding-only: when set, every voice / text submission path consults
     /// this closure first. Returning a non-nil receipt fakes a successful submit
     /// without touching the real agent client — the cursor still shows the
@@ -258,8 +248,10 @@ final class CompanionManager: ObservableObject {
         armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil,
         annotationSceneMonitor: PickyAnnotationSceneMonitor? = nil,
         voiceTargetResolver: (any PickyVoiceTargetResolving)? = nil,
+        permissions: PickyPermissionMonitor? = nil,
         pointerLocationProvider: @escaping @MainActor () -> CGPoint = { NSEvent.mouseLocation }
     ) {
+        self.permissions = permissions ?? PickyPermissionMonitor()
         let resolvedInitialSettings = initialSettings
             ?? Self.migrateLegacyCursorPreferenceIfNeeded(store: PickySettingsStore())
         self.isCursorPreferenceEnabled = resolvedInitialSettings.cursor.showPiCursor
@@ -401,7 +393,7 @@ final class CompanionManager: ObservableObject {
     private var audioPowerCancellable: AnyCancellable?
     private var dictationErrorCancellable: AnyCancellable?
     private var settingsChangeCancellable: AnyCancellable?
-    private var accessibilityCheckTimer: Timer?
+    private var permissionCancellables = Set<AnyCancellable>()
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
     /// Scheduled hide for transient cursor mode — cancelled if the user
     /// speaks again before the delay elapses.
@@ -469,19 +461,6 @@ final class CompanionManager: ObservableObject {
     /// `setVoiceFollowUpSessionIDForCurrentUtterance(_:)`.
     private(set) var voiceFollowUpSessionIDForCurrentUtterance: String?
 
-    /// True when all three required permissions (accessibility, screen recording,
-    /// microphone) are granted. Used by the panel to show a single "all good" state.
-    var allPermissionsGranted: Bool {
-        hasAccessibilityPermission && hasScreenRecordingPermission && hasMicrophonePermission && hasScreenContentPermission
-    }
-
-    /// Everything the user needs in place before the panel hides its setup
-    /// surface. Agent runtime health is reported by agentd itself rather than
-    /// a separate local Pi executable probe.
-    var allPrerequisitesMet: Bool {
-        allPermissionsGranted
-    }
-
     /// Whether the blue cursor overlay is currently visible on screen.
     /// Used by the panel to show accurate status text ("Active" vs "Ready").
     @Published private(set) var isOverlayVisible: Bool = false
@@ -546,7 +525,7 @@ final class CompanionManager: ObservableObject {
         transientHideTask = nil
 
         if enabled {
-            if allPermissionsGranted {
+            if permissions.allGranted {
                 setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
             }
         } else {
@@ -566,10 +545,11 @@ final class CompanionManager: ObservableObject {
         wireMainCancelPill()
         applyShortcutSpecsFromSettings()
         bindShortcutCaptureLifecycle()
+        bindPermissionTransitions()
         if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {
-            refreshAllPermissions()
-            print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
-            startPermissionPolling()
+            permissions.refresh()
+            print("🔑 Picky start — accessibility: \(permissions.hasAccessibility), screen: \(permissions.hasScreenRecording), mic: \(permissions.hasMicrophone), screenContent: \(permissions.hasScreenContent)")
+            permissions.startPolling()
         }
         bindVoiceStateObservation()
         bindAudioPowerLevel()
@@ -581,7 +561,7 @@ final class CompanionManager: ObservableObject {
         bindSettingsChanges()
         // Show the cursor as soon as all permissions are available and the
         // cursor preference is enabled.
-        if allPermissionsGranted && isCursorPreferenceEnabled {
+        if permissions.allGranted && isCursorPreferenceEnabled {
             setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
         }
     }
@@ -646,115 +626,34 @@ final class CompanionManager: ObservableObject {
         audioPowerCancellable?.cancel()
         dictationErrorCancellable?.cancel()
         settingsChangeCancellable?.cancel()
-        accessibilityCheckTimer?.invalidate()
-        accessibilityCheckTimer = nil
+        permissionCancellables.removeAll()
+        permissions.stopPolling()
     }
 
-    func refreshAllPermissions() {
-        let previouslyHadAccessibility = hasAccessibilityPermission
-        let previouslyHadScreenRecording = hasScreenRecordingPermission
-        let previouslyHadMicrophone = hasMicrophonePermission
-        let previouslyHadAll = allPermissionsGranted
-
-        let currentlyHasAccessibility = WindowPositionManager.hasAccessibilityPermission()
-        hasAccessibilityPermission = currentlyHasAccessibility
-
-        if currentlyHasAccessibility {
-            globalPushToTalkShortcutMonitor.start()
-            // Pre-warm the shared suppressing mouse tap so the first ink draw
-            // doesn't leak its opening mouse-down while a fresh tap is created.
-            inkCaptureCoordinator.ensureEventTapInstalled()
-        } else {
-            globalPushToTalkShortcutMonitor.stop()
-            inkCaptureCoordinator.teardownEventTap()
-        }
-
-        hasScreenRecordingPermission = WindowPositionManager.hasScreenRecordingPermission()
-
-        let micAuthStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        hasMicrophonePermission = micAuthStatus == .authorized
-
-        // Debug: log permission state on changes
-        if previouslyHadAccessibility != hasAccessibilityPermission
-            || previouslyHadScreenRecording != hasScreenRecordingPermission
-            || previouslyHadMicrophone != hasMicrophonePermission {
-            print("🔑 Permissions — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
-        }
-
-        // Track individual permission grants as they happen
-        if !previouslyHadAccessibility && hasAccessibilityPermission {
-            PickyAnalytics.trackPermissionGranted(permission: "accessibility")
-        }
-        if !previouslyHadScreenRecording && hasScreenRecordingPermission {
-            PickyAnalytics.trackPermissionGranted(permission: "screen_recording")
-        }
-        if !previouslyHadMicrophone && hasMicrophonePermission {
-            PickyAnalytics.trackPermissionGranted(permission: "microphone")
-        }
-        // Screen content permission is persisted — once the user has approved the
-        // SCShareableContent picker, we don't need to re-check it.
-        if !hasScreenContentPermission {
-            hasScreenContentPermission = PickyRuntimeEnvironment.userDefaults.bool(forKey: "hasScreenContentPermission")
-        }
-
-        // UI-only simulation: flip every flag to false AFTER the real probe so
-        // the analytics/grant-tracking branches above still see realistic
-        // transitions during a normal launch, while the panel renders the
-        // setup-needed state on next bind.
-        if forcePermissionsMissing {
-            hasAccessibilityPermission = false
-            hasScreenRecordingPermission = false
-            hasMicrophonePermission = false
-            hasScreenContentPermission = false
-        }
-
-        if !previouslyHadAll && allPermissionsGranted {
-            PickyAnalytics.trackAllPermissionsGranted()
-            if isCursorPreferenceEnabled {
+    /// Accessibility gates the global event taps; the first fully granted state
+    /// reveals the always-on cursor when the preference allows it.
+    private func bindPermissionTransitions() {
+        guard permissionCancellables.isEmpty else { return }
+        permissions.accessibilityProbed
+            .sink { [weak self] granted in
+                guard let self else { return }
+                if granted {
+                    globalPushToTalkShortcutMonitor.start()
+                    // Pre-warm the shared suppressing mouse tap so the first ink draw
+                    // doesn't leak its opening mouse-down while a fresh tap is created.
+                    inkCaptureCoordinator.ensureEventTapInstalled()
+                } else {
+                    globalPushToTalkShortcutMonitor.stop()
+                    inkCaptureCoordinator.teardownEventTap()
+                }
+            }
+            .store(in: &permissionCancellables)
+        permissions.becameAllGranted
+            .sink { [weak self] in
+                guard let self, isCursorPreferenceEnabled else { return }
                 setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
             }
-        }
-    }
-
-    /// Triggers the macOS screen content picker by performing a dummy
-    /// screenshot capture. Once the user approves, we persist the grant
-    /// so they're not asked again on later launches.
-    @Published private(set) var isRequestingScreenContent = false
-    func requestScreenContentPermission() {
-        guard !isRequestingScreenContent else { return }
-        isRequestingScreenContent = true
-        Task {
-            do {
-                let content = try await PickySystemPermissionGateway.shared.screenShareableContent()
-                guard let display = content.displays.first else {
-                    await MainActor.run { isRequestingScreenContent = false }
-                    return
-                }
-                let filter = SCContentFilter(display: display, excludingWindows: [])
-                let config = SCStreamConfiguration()
-                config.width = 320
-                config.height = 240
-                let image = try await PickySystemPermissionGateway.shared.captureScreenshot(contentFilter: filter, configuration: config)
-                // Verify the capture actually returned real content — a 0x0 or
-                // fully-empty image means the user denied the prompt.
-                let didCapture = image.width > 0 && image.height > 0
-                print("🔑 Screen content capture result — width: \(image.width), height: \(image.height), didCapture: \(didCapture)")
-                await MainActor.run {
-                    isRequestingScreenContent = false
-                    guard didCapture else { return }
-                    hasScreenContentPermission = true
-                    PickyRuntimeEnvironment.userDefaults.set(true, forKey: "hasScreenContentPermission")
-                    PickyAnalytics.trackPermissionGranted(permission: "screen_content")
-
-                    if allPermissionsGranted && isCursorPreferenceEnabled {
-                        setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
-                    }
-                }
-            } catch {
-                print("⚠️ Screen content permission request failed: \(error)")
-                await MainActor.run { isRequestingScreenContent = false }
-            }
-        }
+            .store(in: &permissionCancellables)
     }
 
     /// Explicit user action from the post-narration annotation close control.
@@ -862,29 +761,6 @@ final class CompanionManager: ObservableObject {
     var hasActiveTransientOverlayBlocker: Bool {
         let blockers: Set<PickyOverlayReason> = [.activeVoiceInput, .waitingForVoiceResponse, .speakingResponse, .activePointerAnimation, .activeInkCapture, .screenContextTarget]
         return !overlayVisibilityReasons.intersection(blockers).isEmpty
-    }
-
-    /// Triggers the system microphone prompt if the user has never been asked.
-    /// Once granted/denied the status sticks and polling picks it up.
-    private func promptForMicrophoneIfNotDetermined() {
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
-        Task { [weak self] in
-            do {
-                let granted = try await PickySystemPermissionGateway.shared.requestMicrophoneAccess()
-                self?.hasMicrophonePermission = granted
-            } catch { self?.hasMicrophonePermission = false }
-        }
-    }
-
-    /// Polls all permissions frequently so the UI updates live after the
-    /// user grants them in System Settings. Screen Recording is the exception —
-    /// macOS requires an app restart for that one to take effect.
-    private func startPermissionPolling() {
-        accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refreshAllPermissions()
-            }
-        }
     }
 
     private func bindAudioPowerLevel() {

@@ -215,6 +215,7 @@ final class MenuBarPanelManager: NSObject {
         let companionPanelView = PickyAppFontScaleRoot(store: fontScaleStore) {
             CompanionPanelView(
                 companionManager: self.companionManager,
+                permissions: self.companionManager.permissions,
                 sessionListViewModel: self.sessionListViewModel,
                 navigator: self.navigator,
                 dockDisplayIDProvider: { [weak self] in
@@ -325,7 +326,7 @@ final class MenuBarPanelManager: NSObject {
 
                 // If permissions aren't all granted yet, a system dialog
                 // may have focus — don't dismiss while setup is in progress.
-                if !self.companionManager.allPermissionsGranted && !NSApp.isActive {
+                if !self.companionManager.permissions.allGranted && !NSApp.isActive {
                     return
                 }
 

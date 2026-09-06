@@ -11,8 +11,6 @@ import AVFoundation
 import SwiftUI
 
 struct CompanionPanelPrerequisitesCopyView: View {
-    @ObservedObject var companionManager: CompanionManager
-
     /// The copy view is only embedded by the Status tab when prerequisites are
     /// still missing, so the body always renders the "setup needed" wording.
     /// Kept as its own view (rather than inlined) so the Status tab and any
@@ -38,7 +36,7 @@ struct CompanionPanelPrerequisitesCopyView: View {
 }
 
 struct CompanionPanelPrerequisitesView: View {
-    @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var permissions: PickyPermissionMonitor
 
     var body: some View {
         VStack(spacing: 2) {
@@ -54,7 +52,7 @@ struct CompanionPanelPrerequisitesView: View {
 
             screenRecordingPermissionRow
 
-            if companionManager.hasScreenRecordingPermission {
+            if permissions.hasScreenRecording {
                 screenContentPermissionRow
             }
 
@@ -62,7 +60,7 @@ struct CompanionPanelPrerequisitesView: View {
     }
 
     private var accessibilityPermissionRow: some View {
-        let isGranted = companionManager.hasAccessibilityPermission
+        let isGranted = permissions.hasAccessibility
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "hand.raised")
@@ -132,7 +130,7 @@ struct CompanionPanelPrerequisitesView: View {
     }
 
     private var screenRecordingPermissionRow: some View {
-        let isGranted = companionManager.hasScreenRecordingPermission
+        let isGranted = permissions.hasScreenRecording
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "rectangle.dashed.badge.record")
@@ -187,7 +185,7 @@ struct CompanionPanelPrerequisitesView: View {
     }
 
     private var screenContentPermissionRow: some View {
-        let isGranted = companionManager.hasScreenContentPermission
+        let isGranted = permissions.hasScreenContent
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "eye")
@@ -213,7 +211,7 @@ struct CompanionPanelPrerequisitesView: View {
                 }
             } else {
                 Button(action: {
-                    companionManager.requestScreenContentPermission()
+                    permissions.requestScreenContent()
                 }) {
                     Text("common.grant")
                         .pickyFont(size: 11, weight: .semibold)
@@ -233,7 +231,7 @@ struct CompanionPanelPrerequisitesView: View {
     }
 
     private var microphonePermissionRow: some View {
-        let isGranted = companionManager.hasMicrophonePermission
+        let isGranted = permissions.hasMicrophone
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "mic")

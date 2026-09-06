@@ -316,3 +316,23 @@ npx madge --extensions ts --ts-config agentd/tsconfig.json --circular agentd/src
 # 아키텍처 가드
 node scripts/check-architecture-rules.js
 ```
+
+## 7. 2026-09-06 self-healing 결과 (P0 + P1 시리즈, `a739298ad..09f874340`)
+
+verifier·reviewer·challenger 격리 검토 2사이클. 검증 증거: Swift 전체 2,612 테스트, agentd 1,232 테스트, mock 데몬 소켓 스모크(v2 부트스트랩·비구독 소켓·`awaitPickleSessionTerminal`·rewind) 모두 통과.
+
+| Cycle | 발견 | 심각도 | 조치 |
+|---|---|---|---|
+| 1 | `rewindSession` 핸들러가 v2 transaction 뒤에 v1 `sessionUpdated`를 브로드캐스트 | P2 | 제거 + 서버 회귀 테스트 (`0a31373f4`) |
+| 1 | SDK 가드가 비리터럴 동적 import를 못 잡음 | P2 | 패키지 문자열 자체를 `runtime/`·`bootstrap.ts` 밖에서 금지 |
+| 1 | 카드 round-trip이 `lastRequest.source`를 `.followUp`으로 강제 | P3 | 텍스트가 같으면 이전 source 보존 + 테스트 |
+| 2 | ratchet이 파일명만 보고 `extension <Stem>` 블록을 다른 파일에 두면 우회 | P2 | extension 블록 라인을 그룹에 합산 (`09f874340`) |
+| 2 | ratchet pin을 올려도 감지 못 함 | P2 | `origin/main` 대비 pin 인상·삭제 검사 |
+| 2 | `additionalOwnedSessionIDs` 항상 빈 집합, `disconnectAll` 주석 오류, `pickleSessionIds` 재할당 가능 | P3 | 제거·수정·`readonly` |
+
+### 남은 리스크 (수정하지 않음)
+
+- **`mutateSession`의 lossy 재설치** (이번 범위 이전부터 존재): `PickyRegistrySessionProjectionStorage.mutateSession`이 카드 하나를 바꿀 때 전 세션 스토어를 `replace(card:)`로 재설치해 무관한 세션의 `revision`·`finalAnswer`·`archivedAt`을 리셋한다. P1-2c(Swift v1 카드 파사드 제거)와 함께 대상 스토어만 변이하는 API로 바꿔야 한다.
+- **rewind 후 `lastRequest` 미갱신**: 폐기된 분기의 요청 텍스트가 REQUEST 행에 남는다. 이전 로그 파생 값도 같은 동작이었으므로 회귀는 아니지만 제품 판단이 필요하다.
+- **supervisor 내부 v1 emit 파이프라인**: 서버 리스너는 사라졌지만 `session`/`log`/`messageAppended` 등 내부 이벤트와 `emitTerminalV1Compatibility`는 남아 있다. `session-supervisor.test.ts` 335건이 이 이벤트로 검증하므로 테스트 리팩터와 함께 제거해야 한다.
+- **구버전 앱 + 신버전 데몬**: 앱·데몬이 한 번들로 배포되고 Sparkle 교체 전 데몬을 동기 종료하므로 정상 경로에서는 발생하지 않지만, `PICKY_AGENTD_ROOT` 같은 dev override로 섞이면 등록은 성공하고 도크가 비어 보인다. 명시적 거부가 필요하면 `registerAppCapabilities`에서 `sessionProjectionV2` 없는 앱 등록을 error로 만들면 된다.

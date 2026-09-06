@@ -290,3 +290,27 @@ Use this sequence for safe refactors:
 - SwiftLint rules: https://realm.github.io/SwiftLint/rule-directory.html
 - typescript-eslint rules: https://typescript-eslint.io/rules/
 - GitHub Actions workflow syntax: https://docs.github.com/actions/reference/workflows-and-actions/workflow-syntax
+
+#### 2026-09-06 type-group ratchet
+
+The file-size ratchet counted each `Foo+Role.swift` extension file separately, so a
+facade could keep growing by adding extension files while its primary file stayed
+under its pin. `CompanionManager` had reached 12 files / 4157 lines and
+`PickySessionViewModel` 8 files / 3667 lines with both primary files "passing".
+
+`checkSwiftTypeGroupRatchet` now sums `Foo.swift` plus every `Foo+*.swift`
+(directory-independent) into one group and applies the same 1500-line limit to the
+total. Groups already above the limit are pinned at their measured size with no
+headroom, lower-only:
+
+| Group | Files | Pin |
+|---|---:|---:|
+| `CompanionManager` | 12 | 4157 |
+| `PickySessionViewModel` | 8 | 3667 |
+| `PickyHUDOverlayManager` | 2 | 2449 |
+| `PickyHUDDockRailView` | 2 | 1771 |
+| `PickyAgentClientRouter` | 2 | 1612 |
+
+Per-file pins remain. A group pin may only drop; the intended way to satisfy it is
+2.4 (move a state cluster to its own owner), not another extension file. See
+`docs/architecture-maintainability-review.md` F1 for the extraction order.

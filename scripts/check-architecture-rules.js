@@ -648,6 +648,62 @@ function checkFileSizeRatchet() {
       addError(`${relative} is ${lines} lines, above the ${ext} file-size limit ${thresholds[ext]}. Split by responsibility (docs/refactoring-principles.md) or, for a deliberate exception, add a pinned ratchet entry in checkFileSizeRatchet.`);
     }
   }
+
+  checkSwiftTypeGroupRatchet(swiftFiles, thresholds.swift);
+}
+
+// `Foo.swift` plus every `Foo+Role.swift` extension file form one type group.
+// Extension files split compilation units, not state ownership, so the group
+// total is the real facade size and must obey the same lower-only ratchet.
+function swiftTypeGroupStem(relativePath) {
+  const name = path.posix.basename(relativePath, ".swift");
+  const plus = name.indexOf("+");
+  return plus === -1 ? name : name.slice(0, plus);
+}
+
+const SWIFT_TYPE_GROUP_RATCHET = new Map([
+  ["CompanionManager", 4157],
+  ["PickySessionViewModel", 3667],
+  ["PickyHUDOverlayManager", 2449],
+  ["PickyHUDDockRailView", 1771],
+  ["PickyAgentClientRouter", 1612],
+]);
+
+function checkSwiftTypeGroupRatchet(swiftFiles, threshold) {
+  const groups = new Map();
+  for (const file of swiftFiles) {
+    const relative = rel(file);
+    const stem = swiftTypeGroupStem(relative);
+    const group = groups.get(stem) ?? { lines: 0, files: [] };
+    group.lines += lineCount(file);
+    group.files.push(relative);
+    groups.set(stem, group);
+  }
+
+  for (const [stem, group] of groups) {
+    if (group.files.length < 2) continue;
+    const allowedMax = SWIFT_TYPE_GROUP_RATCHET.get(stem);
+    if (allowedMax !== undefined) {
+      if (group.lines > allowedMax) addError(`Swift type group ${stem} grew to ${group.lines} lines across ${group.files.length} files, above ratchet ${allowedMax}. Move a coherent responsibility to its own owner; do not raise the ratchet or add another +Extension file.`);
+      continue;
+    }
+    if (group.lines > threshold) {
+      addError(`Swift type group ${stem} spans ${group.lines} lines across ${group.files.join(", ")}, above the ${threshold}-line limit. +Extension files do not reduce facade size; split by owner or add a pinned entry in SWIFT_TYPE_GROUP_RATCHET.`);
+    }
+  }
+}
+
+function checkSwiftTypeGroupRatchetFixtures() {
+  const cases = [
+    ["Picky/CompanionManager.swift", "CompanionManager"],
+    ["Picky/Overlay/CompanionManager+AgentAnnotationOverlay.swift", "CompanionManager"],
+    ["Picky/Sessions/Projection/PickySessionViewModel+DiffStore.swift", "PickySessionViewModel"],
+    ["Picky/HUD/PickyHUDView.swift", "PickyHUDView"],
+  ];
+  for (const [input, expected] of cases) {
+    const actual = swiftTypeGroupStem(input);
+    if (actual !== expected) addError(`Type-group ratchet self-test: ${input} resolved to ${actual}, expected ${expected}.`);
+  }
 }
 
 function finish() {
@@ -673,6 +729,7 @@ function main() {
     addError("Run this script from the repository root.");
   } else {
     checkGuardPatternFixtures();
+    checkSwiftTypeGroupRatchetFixtures();
     // Self-verification runs with the normal gate too: the pre-push hook never
     // passes `--self-test`, so rename detection and baseline drift would
     // otherwise never be enforced automatically.

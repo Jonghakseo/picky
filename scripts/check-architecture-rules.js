@@ -622,7 +622,7 @@ function checkFileSizeRatchet() {
   };
   const allowlist = new Map([
     ["Picky/PickySessionViewModel.swift", 2860],
-    ["Picky/CompanionManager.swift", 2541],
+    ["Picky/CompanionManager.swift", 2526],
     ["Picky/Interaction/PickyInteractionReducer.swift", 1400],
     ["Picky/Companion/CompanionPanelSettingsView.swift", 2150],
     ["Picky/Overlay/BlueCursorView.swift", 1830],
@@ -662,7 +662,7 @@ function swiftTypeGroupStem(relativePath) {
 }
 
 const SWIFT_TYPE_GROUP_RATCHET = new Map([
-  ["CompanionManager", 4033],
+  ["CompanionManager", 4018],
   ["PickySessionViewModel", 3667],
   ["PickyHUDOverlayManager", 2449],
   ["PickyHUDDockRailView", 1771],

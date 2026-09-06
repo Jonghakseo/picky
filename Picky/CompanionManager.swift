@@ -76,31 +76,16 @@ final class CompanionManager: ObservableObject {
     /// Owner of the macOS permission flags. Observe it directly from views;
     /// CompanionManager only reacts to its transitions (event tap, cursor overlay).
     let permissions: PickyPermissionMonitor
-    /// Onboarding-only: when set, every voice / text submission path consults
-    /// this closure first. Returning a non-nil receipt fakes a successful submit
-    /// without touching the real agent client — the cursor still shows the
-    /// transcript, the user still hears the full Picky experience, but no real
-    /// Pi call goes out. The onboarding flow controller installs this on entry
-    /// and clears it on exit.
-    var submissionInterceptor: (@MainActor (PickyAgentSubmission) async -> PickyAgentSubmissionReceipt?)?
-
-    /// Onboarding-only: when true, the real shortcut handlers (PTT mic kick-off
-    /// and Quick Input panel) bail out. The onboarding narrates 'I'll drive'
-    /// and the user is told to just watch, so a stray hotkey press should not
-    /// pop the real pill or arm the dictation pipeline underneath the demo.
-    /// Toggled by OnboardingFlowController on enter/exit.
-    var isShortcutHandlingSuppressed: Bool = false
-
-    /// Onboarding-only: when non-nil, BlueCursorView renders this as a guide
-    /// bubble pinned to the cursor. The onboarding flow controller updates it
-    /// per beat to walk the user through the demo without a takeover panel.
-    @Published var onboardingBubbleText: String?
-
-    /// Toggle the onboarding-active overlay reason from outside CompanionManager
-    /// so the flow controller can keep the Picky cursor visible during the demo
-    /// independent of the user's cursor preference, then revert when done.
-    func setOnboardingOverlayVisibility(_ visible: Bool) {
-        setLocalOverlayReason(.onboardingActive, visible: visible)
+    /// Non-nil for the whole onboarding demo. Installing it suppresses the real
+    /// shortcut handlers, routes submissions through the interceptor, and keeps
+    /// the cursor overlay visible; clearing it restores production behavior in
+    /// one step. Owned by `OnboardingFlowController`.
+    @Published var onboardingOverrides: PickyOnboardingOverrides? {
+        didSet {
+            let isActive = onboardingOverrides != nil
+            guard (oldValue != nil) != isActive else { return }
+            setLocalOverlayReason(.onboardingActive, visible: isActive)
+        }
     }
 
     /// Programmatically arm ink capture so the next click-and-drag becomes a
@@ -1240,7 +1225,7 @@ final class CompanionManager: ObservableObject {
         // PTT-in-progress and the input panel are mutually exclusive: voice and
         // typed quick input share the same submission lane and we don't want a
         // floating focus stealer mid-utterance.
-        if isShortcutHandlingSuppressed { return }
+        if onboardingOverrides != nil { return }
         guard activeShortcutCaptureCount == 0,
               !isPushToTalkShortcutHeld,
               !buddyDictationManager.isDictationInProgress else { return }
@@ -1357,7 +1342,7 @@ final class CompanionManager: ObservableObject {
         // its callback while paused, swallowing transitions here too keeps any
         // already-queued event from slipping through and dismissing the panel.
         if activeShortcutCaptureCount > 0 { return }
-        if isShortcutHandlingSuppressed { return }
+        if onboardingOverrides != nil { return }
         switch transition {
         case .pressed:
             isPushToTalkShortcutHeld = true
@@ -1584,7 +1569,7 @@ final class CompanionManager: ObservableObject {
     /// keeps its existing behavior when no interceptor is attached.
     private func submitOrIntercept(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
         noteMainOverlayContext(submission.context)
-        if let interceptor = submissionInterceptor,
+        if let interceptor = onboardingOverrides?.submissionInterceptor,
            let receipt = await interceptor(submission) {
             return receipt
         }

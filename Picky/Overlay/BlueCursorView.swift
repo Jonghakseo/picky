@@ -664,7 +664,7 @@ struct BlueCursorView: View {
             // voice/prompt bubbles so it always wins when the demo is active.
             // Runs through PickyBubbleMarkdown so action words can be wrapped
             // in `**bold**` and read more clearly.
-            if isCursorOnThisScreen, let guideText = companionManager.onboardingBubbleText {
+            if isCursorOnThisScreen, let guideText = companionManager.onboardingOverrides?.bubbleText {
                 let renderedText = PickyBubbleMarkdown.displayString(for: guideText)
                 let attributedText = PickyBubbleMarkdown.highlightedAttributedText(
                     for: guideText,
@@ -721,7 +721,7 @@ struct BlueCursorView: View {
                overlayBubblePreferencesStore.preferences.showUserSpeechRecognitionBubble,
                !companionManager.isProgressiveResponseVisible,
                companionManager.voicePromptBubbleState.isVisible,
-               companionManager.onboardingBubbleText == nil {
+               companionManager.onboardingOverrides?.bubbleText == nil {
                 let bubbleText = companionManager.voicePromptBubbleState.displayText
                 let textWidth = PickyBubbleLayout.textWidth(
                     for: bubbleText,
@@ -759,7 +759,7 @@ struct BlueCursorView: View {
                    for: responseText,
                    contentIdentity: companionManager.activeVisualNarrationSegmentID
                ),
-               companionManager.onboardingBubbleText == nil {
+               companionManager.onboardingOverrides?.bubbleText == nil {
                 PickyCursorBubblePlacementLayout(
                     cursorPosition: compactCursorChromePlacementIsPreferred ? systemCursorPosition : cursorPosition,
                     screenSize: CGSize(width: screenFrame.width, height: screenFrame.height),
@@ -1019,7 +1019,7 @@ struct BlueCursorView: View {
               companionManager.voiceState == .responding || companionManager.isProgressiveResponseVisible,
               let responseText = companionManager.latestAgentSessionSummary,
               !responseText.isEmpty,
-              companionManager.onboardingBubbleText == nil
+              companionManager.onboardingOverrides?.bubbleText == nil
         else {
             responseBubbleLayoutCache.clear()
             return
@@ -1042,7 +1042,7 @@ struct BlueCursorView: View {
             && activePointerID == nil
             && !companionManager.isQuickInputPanelVisible
             && !companionManager.inkOverlayState.isActive
-            && companionManager.onboardingBubbleText == nil
+            && companionManager.onboardingOverrides?.bubbleText == nil
     }
 
     /// Whether the buddy pi icon should be visible on this screen.

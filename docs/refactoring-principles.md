@@ -305,7 +305,7 @@ headroom, lower-only:
 
 | Group | Files | Pin |
 |---|---:|---:|
-| `CompanionManager` | 12 | 4033 (re-pinned after permission monitor extraction) |
+| `CompanionManager` | 12 | 4018 (re-pinned after permission monitor and onboarding overrides extraction) |
 | `PickySessionViewModel` | 8 | 3667 |
 | `PickyHUDOverlayManager` | 2 | 2449 |
 | `PickyHUDDockRailView` | 2 | 1771 |

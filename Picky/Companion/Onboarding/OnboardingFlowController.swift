@@ -136,15 +136,13 @@ final class OnboardingFlowController {
     }
 
     func start() {
-        guard beat == .preWelcome, companionManager?.onboardingBubbleText == nil else { return }
-        showCursorForOnboarding()
+        guard beat == .preWelcome, companionManager?.onboardingOverrides == nil else { return }
         // Block the real shortcut handlers for the entire flow. The narration
         // says "I'll drive" — a stray PTT or quick-input double-tap shouldn't
         // pop the real dictation pipeline or quick-input pill underneath the
         // demo. The submission interceptor is a safety net for anything that
         // slips through some other path.
-        companionManager?.isShortcutHandlingSuppressed = true
-        installSubmissionInterceptor()
+        installOnboardingOverrides()
         installEscKeyMonitor()
         presentSkipPanel()
         enter(.preWelcome)
@@ -237,7 +235,7 @@ final class OnboardingFlowController {
     @discardableResult
     private func setBubble(_ key: OnboardingNarrationKey) -> String {
         let text = L10n.t(key.l10nKey)
-        companionManager?.onboardingBubbleText = text
+        companionManager?.onboardingOverrides?.bubbleText = text
 
         // Speak the same line. Markdown markers (the `**bold**` we add for the
         // amber highlight) are stripped first so the synthesiser doesn't read
@@ -514,10 +512,10 @@ final class OnboardingFlowController {
 
     // MARK: - Submission interceptor + scenario playback
 
-    private func installSubmissionInterceptor() {
-        companionManager?.submissionInterceptor = { [weak self] submission in
+    private func installOnboardingOverrides() {
+        companionManager?.onboardingOverrides = PickyOnboardingOverrides(submissionInterceptor: { [weak self] submission in
             await MainActor.run { self?.handleInterceptedSubmission(submission) }
-        }
+        })
     }
 
     private func handleInterceptedSubmission(_ submission: PickyAgentSubmission) -> PickyAgentSubmissionReceipt? {
@@ -601,10 +599,7 @@ final class OnboardingFlowController {
         removeEscKeyMonitor()
         archiveDemoSessionIfStillVisible()
         companionManager?.cancelOnboardingInkCapture()
-        companionManager?.submissionInterceptor = nil
-        companionManager?.isShortcutHandlingSuppressed = false
-        companionManager?.onboardingBubbleText = nil
-        companionManager?.setOnboardingOverlayVisibility(false)
+        companionManager?.onboardingOverrides = nil
         skipPanelController?.dismiss()
         skipPanelController = nil
         highlightViewer?.dismiss()
@@ -628,10 +623,6 @@ final class OnboardingFlowController {
     }
 
     // MARK: - Wiring helpers
-
-    private func showCursorForOnboarding() {
-        companionManager?.setOnboardingOverlayVisibility(true)
-    }
 
     private func presentSkipPanel() {
         let controller = OnboardingSkipPanelController(onSkip: { [weak self] in

@@ -150,6 +150,25 @@ struct PickyCursorPreferenceTests {
         #expect(manager.overlayVisibilityReasons.contains(.activeInkCapture))
     }
 
+    // MARK: - Onboarding overrides
+
+    @Test func onboardingOverridesToggleOverlayReasonOnlyOnPresenceTransitions() {
+        let ink = FakeInkCaptureCoordinator()
+        let manager = makeManager(initialSettings: settings(showPiCursor: false), ink: ink)
+
+        manager.onboardingOverrides = PickyOnboardingOverrides()
+        #expect(manager.overlayVisibilityReasons.contains(.onboardingActive))
+        #expect(manager.isOverlayVisible)
+
+        let reasonsBeforeBubbleUpdate = manager.overlayVisibilityReasons
+        manager.onboardingOverrides?.bubbleText = "Watch this"
+        #expect(manager.overlayVisibilityReasons == reasonsBeforeBubbleUpdate)
+
+        manager.onboardingOverrides = nil
+        #expect(!manager.overlayVisibilityReasons.contains(.onboardingActive))
+        #expect(!manager.isOverlayVisible)
+    }
+
     @Test func enablingCursorPreferenceWithoutPermissionsStaysHidden() {
         let ink = FakeInkCaptureCoordinator()
         let manager = makeManager(initialSettings: settings(showPiCursor: false), ink: ink)

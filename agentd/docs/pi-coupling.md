@@ -392,6 +392,58 @@ Official source: [Pi coding-agent CHANGELOG 0.84.4](https://github.com/earendil-
   `pi-sdk-runtime.test.ts`.
 - `pi-ai`, `pi-coding-agent`, and `pi-tui` are pinned together on `0.84.4`.
 
+### 0.84.4 -> 0.85.0 (적용 보류)
+
+공식 근거: [Pi 0.85.0 CHANGELOG](https://github.com/earendil-works/pi/blob/v0.85.0/packages/coding-agent/CHANGELOG.md),
+[배포 패키지 메타데이터](https://registry.npmjs.org/@earendil-works/pi-coding-agent/0.85.0).
+
+- 전역 CLI는 `0.85.0`이지만 저장소 SDK와는 별개다. `pi-ai`,
+  `pi-coding-agent`, `pi-tui`를 함께 `0.85.0`으로 설치한 뒤 필수 계약 검증에서
+  실패하여 manifest와 루트 lockfile을 기존 `0.84.4`로 복원했다.
+- Node `24.18.1`에서 `import("@earendil-works/pi-coding-agent")`가
+  `ERR_MODULE_NOT_FOUND`로 실패한다. 배포된 `dist/experimental/server.js`는
+  `@earendil-works/pi-server`와 `/unix`를 import하지만 패키지 dependencies에
+  `pi-server`가 없다. 실험 서버를 사용하지 않는 SDK 소비자도 루트 import에서 실패한다.
+- `pnpm exec vitest run src/__tests__/pi-contract.test.ts src/application/pi-oauth-service.test.ts`
+  결과는 두 파일 모두 수집 실패이며 실행된 테스트는 0개다. 같은 환경에서 `0.84.4`는
+  변경 전과 복원 후 모두 12개 테스트와 실제 Node 루트 import가 통과했다.
+  `0.85.0`의 typecheck는 통과하므로 타입 검사만으로 이 배포 결함을 잡을 수 없다.
+- 저장소 hard-contract 정책에 따라 업데이트를 중단했다. 실험 패키지를 직접 추가하거나
+  private import로 우회하지 않는다. 수정 릴리즈에서 위 Node import와 계약 테스트를
+  먼저 통과시킨 뒤 전체 검증을 다시 실행한다.
+
+변경 내역의 코드 영향과 개선 검토는 다음과 같다. 아래 upstream 개선은 이번에 적용되지 않았다.
+
+- Claude thinking effort 보존과 signed-thinking 복구, provider 스트림 순서 및 Codex SSE
+  종료 이벤트 수정은 `pi-sdk-runtime.ts`와 `pi-event-normalizer.ts`의 입력 품질 개선이다.
+  호스트 API 변경 근거는 없으며 실제 SDK 실행 검증이 선행되어야 한다.
+- `SessionManager.inMemory()`의 외부 엔트리 복원은
+  [공개 API](https://github.com/earendil-works/pi/blob/v0.85.0/packages/coding-agent/src/core/session-manager.ts)다.
+  Picky는 `SessionManager.create/open`의 JSONL 파일을 재연결 및 터미널 재개에 사용하므로
+  메모리 전용 세션으로 대체하지 않는다. bootstrap 주입의 영속성 계약도 유지한다.
+- [fork compaction 경계 수정](https://github.com/earendil-works/pi/pull/8990)은 label 제거 시
+  `firstKeptEntryId`를 보존한다. 과거 중단된 tool call을 복구하는
+  `repairDanglingToolCalls`와는 다른 계약이므로 복구 코드를 삭제하지 않는다.
+- [기본 도구의 `ctx.cwd` 반영](https://github.com/earendil-works/pi/pull/8627)은
+  세션별 작업 경로를 따르게 한다. Picky의 `createHandle`은 이미 세션 cwd를 전달하며,
+  `pi-extensions/picky-handoff/index.ts`도 `ctx.cwd`를 캡처한다. 제거할 로컬 우회는 없다.
+- Bash만 활성화했을 때 skill이 사라지는 문제는 Pi의 resource/tool 경로 수정이다.
+  Picky의 `resourceLoader.getSkills()`와 별도 skill 실행 정책을 대체하지 않는다.
+- `vllmPriority`, `supportsMaxOutputTokens`, `/client` 호환 진입점 복원, RPC 수동
+  compaction abort 수정은 Picky가 직접 사용하는 설정이나 진입점이 아니다.
+- 전체 화면 검색·작업 표시·최신 메시지 이동은 Pi TUI 변경이다. native HUD의 표시,
+  extension UI 대기 상태, queue 및 취소 어댑터를 대체하지 않는다.
+- `ModelRuntime`에 공개 credential reload API가 추가되지 않아
+  `reloadModelRuntimeCredentials`를 유지한다. T2 capability fallback 역시 저장소 정책에
+  따라 유지한다. 단순화·대체·삭제 적용은 0건이다.
+
+복원 후 검증: `pnpm --dir agentd run typecheck`, `pnpm --dir agentd run test:ci`
+(1,249개 통과, 외부 TTS 실서비스 테스트 2개 건너뜀), `pnpm --dir agentd run build`,
+빌드된 `dist/runtime/pi-sdk-runtime.js`의 Node import, `git diff --check`가 통과했다.
+Xcode 16.3 앱 빌드도 통과했지만 SDK 실행 검증을 대체하지 않는다.
+실행 중인 앱을 재시작하지 않았으므로 main-agent 응답, 터미널 재개 버튼, Pickle handoff의
+실제 앱 수동 smoke는 미실행이다.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

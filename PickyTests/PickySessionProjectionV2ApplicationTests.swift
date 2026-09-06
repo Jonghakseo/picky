@@ -631,6 +631,24 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(card.logPreview == "steer: log copy must not be parsed")
     }
 
+    @Test func cardRoundTripPreservesTypedLastRequestSourceWhenTextIsUnchanged() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(
+            sessionID: "session-a",
+            title: "Typed",
+            status: .running,
+            revision: 1,
+            extraProjectionFields: #","lastRequest":{"source":"steer","text":"Keep me"}"#
+        ), to: viewModel)
+
+        let store = storage.registry.sessionStore(sessionID: "session-a")
+        let card = try #require(store.materializedSessionCard())
+        store.replace(card: card)
+
+        #expect(store.materializedAgentSessionSummary()?.lastRequest?.source == .steer)
+    }
+
     @Test func replacementTransactionClearsEverySessionResetCollectionAndPresentation() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)

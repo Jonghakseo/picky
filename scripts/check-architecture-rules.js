@@ -457,7 +457,7 @@ function checkAgentdDomainImports() {
 // Pi SDK packages may be imported only by the runtime adapter layer and the
 // composition root. Application, domain, transport, and CLI code must go
 // through `runtime/types.ts` so an SDK upgrade stays inside the adapter.
-const PI_SDK_IMPORT_PATTERN = /from\s+["']@earendil-works\/[^"']+["']|import\s*\(\s*["']@earendil-works\/[^"']+["']\s*\)|import\.meta\.resolve\(\s*["']@earendil-works\//;
+const PI_SDK_IMPORT_PATTERN = /["']@earendil-works\/[^"']+["']/;
 const PI_SDK_IMPORT_ALLOWED_PREFIXES = ["agentd/src/runtime/", "agentd/src/bootstrap.ts"];
 
 function checkPiSdkImportBoundary() {
@@ -465,7 +465,7 @@ function checkPiSdkImportBoundary() {
     const relative = rel(file);
     if (PI_SDK_IMPORT_ALLOWED_PREFIXES.some((prefix) => relative.startsWith(prefix))) continue;
     if (PI_SDK_IMPORT_PATTERN.test(fs.readFileSync(file, "utf8"))) {
-      addError(`${relative} imports a Pi SDK package; only agentd/src/runtime/ and bootstrap.ts may depend on @earendil-works/*. Route the dependency through runtime/types.ts or move the adapter into runtime/.`);
+      addError(`${relative} may not mention an @earendil-works/* package outside agentd/src/runtime/ and bootstrap.ts. Route the dependency through runtime/types.ts or move the adapter into runtime/.`);
     }
   }
 }
@@ -476,9 +476,12 @@ function checkPiSdkImportBoundaryFixtures() {
     'import type { AutocompleteItem } from "@earendil-works/pi-tui";',
     'const runtime = await import("@earendil-works/pi-coding-agent");',
     'fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"))',
+    'const pkg = "@earendil-works/pi-coding-agent"; await import(pkg);',
+    'const sdk = require("@earendil-works/pi-ai");',
   ];
   const allowed = [
-    'import type { RuntimeCustomTool } from "../runtime/types.js";',
+    'const label = "earendil";',
+    'import { RuntimeCustomTool } from "../runtime/types.js";',
     'import { z } from "zod";',
   ];
   for (const fixture of blocked) {

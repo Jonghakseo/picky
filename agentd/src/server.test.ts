@@ -177,6 +177,40 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("rewinds through a v2 projection transaction without v1 session frames", async () => {
+    const session = await supervisor.create(context("rewind v2 projection"));
+    await waitUntil(() => supervisor.get(session.id)?.status === "running");
+    const target = runtime.handle?.appendMockTurn("Rewind this request", "Rewind this response").userEntryId;
+    if (!target) throw new Error("Mock runtime did not create a rewind target");
+
+    const { ws } = await connectWithHello();
+    trackEvents(ws);
+    await registerV2(ws, "cmd-register-v2-rewind");
+    await waitUntil(() => eventBuffers.get(ws)?.some((event) => event.type === "sessionProjectionSnapshot" && event.sessionId === session.id) === true);
+    eventBuffers.get(ws)?.splice(0);
+
+    ws.send(JSON.stringify({
+      id: "cmd-rewind-v2",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "rewindSession",
+      sessionId: session.id,
+      entryId: target,
+    }));
+
+    await expect(waitForMatchingEvent(ws, (event) => event.type === "sessionProjectionTransaction" && event.sessionId === session.id)).resolves.toMatchObject({
+      type: "sessionProjectionTransaction",
+      sessionId: session.id,
+    });
+    await expect(waitForEvent(ws, "sessionRewound")).resolves.toMatchObject({
+      sessionId: session.id,
+      editorText: "Rewind this request",
+    });
+    await expect(waitForEvent(ws, "ack")).resolves.toMatchObject({ commandId: "cmd-rewind-v2" });
+    await sleep(50);
+    expect(eventBuffers.get(ws)?.filter((event) => ["sessionUpdated", "sessionMetaUpdated", "sessionSnapshot"].includes(event.type))).toEqual([]);
+    ws.close();
+  });
+
   it("delivers empty /new collection replacements as projection mutations", async () => {
     const session = await supervisor.create(context("session replacement v2 projection"));
 

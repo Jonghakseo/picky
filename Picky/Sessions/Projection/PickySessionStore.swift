@@ -40,7 +40,12 @@ final class PickySessionStore {
     /// `.unavailable` rather than retaining a previous hydrated value.
     func replace(card: PickySessionListViewModel.SessionCard) {
         precondition(card.id == sessionID)
-        metaStore.replace(PickySessionMetadata(card: card))
+        var metadata = PickySessionMetadata(card: card)
+        if case .loaded(let previous) = metaStore.metadataState,
+           previous.lastRequest?.text == card.lastRequestText {
+            metadata.lastRequest = previous.lastRequest
+        }
+        metaStore.replace(metadata)
         presentation = PickySessionCardPresentation(card: card)
 
         replaceLogs(for: card)

@@ -471,8 +471,7 @@ export class AgentdServer {
         this.send(ws, { type: "sessionDiffResult", sessionId: cmd.sessionId, view: cmd.view, requestId: cmd.requestId, ...result });
       },
       rewindSession: async (cmd) => {
-        const session = await this.options.supervisor.rewindToEntry(cmd.sessionId, cmd.entryId);
-        this.broadcast({ type: "sessionUpdated", session: protocolSession(session) });
+        await this.options.supervisor.rewindToEntry(cmd.sessionId, cmd.entryId);
       },
       getSessionProjectionSnapshot: (cmd) => {
         if (!this.projectionSubscribers.has(ws)) throw new Error("Session projection recovery requires a sessionProjectionV2 subscriber socket");

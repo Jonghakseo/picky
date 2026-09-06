@@ -314,3 +314,26 @@ headroom, lower-only:
 Per-file pins remain. A group pin may only drop; the intended way to satisfy it is
 2.4 (move a state cluster to its own owner), not another extension file. See
 `docs/architecture-maintainability-review.md` F1 for the extraction order.
+
+#### 2026-09-06 main-agent coordinator extraction
+
+`SessionSupervisor` owned both Pickle session orchestration and the always-on main
+agent: 34 `main*` fields and 43 methods covering handle prewarm/resume/interrupt,
+turn generation with interrupted-input suppression, quick-reply duplicate guards,
+idle compaction with input buffering, live activity/extension UI state, and Pickle
+completion delivery. Those moved verbatim to
+`agentd/src/application/main-agent-coordinator.ts` (`MainAgentCoordinator`), with
+the supervisor keeping one-line delegations and a six-field dependency object
+(`options`, `store`, `emit`, `sessions`, `getSession`, `pickleSessionIds`).
+
+This satisfies 2.3 and 2.4: the coordinator is the single mutable owner of the
+main-agent turn state, and the supervisor now owns only Pickle sessions. The
+335-case `session-supervisor.test.ts` suite characterizes the public surface and
+passed unchanged except for two tests that reached into private fields and the
+`settle()` tracking hook, which now also wraps
+`MainAgentCoordinator.prototype.applyMainRuntimeEvent` (without that hook the
+main-turn tests become timing-dependent).
+
+`session-supervisor.ts` measured 1991 lines afterwards, so its pin drops from
+3000 to 1992. `main-agent-coordinator.ts` is 1021 lines and sits under the
+1500-line limit without a pin.

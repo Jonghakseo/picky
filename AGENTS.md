@@ -84,7 +84,7 @@ When the user asks about a feature, start here before broad searching:
 - App-daemon protocol/client: `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, `Picky/PickyAgentClientRouter.swift`, `Picky/PickyAgentDaemonLauncher.swift`, `Picky/PickyAgentDaemonPool.swift`
 - agentd entry/composition: `agentd/src/index.ts`
 - agentd WebSocket protocol handling: `agentd/src/server.ts`, `agentd/src/protocol.ts`
-- agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts`, `agentd/src/session-store.ts`
+- agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts` (Pickle sessions), `agentd/src/application/main-agent-coordinator.ts` (always-on main agent: handle lifecycle, turn/interrupt guards, idle compaction, Pickle completion delivery), `agentd/src/session-store.ts`
 - Backend message journal / source mapping: `agentd/src/session-message-builder.ts`, `agentd/src/domain/log-prefixes.ts`
 - Tool categorizer/activity counts: `agentd/src/domain/tool-categorizer.ts`, `agentd/src/domain/tool-activity.ts`
 - Session policy helpers (user bash format, slash commands, pi session files, handoff pin, main-agent limits): `agentd/src/domain/user-bash-format.ts`, `agentd/src/domain/slash-commands.ts`, `agentd/src/domain/pi-session-files.ts`, `agentd/src/domain/pickle-handoff-context.ts`, `agentd/src/domain/main-agent-policy.ts`, `agentd/src/domain/queue-policy.ts`

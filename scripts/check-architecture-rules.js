@@ -628,7 +628,7 @@ function checkFileSizeRatchet() {
     ["Picky/Overlay/BlueCursorView.swift", 1830],
     ["Picky/App/Settings/PickySettings.swift", 1550],
     ["Picky/PickyAgentProtocol.swift", 1509],
-    ["agentd/src/session-supervisor.ts", 3000],
+    ["agentd/src/session-supervisor.ts", 1992],
     ["agentd/src/runtime/pi-sdk-runtime.ts", 1539],
   ]);
 

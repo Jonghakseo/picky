@@ -10,6 +10,7 @@ import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadat
 import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
+import { MainAgentCoordinator } from "./application/main-agent-coordinator.js";
 
 const context = (text: string): PickyContextPacket => ({
   id: `context-${text}`,
@@ -50,20 +51,24 @@ type CommittedVisualNarrationTestEvent = {
 // their promises in this test module so settle() can drain the real async work
 // instead of guessing how long filesystem-backed event handling will take.
 const pendingSupervisorOperations = new Set<Promise<unknown>>();
-type AsyncSupervisorMethod = (this: SessionSupervisor, ...args: unknown[]) => Promise<unknown>;
-const supervisorPrototype = SessionSupervisor.prototype as unknown as Record<string, AsyncSupervisorMethod>;
-for (const methodName of ["applyRuntimeEvent", "applyMainRuntimeEvent"]) {
-  const original = supervisorPrototype[methodName]!;
-  supervisorPrototype[methodName] = function (...args: unknown[]): Promise<unknown> {
-    const operation = original.apply(this, args);
-    pendingSupervisorOperations.add(operation);
-    void operation.then(
-      () => pendingSupervisorOperations.delete(operation),
-      () => pendingSupervisorOperations.delete(operation),
-    );
-    return operation;
-  };
+type AsyncTrackedMethod = (this: unknown, ...args: unknown[]) => Promise<unknown>;
+function trackPendingOperations(prototype: object, methodNames: readonly string[]): void {
+  const methods = prototype as unknown as Record<string, AsyncTrackedMethod>;
+  for (const methodName of methodNames) {
+    const original = methods[methodName]!;
+    methods[methodName] = function (...args: unknown[]): Promise<unknown> {
+      const operation = original.apply(this, args);
+      pendingSupervisorOperations.add(operation);
+      void operation.then(
+        () => pendingSupervisorOperations.delete(operation),
+        () => pendingSupervisorOperations.delete(operation),
+      );
+      return operation;
+    };
+  }
 }
+trackPendingOperations(SessionSupervisor.prototype, ["applyRuntimeEvent"]);
+trackPendingOperations(MainAgentCoordinator.prototype, ["applyMainRuntimeEvent"]);
 
 describe("SessionSupervisor", () => {
   it("keeps the live session unchanged when a patch save fails and allows a retry", async () => {
@@ -1803,7 +1808,7 @@ describe("SessionSupervisor", () => {
     // Mirror routeThroughMainAgent's context replacement while retaining the
     // active turn envelope, as can happen before a delayed old-turn tag emits.
     const replacement = { ...context("replacement DSL context"), screenshots: initialContext.screenshots };
-    const internal = supervisor as unknown as { mainContext?: PickyContextPacket; mainContextGeneration: number };
+    const internal = (supervisor as unknown as { mainAgent: { mainContext?: PickyContextPacket; mainContextGeneration: number } }).mainAgent;
     internal.mainContext = replacement;
     internal.mainContextGeneration += 1;
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "[RECT: x=20 y=30 w=10 h=10]" });
@@ -4724,7 +4729,7 @@ describe("SessionSupervisor", () => {
     const store = new DelayedFirstMainStateStore(dir);
     const supervisor = new SessionSupervisor(new MockRuntime(), store);
     await supervisor.load();
-    const mainMessages = supervisor as unknown as { appendMainMessage(role: "user" | "assistant", text: string): Promise<void> };
+    const mainMessages = (supervisor as unknown as { mainAgent: { appendMainMessage(role: "user" | "assistant", text: string): Promise<void> } }).mainAgent;
 
     const first = mainMessages.appendMainMessage("user", "first message");
     await waitUntil(() => store.firstMainSaveStarted);

@@ -57,17 +57,17 @@ afterEach(async () => {
   await server.stop();
 });
 
-async function runCli(args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ stdout: string; stderr: string; code: number }> {
+async function runCli(args: string[], env: NodeJS.ProcessEnv = {}, timeoutMs?: number): Promise<{ stdout: string; stderr: string; code: number }> {
   return await runExecutable(tsxBin, [cliEntry, ...args], {
     ...process.env,
     PICKY_APP_SUPPORT_DIR: appSupportDir,
     ...env,
-  });
+  }, timeoutMs);
 }
 
-async function runExecutable(executable: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string; code: number }> {
+async function runExecutable(executable: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
-    const result = await execFileAsync(executable, args, { env });
+    const result = await execFileAsync(executable, args, { env, timeout: timeoutMs });
     return { stdout: result.stdout, stderr: result.stderr, code: 0 };
   } catch (error) {
     const result = error as { stdout?: string; stderr?: string; code?: number };
@@ -184,6 +184,37 @@ describe("picky CLI against a real agentd server", () => {
     expect(sentTypes.filter((type) => type === "pickleSessionUpdated")).toEqual(["pickleSessionUpdated"]);
     expect(sentTypes.some((type) => type.startsWith("sessionProjection") || type === "sessionUpdated" || type === "sessionMetaUpdated")).toBe(false);
   });
+
+  it("waits through blocked and resumed Pickle states before printing the final answer", async () => {
+    type ServerDispatch = {
+      dispatchCommand(socket: WebSocket, command: { type: string; sessionId?: string }): Promise<void>;
+    };
+    const privateServer = server as unknown as ServerDispatch;
+    const originalDispatch = privateServer.dispatchCommand.bind(server);
+    let waitedSessionId: string | undefined;
+    vi.spyOn(privateServer, "dispatchCommand").mockImplementation(async (socket, command) => {
+      await originalDispatch(socket, command);
+      if (command.type !== "awaitPickleSessionTerminal") return;
+      // The real handler has installed its waiter. A broadcaster also listens
+      // for projection commits, so listenerCount alone cannot prove readiness.
+      waitedSessionId = command.sessionId!;
+      const patch = supervisor as unknown as {
+        patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+      };
+      await patch.patch(waitedSessionId, { status: "blocked", lastSummary: "Waiting for input" });
+      await patch.patch(waitedSessionId, { status: "running", lastSummary: "Resumed" });
+      await patch.patch(waitedSessionId, { status: "completed", finalAnswer: "Recovered final answer" });
+    });
+
+    const result = await runCli([
+      "pickle-create", "Wait through block", "--instructions", "Resume after input", "--no-context", "--wait",
+    ], {}, 10_000);
+
+    expect(waitedSessionId).toBeDefined();
+    expect(supervisor.get(waitedSessionId!)?.status).toBe("completed");
+    expect(result).toMatchObject({ code: 0 });
+    expect(result.stdout).toContain("Recovered final answer");
+  }, 15_000);
 
   it("reports a missing Pickle from the real getPickle handler", async () => {
     // Regression: a bad session id must travel through the real bridge/getPickle

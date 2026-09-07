@@ -3,6 +3,7 @@ import type { DockGroup, EventEnvelope, PickyAgentSession } from "./protocol.js"
 import { loadCliConnection, PickyCliDaemonNotRunningError } from "./cli/connection-loader.js";
 import { sendCommand, sendCommandAndWaitForReply, PickyCliConnectionError, PickyCliServerError, PickyCliTimeoutError } from "./cli/ws-client.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
+import { isFinalSessionStatus } from "./domain/session-status.js";
 
 const VERSION = "0.1.0";
 
@@ -976,9 +977,7 @@ function matchPickleFinalAnswerForSession(event: EventEnvelope, ack: ExternalEnt
   if (!ack.sessionId || event.type !== "pickleSessionUpdated") return null;
   const session = event.session;
   if (session.id !== ack.sessionId) return null;
-  if (session.status === "completed" || session.status === "failed" || session.status === "cancelled") {
-    return session.finalAnswer ?? session.lastSummary ?? "";
-  }
+  if (isFinalSessionStatus(session.status)) return session.finalAnswer ?? session.lastSummary ?? "";
   return null;
 }
 

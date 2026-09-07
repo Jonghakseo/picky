@@ -1,5 +1,5 @@
 import type { PickyAgentSession } from "../protocol.js";
-import { isTerminalStatus } from "../domain/session-status.js";
+import { isFinalSessionStatus } from "../domain/session-status.js";
 
 type ProjectionCommitListener = (sessionId: string, before: PickyAgentSession, after: PickyAgentSession) => void;
 
@@ -28,12 +28,12 @@ export function awaitPickleSessionTerminal(
 ): void {
   const current = source.get(sessionId);
   if (!current) throw new Error(`Unknown session: ${sessionId}`);
-  if (isTerminalStatus(current.status)) {
+  if (isFinalSessionStatus(current.status)) {
     reply(current);
     return;
   }
   const onCommit: ProjectionCommitListener = (committedSessionId, _before, after) => {
-    if (committedSessionId !== sessionId || !isTerminalStatus(after.status)) return;
+    if (committedSessionId !== sessionId || !isFinalSessionStatus(after.status)) return;
     cleanup();
     reply(after);
   };

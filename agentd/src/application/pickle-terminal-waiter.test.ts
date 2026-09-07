@@ -24,18 +24,31 @@ class FakeSource extends EventEmitter {
 }
 
 describe("awaitPickleSessionTerminal", () => {
-  it("replies immediately when the session is already terminal", () => {
-    const source = new FakeSource(new Map([["pickle-1", session({ status: "completed" })]]));
+  it.each(["completed", "failed", "cancelled"] as const)("replies immediately when the session is already finally complete (%s)", (status) => {
+    const source = new FakeSource(new Map([["pickle-1", session({ status })]]));
     const socket = new EventEmitter();
     const replies: PickyAgentSession[] = [];
 
     awaitPickleSessionTerminal(source, socket, "pickle-1", (value) => replies.push(value));
 
+    expect(replies.map((value) => value.status)).toEqual([status]);
+    expect(source.listenerCount("sessionProjectionTransaction")).toBe(0);
+  });
+
+  it("keeps waiting when registration finds a blocked session", () => {
+    const blocked = session({ status: "blocked" });
+    const source = new FakeSource(new Map([["pickle-1", blocked]]));
+    const socket = new EventEmitter();
+    const replies: PickyAgentSession[] = [];
+
+    awaitPickleSessionTerminal(source, socket, "pickle-1", (value) => replies.push(value));
+    source.emit("sessionProjectionTransaction", "pickle-1", blocked, session({ status: "completed" }));
+
     expect(replies.map((value) => value.status)).toEqual(["completed"]);
     expect(source.listenerCount("sessionProjectionTransaction")).toBe(0);
   });
 
-  it("replies once on the first terminal commit for that session and then unsubscribes", () => {
+  it("waits through blocked and running commits until a final completion", () => {
     const running = session();
     const source = new FakeSource(new Map([["pickle-1", running]]));
     const socket = new EventEmitter();
@@ -43,25 +56,27 @@ describe("awaitPickleSessionTerminal", () => {
 
     awaitPickleSessionTerminal(source, socket, "pickle-1", (value) => replies.push(value));
     source.emit("sessionProjectionTransaction", "pickle-2", running, session({ id: "pickle-2", status: "completed" }));
-    source.emit("sessionProjectionTransaction", "pickle-1", running, session({ status: "running", lastSummary: "still going" }));
+    source.emit("sessionProjectionTransaction", "pickle-1", running, session({ status: "blocked" }));
+    source.emit("sessionProjectionTransaction", "pickle-1", running, session({ status: "running", lastSummary: "resumed" }));
     expect(replies).toEqual([]);
 
-    source.emit("sessionProjectionTransaction", "pickle-1", running, session({ status: "failed" }));
-    source.emit("sessionProjectionTransaction", "pickle-1", running, session({ status: "failed" }));
+    source.emit("sessionProjectionTransaction", "pickle-1", running, session({ status: "completed" }));
+    source.emit("sessionProjectionTransaction", "pickle-1", running, session({ status: "completed" }));
 
-    expect(replies.map((value) => value.status)).toEqual(["failed"]);
+    expect(replies.map((value) => value.status)).toEqual(["completed"]);
     expect(source.listenerCount("sessionProjectionTransaction")).toBe(0);
     expect(socket.listenerCount("close")).toBe(0);
   });
 
-  it("stops listening when the socket closes before the session finishes", () => {
-    const source = new FakeSource(new Map([["pickle-1", session()]]));
+  it("stops listening when the socket closes while a blocked session may resume", () => {
+    const blocked = session({ status: "blocked" });
+    const source = new FakeSource(new Map([["pickle-1", blocked]]));
     const socket = new EventEmitter();
     const replies: PickyAgentSession[] = [];
 
     awaitPickleSessionTerminal(source, socket, "pickle-1", (value) => replies.push(value));
     socket.emit("close");
-    source.emit("sessionProjectionTransaction", "pickle-1", session(), session({ status: "completed" }));
+    source.emit("sessionProjectionTransaction", "pickle-1", blocked, session({ status: "completed" }));
 
     expect(replies).toEqual([]);
     expect(source.listenerCount("sessionProjectionTransaction")).toBe(0);

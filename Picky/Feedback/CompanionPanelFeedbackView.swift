@@ -449,8 +449,6 @@ struct CompanionPanelFeedbackView: View {
     private func chooseMediaAttachments() {
         guard status != .sending else { return }
         NSApp.activate(ignoringOtherApps: true)
-        setPanelAutoDismissSuspended(true)
-        defer { setPanelAutoDismissSuspended(false) }
 
         let panel = NSOpenPanel()
         panel.title = "Attach files"
@@ -463,14 +461,6 @@ struct CompanionPanelFeedbackView: View {
         if panel.runModal() == .OK {
             addMediaAttachments(panel.urls)
         }
-    }
-
-    private func setPanelAutoDismissSuspended(_ isSuspended: Bool) {
-        NotificationCenter.default.post(
-            name: .pickyPanelAutoDismissSuspensionChanged,
-            object: nil,
-            userInfo: [PickyPanelAutoDismissSuspension.isSuspendedUserInfoKey: isSuspended]
-        )
     }
 
     private func addMediaAttachments(_ urls: [URL]) {

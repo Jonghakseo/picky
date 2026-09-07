@@ -2010,7 +2010,7 @@ final class PickySessionListViewModel: ObservableObject {
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
              .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .hello, .pluginsReloaded,
-             .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted, .ack, .unknown:
+             .hubStatisticsResult, .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted, .ack, .unknown:
             break
         }
     }

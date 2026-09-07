@@ -4848,14 +4848,34 @@
     },
     "hud.menu.notifyMainOnCompletion": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Report completion to Main Picky" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report completion to Main Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 시 Main Picky에 보고"
+          }
+        }
       }
     },
     "hud.menu.notifyMacOSOnCompletion": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Notify in macOS when complete" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 macOS 알림" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notify in macOS when complete"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 시 macOS 알림"
+          }
+        }
       }
     },
     "hud.menu.stopSession": {
@@ -11644,38 +11664,98 @@
     },
     "hud.composer.notifyMain.accessibilityLabel": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Report completion to Main Picky" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report completion to Main Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 시 Main Picky에 보고"
+          }
+        }
       }
     },
     "hud.composer.notifyMain.off.help": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Do not report completion to Main Picky" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고하지 않기" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Do not report completion to Main Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 시 Main Picky에 보고하지 않기"
+          }
+        }
       }
     },
     "hud.composer.notifyMain.on.help": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Report completion to Main Picky" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "완료 시 Main Picky에 보고하기" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report completion to Main Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 시 Main Picky에 보고하기"
+          }
+        }
       }
     },
     "hud.composer.notifyMacOS.accessibilityLabel": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "macOS completion notification" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "macOS 완료 알림" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS completion notification"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 완료 알림"
+          }
+        }
       }
     },
     "hud.composer.notifyMacOS.off.help": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Do not send a macOS completion notification (⌘N)" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "macOS 완료 알림 보내지 않기 (⌘N)" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Do not send a macOS completion notification (⌘N)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 완료 알림 보내지 않기 (⌘N)"
+          }
+        }
       }
     },
     "hud.composer.notifyMacOS.on.help": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Send a macOS completion notification (⌘N)" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "macOS 완료 알림 보내기 (⌘N)" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send a macOS completion notification (⌘N)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 완료 알림 보내기 (⌘N)"
+          }
+        }
       }
     },
     "hud.composer.placeholder.compacting": {
@@ -11968,80 +12048,210 @@
     },
     "hud.composer.runtime.defaultModel": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Use current model for new Pickles" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "현재 모델을 새 Pickle 기본값으로 설정" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use current model for new Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 모델을 새 Pickle 기본값으로 설정"
+          }
+        }
       }
     },
     "hud.composer.runtime.defaultThinking": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Use current thinking level for new Pickles" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "현재 추론 레벨을 새 Pickle 기본값으로 설정" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use current thinking level for new Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 추론 레벨을 새 Pickle 기본값으로 설정"
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.advancedReadOnly": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "This Pi model scope is read-only here because it uses advanced patterns." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "이 Pi 모델 범위는 고급 패턴을 사용하므로 여기서는 읽기 전용입니다." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Pi model scope is read-only here because it uses advanced patterns."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pi 모델 범위는 고급 패턴을 사용하므로 여기서는 읽기 전용입니다."
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.allEnabled": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Enable all models" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "모든 모델 사용" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable all models"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 모델 사용"
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.allModels": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "All models…" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "모든 모델 보기…" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All models…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 모델 보기…"
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.allModelsTitle": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "All models" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "모든 모델" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All models"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 모델"
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.apply": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Apply" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "적용" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "적용"
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.back": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Back" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "뒤로" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "뒤로"
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.currentOutsideScope": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Current model (%@) is outside this scope." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "현재 모델(%@)은 이 범위 밖에 있습니다." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current model (%@) is outside this scope."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 모델(%@)은 이 범위 밖에 있습니다."
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.projectOverride": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "This project overrides the global model scope. Global edits will not replace it." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "이 프로젝트는 전역 모델 범위를 재정의합니다. 전역 편집으로 바뀌지 않습니다." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This project overrides the global model scope. Global edits will not replace it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 프로젝트는 전역 모델 범위를 재정의합니다. 전역 편집으로 바뀌지 않습니다."
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.conflict": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The model scope changed elsewhere. Reload the latest scope before applying changes." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "다른 곳에서 모델 범위가 변경되었습니다. 적용하기 전에 최신 상태를 불러오세요." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model scope changed elsewhere. Reload the latest scope before applying changes."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 곳에서 모델 범위가 변경되었습니다. 적용하기 전에 최신 상태를 불러오세요."
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.unavailableScope": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The model scope is unavailable. Reload and try again." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "모델 범위를 사용할 수 없습니다. 최신 상태를 불러온 후 다시 시도하세요." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model scope is unavailable. Reload and try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 범위를 사용할 수 없습니다. 최신 상태를 불러온 후 다시 시도하세요."
+          }
+        }
       }
     },
     "hud.composer.runtime.picker.reload": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Reload" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "최신 상태 불러오기" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 상태 불러오기"
+          }
+        }
       }
     },
     "hud.composer.screenContext.cancel": {
@@ -14105,6 +14315,1254 @@
           "stringUnit": {
             "state": "translated",
             "value": "생각 과정 접기"
+          }
+        }
+      }
+    },
+    "hub.window.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky"
+          }
+        }
+      }
+    },
+    "hub.menu.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 열기"
+          }
+        }
+      }
+    },
+    "hub.menu.appearance": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appearance"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외형"
+          }
+        }
+      }
+    },
+    "hub.appearance.light": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light appearance"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "라이트 외형"
+          }
+        }
+      }
+    },
+    "hub.appearance.dark": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dark appearance"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다크 외형"
+          }
+        }
+      }
+    },
+    "hub.brand.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to Picky dashboard"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 대시보드로 이동"
+          }
+        }
+      }
+    },
+    "hub.nav.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky menu"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 메뉴"
+          }
+        }
+      }
+    },
+    "hub.nav.dashboard": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dashboard"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대시보드"
+          }
+        }
+      }
+    },
+    "hub.nav.statistics": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistics"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통계"
+          }
+        }
+      }
+    },
+    "hub.nav.guides": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guides & Updates"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가이드 및 업데이트"
+          }
+        }
+      }
+    },
+    "hub.nav.quickStart": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Start"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빠른 시작"
+          }
+        }
+      }
+    },
+    "hub.nav.plugins": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plugins"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플러그인"
+          }
+        }
+      }
+    },
+    "hub.nav.conversation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent Conversation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 대화"
+          }
+        }
+      }
+    },
+    "hub.nav.settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정"
+          }
+        }
+      }
+    },
+    "hub.page.dashboard.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Look back, discover, and start your next task."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "돌아보고, 발견하고, 다음 작업을 시작하세요."
+          }
+        }
+      }
+    },
+    "hub.page.statistics.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review work results and AI usage by period and project."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 결과와 AI 사용량을 기간·프로젝트별로 확인하세요."
+          }
+        }
+      }
+    },
+    "hub.page.guides.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn how to get more out of Picky and catch up on what's new."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 더 잘 쓰는 방법과 새 소식을 확인하세요."
+          }
+        }
+      }
+    },
+    "hub.page.quickStart.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a new Pickle from a ready-made flow."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정해진 흐름으로 새 Pickle 작업을 시작하세요."
+          }
+        }
+      }
+    },
+    "hub.page.plugins.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find, install, and manage the capabilities you need."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "필요한 기능을 찾아 설치하고 관리하세요."
+          }
+        }
+      }
+    },
+    "hub.page.conversation.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick up the most recent conversation with Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky와 나눈 가장 최근 대화를 확인하세요."
+          }
+        }
+      }
+    },
+    "hub.page.settings.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage how Picky works and what it connects to."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky의 사용 방식과 연결 정보를 관리하세요."
+          }
+        }
+      }
+    },
+    "common.close": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        }
+      }
+    },
+    "hub.stats.category.fix": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fix & improve"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정·개선"
+          }
+        }
+      }
+    },
+    "hub.stats.category.research": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Research & analysis"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조사·분석"
+          }
+        }
+      }
+    },
+    "hub.stats.category.create": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build new"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 만들기"
+          }
+        }
+      }
+    },
+    "hub.stats.category.review": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review & troubleshoot"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검토·문제 해결"
+          }
+        }
+      }
+    },
+    "hub.stats.category.unclassified": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unclassified"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미분류"
+          }
+        }
+      }
+    },
+    "hub.stats.period.thisWeek": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This week"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 주"
+          }
+        }
+      }
+    },
+    "hub.stats.period.thisMonth": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This month"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 달"
+          }
+        }
+      }
+    },
+    "hub.stats.period.lastThreeMonths": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last 3 months"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 3개월"
+          }
+        }
+      }
+    },
+    "hub.stats.period.all": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All time"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체"
+          }
+        }
+      }
+    },
+    "hub.stats.error.timedOut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistics took too long to load."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통계를 불러오는 데 시간이 너무 오래 걸렸어요."
+          }
+        }
+      }
+    },
+    "hub.stats.error.disconnected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lost the connection to picky-agentd while loading statistics."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통계를 불러오는 중 picky-agentd 연결이 끊어졌어요."
+          }
+        }
+      }
+    },
+    "hub.stats.error.generic": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load statistics."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통계를 불러오지 못했어요."
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.landing.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build a landing page"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "랜딩 페이지 제작"
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.landing.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Q&A-driven flow that builds a web page introducing your product or service."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "질의응답 기반 워크플로우로 제품이나 서비스를 소개하는 웹페이지를 만듭니다."
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.native.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build a native app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네이티브 앱 제작"
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.native.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shape a native app that runs locally, through conversation."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 환경에서 구동되는 네이티브 앱을 대화로 만들어봅니다."
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.guide.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start an app guide"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 가이드 시작"
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.guide.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learn the app you're using, one step at a time, with Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 사용하는 앱을 Picky와 함께 한 단계씩 익혀봅니다."
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.files.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organize files"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 정리 시작"
+          }
+        }
+      }
+    },
+    "hub.quickStart.workflow.files.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tidy a local folder according to the rules you choose."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 폴더를 원하는 기준에 맞춰 정리하는 작업을 시작합니다."
+          }
+        }
+      }
+    },
+    "hub.quickStart.guide.fallback": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask me what I want to make, one question at a time, and start once you have enough detail."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무엇을 만들고 싶은지 한 번에 하나씩 질문하고, 정보가 충분해지면 작업을 시작하세요."
+          }
+        }
+      }
+    },
+    "hub.quickStart.error.notProjected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The new Pickle did not appear in time. Check that picky-agentd is running and try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 Pickle이 제때 나타나지 않았어요. picky-agentd가 실행 중인지 확인하고 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "hub.plugins.category.development": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Development"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개발"
+          }
+        }
+      }
+    },
+    "hub.plugins.category.research": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Research"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조사"
+          }
+        }
+      }
+    },
+    "hub.plugins.category.taskManagement": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task management"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 관리"
+          }
+        }
+      }
+    },
+    "hub.plugins.category.content": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘텐츠"
+          }
+        }
+      }
+    },
+    "hub.plugins.feedback.installed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed %1$@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@을(를) 설치했습니다."
+          }
+        }
+      }
+    },
+    "hub.plugins.feedback.removed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removed %1$@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@을(를) 삭제했습니다."
+          }
+        }
+      }
+    },
+    "hub.plugins.feedback.updated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %1$@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@을(를) 업데이트했습니다."
+          }
+        }
+      }
+    },
+    "hub.plugins.feedback.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ failed: %2$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 실패: %2$@"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.diffReview.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking a change set quickly before opening a PR"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PR을 열기 전 변경 내용을 빠르게 점검할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.diffReview.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comparing the scope of edits across several files at once"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여러 파일의 수정 범위를 한눈에 비교할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.askUserQuestion.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clarifying vague requirements before starting"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요구사항이 모호해 먼저 확인할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.askUserQuestion.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Presenting options together with a recommendation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택지와 추천안을 함께 제시할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.generativeUI.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reviewing a screen layout for a new feature quickly"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 기능의 화면 구성을 빠르게 검토할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.generativeUI.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drafting an interface before implementation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구현 전 인터페이스 초안을 만들 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.autoName.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telling many conversations apart at a glance"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여러 대화를 빠르게 구분해야 할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.autoName.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keeping task titles consistent in your history"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 기록의 제목을 일관되게 정리할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.delayedAction.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reminding yourself to follow up after a while"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잠시 뒤에 후속 작업을 떠올려야 할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.delayedAction.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scheduling a one-off prompt for later"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 번만 실행할 지시를 나중에 보내고 싶을 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.cron.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running a recurring check every morning"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매일 아침 정기 점검을 돌릴 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.cron.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automating a repeated report without opening Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 열지 않고 반복 보고서를 자동화할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.memoryLayer.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keeping project rules across sessions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 규칙을 세션이 바뀌어도 유지할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.memoryLayer.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recalling decisions made weeks ago"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "몇 주 전에 내린 결정을 다시 찾을 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.todoWriteOverlay.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Following a multi-step task as it progresses"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여러 단계 작업의 진행 상황을 따라갈 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.todoWriteOverlay.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seeing what the agent plans to do next"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 다음에 무엇을 할지 확인할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.subagent.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Splitting a large task into parallel workers"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "큰 작업을 병렬 워커로 나눌 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.subagent.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting an independent review of a change"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경사항에 대해 독립적인 검토를 받을 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.clipboard.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Handing copied text or images to Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사한 텍스트나 이미지를 Picky에 전달할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.clipboard.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Putting a generated draft straight into your clipboard"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "생성된 초안을 바로 클립보드에 넣을 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.claudeMcpBridge.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reusing MCP servers you already configured for Claude"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude에 설정해둔 MCP 서버를 그대로 쓸 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.claudeMcpBridge.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking which MCP tools are connected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결된 MCP 도구를 확인할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.crossAgent.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegating a sub-task to another coding agent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 코딩 에이전트에 하위 작업을 맡길 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.crossAgent.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comparing answers from multiple agents"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여러 에이전트의 답을 비교할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.claudeHooksBridge.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reusing Claude Code hooks inside Pi sessions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 훅을 Pi 세션에서 재사용할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.claudeHooksBridge.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enforcing project checks before edits land"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "편집이 반영되기 전에 프로젝트 검사를 강제할 때"
           }
         }
       }

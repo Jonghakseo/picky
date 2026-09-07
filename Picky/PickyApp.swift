@@ -27,11 +27,12 @@ enum PickyApp {
     }
 }
 
-/// Manages the companion lifecycle: creates the menu bar panel and starts
-/// the companion voice pipeline on launch.
+/// Manages the companion lifecycle: creates the status item + hub window and
+/// starts the companion voice pipeline on launch.
 @MainActor
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
-    private var menuBarPanelManager: MenuBarPanelManager?
+    private var statusItemController: PickyStatusItemController?
+    private var hubWindowController: PickyHubWindowController?
     private let settingsStore = PickySettingsStore()
     private lazy var settingsPersistence = PickySettingsPersistenceCoordinator.shared(for: settingsStore)
     private let settingsTerminationDrain = PickySettingsTerminationDrain()
@@ -189,10 +190,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// the same instance.
     private let onboardingActivator: PickyOnboardingActivator
     private var onboardingFlowController: OnboardingFlowController?
-    /// Owned at the app delegate so its state survives panel teardown.
-    /// `MenuBarPanelManager` reads/writes it, and `PickyDeepLinkDispatcher`
-    /// routes `picky://` clicks through `present(deepLink:)`.
-    private let panelNavigator = PickyPanelNavigator()
+    /// Owned at the app delegate so hub page selection survives the window
+    /// being closed. `PickyDeepLinkDispatcher` routes `picky://` clicks
+    /// through `present(deepLink:)`.
+    private let hubNavigator = PickyHubNavigator()
+    private let hubModalHost = PickyHubModalHost()
+    private lazy var hubSettingsViewModel = PickySettingsViewModel(store: settingsStore, persistence: settingsPersistence)
 
     override init() {
         self.appearanceStore = PickyAppearanceStore(settingsStore: settingsStore)
@@ -300,30 +303,50 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
         PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
         PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
-        menuBarPanelManager = MenuBarPanelManager(
+        let hubDependencies = PickyHubDependencies(
             companionManager: companionManager,
             sessionListViewModel: hudSessionViewModel,
+            settingsViewModel: hubSettingsViewModel,
+            settingsStore: settingsStore,
             appearanceStore: appearanceStore,
             fontScaleStore: fontScaleStore,
             hudVisibilityStore: hudVisibilityStore,
             updaterController: updaterController,
-            navigator: panelNavigator,
-            pluginReloadController: pluginReloadController
+            pluginReloadController: pluginReloadController,
+            agentClient: hudAgentClientRouter,
+            navigator: hubNavigator,
+            modalHost: hubModalHost,
+            statisticsStore: PickyHubStatisticsStore(client: hudAgentClientRouter),
+            quickStartLauncher: PickyHubQuickStartLauncher(
+                sessions: hudSessionViewModel,
+                defaultCwd: { [settingsStore] in settingsStore.load().normalizedPaths().defaultCwd }
+            ),
+            pluginCatalog: PickyHubPluginCatalogViewModel(
+                curated: PickyCuratedPluginsViewModel(),
+                pluginReloadController: pluginReloadController
+            )
         )
-        // Wire the conversation-card `picky://` link handler to the panel
-        // manager. The dispatcher is a singleton so any markdown surface
-        // (HUD agent bubbles, companion message bubbles) can route through
-        // the same path without each view having to know how to find the
-        // panel manager.
+        let hubWindowController = PickyHubWindowController(dependencies: hubDependencies)
+        self.hubWindowController = hubWindowController
+        statusItemController = PickyStatusItemController(
+            hubWindowController: hubWindowController,
+            hudVisibilityStore: hudVisibilityStore,
+            appearanceStore: appearanceStore,
+            settingsViewModel: hubSettingsViewModel,
+            navigator: hubNavigator,
+            modalHost: hubModalHost
+        )
+        // Wire the conversation-card `picky://` link handler to the hub. The
+        // dispatcher is a singleton so any markdown surface (HUD agent
+        // bubbles, hub conversation bubbles) can route through the same path.
         PickyDeepLinkDispatcher.shared.configure { [weak self] link in
-            self?.menuBarPanelManager?.present(deepLink: link)
+            self?.statusItemController?.present(deepLink: link)
         }
         companionManager.start()
-        // Auto-open the panel only when the user still needs to finish macOS
-        // permissions setup. Mirrors what the prerequisites surface gates on so
-        // launch matches the panel's own visibility logic.
+        // Auto-open the hub only when the user still needs to finish macOS
+        // permissions setup; the dashboard hosts the prerequisites surface.
         if !companionManager.permissions.allGranted {
-            menuBarPanelManager?.showPanelOnLaunch()
+            statusItemController?.showHubOnLaunch()
         }
         // Show the interactive demo on a fresh install (or whenever the user
         // hits "Replay onboarding" in Settings). Prerequisites take priority

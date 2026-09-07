@@ -314,7 +314,8 @@ enum PickyCommandType: String, Codable, Equatable {
     case updatePackage
     case setupPackage
     case reloadPlugins
-
+    case getHubStatistics
+    case resetHubStatistics
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {
@@ -381,6 +382,7 @@ enum PickyEvent: Equatable {
     case sessionArchivedAuthoritative(sessionId: String, archived: Bool)
     case sessionResourcesReloaded(sessionId: String)
     case pluginsReloaded(PickyPluginsReloadedEvent)
+    case hubStatisticsResult(PickyHubStatisticsResultEvent)
     case packageUpdatesAvailable(PickyPackageUpdatesAvailableEvent)
     case packageOperationProgress(PickyPackageOperationProgressEvent)
     case packageOperationCompleted(PickyPackageOperationCompletedEvent)
@@ -563,6 +565,8 @@ enum PickyEvent: Equatable {
         switch type {
         case "pluginsReloaded":
             return .pluginsReloaded(try PickyPluginsReloadedEvent(from: decoder))
+        case "hubStatisticsResult":
+            return .hubStatisticsResult(try PickyHubStatisticsResultEvent(from: decoder))
         case "packageUpdatesAvailable":
             return .packageUpdatesAvailable(try PickyPackageUpdatesAvailableEvent(from: decoder))
         case "packageOperationProgress":
@@ -746,6 +750,15 @@ struct PickyPluginsReloadedEvent: Decodable, Equatable {
     let pickleReloadedCount: Int
     let pickleAbortedCount: Int
     let pickleDeferredCount: Int
+}
+
+/// Reply to `getHubStatistics` / `resetHubStatistics`. `snapshot` is present
+/// only on success.
+struct PickyHubStatisticsResultEvent: Decodable, Equatable {
+    let commandId: String
+    let ok: Bool
+    let errorMessage: String?
+    let snapshot: PickyHubStatisticsSnapshot?
 }
 
 private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }

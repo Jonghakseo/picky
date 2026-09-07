@@ -1396,9 +1396,6 @@ final class CompanionManager: ObservableObject {
                 setLocalOverlayReason(.activeVoiceInput, visible: true)
             }
 
-            // Dismiss the menu bar panel so it doesn't cover the screen
-            NotificationCenter.default.post(name: .pickyDismissPanel, object: nil)
-
             // Cancel any in-progress response from a previous utterance.
             currentResponseTask?.cancel()
             deferredFinishAwaitingAgentResponseTask?.cancel()
@@ -2290,7 +2287,7 @@ final class CompanionManager: ObservableObject {
         case .sessionProjectionBootstrapComplete:
             break
         case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionSubagentRunsUpdated, .sessionArchivedAuthoritative, .pluginsReloaded,
-             .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted:
+             .hubStatisticsResult, .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted:
             // Progress events are already represented in the HUD. They should not
             // replace a cursor bubble that is currently speaking/showing a real
             // response, otherwise generic text like "작업 진행 중…" hides the answer.

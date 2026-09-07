@@ -631,6 +631,79 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(card.logPreview == "steer: log copy must not be parsed")
     }
 
+    @Test func clearingLastRequestClearsPresentationAndSurvivesRecovery() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(sessionID: "session-a", title: "Typed", status: .running, revision: 1), to: viewModel)
+        apply(transaction(
+            sessionID: "session-a",
+            baseRevision: 1,
+            revision: 2,
+            mutations: #"[{"type":"metaPatch","patch":{"lastRequest":{"source":"steer","text":"Old request"}}}]"#
+        ), to: viewModel)
+        let before = try #require(viewModel.sessions.first)
+        #expect(before.lastRequestText == "Old request")
+        #expect(before.lastRequestAt != nil)
+
+        apply(transaction(
+            sessionID: "session-a",
+            baseRevision: 2,
+            revision: 3,
+            mutations: #"[{"type":"metaPatch","patch":{"lastRequest":null}}]"#
+        ), to: viewModel)
+
+        let store = storage.registry.sessionStore(sessionID: "session-a")
+        #expect(store.metaStore.metadataState.loadedValue?.lastRequest == nil)
+        #expect(store.materializedAgentSessionSummary()?.lastRequest == nil)
+        #expect(viewModel.sessions.first?.lastRequestText == nil)
+        #expect(viewModel.sessions.first?.lastRequestAt == nil)
+
+        apply(snapshot(
+            sessionID: "session-a", title: "Recovered", status: .running, revision: 3,
+            extraProjectionFields: #", "logs":["steer: Old request"]"#
+        ), to: viewModel)
+        #expect(viewModel.sessions.first?.title == "Recovered")
+        #expect(viewModel.sessions.first?.lastRequestText == nil)
+        #expect(viewModel.sessions.first?.lastRequestAt == nil)
+    }
+
+    @Test func absentLastRequestPatchPreservesRequestAndTimestamp() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(sessionID: "session-a", title: "Typed", status: .running, revision: 1), to: viewModel)
+        apply(transaction(
+            sessionID: "session-a", baseRevision: 1, revision: 2,
+            mutations: #"[{"type":"metaPatch","patch":{"lastRequest":{"source":"followUp","text":"Keep request"}}}]"#
+        ), to: viewModel)
+        let timestamp = try #require(viewModel.sessions.first?.lastRequestAt)
+
+        apply(transaction(
+            sessionID: "session-a", baseRevision: 2, revision: 3,
+            mutations: #"[{"type":"metaPatch","patch":{"title":"Renamed"}}]"#
+        ), to: viewModel)
+
+        #expect(viewModel.sessions.first?.lastRequestText == "Keep request")
+        #expect(viewModel.sessions.first?.lastRequestAt == timestamp)
+        #expect(storage.registry.sessionStore(sessionID: "session-a").materializedAgentSessionSummary()?.lastRequest?.source == .followUp)
+    }
+
+    @Test func migratedLastRequestFromBootstrapCanRetryRuntimeRace() async throws {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: client, storage: storage)
+        apply(snapshot(
+            sessionID: "session-a", title: "Migrated", status: .failed, revision: 1,
+            extraProjectionFields: #", "logs":["follow-up: Retry the original request"],"lastRequest":{"source":"followUp","text":"Retry the original request"}"#
+        ), to: viewModel)
+        #expect(viewModel.sessions.first?.lastRequestText == "Retry the original request")
+
+        try await viewModel.retryAfterRuntimeRace(sessionID: "session-a")
+
+        let command = try #require(client.sentCommands.last { $0.type == .steer })
+        #expect(command.sessionId == "session-a")
+        #expect(command.text == "Retry the original request")
+    }
+
     @Test func cardRoundTripPreservesTypedLastRequestSourceWhenTextIsUnchanged() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
@@ -658,7 +731,8 @@ struct PickySessionProjectionV2ApplicationTests {
             status: .completed,
             revision: 1,
             extraProjectionFields: #","piSessionFilePath":"/tmp/old.jsonl","lastSummary":"Completed","finalAnswer":"Old answer""# +
-                #","logs":["followup: Old request","pi session: /tmp/old.jsonl"]"# +
+                #","lastRequest":{"source":"followUp","text":"Old request"}"# +
+                #","logs":["follow-up: Old request","pi session: /tmp/old.jsonl"]"# +
                 #","tools":[{"toolCallId":"tool-old","name":"bash","status":"succeeded"}]"# +
                 #","todoState":{"tasks":[{"id":"todo-old","content":"Old task","status":"pending"}],"updatedAt":"2026-08-25T00:00:00.000Z"}"# +
                 #","subagentRuns":[{"runId":1,"agent":"worker","task":"Old task","status":"done"}]"# +
@@ -669,12 +743,13 @@ struct PickySessionProjectionV2ApplicationTests {
                 #","queuedFollowUps":[{"id":"followup-old","text":"Old follow-up","enqueuedAt":"2026-08-25T00:00:00.000Z"}]"# +
                 #","activitySummary":{"read":1,"bash":1,"edit":0,"write":0,"thinking":0,"other":0}"#
         ), to: viewModel)
+        #expect(viewModel.sessions.first?.lastRequestText == "Old request")
 
         apply(transaction(
             sessionID: "session-a",
             baseRevision: 1,
             revision: 2,
-            mutations: #"[{"type":"metaPatch","patch":{"status":"waiting_for_input","piSessionFilePath":"/tmp/new.jsonl","lastSummary":"Ready for instructions"}},{"type":"logsSet","logs":[]},{"type":"messageRemove","messageId":"message-old"},{"type":"toolsSet","tools":[]},{"type":"todoSet","todoState":null},{"type":"subagentRunsSet","runs":[]},{"type":"artifactsSet","artifacts":[]},{"type":"changedFilesSet","changedFiles":[]},{"type":"queueSet","queuedSteers":[],"queuedFollowUps":[],"steeringMode":"one-at-a-time","followUpMode":"one-at-a-time"},{"type":"activitySet","activitySummary":{"read":0,"bash":0,"edit":0,"write":0,"thinking":0,"other":0}},{"type":"finalAnswerSet","finalAnswer":null}]"#
+            mutations: #"[{"type":"metaPatch","patch":{"status":"waiting_for_input","piSessionFilePath":"/tmp/new.jsonl","lastSummary":"Ready for instructions","lastRequest":null}},{"type":"logsSet","logs":[]},{"type":"messageRemove","messageId":"message-old"},{"type":"toolsSet","tools":[]},{"type":"todoSet","todoState":null},{"type":"subagentRunsSet","runs":[]},{"type":"artifactsSet","artifacts":[]},{"type":"changedFilesSet","changedFiles":[]},{"type":"queueSet","queuedSteers":[],"queuedFollowUps":[],"steeringMode":"one-at-a-time","followUpMode":"one-at-a-time"},{"type":"activitySet","activitySummary":{"read":0,"bash":0,"edit":0,"write":0,"thinking":0,"other":0}},{"type":"finalAnswerSet","finalAnswer":null}]"#
         ), to: viewModel)
 
         let store = storage.registry.sessionStore(sessionID: "session-a")
@@ -691,8 +766,10 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(session.queuedFollowUps.isEmpty)
         #expect(session.activitySummary == .zero)
         #expect(session.finalAnswer == nil)
+        #expect(session.lastRequest == nil)
         #expect(card.logPreview.isEmpty)
         #expect(card.lastRequestText == nil)
+        #expect(card.lastRequestAt == nil)
         #expect(card.piSessionFilePath == "/tmp/new.jsonl")
     }
 

@@ -272,11 +272,11 @@ final class PickySessionStore {
         }
     }
 
-    /// The daemon confirmed a user request; keep the optimistic local timestamp
-    /// semantics that the log-line path used to provide.
-    func applyProjectionLastRequest(_ request: PickySessionLastRequest) {
-        presentation.lastRequestText = request.text
-        presentation.lastRequestAt = Date()
+    /// A confirmed request starts the local elapsed timer; an authoritative
+    /// clear removes both the request and its timer.
+    func applyProjectionLastRequest(_ request: PickySessionLastRequest?) {
+        presentation.lastRequestText = request?.text
+        presentation.lastRequestAt = request == nil ? nil : Date()
     }
 
     func applyProjectionTool(_ tool: PickyToolActivity) {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { prefixedUserInputFromLogLine } from "./domain/log-prefixes.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { buildToolResultPreview } from "./domain/tool-result-preview.js";
 import { PickyAgentSessionSchema, PickyMainAgentStateSchema, type PickyAgentSession, type PickyMainAgentState, type PickyToolActivity } from "./protocol.js";
@@ -39,13 +40,17 @@ export class SessionStore {
   }
 
   async save(session: PickyAgentSession): Promise<void> {
-    if (this.scopeSessionId && session.id !== this.scopeSessionId) {
-      throw new Error(`SessionStore scoped to ${this.scopeSessionId} cannot save session ${session.id}`);
+    await this.persistSessionValue(session.id, session);
+  }
+
+  private async persistSessionValue(sessionId: string, value: unknown): Promise<void> {
+    if (this.scopeSessionId && sessionId !== this.scopeSessionId) {
+      throw new Error(`SessionStore scoped to ${this.scopeSessionId} cannot save session ${sessionId}`);
     }
     await mkdir(this.sessionsDir, { recursive: true });
-    const targetPath = join(this.sessionsDir, `${safeName(session.id)}.json`);
-    const tempPath = join(this.sessionsDir, `.${safeName(session.id)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
-    await writeFile(tempPath, JSON.stringify(session, null, 2));
+    const targetPath = join(this.sessionsDir, `${safeName(sessionId)}.json`);
+    const tempPath = join(this.sessionsDir, `.${safeName(sessionId)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
+    await writeFile(tempPath, JSON.stringify(value, null, 2));
     await rename(tempPath, targetPath);
   }
 
@@ -116,7 +121,9 @@ export class SessionStore {
       const raw = JSON.parse(await readFile(filePath, "utf8"));
       const migrated = migrateLegacySession(raw);
       const session = PickyAgentSessionSchema.parse(migrated.value);
-      if (migrated.changed && persistMigration) await this.save(session);
+      // Validate known fields, but write the minimally migrated raw value:
+      // Zod strips unknown fields, including nested metadata from newer clients.
+      if (migrated.changed && persistMigration) await this.persistSessionValue(session.id, migrated.value);
       return projectLegacyToolResultJSONPreviews(session);
     } catch (error) {
       console.warn(`Skipping unreadable Picky session metadata ${filePath}: ${messageOf(error)}`);
@@ -156,7 +163,7 @@ function appendUniqueLog(logs: string[], line: string): string[] {
 function migrateLegacySession(value: unknown): { value: unknown; changed: boolean } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { value, changed: false };
 
-  const session = value as { revision?: unknown; messages?: unknown };
+  const session = value as { revision?: unknown; messages?: unknown; logs?: unknown; lastRequest?: unknown };
   let changed = false;
   const migrated: Record<string, unknown> = { ...session };
   if (!("revision" in session)) {
@@ -173,7 +180,31 @@ function migrateLegacySession(value: unknown): { value: unknown; changed: boolea
     migrated.messages = messages;
   }
 
+  if (!("lastRequest" in session)) {
+    const lastRequest = lastRequestFromLegacyLogs(session.logs);
+    if (lastRequest) {
+      migrated.lastRequest = lastRequest;
+      changed = true;
+    }
+  }
+
   return changed ? { value: migrated, changed: true } : { value, changed: false };
+}
+
+function lastRequestFromLegacyLogs(logs: unknown): PickyAgentSession["lastRequest"] | undefined {
+  if (!Array.isArray(logs)) return undefined;
+  for (let index = logs.length - 1; index >= 0; index -= 1) {
+    const line = logs[index];
+    if (typeof line !== "string") continue;
+    // Match the retired Swift log reader only during legacy migration. Live
+    // journal parsing remains strict, and transcript lines keep their raw prefix.
+    const transcriptPrefix = "source transcript:";
+    const input = prefixedUserInputFromLogLine(line.trim())
+      ?? (line.startsWith(transcriptPrefix) ? { source: "transcript" as const, text: line.slice(transcriptPrefix.length) } : undefined);
+    const text = input?.text.trim();
+    if (input && text) return { source: input.source, text };
+  }
+  return undefined;
 }
 
 function projectLegacyToolResultJSONPreviews(session: PickyAgentSession): PickyAgentSession {

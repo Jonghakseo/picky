@@ -2205,6 +2205,7 @@ describe("SessionSupervisor", () => {
     await waitUntil(() => (supervisor.get(pickle.id)?.tools.length ?? 0) > 0);
     await waitUntil(() => supervisor.get(pickle.id)?.artifacts.length === 1);
     await waitUntil(() => supervisor.get(pickle.id)?.todoState?.tasks[0]?.id === "old-todo");
+    expect(supervisor.get(pickle.id)?.lastRequest).toEqual({ source: "handoff", text: "Investigate the request" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     expect(supervisor.get(pickle.id)?.messages?.length).toBeGreaterThan(0);
     expect(supervisor.get(pickle.id)?.tools.length).toBeGreaterThan(0);
@@ -2229,12 +2230,16 @@ describe("SessionSupervisor", () => {
     expect(updated.todoState).toBeUndefined();
     expect(updated.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(updated.piSessionFilePath).toBe("/tmp/manual-new-session-1.jsonl");
+    expect(updated.lastRequest).toBeUndefined();
+    expect(JSON.parse(await readFile(join(dir, "sessions", `${pickle.id}.json`), "utf8"))).not.toHaveProperty("lastRequest");
+    expect((await new SessionStore(dir).loadAll()).find((session) => session.id === pickle.id)?.lastRequest).toBeUndefined();
 
     const resetMutations = projectionMutations.find((mutations) => mutations.some((mutation) => mutation.type === "logsSet"));
     expect(resetMutations).toEqual(expect.arrayContaining([
       { type: "logsSet", logs: [] },
       { type: "toolsSet", tools: [] },
       { type: "artifactsSet", artifacts: [] },
+      { type: "metaPatch", patch: expect.objectContaining({ lastRequest: null }) },
     ]));
   });
 

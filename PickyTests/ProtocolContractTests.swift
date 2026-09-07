@@ -1092,6 +1092,21 @@ struct ProtocolContractTests {
         }
     }
 
+    @Test func decodesLastRequestClearFixtureAsExplicitClear() throws {
+        let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "session-projection-last-request-clear.event.json"
+        })
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder()
+            .decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .metaPatch(let patch) = transaction.mutations.first else {
+            Issue.record("Expected lastRequest meta patch")
+            return
+        }
+        #expect(patch.lastRequest == .clear)
+        #expect(patch.title == .unchanged)
+    }
+
     @Test func decodesProjectionFixturesIntoNamedDormantEvents() throws {
         let fixtures = try fixtureURLs(in: "contracts/protocol")
         let transactionFixture = try #require(fixtures.first { $0.lastPathComponent == "session-projection-transaction.event.json" })

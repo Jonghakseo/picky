@@ -60,29 +60,115 @@ describe("SessionStore (legacy / primary layout)", () => {
     expect((await store.loadAll())[0]?.revision).toBe(7);
   });
 
-  it("compatibility matrix rollback: ignores future revision metadata without corrupting legacy session fields", async () => {
+  it("backfills absent lastRequest from the most recent nonempty recognized legacy log and persists it", async () => {
     const root = tmpRoot();
     const sessionsDir = join(root, "sessions");
     mkdirSync(sessionsDir, { recursive: true });
-    const futureSession = {
-      ...makeSession({ id: "future-revision", revision: 9, status: "completed", lastSummary: "Durable result" }),
-      projectionEpoch: "future-daemon-epoch",
-      revisionMetadata: { source: "projection-v2", cursor: 9 },
-    };
-    writeFileSync(join(sessionsDir, "future-revision.json"), JSON.stringify(futureSession));
+    const sources = [
+      ["steer", "  steer: focus the failing test  ", { source: "steer", text: "focus the failing test" }],
+      ["follow-up", "follow-up: add a regression", { source: "followUp", text: "add a regression" }],
+      ["handoff", "Picky handoff: continue the investigation", { source: "handoff", text: "continue the investigation" }],
+      ["extension", "extension ui answer: Scope?: Project", { source: "extensionAnswer", text: "Scope?: Project" }],
+      ["transcript", "source transcript:  Original user request  ", { source: "transcript", text: "Original user request" }],
+    ] as const;
+    for (const [id, log, lastRequest] of sources) {
+      writeFileSync(join(sessionsDir, `${id}.json`), JSON.stringify(makeSession({ id, revision: 7, logs: ["follow-up: older request", log, "unrecognized newer noise"] })));
+    }
+
+    const loaded = await new SessionStore(root).loadAll();
+
+    for (const [id, _log, lastRequest] of sources) {
+      expect(loaded.find((session) => session.id === id)?.lastRequest).toEqual(lastRequest);
+      expect(JSON.parse(readFileSync(join(sessionsDir, `${id}.json`), "utf8"))).toMatchObject({ lastRequest, revision: 7 });
+    }
+    const persisted = sources.map(([id]) => readFileSync(join(sessionsDir, `${id}.json`), "utf8"));
+    expect((await new SessionStore(root).loadAll()).map((session) => session.lastRequest)).toEqual(expect.arrayContaining(sources.map(([, , lastRequest]) => lastRequest)));
+    expect(sources.map(([id]) => readFileSync(join(sessionsDir, `${id}.json`), "utf8"))).toEqual(persisted);
+  });
+
+  it("preserves every present typed lastRequest source without rewriting it", async () => {
+    const root = tmpRoot();
+    const store = new SessionStore(root);
+    const sources = ["steer", "followUp", "handoff", "extensionAnswer", "transcript"] as const;
+    for (const source of sources) {
+      await store.save(makeSession({ id: `typed-${source}`, logs: ["follow-up: legacy replacement"], lastRequest: { source, text: `typed ${source}` } }));
+    }
+
+    const loaded = await store.loadAll();
+
+    for (const source of sources) {
+      expect(loaded.find((session) => session.id === `typed-${source}`)?.lastRequest).toEqual({ source, text: `typed ${source}` });
+    }
+  });
+
+  it("ignores blank recognized logs and newer noise when backfilling a legacy request", async () => {
+    const root = tmpRoot();
+    const sessionsDir = join(root, "sessions");
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(sessionsDir, "legacy-fallback.json"), JSON.stringify(makeSession({
+      id: "legacy-fallback",
+      logs: ["follow-up: durable request  ", "Picky handoff:   ", " source transcript: not a legacy transcript prefix", "later unrecognized noise"],
+    })));
+    writeFileSync(join(sessionsDir, "legacy-empty.json"), JSON.stringify(makeSession({ id: "legacy-empty", logs: ["steer:  ", "unrecognized"] })));
+
+    const loaded = await new SessionStore(root).loadAll();
+
+    expect(loaded.find((session) => session.id === "legacy-fallback")?.lastRequest).toEqual({ source: "followUp", text: "durable request" });
+    expect(loaded.find((session) => session.id === "legacy-empty")?.lastRequest).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(sessionsDir, "legacy-empty.json"), "utf8"))).not.toHaveProperty("lastRequest");
+  });
+
+  it("does not persist a nested legacy migration into the primary flat layout", async () => {
+    const root = tmpRoot();
+    const scoped = new SessionStore(root, { scopeSessionId: "nested-legacy" });
+    await scoped.save(makeSession({ id: "nested-legacy", logs: ["steer: scoped request"] }));
+    const nestedPath = join(root, "sessions", "nested-legacy", "nested-legacy.json");
+    const raw = JSON.parse(readFileSync(nestedPath, "utf8")) as Record<string, unknown>;
+    delete raw.lastRequest;
+    writeFileSync(nestedPath, JSON.stringify(raw));
 
     const [loaded] = await new SessionStore(root).loadAll();
+
+    expect(loaded?.lastRequest).toEqual({ source: "steer", text: "scoped request" });
+    expect(JSON.parse(readFileSync(nestedPath, "utf8"))).not.toHaveProperty("lastRequest");
+    expect(existsSync(join(root, "sessions", "nested-legacy.json"))).toBe(false);
+
+    const [owned] = await scoped.loadAll();
+    expect(owned?.lastRequest).toEqual({ source: "steer", text: "scoped request" });
+    expect(JSON.parse(readFileSync(nestedPath, "utf8"))).toMatchObject({ lastRequest: owned?.lastRequest });
+    expect(existsSync(join(root, "sessions", "nested-legacy.json"))).toBe(false);
+  });
+
+  it.each(["flat", "scoped"] as const)("compatibility matrix rollback: preserves unknown fields while backfilling requests in %s storage", async (layout) => {
+    const root = tmpRoot();
+    const store = new SessionStore(root, layout === "scoped" ? { scopeSessionId: "future-revision" } : {});
+    const sessionsDir = join(root, "sessions", ...(layout === "scoped" ? ["future-revision"] : []));
+    mkdirSync(sessionsDir, { recursive: true });
+    const futureSession = {
+      ...makeSession({ id: "future-revision", revision: 9, status: "completed", lastSummary: "Durable result", logs: ["steer: retry"] }),
+      projectionEpoch: "future-daemon-epoch",
+      revisionMetadata: { source: "projection-v2", cursor: 9 },
+      messages: [{
+        id: "future-message", kind: "user_text", createdAt: "2026-09-07T00:00:00.000Z", text: "retry",
+        futureMetadata: { nested: { source: "future-client" } },
+      }],
+    };
+    const filePath = join(sessionsDir, "future-revision.json");
+    writeFileSync(filePath, JSON.stringify(futureSession));
+
+    const [loaded] = await store.loadAll();
 
     expect(loaded).toMatchObject({
       id: "future-revision",
       revision: 9,
       status: "completed",
       lastSummary: "Durable result",
+      lastRequest: { source: "steer", text: "retry" },
     });
-    expect(JSON.parse(readFileSync(join(sessionsDir, "future-revision.json"), "utf8"))).toMatchObject({
-      projectionEpoch: "future-daemon-epoch",
-      revisionMetadata: { source: "projection-v2", cursor: 9 },
-    });
+    const expected = { ...futureSession, lastRequest: { source: "steer", text: "retry" } };
+    expect(JSON.parse(readFileSync(filePath, "utf8"))).toEqual(expected);
+    await store.loadAll();
+    expect(JSON.parse(readFileSync(filePath, "utf8"))).toEqual(expected);
   });
 
   it("projects legacy truncated JSON tool previews without rewriting session files", async () => {

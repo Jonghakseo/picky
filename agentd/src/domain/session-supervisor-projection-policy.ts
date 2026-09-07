@@ -251,6 +251,7 @@ export function buildRuntimeSessionReplacementPatch(input: {
     cwd: input.cwd,
     lastSummary: "Ready for instructions",
     finalAnswer: undefined,
+    lastRequest: undefined,
     thinkingPreview: undefined,
     pendingExtensionUiRequest: undefined,
     logs: [],

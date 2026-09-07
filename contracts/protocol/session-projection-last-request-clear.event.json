@@ -1,0 +1,18 @@
+{
+  "id": "event-projection-last-request-clear",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-09-07T00:00:00.000Z",
+  "type": "sessionProjectionTransaction",
+  "sessionId": "session-001",
+  "epoch": "epoch-001",
+  "baseRevision": 4,
+  "revision": 5,
+  "mutations": [
+    {
+      "type": "metaPatch",
+      "patch": {
+        "lastRequest": null
+      }
+    }
+  ]
+}

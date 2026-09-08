@@ -107,6 +107,35 @@ struct PickyHubStatisticsSnapshot: Codable, Equatable {
     let usageSamples: [PickyHubUsageSample]
     /// Present when the classifier is still catching up on some Pickles.
     let pendingClassificationCount: Int
+    /// Missing from older daemons and therefore fail-closed for privacy.
+    let classificationEnabled: Bool
+
+    init(
+        generatedAt: Date,
+        records: [PickyHubPickleRecord],
+        usageSamples: [PickyHubUsageSample],
+        pendingClassificationCount: Int,
+        classificationEnabled: Bool = false
+    ) {
+        self.generatedAt = generatedAt
+        self.records = records
+        self.usageSamples = usageSamples
+        self.pendingClassificationCount = pendingClassificationCount
+        self.classificationEnabled = classificationEnabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case generatedAt, records, usageSamples, pendingClassificationCount, classificationEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        records = try container.decode([PickyHubPickleRecord].self, forKey: .records)
+        usageSamples = try container.decode([PickyHubUsageSample].self, forKey: .usageSamples)
+        pendingClassificationCount = try container.decode(Int.self, forKey: .pendingClassificationCount)
+        classificationEnabled = try container.decodeIfPresent(Bool.self, forKey: .classificationEnabled) ?? false
+    }
 
     static let empty = PickyHubStatisticsSnapshot(generatedAt: .distantPast, records: [], usageSamples: [], pendingClassificationCount: 0)
 }
@@ -132,7 +161,9 @@ enum PickyHubStatisticsPeriod: String, CaseIterable, Identifiable {
     func startDate(now: Date, calendar: Calendar) -> Date? {
         switch self {
         case .thisWeek:
-            return calendar.dateInterval(of: .weekOfYear, for: now)?.start
+            var weekCalendar = calendar
+            weekCalendar.firstWeekday = 2
+            return weekCalendar.dateInterval(of: .weekOfYear, for: now)?.start
         case .thisMonth:
             return calendar.dateInterval(of: .month, for: now)?.start
         case .lastThreeMonths:
@@ -202,6 +233,7 @@ enum PickyHubStatisticsAggregator {
         let start = filter.period.startDate(now: now, calendar: calendar)
         return snapshot.records
             .filter { record in
+                if record.lastActivityAt > now { return false }
                 if let start, record.lastActivityAt < start { return false }
                 if let project = filter.project, record.project != project { return false }
                 return true
@@ -212,6 +244,9 @@ enum PickyHubStatisticsAggregator {
     static func projects(in snapshot: PickyHubStatisticsSnapshot) -> [String] {
         var counts: [String: Int] = [:]
         for record in snapshot.records { counts[record.project, default: 0] += 1 }
+        for project in snapshot.usageSamples.compactMap(\.project) where counts[project] == nil {
+            counts[project] = 0
+        }
         return counts.keys.sorted { lhs, rhs in
             let lc = counts[lhs] ?? 0
             let rc = counts[rhs] ?? 0
@@ -234,7 +269,9 @@ enum PickyHubStatisticsAggregator {
         let deepest = records.max { lhs, rhs in
             let l = lhs.followUpCount + lhs.delegationCount
             let r = rhs.followUpCount + rhs.delegationCount
-            return l != r ? l < r : lhs.lastActivityAt < rhs.lastActivityAt
+            if l != r { return l < r }
+            if lhs.lastActivityAt != rhs.lastActivityAt { return lhs.lastActivityAt < rhs.lastActivityAt }
+            return lhs.id > rhs.id
         }
         var projectCounts: [String: Int] = [:]
         for record in records { projectCounts[record.project, default: 0] += 1 }
@@ -257,32 +294,35 @@ enum PickyHubStatisticsAggregator {
         calendar: Calendar = .current
     ) -> PickyHubUsageSummary {
         let start = filter.period.startDate(now: now, calendar: calendar)
-        let startDay = start.map(dayString)
+        let startDay = start.map { dayString($0, calendar: calendar) }
+        let endDay = dayString(now, calendar: calendar)
         let samples = snapshot.usageSamples.filter { sample in
+            if sample.day > endDay { return false }
             if let startDay, sample.day < startDay { return false }
             if let project = filter.project, sample.project != project { return false }
             return true
         }
         var input = 0, output = 0, cache = 0
         var byDay: [String: Int] = [:]
-        var byModel: [String: (provider: String, model: String, input: Int, output: Int, cache: Int, lastDay: String)] = [:]
+        var byModel: [String: PickyHubModelUsage] = [:]
         for sample in samples {
             input += sample.inputTokens
             output += sample.outputTokens
             cache += sample.cacheTokens
             byDay[sample.day, default: 0] += sample.inputTokens + sample.outputTokens + sample.cacheTokens
             let key = "\(sample.provider)/\(sample.model)"
-            var entry = byModel[key] ?? (sample.provider, sample.model, 0, 0, 0, sample.day)
-            entry.input += sample.inputTokens
-            entry.output += sample.outputTokens
-            entry.cache += sample.cacheTokens
-            entry.lastDay = max(entry.lastDay, sample.day)
-            byModel[key] = entry
+            let previous = byModel[key]
+            byModel[key] = PickyHubModelUsage(
+                provider: sample.provider,
+                model: sample.model,
+                inputTokens: (previous?.inputTokens ?? 0) + sample.inputTokens,
+                outputTokens: (previous?.outputTokens ?? 0) + sample.outputTokens,
+                cacheTokens: (previous?.cacheTokens ?? 0) + sample.cacheTokens,
+                lastUsedDay: max(previous?.lastUsedDay ?? sample.day, sample.day)
+            )
         }
         let days = byDay.keys.sorted().map { PickyHubUsageDay(day: $0, totalTokens: byDay[$0] ?? 0) }
-        let models = byModel.values
-            .map { PickyHubModelUsage(provider: $0.provider, model: $0.model, inputTokens: $0.input, outputTokens: $0.output, cacheTokens: $0.cache, lastUsedDay: $0.lastDay) }
-            .sorted { $0.totalTokens > $1.totalTokens }
+        let models = byModel.values.sorted { $0.totalTokens > $1.totalTokens }
         return PickyHubUsageSummary(totalTokens: input + output + cache, inputTokens: input, outputTokens: output, cacheTokens: cache, days: days, models: models)
     }
 
@@ -294,22 +334,22 @@ enum PickyHubStatisticsAggregator {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> [PickyHubUsageDay] {
-        let byDay = Dictionary(uniqueKeysWithValues: days.map { ($0.day, $0.totalTokens) })
+        let byDay = Dictionary(days.map { ($0.day, $0.totalTokens) }, uniquingKeysWith: +)
         let end: Date = {
-            if period == .thisWeek, let interval = calendar.dateInterval(of: .weekOfYear, for: now) {
-                return calendar.date(byAdding: .day, value: -1, to: interval.end) ?? now
+            if period == .thisWeek, let start = period.startDate(now: now, calendar: calendar) {
+                return calendar.date(byAdding: .day, value: 6, to: start) ?? now
             }
             return calendar.startOfDay(for: now)
         }()
         var start = period.startDate(now: now, calendar: calendar)
         if start == nil {
-            guard let first = days.first, let parsed = date(fromDay: first.day, calendar: calendar) else { return days }
+            guard let first = days.map(\.day).min(), let parsed = date(fromDay: first, calendar: calendar) else { return days }
             start = parsed
         }
         guard var cursor = start, cursor <= end else { return days }
         var result: [PickyHubUsageDay] = []
         while cursor <= end {
-            let key = dayString(cursor)
+            let key = dayString(cursor, calendar: calendar)
             result.append(PickyHubUsageDay(day: key, totalTokens: byDay[key] ?? 0))
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
             cursor = next
@@ -321,19 +361,24 @@ enum PickyHubStatisticsAggregator {
         PickyHubWorkCategory.chartOrder.firstIndex(of: category) ?? .max
     }
 
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    static func dayString(_ date: Date) -> String {
-        dayFormatter.string(from: date)
+    static func dayString(_ date: Date, calendar: Calendar = .current) -> String {
+        let components = wireCalendar(calendar).dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
 
     static func date(fromDay day: String, calendar: Calendar = .current) -> Date? {
-        dayFormatter.date(from: day)
+        let parts = day.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        let wire = wireCalendar(calendar)
+        guard let date = wire.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
+              dayString(date, calendar: wire) == day else { return nil }
+        return date
+    }
+
+    private static func wireCalendar(_ calendar: Calendar) -> Calendar {
+        var wire = Calendar(identifier: .gregorian)
+        wire.timeZone = calendar.timeZone
+        return wire
     }
 }
 

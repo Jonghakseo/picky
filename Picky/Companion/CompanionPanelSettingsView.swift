@@ -22,6 +22,9 @@ struct CompanionPanelSettingsView: View {
     /// observes the registry list rather than the global session façade.
     let archiveMembership: any PickySessionArchiveMembership
     let archiveCommands: any PickySessionArchiveCommands
+    /// Hub owns page and group headings, so embedded routes keep only their
+    /// controls and save/error affordances instead of nesting panel navigation.
+    let presentation: CompanionPanelSettingsPresentation
     @State private var mainAgentCwdDraft: String = ""
     @State private var piBinaryPathDraft: String = ""
     @State private var piCodingAgentDirDraft: String = ""
@@ -54,6 +57,9 @@ struct CompanionPanelSettingsView: View {
     @StateObject private var edgeTTSVoiceCatalog = EdgeTTSVoiceCatalog()
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
     @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
+    /// Monotonically identifies user edits made after a voice save was
+    /// admitted. Its completion must not overwrite those newer private drafts.
+    @State private var voiceDraftRevision = 0
     /// Whether the archived-Pickle list at the bottom of the Pickle page is
     /// expanded. Lives as @State so re-opening the panel collapses it again —
     /// archive management is an occasional task, not a persistent setting.
@@ -66,13 +72,15 @@ struct CompanionPanelSettingsView: View {
         mainConversation: PickyMainAgentConversationStore,
         archiveMembership: any PickySessionArchiveMembership,
         archiveCommands: any PickySessionArchiveCommands,
-        route: Binding<CompanionPanelSettingsRoute>
+        route: Binding<CompanionPanelSettingsRoute>,
+        presentation: CompanionPanelSettingsPresentation = .navigation
     ) {
         self.viewModel = viewModel
         self.companionManager = companionManager
         self.mainConversation = mainConversation
         self.archiveMembership = archiveMembership
         self.archiveCommands = archiveCommands
+        self.presentation = presentation
         _route = route
         _oauthLoginController = StateObject(
             wrappedValue: PickyPiOAuthLoginController(runner: companionManager.makePiOAuthLoginRunner())
@@ -81,7 +89,9 @@ struct CompanionPanelSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            navHeader
+            if presentation.showsNavigationChrome {
+                navHeader
+            }
             content
 
             if route != .index, let error = viewModel.validationError {
@@ -93,35 +103,54 @@ struct CompanionPanelSettingsView: View {
             }
         }
         .animation(.easeOut(duration: 0.16), value: route)
-        .onAppear {
-            mainAgentCwdDraft = viewModel.settings.mainAgentCwd
-            piBinaryPathDraft = viewModel.settings.piBinaryPath
-            piCodingAgentDirDraft = viewModel.settings.piCodingAgentDir
-            pickleCwdDraft = viewModel.settings.defaultCwd
-            syncVoiceDrafts()
-            oauthLoginController.refreshAll()
-        }
+        .onAppear { initializeOwnedState(for: route) }
+        // Standalone panel navigation reuses the view; initialize the new route's drafts.
+        .onChange(of: route) { _, newRoute in initializeOwnedState(for: newRoute) }
         .onChange(of: viewModel.settings.notifications) { _, _ in
-            // Toggles only flip booleans, so they cannot fail directory validation.
-            // Persist immediately and flash the saved indicator on the unified
-            // Overlay & Notifications section. Draft text in other sections
-            // remains untouched.
+            guard owns(.notifications) else { return }
             saveImmediately(for: .overlayAndNotifications)
         }
         .onChange(of: viewModel.settings.cursor) { _, _ in
+            guard owns(.cursor) else { return }
             saveImmediately(for: .overlayAndNotifications)
         }
         .onChange(of: viewModel.settings.overlayBubbles) { _, _ in
+            guard owns(.overlayBubbles) else { return }
             saveImmediately(for: .overlayAndNotifications)
         }
         .onChange(of: viewModel.settings.ttsEnabled) { _, _ in
-            // Fold voice text drafts into settings before saving so an
-            // in-progress edit (e.g. a half-typed API key) is not clobbered
-            // when syncVoiceDrafts() runs after a successful save.
+            guard owns(.ttsEnabled) else { return }
+            // Only the voice owner may fold its private drafts into settings.
             commitVoiceField()
         }
         .onChange(of: viewModel.settings.disabledBuiltinTools) { _, _ in
+            guard owns(.disabledBuiltinTools) else { return }
             saveImmediately(for: .builtinTools)
+        }
+    }
+
+    private func owns(_ observedSetting: CompanionPanelSettingsObservedSetting) -> Bool {
+        CompanionPanelSettingsOwnership.owns(
+            observedSetting,
+            on: route,
+            presentation: presentation
+        )
+    }
+
+    private func initializeOwnedState(for route: CompanionPanelSettingsRoute) {
+        for owner in CompanionPanelSettingsOwnership.draftOwners(for: route) {
+            switch owner {
+            case .mainAgent:
+                mainAgentCwdDraft = viewModel.settings.mainAgentCwd
+                piBinaryPathDraft = viewModel.settings.piBinaryPath
+                piCodingAgentDirDraft = viewModel.settings.piCodingAgentDir
+            case .oauth:
+                oauthLoginController.refreshAll()
+            case .pickle:
+                pickleCwdDraft = viewModel.settings.defaultCwd
+            case .voice:
+                syncVoiceDrafts()
+            }
         }
     }
 
@@ -540,31 +569,33 @@ struct CompanionPanelSettingsView: View {
                     )
                 }
 
-                voiceGroupDivider()
+                if presentation.includesOverlayNotificationControls {
+                    voiceGroupDivider()
 
-                VStack(alignment: .leading, spacing: 0) {
-                    voiceSubgroupHeader("settings.overlayAndNotifications.subgroup.alerts")
-                    toggleRow(
-                        "settings.notification.toggle.newPicklesMain",
-                        isOn: $viewModel.settings.notifications.notifyMainOnCompletionForNewPickles,
-                        divider: true
-                    )
                     VStack(alignment: .leading, spacing: 0) {
+                        voiceSubgroupHeader("settings.overlayAndNotifications.subgroup.alerts")
                         toggleRow(
-                            "settings.notification.toggle.newPicklesMacOS",
-                            isOn: $viewModel.settings.notifications.notifyMacOSOnCompletionForNewPickles,
-                            divider: false
+                            "settings.notification.toggle.newPicklesMain",
+                            isOn: $viewModel.settings.notifications.notifyMainOnCompletionForNewPickles,
+                            divider: true
                         )
-                        Text("settings.notification.toggle.newPickles.note")
-                            .font(PickyHUDTypography.supporting)
-                            .foregroundColor(DS.Colors.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, DS.Spacing.space2)
-                        Divider()
-                            .background(DS.Colors.borderSubtle.opacity(0.3))
+                        VStack(alignment: .leading, spacing: 0) {
+                            toggleRow(
+                                "settings.notification.toggle.newPicklesMacOS",
+                                isOn: $viewModel.settings.notifications.notifyMacOSOnCompletionForNewPickles,
+                                divider: false
+                            )
+                            Text("settings.notification.toggle.newPickles.note")
+                                .font(PickyHUDTypography.supporting)
+                                .foregroundColor(DS.Colors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, DS.Spacing.space2)
+                            Divider()
+                                .background(DS.Colors.borderSubtle.opacity(0.3))
+                        }
+                        toggleRow("settings.notification.toggle.onFailure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
+                        toggleRow("settings.notification.toggle.onInputRequest", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
                     }
-                    toggleRow("settings.notification.toggle.onFailure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
-                    toggleRow("settings.notification.toggle.onInputRequest", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
                 }
             }
         }
@@ -894,7 +925,9 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                pickyShellCommandSubsection
+                if presentation.includesShellCommandControl {
+                    pickyShellCommandSubsection
+                }
             }
         }
     }
@@ -1396,24 +1429,36 @@ struct CompanionPanelSettingsView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title)
-                    .font(PickyHUDTypography.statusSemibold)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .textCase(.uppercase)
-                    .tracking(0.4)
+            if presentation.showsSectionChrome {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(PickyHUDTypography.statusSemibold)
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .textCase(.uppercase)
+                        .tracking(0.4)
 
-                Spacer(minLength: 8)
+                    Spacer(minLength: 8)
 
-                statusIndicator(for: section)
+                    statusIndicator(for: section)
+                }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(PickyHUDTypography.supporting)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            if let subtitle {
-                Text(subtitle)
-                    .font(PickyHUDTypography.supporting)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+
             content()
+
+            // Text and credential drafts retain their local durable Save action
+            // when the Hub suppresses the panel section heading.
+            if !presentation.showsSectionChrome, saveStatuses[section] != .idle {
+                HStack {
+                    Spacer(minLength: 0)
+                    statusIndicator(for: section)
+                }
+            }
         }
     }
 
@@ -1473,7 +1518,7 @@ struct CompanionPanelSettingsView: View {
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
-                    updateDraftStatus(for: .voice, isDirty: isVoiceDraftDirty())
+                    voiceDraftDidChange()
                 }
                 .onSubmit { commitVoiceField() }
         }
@@ -1493,7 +1538,7 @@ struct CompanionPanelSettingsView: View {
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
-                    updateDraftStatus(for: .voice, isDirty: isVoiceDraftDirty())
+                    voiceDraftDidChange()
                 }
                 .onSubmit { commitVoiceField() }
         }
@@ -1534,7 +1579,7 @@ struct CompanionPanelSettingsView: View {
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
-                    updateDraftStatus(for: .voice, isDirty: isVoiceDraftDirty())
+                    voiceDraftDidChange()
                 }
                 .onSubmit { commitVoiceField() }
         }
@@ -1554,10 +1599,15 @@ struct CompanionPanelSettingsView: View {
                         .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                 )
                 .onChange(of: text.wrappedValue) { _, _ in
-                    updateDraftStatus(for: .voice, isDirty: isVoiceDraftDirty())
+                    voiceDraftDidChange()
                 }
                 .onSubmit { commitVoiceField() }
         }
+    }
+
+    private func voiceDraftDidChange() {
+        voiceDraftRevision &+= 1
+        updateDraftStatus(for: .voice, isDirty: isVoiceDraftDirty())
     }
 
     private func fieldLabel(_ text: LocalizedStringKey) -> some View {
@@ -1820,23 +1870,15 @@ struct CompanionPanelSettingsView: View {
     /// the view-model so unrelated dirty sections keep their unsaved text intact.
     private func commitEdits(in section: CompanionPanelSettingsSection) {
         switch section {
-        case .general:
-            saveImmediately(for: .general)
-        case .oauth:
-            break
+        case .general, .overlayAndNotifications, .shortcuts, .builtinTools:
+            saveImmediately(for: section)
         case .mainAgent:
             commitMainAgentCwdField()
         case .pickle:
             commitPickleCwdField()
-        case .overlayAndNotifications:
-            saveImmediately(for: .overlayAndNotifications)
         case .voice:
             commitVoiceField()
-        case .shortcuts:
-            saveImmediately(for: .shortcuts)
-        case .builtinTools:
-            saveImmediately(for: .builtinTools)
-        case .onboarding:
+        case .oauth, .onboarding:
             break
         }
     }
@@ -1863,10 +1905,7 @@ struct CompanionPanelSettingsView: View {
         saveSectionDurably(.shortcuts)
     }
 
-    /// Flips the persisted onboarding revision back to zero so the takeover
-    /// overlay reappears on the next app launch. The actual overlay wiring
-    /// lands in a later phase; for now flipping the flag is the user-visible
-    /// contract.
+    /// Legacy standalone-panel replay; Hub uses its failure-safe transaction.
     private func replayOnboarding() {
         viewModel.settings.onboardingCompletedVersion = 0
         saveSectionDurably(.onboarding)
@@ -1999,14 +2038,21 @@ struct CompanionPanelSettingsView: View {
             }
         }
         let shouldPreserveDirtyPickleDraft = section == .pickle && pickleCwdDraft != viewModel.settings.defaultCwd
+        let voiceDraftRevisionAtSave = section == .voice ? voiceDraftRevision : nil
         viewModel.save { didSave in
             if didSave {
-                if !shouldPreserveDirtyPickleDraft {
+                let hasNewerVoiceDraft = voiceDraftRevisionAtSave.map {
+                    !CompanionVoiceDraftSyncPolicy.shouldSynchronize(
+                        completedRevision: $0,
+                        currentRevision: self.voiceDraftRevision
+                    )
+                } ?? false
+                if shouldPreserveDirtyPickleDraft || hasNewerVoiceDraft {
+                    self.saveStatuses.markDirty(section)
+                } else {
                     self.syncDraft(for: section)
                     self.saveStatuses.markSaved(section)
                     self.scheduleSaveStatusReset(for: section)
-                } else {
-                    self.saveStatuses.markDirty(section)
                 }
             } else {
                 self.saveStatuses.markDirty(section)

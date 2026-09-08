@@ -92,6 +92,51 @@ struct PickyCuratedPluginInstallerTests {
         #expect(status == .installed(isPinned: false))
     }
 
+    @Test func installedVersionReadsTheResolvedScopedPackageManifest() throws {
+        let scratch = try ScratchCuratedPlugin()
+        let agentDir = scratch.home.appendingPathComponent(".pi/agent", isDirectory: true)
+        try scratch.writeSettings(packages: ["\(source)@^1.0.0"], agentDir: agentDir)
+        try scratch.writePackageManifest(
+            packageName: "@ryan_nookpi/pi-extension-diff-review",
+            version: "2.4.1",
+            agentDir: agentDir
+        )
+
+        let version = PickyCuratedPluginInstaller.installedVersion(
+            source: source,
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: agentDir.path)
+        )
+
+        #expect(version == "2.4.1")
+    }
+
+    @Test func installedVersionOmitsStaleOrWrongPackageManifests() throws {
+        let scratch = try ScratchCuratedPlugin()
+        let agentDir = scratch.home.appendingPathComponent(".pi/agent", isDirectory: true)
+        try scratch.writeSettings(packages: [source], agentDir: agentDir)
+        try scratch.writePackageManifest(
+            packageName: "@ryan_nookpi/pi-extension-diff-review",
+            manifestName: "@ryan_nookpi/another-package",
+            version: "2.4.1",
+            agentDir: agentDir
+        )
+
+        let wrongNameVersion = PickyCuratedPluginInstaller.installedVersion(
+            source: source,
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: agentDir.path)
+        )
+        let missingPackageVersion = PickyCuratedPluginInstaller.installedVersion(
+            source: "npm:@ryan_nookpi/pi-extension-cron",
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: agentDir.path)
+        )
+
+        #expect(wrongNameVersion == nil)
+        #expect(missingPackageVersion == nil)
+    }
+
     @Test func installSendsPackageCommandAndWaitsForDaemonCompletion() async throws {
         let client = FakeCuratedPluginAgentClient()
         var sentCommand: PickyCommandEnvelope?
@@ -483,5 +528,24 @@ private struct ScratchCuratedPlugin {
             options: [.sortedKeys, .prettyPrinted]
         )
         try data.write(to: settingsURL)
+    }
+
+    func writePackageManifest(
+        packageName: String,
+        manifestName: String? = nil,
+        version: String,
+        agentDir: URL
+    ) throws {
+        let packageDirectory = packageName
+            .split(separator: "/")
+            .reduce(agentDir.appendingPathComponent("npm/node_modules", isDirectory: true)) { directory, component in
+                directory.appendingPathComponent(String(component), isDirectory: true)
+            }
+        try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(
+            withJSONObject: ["name": manifestName ?? packageName, "version": version],
+            options: [.sortedKeys, .prettyPrinted]
+        )
+        try data.write(to: packageDirectory.appendingPathComponent("package.json", isDirectory: false))
     }
 }

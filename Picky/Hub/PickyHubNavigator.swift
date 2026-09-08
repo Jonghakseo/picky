@@ -46,6 +46,11 @@ enum PickyHubStatisticsTab: String, CaseIterable, Identifiable {
 @MainActor
 final class PickyHubNavigator: ObservableObject {
     @Published var selectedPage: PickyHubPage = .dashboard
+    @Published var isWindowVisible = false
+
+    var shouldRefreshStatistics: Bool {
+        isWindowVisible && (selectedPage == .dashboard || selectedPage == .statistics)
+    }
     /// One-shot scroll target consumed by the Settings page on appear/change.
     @Published var pendingSettingsGroup: PickyHubSettingsGroup?
     /// One-shot tab request consumed by the Statistics page.

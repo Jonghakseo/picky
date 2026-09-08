@@ -10,12 +10,15 @@ import { createPickyAskUserQuestionTool } from "./runtime/ask-user-question-tool
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./runtime/user-guide-tool.js";
 import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-cwd.js";
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
-import type { AgentRuntime } from "./runtime/types.js";
+import type { AgentRuntime, RuntimeTextCompleter } from "./runtime/types.js";
 import { logAgentd } from "./local-log.js";
 import { buildPickyRuntimeContract } from "./domain/picky-runtime-contract.js";
 import { createPickyRuntimeContractExtension } from "./runtime/picky-runtime-contract-extension.js";
 import { EdgeTTSService } from "./edge-tts-service.js";
 import { PiOAuthService } from "./runtime/pi-oauth-service.js";
+import { PiTextCompleter } from "./runtime/pi-text-completer.js";
+import { HubStatisticsService } from "./application/hub-statistics-service.js";
+import { PickleClassifier } from "./application/pickle-classifier.js";
 
 export type AgentdMode = "primary" | "child";
 
@@ -54,6 +57,7 @@ interface ComposeResult {
   // after `supervisor.load()` rehydrates the scoped session, preventing a replayed `createTask`
   // from minting the same id again and silently overwriting persisted state.
   sessionIdFactory?: () => string;
+  pickleClassifier?: PickleClassifier;
 }
 
 export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
@@ -208,6 +212,15 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   });
   supervisorRef.current = supervisor;
 
+  const hubStatistics = config.mode === "primary" ? new HubStatisticsService(config.appSupportDir) : undefined;
+  const pickleClassifier = hubStatistics
+    ? new PickleClassifier({
+        statistics: hubStatistics,
+        completer: config.useMockRuntime ? runtime as RuntimeTextCompleter : new PiTextCompleter({ cwd: config.mainAgentCwd }),
+      })
+    : undefined;
+  void pickleClassifier?.start();
+
   const server = new AgentdServer({
     port: config.port,
     token: config.token,
@@ -222,6 +235,8 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     // connection token is published to the Settings client.
     edgeTTS: config.mode === "primary" ? new EdgeTTSService() : undefined,
     piOAuth: config.mode === "primary" ? new PiOAuthService() : undefined,
+    hubStatistics,
+    pickleClassifier,
   });
   appPickleBridgeRef.current = (request) => server.requestPickleBridgeFromApp(request);
 
@@ -234,6 +249,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     cwdStabilization,
     currentDefaultCwd,
     sessionIdFactory,
+    pickleClassifier,
   };
 }
 

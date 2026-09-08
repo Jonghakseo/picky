@@ -104,6 +104,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var completionId: String?
     var status: PickySessionStatus?
     var summary: String?
+    /// Explicit opt-in for sending bounded Pickle metadata to the configured model provider.
+    var classificationEnabled: Bool?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -168,7 +170,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         expectedRevision: String? = nil,
         completionId: String? = nil,
         status: PickySessionStatus? = nil,
-        summary: String? = nil
+        summary: String? = nil,
+        classificationEnabled: Bool? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -234,6 +237,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.completionId = completionId
         self.status = status
         self.summary = summary
+        self.classificationEnabled = classificationEnabled
     }
 }
 
@@ -316,6 +320,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case reloadPlugins
     case getHubStatistics
     case resetHubStatistics
+    case configureHubStatistics
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {

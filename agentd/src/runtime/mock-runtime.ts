@@ -1,13 +1,22 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { STEER_PREFIX } from "../domain/log-prefixes.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
-import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, RuntimeTextCompleter, ThinkingLevel } from "./types.js";
 import { modelScopeRevision, validateExactModelScope } from "./pi-model-resolution.js";
 import { PiModelScopeConflictError } from "./model-scope-errors.js";
 
-export class MockRuntime implements AgentRuntime {
+export class MockRuntime implements AgentRuntime, RuntimeTextCompleter {
   private sequence = 0;
   private globalModelPatterns: string[] | undefined;
+
+  async complete(input: { system: string; prompt: string; maxTokens?: number }): Promise<string> {
+    const candidates = JSON.parse(input.prompt) as Array<{ id?: unknown; input?: unknown }>;
+    if (!Array.isArray(candidates)) throw new Error("Mock classifier prompt must be a JSON array");
+    return JSON.stringify(candidates.flatMap((candidate) => {
+      if (typeof candidate.id !== "string" || typeof candidate.input !== "string") return [];
+      return [{ id: candidate.id, category: mockCategory(candidate.input) }];
+    }));
+  }
 
   async setGlobalModelScope(change: RuntimeGlobalModelScopeChange): Promise<void> {
     if (modelScopeRevision(this.globalModelPatterns) !== change.expectedRevision) {
@@ -32,6 +41,13 @@ export class MockRuntime implements AgentRuntime {
     });
     return handle;
   }
+}
+
+function mockCategory(input: string): "fix" | "research" | "create" | "review" {
+  if (/fix|bug|repair|\uC218\uC815|\uAC1C\uC120/i.test(input)) return "fix";
+  if (/research|investigat|analy[sz]|\uC870\uC0AC|\uBD84\uC11D/i.test(input)) return "research";
+  if (/review|verif|audit|critic|\uAC80\uD1A0/i.test(input)) return "review";
+  return "create";
 }
 
 interface MockTreeEntry {

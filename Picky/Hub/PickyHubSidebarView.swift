@@ -15,6 +15,7 @@ struct PickyHubSidebarView: View {
     @ObservedObject var navigator: PickyHubNavigator
     let restartRequirement: PickyRestartRequirement
     let dockDisplayIDProvider: () -> CGDirectDisplayID?
+    @FocusState.Binding var focusedControl: String?
     let onFeedbackTapped: () -> Void
 
     var body: some View {
@@ -47,6 +48,7 @@ struct PickyHubSidebarView: View {
             PickyHubSidebarFooter(
                 restartRequirement: restartRequirement,
                 dockDisplayIDProvider: dockDisplayIDProvider,
+                focusedControl: $focusedControl,
                 onFeedbackTapped: onFeedbackTapped
             )
         }
@@ -106,6 +108,7 @@ private struct PickyHubNavRow: View {
 struct PickyHubSidebarFooter: View {
     let restartRequirement: PickyRestartRequirement
     let dockDisplayIDProvider: () -> CGDirectDisplayID?
+    @FocusState.Binding var focusedControl: String?
     let onFeedbackTapped: () -> Void
     @EnvironmentObject private var visibilityStore: PickyHUDVisibilityStore
     @EnvironmentObject private var appearanceStore: PickyAppearanceStore
@@ -127,7 +130,8 @@ struct PickyHubSidebarFooter: View {
             footerRow(
                 systemImage: dockPresentation.systemImage,
                 title: LocalizedStringKey(dockPresentation.titleKey),
-                foreground: PickyHubTheme.Colors.textSecondary
+                foreground: PickyHubTheme.Colors.textSecondary,
+                focusID: "dock"
             ) {
                 guard let dockDisplayID else { return }
                 visibilityStore.toggle(for: dockDisplayID)
@@ -137,6 +141,7 @@ struct PickyHubSidebarFooter: View {
                 systemImage: "ant.fill",
                 title: "footer.feedback.accessibilityLabel",
                 foreground: PickyHubTheme.Colors.textSecondary,
+                focusID: "feedback",
                 action: onFeedbackTapped
             )
 
@@ -144,7 +149,8 @@ struct PickyHubSidebarFooter: View {
                 footerRow(
                     systemImage: requiresRestart ? "arrow.clockwise" : "power",
                     title: LocalizedStringKey(requiresRestart ? "common.restart" : "common.quit"),
-                    foreground: requiresRestart ? DS.Colors.warningText : DS.Colors.destructiveText.opacity(0.85)
+                    foreground: requiresRestart ? DS.Colors.warningText : DS.Colors.destructiveText.opacity(0.85),
+                    focusID: "quit"
                 ) {
                     isQuitConfirmationPresented = true
                 }
@@ -167,8 +173,21 @@ struct PickyHubSidebarFooter: View {
         }
     }
 
-    private func footerRow(systemImage: String, title: LocalizedStringKey, foreground: Color, action: @escaping () -> Void) -> some View {
-        PickyHubFooterButton(systemImage: systemImage, title: title, foreground: foreground, action: action)
+    private func footerRow(
+        systemImage: String,
+        title: LocalizedStringKey,
+        foreground: Color,
+        focusID: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        PickyHubFooterButton(
+            systemImage: systemImage,
+            title: title,
+            foreground: foreground,
+            focusedControl: $focusedControl,
+            focusID: focusID,
+            action: action
+        )
     }
 
     private func appearanceButton(systemName: String, target: PickyAppearanceMode, label: LocalizedStringKey) -> some View {
@@ -189,9 +208,12 @@ private struct PickyHubFooterButton: View {
     let systemImage: String
     let title: LocalizedStringKey
     let foreground: Color
+    @FocusState.Binding var focusedControl: String?
+    let focusID: String
     let action: () -> Void
     @State private var isHovering = false
-    @FocusState private var isFocused: Bool
+
+    private var isFocused: Bool { focusedControl == focusID }
 
     var body: some View {
         Button(action: action) {
@@ -213,7 +235,7 @@ private struct PickyHubFooterButton: View {
             .contentShape(RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous))
         }
         .buttonStyle(.plain)
-        .focused($isFocused)
+        .focused($focusedControl, equals: focusID)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: DS.CornerRadius.small)
         .onHover { isHovering = $0 }
         .animation(PickyHubTheme.Motion.hover, value: isHovering)

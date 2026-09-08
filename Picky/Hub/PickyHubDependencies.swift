@@ -25,6 +25,7 @@ struct PickyHubDependencies {
     let statisticsStore: PickyHubStatisticsStore
     let quickStartLauncher: PickyHubQuickStartLauncher
     let pluginCatalog: PickyHubPluginCatalogViewModel
+    var requestOnboardingReplay: () -> Void = {}
 
     var permissions: PickyPermissionMonitor { companionManager.permissions }
 }

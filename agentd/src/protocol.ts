@@ -562,6 +562,37 @@ export const DockGroupSchema = z.object({
 });
 export type DockGroup = z.infer<typeof DockGroupSchema>;
 
+const PickyHubWorkCategorySchema = z.enum(["fix", "research", "create", "review", "unclassified"]);
+const PickyHubPickleRecordSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  project: z.string(),
+  cwd: z.string().nullable().optional(),
+  createdAt: isoTimestamp,
+  lastActivityAt: isoTimestamp,
+  followUpCount: z.number().int().nonnegative(),
+  delegationCount: z.number().int().nonnegative(),
+  reviewCount: z.number().int().nonnegative(),
+  category: PickyHubWorkCategorySchema,
+});
+const PickyHubUsageSampleSchema = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  provider: z.string(),
+  model: z.string(),
+  project: z.string().nullable().optional(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheTokens: z.number().int().nonnegative(),
+});
+const PickyHubStatisticsSnapshotSchema = z.object({
+  generatedAt: isoTimestamp,
+  records: z.array(PickyHubPickleRecordSchema),
+  usageSamples: z.array(PickyHubUsageSampleSchema),
+  pendingClassificationCount: z.number().int().nonnegative(),
+  // Legacy snapshots predate the consent field. Treat omission as disabled.
+  classificationEnabled: z.boolean().default(false),
+});
+
 const CommandBaseSchema = z.object({
   id: z.string(),
   protocolVersion: z.literal(PROTOCOL_VERSION),
@@ -718,6 +749,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("checkPackageUpdates") }),
   CommandBaseSchema.extend({ type: z.literal("updatePackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
+  CommandBaseSchema.extend({ type: z.literal("getHubStatistics") }),
+  CommandBaseSchema.extend({ type: z.literal("resetHubStatistics") }),
+  CommandBaseSchema.extend({ type: z.literal("configureHubStatistics"), classificationEnabled: z.boolean() }),
 ]).superRefine((command, context) => {
   if (command.type === "getSessionProjectionSnapshot" && command.id !== command.requestId) {
     context.addIssue({
@@ -910,6 +944,13 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     pickleReloadedCount: z.number().int().nonnegative(),
     pickleAbortedCount: z.number().int().nonnegative(),
     pickleDeferredCount: z.number().int().nonnegative(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("hubStatisticsResult"),
+    commandId: z.string().min(1),
+    ok: z.boolean(),
+    errorMessage: z.string().nullable().optional(),
+    snapshot: PickyHubStatisticsSnapshotSchema.optional(),
   }),
   EventBaseSchema.extend({
     type: z.literal("packageUpdatesAvailable"),

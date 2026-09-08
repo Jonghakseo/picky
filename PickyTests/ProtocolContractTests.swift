@@ -85,6 +85,27 @@ struct ProtocolContractTests {
         }
     }
 
+    @Test func decodesLegacyHubStatisticsSnapshotWithClassificationDisabled() throws {
+        let json = Data("""
+        {
+          "id":"event-hub-statistics-legacy",
+          "protocolVersion":"2026-08-25",
+          "timestamp":"2026-09-01T00:00:00.000Z",
+          "type":"hubStatisticsResult",
+          "commandId":"cmd-hub-statistics",
+          "ok":true,
+          "snapshot":{"generatedAt":"2026-09-01T00:00:00.000Z","records":[],"usageSamples":[],"pendingClassificationCount":0}
+        }
+        """.utf8)
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+
+        guard case .hubStatisticsResult(let result) = envelope.event else {
+            Issue.record("Expected hubStatisticsResult event")
+            return
+        }
+        #expect(result.snapshot?.classificationEnabled == false)
+    }
+
     @Test func decodesArtifactWithRawBacktickURL() throws {
         let json = """
         {

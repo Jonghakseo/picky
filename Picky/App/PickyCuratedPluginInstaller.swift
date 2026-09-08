@@ -66,6 +66,51 @@ enum PickyCuratedPluginInstaller {
         return .installed(isPinned: isPinnedPackageSource(installedSource))
     }
 
+    /// Reads the installed package manifest from Pi's package-manager layout.
+    /// A configured package without a matching local manifest has no trustworthy
+    /// installed version, so callers intentionally render no version in that case.
+    static func installedVersion(
+        source: String,
+        homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default,
+        preferences: PickyPiInstallationPreferences? = nil
+    ) -> String? {
+        let preferences = resolvedPreferences(preferences, homeURL: homeURL)
+        guard installedPackageSource(
+            matching: source,
+            homeURL: homeURL,
+            fileManager: fileManager,
+            preferences: preferences
+        ) != nil,
+        let packageName = npmPackageName(in: source) else {
+            return nil
+        }
+
+        let environment = homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path
+            ? ProcessInfo.processInfo.environment
+            : [:]
+        let agentDirectory = PickyPiInstallation.resolve(
+            preferences: preferences,
+            homeURL: homeURL,
+            environment: environment,
+            fileManager: fileManager
+        ).codingAgentDirURL
+        let manifestURL = packageName
+            .split(separator: "/")
+            .reduce(agentDirectory.appendingPathComponent("npm/node_modules", isDirectory: true)) { directory, component in
+                directory.appendingPathComponent(String(component), isDirectory: true)
+            }
+            .appendingPathComponent("package.json", isDirectory: false)
+        guard let data = try? Data(contentsOf: manifestURL),
+              let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              manifest["name"] as? String == packageName,
+              let version = manifest["version"] as? String,
+              !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return version
+    }
+
     @discardableResult
     static func install(
         source: String,
@@ -252,6 +297,14 @@ enum PickyCuratedPluginInstaller {
     private static func npmPackageIdentity(_ source: String) -> String {
         guard let versionIndex = npmVersionIndex(in: source) else { return source }
         return "npm:" + String(source.dropFirst("npm:".count)[..<versionIndex])
+    }
+
+    private static func npmPackageName(in source: String) -> String? {
+        guard source.hasPrefix("npm:") else { return nil }
+        let package = source.dropFirst("npm:".count)
+        guard !package.isEmpty else { return nil }
+        guard let versionIndex = npmVersionIndex(in: source) else { return String(package) }
+        return String(package[..<versionIndex])
     }
 
     private static func isPinnedPackageSource(_ source: String) -> Bool {

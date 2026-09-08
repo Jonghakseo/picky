@@ -11,12 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 UI_EFFECT_GATE = "@Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))"
 UI_EFFECT_TESTS = {
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
+    ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
     ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 }
 UI_EFFECT_HELPERS: set[tuple[str, str]] = set()
 UI_EFFECT_CALLERS = {
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
+    ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
     ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 } | UI_EFFECT_HELPERS
@@ -64,7 +66,7 @@ REQUIRED_BOUNDARY_SNIPPETS = {
 REQUIRED_GUARDS = {
     "Picky/Context/PickyAppSupport.swift": "unit-tests.\\(ProcessInfo.processInfo.processIdentifier)",
     "Picky/QuickInput/QuickInputPanelManager.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else {",
-    "Picky/App/MenuBarPanelManager.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
+    "Picky/Hub/Components/PickyHubModal.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/CompanionManager.swift": "if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {",
     "Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/Companion/Onboarding/OnboardingFlowController.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",

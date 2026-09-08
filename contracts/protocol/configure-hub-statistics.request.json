@@ -1,0 +1,6 @@
+{
+  "id": "cmd-configure-hub-statistics",
+  "protocolVersion": "2026-08-25",
+  "type": "configureHubStatistics",
+  "classificationEnabled": true
+}

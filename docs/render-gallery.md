@@ -77,6 +77,22 @@ This target writes seven 2× Korean scenes under `build/render-gallery/conversat
 
 This target writes four 2× Korean scenes under `build/render-gallery/conversation-activity/`: collapsed and expanded tool activity summaries in dark and light appearance. `PickyActivitySummaryRenderGalleryTests` renders the production `PickyActivitySummaryView` with deterministic counts and verifies that todo activity stays out of both the compact total and expanded detail grid. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove hover, disclosure animation, or tool-history navigation.
 
+## Hub gallery
+
+```bash
+./scripts/render-ui-gallery.sh hub
+```
+
+This target writes twenty-seven 2× PNGs under `build/render-gallery/hub/`: every production Hub destination (Dashboard, Statistics, Guides, Quick Start, Plugins, Recent Conversation, and Settings) at the 1020×720 default window size in light and dark appearance, plus a 760×560 narrow dark scene for each page. The same three size/appearance variants also cover the production plugin-detail dialog and statistics-reset confirmation. `PickyHubRenderGalleryTests` mounts the actual `PickyHubRootView`, not a gallery-only duplicate, and writes `index.html` and `manifest.json` alongside the images.
+
+The fixture is local and disposable. It uses a unique temporary `PickySettingsStore` root and `UserDefaults` suite, an in-memory agent client that returns a fixed populated statistics snapshot, fixed main-conversation messages, two plugin rows with one installed and one uninstalled state, and an idle Quick Start launcher with all four workflows available. Its permission probes are fixed and it never starts `CompanionManager`, a microphone, a daemon, or an updater. The fixture accepts only simulated `getHubStatistics` and `checkPackageUpdates` commands, then asserts no other lifecycle command was requested.
+
+Guide thumbnails remain the production `AsyncImage` path, but this serialized test installs a narrow `URLProtocol` blocker for `ytimg.com`. The cards therefore show their normal production failure placeholder without fetching remote thumbnails. The gallery does not open a guide modal, so it never creates a WebKit player.
+
+The Hub target passes `-derivedDataPath "${PICKY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"`. Do not point it at a per-run directory unless the shared agent path is unavailable, and do not run it concurrently with another `xcodebuild` using that path. The test verifies every scene has its exact 2× pixel dimensions, PNG encoding, non-empty alpha, and a multi-color production layout sample. The script independently validates the complete filename matrix, `manifest.json`, `index.html`, and PNG dimensions.
+
+The gallery intentionally has no byte-for-byte golden images. Dashboard greeting copy reads the current clock and local account name, and a few existing page labels use system date formatting, so visual geometry and static state are the reliable oracle. It also cannot prove native menu/popover focus, `NSOpenPanel`, permission requests, updater interactions, WebKit playback, hover/press/focus transitions, or scroll restoration. Inspect those behaviors live only when the changed feature requires them.
+
 ## Review limits
 
 Artifacts have a 2× pixel grid tagged 144 dpi, so a viewer shows them at their intended point size. Their detail is still 1 pixel per point: an offscreen `NSHostingView` composites layer contents at `contentsScale == 1`, and the alternatives that do rasterize at 2× lose fidelity (`ImageRenderer` ignores the host appearance and placeholder-fills AppKit-backed views, `dataWithPDF(inside:)` drops layer-drawn surfaces and symbols). Judge geometry, state, and contrast from these artifacts, not glyph antialiasing.

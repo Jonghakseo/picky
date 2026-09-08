@@ -16,8 +16,8 @@ private struct PickyHubContentWidthKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// Width of the main content column, published by `PickyHubPageScroll` so
-    /// grids can pick their column count without nesting GeometryReaders.
+    /// Width of the main content column, provided above each page by the hub
+    /// root so page-level grid policies receive the current window width.
     var pickyHubContentWidth: CGFloat {
         get { self[PickyHubContentWidthKey.self] }
         set { self[PickyHubContentWidthKey.self] = newValue }
@@ -26,7 +26,11 @@ extension EnvironmentValues {
 
 /// Column count policy shared by every card grid in the hub.
 enum PickyHubGridPolicy {
-    static func columnCount(for contentWidth: CGFloat, maximum: Int = 3) -> Int {
+    static func contentWidth(forViewportWidth width: CGFloat) -> CGFloat {
+        max(0, min(PickyHubTheme.Layout.contentMaxWidth, width - PickyHubTheme.Layout.contentHorizontalPadding * 2))
+    }
+
+    static func columnCount(for contentWidth: CGFloat, maximum: Int = 3, minimumCardWidth: CGFloat = 0, spacing: CGFloat = 0) -> Int {
         let count: Int
         if contentWidth >= PickyHubTheme.Layout.threeColumnMinWidth {
             count = 3
@@ -35,7 +39,8 @@ enum PickyHubGridPolicy {
         } else {
             count = 1
         }
-        return max(1, min(count, maximum))
+        let fittingCount = minimumCardWidth > 0 ? max(1, Int((max(0, contentWidth) + spacing) / (minimumCardWidth + spacing))) : count
+        return max(1, min(count, maximum, fittingCount))
     }
 }
 
@@ -45,33 +50,17 @@ enum PickyHubGridPolicy {
 struct PickyHubPageScroll<Content: View>: View {
     var showsIndicators = false
     @ViewBuilder var content: () -> Content
-    @State private var measuredWidth: CGFloat = PickyHubTheme.Layout.contentMaxWidth
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: showsIndicators) {
             content()
-                .environment(\.pickyHubContentWidth, measuredWidth)
                 .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
                 .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
                 .padding(.top, PickyHubTheme.Layout.contentTopPadding)
                 .padding(.bottom, PickyHubTheme.Layout.contentBottomPadding)
                 .frame(maxWidth: .infinity)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: PickyHubContentWidthPreference.self,
-                            value: max(0, min(proxy.size.width, PickyHubTheme.Layout.contentMaxWidth) - PickyHubTheme.Layout.contentHorizontalPadding * 2)
-                        )
-                    }
-                )
         }
-        .onPreferenceChange(PickyHubContentWidthPreference.self) { measuredWidth = $0 }
     }
-}
-
-private struct PickyHubContentWidthPreference: PreferenceKey {
-    static let defaultValue: CGFloat = PickyHubTheme.Layout.contentMaxWidth
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 // MARK: - Headings

@@ -44,56 +44,114 @@ final class PickyHubStatisticsStore: ObservableObject {
     /// always describe the same slice.
     @Published var filter = PickyHubStatisticsFilter()
     @Published private(set) var isResetting = false
+    @Published private(set) var isRefreshing = false
+    @Published private(set) var isUpdatingClassification = false
+    @Published private(set) var classificationUpdateError: String?
+    @Published private(set) var classificationEnabled = false
     @Published private(set) var lastRefreshedAt: Date?
 
     private let client: any PickyAgentClient
     private var refreshTask: Task<Void, Never>?
+    private var requestGeneration = 0
     private let timeoutNanoseconds: UInt64
+    private let now: () -> Date
+    private let freshnessInterval: TimeInterval
 
-    init(client: any PickyAgentClient, timeoutNanoseconds: UInt64 = 30_000_000_000) {
+    init(
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64 = 30_000_000_000,
+        freshnessInterval: TimeInterval = 30,
+        now: @escaping () -> Date = Date.init
+    ) {
         self.client = client
         self.timeoutNanoseconds = timeoutNanoseconds
+        self.freshnessInterval = freshnessInterval
+        self.now = now
     }
 
     var snapshot: PickyHubStatisticsSnapshot { state.snapshot ?? .empty }
     var isLoading: Bool { state == .loading }
 
     func refreshIfNeeded() {
-        guard state == .idle || state.isFailed else { return }
+        guard !isRefreshing, !isResetting, !isUpdatingClassification else { return }
+        let isStale = lastRefreshedAt.map { now().timeIntervalSince($0) >= freshnessInterval } ?? true
+        guard state == .idle || state.isFailed || isStale else { return }
         refresh()
     }
 
     func refresh() {
+        guard !isResetting, !isUpdatingClassification else { return }
         refreshTask?.cancel()
+        requestGeneration += 1
+        let generation = requestGeneration
+        isRefreshing = true
         if state.snapshot == nil { state = .loading }
         refreshTask = Task { [weak self] in
             guard let self else { return }
             let result = await self.request(type: .getHubStatistics)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, self.requestGeneration == generation else { return }
             self.apply(result)
+            self.isRefreshing = false
         }
     }
 
-    /// Wipes the daemon-side classification cache and reloads.
+    /// Reset owns the snapshot until the daemon replies; earlier refreshes
+    /// cannot replace the reset result and repeated clicks send no command.
     func resetClassifications() async {
+        guard !isResetting, !isUpdatingClassification else { return }
+        classificationUpdateError = nil
+        refreshTask?.cancel()
+        refreshTask = nil
+        isRefreshing = false
+        requestGeneration += 1
         isResetting = true
         defer { isResetting = false }
         let result = await request(type: .resetHubStatistics)
         apply(result)
     }
 
+    /// The toggle remains bound to the last daemon-confirmed snapshot. A failed
+    /// command therefore never renders an optimistic consent state.
+    func setClassificationEnabled(_ enabled: Bool) async {
+        guard !isResetting, !isUpdatingClassification else { return }
+        refreshTask?.cancel()
+        refreshTask = nil
+        isRefreshing = false
+        requestGeneration += 1
+        let generation = requestGeneration
+        isUpdatingClassification = true
+        classificationUpdateError = nil
+        defer { isUpdatingClassification = false }
+
+        let result = await request(type: .configureHubStatistics, classificationEnabled: enabled)
+        guard requestGeneration == generation, !Task.isCancelled else { return }
+        switch result {
+        case .success:
+            apply(result)
+        case .failure(let error):
+            classificationUpdateError = error.localizedDescription
+            // A lost reply may follow a committed update. Hide the toggle until
+            // a fresh snapshot confirms the durable value, rather than claiming off.
+            state = .failed(error.localizedDescription)
+        }
+    }
+
     private func apply(_ result: Result<PickyHubStatisticsSnapshot, FetchError>) {
         switch result {
         case .success(let snapshot):
             state = .loaded(snapshot)
-            lastRefreshedAt = Date()
+            classificationEnabled = snapshot.classificationEnabled
+            lastRefreshedAt = now()
         case .failure(let error):
             state = .failed(error.localizedDescription)
         }
     }
 
-    private func request(type: PickyCommandType) async -> Result<PickyHubStatisticsSnapshot, FetchError> {
-        let command = PickyCommandEnvelope(type: type)
+    private func request(
+        type: PickyCommandType,
+        classificationEnabled: Bool? = nil
+    ) async -> Result<PickyHubStatisticsSnapshot, FetchError> {
+        let command = PickyCommandEnvelope(type: type, classificationEnabled: classificationEnabled)
         let stream = client.events
         do {
             try await client.send(command)
@@ -103,6 +161,9 @@ final class PickyHubStatisticsStore: ObservableObject {
                     for await clientEvent in stream {
                         switch clientEvent {
                         case .protocolEvent(let envelope):
+                            if case .error(let error) = envelope.event, error.commandId == command.id {
+                                throw FetchError.failed(error.message)
+                            }
                             guard case .hubStatisticsResult(let result) = envelope.event, result.commandId == command.id else { continue }
                             guard result.ok, let snapshot = result.snapshot else {
                                 throw FetchError.failed(result.errorMessage ?? L10n.t("hub.stats.error.generic"))

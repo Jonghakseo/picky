@@ -38,7 +38,14 @@ const USER_GUIDE_SECTIONS_DESCRIPTION = `Available sections: ${PICKY_USER_GUIDE_
  * teach the LLM which screen each route opens.
  */
 export const PICKY_DEEP_LINK_ROUTES: ReadonlyArray<readonly [string, string]> = [
-  ["picky://panel/status", "Menu bar panel → Status tab (permissions, prerequisites, voice status, updates). Feedback is reachable from the footer bug glyph."],
+  ["picky://hub/dashboard", "Hub → Dashboard."],
+  ["picky://hub/statistics", "Hub → Statistics."],
+  ["picky://hub/guides", "Hub → Guides and updates."],
+  ["picky://hub/quickstart", "Hub → Quick start."],
+  ["picky://hub/plugins", "Hub → Plugins."],
+  ["picky://hub/conversation", "Hub → Recent conversation."],
+  ["picky://hub/settings", "Hub → Settings."],
+  ["picky://panel/status",  "Menu bar panel → Status tab (permissions, prerequisites, voice status, updates). Feedback is reachable from the footer bug glyph."],
   ["picky://panel/messages", "Menu bar panel → Status → Recent conversation sub-page (main-agent chat with Picky)."],
   ["picky://panel/settings", "Menu bar panel → Settings tab index (grouped: General / Agents / Surface)."],
   ["picky://settings/general", "Settings → General (language, appearance, shell command)."],

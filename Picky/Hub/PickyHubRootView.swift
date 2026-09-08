@@ -15,6 +15,8 @@ struct PickyHubRootView: View {
     @ObservedObject private var navigator: PickyHubNavigator
     @ObservedObject private var modalHost: PickyHubModalHost
     @ObservedObject private var settingsViewModel: PickySettingsViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focusedSidebarControl: String?
     let dockDisplayIDProvider: () -> CGDirectDisplayID?
 
     init(dependencies: PickyHubDependencies, dockDisplayIDProvider: @escaping () -> CGDirectDisplayID?) {
@@ -36,21 +38,26 @@ struct PickyHubRootView: View {
                     navigator: navigator,
                     restartRequirement: restartRequirement,
                     dockDisplayIDProvider: dockDisplayIDProvider,
+                    focusedControl: $focusedSidebarControl,
                     onFeedbackTapped: presentFeedback
                 )
 
-                ZStack {
-                    ForEach(PickyHubPage.allCases) { page in
-                        pageView(page)
-                            .opacity(navigator.selectedPage == page ? 1 : 0)
-                            .allowsHitTesting(navigator.selectedPage == page)
-                            .accessibilityHidden(navigator.selectedPage != page)
-                            .disabled(navigator.selectedPage != page)
+                GeometryReader { viewport in
+                    ZStack {
+                        ForEach(PickyHubPage.allCases) { page in
+                            pageView(page)
+                                .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
+                                .opacity(navigator.selectedPage == page ? 1 : 0)
+                                .allowsHitTesting(navigator.selectedPage == page)
+                                .accessibilityHidden(navigator.selectedPage != page)
+                                .disabled(navigator.selectedPage != page)
+                        }
                     }
+                    .environment(\.pickyHubContentWidth, PickyHubGridPolicy.contentWidth(forViewportWidth: viewport.size.width))
+                    .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(PickyHubTheme.Colors.canvas)
-                .animation(PickyHubTheme.Motion.page, value: navigator.selectedPage)
+                .animation(reduceMotion ? nil : PickyHubTheme.Motion.page, value: navigator.selectedPage)
             }
         }
         .frame(
@@ -63,6 +70,14 @@ struct PickyHubRootView: View {
         .environmentObject(dependencies.statisticsStore)
         .environmentObject(dependencies.quickStartLauncher)
         .environmentObject(dependencies.pluginCatalog)
+        .task(id: navigator.shouldRefreshStatistics) {
+            guard navigator.shouldRefreshStatistics else { return }
+            while !Task.isCancelled {
+                dependencies.statisticsStore.refreshIfNeeded()
+                do { try await Task.sleep(for: .seconds(30)) }
+                catch { return }
+            }
+        }
     }
 
     @ViewBuilder
@@ -87,7 +102,11 @@ struct PickyHubRootView: View {
 
     private func presentFeedback() {
         let viewModel = settingsViewModel
-        modalHost.present(width: 480, accessibilityLabel: L10n.t("settings.section.feedback.title")) {
+        modalHost.present(
+            width: 480,
+            accessibilityLabel: L10n.t("settings.section.feedback.title"),
+            onDismiss: { focusedSidebarControl = "feedback" }
+        ) {
             PickyHubFeedbackDialog(viewModel: viewModel)
         }
     }

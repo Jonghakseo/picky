@@ -40,12 +40,10 @@ protocol PickyAgentClient: AnyObject {
     /// otherwise timeout without an error remains a compatibility success.
     /// Throws the underlying transport error on connection failure.
     ///
-    /// The default implementation simply forwards to `send` and returns nil,
-    /// because intercepting error events requires owning a (single-subscriber)
-    /// fanout layer over the events stream. Only `PickyAgentClientRouter`
-    /// overrides this; the raw `WebSocketPickyAgentClient` doesn't, because
-    /// its events stream is consumed exclusively by either the router or a
-    /// dedicated consumer like `CompanionManager`.
+    /// The default implementation can preserve the legacy error-only behavior,
+    /// but it cannot observe a positive ack. Strict callers therefore fail
+    /// rather than treating a send-only fallback as accepted. Only
+    /// `PickyAgentClientRouter` can correlate the daemon's ack/error stream.
     func sendAwaitingError(
         _ command: PickyCommandEnvelope,
         timeout: TimeInterval,
@@ -180,6 +178,9 @@ extension PickyAgentClient {
         timeout: TimeInterval,
         requireAcknowledgement: Bool
     ) async throws -> PickyErrorEvent? {
+        guard !requireAcknowledgement else {
+            throw PickyStrictAcknowledgementError.unavailable
+        }
         try await send(command)
         return nil
     }
@@ -206,6 +207,19 @@ enum PickyClientEvent: Equatable {
     /// bootstrap correlation have already been consumed by the router.
     case sessionProjectionBootstrapCompletion(removedSessionIDs: Set<String>, isPrimary: Bool)
     case recoverableError(String)
+}
+
+struct PickyCommandRejection: LocalizedError, Equatable {
+    let event: PickyErrorEvent
+    var errorDescription: String? { event.message }
+}
+
+enum PickyStrictAcknowledgementError: LocalizedError, Equatable {
+    case unavailable
+
+    var errorDescription: String? {
+        "This client cannot confirm that picky-agentd accepted the command."
+    }
 }
 
 enum PickyAgentClientError: LocalizedError, Equatable {

@@ -7,7 +7,8 @@
 //  draws the backdrop + dialog above everything, and the page beneath is
 //  disabled so keyboard focus cannot escape the dialog. `Esc`, backdrop click,
 //  and the dialog's own buttons all funnel through `dismiss()` so the
-//  `onDismiss` hook (used to restore focus to the trigger) runs exactly once.
+//  `onDismiss` restores focus after SwiftUI re-enables the trigger. Replacing
+//  a dialog suppresses prior restoration, while `onWillDismiss` still cleans up.
 //
 
 import AppKit
@@ -21,6 +22,8 @@ final class PickyHubModalHost: ObservableObject {
         let width: CGFloat
         let accessibilityLabel: String
         let content: AnyView
+        let canDismiss: () -> Bool
+        let onWillDismiss: () -> Void
         let onDismiss: () -> Void
     }
 
@@ -28,36 +31,59 @@ final class PickyHubModalHost: ObservableObject {
     /// The hub window; key events from other Picky windows are left alone.
     weak var window: NSWindow?
     private var escapeMonitor: Any?
+    private var pendingDismissal: Presentation?
 
     var isPresenting: Bool { presentation != nil }
+    var presentationID: UUID? { presentation?.id }
 
+    @discardableResult
     func present<Content: View>(
         width: CGFloat = 540,
         accessibilityLabel: String,
+        canDismiss: @escaping () -> Bool = { true },
+        onWillDismiss: @escaping () -> Void = {},
         onDismiss: @escaping () -> Void = {},
         @ViewBuilder content: () -> Content
-    ) {
-        if presentation != nil { dismiss() }
-        presentation = Presentation(
+    ) -> UUID {
+        if let current = presentation {
+            guard current.canDismiss() else { return current.id }
+            dismiss()
+        }
+        pendingDismissal = nil
+        let next = Presentation(
             width: width,
             accessibilityLabel: accessibilityLabel,
             content: AnyView(content()),
+            canDismiss: canDismiss,
+            onWillDismiss: onWillDismiss,
             onDismiss: onDismiss
         )
+        presentation = next
         installEscapeMonitor()
+        return next.id
     }
 
     func dismiss() {
-        guard let current = presentation else { return }
+        guard let current = presentation, current.canDismiss() else { return }
         presentation = nil
         removeEscapeMonitor()
-        current.onDismiss()
+        pendingDismissal = current
+        current.onWillDismiss()
+    }
+
+    /// The overlay reports removal after SwiftUI has re-enabled the underlying
+    /// controls. Task.yield is not a render boundary. IDs reject old transitions.
+    func presentationDidDisappear(id: UUID) {
+        guard presentation == nil, let pendingDismissal, pendingDismissal.id == id else { return }
+        self.pendingDismissal = nil
+        pendingDismissal.onDismiss()
     }
 
     /// `onExitCommand` only fires while a SwiftUI view inside the dialog owns
     /// focus. The local monitor covers the moment right after presentation
     /// (before the dialog's first responder is set) and any focus-less state.
     private func installEscapeMonitor() {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         removeEscapeMonitor()
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.presentation != nil else { return event }
@@ -96,8 +122,11 @@ struct PickyHubModalOverlay<Content: View>: View {
                     .accessibilityHidden(true)
                     .transition(.opacity)
 
-                presentation.content
-                    .frame(width: presentation.width)
+                ViewThatFits(in: .vertical) {
+                    presentation.content
+                    ScrollView { presentation.content }
+                }
+                    .frame(maxWidth: presentation.width)
                     .background(
                         RoundedRectangle(cornerRadius: PickyHubTheme.Radius.modal, style: .continuous)
                             .fill(PickyHubTheme.Colors.modal)
@@ -119,6 +148,7 @@ struct PickyHubModalOverlay<Content: View>: View {
                     .accessibilityAddTraits(.isModal)
                     .accessibilityLabel(presentation.accessibilityLabel)
                     .id(presentation.id)
+                    .onDisappear { host.presentationDidDisappear(id: presentation.id) }
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
             }
         }
@@ -204,7 +234,7 @@ struct PickyHubConfirmDialog: View {
                 .padding(.top, 8)
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                PickyHubButton(title: "common.cancel", role: .secondary, action: onCancel)
+                PickyHubButton(title: "common.cancel", role: .secondary, isEnabled: !isBusy, action: onCancel)
                     .focused($cancelFocused)
                 PickyHubButton(title: confirmTitle, role: confirmRole, isBusy: isBusy, action: onConfirm)
             }

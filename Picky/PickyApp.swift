@@ -126,6 +126,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var companionManager = CompanionManager(
         agentClient: hudAgentClientRouter,
         ownsAgentClientLifecycle: false,
+        voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator(
+            contextPreflightPreparation: { [weak self] in
+                await self?.hubWindowController?.restoreExternalForegroundForVoiceContextCapture()
+            }
+        ),
         appearanceStore: appearanceStore,
         fontScaleStore: fontScaleStore,
         voiceTargetResolver: voiceTargetHitTestRegistry
@@ -195,6 +200,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// through `present(deepLink:)`.
     private let hubNavigator = PickyHubNavigator()
     private let hubModalHost = PickyHubModalHost()
+    private let hubForegroundContextPreserver = PickyHubForegroundContextPreserver()
     private lazy var hubSettingsViewModel = PickySettingsViewModel(store: settingsStore, persistence: settingsPersistence)
 
     override init() {
@@ -324,9 +330,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             pluginCatalog: PickyHubPluginCatalogViewModel(
                 curated: PickyCuratedPluginsViewModel(),
                 pluginReloadController: pluginReloadController
-            )
+            ),
+            requestOnboardingReplay: { [weak self] in self?.startOnboardingIfNeeded() }
         )
-        let hubWindowController = PickyHubWindowController(dependencies: hubDependencies)
+        let hubWindowController = PickyHubWindowController(
+            dependencies: hubDependencies,
+            foregroundContextPreserver: hubForegroundContextPreserver
+        )
         self.hubWindowController = hubWindowController
         statusItemController = PickyStatusItemController(
             hubWindowController: hubWindowController,
@@ -348,24 +358,28 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         if !companionManager.permissions.allGranted {
             statusItemController?.showHubOnLaunch()
         }
-        // Show the interactive demo on a fresh install (or whenever the user
-        // hits "Replay onboarding" in Settings). Prerequisites take priority
-        // so the user fixes blockers before we hand them a guided tour they
-        // can't actually complete.
-        if companionManager.permissions.allGranted && onboardingActivator.shouldShowOnboarding {
-            // Cursor-bubble onboarding: no takeover panel, guidance lives in the
-            // Picky cursor's speech bubble, real shortcut/dictation pipelines
-            // fire as usual and submissions are intercepted before the daemon.
-            let controller = OnboardingFlowController(
-                activator: onboardingActivator,
-                companionManager: companionManager,
-                hudRouter: hudAgentClientRouter,
-                hudViewModel: hudSessionViewModel
-            )
-            onboardingFlowController = controller
-            controller.start()
-        }
+        startOnboardingIfNeeded()
         registerAsLoginItemIfNeeded()
+    }
+
+    /// Shared by launch and the Hub replay action, after its settings save
+    /// succeeds. Never replace an active tour or intercept a test session.
+    private func startOnboardingIfNeeded() {
+        guard !Self.isRunningUnitTests,
+              companionManager.onboardingOverrides == nil,
+              onboardingActivator.shouldShowOnboarding else { return }
+        guard companionManager.permissions.allGranted else {
+            hubWindowController?.show(page: .dashboard)
+            return
+        }
+        let controller = OnboardingFlowController(
+            activator: onboardingActivator,
+            companionManager: companionManager,
+            hudRouter: hudAgentClientRouter,
+            hudViewModel: hudSessionViewModel
+        )
+        onboardingFlowController = controller
+        controller.start()
     }
 
     /// Try to drop the `/usr/local/bin/picky` wrapper into place silently. We

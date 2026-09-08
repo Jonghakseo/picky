@@ -69,10 +69,57 @@ struct PickyHubQuickStartWorkflow: Identifiable, Equatable {
     }
 }
 
-/// The most recent quick-start Pickle, persisted so the "이어서 하기" card can
-/// point back at it after a relaunch.
+enum PickyHubQuickStartDeliveryState: String, Codable, Equatable {
+    /// The child was created locally, but its projection has not surfaced yet.
+    case awaitingProjection
+    /// Legacy pre-send marker; recovery treats this as uncertain delivery.
+    case readyToSend
+    /// agentd correlated an error; the handler may have partially persisted it.
+    case rejected
+    /// The send may have reached agentd, but no correlated ack arrived.
+    case deliveryUnknown
+    /// agentd positively acknowledged the first instruction.
+    case accepted
+}
+
+/// Durable ownership of the one Pickle created for a quick-start attempt. It
+/// prevents retrying a delayed or uncertain delivery by making another session.
 struct PickyHubQuickStartRecord: Codable, Equatable {
     let workflowID: String
     let sessionID: String
+    let cwd: String
     let startedAt: Date
+    var deliveryState: PickyHubQuickStartDeliveryState
+
+    init(
+        workflowID: String,
+        sessionID: String,
+        cwd: String,
+        startedAt: Date,
+        deliveryState: PickyHubQuickStartDeliveryState
+    ) {
+        self.workflowID = workflowID
+        self.sessionID = sessionID
+        self.cwd = cwd
+        self.startedAt = startedAt
+        self.deliveryState = deliveryState
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case workflowID, sessionID, cwd, startedAt, deliveryState
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        workflowID = try values.decode(String.self, forKey: .workflowID)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        cwd = try values.decodeIfPresent(String.self, forKey: .cwd) ?? ""
+        startedAt = try values.decode(Date.self, forKey: .startedAt)
+        // Records written before durable delivery tracking represented a
+        // completed quick-start, so preserve their resume behavior.
+        deliveryState = try values.decodeIfPresent(
+            PickyHubQuickStartDeliveryState.self,
+            forKey: .deliveryState
+        ) ?? .accepted
+    }
 }

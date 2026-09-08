@@ -14,14 +14,20 @@ import SwiftUI
 @MainActor
 final class PickyHubWindowController: NSObject, NSWindowDelegate {
     private let dependencies: PickyHubDependencies
+    private let foregroundContextPreserver: PickyHubForegroundContextPreserver
     private var window: PickyHubWindow?
     private var frameAutosaver: PickyDetachedPanelFrameAutosaver?
+    private var workspaceActivationObserver: NSObjectProtocol?
     /// Display of the status item that opened the window; used by the sidebar
     /// Dock toggle so it targets the screen the user is looking at.
     private var presentingDisplayID: CGDirectDisplayID?
 
-    init(dependencies: PickyHubDependencies) {
+    init(
+        dependencies: PickyHubDependencies,
+        foregroundContextPreserver: PickyHubForegroundContextPreserver
+    ) {
         self.dependencies = dependencies
+        self.foregroundContextPreserver = foregroundContextPreserver
         super.init()
     }
 
@@ -33,8 +39,11 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
         presentingDisplayID = displayID ?? presentingDisplayID
         if window == nil { createWindow() }
         guard let window else { return }
+        foregroundContextPreserver.recordExternalForegroundBeforeHubActivation(hubIsVisible: isVisible)
+        startTrackingExternalActivations()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        dependencies.navigator.isWindowVisible = true
     }
 
     func show(deepLink: PickyDeepLink) {
@@ -49,6 +58,20 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
 
     func close() {
         window?.performClose(nil)
+    }
+
+    /// The voice context coordinator calls this at PTT release, before it
+    /// queries Workspace, AX, or browser state. Do not use timing sleeps here:
+    /// the preserver waits for the requested external app activation.
+    func restoreExternalForegroundForVoiceContextCapture() async {
+        await foregroundContextPreserver.restoreExternalForegroundForContextCapture(
+            hubIsVisible: isVisible,
+            dismissHub: { [weak self] in
+                self?.stopTrackingExternalActivations()
+                self?.window?.orderOut(nil)
+                self?.dependencies.navigator.isWindowVisible = false
+            }
+        )
     }
 
     // MARK: - Window
@@ -111,13 +134,43 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
         )
     }
 
+    private func startTrackingExternalActivations() {
+        guard workspaceActivationObserver == nil else { return }
+        workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            // Main-queue delivery preserves activation order without another Task hop.
+            MainActor.assumeIsolated {
+                self?.foregroundContextPreserver.recordExternalActivation(PickyForegroundApplication(app))
+            }
+        }
+    }
+
+    private func stopTrackingExternalActivations() {
+        guard let workspaceActivationObserver else { return }
+        NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
+        self.workspaceActivationObserver = nil
+    }
+
     // MARK: - NSWindowDelegate
 
     func windowDidBecomeKey(_ notification: Notification) {
         presentingDisplayID = window?.screen?.pickyDisplayID ?? presentingDisplayID
     }
 
+    func windowDidMiniaturize(_ notification: Notification) {
+        dependencies.navigator.isWindowVisible = false
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        dependencies.navigator.isWindowVisible = true
+    }
+
     func windowWillClose(_ notification: Notification) {
+        stopTrackingExternalActivations()
+        dependencies.navigator.isWindowVisible = false
+        foregroundContextPreserver.clearRememberedExternalForeground()
         dependencies.modalHost.dismiss()
     }
 }

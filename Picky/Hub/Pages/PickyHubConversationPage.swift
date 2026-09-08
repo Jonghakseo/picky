@@ -258,6 +258,7 @@ private struct PickyHubConversationMessage: View {
             Group {
                 if message.role == .assistant {
                     PickyMainAgentMarkdownText(markdown: message.text)
+                        .textSelection(.enabled)
                 } else {
                     Text(message.text)
                         .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)

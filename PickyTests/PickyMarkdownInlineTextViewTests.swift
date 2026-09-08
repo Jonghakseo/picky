@@ -196,6 +196,49 @@ struct PickyMarkdownInlineTextViewTests {
         #expect(boldFonts.allSatisfy { $0.pointSize == PickyHUDTypography.Size.body })
     }
 
+    @Test(arguments: [
+        (
+            "/private/tmp/easy-review-pr5106-20260908/review.html",
+            "file:///private/tmp/easy-review-pr5106-20260908/review.html"
+        ),
+        (
+            "/private/tmp/%EB%A6%AC%EB%B7%B0%20%EC%9E%90%EB%A3%8C/review%2520%23.html?mode=preview#summary",
+            "file:///private/tmp/%EB%A6%AC%EB%B7%B0%20%EC%9E%90%EB%A3%8C/review%2520%23.html?mode=preview#summary"
+        ),
+        (
+            "/private/tmp/리뷰/결과.html",
+            "file:///private/tmp/리뷰/결과.html"
+        )
+    ])
+    func absolutePathLinksBecomeFileURLs(destination: String, expected: String) throws {
+        let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: [
+            .paragraph("[review.html 열기](\(destination))")
+        ])
+        let link = try #require(attributed.attribute(.link, at: 0, effectiveRange: nil) as? URL)
+
+        #expect(attributed.string == "review.html 열기")
+        #expect(link.isFileURL)
+        #expect(link == URL(string: expected))
+    }
+
+    @Test(arguments: [
+        "https://example.com/review?q=hello%20world#summary",
+        "mailto:reader@example.com",
+        "picky://settings",
+        "file:///private/tmp/review.html",
+        "reports/review.html",
+        "#summary",
+        "//example.com/review.html"
+    ])
+    func otherLinkDestinationsRemainUnchanged(destination: String) throws {
+        let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: [
+            .paragraph("[link](\(destination))")
+        ])
+        let link = try #require(attributed.attribute(.link, at: 0, effectiveRange: nil) as? URL)
+
+        #expect(link == URL(string: destination))
+    }
+
     @Test func linkRunGetsAccentColor() {
         let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: [
             .paragraph("see [docs](https://example.com)")

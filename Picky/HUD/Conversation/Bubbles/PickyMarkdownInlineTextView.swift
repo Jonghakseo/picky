@@ -455,11 +455,26 @@ extension PickyMarkdownInlineTextView {
                 attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
             }
             if let link = run.link {
-                attrs[.link] = link
+                attrs[.link] = systemOpenableLink(link)
             }
             result.append(NSAttributedString(string: substring, attributes: attrs))
         }
         return result
+    }
+
+    /// Both HUD renderers hand these links to AppKit. Markdown parses absolute
+    /// filesystem paths as scheme-less URLs, which LaunchServices cannot open.
+    private static func systemOpenableLink(_ url: URL) -> URL {
+        guard url.baseURL == nil,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme == nil,
+              components.host == nil,
+              components.path.hasPrefix("/") else { return url }
+        // Preserve percent encoding, query and fragment. Relative paths and
+        // network references need context we do not have, so leave them alone.
+        components.scheme = "file"
+        components.host = ""
+        return components.url ?? url
     }
 
     private static func applyParagraphStyle(

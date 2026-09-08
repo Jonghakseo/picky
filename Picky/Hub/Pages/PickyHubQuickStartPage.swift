@@ -27,7 +27,7 @@ struct PickyHubQuickStartPage: View {
                     PickyHubQuickStartSuccessView(
                         workflow: workflow,
                         sessionID: sessionID,
-                        onOpen: { dependencies.sessionListViewModel.requestOpenSession(sessionID: sessionID, targetDisplayID: nil) },
+                        onOpen: { launcher.openSessionInHUD(sessionID: sessionID) },
                         onAcknowledge: { launcher.acknowledge() }
                     )
                 }

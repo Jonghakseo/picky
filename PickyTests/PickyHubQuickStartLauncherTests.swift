@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import CoreGraphics
 import Foundation
 import SwiftUI
 import Testing
@@ -289,7 +290,82 @@ struct PickyHubQuickStartLauncherTests {
         #expect(fixture.rootClient.sentCommands.map(\.sessionId) == ["quick-1", "quick-2"])
     }
 
-    private func makeFixture(sessionIDs: [String]) -> QuickStartFixture {
+    @Test func selectionAloneDoesNotRestoreAHiddenHUD() {
+        let fixture = makeFixture(sessionIDs: [])
+        let hud = QuickStartHUDHarness(sessions: fixture.sessions)
+        defer { try? FileManager.default.removeItem(at: hud.root) }
+        project("quick-1", into: fixture.sessions)
+        hud.hide()
+
+        fixture.sessions.requestOpenSession(sessionID: "quick-1", targetDisplayID: nil)
+
+        #expect(fixture.sessions.openSessionRequest?.sessionID == "quick-1")
+        #expect(!hud.visibilityStore.isVisible(for: 777))
+        #expect(!hud.target.isVisible)
+    }
+
+    @Test(arguments: ["rejected", "timedOut"])
+    func unacceptedKickoffKeepsHUDHiddenUntilExplicitRecovery(response: String) async {
+        var presentSession: (String) -> Void = { _ in }
+        let fixture = makeFixture(sessionIDs: ["quick-1"], presentSessionInHUD: { presentSession($0) })
+        let hud = QuickStartHUDHarness(sessions: fixture.sessions)
+        defer { try? FileManager.default.removeItem(at: hud.root) }
+        presentSession = { sessionID in
+            hud.manager.focusSession(id: sessionID, targetDisplayID: 777, persistVisibility: false)
+        }
+        project("quick-1", into: fixture.sessions)
+        fixture.rootClient.strictResponse = response == "rejected"
+            ? .rejected(code: "rejected", message: "Rejected") : .timedOut
+        hud.hide()
+
+        await fixture.launcher.start(.landingPage, cwd: "/tmp/quick-start")
+        #expect(!hud.visibilityStore.isVisible(for: 777))
+        #expect(!hud.target.isVisible)
+
+        fixture.launcher.resume()
+        #expect(hud.visibilityStore.isVisible(for: 777))
+        #expect(hud.target.isVisible && hud.target.isKey)
+        #expect(fixture.rootClient.sentCommands.count == 1)
+    }
+
+    @Test(arguments: ["accepted", "resume", "success-open"])
+    func everyOpenEntryPointRestoresOnlyItsHUDAndOpensThePickle(entryPoint: String) async throws {
+        var presentSession: (String) -> Void = { _ in }
+        let fixture = makeFixture(sessionIDs: ["quick-1"], presentSessionInHUD: { presentSession($0) })
+        let hud = QuickStartHUDHarness(sessions: fixture.sessions)
+        defer { try? FileManager.default.removeItem(at: hud.root) }
+        presentSession = { sessionID in
+            hud.manager.focusSession(id: sessionID, targetDisplayID: 777, persistVisibility: false)
+        }
+        project("quick-1", into: fixture.sessions)
+        hud.hide()
+
+        await fixture.launcher.start(.landingPage, cwd: "/tmp/quick-start")
+        if entryPoint != "accepted" {
+            hud.hide()
+            if entryPoint == "resume" {
+                fixture.launcher.resume()
+            } else {
+                fixture.launcher.openSessionInHUD(sessionID: "quick-1")
+            }
+        }
+
+        #expect(hud.visibilityStore.isVisible(for: 777))
+        #expect(!hud.visibilityStore.isVisible(for: 888))
+        #expect(hud.target.isVisible && hud.target.isKey)
+        #expect(!hud.other.isVisible && !hud.other.isKey)
+        #expect(fixture.sessions.openSessionRequest?.targetDisplayID == 777)
+        #expect(PickyHUDDockLayout.requestedOpenResolution(
+            pendingSessionID: fixture.sessions.openSessionRequest?.sessionID,
+            visibleIDs: fixture.sessions.sessions.map(\.id)
+        ) == .open("quick-1"))
+        #expect(fixture.rootClient.sentCommands.count == 1)
+    }
+
+    private func makeFixture(
+        sessionIDs: [String],
+        presentSessionInHUD: @escaping (String) -> Void = { _ in }
+    ) -> QuickStartFixture {
         var remainingSessionIDs = sessionIDs
         let rootClient = QuickStartClient()
         let childSpawner = QuickStartChildSpawner()
@@ -314,6 +390,7 @@ struct PickyHubQuickStartLauncherTests {
         let launcher = PickyHubQuickStartLauncher(
             sessions: sessions,
             defaultCwd: { "/tmp/default" },
+            presentSessionInHUD: presentSessionInHUD,
             defaults: defaults,
             projectionTimeoutNanoseconds: 1_000_000_000
         )
@@ -356,6 +433,52 @@ struct PickyHubQuickStartLauncherTests {
         }
         Issue.record("Timed out waiting for the quick-start test boundary")
     }
+}
+
+@MainActor
+private final class QuickStartHUDHarness {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("PickyQuickStartHUD-\(UUID())")
+    let target = QuickStartFocusPanel()
+    let other = QuickStartFocusPanel()
+    let visibilityStore: PickyHUDVisibilityStore
+    let manager: PickyHUDOverlayManager
+
+    init(sessions: PickySessionListViewModel) {
+        let settings = PickySettingsStore(appSupportRoot: root)
+        let visibility = PickyHUDVisibilityStore(settingsStore: settings)
+        visibilityStore = visibility
+        let panels: [CGDirectDisplayID: QuickStartFocusPanel] = [777: target, 888: other]
+        manager = PickyHUDOverlayManager(
+            viewModel: sessions,
+            appearanceStore: PickyAppearanceStore(settingsStore: settings),
+            fontScaleStore: PickyAppFontScaleStore(settingsStore: settings),
+            visibilityStore: visibility,
+            settingsStore: settings,
+            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry(),
+            presentSessionPanels: { displayID in
+                #expect(displayID == 777)
+                #expect(visibility.isVisible(for: 777))
+                PickyHUDSessionFocusPresenter.present(targetDisplayID: displayID, panelsByDisplayID: panels)
+            }
+        )
+    }
+
+    func hide() {
+        visibilityStore.setAllVisible(false, persist: false)
+        target.isVisible = false
+        target.isKey = false
+        other.isVisible = false
+        other.isKey = false
+    }
+}
+
+@MainActor
+private final class QuickStartFocusPanel: PickyHUDSessionFocusPanelPresenting {
+    var isVisible = false
+    var isKey = false
+
+    func orderFrontRegardless() { isVisible = true }
+    func makeKey() { isKey = true }
 }
 
 @MainActor

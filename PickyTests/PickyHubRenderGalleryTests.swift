@@ -383,6 +383,7 @@ private final class PickyHubRenderGalleryFixture {
         let quickStartLauncher = PickyHubQuickStartLauncher(
             sessions: sessionListViewModel,
             defaultCwd: { "/tmp/hub-gallery" },
+            presentSessionInHUD: { _ in },
             defaults: defaults,
             projectionTimeoutNanoseconds: 100_000_000
         )

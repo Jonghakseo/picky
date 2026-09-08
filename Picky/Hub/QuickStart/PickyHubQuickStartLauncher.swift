@@ -39,6 +39,7 @@ final class PickyHubQuickStartLauncher: ObservableObject {
 
     private let sessions: PickySessionListViewModel
     private let defaultCwd: () -> String
+    private let presentSessionInHUD: (String) -> Void
     private let defaults: UserDefaults
     private let projectionTimeoutNanoseconds: UInt64
     private var launchGeneration: UInt64 = 0
@@ -49,11 +50,13 @@ final class PickyHubQuickStartLauncher: ObservableObject {
     init(
         sessions: PickySessionListViewModel,
         defaultCwd: @escaping () -> String,
+        presentSessionInHUD: @escaping (String) -> Void,
         defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults,
         projectionTimeoutNanoseconds: UInt64 = 20_000_000_000
     ) {
         self.sessions = sessions
         self.defaultCwd = defaultCwd
+        self.presentSessionInHUD = presentSessionInHUD
         self.defaults = defaults
         self.projectionTimeoutNanoseconds = projectionTimeoutNanoseconds
         if let data = defaults.data(forKey: Self.recordKey),
@@ -137,7 +140,13 @@ final class PickyHubQuickStartLauncher: ObservableObject {
         if sessions.archivedSessions.contains(where: { $0.id == record.sessionID }) {
             sessions.unarchive(sessionID: record.sessionID)
         }
-        sessions.requestOpenSession(sessionID: record.sessionID, targetDisplayID: nil)
+        openSessionInHUD(sessionID: record.sessionID)
+    }
+
+    /// All Hub entry points use the HUD owner, which restores visibility and
+    /// presents the card on the same display instead of only changing selection.
+    func openSessionInHUD(sessionID: String) {
+        presentSessionInHUD(sessionID)
     }
 
     func acknowledge() {
@@ -194,7 +203,7 @@ final class PickyHubQuickStartLauncher: ObservableObject {
 
             record.deliveryState = .accepted
             persist(record)
-            sessions.requestOpenSession(sessionID: record.sessionID, targetDisplayID: nil)
+            openSessionInHUD(sessionID: record.sessionID)
             phase = .started(workflowID: record.workflowID, sessionID: record.sessionID)
         } catch let rejection as PickyCommandRejection {
             guard isCurrent(generation) else { return }

@@ -32,6 +32,7 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
     }
 
     var isVisible: Bool { window?.isVisible ?? false }
+    var displayID: CGDirectDisplayID? { window?.screen?.pickyDisplayID }
 
     /// Create-or-focus. Page/scroll state lives in the navigator and the
     /// mounted SwiftUI tree, so reopening lands where the user left off.

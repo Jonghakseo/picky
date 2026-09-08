@@ -13,32 +13,6 @@ import Combine
 import SwiftUI
 
 @MainActor
-protocol PickyHUDSessionFocusPanelPresenting: AnyObject {
-    func orderFrontRegardless()
-    func makeKey()
-}
-
-extension PickyHUDPanel: PickyHUDSessionFocusPanelPresenting {}
-
-@MainActor
-enum PickyHUDSessionFocusPresenter {
-    static func present<Panel: PickyHUDSessionFocusPanelPresenting>(
-        targetDisplayID: CGDirectDisplayID?,
-        panelsByDisplayID: [CGDirectDisplayID: Panel]
-    ) {
-        if let targetDisplayID, let panel = panelsByDisplayID[targetDisplayID] {
-            panel.orderFrontRegardless()
-            panel.makeKey()
-            return
-        }
-
-        let orderedPanels = panelsByDisplayID.sorted { $0.key < $1.key }.map(\.value)
-        orderedPanels.forEach { $0.orderFrontRegardless() }
-        orderedPanels.first?.makeKey()
-    }
-}
-
-@MainActor
 final class PickyHUDOverlayManager {
     let viewModel: any PickyHUDSessionLifecycle
     let appearanceStore: PickyAppearanceStore
@@ -51,6 +25,7 @@ final class PickyHUDOverlayManager {
     private let settingsStore: PickySettingsStore
     private let settingsPersistence: PickySettingsPersistenceCoordinator
     private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
+    private let presentSessionPanels: ((CGDirectDisplayID?) -> Void)?
     private var visibilityCancellable: AnyCancellable?
     private var dockSnapshotCancellable: AnyCancellable?
     private var lastHandledAuthoritativeRemovalRevision: UInt64 = 0
@@ -157,7 +132,8 @@ final class PickyHUDOverlayManager {
         visibilityStore: PickyHUDVisibilityStore,
         actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore? = nil,
         settingsStore: PickySettingsStore,
-        voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
+        voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry,
+        presentSessionPanels: ((CGDirectDisplayID?) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
@@ -167,6 +143,7 @@ final class PickyHUDOverlayManager {
         self.settingsStore = settingsStore
         self.settingsPersistence = .shared(for: settingsStore)
         self.voiceTargetHitTestRegistry = voiceTargetHitTestRegistry
+        self.presentSessionPanels = presentSessionPanels
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
@@ -373,7 +350,7 @@ final class PickyHUDOverlayManager {
         return sessionID
     }
 
-    private func focusSession(
+    func focusSession(
         id: String,
         targetDisplayID: CGDirectDisplayID?,
         persistVisibility: Bool = true
@@ -386,10 +363,14 @@ final class PickyHUDOverlayManager {
             visibilityStore.setAllVisible(true, persist: persistVisibility)
         }
         viewModel.requestOpenSession(sessionID: id, targetDisplayID: targetDisplayID)
-        PickyHUDSessionFocusPresenter.present(
-            targetDisplayID: targetDisplayID,
-            panelsByDisplayID: panelsByDisplayID.mapValues(\.panel)
-        )
+        if let presentSessionPanels {
+            presentSessionPanels(targetDisplayID)
+        } else {
+            PickyHUDSessionFocusPresenter.present(
+                targetDisplayID: targetDisplayID,
+                panelsByDisplayID: panelsByDisplayID.mapValues(\.panel)
+            )
+        }
     }
 
     private func displayID(at location: CGPoint) -> CGDirectDisplayID? {

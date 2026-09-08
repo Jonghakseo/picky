@@ -325,7 +325,15 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             statisticsStore: PickyHubStatisticsStore(client: hudAgentClientRouter),
             quickStartLauncher: PickyHubQuickStartLauncher(
                 sessions: hudSessionViewModel,
-                defaultCwd: { [settingsStore] in settingsStore.load().normalizedPaths().defaultCwd }
+                defaultCwd: { [settingsStore] in settingsStore.load().normalizedPaths().defaultCwd },
+                presentSessionInHUD: { [weak self] sessionID in
+                    guard let self else { return }
+                    if let displayID = self.hubWindowController?.displayID {
+                        self.hudOverlayManager.focusSession(id: sessionID, targetDisplayID: displayID)
+                    } else {
+                        self.hudOverlayManager.focusSession(id: sessionID)
+                    }
+                }
             ),
             pluginCatalog: PickyHubPluginCatalogViewModel(
                 curated: PickyCuratedPluginsViewModel(),

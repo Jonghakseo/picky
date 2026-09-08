@@ -564,7 +564,7 @@ const observableSessionArrayPattern = new RegExp(
 // Lower-only ratchet across the whole app: a view may not subscribe to the
 // global session façade. `Picky/HUD` has its own stricter reference ratchet;
 // this one closes the gap for views outside that directory.
-const FACADE_OBSERVATION_BASELINE = 1;
+const FACADE_OBSERVATION_BASELINE = 0;
 const facadeObservationPattern = /@(?:ObservedObject|EnvironmentObject|StateObject)(?:\s*\([^\n]*\))?\s+(?:(?:public|internal|package|fileprivate|private(?:\(set\))?|var|let|weak|unowned)\s+)*[A-Za-z_][A-Za-z0-9_]*\s*:\s*PickySessionListViewModel\b/g;
 
 function facadeObservationViolations(source) {

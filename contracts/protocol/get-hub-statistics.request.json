@@ -1,0 +1,5 @@
+{
+  "id": "cmd-get-hub-statistics",
+  "protocolVersion": "2026-08-25",
+  "type": "getHubStatistics"
+}

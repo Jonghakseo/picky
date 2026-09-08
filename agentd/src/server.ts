@@ -22,6 +22,8 @@ import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleL
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./runtime/package-operations.js";
 import type { PiOAuthHandling } from "./runtime/pi-oauth-service.js";
 import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
+import type { HubStatisticsServiceLike } from "./application/hub-statistics-service.js";
+import type { PickleClassifier } from "./application/pickle-classifier.js";
 import { PiModelScopeConflictError } from "./runtime/model-scope-errors.js";
 export { APP_SETTINGS_CONTROL_UNAVAILABLE } from "./application/settings-control-broker.js";
 export interface AgentdServerOptions {
@@ -42,6 +44,10 @@ export interface AgentdServerOptions {
   edgeTTS?: EdgeTTSService;
   /** Primary-only provider authentication coordinator. */
   piOAuth?: PiOAuthHandling;
+  /** Primary-only local Pickle history aggregation. */
+  hubStatistics?: HubStatisticsServiceLike;
+  /** Primary-only classifier lifecycle, stopped with the daemon. */
+  pickleClassifier?: PickleClassifier;
 }
 type ParsedCommand = ReturnType<typeof parseCommand>;
 type CommandHandlerMap = {
@@ -60,6 +66,8 @@ const APP_DOCK_GROUPS_TIMEOUT = "Picky app dock groups request timed out";
 const DOCK_GROUPS_TIMEOUT_MS = 4_000;
 export class AgentdServer {
   private httpServer?: HttpServer;
+  private classificationConfiguration: Promise<void> = Promise.resolve();
+  private classificationConfigurationGeneration = 0;
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
@@ -207,6 +215,8 @@ export class AgentdServer {
     this.settingsControl.rejectAll();
     for (const client of this.clients) client.close();
     await this.packageOperations.stop();
+    this.classificationConfigurationGeneration += 1;
+    this.options.pickleClassifier?.stop();
     this.options.edgeTTS?.dispose();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
     await new Promise<void>((resolve) => this.httpServer?.close(() => resolve()) ?? resolve());
@@ -616,11 +626,55 @@ export class AgentdServer {
           pickleDeferredCount: summary.pickleDeferredCount,
         });
       },
+      getHubStatistics: async (cmd) => this.sendHubStatistics(ws, cmd.id, false),
+      resetHubStatistics: async (cmd) => this.sendHubStatistics(ws, cmd.id, true),
+      configureHubStatistics: async (cmd) => this.configureHubStatistics(ws, cmd.id, cmd.classificationEnabled),
     };
 
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
     await handler(command);
   }
+  private async sendHubStatistics(ws: WebSocket, commandId: string, reset: boolean): Promise<void> {
+    const statistics = this.options.hubStatistics;
+    if (!statistics) {
+      this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: "Hub statistics unavailable on this daemon" });
+      return;
+    }
+    try {
+      const snapshot = reset ? await statistics.reset() : await statistics.snapshot();
+      this.send(ws, { type: "hubStatisticsResult", commandId, ok: true, errorMessage: null, snapshot });
+    } catch (error) {
+      this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private async configureHubStatistics(ws: WebSocket, commandId: string, enabled: boolean): Promise<void> {
+    const statistics = this.options.hubStatistics;
+    if (!statistics) {
+      this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: "Hub statistics unavailable on this daemon" });
+      return;
+    }
+
+    const generation = ++this.classificationConfigurationGeneration;
+    // Revoke immediately, even while an earlier opt-in is awaiting disk reads.
+    if (!enabled) this.options.pickleClassifier?.setClassificationEnabled(false);
+    const operation = this.classificationConfiguration.then(async () => {
+      try {
+        const snapshot = await statistics.configureClassification(enabled);
+        if (generation === this.classificationConfigurationGeneration) {
+          this.options.pickleClassifier?.setClassificationEnabled(enabled);
+        }
+        this.send(ws, { type: "hubStatisticsResult", commandId, ok: true, errorMessage: null, snapshot });
+      } catch (error) {
+        // Never resume transmission after a failed withdrawal. The error tells
+        // the caller the durable choice still needs retrying before a restart.
+        this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: error instanceof Error ? error.message : String(error) });
+      }
+    });
+    this.classificationConfiguration = operation.catch(() => undefined);
+    await operation;
+  }
+
   private requirePiOAuth(): PiOAuthHandling {
     if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
     return this.options.piOAuth;
@@ -1158,6 +1212,10 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, count: command.disabledBuiltinTools.length };
     case "setMainAgentTTSEnabled":
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
+    case "getHubStatistics":
+    case "resetHubStatistics":
+    case "configureHubStatistics":
+      return { commandId: command.id, type: command.type, classificationEnabled: command.type === "configureHubStatistics" ? (command.classificationEnabled ? 1 : 0) : undefined };
     case "listPickles":
     case "listDockGroups":
     case "listMainMessages":
@@ -1194,8 +1252,6 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "sessionRuntimeOptionsSnapshot": return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, models: event.models.length, thinkingLevels: event.thinkingLevels.length };
     case "mainActivityUpdated":
       return { eventId: event.id, type: event.type, kind: event.activity?.kind, tool: event.activity?.toolName, status: event.activity?.status };
-    case "mainExtensionUiRequested":
-      return { eventId: event.id, type: event.type, sessionId: event.request.sessionId, requestId: event.request.id, method: event.request.method };
     case "mainExtensionUiCancelled":
       return { eventId: event.id, type: event.type, requestId: event.requestId };
     case "piOAuthStatus":
@@ -1222,6 +1278,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "pluginsReloaded":
       return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
+    case "hubStatisticsResult":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, records: event.snapshot?.records.length, samples: event.snapshot?.usageSamples.length, errorChars: event.errorMessage?.length };
     case "packageUpdatesAvailable":
       return { eventId: event.id, type: event.type, commandId: event.commandId, sources: event.sources.length };
     case "packageOperationProgress":
@@ -1236,7 +1294,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, tasks: event.todoState?.tasks.length ?? 0, seq: event.seq };
     case "sessionSubagentRunsUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, runs: event.runs.length, seq: event.seq };
-    case "extensionUiRequest":
+    case "mainExtensionUiRequested": case "extensionUiRequest":
       return { eventId: event.id, type: event.type, sessionId: event.request.sessionId, requestId: event.request.id, method: event.request.method };
     case "artifactUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
@@ -1258,7 +1316,6 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "dockGroupsSnapshot":
       return { eventId: event.id, type: event.type, groups: event.groups.length };
     case "pickySettingsRequested": return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action, key: event.key, caller: event.caller };
-    case "pickySettingsAck": return { eventId: event.id, type: event.type, commandId: event.commandId };
     case "pushToTalkControlRequested":
       return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action };
     case "pushToTalkControlAck":
@@ -1289,7 +1346,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, baselineFound: event.baselineFound ? 1 : 0, importedMessageCount: event.importedMessageCount };
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
-    case "ack":
+    case "pickySettingsAck": case "ack":
       return { eventId: event.id, type: event.type, commandId: event.commandId };
   }
 }

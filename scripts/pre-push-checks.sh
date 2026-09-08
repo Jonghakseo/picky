@@ -6,6 +6,8 @@ cd "$ROOT"
 
 HOST_ARCH="$(uname -m)"
 DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
+# Reuse the agent cache instead of contending with a GUI Xcode build.
+DERIVED_DATA_PATH="${PICKY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"
 
 # shellcheck source=scripts/lib/pinned-toolchain.sh
 . "$ROOT/scripts/lib/pinned-toolchain.sh"
@@ -109,7 +111,7 @@ run_step "ESLint suppression guard" pnpm run check:eslint-suppressions
 # runs those two files in a second, serial phase.
 run_step "agentd: tests (parallel + isolated server)" pnpm --dir agentd run test:ci
 run_swiftlint_warning_first
-run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
+run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" build
 
 # `-parallel-testing-enabled NO` forces a single xctest runner process. When xcodebuild
 # shards PickyTests across two runners (the default), both host processes initialize the
@@ -121,7 +123,7 @@ run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -de
 # WindowServer-dependent tests are disabled in every ordinary test invocation.
 # The pre-push gate is their single opt-in execution and deliberately runs the
 # Swift suite once, without retries or test-plan repetitions.
-run_step "Picky test suite" env TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
+run_step "Picky test suite" env TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" -parallel-testing-enabled NO test
 
 echo
 echo "✅ pre-push: all local quality checks passed."

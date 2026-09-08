@@ -168,17 +168,27 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
     struct Row: Identifiable {
         let plugin: PickyCuratedPlugin
         var status: PickyCuratedPluginInstaller.Status
+        var installedVersion: String?
         var hasUpdate: Bool
         var isBusy: Bool
 
         var id: String { plugin.id }
     }
 
+    struct MutationOutcome {
+        let pluginID: String
+        let result: Result<Void, PickyCuratedPluginInstaller.CommandError>
+    }
+
     @Published private(set) var rows: [Row] = []
     @Published private(set) var lastError: String?
+    /// Emits each daemon-backed mutation exactly once so consumers can keep
+    /// concurrent plugin outcomes attributed to their originating row.
+    @Published private(set) var mutationOutcome: MutationOutcome?
 
     private let plugins: [PickyCuratedPlugin]
     private let statusForSource: (String) -> PickyCuratedPluginInstaller.Status
+    private let installedVersionForSource: (String) -> String?
     private var availableUpdateSources: Set<String> = []
     private var hasCheckedForUpdates = false
     private var isCheckingForUpdates = false
@@ -186,38 +196,49 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
 
     init(
         plugins: [PickyCuratedPlugin] = PickyCuratedPlugin.curatedDefaults,
-        statusForSource: @escaping (String) -> PickyCuratedPluginInstaller.Status = { PickyCuratedPluginInstaller.status(source: $0) }
+        statusForSource: @escaping (String) -> PickyCuratedPluginInstaller.Status = { PickyCuratedPluginInstaller.status(source: $0) },
+        installedVersionForSource: @escaping (String) -> String? = { source in
+            guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return nil }
+            return PickyCuratedPluginInstaller.installedVersion(source: source)
+        }
     ) {
         self.plugins = plugins
         self.statusForSource = statusForSource
+        self.installedVersionForSource = installedVersionForSource
         refresh()
     }
 
     func refresh() {
+        let busyIDs = Set(rows.filter(\.isBusy).map(\.id))
         rows = plugins.map { plugin in
             let status = statusForSource(plugin.source)
             return Row(
                 plugin: plugin,
                 status: status,
+                installedVersion: status.isInstalled ? installedVersionForSource(plugin.source) : nil,
                 hasUpdate: status.isInstalled && !status.isPinned && availableUpdateSources.contains(plugin.source),
-                isBusy: false
+                isBusy: busyIDs.contains(plugin.id)
             )
         }
     }
 
-    func install(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+    @discardableResult
+    func install(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) -> Bool {
         mutate(plugin, operation: .install, pluginReloadController: pluginReloadController)
     }
 
-    func remove(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+    @discardableResult
+    func remove(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) -> Bool {
         mutate(plugin, operation: .remove, pluginReloadController: pluginReloadController)
     }
 
-    func update(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+    @discardableResult
+    func update(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) -> Bool {
         mutate(plugin, operation: .update, pluginReloadController: pluginReloadController)
     }
 
-    func setup(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) {
+    @discardableResult
+    func setup(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) -> Bool {
         mutate(plugin, operation: .setup, pluginReloadController: pluginReloadController)
     }
 
@@ -257,10 +278,10 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         _ plugin: PickyCuratedPlugin,
         operation: Operation,
         pluginReloadController: PickyPluginReloadController
-    ) {
+    ) -> Bool {
         let pluginID = plugin.id
         let source = plugin.source
-        guard let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) else { return }
+        guard let index = rows.firstIndex(where: { $0.plugin.id == pluginID }), !rows[index].isBusy else { return false }
         rows[index].isBusy = true
         lastError = nil
 
@@ -279,6 +300,7 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.applyMutationResult(pluginID: pluginID, source: source, operation: operation, result: result)
         }
+        return true
     }
 
     private func applyMutationResult(
@@ -304,8 +326,10 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         if let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) {
             rows[index].isBusy = false
             rows[index].status = statusForSource(source)
+            rows[index].installedVersion = rows[index].status.isInstalled ? installedVersionForSource(source) : nil
             rows[index].hasUpdate = rows[index].status.isInstalled && !rows[index].status.isPinned && availableUpdateSources.contains(source)
         }
+        mutationOutcome = MutationOutcome(pluginID: pluginID, result: result)
     }
 
     func applyAvailableUpdates(_ sources: Set<String>) {

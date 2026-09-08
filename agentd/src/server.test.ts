@@ -15,6 +15,7 @@ import { EdgeTTSService, type EdgeTTSClient } from "./edge-tts-service.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import type { PiOAuthHandling } from "./runtime/pi-oauth-service.js";
+import type { PickleClassifier } from "./application/pickle-classifier.js";
 
 let server: AgentdServer;
 let port: number;
@@ -65,6 +66,108 @@ describe("AgentdServer", () => {
     const { ws, hello } = await connectWithHello();
     expect(hello.type).toBe("hello");
     ws.close();
+  });
+
+  it("returns a structured unavailable result when Hub statistics are requested from a daemon without the primary service", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-hub-unavailable", protocolVersion: PROTOCOL_VERSION, type: "getHubStatistics" }));
+
+    await expect(waitForEvent(ws, "hubStatisticsResult")).resolves.toMatchObject({
+      commandId: "cmd-hub-unavailable",
+      ok: false,
+      errorMessage: "Hub statistics unavailable on this daemon",
+    });
+    await expect(waitForEvent(ws, "ack")).resolves.toMatchObject({ commandId: "cmd-hub-unavailable" });
+    ws.close();
+  });
+
+  it("returns a Hub snapshot and a refreshed snapshot after reset", async () => {
+    await server.stop();
+    const snapshot = {
+      generatedAt: "2026-09-07T06:00:00.000Z",
+      records: [],
+      usageSamples: [],
+      pendingClassificationCount: 0,
+      classificationEnabled: false,
+    };
+    const statistics = {
+      snapshot: vi.fn(async () => snapshot),
+      reset: vi.fn(async () => snapshot),
+      configureClassification: vi.fn(async (enabled: boolean) => ({ ...snapshot, classificationEnabled: enabled })),
+    };
+    const classifierControl = { setClassificationEnabled: vi.fn(), stop: vi.fn() };
+    server = new AgentdServer({
+      port: 0,
+      token: "test-token",
+      supervisor,
+      hubStatistics: statistics,
+      pickleClassifier: classifierControl as unknown as PickleClassifier,
+    });
+    port = await server.start();
+    const { ws } = await connectWithHello();
+
+    ws.send(JSON.stringify({ id: "cmd-hub-statistics", protocolVersion: PROTOCOL_VERSION, type: "getHubStatistics" }));
+    await expect(waitForEvent(ws, "hubStatisticsResult")).resolves.toMatchObject({ commandId: "cmd-hub-statistics", ok: true, errorMessage: null, snapshot });
+    await expect(waitForEvent(ws, "ack")).resolves.toMatchObject({ commandId: "cmd-hub-statistics" });
+
+    ws.send(JSON.stringify({ id: "cmd-hub-statistics-reset", protocolVersion: PROTOCOL_VERSION, type: "resetHubStatistics" }));
+    await expect(waitForEvent(ws, "hubStatisticsResult")).resolves.toMatchObject({ commandId: "cmd-hub-statistics-reset", ok: true, snapshot });
+    expect(statistics.snapshot).toHaveBeenCalledOnce();
+    expect(statistics.reset).toHaveBeenCalledOnce();
+
+    ws.send(JSON.stringify({ id: "cmd-hub-statistics-configure", protocolVersion: PROTOCOL_VERSION, type: "configureHubStatistics", classificationEnabled: true }));
+    await expect(waitForMatchingEvent(ws, (event) => event.type === "hubStatisticsResult" && event.commandId === "cmd-hub-statistics-configure")).resolves.toMatchObject({
+      commandId: "cmd-hub-statistics-configure",
+      ok: true,
+      snapshot: { classificationEnabled: true },
+    });
+    await expect(waitForMatchingEvent(ws, (event) => event.type === "ack" && event.commandId === "cmd-hub-statistics-configure")).resolves.toMatchObject({ commandId: "cmd-hub-statistics-configure" });
+    expect(statistics.configureClassification).toHaveBeenCalledWith(true);
+    expect(classifierControl.setClassificationEnabled).toHaveBeenCalledWith(true);
+
+    statistics.snapshot.mockResolvedValueOnce({ ...snapshot, classificationEnabled: true });
+    statistics.configureClassification.mockRejectedValueOnce(new Error("Consent storage denied"));
+    ws.send(JSON.stringify({ id: "cmd-hub-statistics-configure-failed", protocolVersion: PROTOCOL_VERSION, type: "configureHubStatistics", classificationEnabled: false }));
+    await expect(waitForMatchingEvent(ws, (event) => event.type === "hubStatisticsResult" && event.commandId === "cmd-hub-statistics-configure-failed")).resolves.toMatchObject({
+      commandId: "cmd-hub-statistics-configure-failed",
+      ok: false,
+      errorMessage: "Consent storage denied",
+    });
+    expect(classifierControl.setClassificationEnabled).toHaveBeenLastCalledWith(false);
+    ws.close();
+  });
+
+  it("serializes consent writes and does not resume an older opt-in after withdrawal", async () => {
+    await server.stop();
+    const snapshot = { generatedAt: "2026-09-07T06:00:00.000Z", records: [], usageSamples: [], pendingClassificationCount: 0, classificationEnabled: false };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const statistics = {
+      snapshot: async () => snapshot,
+      reset: async () => snapshot,
+      configureClassification: vi.fn(async (enabled: boolean) => {
+        if (enabled) await gate;
+        return { ...snapshot, classificationEnabled: enabled };
+      }),
+    };
+    const classifier = { setClassificationEnabled: vi.fn(), stop: vi.fn() };
+    server = new AgentdServer({ port: 0, token: "test-token", supervisor, hubStatistics: statistics, pickleClassifier: classifier as unknown as PickleClassifier });
+    port = await server.start();
+    const { ws } = await connectWithHello();
+    try {
+      ws.send(JSON.stringify({ id: "opt-in", protocolVersion: PROTOCOL_VERSION, type: "configureHubStatistics", classificationEnabled: true }));
+      await vi.waitFor(() => expect(statistics.configureClassification).toHaveBeenCalledWith(true));
+      ws.send(JSON.stringify({ id: "withdraw", protocolVersion: PROTOCOL_VERSION, type: "configureHubStatistics", classificationEnabled: false }));
+      await vi.waitFor(() => expect(classifier.setClassificationEnabled).toHaveBeenCalledWith(false));
+      expect(statistics.configureClassification).toHaveBeenCalledTimes(1);
+      release();
+      await expect(waitForMatchingEvent(ws, (event) => event.type === "hubStatisticsResult" && event.commandId === "withdraw")).resolves.toMatchObject({ ok: true, snapshot: { classificationEnabled: false } });
+      expect(statistics.configureClassification.mock.calls).toEqual([[true], [false]]);
+      expect(classifier.setClassificationEnabled).not.toHaveBeenCalledWith(true);
+    } finally {
+      release();
+      ws.close();
+    }
   });
 
   it("keeps unsubscribed sockets free of session projection frames", async () => {

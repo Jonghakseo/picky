@@ -1,0 +1,38 @@
+{
+  "id": "event-hub-statistics",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-09-01T00:00:00.000Z",
+  "type": "hubStatisticsResult",
+  "commandId": "cmd-get-hub-statistics",
+  "ok": true,
+  "snapshot": {
+    "generatedAt": "2026-09-01T00:00:00.000Z",
+    "records": [
+      {
+        "id": "hub-record",
+        "title": "Fix input routing",
+        "project": "picky",
+        "cwd": "/workspace/picky",
+        "createdAt": "2026-08-31T00:00:00.000Z",
+        "lastActivityAt": "2026-09-01T00:00:00.000Z",
+        "followUpCount": 2,
+        "delegationCount": 1,
+        "reviewCount": 1,
+        "category": "fix"
+      }
+    ],
+    "usageSamples": [
+      {
+        "day": "2026-09-01",
+        "provider": "anthropic",
+        "model": "fixture-model",
+        "project": "picky",
+        "inputTokens": 100,
+        "outputTokens": 30,
+        "cacheTokens": 20
+      }
+    ],
+    "pendingClassificationCount": 0,
+    "classificationEnabled": true
+  }
+}

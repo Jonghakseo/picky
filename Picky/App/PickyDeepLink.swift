@@ -4,28 +4,38 @@
 //
 //  Parses `picky://...` URLs the LLM emits inside conversation markdown so a
 //  click on `[label](picky://settings/cursorBubbles)` opens the right screen
-//  in the companion panel. Keep this list in sync with
+//  in the hub window. Keep this list in sync with
 //  `PICKY_DEEP_LINK_ROUTES` in `agentd/src/application/user-guide-tool.ts` —
 //  that's the table the LLM is taught to draw from.
 //
 
 import Foundation
 
-/// Resolved destination for a `picky://` link. The companion panel always
-/// opens on a tab, and Settings deep links additionally drill into a route.
+/// Resolved destination for a `picky://` link. Legacy `panel/*` links keep
+/// resolving to the hub page that replaced each Companion tab; `hub/<page>`
+/// addresses the seven hub pages directly.
 struct PickyDeepLink: Equatable {
     enum Tab: Equatable {
         case status
         case messages
         case settings
+        case hub(PickyHubPage)
     }
 
     var tab: Tab
     var settingsRoute: CompanionPanelSettingsRoute?
+    /// Preserves the legacy path's control-level meaning after the Hub split
+    /// notifications into Privacy and built-in tools into an advanced disclosure.
+    var settingsLeaf: PickyHubSettingsLeaf?
 
-    init(tab: Tab, settingsRoute: CompanionPanelSettingsRoute? = nil) {
+    init(
+        tab: Tab,
+        settingsRoute: CompanionPanelSettingsRoute? = nil,
+        settingsLeaf: PickyHubSettingsLeaf? = nil
+    ) {
         self.tab = tab
         self.settingsRoute = settingsRoute
+        self.settingsLeaf = settingsLeaf
     }
 
     /// Parses `picky://panel/<tab>` and `picky://settings/<route>`. Returns
@@ -48,7 +58,14 @@ struct PickyDeepLink: Equatable {
             }
         case "settings":
             guard let route = CompanionPanelSettingsRoute.fromDeepLinkPath(firstPathComponent) else { return nil }
-            self = PickyDeepLink(tab: .settings, settingsRoute: route)
+            self = PickyDeepLink(
+                tab: .settings,
+                settingsRoute: route,
+                settingsLeaf: PickyHubSettingsLeaf.fromDeepLinkPath(firstPathComponent)
+            )
+        case "hub":
+            guard let page = PickyHubPage.fromDeepLinkPath(firstPathComponent) else { return nil }
+            self = PickyDeepLink(tab: .hub(page))
         default:
             return nil
         }
@@ -79,12 +96,23 @@ extension CompanionPanelSettingsRoute {
     }
 }
 
+extension PickyHubSettingsLeaf {
+    static func fromDeepLinkPath(_ path: String) -> PickyHubSettingsLeaf? {
+        switch path {
+        case "cursorBubbles": .cursorBubbles
+        case "notification": .notifications
+        case "tools", "builtinTools": .builtinTools
+        default: nil
+        }
+    }
+}
+
 /// Process-wide funnel that the markdown renderer pokes when it sees a
-/// `picky://` link, and that the app delegate wires to the menu bar panel
-/// manager at launch. Keeping the dispatcher independent of any view lets
-/// every place that renders agent markdown (HUD agent bubbles, companion
-/// panel messages) share one handler without each view having to know how
-/// to find `MenuBarPanelManager`.
+/// `picky://` link, and that the app delegate wires to the hub window
+/// controller at launch. Keeping the dispatcher independent of any view lets
+/// every place that renders agent markdown (HUD agent bubbles, hub
+/// conversation bubbles) share one handler without each view having to know
+/// how to find the window.
 @MainActor
 final class PickyDeepLinkDispatcher {
     static let shared = PickyDeepLinkDispatcher()

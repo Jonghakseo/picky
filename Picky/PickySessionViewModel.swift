@@ -1003,6 +1003,10 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func followUp(text: String, sessionID: String? = nil) async throws {
+        try await followUp(text: text, sessionID: sessionID, requireAcknowledgement: false)
+    }
+
+    func followUp(text: String, sessionID: String?, requireAcknowledgement: Bool) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             lastError = "Follow-up message cannot be empty"
@@ -1022,7 +1026,14 @@ final class PickySessionListViewModel: ObservableObject {
         }
         pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
         do {
-            try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
+            let command = PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed)
+            if requireAcknowledgement {
+                if let rejection = try await client.sendAwaitingError(command, timeout: 5, requireAcknowledgement: true) {
+                    throw PickyCommandRejection(event: rejection)
+                }
+            } else {
+                try await client.send(command)
+            }
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -2010,7 +2021,7 @@ final class PickySessionListViewModel: ObservableObject {
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
              .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .hello, .pluginsReloaded,
-             .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted, .ack, .unknown:
+             .hubStatisticsResult, .packageUpdatesAvailable, .packageOperationProgress, .packageOperationCompleted, .ack, .unknown:
             break
         }
     }

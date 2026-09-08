@@ -139,6 +139,47 @@ describe("protocol contract fixtures", () => {
     expect(fixture.supportedProtocolVersions).toEqual([PROTOCOL_VERSION]);
   });
 
+  it("parses Hub statistics commands and their Swift-compatible result event", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-hub-statistics",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "getHubStatistics",
+    })).toMatchObject({ type: "getHubStatistics" });
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-hub-statistics-reset",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "resetHubStatistics",
+    })).toMatchObject({ type: "resetHubStatistics" });
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-hub-statistics-configure",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "configureHubStatistics",
+      classificationEnabled: true,
+    })).toMatchObject({ type: "configureHubStatistics", classificationEnabled: true });
+    expect(EventEnvelopeSchema.parse({
+      id: "event-hub-statistics",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-09-07T06:00:00.000Z",
+      type: "hubStatisticsResult",
+      commandId: "cmd-hub-statistics",
+      ok: true,
+      errorMessage: null,
+      snapshot: {
+        generatedAt: "2026-09-07T06:00:00.000Z",
+        records: [{
+          id: "pickle-1", title: "Fix it", project: "picky", cwd: "/work/picky",
+          createdAt: "2026-09-01T00:00:00.000Z", lastActivityAt: "2026-09-02T00:00:00.000Z",
+          followUpCount: 1, delegationCount: 2, reviewCount: 3, category: "fix",
+        }],
+        usageSamples: [{ day: "2026-09-02", provider: "anthropic", model: "claude", project: "picky", inputTokens: 1, outputTokens: 2, cacheTokens: 3 }],
+        pendingClassificationCount: 0,
+      },
+    })).toMatchObject({
+      type: "hubStatisticsResult",
+      snapshot: { records: [{ category: "fix" }], classificationEnabled: false },
+    });
+  });
+
   it("parses main activity and extension UI protocol variants", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-main-ui-answer",

@@ -31,6 +31,7 @@ struct PickyVoiceContextCaptureCoordinator {
         _ displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot?
     ) async throws -> [CompanionScreenCapture]
     typealias SettingsProvider = @MainActor () -> PickySettings
+    typealias ContextPreflightPreparation = @MainActor () async -> Void
     typealias ContextPreflightCapture = @MainActor () async -> PickyContextPacketPreflight
     typealias ContextPreparer = @MainActor (
         _ screenCaptures: [CompanionScreenCapture],
@@ -41,18 +42,21 @@ struct PickyVoiceContextCaptureCoordinator {
 
     private let screenCapture: ScreenCapture
     private let settingsProvider: SettingsProvider
+    private let contextPreflightPreparation: ContextPreflightPreparation
     private let contextPreflightCapture: ContextPreflightCapture
     private let contextPreparer: ContextPreparer
 
     init(
         screenCapture: @escaping ScreenCapture = PickyVoiceContextCaptureCoordinator.captureScreens,
         settingsProvider: @escaping SettingsProvider = { PickySettingsStore().load() },
+        contextPreflightPreparation: @escaping ContextPreflightPreparation = {},
         contextPreflightCapture: @escaping ContextPreflightCapture =
             PickyVoiceContextCaptureCoordinator.captureContextPreflight,
         contextPreparer: @escaping ContextPreparer = PickyVoiceContextCaptureCoordinator.prepareContextPacket
     ) {
         self.screenCapture = screenCapture
         self.settingsProvider = settingsProvider
+        self.contextPreflightPreparation = contextPreflightPreparation
         self.contextPreflightCapture = contextPreflightCapture
         self.contextPreparer = contextPreparer
     }
@@ -103,7 +107,14 @@ struct PickyVoiceContextCaptureCoordinator {
         let settings = settingsProvider()
         let contextPreparationStartedAt = Date()
         let screenCapture = screenCapture
+        let contextPreflightPreparation = contextPreflightPreparation
         let contextPreflightCapture = contextPreflightCapture
+        // Foreground restoration must precede both capture branches; otherwise
+        // the screenshot can show Hub while AX/browser metadata names the editor.
+        if source == "voice" || source == "voice-follow-up" {
+            await contextPreflightPreparation()
+        }
+        try Task.checkCancellation()
         async let preflight = contextPreflightCapture()
         let inkGlobalPoints = (inkCapture?.strokes ?? []).flatMap { stroke in
             stroke.points.map { CGPoint(x: $0.x, y: $0.y) }

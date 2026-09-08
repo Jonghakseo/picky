@@ -8,6 +8,21 @@
 
 import SwiftUI
 
+/// Controls whether a route is rendered as the original navigable panel page
+/// or as content owned by another settings shell (the Hub).
+enum CompanionPanelSettingsPresentation: Equatable {
+    case navigation
+    case embedded
+    /// Hub's Privacy group owns notification preferences, while its Overlay
+    /// group owns the cursor and bubble controls from the legacy combined route.
+    case embeddedOverlayControls
+
+    var showsNavigationChrome: Bool { self == .navigation }
+    var showsSectionChrome: Bool { self == .navigation }
+    var includesOverlayNotificationControls: Bool { self != .embeddedOverlayControls }
+    var includesShellCommandControl: Bool { self == .navigation }
+}
+
 enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case general
     case oauth
@@ -18,6 +33,83 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case shortcuts
     case builtinTools
     case onboarding
+}
+
+/// A settings route owns only the draft state and autosave observations needed
+/// to render its controls. Hub keeps several routes mounted at once, so this
+/// policy prevents an inactive route's stale private draft from being folded
+/// into the shared settings view model.
+enum CompanionPanelSettingsDraftOwner: Hashable {
+    case mainAgent
+    case oauth
+    case pickle
+    case voice
+}
+
+enum CompanionPanelSettingsObservedSetting: Hashable {
+    case notifications
+    case cursor
+    case overlayBubbles
+    case ttsEnabled
+    case disabledBuiltinTools
+}
+
+enum CompanionPanelSettingsOwnership {
+    static func draftOwners(for route: CompanionPanelSettingsRoute) -> Set<CompanionPanelSettingsDraftOwner> {
+        switch route {
+        case .mainAgent:
+            [.mainAgent]
+        case .oauth:
+            [.oauth]
+        case .pickle:
+            [.pickle]
+        case .voice:
+            [.voice]
+        case .index, .general, .overlayAndNotifications, .shortcuts, .builtinTools, .onboarding:
+            []
+        }
+    }
+
+    static func owns(
+        _ observedSetting: CompanionPanelSettingsObservedSetting,
+        on route: CompanionPanelSettingsRoute,
+        presentation: CompanionPanelSettingsPresentation
+    ) -> Bool {
+        switch observedSetting {
+        case .notifications:
+            route == .overlayAndNotifications && presentation.includesOverlayNotificationControls
+        case .cursor, .overlayBubbles:
+            route == .overlayAndNotifications
+        case .ttsEnabled:
+            route == .voice
+        case .disabledBuiltinTools:
+            route == .builtinTools
+        }
+    }
+}
+
+/// Records the precise onboarding field changed by a replay request. A failed
+/// durable save restores that field only while it still holds the transaction's
+/// temporary value, preserving any newer user edit.
+enum CompanionVoiceDraftSyncPolicy {
+    static func shouldSynchronize(completedRevision: Int, currentRevision: Int) -> Bool {
+        completedRevision == currentRevision
+    }
+}
+
+struct PickyHubOnboardingReplaySaveTransaction: Equatable {
+    private let previousCompletedVersion: Int
+
+    static func begin(in settings: inout PickySettings) -> Self {
+        let transaction = Self(previousCompletedVersion: settings.onboardingCompletedVersion)
+        settings.onboardingCompletedVersion = 0
+        return transaction
+    }
+
+    func restoreAfterFailedSave(in settings: inout PickySettings) {
+        guard settings.onboardingCompletedVersion == 0 else { return }
+        settings.onboardingCompletedVersion = previousCompletedVersion
+    }
 }
 
 /// One screen of the Settings tab. The index screen lists the categories;

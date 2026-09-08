@@ -7,6 +7,96 @@ cd "$ROOT"
 TARGET="${1:-}"
 HOST_ARCH="$(uname -m)"
 DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
+# Hub renders share the agent DerivedData path by default so this command does
+# not contend with a developer's GUI build or leave another multi-GB cache.
+HUB_DERIVED_DATA_PATH="${PICKY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"
+
+if [ "$TARGET" = "hub" ]; then
+  OUTPUT="$ROOT/build/render-gallery/hub"
+  REQUEST_FILE="$ROOT/build/render-gallery/.hub-output-path"
+  EXPECTED=(
+    hub-dashboard-wide-dark.png
+    hub-dashboard-wide-light.png
+    hub-dashboard-narrow-dark.png
+    hub-statistics-wide-dark.png
+    hub-statistics-wide-light.png
+    hub-statistics-narrow-dark.png
+    hub-guides-wide-dark.png
+    hub-guides-wide-light.png
+    hub-guides-narrow-dark.png
+    hub-quickStart-wide-dark.png
+    hub-quickStart-wide-light.png
+    hub-quickStart-narrow-dark.png
+    hub-plugins-wide-dark.png
+    hub-plugins-wide-light.png
+    hub-plugins-narrow-dark.png
+    hub-conversation-wide-dark.png
+    hub-conversation-wide-light.png
+    hub-conversation-narrow-dark.png
+    hub-settings-wide-dark.png
+    hub-settings-wide-light.png
+    hub-settings-narrow-dark.png
+    hub-pluginDetail-wide-dark.png
+    hub-pluginDetail-wide-light.png
+    hub-pluginDetail-narrow-dark.png
+    hub-statisticsReset-wide-dark.png
+    hub-statisticsReset-wide-light.png
+    hub-statisticsReset-narrow-dark.png
+  )
+
+  rm -rf "$OUTPUT"
+  mkdir -p "$OUTPUT"
+  printf '%s\n' "$OUTPUT" > "$REQUEST_FILE"
+  trap 'rm -f "$REQUEST_FILE"' EXIT
+
+  echo "Rendering Hub gallery offscreen to $OUTPUT"
+  xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
+    -derivedDataPath "$HUB_DERIVED_DATA_PATH" -parallel-testing-enabled NO \
+    test -only-testing:PickyTests/PickyHubRenderGalleryTests
+
+  python3 - "$OUTPUT" "${EXPECTED[@]}" <<'PY'
+import json
+import struct
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+expected = sys.argv[2:]
+manifest_path = output / "manifest.json"
+index_path = output / "index.html"
+if not manifest_path.is_file() or manifest_path.stat().st_size == 0:
+    raise SystemExit("render gallery is missing a non-empty manifest.json")
+if not index_path.is_file() or index_path.stat().st_size == 0:
+    raise SystemExit("render gallery is missing a non-empty index.html")
+
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+entries = {scene["file"]: scene for scene in manifest.get("scenes", [])}
+if set(entries) != set(expected):
+    raise SystemExit(f"manifest scenes differ from expected matrix: {sorted(entries)}")
+
+signature = b"\x89PNG\r\n\x1a\n"
+for name in expected:
+    path = output / name
+    if not path.is_file() or path.stat().st_size == 0:
+        raise SystemExit(f"missing or empty render: {path}")
+    data = path.read_bytes()
+    if data[:8] != signature or data[12:16] != b"IHDR":
+        raise SystemExit(f"invalid PNG: {path}")
+    width, height = struct.unpack(">II", data[16:24])
+    scene = entries[name]
+    expected_size = (1520, 1120) if scene["widthClass"] == "narrow" else (2040, 1440)
+    if (width, height) != expected_size:
+        raise SystemExit(f"unexpected PNG dimensions for {name}: {(width, height)}")
+    if width != scene["pixelWidth"] or height != scene["pixelHeight"]:
+        raise SystemExit(f"manifest dimension mismatch for {name}: PNG={width}x{height}")
+
+print(f"Validated {len(expected)} Hub PNG renders and manifest dimensions.")
+PY
+
+  printf 'Render gallery artifacts:\n  %s\n  %s\n  %s\n' \
+    "$OUTPUT" "$OUTPUT/index.html" "$OUTPUT/manifest.json"
+  exit 0
+fi
 
 if [ "$TARGET" = "conversation-activity" ]; then
   OUTPUT="$ROOT/build/render-gallery/conversation-activity"
@@ -187,7 +277,7 @@ PY
 fi
 
 if [ "$TARGET" != "dock-group" ]; then
-  echo "Usage: $0 {dock-group|conversation-context|conversation-activity|conversation-composer}" >&2
+  echo "Usage: $0 {hub|dock-group|conversation-context|conversation-activity|conversation-composer}" >&2
   exit 64
 fi
 

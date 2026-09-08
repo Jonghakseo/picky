@@ -81,6 +81,11 @@ export interface RuntimeModelOption {
   pattern: string;
 }
 
+/** Small, non-session model call used by local background maintenance tasks. */
+export interface RuntimeTextCompleter {
+  complete(input: { system: string; prompt: string; maxTokens?: number }): Promise<string>;
+}
+
 export interface RuntimeModelIdentity {
   provider: string;
   modelId: string;

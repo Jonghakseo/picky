@@ -70,6 +70,10 @@ export function pickleStatisticsRecord(
   const messageJournalAvailable = session.messageJournalAvailable !== false;
   const messages = messageJournalAvailable ? session.messages ?? [] : [];
   const userMessageCount = messages.filter((message) => message.kind === "user_text" && message.originatedBy === "user").length;
+  const initialInstruction = messages.find((message) => (
+    message.kind === "user_text"
+    && (message.originatedBy === "user" || message.originatedBy === "main_agent")
+  ));
   const delegationCount = messages.filter((message) => message.kind === "user_text" && message.originatedBy === "main_agent").length;
   const reviewCount = (session.subagentRuns ?? []).filter((run) => REVIEW_AGENT_PATTERN.test(run.agent)).length;
 
@@ -80,7 +84,7 @@ export function pickleStatisticsRecord(
     ...(session.cwd ? { cwd: session.cwd } : {}),
     createdAt: session.createdAt,
     lastActivityAt: session.updatedAt,
-    followUpCount: Math.max(0, userMessageCount - 1),
+    followUpCount: Math.max(0, userMessageCount - (initialInstruction?.originatedBy === "user" ? 1 : 0)),
     delegationCount,
     reviewCount,
     category: classification?.category ?? "unclassified",

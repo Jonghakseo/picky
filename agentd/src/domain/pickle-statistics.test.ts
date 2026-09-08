@@ -43,6 +43,34 @@ describe("pickle statistics", () => {
     });
   });
 
+  it("counts only user instructions after the ordered user or main-agent kickoff", () => {
+    const userText = (id: string, originatedBy: "user" | "main_agent" | "pi_extension") => ({
+      id,
+      kind: "user_text" as const,
+      originatedBy,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      text: id,
+    });
+    const nonInstruction = {
+      id: "agent-progress",
+      kind: "agent_activity" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      text: "working",
+    };
+
+    expect(pickleStatisticsRecord(session({ messages: [userText("user-kickoff", "user")] })).followUpCount).toBe(0);
+    expect(pickleStatisticsRecord(session({ messages: [userText("user-kickoff", "user"), nonInstruction, userText("later-user", "user")] })).followUpCount).toBe(1);
+    expect(pickleStatisticsRecord(session({ messages: [userText("user-kickoff", "user"), userText("later-one", "user"), userText("later-two", "user")] })).followUpCount).toBe(2);
+
+    expect(pickleStatisticsRecord(session({ messages: [userText("main-kickoff", "main_agent")] })).followUpCount).toBe(0);
+    expect(pickleStatisticsRecord(session({ messages: [userText("main-kickoff", "main_agent"), nonInstruction, userText("later-user", "user")] })).followUpCount).toBe(1);
+    expect(pickleStatisticsRecord(session({ messages: [userText("main-kickoff", "main_agent"), userText("later-one", "user"), userText("later-two", "user")] })).followUpCount).toBe(2);
+
+    // Extension reports are not a user or main-agent instruction and cannot turn
+    // the first later user instruction into a follow-up.
+    expect(pickleStatisticsRecord(session({ messages: [userText("extension-report", "pi_extension"), nonInstruction, userText("user-kickoff", "user")] })).followUpCount).toBe(0);
+  });
+
   it("keeps a bridge summary in statistics while withholding unavailable journal counts", () => {
     const record = pickleStatisticsRecord(session({ messageJournalAvailable: false }));
     expect(record).toMatchObject({ followUpCount: 0, delegationCount: 0, reviewCount: 2, category: "unclassified" });

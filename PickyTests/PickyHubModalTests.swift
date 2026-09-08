@@ -28,6 +28,31 @@ struct PickyHubModalTests {
         #expect(restorationCount == 1)
     }
 
+    @Test func lateRemovalAfterCleanupDoesNotRepeatFocusRestoration() async {
+        let host = PickyHubModalHost()
+        var cleanupCount = 0
+        var restorationCount = 0
+        let id = host.present(
+            accessibilityLabel: "Confirmation",
+            onWillDismiss: { cleanupCount += 1 },
+            onDismiss: { restorationCount += 1 },
+            content: { EmptyView() }
+        )
+        host.dismiss()
+        host.presentationDidDisappear(id: id)
+
+        // Drain a later cleanup callback before asserting the final count.
+        let lateRemoval = Task { @MainActor in
+            host.dismiss()
+            host.presentationDidDisappear(id: id)
+        }
+        await lateRemoval.value
+
+        #expect(host.presentationID == nil)
+        #expect(cleanupCount == 1)
+        #expect(restorationCount == 1)
+    }
+
     @Test func replacementCleansUpTheDismissedPresentationWithoutRestoringItsFocus() {
         let host = PickyHubModalHost()
         var firstCleanupCount = 0

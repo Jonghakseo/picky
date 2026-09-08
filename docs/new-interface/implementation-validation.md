@@ -1,6 +1,6 @@
 # Hub implementation validation
 
-Worktree: `feat/new-interface`. Integration and verification are in progress.
+Worktree: `feat/new-interface`. The final quality gate and native keyboard contract passed. Independent handoff findings F1–F6 remain unresolved; this is not a claim that the whole Hub is ready to ship.
 The running Picky application must not be restarted or used as a test host through manual app control.
 
 ## Content publication
@@ -38,22 +38,46 @@ Share links use the repository URL documented in `README.md`, not the unverified
 - The user chose default-off classification with explicit disclosure and opt-in. Settings hides the toggle when the durable state is unconfirmed instead of implying that classification is off. Failed withdrawal does not restart the classifier in the current daemon; the visible error requires retrying persistence before a daemon restart.
 - `/tmp/hub-gallery-3.log`: **27 production PNGs generated and directly inspected**, including every page in wide light/dark and narrow dark, plus plugin detail and reset confirmation in the same three variants. Artifacts are in `build/render-gallery/hub/`, with `index.html`, `manifest.json` and three overview contact sheets.
 - Visual inspection caught and fixed overflowing minimum-width Quick Start grids, a second stale width environment inside the page scroll container, and dynamic localization keys interpreted as interpolation format strings. The latest narrow renders retain the right content inset and switch Quick Start to one column.
-- The user approved one isolated native keyboard-focus verification through `scripts/pre-push-checks.sh`. It executed exactly once in the second gate attempt and **failed**. `/tmp/hub-pre-push-ui-2.log` reports 2,601 Swift Testing tests with two issues, both from `PickyHubNativeFocusTests.dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger()`. No other Swift test failure was reported. The gate's backend phases passed 837 + 428 tests, with two skipped. No commit, push, signing change, or control of the running Picky app occurred.
+- The earlier approved isolated native test failed before keyboard input in `/tmp/hub-pre-push-ui-2.log`. Subsequent evidence identified fixture/observation problems rather than a required product focus change. The final successful keyboard verification is recorded below.
 
-## Remaining verification and findings
-- Independent review confirmed the other core fixes; the follow-up foreground review (#16) confirmed both source scoping and latest-app tracking with no new findings. Native Workspace activation and click behavior remain unverified manually.
-- The three additional P2 findings from review #20 were repaired with focused tests. Independent re-review #21 confirmed all three fixes and found no new consent-boundary issues. That review did not verify native focus, and the subsequent native timeout remains a blocker.
-- The first pre-push attempt passed 1,265 backend tests with two skipped, then stopped on a six-field tuple SwiftLint error before any native UI test executed. The tuple was replaced with the existing named model-usage type; all seven aggregation tests passed before the second gate attempt. Lint limits and signing were not changed.
-- Gallery evidence does not cover live microphone/permission requests, updater actions, actual package installation, media playback, external Workspace app activation, or full end-user Hub navigation.
+## Final keyboard verification
 
-## Native focus blocker
+- `/tmp/hub-focus-gate-final.log`: **all local quality checks passed**, including the Swift run reporting **2,604 tests passed**, backend **837 + 428 tests passed with two skipped**, build, lint and repository guards. The native test explicitly **executed and passed in 0.424 seconds**; it was not skipped in this gate.
+- `/tmp/hub-focus-final-unit.log`: the targeted run reported eight tests passed, with the native case correctly skipped outside the pre-push gate. It includes the AX observer regression and a later duplicate modal-removal callback whose task is awaited before checking final counts.
+- Actual keyboard evidence uses `NSEvent` Space down/up events dispatched through the isolated window, not direct invocation of button actions. The standard SwiftUI Button activates once. The production Hub button activates once, the dialog's **Cancel activates once and Confirm zero times**, then the restored Hub button activates again.
+- After SwiftUI fixture removal, window close and host cleanup, the exact counts remain **trigger=2, Cancel=1, Confirm=0, focusRequests=2**. The latter is one initial request plus one restoration. Review #23 confirmed that review #22's final-count gap was addressed, with no new findings.
+- Keyboard Navigation is an explicit precondition for this button-focus contract. Ordinary tests retain the pre-push-only gate; without Keyboard Navigation, this native suite reports a condition-based skip rather than misclassifying an unsupported environment as a product failure. A skip is not native verification.
+- For the final positive run, the user explicitly approved temporarily enabling system Keyboard Navigation. An external `try/finally` wrapper set only `AppleKeyboardUIMode`, ran `scripts/pre-push-checks.sh`, and restored its original absence. `/tmp/hub-focus-analysis.KYcJkd/keyboard-navigation-restoration-final.json` and a fresh AppKit probe confirm **mode=0, keyboardNavigation=false** after restoration. The repository test itself never changes preferences. No signing change, running-app restart or push occurred.
+- No product code changed to resolve this native test failure. The existing production window, Hub button, modal and dismissal callbacks were exercised.
 
-- Result: **initial-focus prerequisite failed; product cause remains unconfirmed**. A deeper read of the original `ActionTestSummary.failureSummaries[].sourceCodeContext.callStack` recovered the caller at the failed run's line29 (current line30, after the post-failure locale injection). It is the first `didAppear && isKeyWindow && AX label == expected` condition. Neither the first Space event nor modal presentation was reached. This corrects the earlier claim that the failing phase was unknown; the high-level xcresult summaries omit these source locations.
-- The observed values of that compound condition are still missing. The failed fixture lacked the production `LocalizedHostingRoot` locale, its optional AX cast collapses several failure modes into nil, and its appearance-time focus request precedes any established key-window readiness. These are observation/precondition gaps, not proof of which one caused the timeout. The shared button's internal and caller-level FocusState bindings remain an unconfirmed product candidate. Modal dismissal/restoration cannot explain this recorded failure because those actions were not executed.
-- Evidence: `/private/tmp/PickyAgentDD/Logs/Test/Test-Picky-2026.09.08_16-17-28-+0900.xcresult`; raw summary and bounded original stack are `/tmp/hub-focus-analysis.KYcJkd/native-summary.json` and `failure-location.json`. Both issues refer to the same timeout. The result contains no media attachments. The detailed read-only analysis and decision table are `/tmp/hub-focus-analysis.KYcJkd/analysis.md`.
-- The helper now reports the phase, key-window state and actual focused accessibility element. Its SwiftUI locale is explicitly aligned with the localized oracle. These are diagnostic improvements, not a confirmed fix.
-- `/tmp/hub-native-diagnostics-build.log`: `TEST BUILD SUCCEEDED`, **compilation only**. No second native execution was performed. No product or test code was changed during the subsequent failure analysis.
-- Next proposed verification: in a future approved pre-push UI cycle, compare a standard SwiftUI Button and the Hub button with the same known locale and established window readiness. Observe Space action counts independently of AX identity, then record raw AX class/cast/role/identifier/label and expected locale. Only exercise modal restoration after initial keyboard operation is established. A working standard control with a failing Hub control narrows the product investigation; correct raw focus with a failing cast/label comparison identifies an observation defect. Do not extend timeouts or change product focus routing without this evidence.
-- Apple references: [accessibility focus traversal](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Accessibility/cocoaAXUItesting/cocoaAXUItesting.html) and [SwiftUI focus interactions](https://developer.apple.com/videos/play/wwdc2023/10162/). Text-editor focus is not a substitute for a standard-button control, and button keyboard navigation has system-policy dependencies.
+### Why the old focus verdict was invalid
 
-Offscreen rendering does not prove native keyboard focus, window anchoring, media playback or live permission flows. Those limitations must remain explicit in the final report.
+1. The original xcresult's raw call stack identifies the first compound initial-focus condition at the failed run's line29. Keyboard input and modal presentation had not happened; the two issues were a recorded timeout and its thrown error, not separate product failures.
+2. A metadata-only probe found that `SwiftUI.AccessibilityNode` exposes accessibility selectors without formally conforming to `NSAccessibilityProtocol`. The old optional cast can therefore lose valid data. A pure observer test reproduced this failure, then passed with guarded selector dispatch. This is a real observer defect, but it was not the only failed prerequisite.
+3. `/tmp/hub-focus-gate-3.log` shows active/key window readiness but disabled Keyboard Navigation. Even the standard button did not receive focus or Space. Volatile process defaults did not change AppKit's actual policy.
+4. With the user-approved setting enabled, `/tmp/hub-focus-gate-keyboard-enabled.log` shows working standard/Hub Space, modal dismissal and restored Space. However, `window.accessibilityFocusedUIElement` returned the **NSHostingView AXGroup**, not the virtual button, so the old AX label expectations still failed.
+5. The final test establishes real responder readiness and checks keyboard action results, with distinct Cancel/Confirm counters and final cleanup assertions. AX class, role and label remain diagnostic information, not an invalid keyboard-focus oracle. This does not claim that external assistive-technology AX navigation has been validated.
+
+Apple references: [accessibility focus traversal](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Accessibility/cocoaAXUItesting/cocoaAXUItesting.html) and [SwiftUI focus interactions](https://developer.apple.com/videos/play/wwdc2023/10162/). Text-editor focus is not a substitute for a standard-button control.
+
+## Independent handoff findings still open
+
+The user supplied `/tmp/picky-new-interface-review-handoff.md` after the keyboard-test work. Rechecking HEAD `6efea2629` confirmed these six independent omissions. `/tmp/picky-new-interface-review-checked.md` contains the detailed comparison. These are **not fixed by the passing keyboard gate**; regression coverage for these cases has not yet been added.
+
+| ID | Remaining issue | Evidence |
+|---|---|---|
+| F1 / P1 | Quick Start success, resume and Open only call `requestOpenSession`; they do not restore hidden HUD visibility through its owner. | Source traced through selection, local card state and actual panel visibility policy. Native reproduction not run. |
+| F2 / P2 | Notification deep links route to overlay rather than privacy; tools links lose the leaf target and leave advanced controls collapsed. | Parser, navigator and final group/disclosure placement checked. |
+| F3 / P2 | Browser capture permission row opens generic Security settings instead of calling `requestScreenContent()`. | Compared with the existing approval/capture/persistence owner and old prerequisites action. |
+| F4 / P2 | A `main_agent` kickoff followed by one user instruction reports zero follow-ups. | Current production function reproduced `user -> 1`, `main_agent -> 0` for the same one-follow-up case. |
+| F5 / P2 | With 65 unchanged transcripts, a 64-entry LRU rereads/reparses all 65 on the second snapshot. | Current production service reproduced first=65, second=65, cacheSize=64. User-visible latency was not measured. |
+| F6 / P2 | Recent Conversation omits text-selection enablement on AI Markdown that the old transcript row provided. | Old/new component and parent selection modifiers compared. Native drag-selection reproduction not run. |
+
+F4/F5 reproduction output is `/tmp/hub-handoff-probe-current.log`; fixtures were created in a fresh temporary directory and removed. No real daemon, model provider or user session data was used. Fix F1 first, then settings/permissions and statistics correctness/cache boundaries. Keep stable-ID fork/main usage deduplication when changing the cache.
+
+## Other verification limits
+
+- Independent reviews #16 and #21 confirmed their bounded core/P2 fixes. They did not cover the later handoff omissions above.
+- The original six-field tuple lint failure was fixed with the existing named model-usage type and seven passing aggregation tests, without changing lint limits or signing.
+- The 27 inspected renders remain valid visual evidence, but they do not prove microphone/permission requests, updater actions, actual package installation, media playback, external Workspace activation, external accessibility navigation, or all end-user Hub flows.
+- The handoff's sidebar text truncation note was not independently rerendered during that recheck. Verified guide publication metadata is still required before filling the production feed.

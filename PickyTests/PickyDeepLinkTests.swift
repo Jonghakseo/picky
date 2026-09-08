@@ -14,6 +14,12 @@ import Foundation
 import Testing
 @testable import Picky
 
+private struct PickySettingsRouteExpectation {
+    let path: String
+    let route: CompanionPanelSettingsRoute
+    let leaf: PickyHubSettingsLeaf?
+}
+
 struct PickyDeepLinkTests {
     @Test func nonPickySchemeReturnsNilAndDispatcherIgnoresIt() async throws {
         #expect(PickyDeepLink(url: URL(string: "https://picky.app/panel/status")!) == nil)
@@ -36,37 +42,65 @@ struct PickyDeepLinkTests {
         #expect(PickyDeepLink(url: URL(string: "picky://panel")!) == nil) // missing tab path
     }
 
-    @Test func settingsHostMapsEveryRouteListedInDeepLinkTable() {
+    @Test func settingsHostMapsEveryRouteListedInDeepLinkTable() throws {
         // Current canonical paths exposed through PICKY_DEEP_LINK_ROUTES.
-        let expected: [(String, CompanionPanelSettingsRoute)] = [
-            ("general", .general),
-            ("shortcuts", .shortcuts),
-            ("mainAgent", .mainAgent),
-            ("pickle", .pickle),
-            ("tools", .builtinTools),
-            ("voice", .voice),
-            ("overlayAndNotifications", .overlayAndNotifications),
-            ("onboarding", .onboarding),
-            ("index", .index),
+        let expected = [
+            PickySettingsRouteExpectation(path: "general", route: .general, leaf: nil),
+            PickySettingsRouteExpectation(path: "shortcuts", route: .shortcuts, leaf: nil),
+            PickySettingsRouteExpectation(path: "mainAgent", route: .mainAgent, leaf: nil),
+            PickySettingsRouteExpectation(path: "pickle", route: .pickle, leaf: nil),
+            PickySettingsRouteExpectation(path: "tools", route: .builtinTools, leaf: .builtinTools),
+            PickySettingsRouteExpectation(path: "voice", route: .voice, leaf: nil),
+            PickySettingsRouteExpectation(path: "overlayAndNotifications", route: .overlayAndNotifications, leaf: nil),
+            PickySettingsRouteExpectation(path: "onboarding", route: .onboarding, leaf: nil),
+            PickySettingsRouteExpectation(path: "index", route: .index, leaf: nil)
         ]
-        for (path, route) in expected {
-            let link = PickyDeepLink(url: URL(string: "picky://settings/\(path)")!)
-            #expect(link == PickyDeepLink(tab: .settings, settingsRoute: route), "picky://settings/\(path) should map to \(route)")
+        for expectation in expected {
+            let url = try #require(URL(string: "picky://settings/\(expectation.path)"))
+            let link = PickyDeepLink(url: url)
+            #expect(
+                link == PickyDeepLink(
+                    tab: .settings,
+                    settingsRoute: expectation.route,
+                    settingsLeaf: expectation.leaf
+                ),
+                "picky://settings/\(expectation.path) should preserve its leaf"
+            )
         }
     }
 
-    @Test func settingsHostKeepsLegacyAliasesForRouteReorg() {
+    @Test func settingsHostKeepsLegacyAliasesForRouteReorg() throws {
         // Pre-reorg paths the assistant may have already emitted and external
         // bookmarks may still point at. They redirect into the new combined
         // routes so existing links keep working without surfacing a 404.
-        let aliases: [(String, CompanionPanelSettingsRoute)] = [
-            ("notification", .overlayAndNotifications),
-            ("cursorBubbles", .overlayAndNotifications),
-            ("builtinTools", .builtinTools),
+        let aliases = [
+            PickySettingsRouteExpectation(
+                path: "notification",
+                route: .overlayAndNotifications,
+                leaf: .notifications
+            ),
+            PickySettingsRouteExpectation(
+                path: "cursorBubbles",
+                route: .overlayAndNotifications,
+                leaf: .cursorBubbles
+            ),
+            PickySettingsRouteExpectation(
+                path: "builtinTools",
+                route: .builtinTools,
+                leaf: .builtinTools
+            )
         ]
-        for (path, route) in aliases {
-            let link = PickyDeepLink(url: URL(string: "picky://settings/\(path)")!)
-            #expect(link == PickyDeepLink(tab: .settings, settingsRoute: route), "picky://settings/\(path) should alias to \(route)")
+        for expectation in aliases {
+            let url = try #require(URL(string: "picky://settings/\(expectation.path)"))
+            let link = PickyDeepLink(url: url)
+            #expect(
+                link == PickyDeepLink(
+                    tab: .settings,
+                    settingsRoute: expectation.route,
+                    settingsLeaf: expectation.leaf
+                ),
+                "picky://settings/\(expectation.path) should preserve its leaf"
+            )
         }
     }
 

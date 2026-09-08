@@ -24,10 +24,18 @@ struct PickyDeepLink: Equatable {
 
     var tab: Tab
     var settingsRoute: CompanionPanelSettingsRoute?
+    /// Preserves the legacy path's control-level meaning after the Hub split
+    /// notifications into Privacy and built-in tools into an advanced disclosure.
+    var settingsLeaf: PickyHubSettingsLeaf?
 
-    init(tab: Tab, settingsRoute: CompanionPanelSettingsRoute? = nil) {
+    init(
+        tab: Tab,
+        settingsRoute: CompanionPanelSettingsRoute? = nil,
+        settingsLeaf: PickyHubSettingsLeaf? = nil
+    ) {
         self.tab = tab
         self.settingsRoute = settingsRoute
+        self.settingsLeaf = settingsLeaf
     }
 
     /// Parses `picky://panel/<tab>` and `picky://settings/<route>`. Returns
@@ -50,7 +58,11 @@ struct PickyDeepLink: Equatable {
             }
         case "settings":
             guard let route = CompanionPanelSettingsRoute.fromDeepLinkPath(firstPathComponent) else { return nil }
-            self = PickyDeepLink(tab: .settings, settingsRoute: route)
+            self = PickyDeepLink(
+                tab: .settings,
+                settingsRoute: route,
+                settingsLeaf: PickyHubSettingsLeaf.fromDeepLinkPath(firstPathComponent)
+            )
         case "hub":
             guard let page = PickyHubPage.fromDeepLinkPath(firstPathComponent) else { return nil }
             self = PickyDeepLink(tab: .hub(page))
@@ -80,6 +92,17 @@ extension CompanionPanelSettingsRoute {
         case "onboarding": return .onboarding
         case "index", "": return .index
         default: return nil
+        }
+    }
+}
+
+extension PickyHubSettingsLeaf {
+    static func fromDeepLinkPath(_ path: String) -> PickyHubSettingsLeaf? {
+        switch path {
+        case "cursorBubbles": .cursorBubbles
+        case "notification": .notifications
+        case "tools", "builtinTools": .builtinTools
+        default: nil
         }
     }
 }

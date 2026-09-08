@@ -16,6 +16,8 @@ struct PickyHubSettingsPage: View {
     @State private var statisticsResetState: PickyHubStatisticsResetState = .idle
     @State private var onboardingReplayState: PickyHubOnboardingReplayState = .idle
     @State private var onboardingReplayTransaction: PickyHubOnboardingReplaySaveTransaction?
+    @State private var settingsNavigationState = PickyHubSettingsNavigationState()
+    @State private var pendingDisclosureScrollTarget: String?
     @FocusState private var focusedSettingsControl: String?
 
     init(dependencies: PickyHubDependencies) {
@@ -40,13 +42,15 @@ struct PickyHubSettingsPage: View {
                 }
                 ForEach(PickyHubSettingsGroup.allCases) { group in
                     PickyHubSettingsGroupSection(group: group) {
-                        groupContent(group)
+                        groupContent(group, scrollProxy: proxy)
                     }
                     .id(group.id)
                 }
             }
-            .onAppear { consumePendingGroup(with: proxy) }
-            .onChange(of: navigator.pendingSettingsGroup) { _, _ in consumePendingGroup(with: proxy) }
+            .onAppear { consumePendingSettingsNavigation(with: proxy) }
+            .onChange(of: navigator.pendingSettingsNavigation) { _, _ in
+                consumePendingSettingsNavigation(with: proxy)
+            }
         }
     }
 
@@ -69,7 +73,7 @@ struct PickyHubSettingsPage: View {
     }
 
     @ViewBuilder
-    private func groupContent(_ group: PickyHubSettingsGroup) -> some View {
+    private func groupContent(_ group: PickyHubSettingsGroup, scrollProxy: ScrollViewProxy) -> some View {
         switch group {
         case .general:
             embedded(.general)
@@ -84,18 +88,38 @@ struct PickyHubSettingsPage: View {
         case .agents:
             embedded(.oauth)
             embedded(.mainAgent)
-            PickyHubSettingsDisclosure(title: "hub.settings.agents.advanced") { embedded(.builtinTools) }
+            PickyHubSettingsDisclosure(
+                title: "hub.settings.agents.advanced",
+                isExpanded: Binding(
+                    get: { settingsNavigationState.isExpanded(.agentTools) },
+                    set: { isExpanded in
+                        settingsNavigationState.setExpanded(.agentTools, to: isExpanded)
+                    }
+                ),
+                onExpandedContentAppear: {
+                    scrollToPendingDisclosureTarget(
+                        PickyHubSettingsLeaf.builtinTools.scrollTargetID,
+                        with: scrollProxy
+                    )
+                },
+                content: {
+                    embedded(.builtinTools)
+                        .id(PickyHubSettingsLeaf.builtinTools.scrollTargetID)
+                }
+            )
         case .voice:
             embedded(.voice)
             embedded(.shortcuts)
         case .overlay:
             embedded(.overlayAndNotifications, presentation: .embeddedOverlayControls)
+                .id(PickyHubSettingsLeaf.cursorBubbles.scrollTargetID)
         case .workspace:
             embedded(.pickle)
             PickyHubPickleFolderControls(settingsViewModel: settingsViewModel)
         case .privacy:
             PickyHubClassificationSettingsView(statisticsStore: dependencies.statisticsStore)
             PickyHubNotificationControls(settingsViewModel: settingsViewModel)
+                .id(PickyHubSettingsLeaf.notifications.scrollTargetID)
             PickyHubPermissionRows(permissions: permissions)
             PickyHubSettingsNotice(text: "hub.settings.privacy.notice")
         case .advanced:
@@ -125,11 +149,29 @@ struct PickyHubSettingsPage: View {
         .pickyHubCard()
     }
 
-    private func consumePendingGroup(with proxy: ScrollViewProxy) {
-        guard let group = navigator.pendingSettingsGroup else { return }
-        navigator.pendingSettingsGroup = nil
-        DispatchQueue.main.async {
-            withAnimation(reduceMotion ? nil : PickyHubTheme.Motion.page) { proxy.scrollTo(group.id, anchor: .top) }
+    private func consumePendingSettingsNavigation(with proxy: ScrollViewProxy) {
+        guard let request = navigator.consumePendingSettingsNavigation() else { return }
+        pendingDisclosureScrollTarget = nil
+        let disclosureWasExpanded = request.leaf
+            .flatMap(\.disclosure)
+            .map(settingsNavigationState.isExpanded) ?? true
+        let target = settingsNavigationState.apply(request)
+        guard disclosureWasExpanded else {
+            pendingDisclosureScrollTarget = target
+            return
+        }
+        scrollTo(target, with: proxy)
+    }
+
+    private func scrollToPendingDisclosureTarget(_ target: String, with proxy: ScrollViewProxy) {
+        guard pendingDisclosureScrollTarget == target else { return }
+        pendingDisclosureScrollTarget = nil
+        scrollTo(target, with: proxy)
+    }
+
+    private func scrollTo(_ target: String, with proxy: ScrollViewProxy) {
+        withAnimation(reduceMotion ? nil : PickyHubTheme.Motion.page) {
+            proxy.scrollTo(target, anchor: .top)
         }
     }
 
@@ -502,21 +544,59 @@ private struct PickyHubPermissionRows: View {
 
     var body: some View {
         PickyHubSettingsList {
-            permissionRow("hub.settings.permission.screen", granted: permissions.hasScreenRecording, url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-            permissionRow("hub.settings.permission.microphone", granted: permissions.hasMicrophone, url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-            permissionRow("hub.settings.permission.accessibility", granted: permissions.hasAccessibility, url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-            permissionRow("hub.settings.permission.browser", granted: permissions.hasScreenContent, url: "x-apple.systempreferences:com.apple.preference.security")
+            permissionRow(
+                "hub.settings.permission.screen",
+                target: .screenRecording,
+                granted: permissions.hasScreenRecording
+            )
+            permissionRow(
+                "hub.settings.permission.microphone",
+                target: .microphone,
+                granted: permissions.hasMicrophone
+            )
+            permissionRow(
+                "hub.settings.permission.accessibility",
+                target: .accessibility,
+                granted: permissions.hasAccessibility
+            )
+            permissionRow(
+                "hub.settings.permission.browser",
+                target: .browserContent,
+                granted: permissions.hasScreenContent,
+                isBusy: permissions.isRequestingScreenContent
+            )
         }
     }
 
-    private func permissionRow(_ title: LocalizedStringKey, granted: Bool, url: String) -> some View {
-        PickyHubSettingsRow(title: title, detail: "hub.settings.permission.detail") {
+    private func permissionRow(
+        _ title: LocalizedStringKey,
+        target: PickyHubPermissionTarget,
+        granted: Bool,
+        isBusy: Bool = false
+    ) -> some View {
+        let action = PickyHubPermissionAction.resolve(target: target, isGranted: granted)
+        return PickyHubSettingsRow(title: title, detail: "hub.settings.permission.detail") {
             PickyHubButton(
                 title: granted ? "hub.settings.permission.granted" : "hub.settings.permission.required",
                 role: .secondary,
-                systemImage: granted ? "checkmark.circle" : "gear",
-                action: { if let destination = URL(string: url) { NSWorkspace.shared.open(destination) } }
+                systemImage: granted ? "checkmark.circle" : action.systemImage,
+                isBusy: isBusy,
+                action: {
+                    action.perform(
+                        openSystemSettings: { NSWorkspace.shared.open($0) },
+                        requestScreenContent: permissions.requestScreenContent
+                    )
+                }
             )
+        }
+    }
+}
+
+private extension PickyHubPermissionAction {
+    var systemImage: String {
+        switch self {
+        case .openSystemSettings: "gear"
+        case .requestScreenContent: "eye"
         }
     }
 }
@@ -602,9 +682,15 @@ private struct PickyHubSettingsRow<Control: View>: View {
 
 private struct PickyHubSettingsDisclosure<Content: View>: View {
     let title: LocalizedStringKey
+    @Binding var isExpanded: Bool
+    let onExpandedContentAppear: () -> Void
     @ViewBuilder let content: () -> Content
     var body: some View {
-        DisclosureGroup { content().padding(.top, 10) } label: {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            content()
+                .padding(.top, 10)
+                .onAppear(perform: onExpandedContentAppear)
+        } label: {
             Text(title).pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold).foregroundColor(PickyHubTheme.Colors.textSecondary)
         }
         .padding(14)

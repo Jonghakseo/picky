@@ -49,6 +49,110 @@ struct PickyHubSettingsGroupingTests {
         #expect(navigator.pendingSettingsGroup == .voice)
     }
 
+    @Test func legacyLeafLinksReachTheRenderedGroupAnchorAndDisclosure() throws {
+        let navigator = PickyHubNavigator()
+        var renderedState = PickyHubSettingsNavigationState()
+
+        let toolsURL = try #require(URL(string: "picky://settings/tools"))
+        let toolsLink = try #require(PickyDeepLink(url: toolsURL))
+        navigator.apply(deepLink: toolsLink)
+        let firstToolsRequest = try #require(navigator.consumePendingSettingsNavigation())
+        #expect(firstToolsRequest.group == .agents)
+        #expect(firstToolsRequest.leaf == .builtinTools)
+        #expect(
+            renderedState.apply(firstToolsRequest)
+                == PickyHubSettingsLeaf.builtinTools.scrollTargetID
+        )
+        #expect(renderedState.isExpanded(.agentTools))
+
+        navigator.apply(deepLink: toolsLink)
+        let repeatedToolsRequest = try #require(navigator.consumePendingSettingsNavigation())
+        #expect(repeatedToolsRequest.id != firstToolsRequest.id)
+        #expect(
+            renderedState.apply(repeatedToolsRequest)
+                == PickyHubSettingsLeaf.builtinTools.scrollTargetID
+        )
+        #expect(renderedState.isExpanded(.agentTools))
+
+        let notificationURL = try #require(URL(string: "picky://settings/notification"))
+        let notificationLink = try #require(PickyDeepLink(url: notificationURL))
+        navigator.apply(deepLink: notificationLink)
+        let notificationRequest = try #require(navigator.consumePendingSettingsNavigation())
+        #expect(notificationRequest.group == .privacy)
+        #expect(notificationRequest.leaf == .notifications)
+        #expect(
+            renderedState.apply(notificationRequest)
+                == PickyHubSettingsLeaf.notifications.scrollTargetID
+        )
+
+        let cursorURL = try #require(URL(string: "picky://settings/cursorBubbles"))
+        let cursorLink = try #require(PickyDeepLink(url: cursorURL))
+        navigator.apply(deepLink: cursorLink)
+        let cursorRequest = try #require(navigator.consumePendingSettingsNavigation())
+        #expect(cursorRequest.group == .overlay)
+        #expect(cursorRequest.leaf == .cursorBubbles)
+        #expect(
+            renderedState.apply(cursorRequest)
+                == PickyHubSettingsLeaf.cursorBubbles.scrollTargetID
+        )
+    }
+
+    @Test func ungrantedBrowserPermissionDispatchesToTheScreenContentOwner() throws {
+        let action = PickyHubPermissionAction.resolve(target: .browserContent, isGranted: false)
+        #expect(action == .requestScreenContent)
+
+        var openedSettingsURLs: [URL] = []
+        var screenContentRequests = 0
+        action.perform(
+            openSystemSettings: { openedSettingsURLs.append($0) },
+            requestScreenContent: { screenContentRequests += 1 }
+        )
+        #expect(openedSettingsURLs.isEmpty)
+        #expect(screenContentRequests == 1)
+
+        let microphoneAction = PickyHubPermissionAction.resolve(
+            target: .microphone,
+            isGranted: false
+        )
+        microphoneAction.perform(
+            openSystemSettings: { openedSettingsURLs.append($0) },
+            requestScreenContent: { screenContentRequests += 1 }
+        )
+        let microphoneURL = try #require(
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        )
+        #expect(openedSettingsURLs == [microphoneURL])
+        #expect(screenContentRequests == 1)
+    }
+
+    @Test func screenContentGrantPublishedByItsOwnerUpdatesTheHubPermissionState() {
+        var persistedScreenContent = false
+        var probes = PickyPermissionMonitor.Probes()
+        probes.accessibility = { true }
+        probes.screenRecording = { true }
+        probes.microphone = { true }
+        probes.persistedScreenContent = { persistedScreenContent }
+        probes.persistScreenContent = { persistedScreenContent = true }
+        let monitor = PickyPermissionMonitor(probes: probes)
+        monitor.refresh()
+        #expect(!monitor.hasScreenContent)
+
+        let action = PickyHubPermissionAction.resolve(
+            target: .browserContent,
+            isGranted: monitor.hasScreenContent
+        )
+        action.perform(
+            openSystemSettings: { _ in
+                Issue.record("Browser content must not use a generic settings URL while ungranted")
+            },
+            requestScreenContent: { monitor.markScreenContentGranted() }
+        )
+
+        #expect(monitor.hasScreenContent)
+        #expect(monitor.allGranted)
+        #expect(persistedScreenContent)
+    }
+
     @Test func embeddedRoutePresentationKeepsOnlyTheHubOwnedControlsAndSaveStatus() {
         #expect(!CompanionPanelSettingsPresentation.embedded.showsNavigationChrome)
         #expect(!CompanionPanelSettingsPresentation.embedded.showsSectionChrome)

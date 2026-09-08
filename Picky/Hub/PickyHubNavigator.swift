@@ -43,6 +43,82 @@ enum PickyHubStatisticsTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// A leaf control that moved away from the legacy combined settings page.
+/// Keeping this distinct from its hosting group lets old deep links reach the
+/// control itself rather than merely the nearest Hub category.
+enum PickyHubSettingsLeaf: Equatable {
+    case cursorBubbles
+    case notifications
+    case builtinTools
+
+    var group: PickyHubSettingsGroup {
+        switch self {
+        case .cursorBubbles: .overlay
+        case .notifications: .privacy
+        case .builtinTools: .agents
+        }
+    }
+
+    var scrollTargetID: String {
+        switch self {
+        case .cursorBubbles: "hub.settings.leaf.cursorBubbles"
+        case .notifications: "hub.settings.leaf.notifications"
+        case .builtinTools: "hub.settings.leaf.builtinTools"
+        }
+    }
+
+    var disclosure: PickyHubSettingsDisclosureTarget? {
+        switch self {
+        case .builtinTools: .agentTools
+        case .cursorBubbles, .notifications: nil
+        }
+    }
+}
+
+enum PickyHubSettingsDisclosureTarget: Hashable {
+    case agentTools
+}
+
+/// A one-shot request carries a fresh ID so repeated links to the same leaf
+/// still scroll and expand the control after an earlier request was consumed.
+struct PickyHubSettingsNavigationRequest: Equatable {
+    let id: UUID
+    let group: PickyHubSettingsGroup
+    let leaf: PickyHubSettingsLeaf?
+
+    init(group: PickyHubSettingsGroup, leaf: PickyHubSettingsLeaf? = nil, id: UUID = UUID()) {
+        self.id = id
+        self.group = group
+        self.leaf = leaf
+    }
+}
+
+/// View state consumed directly by `PickyHubSettingsPage`. It names the same
+/// scroll anchors rendered by that page, so a route cannot be accepted and
+/// silently leave a required disclosure collapsed.
+struct PickyHubSettingsNavigationState: Equatable {
+    private(set) var expandedDisclosures: Set<PickyHubSettingsDisclosureTarget> = []
+
+    mutating func apply(_ request: PickyHubSettingsNavigationRequest) -> String {
+        if let disclosure = request.leaf?.disclosure {
+            expandedDisclosures.insert(disclosure)
+        }
+        return request.leaf?.scrollTargetID ?? request.group.id
+    }
+
+    func isExpanded(_ disclosure: PickyHubSettingsDisclosureTarget) -> Bool {
+        expandedDisclosures.contains(disclosure)
+    }
+
+    mutating func setExpanded(_ disclosure: PickyHubSettingsDisclosureTarget, to isExpanded: Bool) {
+        if isExpanded {
+            expandedDisclosures.insert(disclosure)
+        } else {
+            expandedDisclosures.remove(disclosure)
+        }
+    }
+}
+
 @MainActor
 final class PickyHubNavigator: ObservableObject {
     @Published var selectedPage: PickyHubPage = .dashboard
@@ -51,8 +127,11 @@ final class PickyHubNavigator: ObservableObject {
     var shouldRefreshStatistics: Bool {
         isWindowVisible && (selectedPage == .dashboard || selectedPage == .statistics)
     }
-    /// One-shot scroll target consumed by the Settings page on appear/change.
-    @Published var pendingSettingsGroup: PickyHubSettingsGroup?
+    /// One-shot settings request consumed by the mounted Settings page.
+    @Published private(set) var pendingSettingsNavigation: PickyHubSettingsNavigationRequest?
+
+    /// Compatibility projection for existing group-only callers and tests.
+    var pendingSettingsGroup: PickyHubSettingsGroup? { pendingSettingsNavigation?.group }
     /// One-shot tab request consumed by the Statistics page.
     @Published var pendingStatisticsTab: PickyHubStatisticsTab?
     /// One-shot scroll target consumed by the Statistics page (mockup anchors
@@ -69,9 +148,14 @@ final class PickyHubNavigator: ObservableObject {
         selectedPage = .statistics
     }
 
-    func showSettings(group: PickyHubSettingsGroup) {
-        pendingSettingsGroup = group
+    func showSettings(group: PickyHubSettingsGroup, leaf: PickyHubSettingsLeaf? = nil) {
+        pendingSettingsNavigation = PickyHubSettingsNavigationRequest(group: group, leaf: leaf)
         selectedPage = .settings
+    }
+
+    func consumePendingSettingsNavigation() -> PickyHubSettingsNavigationRequest? {
+        defer { pendingSettingsNavigation = nil }
+        return pendingSettingsNavigation
     }
 
     func apply(deepLink: PickyDeepLink) {
@@ -81,7 +165,11 @@ final class PickyHubNavigator: ObservableObject {
         case .messages:
             selectedPage = .conversation
         case .settings:
-            showSettings(group: deepLink.settingsRoute.map(PickyHubSettingsGroup.hosting) ?? .general)
+            if let leaf = deepLink.settingsLeaf {
+                showSettings(group: leaf.group, leaf: leaf)
+            } else {
+                showSettings(group: deepLink.settingsRoute.map(PickyHubSettingsGroup.hosting) ?? .general)
+            }
         case .hub(let page):
             selectedPage = page
         }

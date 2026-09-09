@@ -856,7 +856,7 @@ const SWIFT_TYPE_GROUP_RATCHET = new Map([
   ["PickySessionViewModel", 3667],
   ["PickyHUDOverlayManager", 2449],
   ["PickyHUDDockRailView", 1771],
-  ["PickyAgentClientRouter", 1471],
+  ["PickyAgentClientRouter", 1356],
 ]);
 
 function swiftExtensionBlockLineCount(source, stem) {

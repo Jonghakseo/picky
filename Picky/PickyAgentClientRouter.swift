@@ -63,24 +63,12 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private let supportsSessionProjectionV2: Bool
     private var childClients: [String: PickyAgentClient] = [:]
     private var eventTasks: [String: Task<Void, Never>] = [:]
-    /// Owned by `PickyAgentClientRouter+CapabilityRegistration.swift`. Not
-    /// private only because Swift has no visibility narrower than `internal`
-    /// that spans two files.
-    enum CapabilityRegistrationState: Equatable {
-        case awaitingConnection
-        case registering
-        case registered
-    }
-    var capabilityRegistrationStates: [String: CapabilityRegistrationState] = [:]
-    var capabilityRegistrationWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
-    var capabilityRegistrationCommandIDs: [String: String] = [:]
-    var capabilityRegistrationRetryCounts: [String: Int] = [:]
+    /// Owns registration state and retry policy so Router only maps socket
+    /// lifecycle events and commands to the appropriate transport.
+    private let capabilityRegistration: PickyCapabilityRegistrationCoordinator
     private var lastProjectionOwnerReconnects: [String: Date] = [:]
     private static let projectionOwnerReconnectDebounce: TimeInterval = 30
-    var clientEventKeys: [ObjectIdentifier: String] = [:]
-    let capabilityRegistrationTimeoutNanoseconds: UInt64
-    let capabilityRegistrationRetryBackoffNanoseconds: UInt64
-    static let maximumCapabilityRegistrationRetries = 3
+    private var clientEventKeys: [ObjectIdentifier: String] = [:]
     private var primaryConnectStarted = false
     private var knownChildSessionIds = Set<String>()
     private var bootingChildSessionIds = Set<String>()
@@ -262,8 +250,10 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         capabilityRegistrationTimeoutNanoseconds: UInt64 = 10_000_000_000,
         capabilityRegistrationRetryBackoffNanoseconds: UInt64 = 1_000_000_000
     ) {
-        self.capabilityRegistrationTimeoutNanoseconds = capabilityRegistrationTimeoutNanoseconds
-        self.capabilityRegistrationRetryBackoffNanoseconds = capabilityRegistrationRetryBackoffNanoseconds
+        self.capabilityRegistration = PickyCapabilityRegistrationCoordinator(
+            timeoutNanoseconds: capabilityRegistrationTimeoutNanoseconds,
+            retryBackoffNanoseconds: capabilityRegistrationRetryBackoffNanoseconds
+        )
         self.primaryClient = primaryClient
         self.pool = pool
         self.clientFactory = clientFactory
@@ -299,6 +289,16 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
         try await primaryClient.submit(submission)
+    }
+
+    private func sendAfterCapabilityRegistration(
+        _ command: PickyCommandEnvelope,
+        on client: PickyAgentClient
+    ) async throws {
+        if let ownerKey = clientEventKeys[ObjectIdentifier(client)] {
+            try await capabilityRegistration.waitUntilRegistered(ownerKey: ownerKey)
+        }
+        try await client.send(command)
     }
 
     func send(_ command: PickyCommandEnvelope) async throws {
@@ -484,7 +484,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     func disconnect() {
         projectionOwnership.disconnectAll()
         for task in eventTasks.values { task.cancel() }
-        for key in eventTasks.keys { discardCapabilityRegistration(ownerKey: key) }
+        for key in eventTasks.keys { capabilityRegistration.discard(ownerKey: key) }
         eventTasks.removeAll()
         clientEventKeys.removeAll()
         primaryConnectStarted = false
@@ -976,7 +976,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private func startForwardingEvents(from client: PickyAgentClient, key: String, forwardsLifecycleEvents: Bool) {
         guard eventTasks[key] == nil else { return }
         clientEventKeys[ObjectIdentifier(client)] = key
-        capabilityRegistrationStates[key] = .awaitingConnection
+        capabilityRegistration.beginTrackingConnection(ownerKey: key)
         eventTasks[key] = Task { [weak self] in
             for await event in client.events {
                 guard let self else { return }
@@ -988,12 +988,10 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 guard !Task.isCancelled, self.clientEventKeys[ObjectIdentifier(client)] == key else { return }
                 switch event {
                 case .connected:
-                    self.capabilityRegistrationStates[key] = .registering
                     await self.registerAppCapabilities(on: client, ownerKey: key)
                 case .disconnected:
                     self.invalidateProjectionBootstrapExpectation(ownerKey: key)
-                    self.capabilityRegistrationStates[key] = .awaitingConnection
-                    self.capabilityRegistrationCommandIDs[key] = nil
+                    self.capabilityRegistration.connectionDidDisconnect(ownerKey: key)
                 case .protocolEvent, .sessionProjectionBootstrapCompletion, .recoverableError:
                     break
                 }
@@ -1025,7 +1023,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     // regular fanout so subscribers (HUD viewModel) can also
                     // react if they want to.
                     if case .error(let errorEvent) = envelope.event {
-                        self.handleCapabilityRegistrationFailure(errorEvent, on: client, ownerKey: key)
+                        if let message = self.capabilityRegistration.handleRegistrationFailure(errorEvent, on: client, ownerKey: key) {
+                            self.broadcast(.recoverableError(message))
+                        }
                         self.dispatchPendingErrorHandler(errorEvent)
                     }
                     if case .ack(let ackEvent) = envelope.event {
@@ -1100,20 +1100,19 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         if supportsSessionProjectionV2 {
             projectionOwnership.beginBootstrap(ownerKey: ownerKey, bootstrapID: command.id)
         }
-        capabilityRegistrationCommandIDs[ownerKey] = command.id
+        capabilityRegistration.beginRegistration(ownerKey: ownerKey, commandID: command.id)
         do {
             // This is intentionally the sole bypass of the connection gate.
             // Returning from WebSocket send preserves frame order, so queued
             // commands can only follow this registration frame.
             try await client.send(command)
-            completeCapabilityRegistration(ownerKey: ownerKey)
+            capabilityRegistration.completeRegistration(ownerKey: ownerKey)
         } catch {
             // A transport failure is already the client's own reconnect trigger,
             // so re-arm the gate and let the next `.connected` re-register
             // rather than racing the transport with a second reconnect loop.
             pickyAgentRouterLog("capability registration send failed owner=\(ownerKey) error=\(error.localizedDescription)")
-            capabilityRegistrationStates[ownerKey] = .awaitingConnection
-            capabilityRegistrationCommandIDs[ownerKey] = nil
+            capabilityRegistration.registrationSendFailed(ownerKey: ownerKey)
         }
     }
 
@@ -1317,7 +1316,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         eventTasks[key]?.cancel()
         eventTasks[key] = nil
         clientEventKeys = clientEventKeys.filter { $0.value != key }
-        discardCapabilityRegistration(ownerKey: key)
+        capabilityRegistration.discard(ownerKey: key)
     }
 }
 
@@ -1354,5 +1353,3 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
 func pickyAgentRouterLog(_ message: String) {
     PickyLog.notice(.agentClient, prefix: "🔀 Picky agent router —", message: message)
 }
-
-

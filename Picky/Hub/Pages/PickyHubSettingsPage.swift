@@ -384,7 +384,9 @@ private struct PickyHubGeneralControls: View {
             }
             PickyHubSettingsRow(title: "hub.settings.fontScale", detail: "hub.settings.fontScale.detail") {
                 Picker("hub.settings.fontScale", selection: Binding(get: { fontScaleStore.scale }, set: fontScaleStore.setScale)) {
-                    ForEach([0.9, 1.0, 1.1, 1.2, 1.3], id: \.self) { value in Text("\(Int(value * 100))%").tag(value) }
+                    ForEach([0.9, 1.0, 1.1, 1.2, 1.3], id: \.self) { value in
+                        Text(verbatim: "\(Int(value * 100))%").tag(value)
+                    }
                 }
                 .labelsHidden().pickerStyle(.menu)
             }
@@ -433,7 +435,9 @@ private struct PickyHubGeneralControls: View {
                 }
             )) {
                 ForEach(Array(7...25).map { Double($0) / 10 }, id: \.self) { value in
-                    Text("\(Int(value * 100))%").tag(value)
+                    // Numeric menu labels are not catalog keys. Localized interpolation
+                    // re-enters attributed-string lookup when AppKit refreshes accessibility.
+                    Text(verbatim: "\(Int(value * 100))%").tag(value)
                 }
             }
             .labelsHidden()

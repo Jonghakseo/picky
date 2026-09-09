@@ -197,3 +197,58 @@ must always fall back to the original measurement path with identical output.
 
 The 2026-05 fix kept the four bubble-side signposts and the two body
 events; they form a stable baseline for any future HUD perf change.
+
+## Case study: 2026-09 Hub focus and numeric picker labels
+
+A reported first-popover delay turned out to include a separate Hub activation
+stall. In a development-signed Xcode 16.3 build on macOS 15.6.1, the dock picker
+mounted 31.7ms after its first button action and 22.3ms after the second. Screen
+lookup took under 0.02ms; display-name lookup took 1.27ms cold and 0.065ms warm.
+The system recorded roughly 490ms `NSWindowTransformAnimationCoreAnimationPopIn`
+operations for both openings. Those operation intervals are not main-thread CPU
+time or proof that input was blocked for 490ms.
+
+A separate 10-second capture of the user activating the Hub **Settings** page
+exposed the larger stall:
+
+```text
+NSWindow.becomeKeyWindow / SwiftUI platform-view update
+  -> AppKitPopUpAdaptor.Coordinator.updateMenu
+  -> PlatformItemList.Item.applyAccessibilityProperties
+  -> Text.resolveAttributedString / LocalizedStringKey.resolve
+  -> NSBundle.localizedAttributedStringForKey
+  -> _copyStringTable / _CFPropertyListCreateWithData
+```
+
+The three font-scale menus used localized string interpolation for numeric
+percentages. Their 43 options need literal percentage labels, not catalog lookup.
+Changing those two `Text` call sites to `Text(verbatim:)` preserves the displayed
+values and selection bindings while bypassing attributed localization during
+native menu accessibility refreshes. No global localization cache, accessibility
+suppression, popover replacement, or animation change was needed.
+
+| Metric | Before | After |
+|---|---:|---:|
+| Sampled key-window transitions | 3 | 5 |
+| Median CPU samples inside `becomeKeyWindow` | 189ms | 127ms |
+| Median first-to-last sample span inside that call | 190ms | 131ms |
+| String-table parsing CPU samples over the capture | 1,161ms | 174ms |
+| Native picker-menu update CPU samples over the capture | 1,800ms | 1,048ms |
+
+Both recordings used Time Profiler at 1ms sampling plus `os_signpost`. They were
+manual runs, not identical scripted workloads; do not compare their total CPU
+as if the activation counts matched. The remaining roughly 130ms focus work is
+not eliminated. An offscreen control-state microbenchmark did not reproduce the
+full accessibility refresh cost, so it was not used as the performance oracle.
+The native-menu regression test verifies percentage options survive control
+activation; existing settings tests verify font-scale persistence.
+
+Debug markers retained for future comparisons are `hub_dock_picker_click`,
+`hub_dock_screens`, `hub_dock_display_names`, `hub_dock_picker_body`,
+`hub_dock_picker_appear`, and `hub_dock_picker_disappear`. `appear` means SwiftUI
+content mount, not animation completion or input readiness. Capture them with
+`xcrun xctrace record --template 'Time Profiler' --instrument os_signpost`.
+Local evidence for this run is under `build/perf/hub-dock-open/`, including
+`manual-focus.trace`, `manual-focus-fixed.trace`, and `comparison.json`. Raw
+traces can include process environment values; keep them local and do not commit
+or upload them as an unreviewed diagnostic bundle.

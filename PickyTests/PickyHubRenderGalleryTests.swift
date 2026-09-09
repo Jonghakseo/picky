@@ -66,6 +66,36 @@ struct PickyHubRenderGalleryTests {
         let widthClass: String
     }
 
+    @Test func fontScaleMenusRetainPercentageOptionsAcrossControlActivation() throws {
+        let fixture = try PickyHubRenderGalleryFixture()
+        defer { fixture.removeTemporaryState() }
+        fixture.navigator.select(.settings)
+        let root = PickyHubSettingsPage(dependencies: fixture.dependencies)
+            .environmentObject(fixture.navigator)
+            .environmentObject(fixture.dependencies.modalHost)
+            .environmentObject(fixture.appearanceStore)
+            .environmentObject(fixture.fontScaleStore)
+            .environmentObject(fixture.updaterController)
+            .environmentObject(fixture.pluginReloadController)
+            .environment(\.locale, Locale(identifier: "ko"))
+            .frame(width: 1020, height: 720)
+        let host = NSHostingView(rootView: root.environment(\.controlActiveState, .inactive))
+        host.frame = NSRect(x: 0, y: 0, width: 1020, height: 720)
+        func menus(in view: NSView) -> [[String]] {
+            let own = (view as? NSPopUpButton).map { [$0.itemTitles] } ?? []
+            return own + view.subviews.flatMap { menus(in: $0) }
+        }
+        for state in [ControlActiveState.inactive, .key, .inactive] {
+            host.rootView = root.environment(\.controlActiveState, state)
+            host.layoutSubtreeIfNeeded()
+            let options = menus(in: host)
+            #expect(options.contains(["90%", "100%", "110%", "120%", "130%"]))
+            let reportAndTerminal = options.filter { $0.first == "70%" && $0.last == "250%" }
+            #expect(reportAndTerminal.count == 2)
+            #expect(reportAndTerminal.allSatisfy { $0.count == 19 && $0.contains("100%") })
+        }
+    }
+
     @Test func writesHubGalleryWhenOutputDirectoryIsRequested() async throws {
         guard let rawOutput = try? String(contentsOf: Self.outputRequestFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),

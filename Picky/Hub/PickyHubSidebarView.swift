@@ -135,8 +135,10 @@ struct PickyHubSidebarFooter: View {
 
     private var dockPicker: some View {
         PickyHubDockPickerView(
-            displays: screens.compactMap { screen in
-                screen.pickyDisplayID.map { PickyHubDockPickerView.Display(id: $0, name: screen.localizedName) }
+            displays: PickyPerf.interval("hub_dock_display_names") {
+                screens.compactMap { screen in
+                    screen.pickyDisplayID.map { PickyHubDockPickerView.Display(id: $0, name: screen.localizedName) }
+                }
             },
             hubDisplayID: dockDisplayID,
             visibilityBinding: dockControl.visibilityBinding
@@ -151,11 +153,14 @@ struct PickyHubSidebarFooter: View {
                 foreground: PickyHubTheme.Colors.textSecondary,
                 focusID: "dock"
             ) {
-                screens = NSScreen.screens
+                PickyPerf.event("hub_dock_picker_click")
+                screens = PickyPerf.interval("hub_dock_screens") { NSScreen.screens }
                 isDockPickerPresented = dockControl.activate()
             }
             .popover(isPresented: $isDockPickerPresented, arrowEdge: .trailing) {
                 dockPicker
+                    .onAppear { PickyPerf.event("hub_dock_picker_appear") }
+                    .onDisappear { PickyPerf.event("hub_dock_picker_disappear") }
             }
 
             footerRow(

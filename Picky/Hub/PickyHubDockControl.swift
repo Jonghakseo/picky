@@ -44,6 +44,7 @@ struct PickyHubDockPickerView: View {
     let visibilityBinding: (CGDirectDisplayID) -> Binding<Bool>
 
     var body: some View {
+        let _ = PickyPerf.event("hub_dock_picker_body")
         VStack(alignment: .leading, spacing: DS.Spacing.space3) {
             Text("hub.dock.control")
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)

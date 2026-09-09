@@ -4,6 +4,29 @@
 
 Picky is a local-first macOS command center for Pi sessions. It captures neutral desktop context, sends it to local Pi through `picky-agentd`, and shows long-running Pickles in the Picky dock. Picky should stay thin: context capture, overlay/session UI, and session control. Pi remains responsible for interpreting intent, choosing skills/tools/MCPs, and doing the work.
 
+## Autonomous execution
+
+These defaults follow OpenAI's [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model#initiative-and-follow-through) on initiative and [testing and verification](https://developers.openai.com/api/docs/guides/latest-model#testing-and-verification). They govern agent workflow, not the app's model selection or API configuration.
+
+- Treat requests such as "I want to change..." or "can you fix..." as authorization to do the scoped work. Inspect, implement, validate, and finish without stopping at a proposal or asking whether to continue.
+- Infer routine details from the code and conversation. Choose a reasonable, reversible approach and proceed. Ask only when missing information materially changes the product outcome, compatibility, data safety, or authorization and cannot be resolved from available evidence. Complete independent authorized work before asking.
+- Keep autonomy within the requested scope. Do not restart the running app, change signing, perform destructive operations, push, create PRs, or publish without the required authorization. Do not add approval gates for routine local edits or focused validation.
+- Use a short plan for multi-phase work; handle small, obvious changes directly. Report meaningful findings, blockers, and completion, not every tool call. Default to a concise final answer with changes, validation, and any actionable limitation.
+- Read the relevant code path and nearest tests first; expand investigation only when evidence points elsewhere. Batch independent reads and searches. Delegate independent, bounded work when the time or quality benefit exceeds coordination cost; keep small, tightly coupled edits local and avoid overlapping file ownership.
+- Run long commands asynchronously when supported and continue independent work. Await the actual result before claiming completion; do not busy-poll, duplicate in-flight checks, or run concurrent Xcode jobs against the same DerivedData path.
+- Apply skills to the task rather than turning every task into their largest workflow. For routine test scope and permission, the policy below supersedes blanket repository guidance to always add tests or to wait for an explicit test-writing request. Keep domain-specific safety gates and higher-priority instructions. If another instruction genuinely blocks progress, cite its exact file and rule rather than silently stopping.
+
+## Behavior-focused validation
+
+- Before adding a test, identify the observable contract and the realistic failure it would catch. Test user-visible outcomes, public input/output, persisted state, protocol compatibility, or externally meaningful effects. A test should survive a behavior-preserving refactor.
+- Do not add tests that mirror implementation, inspect source text for a particular helper, freeze private structure or SwiftUI modifier order, or recompute the expected result with the same algorithm. Call counts and ordering are valid assertions only when they are the contract, such as duplicate suppression, exactly-once dispatch, or cancellation preventing an external effect. Keep existing architecture/static guards; do not substitute them for behavior evidence.
+- A code-change request authorizes necessary regression/contract tests without a separate permission round. Prefer an existing test or extend its cases; add a new test only for a meaningful coverage gap. For a bug, reproduce the reported condition and assert the corrected outcome, with a before/after check when practical. Do not create tests merely because a file changed.
+- For documentation-only edits, inspect the rendered content or diff and check relevant links/commands; do not build the app or run product suites. For low-impact copy, style, or mechanical changes, use an existing focused check or direct inspection when sufficient. A small diff is not automatically low risk: routing, persistence, concurrency, permissions, and protocol changes need relevant behavioral evidence.
+- Choose the smallest reliable test boundary that proves the contract. Exercise real policy/orchestration code and fake external dependencies only. Routing/state changes must reach the final persisted/rendered outcome through the production event path; an isolated helper assertion is insufficient. Protocol changes still require Swift/TypeScript compatibility checks; performance claims still require measurements.
+- Before a structural refactor, establish behavior coverage for the affected invariants. Reuse existing characterization tests; add only missing cases before moving code. Do not duplicate coverage at every layer or introduce a test harness/production abstraction solely to test a trivial change.
+- Start with the affected test file/suite and required domain checks. Once they pass and cover the changed behavior, stop testing and finish. Broaden or repeat only for a relevant code change, failure, uncovered risk, explicit user request, or required hook/release gate. Do not run a full suite, package build, or repeated review by habit. These limits do not bypass required checks.
+- Keep validation planning proportional. For an obvious change, one sentence naming the contract and check is enough; no full Test Plan Card or approval pause is required. Report what actually executed and what it proved. A build proves compilation, a mock smoke proves the exercised mock path, and zero selected tests or a blocked launch is not a pass.
+
 ## Non-negotiable architecture rules
 
 - Keep local-first behavior. No SaaS backend, auth, billing, remote analytics, or remote STT/TTS requirement for v1.
@@ -100,7 +123,7 @@ When the user asks about a feature, start here before broad searching:
 - Pi extension handoff command: `pi-extensions/picky-handoff/`
 - HUD perf instrumentation / profiling playbook: `Picky/Feedback/PickyPerf.swift`, `docs/perf-profiling.md` (use this before guessing at HUD lag root causes)
 - Swift Concurrency guidelines (MainActor-first, measure before optimizing, GCD migration): `docs/swift-concurrency.md` (follow this when adding/refactoring async Swift code)
-- Refactoring principles and safety gates: `docs/refactoring-principles.md` (follow this before structural splits; write characterization tests first, extract pure policies before splitting facades, keep line-count checks warning-first, and preserve the Picky neutral-context / Pi-intent boundary)
+- Refactoring principles and safety gates: `docs/refactoring-principles.md` (follow this before structural splits; establish characterization coverage first, reusing existing tests where sufficient, extract pure policies before splitting facades, keep line-count checks warning-first, and preserve the Picky neutral-context / Pi-intent boundary)
 - Tests for Swift UI/session/voice: `PickyTests/PickySessionViewModelTests.swift`, `PickyTests/PickyCompanionManagerTests.swift`, `PickyTests/PickyAgentClientTests.swift`
 - Tests for agentd/session/runtime: `agentd/src/*.test.ts`, especially `session-supervisor.test.ts`, `runtime/pi-sdk-runtime.test.ts`
 
@@ -118,6 +141,8 @@ When the user asks about a feature, start here before broad searching:
 10. For routing/state bugs, trace the value through every boundary to the persisted and rendered result; do not stop at the first plausible UI cause. Verify the exact production event path (for example, v1 vs v2) and test the final invariant, not only intermediate callbacks.
 
 ## Build, test, package
+
+Choose commands for the affected surface; this is a reference, not a checklist. Install dependencies only when missing or changed. Apply the Xcode toolchain and shared DerivedData settings below to every agent-driven Xcode command.
 
 ```bash
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" build
@@ -169,7 +194,7 @@ rm -rf "$DD"
 
 Skipping this is not cosmetic. Each abandoned DerivedData directory keeps roughly 1 GB on disk and leaves a permanent LaunchServices bundle record; accumulated records drive `launchservicesd` into sustained high CPU and starve the Picky main thread, which surfaces as HUD lag with no matching hot path in the app itself. Reusing the shared path also helps here: it keeps a single bundle record that gets overwritten rather than one record per run. Use `./scripts/prune-build-artifacts.sh` to reclaim directories that earlier runs abandoned; it protects anything modified within `--keep-hours` (default 24), so an in-flight or recently used shared path is not at risk.
 
-When the full agentd vitest suite fails intermittently, classify before touching code: (1) rerun the failing file alone, (2) rerun the suite with `--no-file-parallelism`, (3) reproduce on a clean HEAD temp worktree (`git worktree add /tmp/picky-verify-<n> HEAD`) three times. Only a failure that survives all three steps implicates the changeset. Remove temp worktrees afterwards.
+When an agentd vitest run fails, inspect the failure and its connection to the changed behavior before editing code. If it appears intermittent, rerun the failing file once in isolation. Escalate to `--no-file-parallelism` only to investigate suspected cross-file interference; compare the same failing case against the pre-change baseline in a temporary worktree only when attribution remains unresolved. A failure reproduced on the baseline is evidence of a pre-existing issue, not proof that the change caused it. Do not automatically repeat full suites or baseline runs three times. Report unresolved flakiness without calling it a pass, do not fix unrelated failures, and remove any temporary worktree afterwards.
 
 Committing from a temp worktree runs this repo's commit hooks, which need both the root and `agentd` dependency trees. If the worktree has no installed dependencies, symlink both from the primary worktree before committing and remove the links afterwards (linking only `agentd/node_modules` is not enough; root `commitlint` is also required). Skip this when the worktree has its own installed dependencies or their versions may diverge from the hooks' expectations:
 
@@ -192,7 +217,7 @@ Expected: `picky-agentd listening on 127.0.0.1:17631`; quitting the app closes t
 
 ## Implementation guidance
 
-- Prefer small, focused changes and add/update tests near the touched code.
+- Prefer small, focused changes. Add/update nearby tests only when they protect a meaningful behavior gap, following Behavior-focused validation above.
 - Keep context packets neutral: transcript, app/window, browser URL/title/selection, screenshots, cwd, selected session.
 - Follow-up routing must be explicit and predictable; avoid surprising session capture.
 - Extension UI and confirmation flows should remain visible in the HUD, not hidden in logs.

@@ -419,8 +419,18 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     func sendAwaitingError(
         _ command: PickyCommandEnvelope,
         timeout: TimeInterval = 1.0,
+        requireAcknowledgement: Bool = false
+    ) async throws -> PickyErrorEvent? {
+        try await sendAwaitingError(command, timeout: timeout, requireAcknowledgement: requireAcknowledgement, on: nil)
+    }
+
+    // Keep the protocol witness above separate from explicit-client routing.
+    // A defaulted fourth argument does not satisfy the three-argument requirement.
+    func sendAwaitingError(
+        _ command: PickyCommandEnvelope,
+        timeout: TimeInterval = 1.0,
         requireAcknowledgement: Bool = false,
-        on targetClient: PickyAgentClient? = nil
+        on targetClient: PickyAgentClient?
     ) async throws -> PickyErrorEvent? {
         let commandId = command.id
         // The handler MUST be installed before `send` is dispatched. agentd

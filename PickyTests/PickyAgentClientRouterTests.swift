@@ -2245,11 +2245,13 @@ struct PickyAgentClientRouterTests {
             configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
         )
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let client: any PickyAgentClient = router
+        defer { router.disconnect() }
         await router.connect()
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
 
         let command = PickyCommandEnvelope(type: .steer, sessionId: "session-X", text: "hello")
-        async let awaiter: PickyErrorEvent? = router.sendAwaitingError(
+        async let awaiter: PickyErrorEvent? = client.sendAwaitingError(
             command,
             timeout: 2.0,
             requireAcknowledgement: true
@@ -2288,12 +2290,14 @@ struct PickyAgentClientRouterTests {
             configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
         )
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let client: any PickyAgentClient = router
+        defer { router.disconnect() }
         await router.connect()
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
 
         let command = PickyCommandEnvelope(type: .deleteSession, sessionId: "session-no-ack")
         await #expect(throws: PickyAgentClientRouterError.commandAcknowledgementTimedOut(commandId: command.id)) {
-            _ = try await router.sendAwaitingError(command, timeout: 0.05, requireAcknowledgement: true)
+            _ = try await client.sendAwaitingError(command, timeout: 0.05, requireAcknowledgement: true)
         }
         #expect(primary.sentCommands.contains { $0.id == command.id })
     }
@@ -2312,6 +2316,8 @@ struct PickyAgentClientRouterTests {
             configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
         )
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let client: any PickyAgentClient = router
+        defer { router.disconnect() }
         await router.connect()
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
 
@@ -2319,7 +2325,7 @@ struct PickyAgentClientRouterTests {
         let command = PickyCommandEnvelope(type: .steer, sessionId: "session-broken", text: "x")
 
         await #expect(throws: PickyAgentClientError.disconnected) {
-            _ = try await router.sendAwaitingError(command, timeout: 0.5)
+            _ = try await client.sendAwaitingError(command, timeout: 0.5)
         }
     }
 
@@ -2403,21 +2409,33 @@ struct PickyAgentClientRouterTests {
             configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
         )
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let client: any PickyAgentClient = router
+        defer { router.disconnect() }
         await router.connect()
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
 
-        let command = PickyCommandEnvelope(type: .abortMainAgent)
+        let command = PickyCommandEnvelope(
+            type: .setSessionModel,
+            sessionId: "session-model",
+            provider: "openai-codex",
+            modelId: "gpt-6-astra"
+        )
         primary.onSendInject = { [weak primary] cmd in
             primary?.emit(.protocolEvent(makeAckEnvelope(commandId: cmd.id)))
         }
 
         let start = ContinuousClock.now
-        let result = try await router.sendAwaitingError(
+        let result = try await client.sendAwaitingError(
             command,
             timeout: 30,
             requireAcknowledgement: true
         )
         #expect(result == nil)
+        let sent = try #require(primary.sentCommands.first { $0.id == command.id })
+        #expect(sent.type == .setSessionModel)
+        #expect(sent.sessionId == command.sessionId)
+        #expect(sent.provider == command.provider)
+        #expect(sent.modelId == command.modelId)
         #expect(ContinuousClock.now - start < .seconds(5))
     }
 

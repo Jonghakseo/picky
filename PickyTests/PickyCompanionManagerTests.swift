@@ -517,6 +517,62 @@ struct PickyCompanionManagerTests {
         #expect(manager.shouldPassThroughInkMouseEvent(point: controlPoint, source: .voice))
     }
 
+    @Test func inkCaptureUpdatesPreserveStrokesAndClearOnCancellation() async throws {
+        let ink = FakeInkCaptureCoordinator()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            inkCaptureCoordinator: ink
+        )
+        let drawing = PickyInkOverlayState(
+            isActive: true, source: .text,
+            virtualCursorGlobalPoint: CGPoint(x: 30, y: 40),
+            strokes: [PickyInkOverlayStroke(
+                id: "stroke", points: [CGPoint(x: 10, y: 20), CGPoint(x: 30, y: 40)],
+                strokeWidth: 8, opacity: 0.34
+            )],
+            didCrossThreshold: true,
+            thresholdFeedbackGlobalPoint: CGPoint(x: 30, y: 40), cursorTrailPoints: []
+        )
+        ink.onStateChange(drawing)
+        try await waitUntil { manager.inkOverlayState == drawing }
+        #expect(manager.overlayVisibilityReasons.contains(.activeInkCapture))
+
+        ink.onStateChange(.inactive)
+        try await waitUntil { manager.inkOverlayState == .inactive }
+        #expect(!manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        manager.stop()
+    }
+
+    @Test func pointerUpdatesDoNotInvalidateGlobalCompanionObservers() {
+        let ink = FakeInkCaptureCoordinator()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            inkCaptureCoordinator: ink
+        )
+        var globalUpdates = 0
+        let observation = manager.objectWillChange.sink { globalUpdates += 1 }
+        func pointerState(_ x: CGFloat) -> PickyInkOverlayState {
+            PickyInkOverlayState(
+                isActive: true, source: .text, virtualCursorGlobalPoint: CGPoint(x: x, y: 20),
+                strokes: [], didCrossThreshold: false, thresholdFeedbackGlobalPoint: nil, cursorTrailPoints: []
+            )
+        }
+        ink.onStateChange(pointerState(0))
+        let updatesAfterBegin = globalUpdates
+        #expect(manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        for x in 1...100 { ink.onStateChange(pointerState(CGFloat(x))) }
+
+        #expect(manager.inkOverlayState.virtualCursorGlobalPoint == CGPoint(x: 100, y: 20))
+        #expect(globalUpdates == updatesAfterBegin)
+        ink.onStateChange(.inactive)
+        #expect(!manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        #expect(manager.inkOverlayStore.state == .inactive)
+        withExtendedLifetime(observation) {}
+        manager.stop()
+    }
+
     @Test func pttDoesNotOverlapAnInFlightQuickInputSubmission() {
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),

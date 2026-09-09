@@ -187,6 +187,8 @@ final class EdgeTTSVoiceCatalog: ObservableObject {
     @Published private(set) var state: State = .idle
 
     private let client: EdgeTTSVoiceCatalogClient
+    private var voicesByLocale: [String: [EdgeTTSVoice]] = [:]
+    private var localeKeys: [String] = []
     private var refreshTask: Task<Void, Never>?
 
     init(client: EdgeTTSVoiceCatalogClient = EdgeTTSVoiceCatalogClient()) {
@@ -202,6 +204,8 @@ final class EdgeTTSVoiceCatalog: ObservableObject {
             do {
                 let voices = try await client.listVoices()
                 guard !Task.isCancelled else { return }
+                self.voicesByLocale = Dictionary(grouping: voices, by: \.locale)
+                self.localeKeys = self.voicesByLocale.keys.sorted()
                 self.voices = voices
                 self.state = .loaded
             } catch {
@@ -212,15 +216,25 @@ final class EdgeTTSVoiceCatalog: ObservableObject {
     }
 
     var locales: [String] {
-        Array(Set(voices.map(\.locale))).sorted()
+        localeKeys
     }
 
     func locales(selectedVoice: String) -> [String] {
-        EdgeTTSVoiceCatalogProjection.locales(voices: voices, selectedVoice: selectedVoice)
+        var result = localeKeys
+        if let selectedLocale = EdgeTTSVoiceCatalogProjection.selectedLocale(voice: selectedVoice, voices: voices) {
+            if voicesByLocale[selectedLocale] == nil {
+                result.append(selectedLocale)
+                result.sort()
+            }
+        } else if !EdgeTTSVoiceCatalogProjection.isSelectedVoiceAvailable(selectedVoice, voices: voices) {
+            result.append(EdgeTTSVoiceCatalogProjection.unavailableLocale)
+            result.sort()
+        }
+        return result
     }
 
     func voices(in locale: String) -> [EdgeTTSVoice] {
-        voices.filter { $0.locale == locale }
+        voicesByLocale[locale] ?? []
     }
 }
 

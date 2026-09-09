@@ -16,7 +16,7 @@ import SwiftUI
 
 struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
-    @ObservedObject var companionManager: CompanionManager
+    let companionManager: CompanionManager
     @ObservedObject var mainConversation: PickyMainAgentConversationStore
     /// Archive membership and commands are deliberately narrow so Settings
     /// observes the registry list rather than the global session façade.

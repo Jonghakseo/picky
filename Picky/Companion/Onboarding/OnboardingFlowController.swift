@@ -412,7 +412,7 @@ final class OnboardingFlowController {
         // we've seen real drawing, debounce 1.0s of state silence so the user
         // gets to finish their circle before we cancel ink mode and move on.
         didCrossInkThresholdInSession = false
-        inkCancellable = companionManager.$inkOverlayState
+        inkCancellable = companionManager.inkOverlayStore.captureStates
             .receive(on: DispatchQueue.main)
             .handleEvents(receiveOutput: { [weak self] state in
                 guard let self else { return }

@@ -275,10 +275,12 @@ final class CompanionManager: ObservableObject {
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
         self.screenContextTargetLabel = (selectionStore as? PickyScreenContextTargetLabelStoring)?.screenContextTargetLabel
         self.inkCaptureCoordinator.onStateChange = { [weak self] state in
-            Task { @MainActor [weak self] in
+            // Capture commands and the CGEvent tap both run on the main run loop.
+            MainActor.assumeIsolated {
                 guard let self else { return }
-                self.inkOverlayState = state
-                self.setLocalOverlayReason(.activeInkCapture, visible: state.isActive)
+                if self.inkOverlayStore.update(state) {
+                    self.setLocalOverlayReason(.activeInkCapture, visible: state.isActive)
+                }
             }
         }
         self.inkCaptureCoordinator.shouldPassThroughMouseEvent = { [weak self] point, source in
@@ -454,7 +456,8 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var isWaitingForCursorResponse: Bool = false {
         didSet { updateMainCancelPillPresentation() }
     }
-    @Published private(set) var inkOverlayState: PickyInkOverlayState = .inactive
+    let inkOverlayStore = PickyInkOverlayStore()
+    var inkOverlayState: PickyInkOverlayState { inkOverlayStore.latestState }
 
     var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
     var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []

@@ -493,6 +493,7 @@ struct BlueCursorView: View {
     let screenFrame: CGRect
     let displayID: CGDirectDisplayID
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject private var inkOverlayStore: PickyInkOverlayStore
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
     @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
@@ -523,6 +524,7 @@ struct BlueCursorView: View {
         self.screenFrame = screenFrame
         self.displayID = displayID
         self.companionManager = companionManager
+        _inkOverlayStore = ObservedObject(wrappedValue: companionManager.inkOverlayStore)
 
         // Seed the cursor position from the current mouse location so the
         // buddy doesn't flash at (0,0) before onAppear fires.
@@ -621,7 +623,7 @@ struct BlueCursorView: View {
     /// focused scope, matching the capture pipeline.
     private var hasInkOnThisScreen: Bool {
         let region = screenFrame.insetBy(dx: -1, dy: -1)
-        return companionManager.inkOverlayState.strokes.contains { stroke in
+        return inkOverlayStore.state.strokes.contains { stroke in
             stroke.points.contains { region.contains($0) }
         }
     }
@@ -643,8 +645,8 @@ struct BlueCursorView: View {
             // Nearly transparent background (helps with compositing)
             Color.black.opacity(0.001)
 
-            if companionManager.inkOverlayState.isActive || !companionManager.inkOverlayState.strokes.isEmpty {
-                PickyInkOverlayView(screenFrame: screenFrame, state: companionManager.inkOverlayState)
+            if inkOverlayStore.state.isActive || !inkOverlayStore.state.strokes.isEmpty {
+                PickyInkOverlayView(screenFrame: screenFrame, state: inkOverlayStore.state)
                     .allowsHitTesting(false)
             }
 
@@ -974,7 +976,7 @@ struct BlueCursorView: View {
     }
 
     private var effectiveCursorGlobalPoint: CGPoint {
-        companionManager.inkOverlayState.virtualCursorGlobalPoint ?? NSEvent.mouseLocation
+        inkOverlayStore.latestState.virtualCursorGlobalPoint ?? NSEvent.mouseLocation
     }
 
     private func cursorBuddyPosition(for screenPoint: CGPoint) -> CGPoint {
@@ -989,7 +991,7 @@ struct BlueCursorView: View {
         !cursorPreferencesStore.preferences.showPiCursor
             && buddyNavigationMode == .followingCursor
             && activePointerID == nil
-            && !companionManager.inkOverlayState.isActive
+            && !inkOverlayStore.state.isActive
             && companionManager.screenContextTargetSessionID == nil
     }
 
@@ -1004,7 +1006,7 @@ struct BlueCursorView: View {
             && activePointerID == nil
             && isCursorOnThisScreen
             && !companionManager.isQuickInputPanelVisible
-            && !companionManager.inkOverlayState.isActive
+            && !inkOverlayStore.state.isActive
     }
 
     private func syncMainActivityChipPresentation() {
@@ -1041,7 +1043,7 @@ struct BlueCursorView: View {
             && buddyNavigationMode == .followingCursor
             && activePointerID == nil
             && !companionManager.isQuickInputPanelVisible
-            && !companionManager.inkOverlayState.isActive
+            && !inkOverlayStore.state.isActive
             && companionManager.onboardingOverrides?.bubbleText == nil
     }
 
@@ -1053,7 +1055,7 @@ struct BlueCursorView: View {
     /// navigating (detectedElementScreenLocation is set but this screen isn't
     /// the one animating), hide the cursor so only one buddy is ever visible.
     private var buddyIsVisibleOnThisScreen: Bool {
-        guard cursorPreferencesStore.preferences.showPiCursor || companionManager.inkOverlayState.isActive || companionManager.screenContextTargetSessionID != nil else { return false }
+        guard cursorPreferencesStore.preferences.showPiCursor || inkOverlayStore.state.isActive || companionManager.screenContextTargetSessionID != nil else { return false }
         if companionManager.isQuickInputPanelVisible { return false }
         switch buddyNavigationMode {
         case .followingCursor:

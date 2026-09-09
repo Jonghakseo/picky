@@ -220,6 +220,7 @@ final class PickyCaptureContextPanelController {
                     screenFrame: screenFrame,
                     displayID: displayID,
                     companionManager: companionManager,
+                    inkOverlayStore: companionManager.inkOverlayStore,
                     viewModel: viewModel
                 )
             },
@@ -247,11 +248,12 @@ private struct PickyCaptureContextControlView: View {
     let screenFrame: CGRect
     let displayID: CGDirectDisplayID
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var inkOverlayStore: PickyInkOverlayStore
     @ObservedObject var viewModel: PickyCaptureContextControlViewModel
 
     private var hasInk: Bool {
         let region = screenFrame.insetBy(dx: -1, dy: -1)
-        return companionManager.inkOverlayState.strokes.contains { stroke in
+        return inkOverlayStore.latestState.strokes.contains { stroke in
             stroke.points.contains { region.contains($0) }
         }
     }

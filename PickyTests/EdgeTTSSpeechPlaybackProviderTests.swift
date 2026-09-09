@@ -203,6 +203,61 @@ struct EdgeTTSSpeechPlaybackProviderTests {
         #expect(voices.map(\.shortName) == ["en-US-AriaNeural", "en-US-ZoeNeural", "ko-KR-SunHiNeural"])
     }
 
+    @MainActor
+    @Test func catalogIndexesSortedVoicesReplacesOnRefreshAndRetainsCacheOnFailure() async throws {
+        EdgeTTSURLProtocol.statusCode = 200
+        EdgeTTSURLProtocol.responseBody = Data(
+            """
+            {"voices":[
+              {"shortName":"ko-KR-SunHiNeural","locale":"ko-KR","gender":"Female","friendlyName":"SunHi"},
+              {"shortName":"en-US-ZoeNeural","locale":"en-US","gender":"Female","friendlyName":"Zoe"},
+              {"shortName":"en-US-AriaNeural","locale":"en-US","gender":"Female","friendlyName":"Aria"}
+            ]}
+            """.utf8
+        )
+        let connection = EdgeTTSFakeConnectionStore(
+            connection: PickyAgentdConnectionInfo(url: "ws://127.0.0.1:17631", token: "test-token")
+        )
+        let catalog = EdgeTTSVoiceCatalog(client: EdgeTTSVoiceCatalogClient(
+            connectionInfoStore: connection,
+            urlSession: edgeTTSTestSession(protocolClass: EdgeTTSURLProtocol.self)
+        ))
+
+        catalog.refresh()
+        try await waitForEdgeTTSCondition { catalog.state == .loaded }
+        #expect(catalog.locales == ["en-US", "ko-KR"])
+        #expect(catalog.locales(selectedVoice: "fr-FR-DeniseNeural") == ["en-US", "fr-FR", "ko-KR"])
+        #expect(catalog.locales(selectedVoice: "retired-voice") == ["__unavailable__", "en-US", "ko-KR"])
+        #expect(
+            catalog.voices(in: "en-US").map(\.shortName)
+                == ["en-US-AriaNeural", "en-US-ZoeNeural"]
+        )
+
+        EdgeTTSURLProtocol.responseBody = Data(
+            """
+            {"voices":[
+              {"shortName":"ja-JP-NanamiNeural","locale":"ja-JP","gender":"Female","friendlyName":"Nanami"}
+            ]}
+            """.utf8
+        )
+        catalog.refresh()
+        try await waitForEdgeTTSCondition {
+            catalog.voices.map(\.shortName) == ["ja-JP-NanamiNeural"]
+        }
+        #expect(catalog.locales == ["ja-JP"])
+        #expect(catalog.voices(in: "en-US").isEmpty)
+
+        EdgeTTSURLProtocol.statusCode = 500
+        EdgeTTSURLProtocol.responseBody = Data("error".utf8)
+        catalog.refresh()
+        try await waitForEdgeTTSCondition {
+            if case .failed = catalog.state { return true }
+            return false
+        }
+        #expect(catalog.locales == ["ja-JP"])
+        #expect(catalog.voices(in: "ja-JP").map(\.shortName) == ["ja-JP-NanamiNeural"])
+    }
+
     @Test func missingSavedVoiceKeepsItsDerivedLocaleAndAddsUnavailableLocaleWhenUnknown() {
         let voices = [EdgeTTSVoice(shortName: "ko-KR-SunHiNeural", locale: "ko-KR", gender: "Female", friendlyName: "SunHi")]
         #expect(EdgeTTSVoiceCatalogProjection.selectedLocale(voice: "en-US-AriaNeural", voices: voices) == "en-US")

@@ -134,30 +134,13 @@ struct PickyHubSidebarFooter: View {
     private var dockPresentation: CompanionPanelDockActionPresentation { dockControl.presentation }
 
     private var dockPicker: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space3) {
-            Text("hub.dock.control")
-                .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
-            ForEach(Array(screens.enumerated()), id: \.element.pickyDisplayID) { index, screen in
-                if let displayID = screen.pickyDisplayID {
-                    Toggle(isOn: dockControl.visibilityBinding(for: displayID)) {
-                        HStack(spacing: DS.Spacing.space2) {
-                            Text(verbatim: "\(index + 1). \(screen.localizedName)")
-                                .fixedSize(horizontal: false, vertical: true)
-                            if displayID == dockDisplayID {
-                                Text("hub.dock.hubDisplay")
-                                    .foregroundStyle(PickyHubTheme.Colors.textSecondary)
-                            }
-                        }
-                    }
-                    .toggleStyle(.checkbox)
-                    .pickyFont(size: PickyHubTheme.Typography.bodySmall)
-                }
-            }
-        }
-        .foregroundStyle(PickyHubTheme.Colors.textPrimary)
-        .tint(PickyHubTheme.Colors.action)
-        .padding(DS.Spacing.space4)
-        .frame(idealWidth: PickyHubTheme.Layout.cardMinWidth)
+        PickyHubDockPickerView(
+            displays: screens.compactMap { screen in
+                screen.pickyDisplayID.map { PickyHubDockPickerView.Display(id: $0, name: screen.localizedName) }
+            },
+            hubDisplayID: dockDisplayID,
+            visibilityBinding: dockControl.visibilityBinding
+        )
     }
 
     var body: some View {

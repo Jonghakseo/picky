@@ -31,3 +31,43 @@ struct PickyHubDockControl {
         )
     }
 }
+
+/// Content-sized native popover, shared with offscreen layout checks.
+struct PickyHubDockPickerView: View {
+    struct Display: Identifiable {
+        let id: CGDirectDisplayID
+        let name: String
+    }
+
+    let displays: [Display]
+    let hubDisplayID: CGDirectDisplayID?
+    let visibilityBinding: (CGDirectDisplayID) -> Binding<Bool>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space3) {
+            Text("hub.dock.control")
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
+            ForEach(Array(displays.enumerated()), id: \.element.id) { index, display in
+                Toggle(isOn: visibilityBinding(display.id)) {
+                    HStack(spacing: DS.Spacing.space2) {
+                        Text(verbatim: "\(index + 1). \(display.name)")
+                            .fixedSize(horizontal: false, vertical: true)
+                        if display.id == hubDisplayID {
+                            Text("hub.dock.hubDisplay")
+                                .foregroundStyle(PickyHubTheme.Colors.textSecondary)
+                        }
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall)
+            }
+        }
+        .foregroundStyle(PickyHubTheme.Colors.textPrimary)
+        .tint(PickyHubTheme.Colors.action)
+        .padding(DS.Spacing.space4)
+        .frame(idealWidth: PickyHubTheme.Layout.cardMinWidth)
+        // AppKit probes the minimum size with a zero-width proposal. Do not let
+        // wrapped display names turn that probe into a tall minimum popover.
+        .fixedSize()
+    }
+}

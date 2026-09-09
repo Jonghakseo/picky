@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 import Testing
@@ -65,6 +66,48 @@ struct PickyHubDockControlTests {
         let before = store.snapshot
         #expect(!control.activate())
         #expect(store.snapshot == before)
+    }
+
+    @Test func pickerMinimumSizeDoesNotWrapDisplayNamesIntoATallPopover() throws {
+        let content = PickyHubDockPickerView(
+            displays: [.init(id: 101, name: "내장 Retina 디스플레이"), .init(id: 202, name: "DELL U2720Q")],
+            hubDisplayID: 101,
+            visibilityBinding: { .constant($0 == 101) }
+        )
+        .environment(\.locale, Locale(identifier: "ko"))
+        for scale in [CGFloat(1), CGFloat(1.3)] {
+            let scaled = content.environment(\.pickyAppFontScale, scale)
+            let host = NSHostingController(rootView: scaled)
+            for proposal in [CGSize(width: 280, height: 600), CGSize(width: CGFloat.infinity, height: CGFloat.infinity), .zero] {
+                let size = host.sizeThatFits(in: proposal)
+                #expect(size.height < 200, "Minimum-size probes must not wrap the rows into a tall popover: \(size)")
+                #expect(size.height > 60, "The heading and both checkbox rows must remain visible")
+                #expect(size.width >= 280, "The popover must retain a readable width even for the minimum-size probe")
+            }
+        }
+    }
+
+    @Test func rendersDockPickerInLightAndDarkAppearance() throws {
+        let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("build/render-gallery/hub-dock")
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        for dark in [false, true] {
+            let content = PickyHubDockPickerView(
+                displays: [.init(id: 101, name: "내장 Retina 디스플레이"), .init(id: 202, name: "DELL U2720Q")],
+                hubDisplayID: 101,
+                visibilityBinding: { .constant($0 == 101) }
+            )
+            .environment(\.locale, Locale(identifier: "ko"))
+            .environment(\.colorScheme, dark ? .dark : .light)
+            .background(PickyHubTheme.Colors.modal)
+            let host = NSHostingController(rootView: content)
+            let size = host.sizeThatFits(in: .zero)
+            let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
+                content, logicalSize: size, scale: 2, appearance: dark ? .darkAqua : .aqua
+            ))
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: output.appendingPathComponent(dark ? "dark.png" : "light.png"))
+        }
     }
 
     private func makeSettings(root: URL) throws -> PickySettingsStore {

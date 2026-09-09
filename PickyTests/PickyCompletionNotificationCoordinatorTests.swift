@@ -73,6 +73,33 @@ struct PickyCompletionNotificationCoordinatorTests {
         #expect(attempts == 1)
     }
 
+    @Test func deliversPlainTextToMacOSWithoutChangingMainCompletion() async throws {
+        let cases: [(String?, String)] = [
+            ("## 완료 **수정** `file.swift`", "완료 수정 file.swift"),
+            ("- **완료**\n- `test` 통과", "완료\ntest 통과"),
+            ("```swift\nlet count = 1\n```", "let count = 1"),
+            ("[문서](https://example.com)와 ~~이전~~ 결과", "문서와 이전 결과"),
+            ("foo_bar에서 2 * 3 계산 (#123)", "foo_bar에서 2 * 3 계산 (#123)"),
+            ("  \n ", "Build report"),
+            (nil, "Build report"),
+            ("---", "Build report"),
+        ]
+        for (summary, expected) in cases {
+            let notifications = PickyNoopNotificationCenter()
+            var mainDeliveries: [PickyCompletionNotificationEnvelope] = []
+            let coordinator = PickyCompletionNotificationCoordinator(
+                notificationCenter: notifications,
+                deliverMain: { mainDeliveries.append($0) }
+            )
+            let envelope = completionEnvelope(notifyMain: true, notifyMacOS: true, summary: summary)
+
+            _ = try await coordinator.route(envelope)
+
+            #expect(notifications.delivered.map(\.body) == [expected])
+            #expect(mainDeliveries == [envelope])
+        }
+    }
+
     @Test func policySuppressesNonCompletedEffects() {
         #expect(PickyCompletionNotificationRoutingPolicy.channels(
             notifyMainOnCompletion: true,
@@ -83,14 +110,15 @@ struct PickyCompletionNotificationCoordinatorTests {
 
     private func completionEnvelope(
         notifyMain: Bool,
-        notifyMacOS: Bool
+        notifyMacOS: Bool,
+        summary: String? = "Finished cleanly"
     ) -> PickyCompletionNotificationEnvelope {
         PickyCompletionNotificationEnvelope(
             completionId: "session-1:4",
             sessionID: "session-1",
             title: "Build report",
             status: .completed,
-            summary: "Finished cleanly",
+            summary: summary,
             prompt: "Pickle finished",
             cwd: "/tmp/project",
             notifyMainOnCompletion: notifyMain,

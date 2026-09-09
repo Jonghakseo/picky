@@ -33,9 +33,29 @@ enum PickyCompletionNotificationRoutingPolicy {
     ) -> (title: String, body: String, identifier: String) {
         (
             title: localizer("notif.session.completed.title"),
-            body: envelope.summary?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? envelope.title,
+            body: plainText(envelope.summary ?? "").nonEmpty ?? plainText(envelope.title),
             identifier: envelope.completionId
         )
+    }
+
+    private static func plainText(_ markdown: String) -> String {
+        guard let parsed = try? AttributedString(markdown: markdown) else {
+            return markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // Foundation removes block separators; restore them without splitting inline emphasis.
+        var text = ""
+        var previousIntent: PresentationIntent?
+        for run in parsed.runs {
+            if run.presentationIntent?.components.contains(where: { $0.kind == .thematicBreak }) == true {
+                continue
+            }
+            if !text.isEmpty, run.presentationIntent != previousIntent {
+                text += "\n"
+            }
+            text += String(parsed[run.range].characters)
+            previousIntent = run.presentationIntent
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

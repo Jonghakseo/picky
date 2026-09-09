@@ -259,7 +259,7 @@ private struct PickyHubPickleRecordsTable: View {
         VStack(alignment: .leading, spacing: 0) {
             PickyHubSubsectionTitle(title: "hub.stats.work.records.title")
             ScrollView(.horizontal, showsIndicators: false) {
-                Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                Grid(alignment: .leading, horizontalSpacing: DS.Spacing.space4, verticalSpacing: 0) {
                     GridRow {
                         heading("hub.stats.work.records.task", width: 210)
                         heading("hub.stats.work.records.project", width: 105)

@@ -200,7 +200,7 @@ events; they form a stable baseline for any future HUD perf change.
 
 ## Automated Hub focus regression checks
 
-Use [`hub-focus-perf.md`](hub-focus-perf.md) for the isolated WindowServer harness and local budget. It renders the production Hub in disposable test state, rather than attaching to or restarting the user's Picky process. Normal tests exercise menu-update and retained-page contracts without taking focus; the opt-in pre-push path owns the real key-window measurement.
+Use [`hub-focus-perf.md`](hub-focus-perf.md) for the complete local runbook: baseline/candidate commands, source and environment recording, JSON metric definitions, regression guards, failure triage, and budget-change rules. It renders the production Hub in disposable test state, rather than attaching to or restarting the user's Picky process. Normal tests exercise menu-update and retained-page contracts without taking focus; the opt-in pre-push path owns the real key-window measurement.
 
 Hub general settings menu choices use `PickyNativeMenuPicker`. Unchanged options must cause no native menu-item mutations, selection changes must not rebuild labels, and translated labels must preserve value identity. The architecture guard rejects direct SwiftUI `Picker` use and menu picker styles in `PickyHubSettingsPage.swift` (an unstyled macOS `Picker` also defaults to a menu) to prevent reintroducing the measured attributed-label path. That rule is deliberately scoped, not a ban on all SwiftUI pickers or accessibility work. Existing menus on other surfaces remain unchanged until evidence justifies migrating them.
 

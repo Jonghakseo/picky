@@ -160,6 +160,68 @@ struct PickyHubRenderGalleryTests {
         #expect(fixture.client.usedOnlyGalleryCommands)
     }
 
+    /// Opt-in, local-only audit. Never reads the live application directory itself.
+    @Test func writesFullPageHubAuditFromExportedSnapshot() async throws {
+        let request = Self.outputRequestFile.deletingLastPathComponent().appendingPathComponent(".hub-audit-request.json")
+        guard FileManager.default.fileExists(atPath: request.path) else { return }
+        struct Request: Decodable { let snapshot: String; let output: String; let packages: String? }
+        let config = try JSONDecoder().decode(Request.self, from: Data(contentsOf: request))
+        let snapshot = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyHubStatisticsSnapshot.self, from: Data(contentsOf: URL(fileURLWithPath: config.snapshot))
+        )
+        let filter = PickyHubStatisticsFilter(period: .all)
+        let records = PickyHubStatisticsAggregator.records(in: snapshot, filter: filter)
+        let usage = PickyHubStatisticsAggregator.usageSummary(in: snapshot, filter: filter)
+        try #require(!records.isEmpty, "A work-table audit requires visible records")
+        try #require(usage.totalTokens > 0, "A chart audit requires visible usage, not an empty-state render")
+        let output = URL(fileURLWithPath: config.output, isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let packages = try config.packages.map { try Data(contentsOf: URL(fileURLWithPath: $0)) }
+        let fixture = try PickyHubRenderGalleryFixture(snapshot: snapshot, packageSettings: packages)
+        defer { fixture.removeTemporaryState() }
+        let blocked = URLProtocol.registerClass(PickyHubRenderGalleryThumbnailBlocker.self)
+        defer { if blocked { URLProtocol.unregisterClass(PickyHubRenderGalleryThumbnailBlocker.self) } }
+        fixture.statisticsStore.filter.period = .all
+        fixture.statisticsStore.refresh()
+        try await waitUntilLoaded(fixture.statisticsStore)
+        #expect(fixture.statisticsStore.snapshot == snapshot)
+
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            var scenes: [ManifestScene] = []
+            for (width, appearance, fontScale) in [(1020.0, Appearance.dark, 1.0), (1020.0, .light, 1.0), (760.0, .dark, 1.3)] {
+                fixture.fontScaleStore.setScale(fontScale)
+                for surface in ["dashboard", "statistics", "usage"] {
+                    let page: PickyHubPage = surface == "dashboard" ? .dashboard : .statistics
+                    let rowCount = surface == "statistics" ? records.count : (surface == "usage" ? usage.models.count : 0)
+                    // 64pt bounds either table's 42/48pt row plus divider; reserve
+                    // 1600pt for filters, summary cards, charts, and the footer.
+                    let height = max(3600, Double(rowCount) * 64 + 1600)
+                    let scene = Scene(page: page,
+                        name: "audit-\(surface)-\(Int(width))-\(appearance.rawValue)-\(Int(fontScale * 100)).png",
+                        appearance: appearance, logicalSize: CGSize(width: width, height: height), widthClass: "full-page")
+                    if page == .statistics {
+                        fixture.navigator.showStatistics(tab: surface == "usage" ? .usage : .work)
+                    } else {
+                        fixture.navigator.select(page)
+                    }
+                    let rendered = try render(scene, fixture: fixture, locale: Locale(identifier: "ko_KR"))
+                    try validate(rendered.bitmap, for: scene)
+                    try rendered.png.write(to: output.appendingPathComponent(scene.name), options: .atomic)
+                    scenes.append(ManifestScene(file: scene.name, page: page.rawValue,
+                        logicalWidth: width, logicalHeight: height,
+                        pixelWidth: rendered.bitmap.pixelsWide, pixelHeight: rendered.bitmap.pixelsHigh,
+                        appearance: appearance.rawValue, widthClass: scene.widthClass))
+                }
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(Manifest(schemaVersion: 1, renderer: "production Hub, exported local statistics, full-height offscreen viewport", scale: 2, scenes: scenes))
+                .write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
+            try writeIndex(scenes: scenes, to: output)
+        }
+        #expect(fixture.client.usedOnlyGalleryCommands)
+    }
+
     private func makeScenes() -> [Scene] {
         let pages = PickyHubPage.allCases.flatMap { page in
             [
@@ -223,7 +285,8 @@ struct PickyHubRenderGalleryTests {
 
     private func render(
         _ scene: Scene,
-        fixture: PickyHubRenderGalleryFixture
+        fixture: PickyHubRenderGalleryFixture,
+        locale: Locale = Locale(identifier: "en_US_POSIX")
     ) throws -> (png: Data, bitmap: NSBitmapImageRep) {
         let root = AnyView(
             PickyAppFontScaleRoot(store: fixture.fontScaleStore) {
@@ -232,7 +295,7 @@ struct PickyHubRenderGalleryTests {
                     .environmentObject(fixture.hudVisibilityStore)
                     .environmentObject(fixture.updaterController)
                     .environmentObject(fixture.pluginReloadController)
-                    .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+                    .environment(\.locale, locale)
                     .preferredColorScheme(scene.appearance.colorScheme)
                     .frame(width: scene.logicalSize.width, height: scene.logicalSize.height)
             }
@@ -343,7 +406,7 @@ final class PickyHubRenderGalleryFixture {
     private let defaults: UserDefaults
     private let defaultsSuiteName: String
 
-    init() throws {
+    init(snapshot: PickyHubStatisticsSnapshot? = nil, packageSettings: Data? = nil) throws {
         temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("PickyHubRenderGallery-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
@@ -355,7 +418,7 @@ final class PickyHubRenderGalleryFixture {
         self.defaultsSuiteName = defaultsSuite
 
         let settingsStore = PickySettingsStore(appSupportRoot: temporaryRoot)
-        let client = PickyHubRenderGalleryClient(snapshot: Self.statisticsSnapshot)
+        let client = PickyHubRenderGalleryClient(snapshot: snapshot ?? Self.statisticsSnapshot)
         let selectionStore = PickyHubRenderGallerySelectionStore()
         let sessionListViewModel = PickySessionListViewModel(
             client: client,
@@ -402,12 +465,21 @@ final class PickyHubRenderGalleryFixture {
         updaterController = PickyUpdaterController(releaseChannel: "alpha", automaticChecksEnabled: false)
         pluginReloadController = PickyPluginReloadController(client: client)
         statisticsStore = PickyHubStatisticsStore(client: client, timeoutNanoseconds: 100_000_000)
+        let packageHome = temporaryRoot.appendingPathComponent("package-home", isDirectory: true)
+        if let packageSettings {
+            let directory = packageHome.appendingPathComponent(".pi/agent", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try packageSettings.write(to: directory.appendingPathComponent("settings.json"))
+        }
         let curated = PickyCuratedPluginsViewModel(
-            plugins: [.diffReview, .askUserQuestion],
+            plugins: packageSettings == nil ? [.diffReview, .askUserQuestion] : PickyCuratedPlugin.curatedDefaults,
             statusForSource: { source in
-                source == PickyCuratedPlugin.diffReview.source ? .installed(isPinned: false) : .notInstalled
+                if packageSettings != nil {
+                    return PickyCuratedPluginInstaller.status(source: source, homeURL: packageHome)
+                }
+                return source == PickyCuratedPlugin.diffReview.source ? .installed(isPinned: false) : .notInstalled
             },
-            installedVersionForSource: { _ in "1.2.3" }
+            installedVersionForSource: { _ in packageSettings == nil ? "1.2.3" : nil }
         )
         let pluginCatalog = PickyHubPluginCatalogViewModel(curated: curated, pluginReloadController: pluginReloadController)
         let quickStartLauncher = PickyHubQuickStartLauncher(

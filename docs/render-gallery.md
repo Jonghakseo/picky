@@ -98,3 +98,45 @@ The gallery intentionally has no byte-for-byte golden images. Dashboard greeting
 Artifacts have a 2× pixel grid tagged 144 dpi, so a viewer shows them at their intended point size. Their detail is still 1 pixel per point: an offscreen `NSHostingView` composites layer contents at `contentsScale == 1`, and the alternatives that do rasterize at 2× lose fidelity (`ImageRenderer` ignores the host appearance and placeholder-fills AppKit-backed views, `dataWithPDF(inside:)` drops layer-drawn surfaces and symbols). Judge geometry, state, and contrast from these artifacts, not glyph antialiasing.
 
 Offscreen material rendering can differ from a displayed child panel. The gallery does not prove live material/vibrancy, native menu/popover behavior, hover/press transitions, drag monitors, accessibility focus, Reduce Transparency fallback, or actual child-`NSPanel` anchoring. Inspect those behaviors separately when the relevant change requires it.
+
+## Local-data dashboard audit
+
+To inspect long titles, project names, counts, and usage from real sessions without
+restarting the running app or taking desktop screenshots:
+
+```bash
+TMPDIR=/private/tmp pnpm --dir agentd exec tsx ../scripts/export-hub-render-data.mts \
+  --output /private/tmp/picky-dashboard-audit/live-statistics.json \
+  --pi-settings "$HOME/.pi/agent/settings.json"
+./scripts/render-hub-data-audit.sh \
+  /private/tmp/picky-dashboard-audit/live-statistics.json \
+  /private/tmp/picky-dashboard-audit/render \
+  /private/tmp/picky-dashboard-audit/live-statistics.packages.json
+```
+
+Use `--source` for a non-default Picky App Support directory and pass the actual Pi
+settings path if `PI_CODING_AGENT_DIR` or Picky's Pi directory setting differs.
+The exporter reads session metadata, referenced transcripts, and saved
+classifications into an isolated temporary projection, runs the production
+`HubStatisticsService`, and removes the projection before publishing. It never
+connects to the live daemon. Its derived-cache writes stay in the temporary root.
+The provenance sidecar records counts and unavailable transcripts separately.
+Package export is optional and retains only the `packages` field, not credentials
+or unrelated Pi settings. The files can contain private task and project names;
+keep them local and do not commit or upload the artifacts.
+
+The opt-in gallery decodes the snapshot through the production wire decoder and
+loads it through the real statistics store with an in-memory transport. It renders
+the production Dashboard, work statistics, and usage statistics at 1020pt in dark
+and light appearance and at 760pt/130% text in dark appearance, in Korean. Tall
+viewports reveal sections below the normal scroll fold without moving a real
+window. Table height grows with the record/model count. An input with no visible
+work or usage is rejected instead of certifying an empty state as a chart audit.
+Choose an empty output directory on each run; inspect the nine PNGs, including
+their lower sections, not just the manifest.
+
+This proves static layout for the exported data and widths, not live scrolling,
+hover, focus, vibrancy, or OS permission behavior. Permissions and launch actions
+remain inert fixtures. Video thumbnails use a blocked-network placeholder, and
+plugin versions are omitted when only package declarations are provided. The
+ordinary deterministic `hub` gallery continues to use its synthetic fixtures.

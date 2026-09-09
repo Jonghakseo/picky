@@ -10,9 +10,10 @@ struct PickyHubWorkInsightCards: View {
     let insights: PickyHubWorkInsights
     var actions: PickyHubWorkInsightActions?
     @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Layout.cardGap), count: PickyHubGridPolicy.columnCount(for: contentWidth))
+        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Layout.cardGap), count: PickyHubGridPolicy.columnCount(for: contentWidth / fontScale))
         LazyVGrid(columns: columns, spacing: PickyHubTheme.Layout.cardGap) {
             PickyHubWorkInsightCard(
                 eyebrow: "hub.dashboard.insight.topCategory",
@@ -91,6 +92,12 @@ private struct PickyHubWorkInsightCard: View {
         .animation(PickyHubTheme.Motion.hover, value: isHovering)
     }
 
+    private var badgeViews: some View {
+        ForEach(badges, id: \.self) { badge in
+            PickyHubBadgePill(text: badge, onAccent: isPrimary)
+        }
+    }
+
     private var cardBody: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(eyebrow)
@@ -100,10 +107,9 @@ private struct PickyHubWorkInsightCard: View {
                 .tracking(-0.8)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 4) {
-                ForEach(badges, id: \.self) { badge in
-                    PickyHubBadgePill(text: badge, onAccent: isPrimary)
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: DS.Spacing.space1) { badgeViews }
+                VStack(alignment: .leading, spacing: DS.Spacing.space1) { badgeViews }
             }
         }
         .foregroundColor(isPrimary ? PickyHubTheme.Colors.textOnAction : PickyHubTheme.Colors.textPrimary)
@@ -122,6 +128,17 @@ private struct PickyHubWorkInsightCard: View {
 }
 
 enum PickyHubStatisticsPresentation {
+    /// Keep the first/last dates and enough space to read each intermediate label.
+    static func usageAxisIndices(dayCount: Int, availableWidth: CGFloat, minimumSpacing: CGFloat) -> [Int] {
+        guard dayCount > 0 else { return [] }
+        guard dayCount > 1 else { return [0] }
+        let stride = max(1, Int(ceil(CGFloat(dayCount - 1) * max(1, minimumSpacing) / max(1, availableWidth))))
+        var indices = Array(Swift.stride(from: 0, to: dayCount - 1, by: stride))
+        if let last = indices.last, last > 0, dayCount - 1 - last < stride { indices.removeLast() }
+        indices.append(dayCount - 1)
+        return indices
+    }
+
     static func relativeActivity(_ date: Date, now: Date = Date(), locale: Locale = .current) -> String {
         let calendar = Calendar.current
         let time = timeFormatter(locale: locale).string(from: date)
@@ -159,12 +176,19 @@ struct PickyHubUsageLineChart: View {
     let days: [PickyHubUsageDay]
     let period: PickyHubStatisticsPeriod
     @Environment(\.locale) private var locale
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
         GeometryReader { proxy in
             let maximum = max(days.map(\.totalTokens).max() ?? 0, 1)
             let chartHeight = max(proxy.size.height - 30, 1)
-            let step = days.count > 1 ? proxy.size.width / CGFloat(days.count - 1) : 0
+            let labelWidth = DS.Spacing.space8 * 2 * fontScale
+            let inset = labelWidth / 2
+            let plotWidth = max(0, proxy.size.width - labelWidth)
+            let step = days.count > 1 ? plotWidth / CGFloat(days.count - 1) : 0
+            let labelIndices = PickyHubStatisticsPresentation.usageAxisIndices(
+                dayCount: days.count, availableWidth: plotWidth, minimumSpacing: labelWidth
+            )
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
                     ForEach(0..<3, id: \.self) { _ in
@@ -175,7 +199,7 @@ struct PickyHubUsageLineChart: View {
                 Path { path in
                     for (index, day) in days.enumerated() {
                         let point = CGPoint(
-                            x: CGFloat(index) * step,
+                            x: inset + CGFloat(index) * step,
                             y: chartHeight * (1 - CGFloat(day.totalTokens) / CGFloat(maximum))
                         )
                         if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
@@ -188,17 +212,16 @@ struct PickyHubUsageLineChart: View {
                         .fill(PickyHubTheme.Colors.action)
                         .overlay(Circle().stroke(PickyHubTheme.Colors.canvas, lineWidth: 2))
                         .frame(width: 8, height: 8)
-                        .position(x: CGFloat(index) * step, y: y)
+                        .position(x: inset + CGFloat(index) * step, y: y)
                 }
-                HStack(spacing: 0) {
-                    ForEach(days) { day in
-                        Text(axisLabel(day.day))
-                            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
-                            .foregroundColor(PickyHubTheme.Colors.textTertiary)
-                            .frame(maxWidth: .infinity)
-                    }
+                ForEach(labelIndices, id: \.self) { index in
+                    Text(axisLabel(days[index].day))
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                        .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                        .lineLimit(1)
+                        .frame(width: labelWidth)
+                        .position(x: inset + CGFloat(index) * step, y: chartHeight + DS.Spacing.space5)
                 }
-                .padding(.top, chartHeight + 10)
             }
         }
         .frame(height: 160)

@@ -24,6 +24,23 @@ struct PickyHubLayoutPolicyTests {
         #expect(PickyHubGridPolicy.columnCount(for: 780, maximum: 2, minimumCardWidth: 280, spacing: 12) == 2)
     }
 
+    @Test func usageAxisKeepsDateRangeReadableForLongHistories() {
+        #expect(PickyHubStatisticsPresentation.usageAxisIndices(dayCount: 0, availableWidth: 500, minimumSpacing: 64).isEmpty)
+        #expect(PickyHubStatisticsPresentation.usageAxisIndices(dayCount: 1, availableWidth: 500, minimumSpacing: 64) == [0])
+        #expect(PickyHubStatisticsPresentation.usageAxisIndices(dayCount: 7, availableWidth: 500, minimumSpacing: 64) == Array(0..<7))
+        let wide = PickyHubStatisticsPresentation.usageAxisIndices(dayCount: 55, availableWidth: 700, minimumSpacing: 64)
+        let narrow = PickyHubStatisticsPresentation.usageAxisIndices(dayCount: 55, availableWidth: 400, minimumSpacing: 84)
+        for labels in [wide, narrow] {
+            #expect(labels.first == 0)
+            #expect(labels.last == 54)
+            #expect(labels == labels.sorted())
+            #expect(Set(labels).count == labels.count)
+        }
+        #expect(wide.count <= 11)
+        #expect(narrow.count <= 5)
+        #expect(narrow.count < wide.count)
+    }
+
     @Test func returnSubmitsButShiftReturnKeepsMultilineInput() {
         #expect(PickyHubConversationPolicy.shouldSubmit(modifiers: []))
         #expect(!PickyHubConversationPolicy.shouldSubmit(modifiers: .shift))

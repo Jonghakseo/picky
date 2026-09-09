@@ -413,8 +413,8 @@ struct PickyHubDashboardPage: View {
                     NSWorkspace.shared.open(PickyHubShareLinks.x)
                 }
                 PickyHubIconCircleButton(
-                    systemImage: "in.circle.fill",
                     accessibilityLabel: "hub.dashboard.share.linkedIn",
+                    textSymbol: "in",
                     fill: PickyHubTheme.Colors.linkedInBrand,
                     foreground: PickyHubTheme.Colors.textOnAction,
                     border: PickyHubTheme.Colors.linkedInBrand,
@@ -492,9 +492,14 @@ private struct PickyHubDashboardQuickStartGrid: View {
     let start: (PickyHubQuickStartWorkflow) -> Void
     @EnvironmentObject private var launcher: PickyHubQuickStartLauncher
     @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Layout.quickGap), count: PickyHubGridPolicy.columnCount(for: contentWidth, maximum: 2))
+        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Layout.quickGap), count: PickyHubGridPolicy.columnCount(
+            for: contentWidth, maximum: 2,
+            minimumCardWidth: PickyHubTheme.Layout.cardMinWidth * fontScale,
+            spacing: PickyHubTheme.Layout.quickGap
+        ))
         LazyVGrid(columns: columns, spacing: PickyHubTheme.Layout.quickGap) {
             ForEach(workflows) { workflow in
                 HStack(spacing: 14) {

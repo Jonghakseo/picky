@@ -330,8 +330,9 @@ struct PickyHubButton: View {
 
 /// Circular 34pt icon button (mockup `.icon-button`).
 struct PickyHubIconCircleButton: View {
-    let systemImage: String
+    var systemImage: String = ""
     let accessibilityLabel: LocalizedStringKey
+    var textSymbol: String? = nil
     var fill: Color = PickyHubTheme.Colors.canvas
     var foreground: Color = PickyHubTheme.Colors.textSecondary
     var border: Color = PickyHubTheme.Colors.border
@@ -343,7 +344,13 @@ struct PickyHubIconCircleButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
+            Group {
+                if let textSymbol {
+                    Text(verbatim: textSymbol)
+                } else {
+                    Image(systemName: systemImage)
+                }
+            }
                 .pickyFont(size: 14, weight: .semibold)
                 .foregroundColor(isHovering ? hoverForeground : foreground)
                 .frame(width: size, height: size)

@@ -258,7 +258,7 @@ private struct PickyHubPickleRecordsTable: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PickyHubSubsectionTitle(title: "hub.stats.work.records.title")
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal, showsIndicators: true) {
                 Grid(alignment: .leading, horizontalSpacing: DS.Spacing.space4, verticalSpacing: 0) {
                     GridRow {
                         heading("hub.stats.work.records.task", width: 210)
@@ -306,6 +306,7 @@ private struct PickyHubPickleRecordsTable: View {
             .truncationMode(.tail)
             .monospacedDigit()
             .frame(width: width, height: 48, alignment: number ? .trailing : .leading)
+            .help(value)
     }
 }
 
@@ -392,8 +393,8 @@ private struct PickyHubModelUsageTable: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PickyHubSubsectionTitle(title: "hub.stats.usage.models.title")
-            ScrollView(.horizontal, showsIndicators: false) {
-                Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+            ScrollView(.horizontal, showsIndicators: true) {
+                Grid(alignment: .leading, horizontalSpacing: DS.Spacing.space4, verticalSpacing: 0) {
                     GridRow {
                         heading("hub.stats.usage.models.model", width: 180)
                         heading("hub.stats.usage.models.provider", width: 135)
@@ -433,5 +434,6 @@ private struct PickyHubModelUsageTable: View {
             .monospacedDigit()
             .lineLimit(1)
             .frame(width: width, height: 42, alignment: number ? .trailing : .leading)
+            .help(value)
     }
 }

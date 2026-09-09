@@ -2377,6 +2377,38 @@
         }
       }
     },
+    "hub.dock.control": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock Display Control"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "독 표시 제어"
+          }
+        }
+      }
+    },
+    "hub.dock.hubDisplay": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(HUB)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(HUB)"
+          }
+        }
+      }
+    },
     "footer.dock.hide": {
       "localizations": {
         "en": {

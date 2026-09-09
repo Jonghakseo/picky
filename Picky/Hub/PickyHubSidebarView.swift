@@ -113,6 +113,8 @@ struct PickyHubSidebarFooter: View {
     @EnvironmentObject private var visibilityStore: PickyHUDVisibilityStore
     @EnvironmentObject private var appearanceStore: PickyAppearanceStore
     @State private var isQuitConfirmationPresented = false
+    @State private var isDockPickerPresented = false
+    @State private var screens = NSScreen.screens
 
     private var requiresRestart: Bool { restartRequirement.isRequired }
 
@@ -121,8 +123,41 @@ struct PickyHubSidebarFooter: View {
         return PickyHUDDockVisibilityTarget.resolve(companionDisplayID: dockDisplayIDProvider(), cursorDisplayID: cursorDisplayID)
     }
 
-    private var dockPresentation: CompanionPanelDockActionPresentation {
-        .resolve(isDockVisible: visibilityStore.isVisible(for: dockDisplayID))
+    private var dockControl: PickyHubDockControl {
+        PickyHubDockControl(
+            displayIDs: screens.compactMap(\.pickyDisplayID),
+            targetDisplayID: dockDisplayID,
+            visibilityStore: visibilityStore
+        )
+    }
+
+    private var dockPresentation: CompanionPanelDockActionPresentation { dockControl.presentation }
+
+    private var dockPicker: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space3) {
+            Text("hub.dock.control")
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
+            ForEach(Array(screens.enumerated()), id: \.element.pickyDisplayID) { index, screen in
+                if let displayID = screen.pickyDisplayID {
+                    Toggle(isOn: dockControl.visibilityBinding(for: displayID)) {
+                        HStack(spacing: DS.Spacing.space2) {
+                            Text(verbatim: "\(index + 1). \(screen.localizedName)")
+                                .fixedSize(horizontal: false, vertical: true)
+                            if displayID == dockDisplayID {
+                                Text("hub.dock.hubDisplay")
+                                    .foregroundStyle(PickyHubTheme.Colors.textSecondary)
+                            }
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall)
+                }
+            }
+        }
+        .foregroundStyle(PickyHubTheme.Colors.textPrimary)
+        .tint(PickyHubTheme.Colors.action)
+        .padding(DS.Spacing.space4)
+        .frame(idealWidth: PickyHubTheme.Layout.cardMinWidth)
     }
 
     var body: some View {
@@ -133,8 +168,11 @@ struct PickyHubSidebarFooter: View {
                 foreground: PickyHubTheme.Colors.textSecondary,
                 focusID: "dock"
             ) {
-                guard let dockDisplayID else { return }
-                visibilityStore.toggle(for: dockDisplayID)
+                screens = NSScreen.screens
+                isDockPickerPresented = dockControl.activate()
+            }
+            .popover(isPresented: $isDockPickerPresented, arrowEdge: .trailing) {
+                dockPicker
             }
 
             footerRow(
@@ -158,6 +196,10 @@ struct PickyHubSidebarFooter: View {
                 appearanceButton(systemName: "sun.max.fill", target: .light, label: "hub.appearance.light")
                 appearanceButton(systemName: "moon.fill", target: .dark, label: "hub.appearance.dark")
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screens = NSScreen.screens
+            if !dockControl.showsDisplayPicker { isDockPickerPresented = false }
         }
         .alert(L10n.t(requiresRestart ? "footer.restart.title" : "footer.quit.title"), isPresented: $isQuitConfirmationPresented) {
             Button(L10n.t("common.cancel"), role: .cancel) {}

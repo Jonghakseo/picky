@@ -793,6 +793,8 @@ The subsections below describe each leaf in the order it appears on the index.
 
 After installing the shell command, use it to drive Picky from a terminal or hardware automation. The Picky main agent does not depend on this optional installation: primary agentd gives its existing bash tool an internal `picky` command automatically.
 
+Ordinary terminals, resumed Pi sessions, Pickles, and subagents must omit `--from-main`; it is reserved for the live Picky main agent. On creation, it copies the daemon's stored main request and desktop context, not the caller's conversation. For self-contained coding or research, use `picky pickle-create <title> --instructions <brief> --cwd <workspace> --no-context`. Do not combine `--no-context` with `--from-main`: the current main route ignores `--no-context`. Context-free creation uses the external route and the configured new-Pickle completion-notification defaults.
+
 ```bash
 picky submit "summarize the current screen"
 picky pickle-create "Research" --instructions "Compare the open tabs" --group "Research"
@@ -803,7 +805,7 @@ picky pickle-unarchive <session-id>
 picky pickle-steer <session-id> "focus on production impact"
 picky pickle-abort <session-id>
 picky pickle-group-list
-picky pickle-group-list --from-main --include-archived
+picky pickle-group-list --include-archived
 picky pickle-group-create "Research" <session-id>...
 picky pickle-group-add <group-id> <session-id>...
 picky pickle-group-remove-members <group-id> <session-id>...

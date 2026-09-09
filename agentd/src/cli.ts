@@ -86,14 +86,14 @@ program
   .name("picky")
   .description("Programmatic interface to a running Picky.app. Creates and manages Pickles, dock groups, push-to-talk, and main-session submissions.")
   .version(VERSION, "-v, --version", "Print the picky CLI version and exit")
-  .option("--from-main", "Identify this invocation as the Picky main agent: pickle-create hands off the current main-turn context and list output stays compact")
+  .option("--from-main", "Live Picky main agent only, never ordinary Pi/Pickles: pickle-create copies stored main context, not the caller's conversation; do not combine with --no-context")
   .addHelpText("after", `
 Examples:
   $ picky submit "정리 좀 해줘"
   $ picky submit "context-free reminder" --no-context
-  $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리"
+  $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리" --no-context
   $ picky pickle-create --empty
-  $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research"
+  $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research" --no-context
   $ picky pickle-list --json
   $ picky pickle-list --include-archived
   $ picky pickle-list --archived --query "sentry"
@@ -166,14 +166,22 @@ const pickleCreate = program
   .option("--empty", "Create an empty Pickle session (no title or instructions required)")
   .option("--cwd <path>", "Workspace cwd for the Pickle session (defaults to the captured context cwd)")
   .option("--group <name>", "Assign the new Pickle to a dock group by name (created if it doesn't exist; first match wins on duplicate names)")
-  .option("--no-context", "Skip app-side context capture; build a neutral context using cwd/timestamp only")
+  .option("--no-context", "Use for self-contained handoffs: skip desktop context (omit --from-main, which currently overrides this option)")
   .option("--json", "Emit the raw ack JSON to stdout")
   .addHelpText("after", `
 Examples:
-  $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리"
+  $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리" --no-context
   $ picky pickle-create --empty
-  $ picky pickle-create "release audit" --instructions "지난 주 머지 PR QA" --cwd "$PWD"
-  $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research"
+  $ picky pickle-create "release audit" --instructions "지난 주 머지 PR QA" --cwd "$PWD" --no-context
+  $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research" --no-context
+
+Caller and context:
+  Ordinary Pi, resumed sessions, Pickles, and subagents must omit --from-main.
+  For self-contained work, pass --no-context and put all relevant context in --instructions.
+  Only the live Picky main agent may use --from-main to inherit its relevant current request.
+  --from-main copies the daemon's stored main context, not this CLI caller's conversation.
+  Do not combine --from-main with --no-context: the current main route ignores --no-context.
+  Context-free creation uses the external route and configured new-Pickle notification defaults.
 `)
   .option("--wait", "Keep the connection open until the Pickle finishes, then print its final answer (default: fire-and-forget)")
   .action(async (title: string | undefined, options: PickleCreateOptions) => {
@@ -1012,7 +1020,7 @@ void Option;
 // Accept `--from-main` both before and after the subcommand name.
 function registerFromMainOption(command: Command): void {
   for (const sub of command.commands) {
-    sub.option("--from-main", "Identify this invocation as the Picky main agent");
+    sub.option("--from-main", "Live Picky main agent only; ordinary Pi/Pickles must omit (pickle-create inherits main context and overrides --no-context)");
     registerFromMainOption(sub);
   }
 }

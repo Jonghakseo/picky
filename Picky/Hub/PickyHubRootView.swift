@@ -2,9 +2,9 @@
 //  PickyHubRootView.swift
 //  Picky
 //
-//  Window content: sidebar + one page host. Every page stays mounted inside a
-//  ZStack and is only hidden when not selected, so each page keeps its own
-//  scroll position and transient state while the user moves around.
+//  Window content: sidebar + retained page host. Pages mount on first visit
+//  and then stay alive, preserving scroll position and transient state without
+//  constructing every Hub page during window focus.
 //
 
 import Combine
@@ -15,6 +15,7 @@ struct PickyHubRootView: View {
     @ObservedObject private var navigator: PickyHubNavigator
     @ObservedObject private var modalHost: PickyHubModalHost
     @ObservedObject private var settingsViewModel: PickySettingsViewModel
+    @StateObject private var pageMountLifecycle: PickyHubPageMountLifecycle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focusedSidebarControl: String?
     let dockDisplayIDProvider: () -> CGDirectDisplayID?
@@ -25,6 +26,9 @@ struct PickyHubRootView: View {
         _navigator = ObservedObject(wrappedValue: dependencies.navigator)
         _modalHost = ObservedObject(wrappedValue: dependencies.modalHost)
         _settingsViewModel = ObservedObject(wrappedValue: dependencies.settingsViewModel)
+        _pageMountLifecycle = StateObject(
+            wrappedValue: PickyHubPageMountLifecycle(initialPage: dependencies.navigator.selectedPage)
+        )
     }
 
     private var restartRequirement: PickyRestartRequirement {
@@ -43,15 +47,12 @@ struct PickyHubRootView: View {
                 )
 
                 GeometryReader { viewport in
-                    ZStack {
-                        ForEach(PickyHubPage.allCases) { page in
-                            pageView(page)
-                                .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
-                                .opacity(navigator.selectedPage == page ? 1 : 0)
-                                .allowsHitTesting(navigator.selectedPage == page)
-                                .accessibilityHidden(navigator.selectedPage != page)
-                                .disabled(navigator.selectedPage != page)
-                        }
+                    PickyHubRetainedPageHost(
+                        lifecycle: pageMountLifecycle,
+                        selectedPage: navigator.selectedPage
+                    ) { page in
+                        pageView(page)
+                            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
                     }
                     .environment(\.pickyHubContentWidth, PickyHubGridPolicy.contentWidth(forViewportWidth: viewport.size.width))
                     .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)

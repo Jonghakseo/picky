@@ -12,6 +12,7 @@ UI_EFFECT_GATE = "@Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffect
 UI_EFFECT_TESTS = {
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
     ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
+    ("PickyTests/PickyHubFocusPerformanceTests.swift", "productionHubFocusTransitionsMeetTheLocalLatencyBudget"),
     ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 }
@@ -19,6 +20,7 @@ UI_EFFECT_HELPERS: set[tuple[str, str]] = set()
 UI_EFFECT_CALLERS = {
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
     ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
+    ("PickyTests/PickyHubFocusPerformanceTests.swift", "productionHubFocusTransitionsMeetTheLocalLatencyBudget"),
     ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 } | UI_EFFECT_HELPERS
@@ -342,12 +344,23 @@ def validate_pre_push_gate() -> None:
     if "env PICKY_PRE_PUSH_UI_EFFECT_TESTS=1" in pre_push:
         fail("pre-push must pass UI-effect opt-in through Xcode's TEST_RUNNER_ environment bridge")
 
+    if "UI_EFFECT_TEST_ENV=(" not in pre_push or 'env "${UI_EFFECT_TEST_ENV[@]}" xcodebuild' not in pre_push:
+        fail("pre-push must pass the UI-effect opt-in through its single TEST_RUNNER_ environment array")
+
     swift_test_commands = [
         line for line in pre_push.splitlines()
         if "xcodebuild" in line and re.search(r"\btest\b", line)
     ]
-    if len(swift_test_commands) != 1 or assignment not in swift_test_commands[0]:
-        fail("pre-push must run exactly one Swift test command and attach the UI-effect opt-in to it")
+    if len(swift_test_commands) != 1:
+        fail("pre-push must keep one shared Swift test command implementation for regular and performance selectors")
+    if "-only-testing:PickyTests/PickyHubFocusPerformanceTests" not in pre_push:
+        fail("pre-push --hub-focus-perf mode must select only the Hub focus performance suite")
+    if "-skip-testing:PickyTests/PickyHubFocusPerformanceTests" not in pre_push:
+        fail("the regular Swift suite must exclude the performance test so it executes only once")
+    if "run_picky_tests\nHUB_FOCUS_PERF_ONLY=true run_picky_tests" not in pre_push:
+        fail("full pre-push must run performance in a fresh targeted host after the regular suite")
+    if "test_hub_focus_perf_runner.py" not in pre_push:
+        fail("pre-push must verify the Hub focus report and executed test evidence after xcodebuild")
 
     for shell_script in sorted((ROOT / "scripts").rglob("*.sh")):
         if shell_script == pre_push_path:

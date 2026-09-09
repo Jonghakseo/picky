@@ -1012,7 +1012,33 @@ function finish() {
   console.log(`Architecture guard passed with ${warnings.length} warning(s).`);
 }
 
+// The measured Hub settings focus path must not regain SwiftUI's attributed
+// menu-item refresh. Other surfaces remain outside this deliberately narrow
+// migration; their controls require their own evidence before replacement.
+function hasUncachedHubPicker(source) {
+  // A bare Picker defaults to a menu on macOS; checking only .menu would
+  // allow the same expensive adapter back in through an omitted style.
+  return /\bPicker\b|\.pickerStyle\s*\(\s*(?:\.menu\b|(?:SwiftUI\.)?MenuPickerStyle\s*\()/.test(stripSwiftCommentsAndStrings(source));
+}
+
+function checkHubSettingsMenuBoundary() {
+  const file = "Picky/Hub/Pages/PickyHubSettingsPage.swift";
+  if (hasUncachedHubPicker(read(file))) {
+    addError(`${file}: use PickyNativeMenuPicker for menu choices. Focus-only updates must not resolve/rebuild menu labels; see docs/hub-focus-perf.md.`);
+  }
+  const blocked = ["Picker(selection: selection) { choices }", "Picker(choices).pickerStyle(.menu)", "view.pickerStyle(\n MenuPickerStyle()\n)", "view.pickerStyle(SwiftUI.MenuPickerStyle())"];
+  const allowed = ["view.pickerStyle(.segmented)", "PickyNativeMenuPicker(title: title, selection: selection, options: options)", "// .pickerStyle(.menu)\nText(\".pickerStyle(.menu)\")"];
+  if (blocked.some((source) => !hasUncachedHubPicker(source)) || allowed.some(hasUncachedHubPicker)) {
+    addError("Hub settings menu boundary self-test failed.");
+  }
+}
+
 function main() {
+  if (process.argv.includes("--self-test=hub-focus")) {
+    checkHubSettingsMenuBoundary();
+    finish();
+    return;
+  }
   if (process.argv.includes("--self-test=session-projection")) {
     checkSessionProjectionGuardFixtures();
     finish();
@@ -1041,6 +1067,7 @@ function main() {
     checkSecretCodingKeys();
     checkSessionProjectionRules();
     checkTestWindowReleasePolicy();
+    checkHubSettingsMenuBoundary();
     checkFileSizeRatchet();
   }
 

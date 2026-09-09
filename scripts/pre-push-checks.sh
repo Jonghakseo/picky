@@ -4,6 +4,22 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+if [ "$#" -gt 1 ]; then
+  echo "Usage: $0 [--hub-focus-perf|--hub-focus-perf-calibrate]" >&2
+  exit 64
+fi
+HUB_FOCUS_PERF_ONLY=false
+HUB_FOCUS_PERF_MODE=gate
+case "${1:-}" in
+  "") ;;
+  --hub-focus-perf) HUB_FOCUS_PERF_ONLY=true ;;
+  --hub-focus-perf-calibrate) HUB_FOCUS_PERF_ONLY=true; HUB_FOCUS_PERF_MODE=calibrate ;;
+  *)
+    echo "Usage: $0 [--hub-focus-perf|--hub-focus-perf-calibrate]" >&2
+    exit 64
+    ;;
+esac
+
 HOST_ARCH="$(uname -m)"
 DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
 # Reuse the agent cache instead of contending with a GUI Xcode build.
@@ -13,9 +29,17 @@ DERIVED_DATA_PATH="${PICKY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"
 . "$ROOT/scripts/lib/pinned-toolchain.sh"
 picky_require_pinned_toolchain "pre-push"
 PRE_PUSH_REFS="$(mktemp "${TMPDIR:-/tmp}/picky-pre-push-refs.XXXXXX")"
-trap 'rm -f "$PRE_PUSH_REFS"' EXIT
-if [ ! -t 0 ]; then
-  cat > "$PRE_PUSH_REFS"
+PICKY_TEST_LOG=""
+cleanup() {
+  rm -f "$PRE_PUSH_REFS"
+}
+trap cleanup EXIT
+# Git supplies a finite refs stream. Narrow performance runs never read stdin,
+# so invoking them manually cannot block on a terminal or open pipe.
+if [ "$HUB_FOCUS_PERF_ONLY" = false ] && [ ! -t 0 ]; then
+  while IFS= read -r ref; do
+    printf '%s\n' "$ref"
+  done > "$PRE_PUSH_REFS"
 fi
 
 require_command() {
@@ -33,6 +57,47 @@ run_step() {
   echo
   echo "▶ $label"
   "$@"
+}
+
+HUB_FOCUS_PERF_REPORT="${PICKY_HUB_FOCUS_PERF_REPORT_PATH:-$ROOT/build/perf/hub-focus/pre-push.json}"
+# TEST_RUNNER_ is Xcode's environment bridge. The test bundle receives these
+# as PICKY_* keys, while ordinary xcodebuild tests remain fail-closed.
+UI_EFFECT_TEST_ENV=(
+  "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1"
+  "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_REPORT_PATH=$HUB_FOCUS_PERF_REPORT"
+  "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_MODE=$HUB_FOCUS_PERF_MODE"
+)
+
+run_picky_tests() {
+  local selector=("-skip-testing:PickyTests/PickyHubFocusPerformanceTests")
+  local label="Picky test suite"
+  if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
+    selector=("-only-testing:PickyTests/PickyHubFocusPerformanceTests")
+    label="Hub focus performance gate"
+  fi
+  mkdir -p "$(dirname "$HUB_FOCUS_PERF_REPORT")"
+  PICKY_TEST_LOG="${HUB_FOCUS_PERF_REPORT%.json}.suite.log"
+  if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
+    PICKY_TEST_LOG="${HUB_FOCUS_PERF_REPORT%.json}.log"
+    # A previous run must never satisfy the current invocation's artifact check.
+    if [ -f "$HUB_FOCUS_PERF_REPORT" ]; then
+      mv "$HUB_FOCUS_PERF_REPORT" "${HUB_FOCUS_PERF_REPORT%.json}.previous.json"
+    fi
+  fi
+  echo
+  echo "▶ $label"
+  set +e
+  env "${UI_EFFECT_TEST_ENV[@]}" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" -parallel-testing-enabled NO test "${selector[@]}" 2>&1 | tee "$PICKY_TEST_LOG"
+  local xcode_status=${PIPESTATUS[0]}
+  set -e
+  if [ "$xcode_status" -ne 0 ]; then
+    return "$xcode_status"
+  fi
+  if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
+    python3 scripts/tests/test_hub_focus_perf_runner.py \
+      --report "$HUB_FOCUS_PERF_REPORT" \
+      --xcode-log "$PICKY_TEST_LOG"
+  fi
 }
 
 # Lower-only ratchet for SwiftLint error-severity violations. The `.swiftlint.yml`
@@ -82,8 +147,18 @@ run_swiftlint_warning_first() {
 }
 
 require_command git "Install Git."
-require_command node "Install Node.js 22.19.0."
 require_command python3 "Install Python 3."
+
+if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
+  require_command xcodebuild "Install Xcode command line tools / Xcode."
+  run_step "test environment isolation guard" python3 scripts/check-test-environment-isolation.py
+  run_picky_tests
+  echo
+  echo "✅ hub focus performance gate passed."
+  exit 0
+fi
+
+require_command node "Install Node.js 22.19.0."
 
 # Fail fast on architectural regressions, including the file-size ratchet, before
 # invoking any slower dependency checks, builds, or test suites.
@@ -121,9 +196,11 @@ run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -de
 # ~20% of consecutive runs). Serializing the runners avoids the cross-process collision
 # and trades ~5-9s for deterministic results.
 # WindowServer-dependent tests are disabled in every ordinary test invocation.
-# The pre-push gate is their single opt-in execution and deliberately runs the
-# Swift suite once, without retries or test-plan repetitions.
-run_step "Picky test suite" env TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" -parallel-testing-enabled NO test
+# Each UI-effect test runs once, without retries or test-plan repetitions.
+# The ordinary suite excludes performance; its separate host cannot inherit
+# concurrent Swift Testing tasks or outstanding work from unrelated suites.
+run_picky_tests
+HUB_FOCUS_PERF_ONLY=true run_picky_tests
 
 echo
 echo "✅ pre-push: all local quality checks passed."

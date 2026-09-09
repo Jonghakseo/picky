@@ -365,6 +365,7 @@ enum PickyHubSettingsControlMutation {
 }
 
 private struct PickyHubGeneralControls: View {
+    @ObservedObject private var localeManager = LocaleManager.shared
     @ObservedObject var settingsViewModel: PickySettingsViewModel
     @ObservedObject var appearanceStore: PickyAppearanceStore
     @ObservedObject var fontScaleStore: PickyAppFontScaleStore
@@ -375,28 +376,29 @@ private struct PickyHubGeneralControls: View {
     var body: some View {
         PickyHubSettingsList {
             PickyHubSettingsRow(title: "hub.settings.appearance", detail: "hub.settings.appearance.detail") {
-                Picker("hub.settings.appearance", selection: Binding(get: { appearanceStore.mode }, set: appearanceStore.setMode)) {
-                    ForEach(PickyAppearanceMode.allCases) { mode in
-                        Text(mode == .light ? L10n.t("hub.settings.appearance.light") : L10n.t("hub.settings.appearance.dark")).tag(mode)
+                PickyNativeMenuPicker(
+                    title: menuTitle("hub.settings.appearance"),
+                    selection: Binding(get: { appearanceStore.mode }, set: appearanceStore.setMode),
+                    options: PickyAppearanceMode.allCases.map { mode in
+                        .init(value: mode, title: mode == .light ? menuTitle("hub.settings.appearance.light") : menuTitle("hub.settings.appearance.dark"))
                     }
-                }
-                .labelsHidden().pickerStyle(.menu)
+                )
             }
             PickyHubSettingsRow(title: "hub.settings.fontScale", detail: "hub.settings.fontScale.detail") {
-                Picker("hub.settings.fontScale", selection: Binding(get: { fontScaleStore.scale }, set: fontScaleStore.setScale)) {
-                    ForEach([0.9, 1.0, 1.1, 1.2, 1.3], id: \.self) { value in
-                        Text(verbatim: "\(Int(value * 100))%").tag(value)
-                    }
-                }
-                .labelsHidden().pickerStyle(.menu)
+                PickyNativeMenuPicker(
+                    title: menuTitle("hub.settings.fontScale"),
+                    selection: Binding(get: { fontScaleStore.scale }, set: fontScaleStore.setScale),
+                    options: [0.9, 1.0, 1.1, 1.2, 1.3].map { .init(value: $0, title: "\(Int($0 * 100))%") }
+                )
             }
             fontScaleRow(title: "hub.settings.reportFontScale", detail: "hub.settings.reportFontScale.detail", target: .report)
             fontScaleRow(title: "hub.settings.terminalFontScale", detail: "hub.settings.terminalFontScale.detail", target: .terminal)
             PickyHubSettingsRow(title: "hub.settings.updateChannel", detail: "hub.settings.updateChannel.detail") {
-                Picker("hub.settings.updateChannel", selection: $settingsViewModel.settings.updateChannel) {
-                    ForEach(PickyUpdateChannel.allCases) { channel in Text(channel.displayName).tag(channel) }
-                }
-                .labelsHidden().pickerStyle(.menu)
+                PickyNativeMenuPicker(
+                    title: menuTitle("hub.settings.updateChannel"),
+                    selection: $settingsViewModel.settings.updateChannel,
+                    options: PickyUpdateChannel.allCases.map { .init(value: $0, title: $0.displayName) }
+                )
                 .onChange(of: settingsViewModel.settings.updateChannel) { _, _ in settingsViewModel.save() }
             }
             PickyHubSettingsRow(title: "hub.settings.autoUpdates", detail: "hub.settings.autoUpdates.detail") {
@@ -420,9 +422,13 @@ private struct PickyHubGeneralControls: View {
         }
     }
 
-    private func fontScaleRow(title: LocalizedStringKey, detail: LocalizedStringKey, target: PickyHubFontScaleTarget) -> some View {
-        PickyHubSettingsRow(title: title, detail: detail) {
-            Picker(title, selection: Binding(
+    private func menuTitle(_ key: String) -> String {
+        NSLocalizedString(key, bundle: localeManager.stringsBundle, value: key, comment: "")
+    }
+
+    private func fontScaleRow(title: String, detail: LocalizedStringKey, target: PickyHubFontScaleTarget) -> some View {
+        PickyHubSettingsRow(title: LocalizedStringKey(title), detail: detail) {
+            PickyNativeMenuPicker(title: menuTitle(title), selection: Binding(
                 get: {
                     switch target {
                     case .report: settingsViewModel.settings.fontScales.markdownReport
@@ -433,15 +439,7 @@ private struct PickyHubGeneralControls: View {
                     PickyHubSettingsControlMutation.setFontScale(target, to: value, in: &settingsViewModel.settings)
                     settingsViewModel.save()
                 }
-            )) {
-                ForEach(Array(7...25).map { Double($0) / 10 }, id: \.self) { value in
-                    // Numeric menu labels are not catalog keys. Localized interpolation
-                    // re-enters attributed-string lookup when AppKit refreshes accessibility.
-                    Text(verbatim: "\(Int(value * 100))%").tag(value)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            ), options: (7...25).map { .init(value: Double($0) / 10, title: "\($0 * 10)%") })
         }
     }
 }

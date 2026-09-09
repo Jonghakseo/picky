@@ -14,6 +14,14 @@ enum PickyHubAccessibilityObservation {
         return "\(String(reflecting: type(of: element))) protocol=\(element is NSAccessibilityProtocol), \(values)"
     }
 
+    // AppKit single-cell controls and some SwiftUI AX nodes still expose
+    // their actual public accessibility output through the informal API.
+    static func legacyValue(_ attribute: NSAccessibility.Attribute, of element: Any) -> Any? {
+        guard let object = element as? NSObject,
+              object.accessibilityAttributeNames().contains(attribute) else { return nil }
+        return object.accessibilityAttributeValue(attribute)
+    }
+
     private static func string(_ name: String, of element: Any?) -> String? {
         let selector = NSSelectorFromString(name)
         guard let object = element as? NSObject, object.responds(to: selector) else { return nil }

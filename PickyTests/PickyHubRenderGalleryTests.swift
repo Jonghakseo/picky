@@ -328,7 +328,7 @@ struct PickyHubRenderGalleryTests {
 }
 
 @MainActor
-private final class PickyHubRenderGalleryFixture {
+final class PickyHubRenderGalleryFixture {
     let client: PickyHubRenderGalleryClient
     let navigator: PickyHubNavigator
     let appearanceStore: PickyAppearanceStore
@@ -436,6 +436,10 @@ private final class PickyHubRenderGalleryFixture {
         )
     }
 
+    func readPersistedSettings() -> PickySettings {
+        PickySettingsStore(appSupportRoot: temporaryRoot).load()
+    }
+
     func removeTemporaryState() {
         defaults.removePersistentDomain(forName: defaultsSuiteName)
         try? FileManager.default.removeItem(at: temporaryRoot)
@@ -461,7 +465,7 @@ private final class PickyHubRenderGalleryFixture {
     }
 }
 
-private final class PickyHubRenderGalleryClient: PickyAgentClient, @unchecked Sendable {
+final class PickyHubRenderGalleryClient: PickyAgentClient, @unchecked Sendable {
     private let lock = NSLock()
     private var subscribers: [AsyncStream<PickyClientEvent>.Continuation] = []
     var events: AsyncStream<PickyClientEvent> {

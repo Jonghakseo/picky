@@ -8357,6 +8357,22 @@
         }
       }
     },
+    "settings.mainAgent.details": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Details"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자세히 보기"
+          }
+        }
+      }
+    },
     "settings.mainAgent.group.context": {
       "localizations": {
         "en": {
@@ -8417,6 +8433,166 @@
           "stringUnit": {
             "state": "translated",
             "value": "작업 공간과 지침"
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.binary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to find Pi automatically. Package installs and removals use changes immediately."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비워두면 Pi를 자동으로 찾아요. 설치·제거 작업에는 즉시 적용돼요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.capture": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, only drawn-on screenshots are sent. Screen capture continues."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 그린 화면만 모델에 보내요. 화면 캡처는 계속돼요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.dispatch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used by PTT and Quick Input. Idle Pickles start immediately in either mode."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PTT·Quick Input에 적용돼요. 작업 중이 아니면 두 방식 모두 바로 시작돼요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.instructions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit behavior and tool instructions. Reset or restart to apply them to the current session."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "행동·도구 지침을 편집해요. 현재 세션에는 초기화 또는 재시작 후 반영돼요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow Pi defaults, or pin a model and reasoning level."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 기본값을 따르거나 모델과 추론 레벨을 고정해요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.quality": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Higher quality improves small text but uses more image tokens."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "높은 품질은 작은 글자를 더 잘 보여주지만 이미지 토큰을 더 사용해요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.runtime": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to use defaults. Running sessions use changes after a restart."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비워두면 기본 경로를 사용해요. 실행 중인 세션에는 재시작 후 적용돼요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.screenContext": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose the screen scope, sending conditions, and quality."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 범위와 전송 조건, 품질을 정해요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.summary.workspace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting folder for new Picky work."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 Picky 작업을 시작할 폴더예요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.warning.workspace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move AGENTS.md with the workspace. Missing instructions can cause tool calls to fail."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 폴더를 옮길 때 AGENTS.md도 함께 옮겨주세요. 지침이 없으면 도구 호출이 실패할 수 있어요."
           }
         }
       }

@@ -150,11 +150,12 @@ struct PickyHubSettingsPage: View {
         }
     }
 
+    @ViewBuilder
     private func embedded(
         _ route: CompanionPanelSettingsRoute,
         presentation: CompanionPanelSettingsPresentation = .embedded
     ) -> some View {
-        CompanionPanelSettingsView(
+        let settings = CompanionPanelSettingsView(
             viewModel: settingsViewModel,
             companionManager: dependencies.companionManager,
             mainConversation: dependencies.companionManager.mainConversation,
@@ -163,8 +164,14 @@ struct PickyHubSettingsPage: View {
             route: .constant(route),
             presentation: presentation
         )
-        .padding(DS.Spacing.space4)
-        .pickyHubCard()
+
+        if route == .mainAgent, presentation == .embedded {
+            settings
+        } else {
+            settings
+                .padding(DS.Spacing.space4)
+                .pickyHubCard()
+        }
     }
 
     private func consumePendingSettingsNavigation(with proxy: ScrollViewProxy) {

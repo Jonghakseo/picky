@@ -609,190 +609,297 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
+    @ViewBuilder
     private var mainAgentSection: some View {
-        sectionHeader(
-            section: .mainAgent,
-            title: L10n.t("settings.section.picky.title"),
-            subtitle: L10n.t("settings.section.picky.subtitle")
-        ) {
-            VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-                mainAgentSettingsGroup("settings.mainAgent.group.workspace") {
-                    VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.field.pickyCwd")
-                            cwdField(
-                                placeholder: "~/",
-                                text: $mainAgentCwdDraft,
-                                onChange: { newValue in
-                                    updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(mainAgentCwd: newValue))
-                                },
-                                onSubmit: commitMainAgentCwdField,
-                                onChoose: chooseMainAgentDirectory
-                            )
-                            Text("settings.field.pickyCwd.note")
+        if usesHubMainAgentCards {
+            mainAgentSettingsContent
+            embeddedSaveStatus(for: .mainAgent)
+        } else {
+            sectionHeader(
+                section: .mainAgent,
+                title: L10n.t("settings.section.picky.title"),
+                subtitle: L10n.t("settings.section.picky.subtitle")
+            ) {
+                mainAgentSettingsContent
+            }
+        }
+    }
+
+    private var usesHubMainAgentCards: Bool {
+        presentation == .embedded
+    }
+
+    private var mainAgentSettingsContent: some View {
+        VStack(alignment: .leading, spacing: usesHubMainAgentCards ? DS.Spacing.space4 : DS.Spacing.space6) {
+            mainAgentSettingsGroup(
+                "settings.mainAgent.group.workspace",
+                summary: "settings.mainAgent.summary.workspace",
+                details: [
+                    "settings.field.pickyCwd.note",
+                    "settings.field.pickyCwd.workspaceWarning",
+                    "settings.field.agentsFile.note"
+                ]
+            ) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        fieldLabel("settings.field.pickyCwd")
+                        cwdField(
+                            placeholder: "~/",
+                            text: $mainAgentCwdDraft,
+                            onChange: { newValue in
+                                updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(mainAgentCwd: newValue))
+                            },
+                            onSubmit: commitMainAgentCwdField,
+                            onChoose: chooseMainAgentDirectory
+                        )
+                        mainAgentStandaloneNote("settings.field.pickyCwd.note")
+                        if usesHubMainAgentCards {
+                            Text("settings.mainAgent.warning.workspace")
                                 .font(PickyHUDTypography.supporting)
-                                .foregroundColor(supportingTextColor)
+                                .foregroundColor(DS.Colors.warningText)
                                 .lineSpacing(DS.Spacing.space1)
                                 .fixedSize(horizontal: false, vertical: true)
+                        } else {
                             Text("settings.field.pickyCwd.workspaceWarning")
                                 .font(PickyHUDTypography.supporting)
                                 .foregroundColor(DS.Colors.warningText)
                                 .lineSpacing(DS.Spacing.space1)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.field.agentsFile")
-                            Text("settings.field.agentsFile.note")
-                                .font(PickyHUDTypography.supporting)
-                                .foregroundColor(supportingTextColor)
-                                .lineSpacing(DS.Spacing.space1)
-                                .fixedSize(horizontal: false, vertical: true)
-                            openAgentsFileButton
-                        }
                     }
-                }
 
-                mainAgentSettingsGroup("settings.mainAgent.group.model") {
-                    VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-                        piMainAgentModelPicker
-
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.field.reasoningLevel")
-                            PickyNativeMenuPicker(
-                                title: L10n.t("settings.field.reasoningLevel"),
-                                selection: $viewModel.settings.mainAgentThinkingLevel,
-                                options: PickyMainAgentThinkingLevel.allCases.map { .init(value: $0, title: $0.displayName) }
-                            )
-                            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .onChange(of: viewModel.settings.mainAgentThinkingLevel) { _, _ in saveImmediately(for: .mainAgent) }
-                        }
-                    }
-                }
-
-                mainAgentSettingsGroup("settings.mainAgent.group.context") {
-                    VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.field.screenContext")
-                            PickyNativeMenuPicker(
-                                title: L10n.t("settings.field.screenContext"),
-                                selection: $viewModel.settings.screenContextScope,
-                                options: PickyScreenContextScope.allCases.map { .init(value: $0, title: $0.displayName) }
-                            )
-                            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .onChange(of: viewModel.settings.screenContextScope) { _, _ in saveImmediately(for: .mainAgent) }
-                        }
-
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            HStack(spacing: DS.Spacing.space2) {
-                                Text("settings.field.attachScreenshotsOnlyWhenInked")
-                                    .font(PickyHUDTypography.labelMedium)
-                                    .foregroundColor(DS.Colors.textPrimary)
-                                Spacer(minLength: DS.Spacing.space2)
-                                Toggle("settings.field.attachScreenshotsOnlyWhenInked",
-                                       isOn: $viewModel.settings.attachScreenshotsOnlyWhenInked)
-                                    .labelsHidden()
-                                    .toggleStyle(.switch)
-                                    .tint(DS.Colors.accent)
-                                    .controlSize(.small)
-                                    .onChange(of: viewModel.settings.attachScreenshotsOnlyWhenInked) { _, _ in
-                                        saveImmediately(for: .mainAgent)
-                                    }
-                            }
-                            Text("settings.field.attachScreenshotsOnlyWhenInked.note")
-                                .font(PickyHUDTypography.supporting)
-                                .foregroundColor(supportingTextColor)
-                                .lineSpacing(DS.Spacing.space1)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.field.screenshotQuality")
-                            PickyNativeMenuPicker(
-                                title: L10n.t("settings.field.screenshotQuality"),
-                                selection: $viewModel.settings.screenshotQuality,
-                                options: PickyScreenshotQuality.allCases.map { .init(value: $0, title: $0.displayName) }
-                            )
-                            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .onChange(of: viewModel.settings.screenshotQuality) { _, _ in saveImmediately(for: .mainAgent) }
-                            Text("settings.field.screenshotQuality.note")
-                                .font(PickyHUDTypography.supporting)
-                                .foregroundColor(supportingTextColor)
-                                .lineSpacing(DS.Spacing.space1)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-
-                mainAgentSettingsGroup("settings.field.armedPickleDispatchMode") {
                     VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                        PickyDispatchModeChoiceView(selection: $viewModel.settings.armedPickleDispatchMode)
-                            .onChange(of: viewModel.settings.armedPickleDispatchMode) { _, _ in saveImmediately(for: .mainAgent) }
-                        Text("settings.dispatch.idle.note")
-                            .font(PickyHUDTypography.supporting)
-                            .foregroundColor(supportingTextColor)
-                            .lineSpacing(DS.Spacing.space1)
-                            .fixedSize(horizontal: false, vertical: true)
+                        fieldLabel("settings.field.agentsFile")
+                        mainAgentSummary("settings.mainAgent.summary.instructions")
+                        mainAgentStandaloneNote("settings.field.agentsFile.note")
+                        openAgentsFileButton
                     }
                 }
+            }
 
-                mainAgentSettingsGroup("settings.mainAgent.group.runtime") {
-                    VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.field.piBinaryPath")
-                            cwdField(
-                                placeholder: L10n.t("settings.field.piBinaryPath.placeholder"),
-                                text: $piBinaryPathDraft,
-                                onChange: { newValue in
-                                    updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(piBinaryPath: newValue))
-                                },
-                                onSubmit: commitMainAgentCwdField,
-                                onChoose: choosePiBinaryFile
-                            )
-                            Text("settings.field.piBinaryPath.note")
-                                .font(PickyHUDTypography.supporting)
-                                .foregroundColor(supportingTextColor)
-                                .lineSpacing(DS.Spacing.space1)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+            mainAgentSettingsGroup(
+                "settings.mainAgent.group.model",
+                summary: "settings.mainAgent.summary.model",
+                details: ["settings.field.piModel.helpText"]
+            ) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                    piMainAgentModelPicker
 
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.field.piCodingAgentDir")
-                            cwdField(
-                                placeholder: L10n.t("settings.field.piCodingAgentDir.placeholder"),
-                                text: $piCodingAgentDirDraft,
-                                onChange: { newValue in
-                                    updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(piCodingAgentDir: newValue))
-                                },
-                                onSubmit: commitMainAgentCwdField,
-                                onChoose: choosePiCodingAgentDirectory
-                            )
-                            Text("settings.field.piCodingAgentDir.note")
-                                .font(PickyHUDTypography.supporting)
-                                .foregroundColor(supportingTextColor)
-                                .lineSpacing(DS.Spacing.space1)
-                                .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        fieldLabel("settings.field.reasoningLevel")
+                        PickyNativeMenuPicker(
+                            title: L10n.t("settings.field.reasoningLevel"),
+                            selection: $viewModel.settings.mainAgentThinkingLevel,
+                            options: PickyMainAgentThinkingLevel.allCases.map { .init(value: $0, title: $0.displayName) }
+                        )
+                        .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: viewModel.settings.mainAgentThinkingLevel) { _, _ in saveImmediately(for: .mainAgent) }
+                    }
+                }
+            }
+
+            mainAgentSettingsGroup(
+                "settings.mainAgent.group.context",
+                summary: "settings.mainAgent.summary.screenContext",
+                details: [
+                    "settings.field.attachScreenshotsOnlyWhenInked.note",
+                    "settings.field.screenshotQuality.note"
+                ]
+            ) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        fieldLabel("settings.field.screenContext")
+                        PickyNativeMenuPicker(
+                            title: L10n.t("settings.field.screenContext"),
+                            selection: $viewModel.settings.screenContextScope,
+                            options: PickyScreenContextScope.allCases.map { .init(value: $0, title: $0.displayName) }
+                        )
+                        .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: viewModel.settings.screenContextScope) { _, _ in saveImmediately(for: .mainAgent) }
+                    }
+
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        HStack(spacing: DS.Spacing.space2) {
+                            Text("settings.field.attachScreenshotsOnlyWhenInked")
+                                .font(PickyHUDTypography.labelMedium)
+                                .foregroundColor(DS.Colors.textPrimary)
+                            Spacer(minLength: DS.Spacing.space2)
+                            Toggle("settings.field.attachScreenshotsOnlyWhenInked",
+                                   isOn: $viewModel.settings.attachScreenshotsOnlyWhenInked)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .tint(DS.Colors.accent)
+                                .controlSize(.small)
+                                .onChange(of: viewModel.settings.attachScreenshotsOnlyWhenInked) { _, _ in
+                                    saveImmediately(for: .mainAgent)
+                                }
                         }
+                        mainAgentSummary("settings.mainAgent.summary.capture")
+                        mainAgentStandaloneNote("settings.field.attachScreenshotsOnlyWhenInked.note")
+                    }
+
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        fieldLabel("settings.field.screenshotQuality")
+                        PickyNativeMenuPicker(
+                            title: L10n.t("settings.field.screenshotQuality"),
+                            selection: $viewModel.settings.screenshotQuality,
+                            options: PickyScreenshotQuality.allCases.map { .init(value: $0, title: $0.displayName) }
+                        )
+                        .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: viewModel.settings.screenshotQuality) { _, _ in saveImmediately(for: .mainAgent) }
+                        mainAgentSummary("settings.mainAgent.summary.quality")
+                        mainAgentStandaloneNote("settings.field.screenshotQuality.note")
+                    }
+                }
+            }
+
+            mainAgentSettingsGroup(
+                "settings.field.armedPickleDispatchMode",
+                summary: "settings.mainAgent.summary.dispatch",
+                details: ["settings.dispatch.idle.note"]
+            ) {
+                PickyDispatchModeChoiceView(selection: $viewModel.settings.armedPickleDispatchMode)
+                    .onChange(of: viewModel.settings.armedPickleDispatchMode) { _, _ in saveImmediately(for: .mainAgent) }
+                mainAgentStandaloneNote("settings.dispatch.idle.note")
+            }
+
+            mainAgentSettingsGroup(
+                "settings.mainAgent.group.runtime",
+                summary: "settings.mainAgent.summary.runtime",
+                details: [
+                    "settings.field.piBinaryPath.note",
+                    "settings.field.piCodingAgentDir.note"
+                ]
+            ) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        fieldLabel("settings.field.piBinaryPath")
+                        cwdField(
+                            placeholder: L10n.t("settings.field.piBinaryPath.placeholder"),
+                            text: $piBinaryPathDraft,
+                            onChange: { newValue in
+                                updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(piBinaryPath: newValue))
+                            },
+                            onSubmit: commitMainAgentCwdField,
+                            onChoose: choosePiBinaryFile
+                        )
+                        mainAgentSummary("settings.mainAgent.summary.binary")
+                        mainAgentStandaloneNote("settings.field.piBinaryPath.note")
+                    }
+
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        fieldLabel("settings.field.piCodingAgentDir")
+                        cwdField(
+                            placeholder: L10n.t("settings.field.piCodingAgentDir.placeholder"),
+                            text: $piCodingAgentDirDraft,
+                            onChange: { newValue in
+                                updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(piCodingAgentDir: newValue))
+                            },
+                            onSubmit: commitMainAgentCwdField,
+                            onChoose: choosePiCodingAgentDirectory
+                        )
+                        mainAgentStandaloneNote("settings.field.piCodingAgentDir.note")
                     }
                 }
             }
         }
     }
 
+    @ViewBuilder
     private func mainAgentSettingsGroup<Content: View>(
         _ title: LocalizedStringKey,
+        summary: LocalizedStringKey,
+        details: [LocalizedStringKey],
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            Text(title)
-                .font(PickyHUDTypography.title)
-                .foregroundColor(DS.Colors.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            content()
+        if usesHubMainAgentCards {
+            VStack(alignment: .leading, spacing: DS.Spacing.space4) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+                    Text(title)
+                        .font(PickyHUDTypography.title)
+                        .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(summary)
+                        .font(PickyHUDTypography.supporting)
+                        .foregroundColor(supportingTextColor)
+                        .lineSpacing(DS.Spacing.space1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                content()
+                    .lineSpacing(DS.Spacing.space1)
+
+                mainAgentDetails(details)
+            }
+            .padding(DS.Spacing.space5)
+            .pickyHubCard(radius: DS.CornerRadius.surface)
+        } else {
+            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                Text(title)
+                    .font(PickyHUDTypography.title)
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                content()
+                    .lineSpacing(DS.Spacing.space1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func mainAgentSummary(_ key: LocalizedStringKey) -> some View {
+        if usesHubMainAgentCards {
+            Text(key)
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(supportingTextColor)
                 .lineSpacing(DS.Spacing.space1)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func mainAgentStandaloneNote(_ key: LocalizedStringKey) -> some View {
+        if !usesHubMainAgentCards {
+            Text(key)
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(supportingTextColor)
+                .lineSpacing(DS.Spacing.space1)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func mainAgentDetails(_ details: [LocalizedStringKey]) -> some View {
+        if !details.isEmpty {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+                    ForEach(Array(details.enumerated()), id: \.offset) { _, detail in
+                        Text(detail)
+                            .font(PickyHUDTypography.supporting)
+                            .foregroundColor(supportingTextColor)
+                            .lineSpacing(DS.Spacing.space1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, DS.Spacing.space2)
+            } label: {
+                Text("settings.mainAgent.details")
+                    .font(PickyHUDTypography.supportingMedium)
+                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
+            }
+            .tint(DS.Colors.accent)
+        }
+    }
+
+    @ViewBuilder
+    private func embeddedSaveStatus(for section: CompanionPanelSettingsSection) -> some View {
+        if saveStatuses[section] != .idle {
+            HStack {
+                Spacer(minLength: 0)
+                statusIndicator(for: section)
+            }
         }
     }
 
@@ -803,7 +910,8 @@ struct CompanionPanelSettingsView: View {
             shouldShowSavedOption: shouldShowSavedMainAgentModelOption,
             savedValue: viewModel.settings.mainAgentModelPattern,
             onSave: { saveImmediately(for: .mainAgent) },
-            helpText: L10n.t("settings.field.piModel.helpText")
+            helpText: L10n.t("settings.field.piModel.helpText"),
+            showsHelpText: !usesHubMainAgentCards
         )
     }
 
@@ -824,7 +932,8 @@ struct CompanionPanelSettingsView: View {
         shouldShowSavedOption: Bool,
         savedValue: String,
         onSave: @escaping () -> Void,
-        helpText: String
+        helpText: String,
+        showsHelpText: Bool = true
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
@@ -847,10 +956,12 @@ struct CompanionPanelSettingsView: View {
             .onChange(of: selection.wrappedValue) { _, _ in onSave() }
             .task { companionManager.refreshMainAgentModelOptions() }
 
-            Text(helpText)
-                .font(PickyHUDTypography.supporting)
-                .foregroundColor(supportingTextColor)
-                .fixedSize(horizontal: false, vertical: true)
+            if showsHelpText {
+                Text(helpText)
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(supportingTextColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

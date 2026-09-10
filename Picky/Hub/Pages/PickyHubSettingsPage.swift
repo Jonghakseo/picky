@@ -30,7 +30,11 @@ struct PickyHubSettingsPage: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    // Keep the page's initial top inset with the scrolling title,
+                    // not the lazy container. A container inset becomes a gap above
+                    // the pinned header in the Hub's full-size titlebar window.
                     PickyHubPageHeader(title: PickyHubPage.settings.titleKey, subtitle: "hub.page.settings.subtitle")
+                        .padding(.top, PickyHubTheme.Layout.contentTopPadding)
                     Section {
                         // Keep all targets instantiated so settings deep links can scroll
                         // to a group or expanded leaf before it enters the viewport.
@@ -53,15 +57,20 @@ struct PickyHubSettingsPage: View {
                         }
                     } header: {
                         groupLinks(proxy)
+                            // Keep breathing room inside the pinned surface. Padding the
+                            // scroll container itself leaves a transparent titlebar gap.
+                            .padding(.top, DS.Spacing.space3)
                             // Pinned section headers overlay scrolling content, so keep this
                             // canvas opaque rather than allowing labels to show through.
                             .background(PickyHubTheme.Colors.canvas)
+                            .overlay(alignment: .bottom) {
+                                Divider().overlay(PickyHubTheme.Colors.borderSoft)
+                            }
                             .zIndex(1)
                     }
                 }
                 .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
                 .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
-                .padding(.top, PickyHubTheme.Layout.contentTopPadding)
                 .padding(.bottom, PickyHubTheme.Layout.contentBottomPadding)
                 .frame(maxWidth: .infinity)
             }

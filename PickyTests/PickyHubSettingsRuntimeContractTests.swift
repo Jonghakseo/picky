@@ -44,7 +44,7 @@ struct PickyHubSettingsRuntimeContractTests {
         }
     }
 
-    @Test func settingsGroupLinksRemainPinnedAfterScrolling() throws {
+    @Test func settingsGroupLinksCoverScrolledContentAtViewportTop() throws {
         try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
             let fixture = try PickyHubRenderGalleryFixture()
             fixture.navigator.select(.settings)
@@ -69,10 +69,21 @@ struct PickyHubSettingsRuntimeContractTests {
 
             let pageSubtitle = normalized(L10n.t("hub.page.settings.subtitle"))
             let advancedGroup = normalized(L10n.t("hub.settings.group.advanced.title"))
+            var scrolledLines: [RenderedTextLine] = []
             #expect(waitForHost(host) {
-                guard let visibleText = try? renderedText(in: host) else { return false }
+                guard let lines = try? renderedTextLines(in: host, outputName: "settings-pinned-header-scrolled.png") else { return false }
+                scrolledLines = lines
+                let visibleText = normalized(lines.map(\.text).joined())
                 return !visibleText.contains(pageSubtitle) && visibleText.contains(advancedGroup)
             })
+
+            // The topmost text in the production bitmap must be a pinned category
+            // control, not a setting row scrolled into the titlebar area.
+            let groupTitles = Set(PickyHubSettingsGroup.allCases.map {
+                normalized(L10n.t("hub.settings.group.\($0.rawValue).title"))
+            })
+            let topmostLine = try #require(scrolledLines.max { $0.bounds.maxY < $1.bounds.maxY })
+            #expect(groupTitles.contains(normalized(topmostLine.text)))
         }
     }
 
@@ -237,11 +248,18 @@ struct PickyHubSettingsRuntimeContractTests {
     }
 
     private func renderedText(in host: NSView) throws -> String {
+        let text = try renderedTextLines(in: host, outputName: "deeplink.png")
+            .map(\.text)
+            .joined()
+        return normalized(text)
+    }
+
+    private func renderedTextLines(in host: NSView, outputName: String) throws -> [RenderedTextLine] {
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         let image = try #require(bitmap.cgImage)
         let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("build/perf/hub-focus/deeplink.png")
+            .appendingPathComponent("build/perf/hub-focus/\(outputName)")
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         try bitmap.representation(using: .png, properties: [:])?.write(to: output)
         let request = VNRecognizeTextRequest()
@@ -249,8 +267,16 @@ struct PickyHubSettingsRuntimeContractTests {
         request.usesLanguageCorrection = false
         request.recognitionLanguages = ["en-US"]
         try VNImageRequestHandler(cgImage: image).perform([request])
-        let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-        return normalized(lines.joined())
+        return (request.results ?? []).compactMap { observation in
+            observation.topCandidates(1).first.map {
+                RenderedTextLine(text: $0.string, bounds: observation.boundingBox)
+            }
+        }
+    }
+
+    private struct RenderedTextLine {
+        let text: String
+        let bounds: CGRect
     }
 
     private func dismantle(_ host: NSHostingView<AnyView>) {

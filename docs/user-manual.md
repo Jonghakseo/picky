@@ -728,7 +728,7 @@ Only **screenshots** are written outside this tree, to the per-user temporary di
 
 ---
 
-Hub Settings is one scrollable page with jump links for seven groups. The group headings explain their scope; Main Agent uses focused cards that pair a live summary with supporting details, so workspace/runtime paths do not compete with model, screen-capture, or delivery decisions.
+Hub Settings is one scrollable page with jump links for seven groups. The category links stay pinned at the top as you scroll, so you can switch groups without returning to the page title. The group headings explain their scope; Main Agent uses focused cards that pair a live summary with supporting details, so workspace/runtime paths do not compete with model, screen-capture, or delivery decisions.
 
 | Group | Contents |
 | --- | --- |

@@ -28,24 +28,42 @@ struct PickyHubSettingsPage: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            PickyHubPageScroll {
-                PickyHubPageHeader(title: PickyHubPage.settings.titleKey, subtitle: "hub.page.settings.subtitle")
-                groupLinks(proxy)
-                if restartRequired {
-                    PickyHubInlineStatus(
-                        tone: .warning,
-                        message: L10n.t("hub.settings.restart.message"),
-                        actionTitle: "hub.settings.restart.action",
-                        action: { PickyRelauncher.relaunchAndTerminate() }
-                    )
-                    .padding(.bottom, PickyHubTheme.Spacing.field)
-                }
-                ForEach(PickyHubSettingsGroup.allCases) { group in
-                    PickyHubSettingsGroupSection(group: group) {
-                        groupContent(group, scrollProxy: proxy)
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    PickyHubPageHeader(title: PickyHubPage.settings.titleKey, subtitle: "hub.page.settings.subtitle")
+                    Section {
+                        // Keep all targets instantiated so settings deep links can scroll
+                        // to a group or expanded leaf before it enters the viewport.
+                        VStack(alignment: .leading, spacing: 0) {
+                            if restartRequired {
+                                PickyHubInlineStatus(
+                                    tone: .warning,
+                                    message: L10n.t("hub.settings.restart.message"),
+                                    actionTitle: "hub.settings.restart.action",
+                                    action: { PickyRelauncher.relaunchAndTerminate() }
+                                )
+                                .padding(.bottom, PickyHubTheme.Spacing.field)
+                            }
+                            ForEach(PickyHubSettingsGroup.allCases) { group in
+                                PickyHubSettingsGroupSection(group: group) {
+                                    groupContent(group, scrollProxy: proxy)
+                                }
+                                .id(group.id)
+                            }
+                        }
+                    } header: {
+                        groupLinks(proxy)
+                            // Pinned section headers overlay scrolling content, so keep this
+                            // canvas opaque rather than allowing labels to show through.
+                            .background(PickyHubTheme.Colors.canvas)
+                            .zIndex(1)
                     }
-                    .id(group.id)
                 }
+                .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
+                .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
+                .padding(.top, PickyHubTheme.Layout.contentTopPadding)
+                .padding(.bottom, PickyHubTheme.Layout.contentBottomPadding)
+                .frame(maxWidth: .infinity)
             }
             .environment(\.pickyUsesSubtleMenuChrome, true)
             .onAppear { consumePendingSettingsNavigation(with: proxy) }

@@ -16,30 +16,64 @@ import Vision
 @Suite(.serialized)
 struct PickyHubSettingsRuntimeContractTests {
     @Test func toolsDeepLinkMountsSettingsAndExpandsBuiltinToolsOnFirstVisit() throws {
-        let fixture = try PickyHubRenderGalleryFixture()
-        let (window, host) = mountProductionHub(fixture)
-        defer {
-            window.contentView = nil
-            window.close()
-            dismantle(host)
-            fixture.removeTemporaryState()
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let fixture = try PickyHubRenderGalleryFixture()
+            let (window, host) = mountProductionHub(fixture)
+            defer {
+                window.contentView = nil
+                window.close()
+                dismantle(host)
+                fixture.removeTemporaryState()
+            }
+
+            host.layoutSubtreeIfNeeded()
+            #expect(nativePopUpButtons(in: host).filter { $0.itemTitles.first == "70%" && $0.itemTitles.last == "250%" }.isEmpty)
+
+            let url = try #require(URL(string: "picky://settings/tools"))
+            fixture.navigator.apply(deepLink: try #require(PickyDeepLink(url: url)))
+
+            // Offscreen SwiftUI does not publish its AX text tree. Verify the
+            // actual visible pixels instead, without ordering a window or asking
+            // for screen-recording/accessibility permission.
+            // This is a render/content assertion, not a latency budget. Allow
+            // Vision's first model load; keep performance timing in its own host.
+            #expect(waitForHost(host, timeout: 5) {
+                guard fixture.navigator.pendingSettingsNavigation == nil else { return false }
+                return (try? renderedText(in: host).contains("pickyscreenoverlay")) == true
+            })
         }
+    }
 
-        host.layoutSubtreeIfNeeded()
-        #expect(nativePopUpButtons(in: host).filter { $0.itemTitles.first == "70%" && $0.itemTitles.last == "250%" }.isEmpty)
+    @Test func settingsGroupLinksRemainPinnedAfterScrolling() throws {
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let fixture = try PickyHubRenderGalleryFixture()
+            fixture.navigator.select(.settings)
+            let (window, host) = mountProductionHub(fixture)
+            defer {
+                window.contentView = nil
+                window.close()
+                dismantle(host)
+                fixture.removeTemporaryState()
+            }
 
-        let url = try #require(URL(string: "picky://settings/tools"))
-        fixture.navigator.apply(deepLink: try #require(PickyDeepLink(url: url)))
+            #expect(waitForHost(host) {
+                scrollViews(in: host).contains { $0.documentView?.bounds.height ?? 0 > $0.contentView.bounds.height }
+            })
+            let scrollView = try #require(scrollViews(in: host).first {
+                $0.documentView?.bounds.height ?? 0 > $0.contentView.bounds.height
+            })
+            let documentView = try #require(scrollView.documentView)
+            let maximumOffset = documentView.bounds.height - scrollView.contentView.bounds.height
+            scrollView.contentView.scroll(to: CGPoint(x: 0, y: min(280, maximumOffset)))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
 
-        // Offscreen SwiftUI does not publish its AX text tree. Verify the
-        // actual visible pixels instead, without ordering a window or asking
-        // for screen-recording/accessibility permission.
-        // This is a render/content assertion, not a latency budget. Allow
-        // Vision's first model load; keep performance timing in its own host.
-        #expect(waitForHost(host, timeout: 5) {
-            guard fixture.navigator.pendingSettingsNavigation == nil else { return false }
-            return (try? renderedText(in: host).contains("pickyscreenoverlay")) == true
-        })
+            let pageSubtitle = normalized(L10n.t("hub.page.settings.subtitle"))
+            let advancedGroup = normalized(L10n.t("hub.settings.group.advanced.title"))
+            #expect(waitForHost(host) {
+                guard let visibleText = try? renderedText(in: host) else { return false }
+                return !visibleText.contains(pageSubtitle) && visibleText.contains(advancedGroup)
+            })
+        }
     }
 
     @Test func reportTerminalAndUpdateChannelMenusPersistIndependentSelectionsFromNativeActions() async throws {
@@ -194,6 +228,14 @@ struct PickyHubSettingsRuntimeContractTests {
         (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(nativePopUpButtons)
     }
 
+    private func scrollViews(in view: NSView) -> [NSScrollView] {
+        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+    }
+
+    private func normalized(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
     private func renderedText(in host: NSView) throws -> String {
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
@@ -208,7 +250,7 @@ struct PickyHubSettingsRuntimeContractTests {
         request.recognitionLanguages = ["en-US"]
         try VNImageRequestHandler(cgImage: image).perform([request])
         let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-        return lines.joined().lowercased().filter { $0.isLetter || $0.isNumber }
+        return normalized(lines.joined())
     }
 
     private func dismantle(_ host: NSHostingView<AnyView>) {

@@ -1,14 +1,14 @@
 # Picky User Manual
 
-Picky is a local-first macOS command center for Pi sessions. It lives in the menu bar, captures neutral desktop context only when invoked, and hands work to local Pi/Pickle sessions.
+Picky is a local-first macOS command center for Pi sessions. Its menu bar icon opens Hub, and it captures neutral desktop context only when invoked before handing work to local Pi/Pickle sessions.
 
 This document describes the current user-facing behavior: menu bar usage, shortcuts, HUD interactions, Pickle controls, and settings.
 
 ## 1. First launch and prerequisites
 
-Picky is a menu bar-only app. It has no regular Dock icon or main app window. On launch, click the Picky icon in the macOS menu bar to open the companion panel.
+Picky is menu-bar-first. On launch, click the Picky icon in the macOS menu bar to open Picky Hub, its regular macOS workspace window. Picky appears in the Dock and app switcher only while that Hub window is open.
 
-If setup is incomplete, Picky opens the panel automatically and shows prerequisites before the normal tabs.
+If setup is incomplete, Picky opens Hub automatically and shows the required prerequisites on the Dashboard.
 
 Required items:
 
@@ -22,14 +22,14 @@ Required items:
 
 Speech Recognition is not part of the initial setup gate. If you use Apple Speech STT, macOS may separately request Speech Recognition during dictation.
 
-Setup actions shown in the panel include:
+Setup actions shown in Hub include:
 
 - **Install**: opens `https://pi.dev` when Pi is missing.
 - **Recheck**: reruns the local Pi runtime probe.
 - **Grant**: requests or opens the matching macOS permission pane.
 - **Find App**: reveals Picky in Finder and opens Accessibility settings, useful for unsigned/dev builds.
 
-When all prerequisites are satisfied, Picky shows the main tabs: **Status**, **Extensions**, and **Settings**.
+When all prerequisites are satisfied, Picky shows Hub's Dashboard and its seven-page sidebar.
 
 ### 1.1 Guided onboarding
 
@@ -37,108 +37,62 @@ On fresh installs, after prerequisites are satisfied, Picky may run a short guid
 
 You can skip onboarding at any beat by pressing Escape or clicking **Skip**.
 
-## 2. Menu bar companion panel
+## 2. Picky Hub
 
-Open the companion panel by clicking the Picky menu bar icon.
+Click the Picky menu bar icon to open Hub. It is a resizable macOS window with a seven-page sidebar, not a transient companion panel.
 
-Panel behavior:
+Hub behavior:
 
-- Click the menu bar icon again to toggle the panel.
-- Click outside the panel to dismiss it.
-- Click the `x` in the header to dismiss it.
-- The panel does not activate like a normal app window, so it stays lightweight while you work.
-- The footer includes **Quit** and a Light/Dark appearance toggle.
+- The first open from a menu-bar display centers Hub on that display. Hub remembers its frame.
+- Summoning an already open or minimized Hub brings it forward without moving it, even when you click the menu-bar icon on another display. The selected page and each visited page's scroll state remain available while the window stays alive.
+- Close Hub with the title-bar close control or `Cmd + W`. This closes the window, not Picky or its Pickles.
+- Hub is excluded from Picky's screen captures. When you begin a voice/context capture, Picky returns focus to the external app you were using.
 
-### 2.1 Status tab
+### 2.1 Sidebar pages
 
-The Status tab shows the current Picky state and setup/update information.
+The sidebar contains these seven destinations:
 
-Voice status states:
+- **Dashboard**: setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
+- **Statistics**: local work and AI-usage summaries. Filter by period and project, then switch between Work and Usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
+- **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
+- **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.
+- **Plugins**: search or filter the curated Pi plugin catalog by category, view details, then install, update, remove, or set up supported plugins. Changes that require Pi to reload are surfaced in Hub, with confirmation when work is active.
+- **Recent Conversation**: the Picky main-agent timeline and composer.
+- **Settings**: grouped controls for Picky's behavior, accounts, local data, and diagnostics.
 
-- **Ready when you are**: idle and ready for input.
-- **Listening…**: Push-to-Talk is held and audio is being captured.
-- **Preparing context…**: Picky is collecting desktop context for Pi.
-- **Answering…**: Picky/Pi is responding.
+### 2.2 Recent Conversation
 
-The **What Picky captures** section explains the neutral context Picky sends when invoked:
+**Recent Conversation** is the Picky main-agent chat. You can review Markdown-rendered prompts and replies, send a direct message from the bottom composer, or start a **New session**. Direct messages capture current desktop context through the same local-first flow as voice and Quick Input.
 
-- Screenshots only when you use the hotkey/input flow.
-- Selected text and browser context when available.
-- Default workspace from Settings.
+Once the daemon reports a session file, Hub also shows **Open in Pi** and **Copy resume command**. The first opens the in-app terminal against the same `pi` session; the second copies `cd <cwd> && pi --session <file>` for an external shell.
 
-The **Updates** section shows the current app version/build and channel on one compact line, plus a **Check Now** button and an inline auto-check toggle. The channel itself is pinned by the installed build (Stable, Beta, or Alpha) — it is not user-switchable. Alpha builds show a static reinstall notice instead of Sparkle update controls.
+### 2.3 Plugins
 
-The Status tab also exposes a **Recent conversation ›** drill-in row that opens the Picky main-agent chat as a Status sub-page (described below). The Status index does not host its own "Send feedback" link — use the footer bug glyph (see [§2.4](#24-footer-controls)) to reach the feedback form from any tab.
+Picky never modifies your Pi coding-agent directory on launch. Plugin installation is opt-in. By default that directory is `~/.pi/agent`, or the `PI_CODING_AGENT_DIR` configured in Settings/environment.
 
-#### Recent conversation sub-page
+For every curated plugin, Hub shows its category, provider, use cases, description, and current install state. Search by name or command, or filter by category. The available actions are **Install**, **Update**, **Remove**, and, where a plugin needs it, **Set up**. Picky never removes a path it did not create.
 
-Drills into the Picky main-agent chat. Available actions:
-
-- Review recent prompts and replies.
-- Read Markdown-rendered Picky replies.
-- Send a direct message via the bottom composer (placeholder `Message Picky…`; Return or click the send icon to submit; empty messages cannot be sent).
-- Start a **New session** for the main Picky conversation.
-- **Open in Pi** — launches the in-app Pi terminal overlay against the same `pi` session file the daemon is driving. Available once the main agent has run at least one turn.
-- **Copy resume command** — copies a `cd <cwd> && pi --session <file>` command to the clipboard so you can resume the main Picky session in any external shell. The button briefly switches to **Copied** to confirm.
-
-Both escape hatches stay hidden until the daemon reports a session file, and they reuse the same overlay/resume command flow as Pickles. Submission from the composer captures current desktop context in the same local-first flow as voice/quick input.
-
-#### Send feedback sub-page
-
-Reached from the footer bug glyph. The feedback form supports:
-
-- Category: Bug, Idea, or Other.
-- Message text.
-- Up to 5 file attachments, each up to 100 MB and 250 MB total. Image/video previews are shown when supported; unsupported media is attached as a regular file.
-- Optional diagnostics: Off, Logs only, or Full diagnostics with API keys masked.
-
-If feedback is not configured in the build/environment, the page explains that the feedback channel is unavailable and disables sending.
-
-### 2.2 Extensions tab
-
-The Extensions tab is where Picky surfaces bundled Pi resources you can install on demand and a curated list of third-party extensions. Picky never modifies your Pi coding-agent directory on launch — each extension or skill is opt-in. By default that directory is `~/.pi/agent`, or the `PI_CODING_AGENT_DIR` configured in Settings/environment.
-
-For every bundled extension or skill the tab shows:
-
-- A short description of what it adds to your local Pi.
-- The current state: **Not installed**, **Installed**, or a **Conflict** message when an unrelated entry already lives at the target path.
-- An **Install** button when the bundled source exists and the target slot is empty.
-- A **Remove** button when Picky's managed copy is installed. Picky never removes a path it did not create.
-
-Currently bundled:
-
-- **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi. When the source Pi turn is idle, it pins the conversation to Picky as a completed Pickle card seeded with the recent turns of the source session; when Pi is busy, it aborts the source turn, snapshots that Pi session, resumes it as a Pickle, and sends the handoff instruction (default: `continue`). After installing, restart Pi or run `/reload`.
-- **Picky CLI skill** — teaches local Pi how to use the `picky` shell command for submitting to Picky, creating/steering Pickles, controlling Picky push-to-talk, and reading or changing the CLI-exposed Picky settings.
-
-A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, the command or tool it adds, a short description, and an install/remove control that installs the extension from npm into the local Pi setup. Examples include `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, `show_widget` for native generative UI windows, `/delay` for scheduling a one-shot follow-up prompt after a chosen delay, and `subagent` for delegating work to parallel Pi subagents.
-
-The curated list also includes:
+The catalog includes tools such as `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, generative UI, delayed actions, local memory, clipboard access, and cross-agent bridges. It also includes:
 
 - **Cron** — schedules local Pi jobs and configures a persistent macOS LaunchAgent during install and update. An installed row provides **View jobs**, a read-only list of schedule and run status that never opens prompt contents, working directories, or run logs. If daemon setup fails after the npm package installs, use **Set up** to retry without reinstalling. Removal asks for confirmation, runs Cron's uninstall command, verifies that the LaunchAgent is unloaded, and only then removes the npm package.
 - **Memory Layer** — adds local `remember`, `recall`, `memory_list`, and `forget` tools so Pi can reuse durable memories across sessions.
 
-Picky also checks npm for newer versions of installed curated extensions: when an installed, non-pinned extension has an update available, an **Update** button appears next to its Remove button.
+Hub checks npm for newer versions of installed curated plugins. When an installed, non-pinned plugin has an update available, **Update** appears with its other actions.
 
-### 2.3 Settings tab
+### 2.4 Settings
 
-Settings are grouped in the index:
+Settings has jump links and seven scrollable groups: **General**, **Accounts and agents**, **Voice and input**, **Screen and overlays**, **Pickles and workspace**, **Notifications, permissions, and privacy**, and **Advanced and diagnostics**. Group headings include a short summary; the Main Agent area further separates workspace and instructions, model and reasoning, screen capture, armed-Pickle delivery, and runtime paths into focused cards. Most toggles and menus save immediately. Directory and provider text fields retain their own drafts and show **Save changes** / **Saved** status.
 
-- **General**: General, Pi login (OAuth), Shortcuts
-- **Agents**: Main Agent, Pickle, Built-in Tools
-- **Surface**: Voice (STT & TTS), Overlay & Notifications
+The **Accounts and agents** group includes Pi OAuth connections for OpenAI Codex and Anthropic. Use **Refresh** to query the current status, **Sign in** or **Reconnect** to authenticate, and **Disconnect** to remove a provider after confirmation. Completing either sign-in or disconnect refreshes authentication for the current Picky/Pickle daemon sessions.
 
-The **Pi login** page lets you sign in to your Pi account from Picky. Use it to connect your local Pi to your Pi account so account-bound features stay in sync. The section header shows the current login status.
+### 2.5 Sidebar controls
 
-Most toggles and pickers save immediately. Directory and provider text fields show a section-level **Save changes** / **Saved** indicator.
+The controls at the bottom of the sidebar are always available:
 
-### 2.4 Footer controls
-
-Footer controls are always visible:
-
-- **Quit**: asks for confirmation before terminating Picky.
-- **Hide Dock / Show Dock**: hides or restores only the HUD dock on the display where the companion panel is open, without stopping Pickles or disconnecting their sessions. Each display's choice persists independently across relaunches. Clicking a Pickle notification explicitly restores the Dock so the requested conversation can open.
-- **Send feedback (bug glyph)**: opens the feedback form regardless of which tab you are on. Routes the panel to Status → Send feedback so the back chevron lands on a familiar surface afterward.
-- **Light/Dark icons**: click the sun or moon directly to select and persist the Picky UI appearance. The selected icon uses a quiet highlighted background.
+- **Dock**: with one connected display, toggles that display's HUD dock. With multiple displays, opens a picker with a visibility checkbox for every connected display. Each choice persists independently; opening a Pickle from a notification restores the required dock.
+- **Send feedback (bug glyph)**: opens a feedback dialog from any Hub page. It supports Bug, Idea, or Other; text; up to 5 attachments (100 MB each, 250 MB total); and optional masked diagnostics. If feedback is unavailable in the build/environment, sending is disabled.
+- **Quit**: asks for confirmation before terminating Picky. When saved settings require a fresh process, this becomes **Restart**.
+- **Light/Dark icons**: select and persist Hub's appearance.
 
 ## 3. Global shortcuts
 
@@ -150,7 +104,7 @@ Default shortcuts:
 | Quick Input | Double-tap Control | Opens a text composer near the cursor. |
 | Focus Pickle | Left Command + Right Command | Opens the first unread Pickle on the cursor's display and gives its HUD keyboard focus. If none is unread, opens the most recently opened Pickle, then the first active Pickle. |
 
-Shortcuts are configurable in **Settings → Shortcuts**.
+Shortcuts are configurable in **Hub → Settings → Voice and input**.
 
 Supported shortcut shapes:
 
@@ -173,7 +127,7 @@ Basic flow:
 3. Optionally draw on screen while holding the shortcut.
 4. Release the shortcut.
 5. Picky transcribes speech, captures context, and sends the request to Pi.
-6. Replies appear in the Picky cursor bubble, the Status → Recent conversation sub-page, or the Pickle HUD depending on routing.
+6. Replies appear in the Picky cursor bubble, **Hub → Recent Conversation**, or the Pickle HUD depending on routing.
 7. If TTS is enabled, Picky also reads replies aloud.
 
 > **Clamshell mode:** Apple silicon and T2-equipped Mac laptops hardware-disconnect the built-in microphone when the lid closes ([Apple Platform Security](https://support.apple.com/guide/security/hardware-microphone-disconnect-secbbd20b00b/web)). Select an external microphone in **System Settings → Sound → Input** before using Push-to-Talk with the lid closed. If Azure STT receives only digital silence, Picky skips the network request and reports that no speech was detected instead of accepting a fabricated transcript.
@@ -202,7 +156,7 @@ You can explicitly arm a Pickle as the target for the next Picky screen-context 
 4. To keep targeting the Pickle until you clear it, press and hold that badge for about one second, or right-click / Control-click its Dock icon and choose **Pin Picky Input to This Pickle**.
 5. Use Push-to-Talk or Quick Input.
 6. The next screen-context input is sent directly to that Pickle.
-7. By default, the input is delivered as a **follow-up** so it waits for the Pickle's current turn to finish. Change **Settings → Picky → Armed Pickle delivery** to **Steer** if you want armed Push-to-Talk and Quick Input to interrupt the current turn instead.
+7. By default, the input is delivered as a **follow-up** so it waits for the Pickle's current turn to finish. Change **Hub → Settings → Accounts and agents → Main Agent → Armed Pickle delivery** to **Steer** if you want armed Push-to-Talk and Quick Input to interrupt the current turn instead.
 8. A one-shot target clears after delivery. A pinned target stays armed until you click the badge again, choose **Unpin Picky Input** from its Dock context menu, or pin another Pickle.
 9. When that armed delivery includes at least one screenshot, the Pickle receives the visual annotation DSL for that response only and may draw grounded `RECT`, `LINE`, or `PATH` annotations on the captured screen. Text-only deliveries never enable the DSL.
 10. Visual Pickle replies use the same narration pipeline as main Picky: when TTS is enabled, each completed sentence is read in source order and its annotation is revealed when that sentence starts. Providers without incremental playback read the clean final reply once; with TTS disabled, sentences and annotations still appear progressively without audio. The DSL tags themselves never appear in the Pickle conversation.
@@ -252,7 +206,7 @@ Details:
 - Any display whose pixels are about to be sent as context shows a subtle blue edge glow and a **This screen is being shared as context** capsule while you record or type, so you always know which screens are captured. Use the capsule's action to exclude that display, or include a display that is currently omitted. Only the visible capsule is interactive; its transparent panel area does not block the app underneath.
 - The included display set is frozen when you release Push-to-Talk or submit Quick Input. Moving the pointer or changing display topology afterward cannot silently add another screen to that submission.
 - With **Focused screen only** scope, drawing on a second monitor also pulls that monitor into the context for this turn (its edge glow appears as soon as your mark lands on it), so a highlight on a non-focused display is never lost.
-- If **Send screenshots only when drawn** (Settings → Picky) is enabled, a display's screenshot is sent only after you actually draw on that display — the edge glow follows the same rule and appears only once you start drawing. Displays you did not draw on send only the transcript and non-visual context fields; screen capture still runs locally so the ink overlay can render.
+- If **Send screenshots only when drawn** (**Hub → Settings → Accounts and agents → Main Agent**) is enabled, a display's screenshot is sent only after you actually draw on that display — the edge glow follows the same rule and appears only once you start drawing. Displays you did not draw on send only the transcript and non-visual context fields; screen capture still runs locally so the ink overlay can render.
 
 ### 6.1 Picky screen guidance
 
@@ -260,7 +214,7 @@ When a reply refers to a concrete location in a captured screenshot, Picky can p
 
 These overlays are grounded in the screenshot captured for the current turn. Picky validates the current screen pixels before revealing them, hides drawings when the referenced area changes substantially, and can restore them if the original scene returns during narration or within the roughly 30-second recovery window afterward. Drawings that remain after narration show a lower-center **Clear drawing** control. Agent-authored overlays are visual-only and are not added to the conversation transcript.
 
-Turn **Screen pointing & drawing** off under Settings → Agents → Tools to disable all agent-authored screen overlays. This does not disable the marks you draw yourself during Push-to-Talk or Quick Input.
+Turn **Screen pointing & drawing** off under **Hub → Settings → Accounts and agents → Advanced tools** to disable all agent-authored screen overlays. This does not disable the marks you draw yourself during Push-to-Talk or Quick Input.
 
 ## 7. Pickle HUD and dock
 
@@ -290,7 +244,7 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | --- | --- |
 | Hover a Pickle | Shows a mini preview. |
 | Click a Pickle | Opens or closes its conversation card. |
-| Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or Settings → Pickle → Archived sessions. |
+| Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or **Hub → Settings → Pickles and workspace → Archived sessions**. |
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
 | Right-click / Control-click | Opens the dock context menu. Use **Pin Picky Input to This Pickle** to keep routing voice and Quick Input here, or **Send Next Picky Input to This Pickle** for one message only. The menu also provides Compact, Archive, and Stop; Stop is disabled when the Pickle can no longer be stopped. |
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
@@ -376,7 +330,7 @@ After archiving:
 Restore paths after archiving:
 
 - The screen-level **Undo** toast (immediate, time-limited).
-- **Menu bar panel → Settings → Pickle → Archived sessions** (footer disclosure, hidden when empty). Each row has a **Restore** button.
+- **Hub → Settings → Pickles and workspace → Archived sessions** (footer disclosure, hidden when empty). Each row has a **Restore** button.
 - Asking the Picky main agent to bring it back (e.g. "되살려", "restore that pickle"), which routes through the same `picky_unarchive_pickle` path.
 
 Permanently deleting archives:
@@ -541,7 +495,7 @@ The composer bottom action row includes two independent controls for successful 
 - **Picky icon**: report completion to Main Picky.
 - **Bell**: show a macOS completion notification. `Cmd + N` toggles only this channel.
 
-Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles. Settings → Overlay & Notifications supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
+Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles. **Hub → Settings → Notifications, permissions, and privacy** supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
 
 Both defaults are off on a fresh install, so background work stays quiet until you enable a channel.
 
@@ -625,7 +579,7 @@ The Pickle card menu contains:
 | Stop session | Abort the active session. |
 | Archive | Archive the Pickle. |
 
-The archived Pickle list lives in **Settings → Pickle → Archived sessions**, not in the card menu — see [§7.5](#75-archiving-and-undo).
+The archived Pickle list lives in **Hub → Settings → Pickles and workspace → Archived sessions**, not in the card menu — see [§7.5](#75-archiving-and-undo).
 
 ### 9.2 Dock right-click menu
 
@@ -700,8 +654,8 @@ Ways to open from a Pickle card:
 
 Ways to open from the always-on Picky main agent:
 
-- Menu bar panel → **Status → Recent conversation** → **Open in Pi**.
-- Menu bar panel → **Status → Recent conversation** → **Copy resume command** to paste `pi --session ...` into your own shell.
+- **Hub → Recent Conversation → Open in Pi**.
+- **Hub → Recent Conversation → Copy resume command** to paste `pi --session ...` into your own shell.
 
 Throughout this section "terminal overlay" means Picky's in-app Pi terminal panel (`PickyTerminalOverlay`), not an external Terminal.app window.
 
@@ -774,24 +728,36 @@ Only **screenshots** are written outside this tree, to the per-user temporary di
 
 ---
 
-The Settings tab groups every leaf under one of three headers so the index reads as a short, scannable list rather than a flat menu. Each row also shows a one-line summary built from your current configuration (model, dock size, STT/TTS provider, enabled alert count, etc.) so the index doubles as a status overview.
+Hub Settings is one scrollable page with jump links for seven groups. The group headings explain their scope; Main Agent uses focused cards that pair a live summary with supporting details, so workspace/runtime paths do not compete with model, screen-capture, or delivery decisions.
 
-| Group | Leaves |
+| Group | Contents |
 | --- | --- |
-| General | General, Shortcuts |
-| Agents | Picky, Pickle, Tools |
-| Surface | Voice, Overlay & Notifications |
-
-The subsections below describe each leaf in the order it appears on the index.
+| General | App language, appearance, Hub/report/terminal font scales, update controls, and onboarding replay. |
+| Accounts and agents | Pi OAuth accounts, Main Agent settings, and the expandable built-in-tools list. |
+| Voice and input | Speech-to-text, text-to-speech, and global shortcuts. |
+| Screen and overlays | Cursor and speech-bubble controls. |
+| Pickles and workspace | New-Pickle defaults, dock size, folder history, and archived sessions. |
+| Notifications, permissions, and privacy | Optional work classification, new-Pickle notification defaults, macOS permissions, and local-data notice. |
+| Advanced and diagnostics | Main-thread watchdog, `picky` shell command, and statistics-classification reset. |
 
 ### 13.1 General
 
 | Setting | Values | Notes |
 | --- | --- | --- |
 | App language | System default, English, 한국어 | Most UI retranslates immediately. Some macOS-owned surfaces require relaunch. |
-| Install `picky` shell command | Button | Installs or uninstalls the `picky` launcher in `/usr/local/bin` (or the closest writable directory). Useful because Picky is an `LSUIElement` app whose panels never activate the macOS top menu bar, so a normal "Install Shell Command…" menu item would never be visible. |
+| Appearance | Light or Dark | Also available from the sidebar footer. |
+| Hub font scale | 90%–130% | Changes Hub controls and text. Report and terminal font scales are separate. |
+| Update channel preference | Stable or Beta | Kept for settings-file compatibility. The installed app bundle determines which updates are eligible, so this setting does not move an installed app between release channels. |
+| Check automatically / Check now | Toggle / button | Controls Sparkle update checks where the installed build supports them. |
+| Replay onboarding | Button | Shows the guided introduction again after confirmation. |
 
-After installing the shell command, use it to drive Picky from a terminal or hardware automation. The Picky main agent does not depend on this optional installation: primary agentd gives its existing bash tool an internal `picky` command automatically.
+#### Pi accounts (Accounts and agents)
+
+The **Pi accounts** card lists OpenAI Codex and Anthropic independently. It shows each current authentication state. Use **Refresh** to query both providers, **Sign in** or **Reconnect** to authenticate in a browser, and **Disconnect** to remove a configured provider after confirmation. A successful sign-in or disconnect reloads authentication for the current Picky/Pickle daemon sessions.
+
+#### Picky shell command (Advanced and diagnostics)
+
+**Install `picky` shell command** installs or uninstalls the `picky` launcher in `/usr/local/bin` (or the closest writable directory). After installing the shell command, use it to drive Picky from a terminal or hardware automation. The Picky main agent does not depend on this optional installation: primary agentd gives its existing bash tool an internal `picky` command automatically.
 
 Ordinary terminals, resumed Pi sessions, Pickles, and subagents must omit `--from-main`; it is reserved for the live Picky main agent. On creation, it copies the daemon's stored main request and desktop context, not the caller's conversation. For self-contained coding or research, use `picky pickle-create <title> --instructions <brief> --cwd <workspace> --no-context`. Do not combine `--no-context` with `--from-main`: the current main route ignores `--no-context`. Context-free creation uses the external route and the configured new-Pickle completion-notification defaults.
 
@@ -827,14 +793,14 @@ picky settings-set mainAgent.model "claude*sonnet"
 
 Existing consumers of `.sessions[].id`, title, status, or artifact links should stay on `--json`. Legacy scripts that require session details omitted above must explicitly migrate to `picky pickle-list --raw-json`. That flag returns the former filtered session snapshot and may expose sensitive session details. It is not an authoritative message journal: the app bridge can return `messages: []` with `messageJournalAvailable: false`. Archive selection, query filtering, limit slicing, and dock-group enrichment are identical in both JSON modes. This change minimizes CLI stdout only; the local app/daemon bridge still supplies the session summary used for filtering.
 
-### 13.1.1 CLI settings control
+#### CLI settings control
 
 `picky settings-list`, `picky settings-get <key>`, and `picky settings-set <key> <value>` read and change a small allowlisted subset of Picky settings while Picky.app is running (the commands fail with a clear error when the app is not connected). The current keys are:
 
 | Key | Type | Notes |
 | --- | --- | --- |
 | `hud.dockVisible` | bool, `toggle` | Optional `--display <id>` targets one display; without it, all displays change together. A display ID that is not currently connected is stored as an offline override and takes effect when that display returns. |
-| `hud.dockSizePreset` | enum | Same presets as Settings → HUD. |
+| `hud.dockSizePreset` | enum | Same presets as Hub → Settings → Pickles and workspace. |
 | `cursor.visible` | bool, `toggle` | Shows or hides the Pi cursor overlay. |
 | `mainAgent.model` | string pattern | Applied to the running main session; the CLI reports `saved but not applied: <reason>` if the daemon rejects or times out. |
 | `mainAgent.thinkingLevel` | enum | Same applied/pending semantics as the model key. |
@@ -847,7 +813,7 @@ Existing consumers of `.sessions[].id`, title, status, or artifact links should 
 
 The Picky main agent can also run these commands itself: asking Picky to "hide the dock", "turn off the cursor", or "switch the model" changes the setting through the same allowlist. The agent is instructed to change settings only when you explicitly ask.
 
-### 13.2 Shortcuts
+### 13.2 Shortcuts (Voice and input)
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -857,7 +823,9 @@ The Picky main agent can also run these commands itself: asking Picky to "hide t
 
 Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to defaults** restores all three defaults.
 
-### 13.3 Picky
+### 13.3 Main Agent (Accounts and agents)
+
+Main Agent is split into cards for **workspace and instructions**, **model and reasoning**, **screen capture**, **armed-Pickle delivery**, and **runtime paths**. The cards keep the controls visible while their summaries and details explain what each choice affects.
 
 | Setting | Values / behavior |
 | --- | --- |
@@ -897,9 +865,9 @@ The seeded `AGENTS.md` instructs the main agent to keep itself in sync with how 
 
 In practice you can shape Picky just by talking to it ("always start Pickles for the picky repo from `~/Documents/picky` and follow the AGENTS guide there") and let Picky persist the rule. You can still hand-edit `AGENTS.md` whenever you want full control.
 
-To run Picky with a completely different persona or workflow set, change **Picky cwd** in Settings to any folder that contains its own `AGENTS.md` and `.pi/*` subdirectories.
+To run Picky with a completely different persona or workflow set, change **Hub → Settings → Accounts and agents → Main Agent → Picky cwd** to any folder that contains its own `AGENTS.md` and `.pi/*` subdirectories.
 
-### 13.4 Pickle
+### 13.4 Pickles and workspace
 
 | Setting | Values / behavior |
 | --- | --- |
@@ -912,13 +880,13 @@ To run Picky with a completely different persona or workflow set, change **Picky
 
 Running Pickles can still cycle model/thinking independently from these defaults.
 
-### 13.5 Tools
+### 13.5 Built-in tools (Accounts and agents)
 
 Built-in capabilities that add dedicated agent context can be disabled here. Pickle creation, listing, steering, abort, archive, and dock-group management use the local `picky` CLI and are always available, so they do not appear as toggles. **Screen pointing & drawing** controls all agent-authored pointer and shape overlays as one capability.
 
 Tool changes apply to the main agent immediately and interrupt any in-progress turn. Pickles that started before the change keep their existing tool list until the next turn.
 
-### 13.6 Voice (STT & TTS)
+### 13.6 Voice (STT & TTS, Voice and input)
 
 Picky supports Apple/macOS built-in, OpenAI direct (`api.openai.com`), Azure
 OpenAI, and ElevenLabs for speech recognition and synthesis. **Edge TTS
@@ -980,9 +948,9 @@ ElevenLabs TTS fields (when TTS provider = ElevenLabs):
 > falls back to macOS Speech if it fails. macOS Speech remains the default. Picky
 > uses the MIT-licensed `msedge-tts` package for this adapter.
 
-### 13.7 Overlay & Notifications
+### 13.7 Screen, overlays, notifications, and privacy
 
-Combined page for everything Picky surfaces back to you — cursor overlay, speech bubbles, and macOS notification banners. Inside the page, the three groups are separated by small `Cursor` / `Bubbles` / `Alerts` subgroup headers.
+**Hub → Settings → Screen and overlays** contains the cursor and speech-bubble controls. **Hub → Settings → Notifications, permissions, and privacy** contains new-Pickle notification defaults, optional statistics classification, macOS permissions, and the local-data notice.
 
 **Cursor**
 
@@ -1014,17 +982,19 @@ While the Mac App Store is the frontmost app, Picky temporarily hides the cursor
 
 The two completion defaults are independent and do not modify existing Pickles. Change an existing Pickle's controls in its composer or conversation menu. Upgrading preserves the former **On success** setting as the macOS default for future Pickles.
 
-### 13.8 Updates
-
-Update controls live in the Status tab.
+### 13.8 Updates (General)
 
 | Control | Values / behavior |
 | --- | --- |
-| Channel | Pinned by the installed build (Stable, Beta, or Alpha). The Updates row shows the active channel on the build line; there is no in-app channel switcher. To move between channels, install the matching release artifact (DMG for beta/stable, trusted internal zip/package for alpha). |
-| Check automatically every 4 hours | Toggle that enables Sparkle automatic checks where available. |
-| Check Now | Manual update check. |
+| Update channel preference | Stable or Beta. This legacy saved preference does not change the installed build's release channel or update eligibility. Install the matching release artifact to move between Stable, Beta, or Alpha. |
+| Check automatically every 4 hours | Toggle that enables Sparkle automatic checks where the installed build supports them. |
+| Check Now | Manual update check when available. |
 
-Alpha builds replace the controls above with a one-line reinstall notice because the alpha channel is not exposed through Sparkle's appcast — the updater is not started for alpha builds, so installing a new alpha means downloading the next trusted internal alpha zip/package manually.
+Alpha builds do not expose Sparkle updates; install the next trusted alpha package manually.
+
+### 13.9 Advanced and diagnostics
+
+This group includes the main-thread watchdog, **Install `picky` shell command**, and **Reset statistics classification**. Resetting classifications asks for confirmation and affects only the locally stored work-classification data; it does not delete Pickles or their conversation history.
 
 ## 14. Common workflows
 
@@ -1075,7 +1045,7 @@ To continue a longer conversation through voice or Quick Input, right-click / Co
 
 1. Press and hold a dock icon, right-click → **Archive**, or use the card menu → **Archive**.
 2. If it was accidental, click **Undo** in the archive toast.
-3. After the toast disappears, open **Settings → Pickle → Archived sessions** to restore (or permanently delete) an archived Pickle. Picky also restores archived Pickles when you ask the main agent (e.g. "되살려", "bring back that pickle"), which routes through the same `picky_unarchive_pickle` path.
+3. After the toast disappears, open **Hub → Settings → Pickles and workspace → Archived sessions** to restore (or permanently delete) an archived Pickle. Picky also restores archived Pickles when you ask the main agent (e.g. "되살려", "bring back that pickle"), which routes through the same `picky_unarchive_pickle` path.
 
 ### 14.7 Customize Picky's persona or routing rules
 
@@ -1095,10 +1065,10 @@ One-off facts ("my OpenAI key lives at `~/.config/foo`") are stored in the built
 2. Edit the persona, Pickle delegation thresholds, or any other instructions.
 3. Save. The next Picky main session picks up the changes.
 
-To experiment without touching the default, point **Settings → Picky → Picky cwd** at a fresh folder containing its own `AGENTS.md` and switch back when you're done.
+To experiment without touching the default, point **Hub → Settings → Accounts and agents → Main Agent → Picky cwd** at a fresh folder containing its own `AGENTS.md` and switch back when you're done.
 
 ### 14.8 Resume the main Picky session in a real Pi terminal
 
-1. Open the menu bar panel, stay on the **Status** tab, and click the **Recent conversation ›** row.
+1. Open **Hub → Recent Conversation**.
 2. Click **Open in Pi** to launch the in-app Pi terminal overlay, or **Copy resume command** to paste `pi --session ...` into an external shell.
-3. Work directly in the Pi TUI. Closing the overlay syncs the visible state back into the Picky panel.
+3. Work directly in the Pi TUI. Closing the overlay syncs the visible state back into Hub.

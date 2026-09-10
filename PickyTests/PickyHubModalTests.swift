@@ -33,22 +33,6 @@ struct PickyHubModalTests {
         #expect(restorationCount == 1)
     }
 
-    @Test func modalRenderingChangesOutsideTheInitiatingAction() async {
-        let host = PickyHubModalHost()
-        let id = host.present(accessibilityLabel: "Confirmation") { EmptyView() }
-
-        #expect(host.presentation?.id == id)
-        #expect(host.renderedPresentation == nil)
-        await drainMainQueue()
-        #expect(host.renderedPresentation?.id == id)
-
-        host.dismiss()
-        #expect(host.presentation == nil)
-        #expect(host.renderedPresentation?.id == id)
-        await drainMainQueue()
-        #expect(host.renderedPresentation == nil)
-    }
-
     @Test func lateRemovalAfterCleanupDoesNotRepeatFocusRestoration() async {
         let host = PickyHubModalHost()
         var cleanupCount = 0

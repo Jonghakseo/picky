@@ -19199,6 +19199,70 @@
         }
       }
     },
+    "hub.settings.notification.main.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends newly created Pickles’ completion results to the main Picky conversation. Existing Pickles keep their own settings."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 만드는 Pickle이 완료되면 메인 Picky 대화로 결과를 전달합니다. 기존 Pickle의 설정은 바뀌지 않습니다."
+          }
+        }
+      }
+    },
+    "hub.settings.notification.completion.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends a macOS notification when a newly created Pickle completes. Existing Pickles keep their own settings; macOS notification permission is required."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 만드는 Pickle이 완료되면 macOS 알림으로 알려줍니다. 기존 Pickle의 설정은 바뀌지 않으며, macOS 알림 권한이 필요합니다."
+          }
+        }
+      }
+    },
+    "hub.settings.notification.failure.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends a macOS notification when a Pickle fails, so you can check the error. This is independent of completion notifications."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 작업이 실패하면 macOS 알림으로 알려줍니다. 완료 알림 설정과 별도로 적용됩니다."
+          }
+        }
+      }
+    },
+    "hub.settings.notification.input.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends a macOS notification when a Pickle pauses for your answer or confirmation, so you know it needs input to continue."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle이 질문에 대한 답변이나 확인을 기다리면 macOS 알림으로 알려줍니다. 작업을 이어가려면 해당 Pickle에서 응답하세요."
+          }
+        }
+      }
+    },
     "hub.settings.notification.detail": {
       "localizations": {
         "en": {

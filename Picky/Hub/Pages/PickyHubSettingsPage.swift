@@ -518,15 +518,15 @@ private struct PickyHubNotificationControls: View {
 
     var body: some View {
         PickyHubSettingsList {
-            notificationRow("hub.settings.notification.main", binding: \PickyNotificationPreferences.notifyMainOnCompletionForNewPickles)
-            notificationRow("hub.settings.notification.completion", binding: \PickyNotificationPreferences.notifyMacOSOnCompletionForNewPickles)
-            notificationRow("hub.settings.notification.failure", binding: \PickyNotificationPreferences.notifyOnFailed)
-            notificationRow("hub.settings.notification.input", binding: \PickyNotificationPreferences.notifyOnWaitingForInput)
+            notificationRow("hub.settings.notification.main", detail: "hub.settings.notification.main.detail", binding: \PickyNotificationPreferences.notifyMainOnCompletionForNewPickles)
+            notificationRow("hub.settings.notification.completion", detail: "hub.settings.notification.completion.detail", binding: \PickyNotificationPreferences.notifyMacOSOnCompletionForNewPickles)
+            notificationRow("hub.settings.notification.failure", detail: "hub.settings.notification.failure.detail", binding: \PickyNotificationPreferences.notifyOnFailed)
+            notificationRow("hub.settings.notification.input", detail: "hub.settings.notification.input.detail", binding: \PickyNotificationPreferences.notifyOnWaitingForInput)
         }
     }
 
-    private func notificationRow(_ title: LocalizedStringKey, binding: WritableKeyPath<PickyNotificationPreferences, Bool>) -> some View {
-        PickyHubSettingsRow(title: title, detail: "hub.settings.notification.detail") {
+    private func notificationRow(_ title: LocalizedStringKey, detail: LocalizedStringKey, binding: WritableKeyPath<PickyNotificationPreferences, Bool>) -> some View {
+        PickyHubSettingsRow(title: title, detail: detail) {
             Toggle(title, isOn: Binding(
                 get: { settingsViewModel.settings.notifications[keyPath: binding] },
                 set: { enabled in

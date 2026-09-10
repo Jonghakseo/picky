@@ -37,14 +37,15 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
     /// Create-or-focus. Page/scroll state lives in the navigator and the
     /// mounted SwiftUI tree, so reopening lands where the user left off.
     func show(fromDisplayID displayID: CGDirectDisplayID? = nil) {
+        let shouldRelocate = !(isVisible || window?.isMiniaturized == true)
         presentingDisplayID = displayID ?? presentingDisplayID
         if window == nil { createWindow() }
         guard let window else { return }
         foregroundContextPreserver.recordExternalForegroundBeforeHubActivation(hubIsVisible: isVisible)
         startTrackingExternalActivations()
-        // Apply the explicit destination after autosave restoration, including
-        // when reusing an existing window. Deep links keep the current frame.
-        if let displayID,
+        // An open (or minimized) Hub keeps its location when summoned from
+        // another display. Only a closed Hub follows the explicit destination.
+        if shouldRelocate, let displayID,
            let screen = NSScreen.screens.first(where: { $0.pickyDisplayID == displayID }),
            window.screen?.pickyDisplayID != displayID {
             let visible = screen.visibleFrame

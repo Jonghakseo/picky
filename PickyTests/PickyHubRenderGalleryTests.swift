@@ -254,6 +254,33 @@ struct PickyHubRenderGalleryTests {
             }
         }
 
+        // Exercise the production disclosure style with visible multi-line
+        // content as well as the default collapsed full-page settings scenes.
+        for appearance in [Appearance.dark, .light] {
+            let size = CGSize(width: 620, height: 240)
+            let root = DisclosureGroup(isExpanded: .constant(true)) {
+                Text("settings.field.piModel.helpText")
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                Text("settings.mainAgent.details")
+                    .font(PickyHUDTypography.supportingMedium)
+            }
+            .disclosureGroupStyle(PickySettingsDisclosureStyle())
+            .padding(DS.Spacing.space5)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(PickyHubTheme.Colors.surface)
+            .environment(\.locale, Locale(identifier: "ko_KR"))
+            .preferredColorScheme(appearance.colorScheme)
+            let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
+                root, logicalSize: size, scale: Self.renderScale, appearance: appearance.nsAppearance
+            ))
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: settingsOutput.appendingPathComponent("disclosure-expanded-\(appearance.rawValue).png"))
+        }
+
         #expect(fixture.client.usedOnlyGalleryCommands)
     }
 

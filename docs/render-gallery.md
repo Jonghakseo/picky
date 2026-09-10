@@ -142,3 +142,5 @@ hover, focus, vibrancy, or OS permission behavior. Permissions and launch action
 remain inert fixtures. Video thumbnails use a blocked-network placeholder, and
 plugin versions are omitted when only package declarations are provided. The
 ordinary deterministic `hub` gallery continues to use its synthetic fixtures.
+
+Settings disclosure review also exports `settings-full/disclosure-expanded-dark.png` and `disclosure-expanded-light.png`. These render the shared production disclosure style with multi-line explanation content expanded; unlike the full-page scenes, they are component renders and do not establish live pointer/keyboard activation.

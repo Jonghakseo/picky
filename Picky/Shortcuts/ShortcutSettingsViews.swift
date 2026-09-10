@@ -71,7 +71,7 @@ struct ShortcutSettingsRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
             Text(title)
                 .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
@@ -82,7 +82,7 @@ struct ShortcutSettingsRow: View {
                 .foregroundColor(DS.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Spacing.space2) {
                 keyCapsRow
 
                 Spacer(minLength: 8)

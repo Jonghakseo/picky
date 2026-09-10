@@ -347,7 +347,7 @@ private struct PickyHubSettingsGroupSection<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+        VStack(alignment: .leading, spacing: DS.Spacing.space4) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.space2) {
                 Text(group.titleKey)
                     .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .semibold)
@@ -762,6 +762,7 @@ private struct PickyHubSettingsDisclosure<Content: View>: View {
         } label: {
             Text(title).pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold).foregroundColor(PickyHubTheme.Colors.textSecondary)
         }
+        .disclosureGroupStyle(PickySettingsDisclosureStyle())
         .padding(DS.Spacing.space4)
         .pickyHubCard(fill: PickyHubTheme.Colors.surface)
     }

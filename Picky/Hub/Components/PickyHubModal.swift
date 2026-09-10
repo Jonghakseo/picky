@@ -27,7 +27,9 @@ final class PickyHubModalHost: ObservableObject {
         let onDismiss: () -> Void
     }
 
-    @Published private(set) var presentation: Presentation?
+    /// Logical ownership clears immediately; SwiftUI observes the render phase.
+    private(set) var presentation: Presentation?
+    @Published private(set) var renderedPresentation: Presentation?
     /// The hub window; key events from other Picky windows are left alone.
     weak var window: NSWindow?
     private var escapeMonitor: Any?
@@ -59,6 +61,7 @@ final class PickyHubModalHost: ObservableObject {
             onDismiss: onDismiss
         )
         presentation = next
+        renderedPresentation = next
         installEscapeMonitor()
         return next.id
     }
@@ -69,14 +72,27 @@ final class PickyHubModalHost: ObservableObject {
         removeEscapeMonitor()
         pendingDismissal = current
         current.onWillDismiss()
+
+        // A SwiftUI button action can arrive during a view update. Do not
+        // publish removal from that transaction: @Published sends before storing.
+        let id = current.id
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentation == nil,
+                  self.pendingDismissal?.id == id,
+                  self.renderedPresentation?.id == id else { return }
+            // The overlay supplies its animation, including Reduce Motion.
+            // Completion waits for exit transitions, unlike onDisappear.
+            withAnimation(nil, completionCriteria: .removed) {
+                self.renderedPresentation = nil
+            } completion: { [weak self] in
+                self?.restoreFocusAfterRemoval(id: id)
+            }
+        }
     }
 
-    /// onDisappear can run inside SwiftUI's update transaction. Defer the
-    /// caller's focus-state mutation until that synchronous update has unwound.
-    /// This is not a compositor/frame guarantee; the focus binding still updates
-    /// through SwiftUI. Recheck IDs after the hop so replacements win.
-    func presentationDidDisappear(id: UUID) {
-        guard presentation == nil, pendingDismissal?.id == id else { return }
+    private func restoreFocusAfterRemoval(id: UUID) {
+        // With no animation, SwiftUI may complete synchronously. Leave that
+        // transaction before changing the caller's focus binding.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.presentation == nil,
                   let pending = self.pendingDismissal, pending.id == id else { return }
@@ -117,10 +133,10 @@ struct PickyHubModalOverlay<Content: View>: View {
     var body: some View {
         ZStack {
             content()
-                .disabled(host.isPresenting)
-                .accessibilityHidden(host.isPresenting)
+                .disabled(host.renderedPresentation != nil)
+                .accessibilityHidden(host.renderedPresentation != nil)
 
-            if let presentation = host.presentation {
+            if let presentation = host.renderedPresentation {
                 PickyHubTheme.Colors.modalBackdrop
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
@@ -154,11 +170,10 @@ struct PickyHubModalOverlay<Content: View>: View {
                     .accessibilityAddTraits(.isModal)
                     .accessibilityLabel(presentation.accessibilityLabel)
                     .id(presentation.id)
-                    .onDisappear { host.presentationDidDisappear(id: presentation.id) }
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
             }
         }
-        .animation(reduceMotion ? nil : PickyHubTheme.Motion.modal, value: host.presentation?.id)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.modal, value: host.renderedPresentation?.id)
     }
 }
 

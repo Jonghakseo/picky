@@ -60,6 +60,8 @@ The sidebar contains these seven destinations:
 - **Recent Conversation**: the Picky main-agent timeline and composer.
 - **Settings**: grouped controls for Picky's behavior, accounts, local data, and diagnostics.
 
+Closing a guide, plugin detail, or settings confirmation returns keyboard focus to the control that opened it. With macOS **Keyboard navigation** enabled, press Space to activate that control again.
+
 ### 2.2 Recent Conversation
 
 **Recent Conversation** is the Picky main-agent chat. You can review Markdown-rendered prompts and replies, send a direct message from the bottom composer, or start a **New session**. Direct messages capture current desktop context through the same local-first flow as voice and Quick Input.
@@ -81,7 +83,7 @@ Hub checks npm for newer versions of installed curated plugins. When an installe
 
 ### 2.4 Settings
 
-Settings has jump links and seven scrollable groups: **General**, **Accounts and agents**, **Voice and input**, **Screen and overlays**, **Pickles and workspace**, **Notifications, permissions, and privacy**, and **Advanced and diagnostics**. Group headings include a short summary; the Main Agent area further separates workspace and instructions, model and reasoning, screen capture, armed-Pickle delivery, and runtime paths into focused cards. Most toggles and menus save immediately. Directory and provider text fields retain their own drafts and show **Save changes** / **Saved** status.
+Settings keeps its category jump links visible while you scroll through seven groups: **General**, **Accounts and agents**, **Voice and input**, **Screen and overlays**, **Pickles and workspace**, **Notifications, permissions, and privacy**, and **Advanced and diagnostics**. Group headings include a short summary; the Main Agent area further separates workspace and instructions, model and reasoning, screen capture, armed-Pickle delivery, and runtime paths into focused cards. Most toggles and menus save immediately. Directory and provider text fields retain their own drafts and show **Save changes** / **Saved** status.
 
 The **Accounts and agents** group includes Pi OAuth connections for OpenAI Codex and Anthropic. Use **Refresh** to query the current status, **Sign in** or **Reconnect** to authenticate, and **Disconnect** to remove a provider after confirmation. Completing either sign-in or disconnect refreshes authentication for the current Picky/Pickle daemon sessions.
 

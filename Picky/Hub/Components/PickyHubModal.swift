@@ -17,8 +17,6 @@ import SwiftUI
 
 @MainActor
 final class PickyHubModalHost: ObservableObject {
-    let objectWillChange = ObservableObjectPublisher()
-
     struct Presentation: Identifiable {
         let id = UUID()
         let width: CGFloat
@@ -29,12 +27,9 @@ final class PickyHubModalHost: ObservableObject {
         let onDismiss: () -> Void
     }
 
-    /// Logical presentation ownership. Clear this immediately so busy work and
-    /// replacement requests observe dismissal without waiting for SwiftUI.
+    /// Logical ownership clears immediately; SwiftUI observes the render phase.
     private(set) var presentation: Presentation?
-    /// SwiftUI observes only this value. It is stored before an explicit
-    /// invalidation so a dismissal cannot render against the old presentation.
-    private(set) var renderedPresentation: Presentation?
+    @Published private(set) var renderedPresentation: Presentation?
     /// The hub window; key events from other Picky windows are left alone.
     weak var window: NSWindow?
     private var escapeMonitor: Any?
@@ -67,7 +62,6 @@ final class PickyHubModalHost: ObservableObject {
         )
         presentation = next
         renderedPresentation = next
-        objectWillChange.send()
         installEscapeMonitor()
         return next.id
     }
@@ -79,29 +73,26 @@ final class PickyHubModalHost: ObservableObject {
         pendingDismissal = current
         current.onWillDismiss()
 
-        // `@Published` emits before it stores its new value. If its write runs
-        // during a button action's SwiftUI update, the overlay can re-render
-        // against the old dialog and never remove it. Store the visual removal
-        // first, then invalidate on the next main turn.
+        // A SwiftUI button action can arrive during a view update. Do not
+        // publish removal from that transaction: @Published sends before storing.
         let id = current.id
         DispatchQueue.main.async { [weak self] in
             guard let self, self.presentation == nil,
                   self.pendingDismissal?.id == id,
                   self.renderedPresentation?.id == id else { return }
-            self.renderedPresentation = nil
-            self.objectWillChange.send()
+            // The overlay supplies its animation, including Reduce Motion.
+            // Completion waits for exit transitions, unlike onDisappear.
+            withAnimation(nil, completionCriteria: .removed) {
+                self.renderedPresentation = nil
+            } completion: { [weak self] in
+                self?.restoreFocusAfterRemoval(id: id)
+            }
         }
     }
 
-    /// SwiftUI reports the exact removal transaction after it has re-enabled
-    /// the trigger beneath the overlay. Defer the caller's focus-state mutation
-    /// until that synchronous update has unwound.
-    func presentationDidDisappear(id: UUID) {
-        guard presentation == nil, pendingDismissal?.id == id else { return }
-        restoreFocusAfterRemoval(id: id)
-    }
-
     private func restoreFocusAfterRemoval(id: UUID) {
+        // With no animation, SwiftUI may complete synchronously. Leave that
+        // transaction before changing the caller's focus binding.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.presentation == nil,
                   let pending = self.pendingDismissal, pending.id == id else { return }
@@ -142,8 +133,8 @@ struct PickyHubModalOverlay<Content: View>: View {
     var body: some View {
         ZStack {
             content()
-                .disabled(host.isPresenting)
-                .accessibilityHidden(host.isPresenting)
+                .disabled(host.renderedPresentation != nil)
+                .accessibilityHidden(host.renderedPresentation != nil)
 
             if let presentation = host.renderedPresentation {
                 PickyHubTheme.Colors.modalBackdrop
@@ -179,7 +170,6 @@ struct PickyHubModalOverlay<Content: View>: View {
                     .accessibilityAddTraits(.isModal)
                     .accessibilityLabel(presentation.accessibilityLabel)
                     .id(presentation.id)
-                    .onDisappear { host.presentationDidDisappear(id: presentation.id) }
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
             }
         }

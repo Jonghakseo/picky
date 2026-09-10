@@ -96,6 +96,42 @@ struct PickyHubRenderGalleryTests {
         }
     }
 
+    @Test func embeddedNativeSelectorPersistsItsChosenReasoningLevel() async throws {
+        let fixture = try PickyHubRenderGalleryFixture()
+        defer { fixture.removeTemporaryState() }
+        let root = CompanionPanelSettingsView(
+            viewModel: fixture.dependencies.settingsViewModel,
+            companionManager: fixture.dependencies.companionManager,
+            mainConversation: fixture.dependencies.companionManager.mainConversation,
+            archiveMembership: fixture.dependencies.sessionListViewModel.sessionRegistry,
+            archiveCommands: fixture.dependencies.sessionListViewModel,
+            route: .constant(.mainAgent),
+            presentation: .embedded
+        )
+        .environment(\.pickyUsesSubtleMenuChrome, true)
+        let host = NSHostingView(rootView: root)
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 1800)
+        host.layoutSubtreeIfNeeded()
+        func menus(in view: NSView) -> [NSPopUpButton] {
+            ((view as? NSPopUpButton).map { [$0] } ?? [])
+                + view.subviews.flatMap { menus(in: $0) }
+        }
+        let levels = PickyMainAgentThinkingLevel.allCases
+        let menu = try #require(menus(in: host).first { $0.itemTitles == levels.map(\.displayName) })
+        let target = try #require(levels.first { $0 != fixture.dependencies.settingsViewModel.settings.mainAgentThinkingLevel })
+        let index = try #require(levels.firstIndex(of: target))
+        menu.selectItem(at: index)
+        #expect(menu.sendAction(menu.action, to: menu.target))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while fixture.readPersistedSettings().mainAgentThinkingLevel != target, ContinuousClock.now < deadline {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(fixture.dependencies.settingsViewModel.settings.mainAgentThinkingLevel == target)
+        #expect(fixture.readPersistedSettings().mainAgentThinkingLevel == target)
+        #expect(menu.titleOfSelectedItem == target.displayName)
+    }
+
     @Test func writesHubGalleryWhenOutputDirectoryIsRequested() async throws {
         guard let rawOutput = try? String(contentsOf: Self.outputRequestFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -155,6 +191,28 @@ struct PickyHubRenderGalleryTests {
                 options: .atomic
             )
             try writeIndex(scenes: manifestScenes, to: output)
+        }
+
+        // The normal window captures only General. Keep a full-height production
+        // settings gallery so the remaining six groups are reviewable too.
+        let settingsOutput = output.appendingPathComponent("settings-full", isDirectory: true)
+        try FileManager.default.createDirectory(at: settingsOutput, withIntermediateDirectories: true)
+        fixture.dependencies.modalHost.dismiss()
+        fixture.navigator.select(.settings)
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            for (width, appearance, scale) in [(1020.0, Appearance.dark, 1.0), (1020.0, .light, 1.0), (760.0, .dark, 1.3)] {
+                fixture.fontScaleStore.setScale(scale)
+                let scene = Scene(
+                    page: .settings,
+                    name: "settings-\(Int(width))-\(appearance.rawValue)-\(Int(scale * 100)).png",
+                    appearance: appearance,
+                    logicalSize: CGSize(width: width, height: 8000),
+                    widthClass: "full-page"
+                )
+                let rendered = try render(scene, fixture: fixture, locale: Locale(identifier: "ko_KR"))
+                try validate(rendered.bitmap, for: scene)
+                try rendered.png.write(to: settingsOutput.appendingPathComponent(scene.name), options: .atomic)
+            }
         }
 
         #expect(fixture.client.usedOnlyGalleryCommands)

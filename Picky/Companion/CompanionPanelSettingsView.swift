@@ -129,6 +129,15 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
+    /// Hub cards use a different surface palette than the standalone panel.
+    /// Explanations are reading content, not disabled metadata.
+    // design-token-exception: 320pt popup measure accommodates model/provider names without spanning a Hub card
+    private var embeddedMenuMaximumWidth: CGFloat { presentation.showsNavigationChrome ? .infinity : 320 }
+
+    private var supportingTextColor: Color {
+        presentation.showsNavigationChrome ? DS.Colors.textTertiary : PickyHubTheme.Colors.textSecondary
+    }
+
     private func owns(_ observedSetting: CompanionPanelSettingsObservedSetting) -> Bool {
         CompanionPanelSettingsOwnership.owns(
             observedSetting,
@@ -181,7 +190,7 @@ struct CompanionPanelSettingsView: View {
                         Text(L10n.t("tab.settings"))
                             .font(PickyHUDTypography.labelMedium)
                     }
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(supportingTextColor)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -211,7 +220,7 @@ struct CompanionPanelSettingsView: View {
     private func indexGroupHeader(_ group: CompanionPanelSettingsGroup) -> some View {
         Text(group.titleKey)
             .font(PickyHUDTypography.minimumSemibold)
-            .foregroundColor(DS.Colors.textTertiary)
+            .foregroundColor(supportingTextColor)
             .textCase(.uppercase)
             .tracking(0.6)
             .padding(.top, 12)
@@ -233,7 +242,7 @@ struct CompanionPanelSettingsView: View {
                     if let subtitle = indexSubtitle(for: item) {
                         Text(subtitle)
                             .font(PickyHUDTypography.supporting)
-                            .foregroundColor(DS.Colors.textTertiary)
+                            .foregroundColor(supportingTextColor)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -243,7 +252,7 @@ struct CompanionPanelSettingsView: View {
                 }
                 Image(systemName: "chevron.right")
                     .font(PickyHUDTypography.minimumSemibold)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(supportingTextColor)
             }
             .padding(.vertical, 9)
             .contentShape(Rectangle())
@@ -343,18 +352,17 @@ struct CompanionPanelSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.field.reasoningLevel")
-                    Picker("settings.field.reasoningLevel", selection: $viewModel.settings.pickleAgentThinkingLevel) {
-                        ForEach(PickyPickleAgentThinkingLevel.allCases) { level in
-                            Text(level.displayName).tag(level)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    PickyNativeMenuPicker(
+                        title: L10n.t("settings.field.reasoningLevel"),
+                        selection: $viewModel.settings.pickleAgentThinkingLevel,
+                        options: PickyPickleAgentThinkingLevel.allCases.map { .init(value: $0, title: $0.displayName) }
+                    )
+                    .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.pickleAgentThinkingLevel) { _, _ in saveImmediately(for: .pickle) }
                     Text("settings.field.reasoningLevel.pickleNote")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -392,14 +400,14 @@ struct CompanionPanelSettingsView: View {
                 HStack(alignment: .center, spacing: 8) {
                     Image(systemName: isArchivedSessionsExpanded ? "chevron.down" : "chevron.right")
                         .font(PickyHUDTypography.minimumSemibold)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .frame(width: 12)
                     Text("settings.pickle.archive.toggle")
                         .font(PickyHUDTypography.labelSemibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     Text("\(archiveMembership.archivedSessionIDs.count)")
                         .font(PickyHUDTypography.metaMedium)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                     Spacer(minLength: 4)
                 }
                 .padding(.vertical, 7)
@@ -547,7 +555,7 @@ struct CompanionPanelSettingsView: View {
                     if !viewModel.settings.cursor.showPiCursor {
                         Text("settings.cursor.disabledNote")
                             .font(PickyHUDTypography.supporting)
-                            .foregroundColor(DS.Colors.textTertiary)
+                            .foregroundColor(supportingTextColor)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 7)
                     }
@@ -587,7 +595,7 @@ struct CompanionPanelSettingsView: View {
                             )
                             Text("settings.notification.toggle.newPickles.note")
                                 .font(PickyHUDTypography.supporting)
-                                .foregroundColor(DS.Colors.textTertiary)
+                                .foregroundColor(supportingTextColor)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.bottom, DS.Spacing.space2)
                             Divider()
@@ -621,7 +629,7 @@ struct CompanionPanelSettingsView: View {
                     )
                     Text("settings.field.pickyCwd.note")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("settings.field.pickyCwd.workspaceWarning")
                         .font(PickyHUDTypography.supporting)
@@ -642,7 +650,7 @@ struct CompanionPanelSettingsView: View {
                     )
                     Text("settings.field.piBinaryPath.note")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -659,7 +667,7 @@ struct CompanionPanelSettingsView: View {
                     )
                     Text("settings.field.piCodingAgentDir.note")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -667,26 +675,24 @@ struct CompanionPanelSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.field.reasoningLevel")
-                    Picker("settings.field.reasoningLevel", selection: $viewModel.settings.mainAgentThinkingLevel) {
-                        ForEach(PickyMainAgentThinkingLevel.allCases) { level in
-                            Text(level.displayName).tag(level)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    PickyNativeMenuPicker(
+                        title: L10n.t("settings.field.reasoningLevel"),
+                        selection: $viewModel.settings.mainAgentThinkingLevel,
+                        options: PickyMainAgentThinkingLevel.allCases.map { .init(value: $0, title: $0.displayName) }
+                    )
+                    .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.mainAgentThinkingLevel) { _, _ in saveImmediately(for: .mainAgent) }
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.field.screenContext")
-                    Picker("settings.field.screenContext", selection: $viewModel.settings.screenContextScope) {
-                        ForEach(PickyScreenContextScope.allCases) { scope in
-                            Text(scope.displayName).tag(scope)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    PickyNativeMenuPicker(
+                        title: L10n.t("settings.field.screenContext"),
+                        selection: $viewModel.settings.screenContextScope,
+                        options: PickyScreenContextScope.allCases.map { .init(value: $0, title: $0.displayName) }
+                    )
+                    .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.screenContextScope) { _, _ in saveImmediately(for: .mainAgent) }
                 }
@@ -704,7 +710,7 @@ struct CompanionPanelSettingsView: View {
                     .onChange(of: viewModel.settings.armedPickleDispatchMode) { _, _ in saveImmediately(for: .mainAgent) }
                     Text("settings.field.armedPickleDispatchMode.note")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -726,24 +732,23 @@ struct CompanionPanelSettingsView: View {
                     }
                     Text("settings.field.attachScreenshotsOnlyWhenInked.note")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.field.screenshotQuality")
-                    Picker("settings.field.screenshotQuality", selection: $viewModel.settings.screenshotQuality) {
-                        ForEach(PickyScreenshotQuality.allCases) { quality in
-                            Text(quality.displayName).tag(quality)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    PickyNativeMenuPicker(
+                        title: L10n.t("settings.field.screenshotQuality"),
+                        selection: $viewModel.settings.screenshotQuality,
+                        options: PickyScreenshotQuality.allCases.map { .init(value: $0, title: $0.displayName) }
+                    )
+                    .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.screenshotQuality) { _, _ in saveImmediately(for: .mainAgent) }
                     Text("settings.field.screenshotQuality.note")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -751,7 +756,7 @@ struct CompanionPanelSettingsView: View {
                     fieldLabel("settings.field.agentsFile")
                     Text("settings.field.agentsFile.note")
                         .pickyFont(size: 11)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                     openAgentsFileButton
                 }
@@ -782,7 +787,7 @@ struct CompanionPanelSettingsView: View {
     }
 
     private func modelPicker(
-        label: LocalizedStringKey,
+        label: String,
         selection: Binding<String>,
         shouldShowSavedOption: Bool,
         savedValue: String,
@@ -791,31 +796,28 @@ struct CompanionPanelSettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                fieldLabel(label)
+                fieldLabel(LocalizedStringKey(label))
                 if mainConversation.isLoadingModelOptions {
                     ProgressView()
                         .controlSize(.small)
                         .scaleEffect(0.65)
                 }
             }
-            Picker(label, selection: selection) {
-                Text("settings.field.modelOption.automatic").tag("")
-                if shouldShowSavedOption {
-                    Text(L10n.t("settings.field.modelOption.saved", savedValue)).tag(savedValue)
-                }
-                ForEach(mainConversation.modelOptions) { option in
-                    Text(option.displayName).tag(option.pattern)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            PickyNativeMenuPicker(
+                title: L10n.t(label),
+                selection: selection,
+                options: [PickyNativeMenuOption(value: "", title: L10n.t("settings.field.modelOption.automatic"))]
+                    + (shouldShowSavedOption ? [.init(value: savedValue, title: L10n.t("settings.field.modelOption.saved", savedValue))] : [])
+                    + mainConversation.modelOptions.map { .init(value: $0.pattern, title: $0.displayName) }
+            )
+            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onChange(of: selection.wrappedValue) { _, _ in onSave() }
             .task { companionManager.refreshMainAgentModelOptions() }
 
             Text(helpText)
                 .font(PickyHUDTypography.supporting)
-                .foregroundColor(DS.Colors.textTertiary)
+                .foregroundColor(supportingTextColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -901,13 +903,14 @@ struct CompanionPanelSettingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.general.language.label")
-                    Picker("settings.general.language.label", selection: $viewModel.settings.appLanguage) {
-                        ForEach(PickyLanguage.allCases) { language in
-                            Text(String(localized: language.displayKey)).tag(language)
+                    PickyNativeMenuPicker(
+                        title: L10n.t("settings.general.language.label"),
+                        selection: $viewModel.settings.appLanguage,
+                        options: PickyLanguage.allCases.map {
+                            .init(value: $0, title: String(localized: $0.displayKey))
                         }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    )
+                    .fixedSize(horizontal: !presentation.showsNavigationChrome, vertical: false)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.appLanguage) { _, newValue in
                         // Two effects: persist via saveImmediately (the
@@ -921,7 +924,7 @@ struct CompanionPanelSettingsView: View {
 
                     Text("settings.general.language.note")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -941,7 +944,7 @@ struct CompanionPanelSettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("settings.oauth.body")
                     .font(PickyHUDTypography.supportingMedium)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -974,7 +977,7 @@ struct CompanionPanelSettingsView: View {
 
                 Text("settings.oauth.fallback")
                     .font(PickyHUDTypography.supporting)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -994,7 +997,7 @@ struct CompanionPanelSettingsView: View {
                         .foregroundColor(DS.Colors.textPrimary)
                     Text(L10n.t(provider.subtitleKey))
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
@@ -1142,7 +1145,7 @@ struct CompanionPanelSettingsView: View {
 
             Text("settings.general.shellCommand.note")
                 .font(PickyHUDTypography.supporting)
-                .foregroundColor(DS.Colors.textTertiary)
+                .foregroundColor(supportingTextColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1152,7 +1155,7 @@ struct CompanionPanelSettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("settings.section.builtinTools.note")
                     .font(PickyHUDTypography.supportingMedium)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(spacing: 0) {
@@ -1184,7 +1187,7 @@ struct CompanionPanelSettingsView: View {
                         .foregroundColor(DS.Colors.textPrimary)
                     Text(L10n.t(tool.descriptionKey))
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(verbatim: tool.rawValue)
                         .font(PickyHUDTypography.supportingMonospaced)
@@ -1210,7 +1213,7 @@ struct CompanionPanelSettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("settings.section.onboarding.body")
                     .font(PickyHUDTypography.supportingMedium)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Button(action: replayOnboarding) {
@@ -1294,7 +1297,7 @@ struct CompanionPanelSettingsView: View {
 
                         Text("settings.voice.openaiBaseUrlNote")
                             .font(PickyHUDTypography.supporting)
-                            .foregroundColor(DS.Colors.textTertiary)
+                            .foregroundColor(supportingTextColor)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -1327,7 +1330,7 @@ struct CompanionPanelSettingsView: View {
                         toggleRow("settings.voice.toggle.ttsEnabled", isOn: $viewModel.settings.ttsEnabled, divider: false)
                         Text("settings.tts.disabledNote")
                             .font(PickyHUDTypography.supporting)
-                            .foregroundColor(DS.Colors.textTertiary)
+                            .foregroundColor(supportingTextColor)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -1362,7 +1365,7 @@ struct CompanionPanelSettingsView: View {
 
                         Text("settings.azure.ttsUrlNote")
                             .font(PickyHUDTypography.supporting)
-                            .foregroundColor(DS.Colors.textTertiary)
+                            .foregroundColor(supportingTextColor)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -1444,9 +1447,17 @@ struct CompanionPanelSettingsView: View {
                 if let subtitle {
                     Text(subtitle)
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            }
+
+            if !presentation.showsSectionChrome, section != .general, presentation != .embeddedOverlayControls {
+                Text(title)
+                    .font(PickyHUDTypography.title)
+                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.bottom, DS.Spacing.space2)
             }
 
             content()
@@ -1612,8 +1623,8 @@ struct CompanionPanelSettingsView: View {
 
     private func fieldLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            .font(PickyHUDTypography.metaSemibold)
-            .foregroundColor(DS.Colors.textTertiary)
+            .font(presentation.showsNavigationChrome ? PickyHUDTypography.metaSemibold : PickyHUDTypography.labelSemibold)
+            .foregroundColor(presentation.showsNavigationChrome ? DS.Colors.textTertiary : PickyHubTheme.Colors.textPrimary)
     }
 
     private var dockSizePresetPicker: some View {
@@ -1633,7 +1644,7 @@ struct CompanionPanelSettingsView: View {
 
             Text("settings.field.dockSize.mediumNote")
                 .font(PickyHUDTypography.supporting)
-                .foregroundColor(DS.Colors.textTertiary)
+                .foregroundColor(supportingTextColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1765,12 +1776,12 @@ struct CompanionPanelSettingsView: View {
                     ProgressView().controlSize(.small)
                     Text("settings.voice.edge.loading")
                         .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textTertiary)
+                        .foregroundColor(supportingTextColor)
                 }
             case .failed(let message):
                 Text(L10n.t("settings.voice.edge.selectedVoice", viewModel.settings.edgeTTSVoice))
                     .font(PickyHUDTypography.supporting)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(supportingTextColor)
                 Text(message)
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.destructiveText)
@@ -1787,29 +1798,37 @@ struct CompanionPanelSettingsView: View {
     private var edgeTTSVoicePickers: some View {
         VStack(alignment: .leading, spacing: 6) {
             fieldLabel("settings.voice.edge.language")
-            Picker("settings.voice.edge.language", selection: edgeTTSLocaleBinding) {
-                ForEach(edgeTTSVoiceCatalog.locales(selectedVoice: viewModel.settings.edgeTTSVoice), id: \.self) { locale in
-                    Text(edgeTTSLocaleLabel(locale)).tag(locale)
+            PickyNativeMenuPicker(
+                title: L10n.t("settings.voice.edge.language"),
+                selection: edgeTTSLocaleBinding,
+                options: edgeTTSVoiceCatalog.locales(selectedVoice: viewModel.settings.edgeTTSVoice).map {
+                    .init(value: $0, title: edgeTTSLocaleLabel($0))
                 }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            )
+            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             fieldLabel("settings.voice.edge.voice")
-            Picker("settings.voice.edge.voice", selection: $viewModel.settings.edgeTTSVoice) {
-                if !EdgeTTSVoiceCatalogProjection.isSelectedVoiceAvailable(viewModel.settings.edgeTTSVoice, voices: edgeTTSVoiceCatalog.voices) {
-                    Text(L10n.t("settings.voice.edge.savedVoiceUnavailable", viewModel.settings.edgeTTSVoice)).tag(viewModel.settings.edgeTTSVoice)
-                }
-                ForEach(edgeTTSVoiceCatalog.voices(in: selectedEdgeTTSLocale)) { voice in
-                    Text(edgeTTSVoiceLabel(voice)).tag(voice.shortName)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            PickyNativeMenuPicker(
+                title: L10n.t("settings.voice.edge.voice"),
+                selection: $viewModel.settings.edgeTTSVoice,
+                options: edgeTTSMenuOptions
+            )
+            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onChange(of: viewModel.settings.edgeTTSVoice) { _, _ in commitVoiceField() }
         }
+    }
+
+    private var edgeTTSMenuOptions: [PickyNativeMenuOption<String>] {
+        var options: [PickyNativeMenuOption<String>] = []
+        if !EdgeTTSVoiceCatalogProjection.isSelectedVoiceAvailable(viewModel.settings.edgeTTSVoice, voices: edgeTTSVoiceCatalog.voices) {
+            options.append(.init(value: viewModel.settings.edgeTTSVoice, title: L10n.t("settings.voice.edge.savedVoiceUnavailable", viewModel.settings.edgeTTSVoice)))
+        }
+        options += edgeTTSVoiceCatalog.voices(in: selectedEdgeTTSLocale).map {
+            .init(value: $0.shortName, title: edgeTTSVoiceLabel($0))
+        }
+        return options
     }
 
     private var selectedEdgeTTSLocale: String {
@@ -1845,16 +1864,17 @@ struct CompanionPanelSettingsView: View {
         )
     }
 
-    private func providerPicker(title: LocalizedStringKey, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>, isEnabled: Bool = true) -> some View {
+    private func providerPicker(title: String, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>, isEnabled: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            fieldLabel(title)
-            Picker(title, selection: selection) {
-                ForEach(PickyVoiceProviderSelection.cases(for: capability)) { provider in
-                    Text(provider.displayName(for: capability)).tag(provider)
+            fieldLabel(LocalizedStringKey(title))
+            PickyNativeMenuPicker(
+                title: L10n.t(title),
+                selection: selection,
+                options: PickyVoiceProviderSelection.cases(for: capability).map {
+                    .init(value: $0, title: $0.displayName(for: capability))
                 }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            )
+            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .disabled(!isEnabled)
             .opacity(isEnabled ? 1 : 0.55)

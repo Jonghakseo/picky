@@ -78,8 +78,8 @@ struct ShortcutSettingsRow: View {
                 .textCase(.uppercase)
                 .tracking(0.4)
             Text(subtitle)
-                .pickyFont(size: 10.5, weight: .medium)
-                .foregroundColor(DS.Colors.textTertiary)
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(DS.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
@@ -102,8 +102,8 @@ struct ShortcutSettingsRow: View {
 
             if recorder.isCapturing, let message = recorder.statusMessage {
                 Text(message)
-                    .pickyFont(size: 10, weight: .medium)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(DS.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

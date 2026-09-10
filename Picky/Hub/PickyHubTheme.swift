@@ -42,7 +42,8 @@ enum PickyHubTheme {
 
         static let success = Color(light: Color(hex: "#108D6F"), dark: Color(hex: "#4CD6A9"))
         static let successBackground = Color(light: Color(hex: "#D7EEE4"), dark: Color(hex: "#123A30"))
-        static let danger = Color(light: Color(hex: "#F87171"), dark: Color(hex: "#FF8A8A"))
+        /// Foreground-grade semantic red keeps destructive settings readable in light appearance.
+        static let danger = DS.Colors.destructiveText
         static let dangerTint = Color(light: Color(hex: "#FFF8F8"), dark: Color(hex: "#33201F"))
         static let warning = DS.Colors.warningText
 

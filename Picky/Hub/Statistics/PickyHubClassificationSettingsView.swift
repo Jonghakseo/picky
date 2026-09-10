@@ -11,18 +11,18 @@ struct PickyHubClassificationSettingsView: View {
     @ObservedObject var statisticsStore: PickyHubStatisticsStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 18) {
-                VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: DS.Spacing.space3) {
+            HStack(alignment: .center, spacing: DS.Spacing.space4) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space1) {
                     Text("hub.settings.classification.title")
                         .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     Text("hub.settings.classification.detail")
-                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
-                        .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
+                        .foregroundColor(PickyHubTheme.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 12)
+                Spacer(minLength: DS.Spacing.space3)
                 if hasConfirmedSnapshot {
                     Toggle("hub.settings.classification.title", isOn: toggleBinding)
                     .labelsHidden()
@@ -32,7 +32,7 @@ struct PickyHubClassificationSettingsView: View {
                     .accessibilityHint(Text("hub.settings.classification.accessibilityHint"))
                 } else {
                     Text("hub.settings.classification.unknown")
-                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 }
             }
@@ -40,7 +40,7 @@ struct PickyHubClassificationSettingsView: View {
             Divider().overlay(PickyHubTheme.Colors.borderSoft)
 
             Text("hub.settings.classification.disclosure")
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -53,7 +53,7 @@ struct PickyHubClassificationSettingsView: View {
                 PickyHubInlineStatus(tone: .error, message: error)
             }
         }
-        .padding(15)
+        .padding(DS.Spacing.space4)
         .pickyHubCard(radius: PickyHubTheme.Radius.card)
         .onAppear { statisticsStore.refreshIfNeeded() }
     }

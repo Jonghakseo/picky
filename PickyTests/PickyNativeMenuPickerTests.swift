@@ -35,8 +35,10 @@ struct PickyNativeMenuPickerTests {
         #expect(mutations > 0, "The observer must detect a real label mutation, not silently miss all updates")
     }
 
-    @Test func selectionAndEnabledUpdatesKeepTheMenuAndDoNotWriteBack() throws {
+    @Test(arguments: [false, true]) func selectionAndEnabledUpdatesKeepTheMenuAndDoNotWriteBack(subtleChrome: Bool) throws {
         let fixture = MenuFixture()
+        fixture.subtleMenuChrome = subtleChrome
+        fixture.render()
         let button = try fixture.button()
         let items = button.itemArray
         fixture.value = 2
@@ -112,6 +114,36 @@ struct PickyNativeMenuPickerTests {
         #expect(button.menu?.font == button.font)
         #expect(zip(button.itemArray, items).allSatisfy { $0 === $1 })
     }
+
+    @Test func subtleChromeKeepsTheNativeMenuAndAccessibilityContract() throws {
+        let fixture = MenuFixture()
+        fixture.subtleMenuChrome = true
+        fixture.scale = 1.3
+        fixture.options[0] = .init(value: 1, title: "A selected option with a title long enough to truncate in a settings row")
+        fixture.render()
+        let button = try fixture.button()
+        let menu = try #require(button.menu)
+        let items = button.itemArray
+        #expect(button.intrinsicContentSize.height > 30)
+        #expect(button.toolTip == fixture.options[0].title)
+        #expect(button.accessibilityHelp() == fixture.options[0].title)
+
+        fixture.enabled = false
+        fixture.render()
+        #expect(!button.isEnabled)
+        #expect(button.menu === menu)
+        #expect(zip(button.itemArray, items).allSatisfy { $0 === $1 })
+
+        fixture.enabled = true
+        fixture.subtleMenuChrome = false
+        fixture.render()
+        #expect(button.isEnabled)
+        #expect(button.menu === menu)
+        #expect(zip(button.itemArray, items).allSatisfy { $0 === $1 })
+        let accessible = NSAccessibility.unignoredDescendant(of: button)
+        #expect(PickyHubAccessibilityObservation.legacyValue(.role, of: accessible) as? String == NSAccessibility.Role.popUpButton.rawValue)
+        #expect(PickyHubAccessibilityObservation.legacyValue(.value, of: accessible) as? String == fixture.options[0].title)
+    }
 }
 
 @MainActor
@@ -120,6 +152,7 @@ private final class MenuFixture {
     var writes = 0
     var active = false
     var enabled = true
+    var subtleMenuChrome = false
     var scale: CGFloat = 1
     var title = "Choice"
     var options: [PickyNativeMenuOption<Int>] = [.init(value: 1, title: "First"), .init(value: 2, title: "Second")]
@@ -143,6 +176,7 @@ private final class MenuFixture {
             .disabled(!enabled)
             .environment(\.controlActiveState, active ? .key : .inactive)
             .environment(\.pickyAppFontScale, scale)
+            .environment(\.pickyUsesSubtleMenuChrome, subtleMenuChrome)
         )
         host.layoutSubtreeIfNeeded()
     }

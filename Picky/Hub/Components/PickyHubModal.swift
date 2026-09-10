@@ -17,6 +17,8 @@ import SwiftUI
 
 @MainActor
 final class PickyHubModalHost: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+
     struct Presentation: Identifiable {
         let id = UUID()
         let width: CGFloat
@@ -31,9 +33,9 @@ final class PickyHubModalHost: ObservableObject {
     /// requests never race with SwiftUI's rendering transaction.
     private(set) var presentation: Presentation?
     /// SwiftUI observes this copy only after the initiating action's view
-    /// update unwinds. Mutating an observed modal from its own button action
-    /// is undefined and can leave the overlay mounted.
-    @Published private(set) var renderedPresentation: Presentation?
+    /// update unwinds. It is written before invalidation because `@Published`
+    /// emits before its write, which can leave the old dialog mounted.
+    private(set) var renderedPresentation: Presentation?
     /// The hub window; key events from other Picky windows are left alone.
     weak var window: NSWindow?
     private var escapeMonitor: Any?
@@ -96,6 +98,7 @@ final class PickyHubModalHost: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.presentation?.id == presentation.id else { return }
             self.renderedPresentation = presentation
+            self.objectWillChange.send()
         }
     }
 
@@ -105,6 +108,7 @@ final class PickyHubModalHost: ObservableObject {
                   self.pendingDismissal?.id == id,
                   self.renderedPresentation?.id == id else { return }
             self.renderedPresentation = nil
+            self.objectWillChange.send()
         }
     }
 

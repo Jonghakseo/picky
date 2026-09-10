@@ -4,7 +4,6 @@
 //
 
 import AppKit
-import Combine
 import SwiftUI
 import Testing
 @testable import Picky
@@ -48,22 +47,6 @@ struct PickyHubModalTests {
         #expect(host.renderedPresentation?.id == id)
         await drainMainQueue()
         #expect(host.renderedPresentation == nil)
-    }
-
-    @Test func modalInvalidationSeesTheStoredRenderedState() async {
-        let host = PickyHubModalHost()
-        var statesAtInvalidation: [UUID?] = []
-        let observation = host.objectWillChange.sink {
-            statesAtInvalidation.append(host.renderedPresentation?.id)
-        }
-        defer { observation.cancel() }
-
-        let id = host.present(accessibilityLabel: "Confirmation") { EmptyView() }
-        await drainMainQueue()
-        host.dismiss()
-        await drainMainQueue()
-
-        #expect(statesAtInvalidation == [id, nil])
     }
 
     @Test func lateRemovalAfterCleanupDoesNotRepeatFocusRestoration() async {

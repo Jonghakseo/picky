@@ -32,6 +32,26 @@ struct PickyHubModalTests {
         #expect(restorationCount == 1)
     }
 
+    @Test func dismissalCompletesFocusRestorationWithoutAViewLifecycleCallback() async {
+        let host = PickyHubModalHost()
+        var restorationCount = 0
+
+        _ = host.present(
+            accessibilityLabel: "Confirmation",
+            onDismiss: { restorationCount += 1 },
+            content: { EmptyView() }
+        )
+        host.dismiss()
+
+        #expect(host.presentationID == nil)
+        #expect(restorationCount == 0)
+
+        await drainMainQueue()
+        await drainMainQueue()
+
+        #expect(restorationCount == 1)
+    }
+
     @Test func lateRemovalAfterCleanupDoesNotRepeatFocusRestoration() async {
         let host = PickyHubModalHost()
         var cleanupCount = 0

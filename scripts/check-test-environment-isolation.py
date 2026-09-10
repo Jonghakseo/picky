@@ -10,6 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UI_EFFECT_GATE = "@Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))"
 UI_EFFECT_TESTS = {
+    # Hub lifecycle tests restore the test host's activation policy and prior
+    # foreground app in defer, and remain enabled only by the pre-push gate.
+    ("PickyTests/PickyHubWindowLifecycleTests.swift", "openMinimizeReopenAndClosePreserveTheHubApplicationLifecycle"),
+    ("PickyTests/PickyHubWindowLifecycleTests.swift", "voiceCaptureDismissesHubAndReturnsToAccessoryBeforeRestoringExternalFocus"),
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
     ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
     ("PickyTests/PickyHubFocusPerformanceTests.swift", "productionHubFocusTransitionsMeetTheLocalLatencyBudget"),

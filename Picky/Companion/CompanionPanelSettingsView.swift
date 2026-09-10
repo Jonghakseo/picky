@@ -1064,6 +1064,18 @@ struct CompanionPanelSettingsView: View {
                 .opacity(oauthIsBusy(status) ? 0.55 : 1)
                 .hoverAffordance()
 
+                if case .configured = status {
+                    Button(action: { oauthLoginController.requestSignOut(provider: provider) }) {
+                        Text("settings.oauth.disconnect")
+                            .font(PickyHUDTypography.statusSemibold)
+                            .foregroundColor(DS.Colors.destructiveText)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                    .hoverAffordance()
+                }
+
                 if case .signingIn = status {
                     Button(action: { oauthLoginController.cancel(provider: provider) }) {
                         Text("settings.oauth.cancel")
@@ -1080,6 +1092,24 @@ struct CompanionPanelSettingsView: View {
             }
         }
         .padding(10)
+        .alert(
+            L10n.t("settings.oauth.disconnect.confirmation.title"),
+            isPresented: Binding(
+                get: { oauthLoginController.pendingSignOutProvider == provider },
+                set: { isPresented in
+                    if !isPresented { oauthLoginController.cancelSignOutConfirmation() }
+                }
+            )
+        ) {
+            Button("settings.oauth.cancel", role: .cancel) {
+                oauthLoginController.cancelSignOutConfirmation()
+            }
+            Button("settings.oauth.disconnect", role: .destructive) {
+                oauthLoginController.confirmSignOut(provider: provider)
+            }
+        } message: {
+            Text("settings.oauth.disconnect.confirmation.message")
+        }
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(DS.Colors.surface1.opacity(0.55))
@@ -1119,6 +1149,8 @@ struct CompanionPanelSettingsView: View {
             return (L10n.t("settings.oauth.status.configured", sourceText), "checkmark.circle.fill", DS.Colors.successText, DS.Colors.success)
         case .signingIn:
             return (L10n.t("settings.oauth.status.signingIn"), "arrow.triangle.2.circlepath", DS.Colors.accentText, DS.Colors.accentText)
+        case .signingOut:
+            return (L10n.t("settings.oauth.status.signingOut"), "arrow.triangle.2.circlepath", DS.Colors.textSecondary, DS.Colors.textSecondary)
         case .failed:
             return (L10n.t("settings.oauth.status.failed"), "exclamationmark.triangle.fill", DS.Colors.destructiveText, DS.Colors.destructiveText)
         }
@@ -1135,7 +1167,7 @@ struct CompanionPanelSettingsView: View {
 
     private func oauthIsBusy(_ status: PickyPiOAuthLoginStatus) -> Bool {
         switch status {
-        case .checking, .signingIn:
+        case .checking, .signingIn, .signingOut:
             return true
         default:
             return false

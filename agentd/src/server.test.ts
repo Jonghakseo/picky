@@ -791,6 +791,7 @@ describe("AgentdServer", () => {
         request.onNotify({ type: "auth_url", url: "https://example.com/oauth" });
         return { configured: true, source: "stored" };
       }),
+      logout: vi.fn(async () => ({ configured: true, source: "environment", label: "API key" })),
       answerPrompt: vi.fn(),
       cancel: vi.fn(() => true),
       cancelOwnedBy: vi.fn(() => 1),
@@ -831,6 +832,21 @@ describe("AgentdServer", () => {
       source: "stored",
     });
     await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
+
+    requester.ws.send(JSON.stringify({
+      id: "cmd-oauth-logout",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "signOutPiOAuth",
+      providerId: "anthropic",
+    }));
+    await expect(waitForEvent(requester.ws, "piOAuthStatus")).resolves.toMatchObject({
+      requestId: "cmd-oauth-logout",
+      providerId: "anthropic",
+      configured: true,
+      source: "environment",
+      label: "API key",
+    });
+    expect(piOAuth.logout).toHaveBeenCalledWith("anthropic");
 
     requester.ws.send(JSON.stringify({
       id: "cmd-oauth-answer",

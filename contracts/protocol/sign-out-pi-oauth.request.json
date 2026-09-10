@@ -1,0 +1,6 @@
+{
+  "id": "cmd-oauth-logout-001",
+  "protocolVersion": "2026-08-25",
+  "type": "signOutPiOAuth",
+  "providerId": "anthropic"
+}

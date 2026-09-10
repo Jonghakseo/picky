@@ -21,6 +21,7 @@ enum PickyPiOAuthLoginStatus: Equatable {
     case notConfigured
     case configured(source: String?)
     case signingIn
+    case signingOut
     case failed(String)
 }
 
@@ -56,12 +57,14 @@ enum PickyPiOAuthLoginProvider: String, CaseIterable, Identifiable, Codable, Sen
 protocol PickyPiOAuthLoginRunning: AnyObject {
     func authStatus(for provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus
     func signIn(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus
+    func signOut(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus
     func cancel(provider: PickyPiOAuthLoginProvider)
 }
 
 @MainActor
 final class PickyPiOAuthLoginController: ObservableObject {
     @Published private var statuses: [PickyPiOAuthLoginProvider: PickyPiOAuthLoginStatus]
+    @Published private(set) var pendingSignOutProvider: PickyPiOAuthLoginProvider?
 
     private let runner: PickyPiOAuthLoginRunning
     private var tasks: [PickyPiOAuthLoginProvider: Task<Void, Never>] = [:]
@@ -93,7 +96,7 @@ final class PickyPiOAuthLoginController: ObservableObject {
     }
 
     func refresh(provider: PickyPiOAuthLoginProvider) {
-        guard !isSigningIn(provider) else { return }
+        guard !isBusy(provider) else { return }
         statuses[provider] = .checking
         tasks[provider]?.cancel()
         tasks[provider] = Task { [weak self] in
@@ -109,13 +112,41 @@ final class PickyPiOAuthLoginController: ObservableObject {
     }
 
     func signIn(provider: PickyPiOAuthLoginProvider) {
-        guard !isSigningIn(provider) else { return }
+        guard !isBusy(provider) else { return }
         statuses[provider] = .signingIn
         tasks[provider]?.cancel()
         tasks[provider] = Task { [weak self] in
             guard let self else { return }
             do {
                 let authStatus = try await runner.signIn(provider: provider)
+                statuses[provider] = Self.loginStatus(from: authStatus)
+            } catch is CancellationError {
+                statuses[provider] = .notConfigured
+            } catch {
+                statuses[provider] = .failed(Self.presentableError(error))
+            }
+            tasks[provider] = nil
+        }
+    }
+
+    func requestSignOut(provider: PickyPiOAuthLoginProvider) {
+        guard !isBusy(provider) else { return }
+        pendingSignOutProvider = provider
+    }
+
+    func cancelSignOutConfirmation() {
+        pendingSignOutProvider = nil
+    }
+
+    func confirmSignOut(provider: PickyPiOAuthLoginProvider) {
+        guard pendingSignOutProvider == provider, !isBusy(provider) else { return }
+        pendingSignOutProvider = nil
+        statuses[provider] = .signingOut
+        tasks[provider]?.cancel()
+        tasks[provider] = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let authStatus = try await runner.signOut(provider: provider)
                 statuses[provider] = Self.loginStatus(from: authStatus)
             } catch is CancellationError {
                 statuses[provider] = .notConfigured
@@ -133,9 +164,13 @@ final class PickyPiOAuthLoginController: ObservableObject {
         statuses[provider] = .notConfigured
     }
 
-    private func isSigningIn(_ provider: PickyPiOAuthLoginProvider) -> Bool {
-        if case .signingIn = status(for: provider) { return true }
-        return false
+    private func isBusy(_ provider: PickyPiOAuthLoginProvider) -> Bool {
+        switch status(for: provider) {
+        case .signingIn, .signingOut:
+            return true
+        default:
+            return false
+        }
     }
 
     private static func loginStatus(from authStatus: PickyPiOAuthLoginAuthStatus) -> PickyPiOAuthLoginStatus {
@@ -203,6 +238,16 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
             cancelRequest(provider: provider, requestId: command.id)
             throw error
         }
+        try await reloadAuthenticationAcrossDaemons()
+        return status
+    }
+
+    func signOut(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
+        let status = try await requestStatus(
+            provider: provider,
+            commandType: .signOutPiOAuth,
+            timeoutNanoseconds: statusTimeoutNanoseconds
+        )
         try await reloadAuthenticationAcrossDaemons()
         return status
     }

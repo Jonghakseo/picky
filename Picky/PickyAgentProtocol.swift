@@ -281,6 +281,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case listMainAgentModels
     case getPiOAuthStatus
     case signInPiOAuth
+    case signOutPiOAuth
     case answerPiOAuthPrompt
     case cancelPiOAuth
     case reloadPiAuthentication

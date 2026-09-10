@@ -393,6 +393,10 @@ export class AgentdServer {
         });
         this.send(ws, { type: "piOAuthStatus", requestId: cmd.id, providerId: cmd.providerId, ...status });
       },
+      signOutPiOAuth: async (cmd) => {
+        const status = await this.requirePiOAuth().logout(cmd.providerId);
+        this.send(ws, { type: "piOAuthStatus", requestId: cmd.id, providerId: cmd.providerId, ...status });
+      },
       answerPiOAuthPrompt: (cmd) => this.requirePiOAuth().answerPrompt({
         owner: ws,
         requestId: cmd.requestId,
@@ -1191,8 +1195,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
     case "answerMainExtensionUi":
       return { commandId: command.id, type: command.type, requestId: command.requestId };
-    case "getPiOAuthStatus":
-    case "signInPiOAuth":
+    case "getPiOAuthStatus": case "signInPiOAuth": case "signOutPiOAuth":
       return { commandId: command.id, type: command.type, providerId: command.providerId };
     case "answerPiOAuthPrompt":
       return { commandId: command.id, type: command.type, requestId: command.requestId, promptId: command.promptId, cancelled: command.cancelled ? 1 : 0, valueChars: command.value?.length };

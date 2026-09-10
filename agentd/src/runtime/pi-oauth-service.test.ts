@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -25,6 +25,87 @@ describe("PiOAuthService", () => {
 
     await expect(service.status("anthropic")).resolves.toEqual({ configured: false });
     await expect(service.status("openai-codex")).resolves.toEqual({ configured: false });
+  });
+
+  it("deletes only the selected provider from the shared credential file", async () => {
+    const agentDir = await mkdtemp(join(tmpdir(), "picky-pi-oauth-logout-"));
+    const authPath = join(agentDir, "auth.json");
+    const otherCredential = oauthCredential();
+    try {
+      await writeFile(authPath, JSON.stringify({ anthropic: oauthCredential(), "openai-codex": otherCredential }));
+      const service = new PiOAuthService({
+        createRuntime: () => ModelRuntime.create({
+          authPath,
+          modelsPath: join(agentDir, "models.json"),
+          allowModelNetwork: false,
+        }),
+      });
+      await expect(service.status("anthropic")).resolves.toEqual({ configured: true, source: "stored" });
+
+      await service.logout("anthropic");
+
+      expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual({ "openai-codex": otherCredential });
+      await expect(service.status("openai-codex")).resolves.toEqual({ configured: true, source: "stored" });
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the effective fallback status after ModelRuntime logout", async () => {
+    const runtime = fakeRuntime(async () => oauthCredential());
+    runtime.getProviderAuthStatus.mockReturnValue({ configured: true, source: "environment", label: "API key" });
+    const service = new PiOAuthService({ createRuntime: async () => runtime });
+
+    await expect(service.logout("anthropic")).resolves.toEqual({
+      configured: true,
+      source: "environment",
+      label: "API key",
+    });
+
+    expect(runtime.logout).toHaveBeenCalledWith("anthropic");
+  });
+
+  it("rejects logout while a login owns the provider", async () => {
+    const owner = {};
+    const prompts: string[] = [];
+    const runtime = fakeRuntime(async (_providerId, _type, interaction) => {
+      await interaction.prompt({ type: "manual_code", message: "Wait" });
+      return oauthCredential();
+    });
+    const service = new PiOAuthService({ createRuntime: async () => runtime });
+    const login = service.login({
+      requestId: "login-then-logout",
+      providerId: "anthropic",
+      owner,
+      onPrompt: (promptId) => prompts.push(promptId),
+      onNotify: () => {},
+    });
+    await waitUntil(() => prompts.length === 1);
+
+    await expect(service.logout("anthropic")).rejects.toThrow("login already in progress");
+
+    service.cancel(owner, "login-then-logout");
+    await expect(login).rejects.toThrow("cancelled");
+  });
+
+  it("rejects login while a logout owns the provider", async () => {
+    let resolveLogout!: () => void;
+    const logoutCompletion = new Promise<void>((resolve) => { resolveLogout = resolve; });
+    const runtime = fakeRuntime(async () => oauthCredential(), async () => { await logoutCompletion; });
+    const service = new PiOAuthService({ createRuntime: async () => runtime });
+    const logout = service.logout("anthropic");
+    await waitUntil(() => runtime.logout.mock.calls.length === 1);
+
+    await expect(service.login({
+      requestId: "logout-then-login",
+      providerId: "anthropic",
+      owner: {},
+      onPrompt: () => {},
+      onNotify: () => {},
+    })).rejects.toThrow("logout already in progress");
+
+    resolveLogout();
+    await expect(logout).resolves.toEqual({ configured: false });
   });
 
   it("forwards provider prompts and notifications and persists the final status", async () => {
@@ -169,17 +250,23 @@ describe("PiOAuthService", () => {
   });
 });
 
-function fakeRuntime(login: PiOAuthRuntime["login"]): PiOAuthRuntime & {
+function fakeRuntime(
+  login: PiOAuthRuntime["login"],
+  logout: PiOAuthRuntime["logout"] = async () => {}
+): PiOAuthRuntime & {
   getProviderAuthStatus: ReturnType<typeof vi.fn>;
   login: ReturnType<typeof vi.fn>;
+  logout: ReturnType<typeof vi.fn>;
 } {
   return {
     getProvider: vi.fn(() => anthropicProvider),
     getProviderAuthStatus: vi.fn(() => ({ configured: false })),
     login: vi.fn(login),
+    logout: vi.fn(logout),
   } as unknown as PiOAuthRuntime & {
     getProviderAuthStatus: ReturnType<typeof vi.fn>;
     login: ReturnType<typeof vi.fn>;
+    logout: ReturnType<typeof vi.fn>;
   };
 }
 

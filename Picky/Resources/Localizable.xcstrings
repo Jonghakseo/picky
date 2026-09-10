@@ -8549,6 +8549,54 @@
         }
       }
     },
+    "settings.oauth.disconnect": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 해제"
+          }
+        }
+      }
+    },
+    "settings.oauth.disconnect.confirmation.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This removes the shared Pi credentials. Other Pi sessions using this account may need to sign in again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 로그인 정보를 삭제해요. 이 계정을 쓰는 다른 Pi 세션에서도 다시 로그인해야 할 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.oauth.disconnect.confirmation.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect this account?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 계정의 연결을 해제할까요?"
+          }
+        }
+      }
+    },
     "settings.oauth.fallback": {
       "localizations": {
         "en": {
@@ -8753,6 +8801,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "브라우저 대기 중…"
+          }
+        }
+      }
+    },
+    "settings.oauth.status.signingOut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnecting…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 해제 중…"
           }
         }
       }

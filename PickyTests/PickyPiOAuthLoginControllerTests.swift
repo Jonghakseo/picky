@@ -95,6 +95,60 @@ struct PickyPiOAuthLoginControllerTests {
         #expect(didReloadAuthentication)
     }
 
+    @Test func signOutReturnsFallbackStatusAndReloadsEveryDaemon() async throws {
+        let client = FakePickyAgentClient()
+        client.beforeSend = { command in
+            switch command.type {
+            case .signOutPiOAuth:
+                guard let provider = command.providerId else {
+                    Issue.record("Expected OAuth provider")
+                    return
+                }
+                client.emit(.protocolEvent(Self.envelope(.piOAuthStatus(PickyPiOAuthStatusEvent(
+                    requestId: command.id,
+                    providerId: provider,
+                    configured: true,
+                    source: "environment",
+                    label: "API key"
+                )))))
+            case .reloadPiAuthentication:
+                client.emit(.protocolEvent(Self.envelope(.piAuthenticationReloaded(PickyPiAuthenticationReloadedEvent(
+                    requestId: command.id,
+                    reloadedHandleCount: 3
+                )))))
+            default:
+                break
+            }
+        }
+        let runner = PickyPiOAuthLoginAgentRunner(client: client, reloadTimeoutNanoseconds: 100_000_000)
+
+        let status = try await runner.signOut(provider: .anthropic)
+
+        #expect(status == PickyPiOAuthLoginAuthStatus(configured: true, source: "environment", label: "API key"))
+        #expect(client.sentCommands.map(\.type) == [.signOutPiOAuth, .reloadPiAuthentication])
+        #expect(client.sentCommands.first?.providerId == .anthropic)
+    }
+
+    @Test func disconnectConfirmationCancelsWithoutChangingCredentialsThenRefreshesFallbackStatus() async {
+        let runner = FakePiOAuthLoginRunner(
+            signOutStatus: PickyPiOAuthLoginAuthStatus(configured: true, source: "environment", label: "API key")
+        )
+        let controller = PickyPiOAuthLoginController(runner: runner)
+
+        controller.requestSignOut(provider: .anthropic)
+        #expect(controller.pendingSignOutProvider == .anthropic)
+        controller.cancelSignOutConfirmation()
+        #expect(controller.pendingSignOutProvider == nil)
+        #expect(runner.signOutProviders.isEmpty)
+
+        controller.requestSignOut(provider: .anthropic)
+        controller.confirmSignOut(provider: .anthropic)
+        await waitUntil { controller.status(for: .anthropic) == .configured(source: "API key") }
+
+        #expect(controller.pendingSignOutProvider == nil)
+        #expect(runner.signOutProviders == [.anthropic])
+    }
+
     @Test func browserFailureCancelsTheDaemonLogin() async {
         let client = FakePickyAgentClient()
         client.beforeSend = { command in
@@ -193,6 +247,31 @@ struct PickyPiOAuthLoginControllerTests {
             event: event
         )
     }
+}
+
+@MainActor
+private final class FakePiOAuthLoginRunner: PickyPiOAuthLoginRunning {
+    let signOutStatus: PickyPiOAuthLoginAuthStatus
+    private(set) var signOutProviders: [PickyPiOAuthLoginProvider] = []
+
+    init(signOutStatus: PickyPiOAuthLoginAuthStatus) {
+        self.signOutStatus = signOutStatus
+    }
+
+    func authStatus(for provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
+        .init(configured: false)
+    }
+
+    func signIn(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
+        .init(configured: true, source: "stored")
+    }
+
+    func signOut(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
+        signOutProviders.append(provider)
+        return signOutStatus
+    }
+
+    func cancel(provider: PickyPiOAuthLoginProvider) {}
 }
 
 @MainActor

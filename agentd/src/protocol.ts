@@ -693,6 +693,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
   CommandBaseSchema.extend({ type: z.literal("getPiOAuthStatus"), providerId: PiOAuthProviderIdSchema }),
   CommandBaseSchema.extend({ type: z.literal("signInPiOAuth"), providerId: PiOAuthProviderIdSchema }),
+  CommandBaseSchema.extend({ type: z.literal("signOutPiOAuth"), providerId: PiOAuthProviderIdSchema }),
   CommandBaseSchema.extend({
     type: z.literal("answerPiOAuthPrompt"),
     requestId: z.string().min(1),

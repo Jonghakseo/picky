@@ -11,6 +11,7 @@ export interface PiOAuthRuntime {
   getProvider(providerId: string): Provider | undefined;
   getProviderAuthStatus(providerId: string): PiOAuthAuthStatus;
   login(providerId: string, type: "oauth", interaction: AuthInteraction): Promise<Credential>;
+  logout(providerId: string): Promise<void>;
 }
 
 export interface PiOAuthLoginRequest {
@@ -36,6 +37,7 @@ export interface PiOAuthServiceOptions {
 export interface PiOAuthHandling {
   status(providerId: string): Promise<PiOAuthAuthStatus>;
   login(request: PiOAuthLoginRequest): Promise<PiOAuthAuthStatus>;
+  logout(providerId: string): Promise<PiOAuthAuthStatus>;
   answerPrompt(answer: PiOAuthPromptAnswer): void;
   cancel(owner: object, requestId: string): boolean;
   cancelOwnedBy(owner: object): number;
@@ -68,6 +70,7 @@ export class PiOAuthService implements PiOAuthHandling {
   private runtimePromise: Promise<PiOAuthRuntime> | undefined;
   private readonly logins = new Map<string, PendingLogin>();
   private readonly providerRequests = new Map<string, string>();
+  private readonly signingOutProviders = new Set<string>();
 
   constructor(options: PiOAuthServiceOptions = {}) {
     this.createRuntime = options.createRuntime ?? (() => ModelRuntime.create({ allowModelNetwork: false }));
@@ -86,6 +89,9 @@ export class PiOAuthService implements PiOAuthHandling {
     const existingRequestId = this.providerRequests.get(request.providerId);
     if (existingRequestId) {
       throw new Error(`Pi OAuth login already in progress for '${request.providerId}' (${existingRequestId})`);
+    }
+    if (this.signingOutProviders.has(request.providerId)) {
+      throw new Error(`Pi OAuth logout already in progress for '${request.providerId}'`);
     }
 
     // Reserve synchronously before the first await. WebSocket commands can be
@@ -113,6 +119,30 @@ export class PiOAuthService implements PiOAuthHandling {
       return runtime.getProviderAuthStatus(request.providerId);
     } finally {
       this.finishLogin(request.requestId, pending, new Error("Pi OAuth login finished"));
+    }
+  }
+
+  async logout(providerId: string): Promise<PiOAuthAuthStatus> {
+    const existingRequestId = this.providerRequests.get(providerId);
+    if (existingRequestId) {
+      throw new Error(`Pi OAuth login already in progress for '${providerId}' (${existingRequestId})`);
+    }
+    if (this.signingOutProviders.has(providerId)) {
+      throw new Error(`Pi OAuth logout already in progress for '${providerId}'`);
+    }
+
+    // As with login, reserve before waiting for ModelRuntime initialization so
+    // concurrent websocket commands cannot remove credentials twice or race a login.
+    this.signingOutProviders.add(providerId);
+    try {
+      const runtime = await this.runtime();
+      this.requireOAuthProvider(runtime, providerId);
+      await runtime.logout(providerId);
+      // ModelRuntime reports the effective credential source after deletion.
+      // This can remain configured when an environment or API-key fallback exists.
+      return runtime.getProviderAuthStatus(providerId);
+    } finally {
+      this.signingOutProviders.delete(providerId);
     }
   }
 

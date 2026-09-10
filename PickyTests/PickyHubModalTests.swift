@@ -9,7 +9,7 @@ import Testing
 
 @MainActor
 struct PickyHubModalTests {
-    @Test func dismissalRestoresItsTriggerOnceAfterPresentationClears() {
+    @Test func dismissalRestoresItsTriggerOnceOutsideTheRemovalUpdate() async {
         let host = PickyHubModalHost()
         var restorationCount = 0
 
@@ -25,6 +25,10 @@ struct PickyHubModalTests {
         host.presentationDidDisappear(id: firstID)
         host.presentationDidDisappear(id: firstID)
 
+        // SwiftUI invokes the removal callback during a view update. Updating
+        // the caller's observed focus state synchronously is not safe there.
+        #expect(restorationCount == 0)
+        await drainMainQueue()
         #expect(restorationCount == 1)
     }
 
@@ -47,13 +51,14 @@ struct PickyHubModalTests {
             host.presentationDidDisappear(id: id)
         }
         await lateRemoval.value
+        await drainMainQueue()
 
         #expect(host.presentationID == nil)
         #expect(cleanupCount == 1)
         #expect(restorationCount == 1)
     }
 
-    @Test func replacementCleansUpTheDismissedPresentationWithoutRestoringItsFocus() {
+    @Test func replacementCleansUpTheDismissedPresentationWithoutRestoringItsFocus() async {
         let host = PickyHubModalHost()
         var firstCleanupCount = 0
         var firstRestorationCount = 0
@@ -81,9 +86,31 @@ struct PickyHubModalTests {
         host.presentationDidDisappear(id: firstID)
         #expect(secondRestorationCount == 0)
         host.presentationDidDisappear(id: secondID)
+        await drainMainQueue()
 
         #expect(firstRestorationCount == 0)
         #expect(secondRestorationCount == 1)
+    }
+
+    @Test func newPresentationCancelsRestorationAlreadyQueuedByRemoval() async {
+        let host = PickyHubModalHost()
+        var firstRestorations = 0
+        var secondRestorations = 0
+        let firstID = host.present(accessibilityLabel: "First", onDismiss: { firstRestorations += 1 }) { EmptyView() }
+        host.dismiss()
+        host.presentationDidDisappear(id: firstID)
+
+        let secondID = host.present(accessibilityLabel: "Second", onDismiss: { secondRestorations += 1 }) { EmptyView() }
+        await drainMainQueue()
+        #expect(host.presentationID == secondID)
+        #expect(firstRestorations == 0)
+        #expect(secondRestorations == 0)
+
+        host.dismiss()
+        host.presentationDidDisappear(id: secondID)
+        await drainMainQueue()
+        #expect(firstRestorations == 0)
+        #expect(secondRestorations == 1)
     }
 
     @Test func busyConfirmationCannotBeDismissedOrReplacedBeforeSavingSettles() {
@@ -115,4 +142,9 @@ struct PickyHubModalTests {
         #expect(host.presentationID == nil)
     }
 
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
 }

@@ -49,7 +49,7 @@ struct PickyHubNativeFocusTests {
             probe.focusRequest += 1
 
             let responding = try await observe("\(kind) responder ready", window: window, probe: probe) {
-                guard let responder = window.firstResponder as? NSView else { return false }
+                guard probe.triggerFocused, let responder = window.firstResponder as? NSView else { return false }
                 return responder === hosting || responder.isDescendant(of: hosting)
             }
             try #require(responding, "The mounted control hierarchy must receive keyboard events")
@@ -97,9 +97,9 @@ struct PickyHubNativeFocusTests {
             }
         )
         let appeared = try await observe("dialog mounted", window: window, probe: probe) {
-            probe.dialogAppeared
+            probe.dialogAppeared && !probe.triggerFocused
         }
-        try #require(appeared, "The production dialog must appear before receiving Space")
+        try #require(appeared, "The production dialog must appear and move focus away from the trigger before Space")
         window.contentView?.layoutSubtreeIfNeeded()
         try sendSpace(to: window)
         let dismissed = try await observe("dialog Cancel Space", window: window, probe: probe) {
@@ -110,6 +110,12 @@ struct PickyHubNativeFocusTests {
         #expect(probe.confirmPresses == 0)
         #expect(probe.presses == 1, "The disabled trigger must not receive the dialog's Space")
 
+        // A callback count proves only that restoration was requested. Wait for
+        // SwiftUI to apply the binding, then send one Space and require the action.
+        let focused = try await observe("restored trigger focused", window: window, probe: probe) {
+            probe.triggerFocused
+        }
+        try #require(focused, "The trigger must regain focus after the dialog is removed")
         window.contentView?.layoutSubtreeIfNeeded()
         try sendSpace(to: window)
         let reactivated = try await observe("restored trigger Space", window: window, probe: probe) {
@@ -152,7 +158,8 @@ struct PickyHubNativeFocusTests {
             "expectedTrigger=\(L10n.t("common.close"))", "expectedCancel=\(L10n.t("common.cancel"))",
             "appeared=\(probe?.didAppear ?? false)", "dialogAppeared=\(probe?.dialogAppeared ?? false)",
             "removed=\(probe?.fixtureDisappeared ?? false)",
-            "focusRequests=\(probe?.focusRequest ?? 0)", "presses=\(probe?.presses ?? 0)",
+            "focusRequests=\(probe?.focusRequest ?? 0)", "triggerFocused=\(probe?.triggerFocused ?? false)",
+            "presses=\(probe?.presses ?? 0)",
             "cancel=\(probe?.cancelPresses ?? 0)", "confirm=\(probe?.confirmPresses ?? 0)",
             "firstResponder=\(String(describing: window.firstResponder))", "AX=\(focus)"
         ]
@@ -167,6 +174,7 @@ private final class HubFocusProbe: ObservableObject {
     var didAppear = false
     var dialogAppeared = false
     var fixtureDisappeared = false
+    var triggerFocused = false
     var presses = 0
     var cancelPresses = 0
     var confirmPresses = 0
@@ -183,6 +191,7 @@ private struct HubFocusFixture: View {
             trigger
                 .onAppear { probe.didAppear = true }
                 .onChange(of: probe.focusRequest) { _, _ in triggerFocused = true }
+                .onChange(of: triggerFocused) { _, focused in probe.triggerFocused = focused }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onDisappear { probe.fixtureDisappeared = true }

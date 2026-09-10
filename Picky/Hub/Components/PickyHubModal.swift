@@ -71,12 +71,18 @@ final class PickyHubModalHost: ObservableObject {
         current.onWillDismiss()
     }
 
-    /// The overlay reports removal after SwiftUI has re-enabled the underlying
-    /// controls. Task.yield is not a render boundary. IDs reject old transitions.
+    /// onDisappear can run inside SwiftUI's update transaction. Defer the
+    /// caller's focus-state mutation until that synchronous update has unwound.
+    /// This is not a compositor/frame guarantee; the focus binding still updates
+    /// through SwiftUI. Recheck IDs after the hop so replacements win.
     func presentationDidDisappear(id: UUID) {
-        guard presentation == nil, let pendingDismissal, pendingDismissal.id == id else { return }
-        self.pendingDismissal = nil
-        pendingDismissal.onDismiss()
+        guard presentation == nil, pendingDismissal?.id == id else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentation == nil,
+                  let pending = self.pendingDismissal, pending.id == id else { return }
+            self.pendingDismissal = nil
+            pending.onDismiss()
+        }
     }
 
     /// `onExitCommand` only fires while a SwiftUI view inside the dialog owns

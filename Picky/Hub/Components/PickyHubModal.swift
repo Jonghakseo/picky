@@ -175,6 +175,10 @@ struct PickyHubModalOverlay<Content: View>: View {
     @ObservedObject var host: PickyHubModalHost
     @ViewBuilder var content: () -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Keep SwiftUI's visual branch in `@State`. The host owns logical modal
+    /// lifetime, while this local projection consumes its post-write
+    /// invalidation without re-entering a button's update transaction.
+    @State private var renderedPresentation: PickyHubModalHost.Presentation?
 
     var body: some View {
         ZStack {
@@ -182,7 +186,7 @@ struct PickyHubModalOverlay<Content: View>: View {
                 .disabled(host.isPresenting)
                 .accessibilityHidden(host.isPresenting)
 
-            if let presentation = host.renderedPresentation {
+            if let presentation = renderedPresentation {
                 PickyHubTheme.Colors.modalBackdrop
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
@@ -220,7 +224,11 @@ struct PickyHubModalOverlay<Content: View>: View {
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
             }
         }
-        .animation(reduceMotion ? nil : PickyHubTheme.Motion.modal, value: host.renderedPresentation?.id)
+        .onAppear { renderedPresentation = host.renderedPresentation }
+        .onReceive(host.objectWillChange) { _ in
+            renderedPresentation = host.renderedPresentation
+        }
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.modal, value: renderedPresentation?.id)
     }
 }
 

@@ -56,8 +56,17 @@ env:
   PICKY_RELEASE_SLACK_CHANNEL_ID: C0B41QL02SU
 
 jobs:
+  isolated-ui:
+    name: Verify WindowServer UI effects
+    uses: ./.github/workflows/isolated-ui-tests.yml
+    with:
+      # Build the tagged source, but use the current policy runner because
+      # historical release tags predate the isolated UI-test command.
+      ref: ${{ github.event.release.tag_name || inputs.tag_name }}
+
   build-notarized-release:
     name: Build, notarize, and publish dmg
+    needs: isolated-ui
     runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 90
 

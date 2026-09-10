@@ -8,6 +8,7 @@ import Foundation
 
 enum PickyRuntimeEnvironment {
     static let prePushUIEffectTestsEnvironmentKey = "PICKY_PRE_PUSH_UI_EFFECT_TESTS"
+    static let uiTestSessionEnvironmentKey = "PICKY_UI_TEST_SESSION"
     static let unitTestDefaultsSuiteName = "com.jonghakseo.picky.unit-tests.\(ProcessInfo.processInfo.processIdentifier)"
     private static let unitTestDefaults = UserDefaults(suiteName: unitTestDefaultsSuiteName)!
 
@@ -50,6 +51,7 @@ enum PickyRuntimeEnvironment {
 
     static func shouldRunPrePushUIEffectTests(environment: [String: String]) -> Bool {
         environment[prePushUIEffectTestsEnvironmentKey] == "1"
+            && environment[uiTestSessionEnvironmentKey] == "isolated"
     }
 }
 

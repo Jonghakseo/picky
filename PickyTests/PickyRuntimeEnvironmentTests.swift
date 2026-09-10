@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Picky
@@ -45,12 +46,23 @@ struct PickyRuntimeEnvironmentTests {
         #expect(UserDefaults.standard.object(forKey: key) as? String == productionValueBeforeTest)
     }
 
-    @Test func onlyThePrePushEnvironmentValueEnablesUIEffectTests() {
+    @Test func uiEffectsRequireBothExplicitOptInAndAnIsolatedSession() {
         let key = PickyRuntimeEnvironment.prePushUIEffectTestsEnvironmentKey
+        let session = PickyRuntimeEnvironment.uiTestSessionEnvironmentKey
 
-        #expect(PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [key: "1"]))
-        #expect(!PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [key: "0"]))
+        #expect(PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [key: "1", session: "isolated"]))
+        #expect(!PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [key: "1"]))
+        #expect(!PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [key: "1", session: "desktop"]))
+        #expect(!PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [key: "0", session: "isolated"]))
+        #expect(!PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [session: "isolated"]))
         #expect(!PickyRuntimeEnvironment.shouldRunPrePushUIEffectTests(environment: [:]))
+    }
+
+    @MainActor
+    @Test func ordinaryTestHostCannotActivateOnTheDesktop() {
+        guard !PickyRuntimeEnvironment.runsPrePushUIEffectTests else { return }
+        #expect(NSApp.activationPolicy() == .prohibited)
+        #expect(!NSApp.isActive)
     }
 
     @Test func unitTestsDoNotInvokeTheKeychainFallback() {

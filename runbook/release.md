@@ -135,6 +135,7 @@ gh release view <tag>
 
 완료 조건:
 
+- GitHub-hosted `isolated-ui-tests.yml`의 WindowServer UI-effect gate 성공 (측정 불가는 실패이며, 오프스크린 검증으로 대체하지 않음)
 - workflow 성공
 - Developer ID 서명 및 Apple notarization 성공
 - DMG와 Sparkle update zip 업로드
@@ -155,7 +156,7 @@ gh release view <tag>
 정식 채널(stable/beta) 릴리즈는 GitHub Actions가 notarize + Sparkle appcast 갱신까지 처리한다. 전체 설계는 `docs/auto-update.md` 참고.
 
 - **appcast 앵커**: `auto-update` 태그/릴리즈가 `appcast.xml` 호스팅 앵커다. `https://github.com/Jonghakseo/picky/releases/download/auto-update/appcast.xml` — **절대 삭제 금지.**
-- **workflow**: `.github/workflows/beta-notarized-release.yml`. 트리거는 `release: published` 또는 `workflow_dispatch`.
+- **workflow**: `.github/workflows/beta-notarized-release.yml`. 트리거는 `release: published` 또는 `workflow_dispatch`. 패키징 전 `.github/workflows/isolated-ui-tests.yml`을 재사용해 GitHub-hosted `macos-15`에서 WindowServer UI-effect gate를 통과해야 한다.
 - **새 태그 검증**: stable=`X.Y.Z`, beta=`X.Y.Z-beta.N`, alpha=`X.Y.Z-alpha.N`.
 - **legacy 재실행**: 기존 숫자형 beta 또는 `*-stable` GitHub Release만 manual dispatch에서 `allow_legacy_tag=true`, `create_release_if_missing=false`로 허용한다.
 - **동작**: build → notarize app → DMG notarize/staple → Sparkle update zip + `sign_update` → `appcast.xml` prepend → 릴리즈 노트 갱신.

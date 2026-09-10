@@ -89,7 +89,7 @@ SUT와 핵심 정책은 실제 구현으로 둔다. fake/mock은 다음 경계�
 - private SwiftUI state, view hierarchy, modifier 순서, pixel 상수를 우연히 고정하지 않는다.
 - 사용자에게 보이는 text, status, enabled state, projection, routing action을 검증한다.
 - Picky의 `renderSnapshot`이나 pure presentation policy로 충분하면 실제 window를 띄우지 않는다.
-- WindowServer ordering이나 key-window가 계약인 테스트는 `PickyRuntimeEnvironment.runsPrePushUIEffectTests`로 gate하고, `scripts/pre-push-checks.sh`의 단일 실행 외에는 opt-in 환경 변수를 설정하지 않는다.
+- WindowServer ordering이나 key-window가 계약인 테스트는 `PickyRuntimeEnvironment.runsPrePushUIEffectTests`로 gate한다. opt-in은 GitHub-hosted `isolated-ui-tests.yml`이 호출한 `scripts/pre-push-checks.sh --ui-effects`만 소유하며, 로컬 명령에서 환경 변수를 설정하거나 UI-effect/performance 모드를 호출하지 않는다. `docs/test-desktop-isolation.md`의 실제 포커스 검증 경계를 따른다.
 - snapshot/golden은 serialization 또는 diff 자체가 계약일 때만 사용한다.
 - HUD identity/performance 변경은 `docs/perf-profiling.md`의 측정 근거를 별도로 요구한다.
 

@@ -1,6 +1,6 @@
 # HUB 포커스 실측과 성능 회귀 방지
 
-이 문서는 HUB 포커스 성능을 **사용자의 수동 클릭이나 실행 중인 Picky 재시작 없이** 측정하는 로컬 운영 절차다. 상세 스택 분석은 [perf-profiling.md](perf-profiling.md)를 참고한다.
+이 문서는 HUB 포커스 성능을 **사용자의 수동 클릭이나 실행 중인 Picky 재시작 없이** GitHub-hosted macOS VM에서 측정하는 절차다. 로컬 데스크톱은 일반·오프스크린 테스트만 실행한다. 상세 격리 규칙은 [test-desktop-isolation.md](test-desktop-isolation.md), 스택 분석은 [perf-profiling.md](perf-profiling.md)를 참고한다.
 
 ## 1. 무엇을 실행하는가
 
@@ -12,17 +12,30 @@
 - 자체 창 두 개를 만든다. 보조 창은 워밍업과 지연 감지 확인에만 사용한다.
 - 종료 시 자체 창과 임시 상태를 정리하고, 가능하면 시작 전의 전면 앱을 복원한다. 실행 중인 사용자 Picky는 그대로 둔다.
 
-로그인된 macOS 데스크톱과 WindowServer가 필요하다. 잠깐 포커스를 가져가므로 입력 중에는 실행하지 않는다. 화면 잠금, 사용자의 동시 앱 전환, 다른 UI 테스트는 정상 측정을 방해할 수 있다.
+GitHub-hosted `macos-15` VM의 WindowServer와 Finder가 필요하다. 워크플로는 고정된 `/Applications/Xcode_16.3.app/Contents/Developer` 도구체인에서 실행한다. Finder가 없거나 앱 활성화가 실패하면 측정 불가로 실패한다. fixture나 오프스크린 렌더로 대체해 통과 처리하지 않는다.
 
-## 2. 평소 실행할 명령
+## 2. CI에서 실행할 명령
 
-저장소 루트에서 실행한다.
+일반 UI-effect gate는 GitHub Actions에서 실행한다. 기본 브랜치의 워크플로를 수동 실행하려면 다음을 사용한다.
 
 ```bash
-./scripts/pre-push-checks.sh --hub-focus-perf
+gh workflow run isolated-ui-tests.yml --ref main
+gh run list --workflow isolated-ui-tests.yml --limit 1
 ```
 
-스크립트는 고정 Xcode 도구 체인과 `/private/tmp/PickyAgentDD`를 사용한다. 다른 `xcodebuild`와 같은 DerivedData를 공유해 동시에 실행하지 않는다. 경합 시 별도 경로 사용·정리 규칙은 [AGENTS.md](../AGENTS.md)의 Build, test, package 항목을 따른다.
+명시적 태그나 커밋을 검사할 때는 현재 기본 브랜치의 정책 스크립트로 해당 소스를 검사한다.
+
+```bash
+gh workflow run isolated-ui-tests.yml --ref main -f ref=<tag-or-sha>
+```
+
+기준 수집은 의도적으로 실패하는 calibration 모드로 실행한다.
+
+```bash
+gh workflow run isolated-ui-tests.yml --ref main -f mode=hub-focus-perf-calibrate
+```
+
+워크플로는 고정 Xcode 도구 체인과 runner 전용 DerivedData를 사용한다. 로컬 `./scripts/pre-push-checks.sh --hub-focus-perf` 명령은 허용되지 않는다. 실행 후 `picky-hub-focus-<run-id>` artifact를 내려받아 아래 산출물을 확인한다.
 
 기본 산출물은 다음과 같다. `build/`는 Git에서 제외된다.
 
@@ -40,27 +53,31 @@
 ### 조건과 소스 고정
 
 1. 변경 전에 기준값을 먼저 수집한다. 두 버전 모두 같은 하네스 구현과 시나리오를 사용한다.
-2. 같은 Mac, macOS, Xcode/Debug 구성, 디스플레이, 언어, 폰트 크기를 유지한다. 전원 모드·열 상태·백그라운드 부하도 기록한다. JSON은 이 조건을 모두 자동 기록하지 않는다.
+2. 같은 GitHub-hosted runner image, macOS, Xcode/Debug 구성, 언어, 폰트 크기를 유지한다. GitHub 이미지 갱신이나 runner 부하도 기록한다. JSON은 이 조건을 모두 자동 기록하지 않는다.
 3. 각 소스의 커밋을 기록한다. 깨끗한 작업 트리에서 실행하는 것이 가장 명확하다. 미커밋 변경이 있다면 diff와 신규 소스도 별도로 보존한다.
 4. 다른 빌드·테스트를 동시에 돌리지 않는다. 일부러 느린 실행을 버리고 가장 빠른 값만 고르지 않는다.
 
 ```bash
-mkdir -p build/perf/hub-focus
-# 기준 소스에서 실행. 작업 중이면 status/diff 및 신규 소스도 함께 보존한다.
-git rev-parse HEAD > build/perf/hub-focus/before-revision.txt
-PICKY_HUB_FOCUS_PERF_REPORT_PATH="$PWD/build/perf/hub-focus/before.json" \
-  ./scripts/pre-push-checks.sh --hub-focus-perf-calibrate
+# 기준 소스의 SHA를 기록한 뒤 CI calibration을 실행한다.
+git rev-parse HEAD
+gh workflow run isolated-ui-tests.yml --ref main \
+  -f ref="$(git rev-parse HEAD)" \
+  -f mode=hub-focus-perf-calibrate
 ```
+
+완료된 run의 `picky-hub-focus-<run-id>` artifact를 내려받아 `before.json`으로 보관한다.
 
 **Calibration은 샘플과 화면을 저장한 뒤 의도적으로 테스트를 실패시킨다.** `calibrationCompleted(...)`와 새 `before.json`의 `mode: calibration`, `gateStatus: calibration`을 함께 확인한다. 보통 종료 코드는 65지만, 65 자체는 기준 측정 완료의 증거가 아니다. 컴파일 오류나 호스트 실행 실패도 같은 코드를 반환할 수 있다.
 
 변경 후에는 일반 게이트로 실행한다.
 
 ```bash
-git rev-parse HEAD > build/perf/hub-focus/after-revision.txt
-PICKY_HUB_FOCUS_PERF_REPORT_PATH="$PWD/build/perf/hub-focus/after.json" \
-  ./scripts/pre-push-checks.sh --hub-focus-perf
+gh workflow run isolated-ui-tests.yml --ref main \
+  -f ref="$(git rev-parse HEAD)" \
+  -f mode=hub-focus-perf
 ```
+
+통과한 run의 `picky-hub-focus-<run-id>` artifact를 내려받아 `after.json`으로 보관한다.
 
 통과한 변경본의 산출물은 별도로 재검증할 수 있다.
 
@@ -127,9 +144,9 @@ PY
 
 Settings 딥링크 테스트는 offscreen SwiftUI의 AX 텍스트 트리가 비어 있기 때문에 실제 렌더 이미지의 도구 식별자를 Apple Vision OCR로 확인한다. 데스크톱 캡처나 권한 요청은 없다. 이 fixture의 애니메이션 억제와 OCR 초기화 대기 한도는 성능 예산이 아니며, 런타임 하네스의 정상 motion 환경과 구분한다.
 
-전체 `./scripts/pre-push-checks.sh`는 일반 Swift 실행에서 성능 suite를 제외하고, 이후 새 테스트 호스트에서 해당 suite만 한 번 실행한다. 각 WindowServer 테스트는 한 번씩 실행한다. runner 직렬화만으로 다른 Swift Testing 작업이나 잔여 비동기 작업의 영향을 없앴다고 가정하지 않는다.
+일반 `./scripts/pre-push-checks.sh`와 `xcodebuild test`에서는 WindowServer 성능 suite가 비활성화된다. GitHub-hosted `isolated-ui-tests.yml`만 UI-effect 모드를 호출하며, 각 WindowServer 테스트는 새 테스트 호스트에서 한 번씩 실행한다. runner 직렬화만으로 다른 Swift Testing 작업이나 잔여 비동기 작업의 영향을 없앴다고 가정하지 않는다.
 
-일반 `xcodebuild test`에서는 런타임 성능 테스트가 비활성화된다. `TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1`을 임의로 설정하지 않는다. opt-in 소유자는 pre-push 스크립트다.
+`TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1`을 임의로 설정하지 않는다. UI-effect opt-in은 격리 워크플로가 호출한 pre-push 스크립트만 소유한다.
 
 빠른 구조·산출물 검증기 검사:
 
@@ -144,7 +161,7 @@ python3 -m unittest discover -s scripts/tests -p test_hub_focus_perf_runner.py
 | 증상 | 처리 |
 | --- | --- |
 | 컴파일 실패, `IDELaunchErrorDomain Code 20`, 샘플/화면 없음 | 측정 불가. 로그의 원인을 해결한다. 서명 설정을 바꾸거나 미실행 테스트를 통과로 표시하지 않는다 |
-| Finder/WindowServer 없음, 앱 활성화 시간 초과, 중간 포커스 손실 | 환경 때문에 판정 불가. 로그인·잠금·동시 작업 조건을 확인한다. 임의 앱 실행이나 권한 요청으로 우회하지 않는다 |
+| Finder/WindowServer 없음, 앱 활성화 시간 초과, 중간 포커스 손실 | 환경 때문에 판정 불가이며 CI 실패다. GitHub-hosted runner image와 실행 로그를 확인한다. 임의 앱 실행이나 권한 요청, fixture 대체로 우회하지 않는다 |
 | `calibrationCompleted` + 유효한 새 calibration JSON | 기준 수집 완료, 게이트 통과는 아님 |
 | 현재 gate JSON의 예산 초과 | 실제 샘플과 화면을 먼저 확인한 뒤 아래 순서로 원인을 좁힌다 |
 | 구조/메뉴 mutation 계약 실패 | 시간 측정이 빨라도 수정해야 한다. 워밍업·캐시가 구조적 회귀를 가릴 수 있다 |

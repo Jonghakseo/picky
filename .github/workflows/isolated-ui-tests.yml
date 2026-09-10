@@ -1,0 +1,99 @@
+name: Isolated UI tests
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Optional source ref to test with the current UI-test policy"
+        required: false
+        type: string
+      mode:
+        description: "UI-effect gate mode"
+        required: false
+        default: ui-effects
+        type: choice
+        options:
+          - ui-effects
+          - hub-focus-perf
+          - hub-focus-perf-calibrate
+  workflow_call:
+    inputs:
+      ref:
+        description: "Optional release source ref to test with the current UI-test policy"
+        required: false
+        default: ""
+        type: string
+      mode:
+        description: "UI-effect gate mode"
+        required: false
+        default: ui-effects
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ui-effects:
+    name: WindowServer UI effects
+    # This literal GitHub-hosted image supplies the pinned Xcode path below.
+    # Do not replace it with a repository variable or a self-hosted runner.
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      PICKY_DEVELOPER_DIR: /Applications/Xcode_16.3.app/Contents/Developer
+
+    steps:
+      - name: Check out source under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 1
+
+      # Release tags can predate the UI-only runner. Keep test policy current
+      # while building the immutable release source, matching the release
+      # workflow's separate policy checkout.
+      - name: Check out current UI-test policy
+        if: ${{ inputs.ref != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .ui-policy
+          fetch-depth: 1
+
+      - name: Prepare disposable desktop
+        run: |
+          set -euo pipefail
+          # Use the runner-provided identity; never manufacture an isolation claim.
+          [[ "${GITHUB_ACTIONS}" == true && "${RUNNER_ENVIRONMENT}" == github-hosted ]]
+          actual_version="$("${PICKY_DEVELOPER_DIR}/usr/bin/xcodebuild" -version)"
+          [[ "${actual_version}" == $'Xcode 16.3\nBuild version 16E140' ]]
+          # Required by the native Tab/Space focus contract. Only this disposable
+          # VM changes its preference; the developer's keyboard settings stay intact.
+          defaults write -g AppleKeyboardUIMode -int 3
+
+      - name: Run WindowServer UI-effect gate
+        env:
+          POLICY_ROOT: ${{ inputs.ref != '' && format('{0}/.ui-policy', github.workspace) || github.workspace }}
+          UI_EFFECT_MODE: ${{ inputs.mode || 'ui-effects' }}
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
+          "${POLICY_ROOT}/scripts/pre-push-checks.sh" "--${UI_EFFECT_MODE}"
+
+      - name: Upload Hub focus evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: picky-hub-focus-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            build/perf/hub-focus/
+            /private/tmp/PickyAgentDD/Logs/Test/

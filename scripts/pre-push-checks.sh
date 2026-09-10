@@ -1,24 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Helpers come from this checkout; tests come from the cwd checkout. Resolve
+# the script path before changing directories, including relative invocations.
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
-
-if [ "$#" -gt 1 ]; then
-  echo "Usage: $0 [--hub-focus-perf|--hub-focus-perf-calibrate]" >&2
-  exit 64
-fi
+usage() {
+  echo "Usage: $0 [--swift-tests|--ui-effects|--hub-focus-perf|--hub-focus-perf-calibrate]" >&2
+}
+if [ "$#" -gt 1 ]; then usage; exit 64; fi
+TEST_MODE="${1:-local}"
 HUB_FOCUS_PERF_ONLY=false
 HUB_FOCUS_PERF_MODE=gate
-case "${1:-}" in
-  "") ;;
+case "$TEST_MODE" in
+  local|--swift-tests) ;;
+  --ui-effects) ;;
   --hub-focus-perf) HUB_FOCUS_PERF_ONLY=true ;;
   --hub-focus-perf-calibrate) HUB_FOCUS_PERF_ONLY=true; HUB_FOCUS_PERF_MODE=calibrate ;;
-  *)
-    echo "Usage: $0 [--hub-focus-perf|--hub-focus-perf-calibrate]" >&2
-    exit 64
-    ;;
+  *) usage; exit 64 ;;
 esac
+
+# CI=true (or a self-hosted runner on a developer laptop) is not isolation.
+# Refuse before starting Xcode, reading stdin, or touching the desktop.
+UI_EFFECTS=false
+if [ "$TEST_MODE" = --ui-effects ] || [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
+  if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
+    echo "❌ UI-effect tests require a GitHub-hosted macOS VM. Use the Isolated UI tests workflow; local tests never take focus." >&2
+    exit 78
+  fi
+  UI_EFFECTS=true
+fi
 
 HOST_ARCH="$(uname -m)"
 DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
@@ -26,7 +38,7 @@ DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
 DERIVED_DATA_PATH="${PICKY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"
 
 # shellcheck source=scripts/lib/pinned-toolchain.sh
-. "$ROOT/scripts/lib/pinned-toolchain.sh"
+. "$SCRIPT_ROOT/scripts/lib/pinned-toolchain.sh"
 picky_require_pinned_toolchain "pre-push"
 PRE_PUSH_REFS="$(mktemp "${TMPDIR:-/tmp}/picky-pre-push-refs.XXXXXX")"
 PICKY_TEST_LOG=""
@@ -36,7 +48,7 @@ cleanup() {
 trap cleanup EXIT
 # Git supplies a finite refs stream. Narrow performance runs never read stdin,
 # so invoking them manually cannot block on a terminal or open pipe.
-if [ "$HUB_FOCUS_PERF_ONLY" = false ] && [ ! -t 0 ]; then
+if [ "$TEST_MODE" = local ] && [ ! -t 0 ]; then
   while IFS= read -r ref; do
     printf '%s\n' "$ref"
   done > "$PRE_PUSH_REFS"
@@ -60,24 +72,38 @@ run_step() {
 }
 
 HUB_FOCUS_PERF_REPORT="${PICKY_HUB_FOCUS_PERF_REPORT_PATH:-$ROOT/build/perf/hub-focus/pre-push.json}"
-# TEST_RUNNER_ is Xcode's environment bridge. The test bundle receives these
-# as PICKY_* keys, while ordinary xcodebuild tests remain fail-closed.
+# Explicit zeros override leaked shell flags. A bare xcodebuild remains
+# fail-closed in Swift too: opt-in AND an isolated session are both required.
 UI_EFFECT_TEST_ENV=(
-  "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1"
-  "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_REPORT_PATH=$HUB_FOCUS_PERF_REPORT"
-  "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_MODE=$HUB_FOCUS_PERF_MODE"
+  "PICKY_PRE_PUSH_UI_EFFECT_TESTS=0"
+  "PICKY_UI_TEST_SESSION="
+  "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=0"
+  "TEST_RUNNER_PICKY_UI_TEST_SESSION="
 )
+if [ "$UI_EFFECTS" = true ]; then
+  UI_EFFECT_TEST_ENV=(
+    "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1"
+    "TEST_RUNNER_PICKY_UI_TEST_SESSION=isolated"
+    "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_REPORT_PATH=$HUB_FOCUS_PERF_REPORT"
+    "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_MODE=$HUB_FOCUS_PERF_MODE"
+  )
+fi
 
 run_picky_tests() {
+  local selected_test="${1:-}"
   local selector=("-skip-testing:PickyTests/PickyHubFocusPerformanceTests")
-  local label="Picky test suite"
-  if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
-    selector=("-only-testing:PickyTests/PickyHubFocusPerformanceTests")
-    label="Hub focus performance gate"
-  fi
+  local label="Picky offscreen test suite (desktop activation prohibited)"
   mkdir -p "$(dirname "$HUB_FOCUS_PERF_REPORT")"
   PICKY_TEST_LOG="${HUB_FOCUS_PERF_REPORT%.json}.suite.log"
+  if [ -n "$selected_test" ]; then
+    selector=("-only-testing:PickyTests/$selected_test")
+    label="Isolated UI contract: $selected_test"
+    local log_name="${selected_test//\//-}"
+    PICKY_TEST_LOG="${HUB_FOCUS_PERF_REPORT%.json}.${log_name}.log"
+  fi
   if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
+    selector=("-only-testing:PickyTests/PickyHubFocusPerformanceTests")
+    label="Isolated Hub focus performance gate"
     PICKY_TEST_LOG="${HUB_FOCUS_PERF_REPORT%.json}.log"
     # A previous run must never satisfy the current invocation's artifact check.
     if [ -f "$HUB_FOCUS_PERF_REPORT" ]; then
@@ -90,11 +116,12 @@ run_picky_tests() {
   env "${UI_EFFECT_TEST_ENV[@]}" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" -parallel-testing-enabled NO test "${selector[@]}" 2>&1 | tee "$PICKY_TEST_LOG"
   local xcode_status=${PIPESTATUS[0]}
   set -e
-  if [ "$xcode_status" -ne 0 ]; then
-    return "$xcode_status"
+  if [ "$xcode_status" -ne 0 ]; then return "$xcode_status"; fi
+  if [ -n "$selected_test" ]; then
+    python3 "$SCRIPT_ROOT/scripts/validate-ui-effect-test-log.py" --selector "$selected_test" --log "$PICKY_TEST_LOG"
   fi
   if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
-    python3 scripts/tests/test_hub_focus_perf_runner.py \
+    python3 "$SCRIPT_ROOT/scripts/tests/test_hub_focus_perf_runner.py" \
       --report "$HUB_FOCUS_PERF_REPORT" \
       --xcode-log "$PICKY_TEST_LOG"
   fi
@@ -149,12 +176,31 @@ run_swiftlint_warning_first() {
 require_command git "Install Git."
 require_command python3 "Install Python 3."
 
-if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
-  require_command xcodebuild "Install Xcode command line tools / Xcode."
-  run_step "test environment isolation guard" python3 scripts/check-test-environment-isolation.py
+if [ "$UI_EFFECTS" = true ]; then
+  require_command xcodebuild "Install Xcode."
+  if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
+    run_picky_tests
+  else
+    # Read all selectors before running any test; discovery failure cannot be
+    # masked by process substitution. Each contract gets a fresh test host.
+    ui_selectors="$(python3 "$SCRIPT_ROOT/scripts/check-test-environment-isolation.py" --ui-effect-selectors --source-root "$ROOT")"
+    while IFS= read -r selected_test; do
+      if [[ "$selected_test" == PickyHubFocusPerformanceTests/* ]]; then
+        HUB_FOCUS_PERF_ONLY=true run_picky_tests "$selected_test"
+      else
+        run_picky_tests "$selected_test"
+      fi
+    done <<< "$ui_selectors"
+  fi
+  echo "✅ isolated UI checks passed."
+  exit 0
+fi
+
+if [ "$TEST_MODE" = --swift-tests ]; then
+  require_command xcodebuild "Install Xcode."
+  run_step "test environment isolation guard" python3 "$SCRIPT_ROOT/scripts/check-test-environment-isolation.py"
   run_picky_tests
-  echo
-  echo "✅ hub focus performance gate passed."
+  echo "✅ offscreen Swift checks passed; real UI checks belong to isolated CI."
   exit 0
 fi
 
@@ -195,12 +241,9 @@ run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -de
 # runner and reporting every still-scheduled test in that shard as a failure (observed
 # ~20% of consecutive runs). Serializing the runners avoids the cross-process collision
 # and trades ~5-9s for deterministic results.
-# WindowServer-dependent tests are disabled in every ordinary test invocation.
-# Each UI-effect test runs once, without retries or test-plan repetitions.
-# The ordinary suite excludes performance; its separate host cannot inherit
-# concurrent Swift Testing tasks or outstanding work from unrelated suites.
+# Real UI contracts run in isolated-ui-tests.yml, never on the user's desktop.
+# Release packaging depends on that workflow's successful UI job.
 run_picky_tests
-HUB_FOCUS_PERF_ONLY=true run_picky_tests
 
 echo
-echo "✅ pre-push: all local quality checks passed."
+echo "✅ pre-push: local checks passed. Real UI/latency validation is required separately in isolated CI."

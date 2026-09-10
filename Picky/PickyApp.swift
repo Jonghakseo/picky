@@ -19,6 +19,11 @@ enum PickyApp {
     static func main() {
         PickyRuntimeEnvironment.resetUnitTestUserDefaults()
         let app = NSApplication.shared
+        if PickyRuntimeEnvironment.isRunningUnitTests && !PickyRuntimeEnvironment.runsPrePushUIEffectTests {
+            // Offscreen tests need AppKit, not permission to activate on the
+            // developer's desktop. Set this before the application run loop.
+            app.setActivationPolicy(.prohibited)
+        }
         let delegate = CompanionAppDelegate()
         Self.delegate = delegate
         app.delegate = delegate

@@ -175,7 +175,7 @@ rg -n "TEST SUCCEEDED|TEST FAILED|intended-test-name" "$LOG" || true
 exit "$xcode_status"
 ```
 
-WindowServer-dependent tests are disabled during ordinary Xcode test runs. They may run exactly once through `scripts/pre-push-checks.sh`, which owns the `PICKY_PRE_PUSH_UI_EFFECT_TESTS=1` opt-in. Do not set that variable for ad-hoc or repeated test commands.
+WindowServer-dependent tests are disabled during ordinary local Xcode and pre-push runs. They run exactly once per fresh test host only through GitHub-hosted `.github/workflows/isolated-ui-tests.yml`, which invokes the pre-push script's UI-effect mode with its `TEST_RUNNER_` opt-in. Do not set that variable or invoke UI-effect/performance modes for ad-hoc local commands. See `docs/test-desktop-isolation.md`.
 
 Build with **Xcode 16.3** (`/Applications/Xcode.app`). Xcode 26.3 miscompiles the implicit isolated `deinit` that `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` produces: Release crashes `swift-frontend`, and Debug builds corrupt the heap so the app and the XCTest host die with `SIGBUS`. If `xcode-select -p` points elsewhere, prefix commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` rather than changing the global setting. Details and the open blocker are in `docs/known-issues/xcode-26-3-isolated-deinit.md`. Use a toolchain-specific `-derivedDataPath` when comparing Xcode versions; reusing one across versions fails to link.
 

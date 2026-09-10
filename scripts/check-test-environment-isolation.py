@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UI_EFFECT_GATE = "@Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))"
 UI_EFFECT_TESTS = {
     # Hub lifecycle tests restore the test host's activation policy and prior
-    # foreground app in defer, and remain enabled only by the pre-push gate.
+    # foreground app in defer, and remain enabled only in isolated UI hosts.
     ("PickyTests/PickyHubWindowLifecycleTests.swift", "openMinimizeReopenAndClosePreserveTheHubApplicationLifecycle"),
     ("PickyTests/PickyHubWindowLifecycleTests.swift", "voiceCaptureDismissesHubAndReturnsToAccessoryBeforeRestoringExternalFocus"),
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
@@ -361,8 +362,20 @@ def validate_pre_push_gate() -> None:
         fail("pre-push --hub-focus-perf mode must select only the Hub focus performance suite")
     if "-skip-testing:PickyTests/PickyHubFocusPerformanceTests" not in pre_push:
         fail("the regular Swift suite must exclude the performance test so it executes only once")
-    if "run_picky_tests\nHUB_FOCUS_PERF_ONLY=true run_picky_tests" not in pre_push:
-        fail("full pre-push must run performance in a fresh targeted host after the regular suite")
+    if "HUB_FOCUS_PERF_ONLY=true run_picky_tests \"$selected_test\"" not in pre_push:
+        fail("isolated UI mode must give the performance contract a fresh host")
+    if "HUB_FOCUS_PERF_ONLY=true run_picky_tests\necho" in pre_push:
+        fail("local pre-push must not run the focus performance gate")
+    for required in (
+        '"TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=0"',
+        '"TEST_RUNNER_PICKY_UI_TEST_SESSION="',
+        '"TEST_RUNNER_PICKY_UI_TEST_SESSION=isolated"',
+        '${RUNNER_ENVIRONMENT:-}',
+        'github-hosted',
+        'validate-ui-effect-test-log.py',
+    ):
+        if required not in pre_push:
+            fail(f"pre-push lost its desktop isolation boundary: {required}")
     if "test_hub_focus_perf_runner.py" not in pre_push:
         fail("pre-push must verify the Hub focus report and executed test evidence after xcodebuild")
 
@@ -378,7 +391,31 @@ def validate_pre_push_gate() -> None:
         fail("PickyUITests must stay excluded from the shared default TestAction")
 
 
+def ui_effect_selectors(source_root: Path) -> list[str]:
+    selectors = []
+    for path in sorted((source_root / "PickyTests").glob("*.swift")):
+        source = path.read_text()
+        gated = [name for name, enabled in test_functions(source).items() if enabled]
+        if not gated:
+            continue
+        if not re.search(rf"\b(?:struct|class)\s+{re.escape(path.stem)}\b", source):
+            fail(f"UI suite does not match its filename: {path.name}")
+        selectors.extend(f"{path.stem}/{name}()" for name in gated)
+    if not selectors:
+        fail("no UI-effect tests discovered; an empty run is not validation")
+    if not any(value.startswith("PickyHubFocusPerformanceTests/") for value in selectors):
+        fail("source under test has no Hub focus performance contract")
+    return selectors
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ui-effect-selectors", action="store_true")
+    parser.add_argument("--source-root", type=Path, default=ROOT)
+    args = parser.parse_args()
+    if args.ui_effect_selectors:
+        print("\n".join(ui_effect_selectors(args.source_root)))
+        return
     validate_injected_local_monitor_guard_fixtures()
     validate_ui_effect_tests()
     validate_test_boundary_calls()

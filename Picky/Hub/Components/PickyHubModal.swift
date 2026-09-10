@@ -27,7 +27,13 @@ final class PickyHubModalHost: ObservableObject {
         let onDismiss: () -> Void
     }
 
-    @Published private(set) var presentation: Presentation?
+    /// Logical modal ownership changes immediately so busy work and replacement
+    /// requests never race with SwiftUI's rendering transaction.
+    private(set) var presentation: Presentation?
+    /// SwiftUI observes this copy only after the initiating action's view
+    /// update unwinds. Mutating an observed modal from its own button action
+    /// is undefined and can leave the overlay mounted.
+    @Published private(set) var renderedPresentation: Presentation?
     /// The hub window; key events from other Picky windows are left alone.
     weak var window: NSWindow?
     private var escapeMonitor: Any?
@@ -72,6 +78,7 @@ final class PickyHubModalHost: ObservableObject {
             onDismiss: onDismiss
         )
         presentation = next
+        publishPresentation(next)
         installEscapeMonitor()
         return next.id
     }
@@ -82,6 +89,23 @@ final class PickyHubModalHost: ObservableObject {
         removeEscapeMonitor()
         pendingDismissal = current
         current.onWillDismiss()
+        removeRenderedPresentation(id: current.id)
+    }
+
+    private func publishPresentation(_ presentation: Presentation) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentation?.id == presentation.id else { return }
+            self.renderedPresentation = presentation
+        }
+    }
+
+    private func removeRenderedPresentation(id: UUID) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentation == nil,
+                  self.pendingDismissal?.id == id,
+                  self.renderedPresentation?.id == id else { return }
+            self.renderedPresentation = nil
+        }
     }
 
     /// `onDisappear` confirms that SwiftUI removed the overlay. The next main
@@ -106,6 +130,10 @@ final class PickyHubModalHost: ObservableObject {
               capturedWindow === window,
               let responder = capturedResponder.responder,
               responderBelongsToHubWindow(responder, window: capturedWindow) else { return }
+        // SwiftUI can keep its hosting view as first responder while the
+        // dialog is up. Force a public AppKit resign/become cycle so the
+        // restored responder receives a fresh focus transition.
+        capturedWindow.makeFirstResponder(nil)
         capturedWindow.makeFirstResponder(responder)
     }
 
@@ -150,7 +178,7 @@ struct PickyHubModalOverlay<Content: View>: View {
                 .disabled(host.isPresenting)
                 .accessibilityHidden(host.isPresenting)
 
-            if let presentation = host.presentation {
+            if let presentation = host.renderedPresentation {
                 PickyHubTheme.Colors.modalBackdrop
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
@@ -188,7 +216,7 @@ struct PickyHubModalOverlay<Content: View>: View {
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
             }
         }
-        .animation(reduceMotion ? nil : PickyHubTheme.Motion.modal, value: host.presentation?.id)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.modal, value: host.renderedPresentation?.id)
     }
 }
 

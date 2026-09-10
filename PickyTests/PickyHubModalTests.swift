@@ -32,11 +32,11 @@ struct PickyHubModalTests {
         #expect(restorationCount == 1)
     }
 
-    @Test func dismissalCompletesFocusRestorationWithoutAViewLifecycleCallback() async {
+    @Test func dismissalPublishesOverlayRemovalBeforeItsFocusRestoration() async {
         let host = PickyHubModalHost()
         var restorationCount = 0
 
-        _ = host.present(
+        let id = host.present(
             accessibilityLabel: "Confirmation",
             onDismiss: { restorationCount += 1 },
             content: { EmptyView() }
@@ -44,9 +44,15 @@ struct PickyHubModalTests {
         host.dismiss()
 
         #expect(host.presentationID == nil)
-        #expect(restorationCount == 0)
+        #expect(host.renderedPresentation?.id == id)
 
         await drainMainQueue()
+        await drainMainQueue()
+
+        #expect(host.renderedPresentation == nil)
+        #expect(restorationCount == 0)
+
+        host.presentationDidDisappear(id: id)
         await drainMainQueue()
 
         #expect(restorationCount == 1)

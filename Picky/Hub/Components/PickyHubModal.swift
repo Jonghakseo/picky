@@ -86,13 +86,12 @@ final class PickyHubModalHost: ObservableObject {
                   self.pendingDismissal?.id == id,
                   self.renderedPresentation?.id == id else { return }
             self.renderedPresentation = nil
-            self.restoreFocusAfterRemoval(id: id)
         }
     }
 
-    /// SwiftUI normally reports the exact removal transaction. Keep this as an
-    /// earlier completion signal, while `dismiss()` also completes independently
-    /// so a skipped lifecycle callback cannot strand focus restoration.
+    /// SwiftUI reports the exact removal transaction after it has re-enabled
+    /// the trigger beneath the overlay. Defer the caller's focus-state mutation
+    /// until that synchronous update has unwound.
     func presentationDidDisappear(id: UUID) {
         guard presentation == nil, pendingDismissal?.id == id else { return }
         restoreFocusAfterRemoval(id: id)

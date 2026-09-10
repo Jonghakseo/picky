@@ -132,6 +132,38 @@ struct PickyHubRenderGalleryTests {
         #expect(menu.titleOfSelectedItem == target.displayName)
     }
 
+    @Test func dispatchModeChangesPersistFromTheMountedSettingsView() async throws {
+        let fixture = try PickyHubRenderGalleryFixture()
+        defer { fixture.removeTemporaryState() }
+        let root = CompanionPanelSettingsView(
+            viewModel: fixture.dependencies.settingsViewModel,
+            companionManager: fixture.dependencies.companionManager,
+            mainConversation: fixture.dependencies.companionManager.mainConversation,
+            archiveMembership: fixture.dependencies.sessionListViewModel.sessionRegistry,
+            archiveCommands: fixture.dependencies.sessionListViewModel,
+            route: .constant(.mainAgent),
+            presentation: .embedded
+        )
+        .environment(\.pickyUsesSubtleMenuChrome, true)
+        let host = NSHostingView(rootView: root)
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 3000)
+        host.layoutSubtreeIfNeeded()
+
+        // SwiftUI's button AX tree is unavailable without a displayed window.
+        // Exercise the observed settings input and its production onChange/save
+        // path here; selected card appearance is covered by both gallery modes.
+        for target in [PickyArmedPickleDispatchMode.steer, .followUp] {
+            fixture.dependencies.settingsViewModel.settings.armedPickleDispatchMode = target
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while fixture.readPersistedSettings().armedPickleDispatchMode != target, ContinuousClock.now < deadline {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(fixture.dependencies.settingsViewModel.settings.armedPickleDispatchMode == target)
+            #expect(fixture.readPersistedSettings().armedPickleDispatchMode == target)
+        }
+    }
+
     @Test func writesHubGalleryWhenOutputDirectoryIsRequested() async throws {
         guard let rawOutput = try? String(contentsOf: Self.outputRequestFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -200,11 +232,18 @@ struct PickyHubRenderGalleryTests {
         fixture.dependencies.modalHost.dismiss()
         fixture.navigator.select(.settings)
         try LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
-            for (width, appearance, scale) in [(1020.0, Appearance.dark, 1.0), (1020.0, .light, 1.0), (760.0, .dark, 1.3)] {
+            for (width, appearance, scale, mode) in [
+                (1020.0, Appearance.dark, 1.0, PickyArmedPickleDispatchMode.followUp),
+                (1020.0, .light, 1.0, .followUp),
+                (760.0, .dark, 1.3, .followUp),
+                (1020.0, .dark, 1.0, .steer),
+            ] {
                 fixture.fontScaleStore.setScale(scale)
+                fixture.dependencies.settingsViewModel.settings.armedPickleDispatchMode = mode
+                let suffix = mode == .steer ? "-steer" : ""
                 let scene = Scene(
                     page: .settings,
-                    name: "settings-\(Int(width))-\(appearance.rawValue)-\(Int(scale * 100)).png",
+                    name: "settings-\(Int(width))-\(appearance.rawValue)-\(Int(scale * 100))\(suffix).png",
                     appearance: appearance,
                     logicalSize: CGSize(width: width, height: 8000),
                     widthClass: "full-page"

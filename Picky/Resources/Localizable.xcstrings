@@ -7486,6 +7486,54 @@
         }
       }
     },
+    "settings.dispatch.followUp.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait for the current turn to finish, then continue."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중인 응답이 끝난 뒤 이어서 전달해요."
+          }
+        }
+      }
+    },
+    "settings.dispatch.idle.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to PTT and Quick Input sent to an armed Pickle. Idle Pickles start immediately with either option."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전달 대상으로 지정한 Pickle의 PTT·Quick Input에 적용돼요. 작업 중이 아닌 Pickle은 어느 쪽이든 바로 시작돼요."
+          }
+        }
+      }
+    },
+    "settings.dispatch.steer.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send into the current turn to adjust its direction."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 턴에 전달해 진행 방향을 조정해요."
+          }
+        }
+      }
+    },
     "settings.field.agentsFile": {
       "localizations": {
         "en": {
@@ -8305,6 +8353,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "시스템 설정 → 손쉬운 사용 → 콘텐츠 말하기에서 Picky 로컬 TTS가 사용하는 시스템 음성을 선택해주세요."
+          }
+        }
+      }
+    },
+    "settings.mainAgent.group.context": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen capture"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 캡처"
+          }
+        }
+      }
+    },
+    "settings.mainAgent.group.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model and reasoning"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델과 추론"
+          }
+        }
+      }
+    },
+    "settings.mainAgent.group.runtime": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local runtime paths"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 실행 경로"
+          }
+        }
+      }
+    },
+    "settings.mainAgent.group.workspace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace and instructions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 공간과 지침"
           }
         }
       }

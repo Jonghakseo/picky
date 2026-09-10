@@ -17,6 +17,8 @@ import SwiftUI
 
 @MainActor
 final class PickyHubModalHost: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+
     struct Presentation: Identifiable {
         let id = UUID()
         let width: CGFloat
@@ -30,9 +32,9 @@ final class PickyHubModalHost: ObservableObject {
     /// Logical presentation ownership. Clear this immediately so busy work and
     /// replacement requests observe dismissal without waiting for SwiftUI.
     private(set) var presentation: Presentation?
-    /// SwiftUI observes only this value. Publishing the removal from a button
-    /// action's view update can otherwise make it render the old presentation.
-    @Published private(set) var renderedPresentation: Presentation?
+    /// SwiftUI observes only this value. It is stored before an explicit
+    /// invalidation so a dismissal cannot render against the old presentation.
+    private(set) var renderedPresentation: Presentation?
     /// The hub window; key events from other Picky windows are left alone.
     weak var window: NSWindow?
     private var escapeMonitor: Any?
@@ -65,6 +67,7 @@ final class PickyHubModalHost: ObservableObject {
         )
         presentation = next
         renderedPresentation = next
+        objectWillChange.send()
         installEscapeMonitor()
         return next.id
     }
@@ -76,16 +79,17 @@ final class PickyHubModalHost: ObservableObject {
         pendingDismissal = current
         current.onWillDismiss()
 
-        // A `@Published` write sends before storing its new value. If a button
-        // action performs that write during a SwiftUI update, the overlay can
-        // re-render against the old dialog and never remove it. Keep ownership
-        // synchronous, then publish the visual removal on the next main turn.
+        // `@Published` emits before it stores its new value. If its write runs
+        // during a button action's SwiftUI update, the overlay can re-render
+        // against the old dialog and never remove it. Store the visual removal
+        // first, then invalidate on the next main turn.
         let id = current.id
         DispatchQueue.main.async { [weak self] in
             guard let self, self.presentation == nil,
                   self.pendingDismissal?.id == id,
                   self.renderedPresentation?.id == id else { return }
             self.renderedPresentation = nil
+            self.objectWillChange.send()
         }
     }
 

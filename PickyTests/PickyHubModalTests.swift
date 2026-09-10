@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import Combine
 import SwiftUI
 import Testing
 @testable import Picky
@@ -56,6 +57,24 @@ struct PickyHubModalTests {
         await drainMainQueue()
 
         #expect(restorationCount == 1)
+    }
+
+    @Test func rendersStoredPresentationWhenItNotifiesSwiftUI() async {
+        let host = PickyHubModalHost()
+        var renderedIDs = [UUID?]()
+        let observation = host.objectWillChange.sink {
+            renderedIDs.append(host.renderedPresentation?.id)
+        }
+        defer { observation.cancel() }
+
+        let id = host.present(accessibilityLabel: "Confirmation") { EmptyView() }
+        #expect(renderedIDs == [id])
+
+        host.dismiss()
+        await drainMainQueue()
+        await drainMainQueue()
+
+        #expect(renderedIDs == [id, nil])
     }
 
     @Test func lateRemovalAfterCleanupDoesNotRepeatFocusRestoration() async {

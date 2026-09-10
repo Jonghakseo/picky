@@ -2,9 +2,8 @@
 //  PickyApp.swift
 //  Picky
 //
-//  Menu bar-only companion app. No dock icon, no main window — just an
-//  always-available status item in the macOS menu bar. Clicking the icon
-//  opens a floating panel with companion voice controls.
+//  Menu bar companion app. Opening Hub temporarily gives Picky a Dock icon
+//  and regular app activation; closing Hub returns to menu bar-only operation.
 //
 
 import AppKit
@@ -368,6 +367,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         }
         startOnboardingIfNeeded()
         registerAsLoginItemIfNeeded()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // HUD panels can be visible while Hub is minimized or the app is hidden,
+        // so AppKit's aggregate hasVisibleWindows flag is not a Hub visibility test.
+        hubWindowController?.show()
+        return false
     }
 
     /// Shared by launch and the Hub replay action, after its settings save

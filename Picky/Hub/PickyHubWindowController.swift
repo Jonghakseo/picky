@@ -60,6 +60,11 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
             )
             window.setFrame(frame, display: true)
         }
+        // Hub is a normal workspace window, not an accessory overlay. Keep
+        // Picky in the Dock/app switcher while it is open so macOS can restore
+        // app activation when returning to its Space, without forcing Z-order.
+        setHubActivationPolicy(.regular)
+        if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         dependencies.navigator.isWindowVisible = true
@@ -89,8 +94,16 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
                 self?.stopTrackingExternalActivations()
                 self?.window?.orderOut(nil)
                 self?.dependencies.navigator.isWindowVisible = false
+                self?.setHubActivationPolicy(.accessory)
             }
         )
+    }
+
+    private func setHubActivationPolicy(_ policy: NSApplication.ActivationPolicy) {
+        guard NSApp.activationPolicy() != policy else { return }
+        if !NSApp.setActivationPolicy(policy) {
+            NSLog("Picky Hub: could not set activation policy to %ld", policy.rawValue)
+        }
     }
 
     // MARK: - Window
@@ -179,6 +192,7 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidMiniaturize(_ notification: Notification) {
+        // A minimized Hub still belongs in the Dock and app switcher.
         dependencies.navigator.isWindowVisible = false
     }
 
@@ -191,6 +205,7 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
         dependencies.navigator.isWindowVisible = false
         foregroundContextPreserver.clearRememberedExternalForeground()
         dependencies.modalHost.dismiss()
+        setHubActivationPolicy(.accessory)
     }
 }
 

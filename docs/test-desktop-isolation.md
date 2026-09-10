@@ -33,7 +33,7 @@ GitHub의 이미지 구성은 변할 수 있다. 따라서 `PICKY_DEVELOPER_DIR`
 
 `beta-notarized-release.yml`은 `isolated-ui-tests.yml`을 재사용하고, `build-notarized-release`는 UI gate가 성공한 뒤에만 시작한다. 따라서 서명, notarization, DMG 업로드, Sparkle appcast 갱신은 실제 WindowServer 검증 실패 또는 측정 불가 상태에서 진행되지 않는다.
 
-격리 VM은 키보드 탐색 계약에 필요한 `AppleKeyboardUIMode=3`을 설정하고 정확한 Xcode 16.3 빌드 번호를 확인한다. 각 UI 계약은 새 호스트에서 한 번만 실행하며, 해당 테스트·suite·1건 실행의 실제 통과 로그를 모두 요구한다. skipped 또는 0건 실행은 실패다. 성능 검사는 기존 예산, 7회 전환, 300ms 대조군, 새 JSON·PNG 증거를 유지한다.
+격리 VM은 키보드 탐색 계약에 필요한 `AppleKeyboardUIMode=3`을 설정하고 정확한 Xcode 16.3 빌드 번호를 확인한다. 각 UI 계약은 새 호스트에서 한 번만 실행하며, 해당 테스트·suite·1건 실행의 실제 통과 로그를 모두 요구한다. skipped 또는 0건 실행은 실패다. 성능 검사는 7회 전환, 300ms 대조군, 새 JSON·PNG 증거를 유지한다. 렌더 준비 p95는 로컬 기준 100ms와 GitHub-hosted CI 기준 250ms로 분리하고, 포커스 획득 예산은 동일하게 유지한다. 조정 근거와 원시 샘플은 [성능 예산 기록](hub-focus-perf.md)에 남긴다.
 
 일반 push/PR에도 CI를 실행하지만 저장소 branch protection을 자동으로 변경하지는 않는다. merge 자체도 강제 차단하려면 관리자가 `WindowServer UI effects`를 required status check로 등록해야 한다. 릴리즈 배포는 워크플로의 `needs`로 이미 차단된다.
 

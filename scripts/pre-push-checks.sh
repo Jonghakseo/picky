@@ -79,11 +79,13 @@ UI_EFFECT_TEST_ENV=(
   "PICKY_UI_TEST_SESSION="
   "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=0"
   "TEST_RUNNER_PICKY_UI_TEST_SESSION="
+  "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_PROFILE="
 )
 if [ "$UI_EFFECTS" = true ]; then
   UI_EFFECT_TEST_ENV=(
     "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=1"
     "TEST_RUNNER_PICKY_UI_TEST_SESSION=isolated"
+    "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_PROFILE=github-hosted"
     "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_REPORT_PATH=$HUB_FOCUS_PERF_REPORT"
     "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_MODE=$HUB_FOCUS_PERF_MODE"
   )
@@ -123,7 +125,8 @@ run_picky_tests() {
   if [ "$HUB_FOCUS_PERF_ONLY" = true ]; then
     python3 "$SCRIPT_ROOT/scripts/tests/test_hub_focus_perf_runner.py" \
       --report "$HUB_FOCUS_PERF_REPORT" \
-      --xcode-log "$PICKY_TEST_LOG"
+      --xcode-log "$PICKY_TEST_LOG" \
+      --profile github-hosted
   fi
 }
 

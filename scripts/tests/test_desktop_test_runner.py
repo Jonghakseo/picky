@@ -39,7 +39,7 @@ class DesktopTestRunnerTests(unittest.TestCase):
 with open(os.environ["FAKE_CALLS"], "a") as file:
     file.write(json.dumps({"args": sys.argv[1:], "environment": {
         key: value for key, value in os.environ.items()
-        if "PICKY_PRE_PUSH_UI_EFFECT_TESTS" in key or "PICKY_UI_TEST_SESSION" in key
+        if "PICKY_PRE_PUSH_UI_EFFECT_TESTS" in key or "PICKY_UI_TEST_SESSION" in key or "PICKY_HUB_FOCUS_PERF_PROFILE" in key
     }}) + "\\n")
 if os.environ.get("FAKE_XCODE_FAILURE"):
     sys.exit(int(os.environ["FAKE_XCODE_FAILURE"]))
@@ -81,7 +81,7 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
         fixture_dir.mkdir()
         fixture_test = runpy.run_path(str(ROOT / "scripts/tests/test_hub_focus_perf_runner.py"))[
             "HubFocusPerformanceRunnerTests"]()
-        fixture, _ = fixture_test.write_artifacts(fixture_dir)
+        fixture, _ = fixture_test.write_artifacts(fixture_dir, profile="github-hosted")
         self.env["FAKE_PERF_FIXTURE"] = str(fixture)
 
     def run_runner(self, *args, **environment):
@@ -96,12 +96,14 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
         result = self.run_runner(PICKY_PRE_PUSH_UI_EFFECT_TESTS="1", PICKY_UI_TEST_SESSION="isolated",
                                  TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS="1",
                                  TEST_RUNNER_PICKY_UI_TEST_SESSION="isolated",
+                                 TEST_RUNNER_PICKY_HUB_FOCUS_PERF_PROFILE="github-hosted",
                                  GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted")
         self.assertEqual(result.returncode, 0, result.stdout)
         tests = [call for call in self.xcode_calls() if "test" in call["args"]]
         self.assertEqual(len(tests), 1)
         self.assertEqual(tests[0]["environment"]["TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS"], "0")
         self.assertEqual(tests[0]["environment"]["TEST_RUNNER_PICKY_UI_TEST_SESSION"], "")
+        self.assertEqual(tests[0]["environment"]["TEST_RUNNER_PICKY_HUB_FOCUS_PERF_PROFILE"], "")
         self.assertEqual(tests[0]["environment"]["PICKY_PRE_PUSH_UI_EFFECT_TESTS"], "0")
         self.assertFalse(any(arg.startswith("-only-testing:") for arg in tests[0]["args"]))
 
@@ -130,6 +132,7 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
             actual[suite] = actual.get(suite, 0) + 1
             self.assertEqual(call["environment"]["TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS"], "1")
             self.assertEqual(call["environment"]["TEST_RUNNER_PICKY_UI_TEST_SESSION"], "isolated")
+            self.assertEqual(call["environment"]["TEST_RUNNER_PICKY_HUB_FOCUS_PERF_PROFILE"], "github-hosted")
         self.assertEqual(actual, expected_suites)
 
     def test_current_policy_discovers_contracts_from_a_separate_source_checkout(self):

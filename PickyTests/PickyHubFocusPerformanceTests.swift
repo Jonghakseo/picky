@@ -126,7 +126,7 @@ struct PickyHubFocusPerformanceTests {
         // otherwise the harness would be a blind stopwatch.
         controlWindow.makeKeyAndOrderFront(nil)
         try await waitUntil("negative-control setup") { controlWindow.isKeyWindow }
-        let injectedDelayMilliseconds = HubFocusThreshold.provisional.keyMaxMilliseconds + 50
+        let injectedDelayMilliseconds = HubFocusThreshold.current.keyMaxMilliseconds + 50
         let negativeControl: HubFocusSample
         do {
             let resignObserver = NotificationCenter.default.addObserver(
@@ -151,7 +151,7 @@ struct PickyHubFocusPerformanceTests {
             )
         }
 
-        try #require(!HubFocusThreshold.provisional.accepts(
+        try #require(!HubFocusThreshold.current.accepts(
             key: HubFocusSummary([negativeControl.keyAcquisitionMilliseconds]),
             render: HubFocusSummary([negativeControl.renderReadyAfterKeyMilliseconds])
         ), "The same regression gate must reject the deliberately blocked focus transition")
@@ -169,7 +169,7 @@ struct PickyHubFocusPerformanceTests {
             throw HubFocusPerformanceError.latencyBudgetExceeded(
                 key: reportResult.keySummary,
                 render: reportResult.renderSummary,
-                threshold: HubFocusThreshold.provisional,
+                threshold: HubFocusThreshold.current,
                 report: reportResult.url
             )
         }
@@ -275,7 +275,7 @@ struct PickyHubFocusPerformanceTests {
         let mode: HubFocusMode = ProcessInfo.processInfo.environment["PICKY_HUB_FOCUS_PERF_MODE"] == "calibrate"
             ? .calibration
             : .gate
-        let threshold = HubFocusThreshold.provisional
+        let threshold = HubFocusThreshold.current
         let gateStatus: HubFocusGateStatus
         if mode == .calibration {
             gateStatus = .calibration
@@ -296,6 +296,7 @@ struct PickyHubFocusPerformanceTests {
                 totalReady: HubFocusSummary(samples.map { $0.keyAcquisitionMilliseconds + $0.renderReadyAfterKeyMilliseconds }),
                 mainThreadCPU: HubFocusSummary(samples.map(\.mainThreadCPUMilliseconds))
             ),
+            thresholdProfile: HubFocusThreshold.profile,
             threshold: threshold,
             negativeControl: HubFocusNegativeControl(
                 injectedDelayMilliseconds: injectedDelayMilliseconds,
@@ -375,12 +376,23 @@ private struct HubFocusThreshold: Encodable {
     let keyMaxMilliseconds: Double
     let renderP95Milliseconds: Double
 
-    static let provisional = HubFocusThreshold(
-        keyMedianMilliseconds: 100,
-        keyP95Milliseconds: 150,
-        keyMaxMilliseconds: 250,
-        renderP95Milliseconds: 100
-    )
+    static var profile: String {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["PICKY_UI_TEST_SESSION"] == "isolated"
+            && environment["PICKY_HUB_FOCUS_PERF_PROFILE"] == "github-hosted"
+            ? "github-hosted" : "local"
+    }
+
+    // Separate VM budget, not a change to the local reference or key timing.
+    // See docs/hub-focus-perf.md for the measured baseline and approval.
+    static var current: HubFocusThreshold {
+        HubFocusThreshold(
+            keyMedianMilliseconds: 100,
+            keyP95Milliseconds: 150,
+            keyMaxMilliseconds: 250,
+            renderP95Milliseconds: profile == "github-hosted" ? 250 : 100
+        )
+    }
 
     func accepts(key: HubFocusSummary, render: HubFocusSummary) -> Bool {
         key.medianMilliseconds <= keyMedianMilliseconds
@@ -438,6 +450,7 @@ private struct HubFocusReport: Encodable {
     let environment: HubFocusEnvironment
     let samples: [HubFocusSample]
     let summary: HubFocusReportSummary
+    let thresholdProfile: String
     let threshold: HubFocusThreshold
     let negativeControl: HubFocusNegativeControl
     let screenshot: String

@@ -12,6 +12,7 @@ from pathlib import Path
 
 TEST_NAME = "productionHubFocusTransitionsMeetTheLocalLatencyBudget"
 EXPECTED_SAMPLE_COUNT = 7
+RENDER_BUDGETS = {"local": 100, "github-hosted": 250}
 
 
 def fail(message: str) -> None:
@@ -26,7 +27,7 @@ def require_number(value: object, path: str) -> float:
     return float(value)
 
 
-def validate_report(report_path: Path, log_path: Path) -> None:
+def validate_report(report_path: Path, log_path: Path, *, expected_profile: str | None = None) -> None:
     try:
         report = json.loads(report_path.read_text())
     except (OSError, json.JSONDecodeError) as error:
@@ -63,11 +64,25 @@ def validate_report(report_path: Path, log_path: Path) -> None:
     validate_summary(summary.get("totalReady"), [key + render for key, render in zip(key_values, render_values)], "summary.totalReady")
     validate_summary(summary.get("mainThreadCPU"), cpu_values, "summary.mainThreadCPU")
 
+    # Older reports predate named profiles and retain the strict local budget.
+    profile = report.get("thresholdProfile", "local")
+    if not isinstance(profile, str) or profile not in RENDER_BUDGETS:
+        fail("unknown threshold profile")
+    if expected_profile is not None and profile != expected_profile:
+        fail(f"expected threshold profile {expected_profile}, got {profile}")
+    maximum_budget = {
+        "keyMedianMilliseconds": 100,
+        "keyP95Milliseconds": 150,
+        "keyMaxMilliseconds": 250,
+        "renderP95Milliseconds": RENDER_BUDGETS[profile],
+    }
     threshold = report.get("threshold")
     if not isinstance(threshold, dict):
         fail("threshold must be an object")
     for field in ("keyMedianMilliseconds", "keyP95Milliseconds", "keyMaxMilliseconds", "renderP95Milliseconds"):
-        require_number(threshold.get(field), f"threshold.{field}")
+        limit = require_number(threshold.get(field), f"threshold.{field}")
+        if limit > maximum_budget[field]:
+            fail(f"threshold.{field} exceeds the {profile} profile budget")
     for actual, limit in (
         (summary["keyAcquisition"]["medianMilliseconds"], threshold["keyMedianMilliseconds"]),
         (summary["keyAcquisition"]["p95Milliseconds"], threshold["keyP95Milliseconds"]),
@@ -128,15 +143,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--xcode-log", required=True, type=Path)
+    parser.add_argument("--profile", choices=tuple(RENDER_BUDGETS))
     args = parser.parse_args()
     try:
-        validate_report(args.report, args.xcode_log)
+        validate_report(args.report, args.xcode_log, expected_profile=args.profile)
     except ValueError as error:
         parser.error(str(error))
 
 
 class HubFocusPerformanceRunnerTests(unittest.TestCase):
-    def write_artifacts(self, directory: Path, *, gate_status: str = "passed") -> tuple[Path, Path]:
+    def write_artifacts(self, directory: Path, *, gate_status: str = "passed", profile: str = "local") -> tuple[Path, Path]:
         screenshot = directory / "fixture.png"
         screenshot.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
         samples = [
@@ -153,6 +169,7 @@ class HubFocusPerformanceRunnerTests(unittest.TestCase):
             "scenario": "finder-to-isolated-hub-settings",
             "mode": "gate",
             "gateStatus": gate_status,
+            "thresholdProfile": profile,
             "samples": samples,
             "summary": {
                 "keyAcquisition": {"medianMilliseconds": 4, "p95Milliseconds": 7, "maxMilliseconds": 7},
@@ -164,7 +181,7 @@ class HubFocusPerformanceRunnerTests(unittest.TestCase):
                 "keyMedianMilliseconds": 100,
                 "keyP95Milliseconds": 150,
                 "keyMaxMilliseconds": 250,
-                "renderP95Milliseconds": 100,
+                "renderP95Milliseconds": RENDER_BUDGETS[profile],
             },
             "negativeControl": {
                 "injectedDelayMilliseconds": 300,
@@ -193,6 +210,55 @@ class HubFocusPerformanceRunnerTests(unittest.TestCase):
             data["threshold"]["keyMedianMilliseconds"] = 1
             report.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError, "exceeds its budget"):
+                validate_report(report, log)
+
+    def test_render_budget_is_relaxed_only_for_the_ci_profile(self) -> None:
+        # Uniform samples make the expected summaries explicit, without using
+        # the validator algorithm to compute the oracle.
+        for profile, render, accepted in (
+            ("local", 100, True), ("local", 184, False),
+            ("github-hosted", 184, True), ("github-hosted", 250, True),
+            ("github-hosted", 251, False),
+        ):
+            with self.subTest(profile=profile, render=render), tempfile.TemporaryDirectory() as raw:
+                report, log = self.write_artifacts(Path(raw), profile=profile)
+                data = json.loads(report.read_text())
+                for sample in data["samples"]:
+                    sample["keyAcquisitionMilliseconds"] = 10
+                    sample["renderReadyAfterKeyMilliseconds"] = render
+                    sample["mainThreadCPUMilliseconds"] = 10
+                for metric, value in (("keyAcquisition", 10), ("renderReadyAfterKey", render),
+                                      ("mainThreadCPU", 10), ("totalReady", 10 + render)):
+                    data["summary"][metric] = {
+                        "medianMilliseconds": value, "p95Milliseconds": value, "maxMilliseconds": value,
+                    }
+                report.write_text(json.dumps(data))
+                if accepted:
+                    validate_report(report, log, expected_profile=profile)
+                else:
+                    with self.assertRaisesRegex(ValueError, "exceeds its budget"):
+                        validate_report(report, log, expected_profile=profile)
+
+    def test_rejects_inflated_budgets_and_wrong_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            report, log = self.write_artifacts(Path(raw), profile="github-hosted")
+            with self.assertRaisesRegex(ValueError, "expected threshold profile local"):
+                validate_report(report, log, expected_profile="local")
+            original = report.read_text()
+            for field, value in (("renderP95Milliseconds", 251), ("keyMaxMilliseconds", 300)):
+                data = json.loads(original)
+                data["threshold"][field] = value
+                report.write_text(json.dumps(data))
+                with self.assertRaisesRegex(ValueError, "profile budget"):
+                    validate_report(report, log)
+
+    def test_ci_still_requires_the_negative_control_to_exceed_the_key_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            report, log = self.write_artifacts(Path(raw), profile="github-hosted")
+            data = json.loads(report.read_text())
+            data["negativeControl"]["observedKeyAcquisitionMilliseconds"] = 250
+            report.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError, "negative control must be rejected"):
                 validate_report(report, log)
 
     def test_requires_the_exact_test_to_execute(self) -> None:

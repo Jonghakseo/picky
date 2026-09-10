@@ -118,7 +118,7 @@ PY
 | JSON 지표 | 측정 경계 | 현재 게이트 |
 | --- | --- | --- |
 | `keyAcquisition` | `NSApp.activate` / `makeKeyAndOrderFront` 직전부터 실제 `didBecomeKey` 통지까지 | 중앙값 ≤ 100ms, p95 ≤ 150ms, 최대 ≤ 250ms |
-| `renderReadyAfterKey` | key 통지 이후 앱 활성화 확인, 다음 `RunLoop.main.perform`, 실제 host layout/display 완료까지 | p95 ≤ 100ms |
+| `renderReadyAfterKey` | key 통지 이후 앱 활성화 확인, 다음 `RunLoop.main.perform`, 실제 host layout/display 완료까지 | 로컬 기준 p95 ≤ 100ms, GitHub-hosted CI p95 ≤ 250ms |
 | `totalReady` | 각 샘플의 위 두 지연 합계 | 보고용. 별도의 합산 임계값은 없음 |
 | `mainThreadCPU` | 전체 전환 구간의 메인 스레드 CPU 시간 | 보고용. 별도 CPU 임계값은 없음 |
 
@@ -173,6 +173,26 @@ python3 -m unittest discover -s scripts/tests -p test_hub_focus_perf_runner.py
 4. 원인을 수정하고 영향받은 테스트와 같은 런타임 경계를 검증한다.
 
 성능 예산을 실패에 맞춰 올리지 않는다. 하드웨어·OS 또는 제품 목표 변경 때문에 재조정이 필요하면 변경 이유, 동일 조건의 원시 샘플, 이전/새 기준의 비교를 리뷰에 남긴다. 메뉴 mutation 0회 같은 결정적 계약은 시간 예산 조정으로 면제하지 않는다.
+
+## CI 전용 예산 조정 (2026-09-10)
+
+사용자가 GitHub CI의 더 제한된 환경을 고려한 기준 완화를 요청해, `github-hosted` 프로필의 **렌더 준비 p95만 100ms → 250ms**로 분리했다. 로컬 기준은 100ms 그대로이며, key 중앙값/p95/최대(100/150/250ms), 7회 측정, 300ms 지연 대조군은 바꾸지 않는다. 250ms는 아래 184ms 관측에 약 36% 여유를 둔 잠정 운영 예산이며, 통계적으로 보정된 하드웨어 계수나 성능 개선을 뜻하지 않는다.
+
+근거는 [CI run 34457932278](https://github.com/Jonghakseo/picky/actions/runs/34457932278)의 원본 JSON·PNG다. macOS 15.7.9, Xcode 16.3, 논리 CPU 3개, RAM 7GiB, 디스플레이 1개에서 측정했다. 비교 대상 로컬 환경은 CPU 14개, RAM 48GiB였지만 CPU 프로파일이 없어 환경 차이만을 병목 원인으로 확정하지 않는다.
+
+| 전환 | key 획득(ms) | 렌더 준비(ms) | 전체 구간 메인 스레드 CPU(ms) |
+| --- | ---: | ---: | ---: |
+| 1 | 49.363 | 184.028 | 155.363 |
+| 2 | 6.797 | 80.723 | 78.193 |
+| 3 | 9.000 | 41.844 | 44.620 |
+| 4 | 50.883 | 63.759 | 108.289 |
+| 5 | 3.765 | 28.711 | 26.471 |
+| 6 | 4.928 | 36.974 | 35.373 |
+| 7 | 48.702 | 51.802 | 91.259 |
+
+동일 샘플의 렌더 p95 184.028ms는 이전 100ms 예산에서는 실패, 새 CI 250ms 예산 범위에는 들어간다. 원래 run의 실패 기록은 변경하지 않으며 새 CI 실행의 통과를 대신하지 않는다. 대조군 301.358ms는 변경하지 않은 key 최대 250ms를 초과하므로 계속 거절된다.
+
+격리 호스트를 확인한 runner만 `PICKY_HUB_FOCUS_PERF_PROFILE=github-hosted`를 Xcode 환경 브리지로 전달한다. Swift는 `PICKY_UI_TEST_SESSION=isolated`도 요구하고 JSON에 `thresholdProfile`을 기록한다. 검증기는 프로필 일치와 예산 상한을 검사해 잘못 선택되거나 임의로 늘어난 예산을 거절한다. 로컬 runner는 상속된 프로필을 비운다. 과거 태그의 테스트는 이 설정을 지원하지 않을 수 있으며, 공개 태그를 수정하거나 과거 실패를 새 예산으로 통과 처리하지 않는다.
 
 ## 7. 검증 범위의 한계와 측정 사례
 

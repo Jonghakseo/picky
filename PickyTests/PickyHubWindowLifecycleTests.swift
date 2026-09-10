@@ -25,7 +25,10 @@ struct PickyHubWindowLifecycleTests {
 
         controller.show()
         let window = try #require(fixture.dependencies.modalHost.window)
-        try await waitUntil { window.isKeyWindow && NSApp.isActive }
+        try await waitUntil {
+            window.isKeyWindow && window.isMainWindow && NSApp.isActive
+                && !window.collectionBehavior.contains(.moveToActiveSpace)
+        }
         #expect(NSApp.activationPolicy() == .regular)
         #expect(controller.isVisible)
         #expect(fixture.navigator.isWindowVisible)
@@ -35,7 +38,11 @@ struct PickyHubWindowLifecycleTests {
         #expect(NSApp.activationPolicy() == .regular)
 
         controller.show()
-        try await waitUntil { !window.isMiniaturized && window.isKeyWindow }
+        controller.show() // Repeated explicit opens must not leave a sticky Space policy.
+        try await waitUntil {
+            !window.isMiniaturized && window.isKeyWindow && window.isMainWindow
+                && !window.collectionBehavior.contains(.moveToActiveSpace)
+        }
         #expect(NSApp.activationPolicy() == .regular)
         #expect(fixture.navigator.isWindowVisible)
 
@@ -45,7 +52,10 @@ struct PickyHubWindowLifecycleTests {
         #expect(NSApp.activationPolicy() == .accessory)
 
         controller.show()
-        try await waitUntil { window.isKeyWindow && NSApp.isActive }
+        try await waitUntil {
+            window.isKeyWindow && window.isMainWindow && NSApp.isActive
+                && !window.collectionBehavior.contains(.moveToActiveSpace)
+        }
         #expect(NSApp.activationPolicy() == .regular)
         #expect(fixture.navigator.isWindowVisible)
     }

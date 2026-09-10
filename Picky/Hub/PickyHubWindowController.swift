@@ -63,10 +63,18 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
         // Hub is a normal workspace window, not an accessory overlay. Keep
         // Picky in the Dock/app switcher while it is open so macOS can restore
         // app activation when returning to its Space, without forcing Z-order.
+        // Move only when explicitly summoned. Leaving this flag set causes
+        // Space round trips to restore other windows over Hub. AppKit processes
+        // activation asynchronously, so restore normal Space behavior on the
+        // next main-queue turn, not in a synchronous defer.
+        window.collectionBehavior.insert(.moveToActiveSpace)
         setHubActivationPolicy(.regular)
         if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        DispatchQueue.main.async { [weak window] in
+            window?.collectionBehavior.remove(.moveToActiveSpace)
+        }
         dependencies.navigator.isWindowVisible = true
     }
 
@@ -124,7 +132,7 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
             width: PickyHubTheme.Layout.minimumWindowSize.width,
             height: PickyHubTheme.Layout.minimumWindowSize.height
         )
-        hubWindow.collectionBehavior = [.fullScreenNone, .moveToActiveSpace]
+        hubWindow.collectionBehavior = [.fullScreenNone]
         hubWindow.backgroundColor = PickyHubWindowChrome.backgroundColor()
         hubWindow.delegate = self
         hubWindow.identifier = NSUserInterfaceItemIdentifier("PickyHubWindow")

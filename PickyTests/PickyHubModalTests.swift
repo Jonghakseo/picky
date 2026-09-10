@@ -3,7 +3,7 @@
 //  PickyTests
 //
 
-import Combine
+import AppKit
 import SwiftUI
 import Testing
 @testable import Picky
@@ -31,50 +31,6 @@ struct PickyHubModalTests {
         #expect(restorationCount == 0)
         await drainMainQueue()
         #expect(restorationCount == 1)
-    }
-
-    @Test func dismissalPublishesOverlayRemovalBeforeItsFocusRestoration() async {
-        let host = PickyHubModalHost()
-        var restorationCount = 0
-
-        let id = host.present(
-            accessibilityLabel: "Confirmation",
-            onDismiss: { restorationCount += 1 },
-            content: { EmptyView() }
-        )
-        host.dismiss()
-
-        #expect(host.presentationID == nil)
-        #expect(host.renderedPresentation?.id == id)
-
-        await drainMainQueue()
-        await drainMainQueue()
-
-        #expect(host.renderedPresentation == nil)
-        #expect(restorationCount == 0)
-
-        host.presentationDidDisappear(id: id)
-        await drainMainQueue()
-
-        #expect(restorationCount == 1)
-    }
-
-    @Test func rendersStoredPresentationWhenItNotifiesSwiftUI() async {
-        let host = PickyHubModalHost()
-        var renderedIDs = [UUID?]()
-        let observation = host.objectWillChange.sink {
-            renderedIDs.append(host.renderedPresentation?.id)
-        }
-        defer { observation.cancel() }
-
-        let id = host.present(accessibilityLabel: "Confirmation") { EmptyView() }
-        #expect(renderedIDs == [id])
-
-        host.dismiss()
-        await drainMainQueue()
-        await drainMainQueue()
-
-        #expect(renderedIDs == [id, nil])
     }
 
     @Test func lateRemovalAfterCleanupDoesNotRepeatFocusRestoration() async {
@@ -156,6 +112,93 @@ struct PickyHubModalTests {
         await drainMainQueue()
         #expect(firstRestorations == 0)
         #expect(secondRestorations == 1)
+    }
+
+    @Test func dismissalRestoresTheCapturedResponderInItsOriginalWindow() async {
+        let host = PickyHubModalHost()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let content = NSView(frame: window.contentView?.bounds ?? .zero)
+        let trigger = NSView(frame: content.bounds)
+        let modalResponder = NSView(frame: content.bounds)
+        content.addSubview(trigger)
+        content.addSubview(modalResponder)
+        window.contentView = content
+        host.window = window
+        defer { window.close() }
+
+        #expect(window.makeFirstResponder(trigger))
+        let id = host.present(accessibilityLabel: "Confirmation") { EmptyView() }
+        #expect(window.makeFirstResponder(modalResponder))
+
+        host.dismiss()
+        host.presentationDidDisappear(id: id)
+        await drainMainQueue()
+
+        #expect(window.firstResponder === trigger)
+    }
+
+    @Test func dismissalDoesNotRestoreAResponderRemovedFromItsWindow() async {
+        let host = PickyHubModalHost()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let content = NSView(frame: window.contentView?.bounds ?? .zero)
+        let trigger = NSView(frame: content.bounds)
+        let modalResponder = NSView(frame: content.bounds)
+        content.addSubview(trigger)
+        content.addSubview(modalResponder)
+        window.contentView = content
+        host.window = window
+        defer { window.close() }
+
+        #expect(window.makeFirstResponder(trigger))
+        let id = host.present(accessibilityLabel: "Confirmation") { EmptyView() }
+        #expect(window.makeFirstResponder(modalResponder))
+        trigger.removeFromSuperview()
+
+        host.dismiss()
+        host.presentationDidDisappear(id: id)
+        await drainMainQueue()
+
+        #expect(window.firstResponder !== trigger)
+    }
+
+    @Test func dismissalDoesNotRestoreAcrossHubWindowChanges() async {
+        let host = PickyHubModalHost()
+        let firstWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let secondWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let firstContent = NSView(frame: firstWindow.contentView?.bounds ?? .zero)
+        let trigger = NSView(frame: firstContent.bounds)
+        firstContent.addSubview(trigger)
+        firstWindow.contentView = firstContent
+        let secondResponder = NSView(frame: secondWindow.contentView?.bounds ?? .zero)
+        secondWindow.contentView?.addSubview(secondResponder)
+        host.window = firstWindow
+        defer {
+            firstWindow.close()
+            secondWindow.close()
+        }
+
+        #expect(firstWindow.makeFirstResponder(trigger))
+        let id = host.present(accessibilityLabel: "Confirmation") { EmptyView() }
+        host.window = secondWindow
+        #expect(secondWindow.makeFirstResponder(secondResponder))
+
+        host.dismiss()
+        host.presentationDidDisappear(id: id)
+        await drainMainQueue()
+
+        #expect(secondWindow.firstResponder === secondResponder)
     }
 
     @Test func busyConfirmationCannotBeDismissedOrReplacedBeforeSavingSettles() {

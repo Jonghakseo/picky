@@ -72,7 +72,8 @@ struct PickyHubNativeFocusTests {
             }
             try #require(removed, "Final counts must be checked after SwiftUI fixture cleanup")
             host.dismiss()
-            #expect(probe.focusRequest == (useHubButton ? 2 : 1))
+            #expect(probe.focusRequest == 1)
+            #expect(probe.dismissalCallbacks == (useHubButton ? 1 : 0))
             #expect(probe.presses == (useHubButton ? 2 : 1))
             #expect(probe.cancelPresses == (useHubButton ? 1 : 0))
             #expect(probe.confirmPresses == 0)
@@ -82,10 +83,9 @@ struct PickyHubNativeFocusTests {
     private func verifyModalRestoration(
         host: PickyHubModalHost, window: NSWindow, probe: HubFocusProbe
     ) async throws {
-        let requestsBeforeModal = probe.focusRequest
         host.present(
             accessibilityLabel: "Confirm",
-            onDismiss: { probe.focusRequest += 1 },
+            onDismiss: { probe.dismissalCallbacks += 1 },
             content: {
                 PickyHubConfirmDialog(
                     title: "Confirm", message: "Isolated fixture, no settings or daemon changes.",
@@ -103,26 +103,21 @@ struct PickyHubNativeFocusTests {
         window.contentView?.layoutSubtreeIfNeeded()
         try sendSpace(to: window)
         let dismissed = try await observe("dialog Cancel Space", window: window, probe: probe) {
-            !host.isPresenting && probe.focusRequest == requestsBeforeModal + 1
+            !host.isPresenting && probe.dismissalCallbacks == 1
         }
-        try #require(dismissed, "Space must dismiss the dialog and request trigger focus")
+        try #require(dismissed, "Space must dismiss the dialog and restore its prior native responder")
         #expect(probe.cancelPresses == 1, "Space must choose Cancel, not Confirm")
         #expect(probe.confirmPresses == 0)
         #expect(probe.presses == 1, "The disabled trigger must not receive the dialog's Space")
 
-        // A callback count proves only that restoration was requested. Wait for
-        // SwiftUI to apply the binding, then send one Space and require the action.
-        let focused = try await observe("restored trigger focused", window: window, probe: probe) {
-            probe.triggerFocused
-        }
-        try #require(focused, "The trigger must regain focus after the dialog is removed")
         window.contentView?.layoutSubtreeIfNeeded()
         try sendSpace(to: window)
         let reactivated = try await observe("restored trigger Space", window: window, probe: probe) {
             probe.presses == 2
         }
-        #expect(reactivated, "The restored trigger must accept keyboard input")
-        #expect(probe.focusRequest == requestsBeforeModal + 1)
+        #expect(reactivated, "The original trigger must accept Space after the dialog closes")
+        #expect(probe.focusRequest == 1)
+        #expect(probe.dismissalCallbacks == 1)
         #expect(probe.cancelPresses == 1)
         #expect(probe.confirmPresses == 0)
     }
@@ -159,7 +154,7 @@ struct PickyHubNativeFocusTests {
             "appeared=\(probe?.didAppear ?? false)", "dialogAppeared=\(probe?.dialogAppeared ?? false)",
             "removed=\(probe?.fixtureDisappeared ?? false)",
             "focusRequests=\(probe?.focusRequest ?? 0)", "triggerFocused=\(probe?.triggerFocused ?? false)",
-            "presses=\(probe?.presses ?? 0)",
+            "dismissals=\(probe?.dismissalCallbacks ?? 0)", "presses=\(probe?.presses ?? 0)",
             "cancel=\(probe?.cancelPresses ?? 0)", "confirm=\(probe?.confirmPresses ?? 0)",
             "firstResponder=\(String(describing: window.firstResponder))", "AX=\(focus)"
         ]
@@ -176,6 +171,7 @@ private final class HubFocusProbe: ObservableObject {
     var fixtureDisappeared = false
     var triggerFocused = false
     var presses = 0
+    var dismissalCallbacks = 0
     var cancelPresses = 0
     var confirmPresses = 0
 }

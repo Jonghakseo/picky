@@ -11,9 +11,9 @@ struct PickyHubClassificationSettingsView: View {
     @ObservedObject var statisticsStore: PickyHubStatisticsStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space3) {
-            HStack(alignment: .center, spacing: DS.Spacing.space4) {
-                VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+            HStack(alignment: .center, spacing: PickyHubTheme.Spacing.field) {
+                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                     Text("hub.settings.classification.title")
                         .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
@@ -22,7 +22,7 @@ struct PickyHubClassificationSettingsView: View {
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: DS.Spacing.space3)
+                Spacer(minLength: PickyHubTheme.Spacing.field)
                 if hasConfirmedSnapshot {
                     Toggle("hub.settings.classification.title", isOn: toggleBinding)
                     .labelsHidden()
@@ -53,7 +53,7 @@ struct PickyHubClassificationSettingsView: View {
                 PickyHubInlineStatus(tone: .error, message: error)
             }
         }
-        .padding(DS.Spacing.space4)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .pickyHubCard(radius: PickyHubTheme.Radius.card)
         .onAppear { statisticsStore.refreshIfNeeded() }
     }

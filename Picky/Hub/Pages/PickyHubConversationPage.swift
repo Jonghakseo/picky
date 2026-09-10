@@ -28,6 +28,7 @@ private struct PickyHubConversationTimeline: View {
     @State private var hasUnreadMessages = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pickyAppFontScale) private var fontScale
+    @Environment(\.pickyHubContentWidth) private var contentWidth
 
     private let bottomAnchorID = "hub.conversation.bottom"
 
@@ -50,15 +51,15 @@ private struct PickyHubConversationTimeline: View {
                                 title: "hub.conversation.empty.title",
                                 message: "hub.conversation.empty.message"
                             )
-                            .padding(.vertical, 24)
+                            .padding(.vertical, PickyHubTheme.Spacing.group)
                         } else {
-                            LazyVStack(alignment: .leading, spacing: 14) {
+                            LazyVStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
                                 ForEach(conversation.messages) { message in
                                     PickyHubConversationMessage(message: message)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 24)
+                            .padding(.vertical, PickyHubTheme.Spacing.group)
                         }
 
                         Color.clear.frame(height: 1).id(bottomAnchorID)
@@ -91,7 +92,7 @@ private struct PickyHubConversationTimeline: View {
                             hasUnreadMessages = false
                             scrollToBottom(proxy, animated: true)
                         }
-                        .padding(12)
+                        .padding(PickyHubTheme.Control.horizontalInset)
                     }
                 }
               }
@@ -104,44 +105,74 @@ private struct PickyHubConversationTimeline: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("hub.nav.conversation")
-                    .pickyFont(size: PickyHubTheme.Typography.pageTitle, weight: .heavy)
-                    .tracking(-0.8)
-                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Text("hub.page.conversation.subtitle")
-                    .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
-                    .foregroundColor(PickyHubTheme.Colors.textSecondary)
-            }
-            Spacer(minLength: 12)
-            HStack(spacing: 8) {
-                if conversation.sessionInfo.canOpenInPi {
-                    PickyHubPillButton(title: "hub.conversation.openInPi", systemImage: "terminal", action: openInPi)
-                    PickyHubPillButton(
-                        title: didCopyResumeCommand ? "hub.conversation.copied" : "hub.conversation.copyResume",
-                        systemImage: didCopyResumeCommand ? "checkmark" : "doc.on.doc",
-                        action: copyResumeCommand
-                    )
+        Group {
+            if contentWidth < PickyHubConversationLayout.inlineHeaderMinimumWidth * fontScale {
+                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                    headerText
+                    headerActions
                 }
-                PickyHubPillButton(
-                    title: "hub.conversation.newSession",
-                    systemImage: "arrow.counterclockwise",
-                    isBusy: companionManager.isResettingMainAgentSession,
-                    action: resetSession
-                )
+            } else {
+                HStack(alignment: .top, spacing: PickyHubTheme.Spacing.field) {
+                    headerText
+                    Spacer(minLength: PickyHubTheme.Spacing.field)
+                    headerActions
+                }
             }
         }
-        .padding(.bottom, 20)
+        .padding(.bottom, PickyHubTheme.Spacing.field)
+    }
+
+    private var headerText: some View {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+            Text("hub.nav.conversation")
+                .pickyFont(size: PickyHubTheme.Typography.pageTitle, weight: .heavy)
+                .tracking(-0.8)
+                .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Text("hub.page.conversation.subtitle")
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
+                .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var headerActions: some View {
+        if contentWidth < PickyHubConversationLayout.inlineActionsMinimumWidth * fontScale {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+                sessionActionButtons
+            }
+        } else {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
+                sessionActionButtons
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sessionActionButtons: some View {
+        if conversation.sessionInfo.canOpenInPi {
+            PickyHubPillButton(title: "hub.conversation.openInPi", systemImage: "terminal", action: openInPi)
+            PickyHubPillButton(
+                title: didCopyResumeCommand ? "hub.conversation.copied" : "hub.conversation.copyResume",
+                systemImage: didCopyResumeCommand ? "checkmark" : "doc.on.doc",
+                action: copyResumeCommand
+            )
+        }
+        PickyHubPillButton(
+            title: "hub.conversation.newSession",
+            systemImage: "arrow.counterclockwise",
+            isBusy: companionManager.isResettingMainAgentSession,
+            action: resetSession
+        )
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             if let error = companionManager.directMessageError {
                 PickyHubInlineStatus(tone: .error, message: error)
             }
-            HStack(alignment: .bottom, spacing: 9) {
+            HStack(alignment: .bottom, spacing: PickyHubTheme.Spacing.related) {
                 ZStack(alignment: .topLeading) {
                     if draft.isEmpty {
                         Text("hub.conversation.composer.placeholder")
@@ -166,8 +197,8 @@ private struct PickyHubConversationTimeline: View {
                     .accessibilityLabel(Text("hub.conversation.composer.placeholder"))
                     .accessibilityHint(Text("hub.conversation.composer.hint"))
                 }
-                .padding(.horizontal, 11)
-                .padding(.vertical, 10)
+                .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+                .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
                 .background(
                     RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous)
                         .stroke(PickyHubTheme.Colors.border, lineWidth: 1)
@@ -186,7 +217,7 @@ private struct PickyHubConversationTimeline: View {
         }
         .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
         .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
-        .padding(.vertical, 14)
+        .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
         .frame(maxWidth: .infinity)
         .background(PickyHubTheme.Colors.canvas)
         .overlay(alignment: .top) { Divider().overlay(PickyHubTheme.Colors.borderSoft) }
@@ -251,7 +282,7 @@ private struct PickyHubConversationMessage: View {
     let message: PickyMainAgentMessage
 
     var body: some View {
-        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(metadata)
                 .pickyFont(size: 11, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
@@ -266,8 +297,8 @@ private struct PickyHubConversationMessage: View {
                         .textSelection(.enabled)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+            .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
             .background(bubbleBackground)
             .frame(maxWidth: 560, alignment: message.role == .user ? .trailing : .leading)
         }
@@ -299,6 +330,13 @@ private struct PickyHubConversationMessage: View {
                 )
         }
     }
+}
+
+private enum PickyHubConversationLayout {
+    /// The retained timeline owns its scroll view, so it cannot use page-level
+    /// grid reflow. Stack header actions before their labels begin truncating.
+    static let inlineHeaderMinimumWidth: CGFloat = 600
+    static let inlineActionsMinimumWidth: CGFloat = 440
 }
 
 private struct PickyHubConversationBottomPreference: PreferenceKey {

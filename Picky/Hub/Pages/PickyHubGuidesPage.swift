@@ -9,6 +9,7 @@ struct PickyHubGuidesPage: View {
     let dependencies: PickyHubDependencies
     @EnvironmentObject private var modalHost: PickyHubModalHost
     @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
     @FocusState private var focusedGuideID: String?
     @State private var entries: [PickyHubGuideEntry] = []
 
@@ -23,7 +24,7 @@ struct PickyHubGuidesPage: View {
                     message: "hub.guides.empty.message"
                 )
             } else {
-                LazyVGrid(columns: columns, spacing: 14) {
+                LazyVGrid(columns: columns, spacing: PickyHubTheme.Spacing.field) {
                     ForEach(entries) { entry in
                         PickyHubGuideCardView(
                             entry: entry,
@@ -43,8 +44,13 @@ struct PickyHubGuidesPage: View {
 
     private var columns: [GridItem] {
         Array(
-            repeating: GridItem(.flexible(minimum: PickyHubTheme.Layout.cardMinWidth), spacing: PickyHubTheme.Layout.cardGap),
-            count: PickyHubGridPolicy.columnCount(for: contentWidth, maximum: 2)
+            repeating: GridItem(.flexible(minimum: PickyHubTheme.Layout.cardMinWidth * fontScale), spacing: PickyHubTheme.Spacing.field),
+            count: PickyHubGridPolicy.columnCount(
+                for: contentWidth,
+                maximum: 2,
+                minimumCardWidth: PickyHubTheme.Layout.cardMinWidth * fontScale,
+                spacing: PickyHubTheme.Spacing.field
+            )
         )
     }
 

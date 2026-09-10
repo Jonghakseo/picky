@@ -2,10 +2,8 @@
 //  PickyHubTheme.swift
 //  Picky
 //
-//  Visual tokens for the hub window. The mockup (`docs/new-interface/mockups`)
-//  is the source of truth for the light palette; dark values are derived so
-//  the same roles keep their contrast relationships. Everything else in the
-//  hub should read from here (or from `DS`) rather than inlining raw values.
+//  Hub-only semantic tokens. See docs/hub-component-rules.md for the shared
+//  component contract. Do not use these to restyle Pickle HUD or overlays.
 //
 
 import SwiftUI
@@ -59,15 +57,30 @@ enum PickyHubTheme {
 
     enum Typography {
         /// Section title (24/750, -1 tracking).
-        static let sectionTitle: CGFloat = 24
+        static let sectionTitle: CGFloat = 20
         static let pageTitle: CGFloat = 24
-        static let cardTitle: CGFloat = 21
+        static let cardTitle: CGFloat = 18
         static let greetingTitle: CGFloat = 18
         static let modalTitle: CGFloat = 20
         static let body: CGFloat = 14
         static let bodySmall: CGFloat = 13
         static let caption: CGFloat = 12
         static let nav: CGFloat = 14
+    }
+
+    enum Spacing {
+        static let related = DS.Spacing.space2
+        static let field = DS.Spacing.space4
+        static let group = DS.Spacing.space6
+        static let cardInset = DS.Spacing.space5
+        static let rowHorizontal = DS.Spacing.space4
+        static let rowVertical = DS.Spacing.space3
+    }
+
+    enum Control {
+        static let minimumHeight = DS.Spacing.space8
+        static let horizontalInset = DS.Spacing.space3
+        static let maximumFieldWidth: CGFloat = 320
     }
 
     enum Layout {
@@ -79,14 +92,14 @@ enum PickyHubTheme {
         static let contentHorizontalPadding: CGFloat = 30
         static let contentTopPadding: CGFloat = 32
         static let contentBottomPadding: CGFloat = 60
-        static let sectionSpacing: CGFloat = 42
-        static let sectionHeadingBottom: CGFloat = 15
+        static let sectionSpacing = DS.Spacing.space8
+        static let sectionHeadingBottom = Spacing.field
         /// Card grid breakpoints measured against the main column width.
         static let threeColumnMinWidth: CGFloat = 640
         static let twoColumnMinWidth: CGFloat = 460
         static let cardMinWidth: CGFloat = 280
-        static let cardGap: CGFloat = 10
-        static let quickGap: CGFloat = 12
+        static let cardGap = Spacing.field
+        static let quickGap = Spacing.field
         static let navRowMinHeight: CGFloat = 40
         static let trafficLightsInset = CGPoint(x: 16, y: 20)
     }

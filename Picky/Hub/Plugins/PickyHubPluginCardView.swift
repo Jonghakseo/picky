@@ -21,7 +21,7 @@ struct PickyHubPluginCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: PickyHubTheme.Spacing.related) {
                 Image(systemName: item.metadata.systemImage)
                     .pickyFont(size: 18, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.action)
@@ -35,43 +35,42 @@ struct PickyHubPluginCardView: View {
                             .stroke(PickyHubTheme.Colors.action.opacity(0.28), lineWidth: 1)
                     )
                     .accessibilityHidden(true)
-                Spacer(minLength: 8)
+                Spacer(minLength: PickyHubTheme.Spacing.related)
                 if item.isInstalled {
                     PickyHubBadgePill(text: L10n.t("hub.plugins.detail.installed"))
                 }
             }
 
             Text(item.title)
-                .pickyFont(size: 16, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                .lineLimit(2)
-                .padding(.top, 14)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, PickyHubTheme.Spacing.field)
 
             Text(item.summary)
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 5)
+                .padding(.top, PickyHubTheme.Spacing.related)
 
             Text(meta)
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 .lineLimit(1)
-                .padding(.top, 11)
+                .padding(.top, PickyHubTheme.Spacing.related)
 
             if let error = item.errorMessage {
                 PickyHubInlineStatus(tone: .error, message: error)
-                    .padding(.top, 10)
+                    .padding(.top, PickyHubTheme.Spacing.field)
             }
 
-            Spacer(minLength: 15)
+            Spacer(minLength: PickyHubTheme.Spacing.field)
 
             actionRow
-                .padding(.top, 15)
+                .padding(.top, PickyHubTheme.Spacing.field)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 208, alignment: .topLeading)
+        .padding(PickyHubTheme.Spacing.cardInset)
+        .frame(maxWidth: .infinity, minHeight: 224, alignment: .topLeading)
         .pickyHubCard(radius: PickyHubTheme.Radius.card)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(item.title))
@@ -87,14 +86,43 @@ struct PickyHubPluginCardView: View {
 
     @ViewBuilder
     private var actionRow: some View {
+        ViewThatFits(in: .horizontal) {
+            actionRow(isVertical: false)
+            actionRow(isVertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func actionRow(isVertical: Bool) -> some View {
         if item.plugin.kind == .cron, item.isInstalled {
-            HStack(spacing: 7) {
+            if isVertical {
+                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+                    detailButton
+                    PickyHubButton(title: "hub.plugins.card.viewJobs", role: .secondary, action: onViewCronJobs)
+                    cronMenu
+                }
+            } else {
+                HStack(spacing: PickyHubTheme.Spacing.related) {
+                    detailButton
+                    PickyHubButton(title: "hub.plugins.card.viewJobs", role: .secondary, action: onViewCronJobs)
+                    cronMenu
+                }
+            }
+        } else if isVertical {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 detailButton
-                PickyHubButton(title: "hub.plugins.card.viewJobs", role: .secondary, action: onViewCronJobs)
-                cronMenu
+                if item.isInstalled {
+                    if item.hasUpdate {
+                        PickyHubButton(title: "hub.plugins.card.update", role: .secondary, isBusy: item.isBusy, action: onUpdate)
+                    }
+                    installedAction
+                } else {
+                    PickyHubButton(title: "hub.plugins.card.install", role: .primary, isBusy: item.isBusy, action: onInstall)
+                        .focused($focusedControl, equals: actionControlID)
+                }
             }
         } else {
-            HStack(spacing: 7) {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 detailButton
                 if item.isInstalled {
                     if item.hasUpdate {
@@ -138,12 +166,12 @@ struct PickyHubPluginCardView: View {
             if item.isBusy {
                 ProgressView()
                     .controlSize(.small)
-                    .frame(width: 34, height: 33)
+                    .frame(width: 34, height: PickyHubTheme.Control.minimumHeight)
             } else {
                 Image(systemName: "ellipsis.circle")
                     .pickyFont(size: 15, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                    .frame(width: 34, height: 33)
+                    .frame(width: 34, height: PickyHubTheme.Control.minimumHeight)
             }
         }
         .menuStyle(.borderlessButton)
@@ -157,7 +185,7 @@ struct PickyHubCronJobsDialog: View {
     @EnvironmentObject private var modalHost: PickyHubModalHost
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.group) {
             PickyHubModalHeader(
                 meta: L10n.t("hub.plugins.card.cronMeta"),
                 title: L10n.t("extensions.cron.jobs.title"),
@@ -165,6 +193,6 @@ struct PickyHubCronJobsDialog: View {
             )
             PickyCronJobsView(onBack: { modalHost.dismiss() })
         }
-        .padding(20)
+        .padding(PickyHubTheme.Spacing.cardInset)
     }
 }

@@ -9,6 +9,7 @@ import SwiftUI
 struct PickyHubQuickStartPage: View {
     let dependencies: PickyHubDependencies
     @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
     @ObservedObject private var launcher: PickyHubQuickStartLauncher
     @State private var folderPanel: NSOpenPanel?
 
@@ -42,11 +43,11 @@ struct PickyHubQuickStartPage: View {
         if let record = launcher.resumableRecord,
            let workflow = PickyHubQuickStartWorkflow.workflow(id: record.workflowID) {
             PickyHubQuickStartResumeCard(workflow: workflow, record: record, action: launcher.resume)
-                .padding(.bottom, 30)
+                .padding(.bottom, PickyHubTheme.Spacing.group)
         }
 
         PickyHubSubsectionTitle(title: "hub.quickStart.chooseWorkflow")
-        LazyVGrid(columns: columns, spacing: PickyHubTheme.Layout.quickGap) {
+        LazyVGrid(columns: columns, spacing: PickyHubTheme.Spacing.field) {
             ForEach(PickyHubQuickStartWorkflow.all) { workflow in
                 PickyHubQuickStartWorkflowCard(
                     workflow: workflow,
@@ -64,7 +65,7 @@ struct PickyHubQuickStartPage: View {
                 tone: .neutral,
                 message: L10n.t("hub.quickStart.starting", workflow.title)
             )
-            .padding(.top, 12)
+            .padding(.top, PickyHubTheme.Spacing.field)
         }
 
         if case .failed(_, let message) = launcher.phase {
@@ -74,20 +75,20 @@ struct PickyHubQuickStartPage: View {
                 actionTitle: launcher.retryWillOpenExistingSession ? "hub.quickStart.recover" : "hub.quickStart.retry",
                 action: { retry() }
             )
-            .padding(.top, 12)
+            .padding(.top, PickyHubTheme.Spacing.field)
         }
 
         Text("hub.quickStart.footer")
             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
             .foregroundColor(PickyHubTheme.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 28)
+            .padding(.top, PickyHubTheme.Spacing.group)
     }
 
     private var columns: [GridItem] {
         Array(
-            repeating: GridItem(.flexible(minimum: PickyHubTheme.Layout.cardMinWidth), spacing: PickyHubTheme.Layout.quickGap),
-            count: PickyHubGridPolicy.columnCount(for: contentWidth, maximum: 2, minimumCardWidth: PickyHubTheme.Layout.cardMinWidth, spacing: PickyHubTheme.Layout.quickGap)
+            repeating: GridItem(.flexible(minimum: PickyHubTheme.Layout.cardMinWidth), spacing: PickyHubTheme.Spacing.field),
+            count: PickyHubGridPolicy.columnCount(for: contentWidth, maximum: 2, minimumCardWidth: PickyHubTheme.Layout.cardMinWidth * fontScale, spacing: PickyHubTheme.Spacing.field)
         )
     }
 

@@ -9,6 +9,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
+import Vision
 @testable import Picky
 
 @MainActor
@@ -253,6 +254,65 @@ struct PickyHubRenderGalleryTests {
                 try rendered.png.write(to: settingsOutput.appendingPathComponent(scene.name), options: .atomic)
             }
         }
+
+        // Full-page inspection catches inconsistencies below the first
+        // viewport; enlarged narrow scenes exercise every page's reflow.
+        let auditOutput = output.appendingPathComponent("component-audit", isDirectory: true)
+        try FileManager.default.createDirectory(at: auditOutput, withIntermediateDirectories: true)
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            for page in PickyHubPage.allCases {
+                fixture.navigator.select(page)
+                fixture.dependencies.modalHost.dismiss()
+                for (width, height, scale) in [(1020.0, 3200.0, 1.0), (760.0, 2400.0, 1.3)] {
+                    fixture.fontScaleStore.setScale(scale)
+                    let scene = Scene(
+                        page: page,
+                        name: "\(page.rawValue)-\(Int(width))-\(Int(scale * 100)).png",
+                        appearance: .dark,
+                        logicalSize: CGSize(width: width, height: height),
+                        widthClass: "component-audit"
+                    )
+                    let rendered = try render(scene, fixture: fixture, locale: Locale(identifier: "ko_KR"))
+                    try validate(rendered.bitmap, for: scene)
+                    try rendered.png.write(to: auditOutput.appendingPathComponent(scene.name), options: .atomic)
+                }
+            }
+        }
+        // The shipping guide catalog is currently empty. Exercise a populated
+        // production card separately without changing the shipped feed.
+        let guide = PickyHubGuideEntry(
+            id: "component-audit", kind: .guide,
+            title: .init(en: "A longer guide title that wraps without losing ZEBRA", ko: "긴 가이드 제목도 줄바꿈하여 끝까지 읽을 수 있어야 해요"),
+            summary: .init(en: "Read the guide, check its context, and then choose whether to play it.", ko: "가이드의 설명과 맥락을 충분히 읽고 영상을 재생할지 선택해요. 큰 글자에서도 내용이 잘리지 않아야 해요."),
+            publishedOn: "2026-09-10", youtubeVideoID: "component-audit", thumbnailURL: nil
+        )
+        fixture.fontScaleStore.setScale(1.3)
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            for appearance in [Appearance.dark, .light] {
+                let size = CGSize(width: 360, height: 560)
+                let root = PickyAppFontScaleRoot(store: fixture.fontScaleStore) {
+                    PickyHubGuideCardView(entry: guide, action: {})
+                        .padding(PickyHubTheme.Spacing.field)
+                        .frame(width: size.width, height: size.height, alignment: .topLeading)
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                        .preferredColorScheme(appearance.colorScheme)
+                }
+                let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
+                    root, logicalSize: size, scale: Self.renderScale, appearance: appearance.nsAppearance
+                ))
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                let image = try #require(bitmap.cgImage)
+                try VNImageRequestHandler(cgImage: image).perform([request])
+                let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                #expect(visibleText.contains("ZEBRA"), "The full guide title must remain visible, not ellipsized")
+                #expect(!visibleText.contains("hub.guides.kind"), "Guide kind must be localized, not a raw key")
+                let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: auditOutput.appendingPathComponent("guide-card-130-\(appearance.rawValue).png"))
+            }
+        }
+        fixture.fontScaleStore.setScale(1)
 
         // Exercise the production disclosure style with visible multi-line
         // content as well as the default collapsed full-page settings scenes.

@@ -35,34 +35,44 @@ struct PickyHubStatisticsPage: View {
     }
 
     private var filters: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            statisticsPicker(
-                title: "hub.stats.filter.period",
-                selection: Binding(
-                    get: { statisticsStore.filter.period },
-                    set: { statisticsStore.filter.period = $0 }
-                )
-            ) {
-                ForEach(PickyHubStatisticsPeriod.allCases) { period in
-                    Text(period.titleKey).tag(period)
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .bottom, spacing: PickyHubTheme.Spacing.field) {
+                filterControls
+                Spacer(minLength: 0)
             }
-            statisticsPicker(
-                title: "hub.stats.filter.project",
-                selection: Binding(
-                    get: { statisticsStore.filter.project },
-                    set: { statisticsStore.filter.project = $0 }
-                )
-            ) {
-                Text("hub.stats.filter.allProjects").tag(String?.none)
-                ForEach(PickyHubStatisticsAggregator.projects(in: statisticsStore.snapshot), id: \.self) { project in
-                    Text(project).tag(Optional(project))
-                }
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                filterControls
             }
-            Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .pickyHubCard(radius: PickyHubTheme.Radius.card)
+    }
+
+    @ViewBuilder
+    private var filterControls: some View {
+        statisticsPicker(
+            title: "hub.stats.filter.period",
+            selection: Binding(
+                get: { statisticsStore.filter.period },
+                set: { statisticsStore.filter.period = $0 }
+            )
+        ) {
+            ForEach(PickyHubStatisticsPeriod.allCases) { period in
+                Text(period.titleKey).tag(period)
+            }
+        }
+        statisticsPicker(
+            title: "hub.stats.filter.project",
+            selection: Binding(
+                get: { statisticsStore.filter.project },
+                set: { statisticsStore.filter.project = $0 }
+            )
+        ) {
+            Text("hub.stats.filter.allProjects").tag(String?.none)
+            ForEach(PickyHubStatisticsAggregator.projects(in: statisticsStore.snapshot), id: \.self) { project in
+                Text(project).tag(Optional(project))
+            }
+        }
     }
 
     private func statisticsPicker<Selection: Hashable, Content: View>(
@@ -70,25 +80,25 @@ struct PickyHubStatisticsPage: View {
         selection: Binding<Selection>,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(title)
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
             Picker(title, selection: selection, content: content)
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .frame(minWidth: 150, alignment: .leading)
+                .frame(minWidth: 150, maxWidth: PickyHubTheme.Control.maximumFieldWidth, alignment: .leading)
                 .accessibilityLabel(Text(title))
         }
     }
 
     private var tabs: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: PickyHubTheme.Spacing.field) {
             statisticsTab(.work, title: "hub.stats.tab.work")
             statisticsTab(.usage, title: "hub.stats.tab.usage")
             Spacer(minLength: 0)
         }
-        .padding(.top, 30)
+        .padding(.top, PickyHubTheme.Spacing.group)
         .overlay(alignment: .bottom) { Divider().overlay(PickyHubTheme.Colors.border) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("hub.stats.tabs.accessibility"))
@@ -107,13 +117,15 @@ struct PickyHubStatisticsPage: View {
             Text(title)
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                 .foregroundColor(selected ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textTertiary)
-                .padding(.horizontal, 2)
-                .padding(.bottom, 11)
+                .frame(minHeight: PickyHubTheme.Control.minimumHeight, alignment: .bottom)
+                .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+                .padding(.bottom, PickyHubTheme.Spacing.related)
                 .overlay(alignment: .bottom) {
                     if selected { Rectangle().fill(PickyHubTheme.Colors.action).frame(height: 2) }
                 }
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityLabel(Text(title))
     }
@@ -124,12 +136,12 @@ struct PickyHubStatisticsPage: View {
             switch statisticsStore.state {
             case .idle, .loading:
                 PickyHubLoadingRow(message: "hub.stats.loading")
-                    .padding(.top, 22)
+                    .padding(.top, PickyHubTheme.Spacing.group)
             case .failed(let message):
                 PickyHubInlineStatus(tone: .error, message: message, actionTitle: "hub.common.retry") {
                     statisticsStore.refresh()
                 }
-                .padding(.top, 22)
+                .padding(.top, PickyHubTheme.Spacing.group)
             case .loaded(let snapshot):
                 if selectedTab == .work {
                     PickyHubStatisticsWorkTab(snapshot: snapshot, filter: statisticsStore.filter, onGoDashboard: {
@@ -144,7 +156,7 @@ struct PickyHubStatisticsPage: View {
     }
 
     private var refreshFooter: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: PickyHubTheme.Spacing.related) {
             if let date = statisticsStore.lastRefreshedAt {
                 Text(PickyHubStatisticsPresentation.updatedDescription(date))
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
@@ -154,7 +166,7 @@ struct PickyHubStatisticsPage: View {
                 statisticsStore.refresh()
             }
         }
-        .padding(.top, 20)
+        .padding(.top, PickyHubTheme.Spacing.group)
     }
 
     private func consumeNavigation(proxy: ScrollViewProxy) {
@@ -190,24 +202,24 @@ private struct PickyHubStatisticsWorkTab: View {
             ) {
                 onGoDashboard()
             }
-            .padding(.top, 22)
+            .padding(.top, PickyHubTheme.Spacing.group)
         } else {
             let insights = PickyHubStatisticsAggregator.workInsights(for: records)
             VStack(alignment: .leading, spacing: 0) {
                 PickyHubWorkInsightCards(insights: insights)
-                    .padding(.top, 22)
+                    .padding(.top, PickyHubTheme.Spacing.group)
                 PickyHubWorkDistribution(insights: insights)
-                    .padding(.top, 30)
+                    .padding(.top, PickyHubTheme.Spacing.group)
                     .id(PickyHubStatisticsAnchor.workPattern.rawValue)
                 if snapshot.pendingClassificationCount > 0 {
                     PickyHubInlineStatus(
                         tone: .neutral,
                         message: L10n.t("hub.stats.work.classifying", snapshot.pendingClassificationCount)
                     )
-                    .padding(.top, 12)
+                    .padding(.top, PickyHubTheme.Spacing.related)
                 }
                 PickyHubPickleRecordsTable(records: records)
-                    .padding(.top, 30)
+                    .padding(.top, PickyHubTheme.Spacing.group)
                     .id(PickyHubStatisticsAnchor.pickleRecords.rawValue)
             }
         }
@@ -220,9 +232,9 @@ private struct PickyHubWorkDistribution: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PickyHubSubsectionTitle(title: "hub.stats.work.distribution.title")
-            VStack(spacing: 14) {
+            VStack(spacing: PickyHubTheme.Spacing.field) {
                 ForEach(insights.distribution) { share in
-                    HStack(spacing: 12) {
+                    HStack(spacing: PickyHubTheme.Spacing.field) {
                         Text(share.category.title)
                             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
                             .foregroundColor(PickyHubTheme.Colors.textPrimary)
@@ -245,7 +257,7 @@ private struct PickyHubWorkDistribution: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(PickyHubTheme.Spacing.cardInset)
             .pickyHubCard(radius: PickyHubTheme.Radius.card)
             .accessibilityElement(children: .combine)
         }
@@ -281,13 +293,13 @@ private struct PickyHubPickleRecordsTable: View {
                         if record.id != records.last?.id { Divider().gridCellColumns(6).overlay(PickyHubTheme.Colors.borderSoft) }
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, PickyHubTheme.Spacing.cardInset)
             }
             .pickyHubCard(radius: PickyHubTheme.Radius.card)
             Text("hub.stats.work.records.caption")
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
-                .padding(.top, 8)
+                .padding(.top, PickyHubTheme.Spacing.related)
         }
     }
 
@@ -302,10 +314,11 @@ private struct PickyHubPickleRecordsTable: View {
         Text(value)
             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: primary ? .semibold : .medium)
             .foregroundColor(primary ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textSecondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
+            .lineLimit(primary ? nil : 1)
+            .fixedSize(horizontal: false, vertical: primary)
             .monospacedDigit()
-            .frame(width: width, height: 48, alignment: number ? .trailing : .leading)
+            .frame(width: width, alignment: number ? .trailing : .leading)
+            .frame(minHeight: 48)
             .help(value)
     }
 }
@@ -322,15 +335,15 @@ private struct PickyHubStatisticsUsageTab: View {
                 title: "hub.stats.usage.empty.title",
                 message: "hub.stats.usage.empty.message"
             )
-            .padding(.top, 22)
+            .padding(.top, PickyHubTheme.Spacing.group)
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 PickyHubUsageSummaryCards(summary: summary)
-                    .padding(.top, 22)
+                    .padding(.top, PickyHubTheme.Spacing.group)
                 usageChart(summary: summary)
-                    .padding(.top, 30)
+                    .padding(.top, PickyHubTheme.Spacing.group)
                 PickyHubModelUsageTable(models: summary.models)
-                    .padding(.top, 30)
+                    .padding(.top, PickyHubTheme.Spacing.group)
             }
         }
     }
@@ -339,8 +352,8 @@ private struct PickyHubStatisticsUsageTab: View {
         let days = PickyHubStatisticsAggregator.continuousDays(summary.days, period: filter.period)
         return VStack(alignment: .leading, spacing: 0) {
             PickyHubSubsectionTitle(title: "hub.stats.usage.chart.title")
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 5) {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                HStack(spacing: PickyHubTheme.Spacing.related) {
                     Circle().fill(PickyHubTheme.Colors.action).frame(width: 8, height: 8)
                     Text("hub.stats.usage.chart.legend")
                         .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
@@ -348,10 +361,10 @@ private struct PickyHubStatisticsUsageTab: View {
                 }
                 PickyHubUsageLineChart(days: days, period: filter.period)
             }
-            .padding(16)
+            .padding(PickyHubTheme.Spacing.cardInset)
             .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.canvas)
             PickyHubInlineStatus(tone: .neutral, message: L10n.t("hub.stats.usage.costNotice"))
-                .padding(.top, 12)
+                .padding(.top, PickyHubTheme.Spacing.related)
         }
     }
 }
@@ -359,10 +372,15 @@ private struct PickyHubStatisticsUsageTab: View {
 private struct PickyHubUsageSummaryCards: View {
     let summary: PickyHubUsageSummary
     @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Layout.cardGap), count: PickyHubGridPolicy.columnCount(for: contentWidth, maximum: 4))
-        LazyVGrid(columns: columns, spacing: PickyHubTheme.Layout.cardGap) {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Spacing.field), count: PickyHubGridPolicy.columnCount(
+            for: contentWidth / fontScale,
+            maximum: 4,
+            spacing: PickyHubTheme.Spacing.field
+        ))
+        LazyVGrid(columns: columns, spacing: PickyHubTheme.Spacing.field) {
             card("hub.stats.usage.total", summary.totalTokens)
             card("hub.stats.usage.input", summary.inputTokens)
             card("hub.stats.usage.output", summary.outputTokens)
@@ -371,18 +389,18 @@ private struct PickyHubUsageSummaryCards: View {
     }
 
     private func card(_ label: LocalizedStringKey, _ value: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(label)
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
             Text(PickyHubTokenFormatter.string(value))
-                .pickyFont(size: 23, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
                 .tracking(-1)
                 .monospacedDigit()
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
         }
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
-        .padding(15)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .pickyHubCard()
     }
 }
@@ -414,7 +432,7 @@ private struct PickyHubModelUsageTable: View {
                         if model.id != models.last?.id { Divider().gridCellColumns(5).overlay(PickyHubTheme.Colors.borderSoft) }
                     }
                 }
-                .padding(.horizontal, 13)
+                .padding(.horizontal, PickyHubTheme.Spacing.cardInset)
             }
             .pickyHubCard(radius: PickyHubTheme.Radius.card)
         }
@@ -432,8 +450,10 @@ private struct PickyHubModelUsageTable: View {
             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: primary ? .semibold : .medium)
             .foregroundColor(primary ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textSecondary)
             .monospacedDigit()
-            .lineLimit(1)
-            .frame(width: width, height: 42, alignment: number ? .trailing : .leading)
+            .lineLimit(primary ? nil : 1)
+            .fixedSize(horizontal: false, vertical: primary)
+            .frame(width: width, alignment: number ? .trailing : .leading)
+            .frame(minHeight: 42)
             .help(value)
     }
 }

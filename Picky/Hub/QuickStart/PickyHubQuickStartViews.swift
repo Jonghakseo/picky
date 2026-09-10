@@ -30,30 +30,44 @@ struct PickyHubQuickStartWorkflowCard: View {
                 .accessibilityHidden(true)
 
             Text(workflow.titleKey)
-                .pickyFont(size: 16, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
                 .tracking(-0.4)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                .padding(.top, 16)
+                .padding(.top, PickyHubTheme.Spacing.field)
 
             Text(workflow.descriptionKey)
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 6)
+                .padding(.top, PickyHubTheme.Spacing.related)
 
-            HStack(spacing: 12) {
-                PickyHubPillButton(title: "hub.quickStart.start", systemImage: "play.fill", isBusy: isBusy, action: onStart)
-                    .disabled(!isEnabled)
-                PickyHubTextLink(title: "hub.quickStart.chooseFolder", action: onChooseFolder)
-                    .disabled(!isEnabled)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: PickyHubTheme.Spacing.related) {
+                    startButton
+                    chooseFolderButton
+                }
+                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+                    startButton
+                    chooseFolderButton
+                }
             }
-            .padding(.top, 18)
+            .padding(.top, PickyHubTheme.Spacing.field)
         }
-        .frame(maxWidth: .infinity, minHeight: 184, alignment: .leading)
-        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 208, alignment: .leading)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .pickyHubCard(radius: PickyHubTheme.Radius.card)
         .opacity(isEnabled ? 1 : 0.55)
         .accessibilityElement(children: .contain)
+    }
+
+    private var startButton: some View {
+        PickyHubPillButton(title: "hub.quickStart.start", systemImage: "play.fill", isBusy: isBusy, action: onStart)
+            .disabled(!isEnabled)
+    }
+
+    private var chooseFolderButton: some View {
+        PickyHubTextLink(title: "hub.quickStart.chooseFolder", action: onChooseFolder)
+            .disabled(!isEnabled)
     }
 }
 
@@ -63,29 +77,44 @@ struct PickyHubQuickStartResumeCard: View {
     let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 18) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("hub.quickStart.resume.kicker")
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .bold)
-                    .foregroundColor(PickyHubTheme.Colors.action)
-                Text(workflow.titleKey)
-                    .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
-                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                if record.deliveryState != .accepted {
-                    Text("hub.quickStart.resume.pending")
-                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
-                        .foregroundColor(PickyHubTheme.Colors.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text(L10n.t("hub.quickStart.resume.lastStarted", record.startedAt.formatted(date: .abbreviated, time: .shortened)))
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
-                    .foregroundColor(PickyHubTheme.Colors.textTertiary)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: PickyHubTheme.Spacing.field) {
+                details
+                Spacer(minLength: PickyHubTheme.Spacing.related)
+                resumeButton
             }
-            Spacer(minLength: 8)
-            PickyHubButton(title: "hub.quickStart.resume.action", role: .secondary, action: action)
+            .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                details
+                resumeButton
+            }
         }
-        .padding(16)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.surface)
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+            Text("hub.quickStart.resume.kicker")
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .bold)
+                .foregroundColor(PickyHubTheme.Colors.action)
+            Text(workflow.titleKey)
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
+                .foregroundColor(PickyHubTheme.Colors.textPrimary)
+            if record.deliveryState != .accepted {
+                Text("hub.quickStart.resume.pending")
+                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                    .foregroundColor(PickyHubTheme.Colors.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(L10n.t("hub.quickStart.resume.lastStarted", record.startedAt.formatted(date: .abbreviated, time: .shortened)))
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                .foregroundColor(PickyHubTheme.Colors.textTertiary)
+        }
+    }
+
+    private var resumeButton: some View {
+        PickyHubButton(title: "hub.quickStart.resume.action", role: .secondary, action: action)
     }
 }
 
@@ -106,20 +135,20 @@ struct PickyHubQuickStartSuccessView: View {
             Text("hub.quickStart.success.title")
                 .pickyFont(size: 20, weight: .bold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                .padding(.top, 15)
+                .padding(.top, PickyHubTheme.Spacing.field)
             Text("hub.quickStart.success.message")
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .multilineTextAlignment(.center)
-                .padding(.top, 7)
+                .padding(.top, PickyHubTheme.Spacing.related)
             PickyHubButton(title: "hub.quickStart.success.showWorkflows", role: .secondary, action: onAcknowledge)
-                .padding(.top, 18)
+                .padding(.top, PickyHubTheme.Spacing.field)
             PickyHubTextLink(title: "hub.quickStart.success.openPickle", action: onOpen)
-                .padding(.top, 12)
+                .padding(.top, PickyHubTheme.Spacing.related)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 64)
-        .padding(.horizontal, 24)
+        .padding(.vertical, PickyHubTheme.Layout.sectionSpacing)
+        .padding(.horizontal, PickyHubTheme.Spacing.group)
         .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.surface)
         .accessibilityElement(children: .contain)
     }

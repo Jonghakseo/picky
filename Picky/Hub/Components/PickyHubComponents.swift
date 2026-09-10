@@ -53,7 +53,9 @@ struct PickyHubPageScroll<Content: View>: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: showsIndicators) {
-            content()
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
                 .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
                 .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
                 .padding(.top, PickyHubTheme.Layout.contentTopPadding)
@@ -70,7 +72,7 @@ struct PickyHubPageHeader: View {
     let subtitle: LocalizedStringKey
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(title)
                 .pickyFont(size: PickyHubTheme.Typography.pageTitle, weight: .heavy)
                 .tracking(-0.8)
@@ -82,7 +84,7 @@ struct PickyHubPageHeader: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 26)
+        .padding(.bottom, PickyHubTheme.Layout.sectionSpacing)
     }
 }
 
@@ -103,7 +105,7 @@ struct PickyHubSectionHeading: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .pickyFont(size: 26, weight: .semibold)
@@ -132,7 +134,7 @@ struct PickyHubSubsectionTitle: View {
     let title: LocalizedStringKey
     var body: some View {
         Text(title)
-            .pickyFont(size: 18, weight: .bold)
+            .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
             .tracking(-0.5)
             .foregroundColor(PickyHubTheme.Colors.textPrimary)
             .accessibilityAddTraits(.isHeader)
@@ -143,6 +145,7 @@ struct PickyHubSubsectionTitle: View {
 struct PickyHubTextLink: View {
     let title: LocalizedStringKey
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
@@ -152,20 +155,22 @@ struct PickyHubTextLink: View {
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
                 .foregroundColor(PickyHubTheme.Colors.action)
                 .underline(isHovering)
+                .padding(.horizontal, DS.Spacing.space1)
+                .frame(minHeight: PickyHubTheme.Control.minimumHeight)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyHubPressStyle())
         .focused($isFocused)
-        .pickyHubFocusRing(isFocused: isFocused, cornerRadius: 4)
+        .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.control)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
     }
 }
 
 // MARK: - Card chrome
 
 struct PickyHubCardStyle: ViewModifier {
-    var radius: CGFloat = PickyHubTheme.Radius.cardCompact
+    var radius: CGFloat = PickyHubTheme.Radius.card
     var fill: Color = PickyHubTheme.Colors.surface
     var border: Color = PickyHubTheme.Colors.border
     var shadow = false
@@ -193,7 +198,7 @@ struct PickyHubCardStyle: ViewModifier {
 
 extension View {
     func pickyHubCard(
-        radius: CGFloat = PickyHubTheme.Radius.cardCompact,
+        radius: CGFloat = PickyHubTheme.Radius.card,
         fill: Color = PickyHubTheme.Colors.surface,
         border: Color = PickyHubTheme.Colors.border,
         shadow: Bool = false
@@ -210,12 +215,13 @@ struct PickyHubPillButton: View {
     var systemImage: String?
     var isBusy = false
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 if isBusy {
                     ProgressView().controlSize(.mini)
                 } else if let systemImage {
@@ -224,11 +230,12 @@ struct PickyHubPillButton: View {
                 }
                 Text(title)
                     .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(PickyHubTheme.Colors.action)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 6)
+            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+            .padding(.vertical, PickyHubTheme.Spacing.related)
+            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
             .background(
                 Capsule(style: .continuous)
                     .fill(isHovering ? PickyHubTheme.Colors.actionTint : PickyHubTheme.Colors.canvas)
@@ -244,7 +251,7 @@ struct PickyHubPillButton: View {
         .focused($isFocused)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.pill)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
     }
 }
 
@@ -264,12 +271,13 @@ struct PickyHubButton: View {
     var isEnabled = true
     var minWidth: CGFloat? = nil
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 if isBusy {
                     ProgressView().controlSize(.mini)
                 } else if let systemImage {
@@ -277,13 +285,14 @@ struct PickyHubButton: View {
                         .pickyFont(size: 11, weight: .bold)
                 }
                 Text(title)
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .bold)
-                    .lineLimit(1)
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(foreground)
             .frame(minWidth: minWidth)
-            .padding(.horizontal, 11)
-            .frame(minHeight: 33)
+            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+            .padding(.vertical, PickyHubTheme.Spacing.related)
+            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
             .background(
                 RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous)
                     .fill(background)
@@ -293,14 +302,14 @@ struct PickyHubButton: View {
                     .stroke(borderColor, lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous))
-            .opacity(isEnabled ? 1 : 0.55)
+
         }
         .buttonStyle(PickyHubPressStyle())
         .disabled(isBusy || !isEnabled)
         .focused($isFocused)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.control)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
     }
 
     private var foreground: Color {
@@ -339,6 +348,7 @@ struct PickyHubIconCircleButton: View {
     var hoverForeground: Color = PickyHubTheme.Colors.action
     var size: CGFloat = 34
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
@@ -362,7 +372,7 @@ struct PickyHubIconCircleButton: View {
         .focused($isFocused)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: size / 2)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
         .help(Text(accessibilityLabel))
         .accessibilityLabel(Text(accessibilityLabel))
     }
@@ -371,10 +381,13 @@ struct PickyHubIconCircleButton: View {
 /// Press feedback shared by hub buttons: 1pt sink, no colour change (colour is
 /// owned by the hover state of each button).
 struct PickyHubPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .offset(y: configuration.isPressed ? 1 : 0)
-            .animation(PickyHubTheme.Motion.hover, value: configuration.isPressed)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.55)
+            .offset(y: configuration.isPressed && !reduceMotion ? 1 : 0)
+            .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: configuration.isPressed)
     }
 }
 
@@ -436,7 +449,7 @@ struct PickyHubEmptyState: View {
     var action: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: PickyHubTheme.Spacing.field) {
             Image(systemName: systemImage)
                 .pickyFont(size: 22, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.action)
@@ -444,7 +457,7 @@ struct PickyHubEmptyState: View {
                 .background(Circle().fill(PickyHubTheme.Colors.actionTint))
                 .accessibilityHidden(true)
             Text(title)
-                .pickyFont(size: 18, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                 .tracking(-0.4)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .multilineTextAlignment(.center)
@@ -529,8 +542,8 @@ struct PickyHubLoadingRow: View {
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 18)
-        .padding(.horizontal, 16)
+        .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
+        .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
         .pickyHubCard()
     }
 }

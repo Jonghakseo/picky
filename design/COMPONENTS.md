@@ -153,6 +153,14 @@ Composer는 첫 디자인 시스템 파일럿 대상으로 삼는다.
 - Picky Action Blue, typography, material 규칙을 HUD와 공유한다.
 - conversation 전체 chrome을 복제하지 않는다.
 
+### Hub window
+
+Hub-specific rules and ownership boundary: [Hub component rules](../docs/hub-component-rules.md).
+All seven pages use `PickyHubTheme` and `Picky/Hub/Components/` for card, heading,
+spacing, button, and status roles. These rules do not restyle Pickle HUD, Dock,
+cursor UI, or standalone Companion surfaces. Embedded shared views retain their
+state owners and receive only Hub-local framing.
+
 ### Companion and Settings
 
 주요 구현:

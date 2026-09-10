@@ -11,6 +11,7 @@ struct PickyHubPluginsPage: View {
     @ObservedObject private var catalog: PickyHubPluginCatalogViewModel
     @EnvironmentObject private var modalHost: PickyHubModalHost
     @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
     @FocusState private var searchFocused: Bool
     @FocusState private var focusedPluginControl: String?
     @State private var commandFMonitor: Any?
@@ -22,8 +23,8 @@ struct PickyHubPluginsPage: View {
 
     private var gridColumns: [GridItem] {
         Array(
-            repeating: GridItem(.flexible(), spacing: PickyHubTheme.Layout.cardGap),
-            count: PickyHubGridPolicy.columnCount(for: contentWidth)
+            repeating: GridItem(.flexible(), spacing: PickyHubTheme.Spacing.field),
+            count: PickyHubGridPolicy.columnCount(for: contentWidth, minimumCardWidth: PickyHubTheme.Layout.cardMinWidth * fontScale, spacing: PickyHubTheme.Spacing.field)
         )
     }
 
@@ -36,14 +37,14 @@ struct PickyHubPluginsPage: View {
                     controller: dependencies.pluginReloadController,
                     onReload: handleReloadTapped
                 )
-                .padding(.bottom, dependencies.pluginReloadController.hasPendingChanges || dependencies.pluginReloadController.lastResult != nil ? 20 : 0)
+                .padding(.bottom, dependencies.pluginReloadController.hasPendingChanges || dependencies.pluginReloadController.lastResult != nil ? PickyHubTheme.Spacing.field : 0)
 
                 searchAndFilters
 
                 Text(statusMessage)
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
-                    .padding(.top, 13)
+                    .padding(.top, PickyHubTheme.Spacing.related)
                     .accessibilityAddTraits(.updatesFrequently)
                     .accessibilityLabel(Text(statusMessage))
 
@@ -56,9 +57,9 @@ struct PickyHubPluginsPage: View {
                         actionSystemImage: "xmark.circle",
                         action: clearFilters
                     )
-                    .padding(.top, 12)
+                    .padding(.top, PickyHubTheme.Spacing.field)
                 } else {
-                    LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 12) {
+                    LazyVGrid(columns: gridColumns, alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
                         ForEach(catalog.filtered) { item in
                             PickyHubPluginCardView(
                                 item: item,
@@ -72,11 +73,11 @@ struct PickyHubPluginsPage: View {
                             )
                         }
                     }
-                    .padding(.top, 12)
+                    .padding(.top, PickyHubTheme.Spacing.field)
                 }
 
                 feedback
-                    .padding(.top, 14)
+                    .padding(.top, PickyHubTheme.Spacing.field)
             }
         }
         .onAppear {
@@ -87,8 +88,8 @@ struct PickyHubPluginsPage: View {
     }
 
     private var searchAndFilters: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 Image(systemName: "magnifyingglass")
                     .pickyFont(size: 16, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
@@ -100,35 +101,37 @@ struct PickyHubPluginsPage: View {
                     .focused($searchFocused)
                     .accessibilityLabel(Text("hub.plugins.search.placeholder"))
             }
-            .padding(.horizontal, 11)
-            .frame(minHeight: 39)
+            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
             .pickyHubCard(radius: PickyHubTheme.Radius.control, fill: PickyHubTheme.Colors.canvas)
             .pickyHubFocusRing(isFocused: searchFocused, cornerRadius: PickyHubTheme.Radius.control)
 
-            HStack(alignment: .center, spacing: 7) {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 Text("hub.plugins.category.label")
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
-                PickyHubPluginCategoryChip(title: "hub.plugins.category.all", isSelected: catalog.category == nil) {
-                    catalog.category = nil
-                }
-                ForEach(PickyHubPluginCategory.allCases) { category in
-                    PickyHubPluginCategoryChip(title: category.titleKey, isSelected: catalog.category == category) {
-                        catalog.category = category
+
+                PickyHubWrappingHStack(spacing: PickyHubTheme.Spacing.related) {
+                    PickyHubPluginCategoryChip(title: "hub.plugins.category.all", isSelected: catalog.category == nil) {
+                        catalog.category = nil
+                    }
+                    ForEach(PickyHubPluginCategory.allCases) { category in
+                        PickyHubPluginCategoryChip(title: category.titleKey, isSelected: catalog.category == category) {
+                            catalog.category = category
+                        }
                     }
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("hub.plugins.category.label"))
         }
-        .padding(15)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.surface)
     }
 
     @ViewBuilder
     private var feedback: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             if let feedback = catalog.feedback {
                 PickyHubInlineStatus(
                     tone: catalog.feedbackIsError ? .error : .success,
@@ -288,10 +291,62 @@ struct PickyHubPluginsPage: View {
     }
 }
 
+/// A Hub-local filter layout that keeps category controls readable at narrow
+/// widths and enlarged fonts instead of forcing the row to clip.
+private struct PickyHubWrappingHStack: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+
+        let maximumWidth = proposal.width ?? .greatestFiniteMagnitude
+        var lineWidth: CGFloat = 0
+        var maximumLineWidth: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let itemWidth = lineWidth == 0 ? size.width : size.width + spacing
+            if lineWidth > 0, lineWidth + itemWidth > maximumWidth {
+                maximumLineWidth = max(maximumLineWidth, lineWidth)
+                totalHeight += lineHeight + spacing
+                lineWidth = size.width
+                lineHeight = size.height
+            } else {
+                lineWidth += itemWidth
+                lineHeight = max(lineHeight, size.height)
+            }
+        }
+
+        maximumLineWidth = max(maximumLineWidth, lineWidth)
+        return CGSize(width: proposal.width ?? maximumLineWidth, height: totalHeight + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        var origin = bounds.origin
+        var lineHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if origin.x > bounds.minX, origin.x + size.width > bounds.maxX {
+                origin.x = bounds.minX
+                origin.y += lineHeight + spacing
+                lineHeight = 0
+            }
+
+            subview.place(at: origin, proposal: ProposedViewSize(size))
+            origin.x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+    }
+}
+
 private struct PickyHubPluginCategoryChip: View {
     let title: LocalizedStringKey
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
@@ -300,8 +355,8 @@ private struct PickyHubPluginCategoryChip: View {
             Text(title)
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(isSelected ? PickyHubTheme.Colors.textOnAction : (isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary))
-                .padding(.horizontal, 9)
-                .frame(minHeight: 29)
+                .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+                .frame(minHeight: PickyHubTheme.Control.minimumHeight)
                 .background(
                     Capsule(style: .continuous)
                         .fill(isSelected ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.canvas)
@@ -315,7 +370,7 @@ private struct PickyHubPluginCategoryChip: View {
         .focused($isFocused)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.pill)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(isSelected ? "hub.plugins.category.selected" : "hub.plugins.category.notSelected"))

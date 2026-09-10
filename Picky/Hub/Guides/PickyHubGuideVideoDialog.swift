@@ -23,7 +23,7 @@ struct PickyHubGuideVideoDialog: View {
                 title: entry.title.resolved(for: LocaleManager.shared.effectiveLocale),
                 onClose: { modalHost.dismiss() }
             )
-            .padding(20)
+            .padding(PickyHubTheme.Spacing.cardInset)
 
             player
         }
@@ -34,7 +34,7 @@ struct PickyHubGuideVideoDialog: View {
     private var player: some View {
         switch loadState {
         case .failed:
-            VStack(spacing: 12) {
+            VStack(spacing: PickyHubTheme.Spacing.field) {
                 Image(systemName: "exclamationmark.triangle")
                     .pickyFont(size: 22, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.warning)
@@ -46,21 +46,14 @@ struct PickyHubGuideVideoDialog: View {
                     .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
-                HStack(spacing: 8) {
-                    PickyHubButton(title: "hub.guides.video.retry", role: .secondary, systemImage: "arrow.clockwise") {
-                        loadState = .loading
-                        reloadID = UUID()
-                    }
-                    if let watchURL = entry.watchURL {
-                        PickyHubButton(title: "hub.guides.video.openYouTube", role: .primary, systemImage: "arrow.up.right") {
-                            NSWorkspace.shared.open(watchURL)
-                        }
-                    }
+                ViewThatFits(in: .horizontal) {
+                    videoActions(horizontal: true)
+                    videoActions(horizontal: false)
                 }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 384)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, PickyHubTheme.Spacing.cardInset)
             .background(PickyHubTheme.Colors.canvas)
         case .loading, .loaded:
             ZStack {
@@ -79,6 +72,38 @@ struct PickyHubGuideVideoDialog: View {
             }
             .aspectRatio(16 / 9, contentMode: .fit)
             .background(PickyHubTheme.Colors.textPrimary)
+        }
+    }
+
+    @ViewBuilder
+    private func videoActions(horizontal: Bool) -> some View {
+        if horizontal {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
+                retryButton
+                if let watchURL = entry.watchURL {
+                    openYouTubeButton(watchURL)
+                }
+            }
+        } else {
+            VStack(spacing: PickyHubTheme.Spacing.related) {
+                retryButton
+                if let watchURL = entry.watchURL {
+                    openYouTubeButton(watchURL)
+                }
+            }
+        }
+    }
+
+    private var retryButton: some View {
+        PickyHubButton(title: "hub.guides.video.retry", role: .secondary, systemImage: "arrow.clockwise") {
+            loadState = .loading
+            reloadID = UUID()
+        }
+    }
+
+    private func openYouTubeButton(_ watchURL: URL) -> some View {
+        PickyHubButton(title: "hub.guides.video.openYouTube", role: .primary, systemImage: "arrow.up.right") {
+            NSWorkspace.shared.open(watchURL)
         }
     }
 

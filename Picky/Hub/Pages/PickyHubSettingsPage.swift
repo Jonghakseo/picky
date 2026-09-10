@@ -38,7 +38,7 @@ struct PickyHubSettingsPage: View {
                         actionTitle: "hub.settings.restart.action",
                         action: { PickyRelauncher.relaunchAndTerminate() }
                     )
-                    .padding(.bottom, 12)
+                    .padding(.bottom, PickyHubTheme.Spacing.field)
                 }
                 ForEach(PickyHubSettingsGroup.allCases) { group in
                     PickyHubSettingsGroupSection(group: group) {
@@ -67,12 +67,12 @@ struct PickyHubSettingsPage: View {
                         minimum: PickyHubSettingsLayout.groupLinkMinimumWidth,
                         maximum: PickyHubSettingsLayout.groupLinkMaximumWidth
                     ),
-                    spacing: DS.Spacing.space2,
+                    spacing: PickyHubTheme.Spacing.field,
                     alignment: .leading
                 )
             ],
             alignment: .leading,
-            spacing: DS.Spacing.space2
+            spacing: PickyHubTheme.Spacing.field
         ) {
             ForEach(PickyHubSettingsGroup.allCases) { group in
                 Button {
@@ -87,7 +87,7 @@ struct PickyHubSettingsPage: View {
             }
         }
         .accessibilityLabel(Text("hub.settings.groupLinks"))
-        .padding(.bottom, DS.Spacing.space4)
+        .padding(.bottom, PickyHubTheme.Spacing.field)
     }
 
     @ViewBuilder
@@ -169,8 +169,8 @@ struct PickyHubSettingsPage: View {
             settings
         } else {
             settings
-                .padding(DS.Spacing.space4)
-                .pickyHubCard()
+                .padding(PickyHubTheme.Spacing.cardInset)
+                .pickyHubCard(radius: PickyHubTheme.Radius.card)
         }
     }
 
@@ -317,8 +317,8 @@ private struct PickyHubOnboardingReplayConfirmation: View {
             )
             if let errorMessage = state.errorMessage {
                 PickyHubInlineStatus(tone: .error, message: errorMessage)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
+                    .padding(.horizontal, PickyHubTheme.Spacing.cardInset)
+                    .padding(.bottom, PickyHubTheme.Spacing.cardInset)
             }
         }
     }
@@ -347,8 +347,8 @@ private struct PickyHubSettingsGroupSection<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space4) {
-            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.space2) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 Text(group.titleKey)
                     .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .semibold)
                     .tracking(-0.5)
@@ -357,10 +357,11 @@ private struct PickyHubSettingsGroupSection<Content: View>: View {
                 Text(group.subtitleKey)
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             content()
         }
-        .padding(.top, DS.Spacing.space6)
+        .padding(.top, PickyHubTheme.Layout.sectionSpacing)
         .scrollTargetLayout()
     }
 }
@@ -397,7 +398,9 @@ private struct PickyHubSettingsJumpStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundColor(isHovered ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary)
-            .padding(DS.Spacing.space2)
+            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+            .padding(.vertical, PickyHubTheme.Spacing.related)
+            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
             .background(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
                     .fill(configuration.isPressed || isHovered ? PickyHubTheme.Colors.navHighlight : PickyHubTheme.Colors.surface)
@@ -412,7 +415,7 @@ private enum PickyHubSettingsLayout {
     static let groupLinkMaximumWidth: CGFloat = 176
     /// Bounds native popup menus without changing the width of other row controls.
     static let nativeMenuWidth: CGFloat = 180
-    static let compactIconHitTarget: CGFloat = 28
+    static let stackedRowMinimumWidth: CGFloat = 560
 }
 
 private extension View {
@@ -553,8 +556,8 @@ private struct PickyHubPickleFolderControls: View {
                                 Image(systemName: "xmark")
                                     .pickyFont(size: 10, weight: .bold)
                                     .frame(
-                                        width: PickyHubSettingsLayout.compactIconHitTarget,
-                                        height: PickyHubSettingsLayout.compactIconHitTarget
+                                        width: PickyHubTheme.Control.minimumHeight,
+                                        height: PickyHubTheme.Control.minimumHeight
                                     )
                                     .contentShape(Rectangle())
                             }
@@ -677,7 +680,7 @@ private struct PickyHubAdvancedControls: View {
     let resetState: PickyHubStatisticsResetState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
             PickyHubSettingsList {
                 PickyHubSettingsRow(title: "hub.settings.watchdog", detail: "hub.settings.watchdog.detail") {
                     Toggle("hub.settings.watchdog", isOn: Binding(
@@ -733,19 +736,45 @@ private struct PickyHubSettingsRow<Control: View>: View {
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
     @ViewBuilder let control: () -> Control
+    @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
-        HStack(alignment: .center, spacing: DS.Spacing.space4) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold).foregroundColor(PickyHubTheme.Colors.textPrimary)
-                Text(detail).pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular).foregroundColor(PickyHubTheme.Colors.textSecondary).fixedSize(horizontal: false, vertical: true)
+        Group {
+            if contentWidth < PickyHubSettingsLayout.stackedRowMinimumWidth * fontScale {
+                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+                    labels
+                    control()
+                        .frame(maxWidth: PickyHubTheme.Control.maximumFieldWidth, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .center, spacing: PickyHubTheme.Spacing.field) {
+                    labels
+                    Spacer(minLength: PickyHubTheme.Spacing.related)
+                    control()
+                        .frame(
+                            minWidth: PickyHubTheme.Control.maximumFieldWidth / 2,
+                            maxWidth: PickyHubTheme.Control.maximumFieldWidth,
+                            alignment: .trailing
+                        )
+                }
             }
-            Spacer(minLength: 12)
-            control().frame(minWidth: 160, alignment: .trailing)
         }
-        .padding(.horizontal, DS.Spacing.space4)
-        .padding(.vertical, DS.Spacing.space3)
+        .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
+        .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
         .overlay(alignment: .bottom) { Divider().overlay(PickyHubTheme.Colors.borderSoft) }
+    }
+
+    private var labels: some View {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+            Text(title)
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
+                .foregroundColor(PickyHubTheme.Colors.textPrimary)
+            Text(detail)
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
+                .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -763,8 +792,8 @@ private struct PickyHubSettingsDisclosure<Content: View>: View {
             Text(title).pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold).foregroundColor(PickyHubTheme.Colors.textSecondary)
         }
         .disclosureGroupStyle(PickySettingsDisclosureStyle())
-        .padding(DS.Spacing.space4)
-        .pickyHubCard(fill: PickyHubTheme.Colors.surface)
+        .padding(PickyHubTheme.Spacing.cardInset)
+        .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.surface)
     }
 }
 
@@ -775,8 +804,8 @@ private struct PickyHubSettingsNotice: View {
             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
             .foregroundColor(PickyHubTheme.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(DS.Spacing.space4)
-            .pickyHubCard(fill: PickyHubTheme.Colors.surface)
+            .padding(PickyHubTheme.Spacing.cardInset)
+            .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.surface)
     }
 }
 

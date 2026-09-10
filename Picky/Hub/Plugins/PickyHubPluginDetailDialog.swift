@@ -39,14 +39,14 @@ struct PickyHubPluginDetailDialog: View {
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 18)
+                .padding(.top, PickyHubTheme.Spacing.field)
 
             Text("hub.plugins.detail.useCases")
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                .padding(.top, 20)
+                .padding(.top, PickyHubTheme.Spacing.group)
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 ForEach(item.useCases, id: \.self) { useCase in
                     Label(useCase, systemImage: "circle.fill")
                         .labelStyle(PickyHubPluginUseCaseLabelStyle())
@@ -54,9 +54,9 @@ struct PickyHubPluginDetailDialog: View {
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, PickyHubTheme.Spacing.related)
 
-            HStack(spacing: 8) {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 PickyHubBadgePill(text: item.isInstalled ? L10n.t("hub.plugins.detail.installed") : L10n.t("hub.plugins.detail.notInstalled"))
                 if item.isBusy {
                     ProgressView()
@@ -64,60 +64,110 @@ struct PickyHubPluginDetailDialog: View {
                         .accessibilityLabel(Text("hub.plugins.detail.actionInProgress"))
                 }
             }
-            .padding(.top, 20)
+            .padding(.top, PickyHubTheme.Spacing.group)
 
             if let error = item.errorMessage {
                 PickyHubInlineStatus(tone: .error, message: error)
-                    .padding(.top, 16)
+                    .padding(.top, PickyHubTheme.Spacing.field)
             }
 
             if confirmsRemoval {
                 inlineRemovalConfirmation
-                    .padding(.top, 16)
+                    .padding(.top, PickyHubTheme.Spacing.field)
             }
 
-            HStack(spacing: 8) {
+            actionRow
+                .padding(.top, PickyHubTheme.Spacing.group)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(PickyHubTheme.Colors.borderSoft)
+                        .frame(height: 1)
+                }
+        }
+        .padding(PickyHubTheme.Spacing.cardInset)
+    }
+
+    private var actionRow: some View {
+        ViewThatFits(in: .horizontal) {
+            actionLayout(isVertical: false)
+            actionLayout(isVertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    @ViewBuilder
+    private func actionLayout(isVertical: Bool) -> some View {
+        if isVertical {
+            VStack(alignment: .trailing, spacing: PickyHubTheme.Spacing.related) {
+                PickyHubButton(title: "hub.plugins.detail.done", role: .secondary, action: { modalHost.dismiss() })
+                mutationButton
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        } else {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 Spacer(minLength: 0)
                 PickyHubButton(title: "hub.plugins.detail.done", role: .secondary, action: { modalHost.dismiss() })
-                if item.isInstalled {
-                    PickyHubButton(
-                        title: confirmsRemoval ? "hub.plugins.detail.confirmRemove" : "hub.plugins.detail.remove",
-                        role: .danger,
-                        isBusy: item.isBusy,
-                        action: { confirmsRemoval ? remove() : (confirmsRemoval = true) }
-                    )
-                } else {
-                    PickyHubButton(
-                        title: "hub.plugins.detail.install",
-                        role: .primary,
-                        isBusy: item.isBusy,
-                        action: onInstall
-                    )
-                }
+                mutationButton
             }
-            .padding(.top, 22)
-            .padding(.top, 15)
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(PickyHubTheme.Colors.borderSoft)
-                    .frame(height: 1)
-            }
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(20)
+    }
+
+    @ViewBuilder
+    private var mutationButton: some View {
+        if item.isInstalled {
+            PickyHubButton(
+                title: confirmsRemoval ? "hub.plugins.detail.confirmRemove" : "hub.plugins.detail.remove",
+                role: .danger,
+                isBusy: item.isBusy,
+                action: { confirmsRemoval ? remove() : (confirmsRemoval = true) }
+            )
+        } else {
+            PickyHubButton(
+                title: "hub.plugins.detail.install",
+                role: .primary,
+                isBusy: item.isBusy,
+                action: onInstall
+            )
+        }
     }
 
     private var inlineRemovalConfirmation: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text("hub.plugins.detail.remove.prompt")
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
-                .foregroundColor(PickyHubTheme.Colors.textPrimary)
-            Spacer(minLength: 8)
-            PickyHubButton(title: "common.cancel", role: .secondary, action: { confirmsRemoval = false })
-            PickyHubButton(title: "hub.plugins.detail.remove", role: .danger, isBusy: item.isBusy, action: remove)
+        ViewThatFits(in: .horizontal) {
+            removalConfirmationLayout(isVertical: false)
+            removalConfirmationLayout(isVertical: true)
         }
-        .padding(12)
+        .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
+        .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
         .pickyHubCard(fill: PickyHubTheme.Colors.dangerTint, border: PickyHubTheme.Colors.danger)
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func removalConfirmationLayout(isVertical: Bool) -> some View {
+        if isVertical {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                removalPrompt
+                HStack(spacing: PickyHubTheme.Spacing.related) {
+                    PickyHubButton(title: "common.cancel", role: .secondary, action: { confirmsRemoval = false })
+                    PickyHubButton(title: "hub.plugins.detail.remove", role: .danger, isBusy: item.isBusy, action: remove)
+                }
+            }
+        } else {
+            HStack(alignment: .center, spacing: PickyHubTheme.Spacing.related) {
+                removalPrompt
+                Spacer(minLength: PickyHubTheme.Spacing.related)
+                PickyHubButton(title: "common.cancel", role: .secondary, action: { confirmsRemoval = false })
+                PickyHubButton(title: "hub.plugins.detail.remove", role: .danger, isBusy: item.isBusy, action: remove)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var removalPrompt: some View {
+        Text("hub.plugins.detail.remove.prompt")
+            .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+            .foregroundColor(PickyHubTheme.Colors.textPrimary)
     }
 
     private func remove() {
@@ -128,7 +178,7 @@ struct PickyHubPluginDetailDialog: View {
 
 private struct PickyHubPluginUseCaseLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: PickyHubTheme.Spacing.related) {
             configuration.icon
                 .pickyFont(size: 5, weight: .bold)
                 .accessibilityHidden(true)

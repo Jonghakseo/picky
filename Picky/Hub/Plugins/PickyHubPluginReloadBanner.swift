@@ -10,7 +10,7 @@ struct PickyHubPluginReloadBanner: View {
     let onReload: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             if controller.hasPendingChanges {
                 pendingCard
                 if let error = controller.lastError {
@@ -18,38 +18,75 @@ struct PickyHubPluginReloadBanner: View {
                 }
             } else if let result = controller.lastResult {
                 PickyHubInlineStatus(tone: .success, message: summary(for: result))
-                    .padding(12)
+                    .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
+                    .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
                     .pickyHubCard(fill: PickyHubTheme.Colors.successBackground, border: PickyHubTheme.Colors.success)
             }
         }
     }
 
     private var pendingCard: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .pickyFont(size: 16, weight: .semibold)
-                .foregroundColor(PickyHubTheme.Colors.action)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("hub.plugins.reload.title")
-                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
-                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                Text("hub.plugins.reload.message")
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
-                    .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            PickyHubButton(
-                title: "hub.plugins.reload.action",
-                role: .primary,
-                systemImage: "arrow.clockwise",
-                isBusy: controller.isReloading,
-                action: onReload
-            )
+        ViewThatFits(in: .horizontal) {
+            pendingLayout(isVertical: false)
+            pendingLayout(isVertical: true)
         }
-        .padding(12)
+        .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
+        .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
         .pickyHubCard(fill: PickyHubTheme.Colors.actionTint, border: PickyHubTheme.Colors.action.opacity(0.32))
+    }
+
+    @ViewBuilder
+    private func pendingLayout(isVertical: Bool) -> some View {
+        if isVertical {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                reloadDetails
+                reloadButton
+            }
+        } else {
+            HStack(alignment: .center, spacing: PickyHubTheme.Spacing.field) {
+                reloadIcon
+                reloadCopy
+                Spacer(minLength: PickyHubTheme.Spacing.related)
+                reloadButton
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var reloadIcon: some View {
+        Image(systemName: "arrow.triangle.2.circlepath")
+            .pickyFont(size: 16, weight: .semibold)
+            .foregroundColor(PickyHubTheme.Colors.action)
+            .accessibilityHidden(true)
+    }
+
+    private var reloadDetails: some View {
+        HStack(alignment: .top, spacing: PickyHubTheme.Spacing.related) {
+            reloadIcon
+            reloadCopy
+        }
+    }
+
+    private var reloadCopy: some View {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+            Text("hub.plugins.reload.title")
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
+                .foregroundColor(PickyHubTheme.Colors.textPrimary)
+            Text("hub.plugins.reload.message")
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var reloadButton: some View {
+        PickyHubButton(
+            title: "hub.plugins.reload.action",
+            role: .primary,
+            systemImage: "arrow.clockwise",
+            isBusy: controller.isReloading,
+            action: onReload
+        )
     }
 
     private func summary(for result: PickyPluginsReloadedEvent) -> String {

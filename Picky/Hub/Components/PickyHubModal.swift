@@ -142,7 +142,7 @@ struct PickyHubModalOverlay<Content: View>: View {
                         x: 0,
                         y: PickyHubTheme.Shadow.modalY
                     )
-                    .padding(24)
+                    .padding(PickyHubTheme.Spacing.group)
                     .onExitCommand { host.dismiss() }
                     .accessibilityElement(children: .contain)
                     .accessibilityAddTraits(.isModal)
@@ -164,7 +164,7 @@ struct PickyHubModalHeader: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 if let meta, !meta.isEmpty {
                     Text(meta)
                         .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
@@ -195,13 +195,13 @@ struct PickyHubModalCloseButton: View {
             Image(systemName: "xmark")
                 .pickyFont(size: 12, weight: .bold)
                 .foregroundColor(isHovering ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textTertiary)
-                .frame(width: 30, height: 30)
+                .frame(width: PickyHubTheme.Control.minimumHeight, height: PickyHubTheme.Control.minimumHeight)
                 .background(Circle().fill(isHovering ? PickyHubTheme.Colors.navHighlight : Color.clear))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .focused($isFocused)
-        .pickyHubFocusRing(isFocused: isFocused, cornerRadius: 15)
+        .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Control.minimumHeight / 2)
         .onHover { isHovering = $0 }
         .help(Text("common.close"))
         .accessibilityLabel(Text("common.close"))
@@ -238,9 +238,9 @@ struct PickyHubConfirmDialog: View {
                     .focused($cancelFocused)
                 PickyHubButton(title: confirmTitle, role: confirmRole, isBusy: isBusy, action: onConfirm)
             }
-            .padding(.top, 20)
+            .padding(.top, PickyHubTheme.Spacing.field)
         }
-        .padding(20)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .onAppear { cancelFocused = true }
     }
 }

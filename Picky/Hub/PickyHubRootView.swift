@@ -119,7 +119,7 @@ struct PickyHubFeedbackDialog: View {
     @EnvironmentObject private var modalHost: PickyHubModalHost
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
             PickyHubModalHeader(
                 meta: L10n.t("settings.section.feedback.subtitle"),
                 title: L10n.t("settings.section.feedback.title"),
@@ -127,6 +127,6 @@ struct PickyHubFeedbackDialog: View {
             )
             CompanionPanelFeedbackView(viewModel: viewModel)
         }
-        .padding(20)
+        .padding(PickyHubTheme.Spacing.cardInset)
     }
 }

@@ -13,8 +13,8 @@ struct PickyHubWorkInsightCards: View {
     @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Layout.cardGap), count: PickyHubGridPolicy.columnCount(for: contentWidth / fontScale))
-        LazyVGrid(columns: columns, spacing: PickyHubTheme.Layout.cardGap) {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Spacing.field), count: PickyHubGridPolicy.columnCount(for: contentWidth / fontScale, spacing: PickyHubTheme.Spacing.field))
+        LazyVGrid(columns: columns, spacing: PickyHubTheme.Spacing.field) {
             PickyHubWorkInsightCard(
                 eyebrow: "hub.dashboard.insight.topCategory",
                 title: insights.topCategory?.category.title ?? L10n.t("hub.dashboard.insight.classifying"),
@@ -73,6 +73,7 @@ private struct PickyHubWorkInsightCard: View {
     let badges: [String]
     var isPrimary = false
     var action: (() -> Void)?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
@@ -89,7 +90,7 @@ private struct PickyHubWorkInsightCard: View {
                 cardBody
             }
         }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
     }
 
     private var badgeViews: some View {
@@ -99,13 +100,12 @@ private struct PickyHubWorkInsightCard: View {
     }
 
     private var cardBody: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(eyebrow)
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
             Text(title)
                 .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
                 .tracking(-0.8)
-                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: DS.Spacing.space1) { badgeViews }
@@ -114,8 +114,7 @@ private struct PickyHubWorkInsightCard: View {
         }
         .foregroundColor(isPrimary ? PickyHubTheme.Colors.textOnAction : PickyHubTheme.Colors.textPrimary)
         .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .background(
             RoundedRectangle(cornerRadius: PickyHubTheme.Radius.cardCompact, style: .continuous)
                 .fill(isPrimary ? PickyHubTheme.Colors.action : (isHovering ? PickyHubTheme.Colors.navHighlight : PickyHubTheme.Colors.surface))

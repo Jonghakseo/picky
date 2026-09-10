@@ -144,3 +144,10 @@ plugin versions are omitted when only package declarations are provided. The
 ordinary deterministic `hub` gallery continues to use its synthetic fixtures.
 
 Settings disclosure review also exports `settings-full/disclosure-expanded-dark.png` and `disclosure-expanded-light.png`. These render the shared production disclosure style with multi-line explanation content expanded; unlike the full-page scenes, they are component renders and do not establish live pointer/keyboard activation.
+
+The Hub component-rule audit exports `component-audit/<page>-1020-100.png` and
+`<page>-760-130.png` for all seven pages. These use the production root with a
+full-height viewport (3200pt wide-layout height; 2400pt narrow/enlarged height)
+to inspect content below the initial screen and 130% text reflow. The normal
+27-scene manifest remains unchanged. Tall viewports do not establish ordinary
+window scroll behavior; use the normal-size scenes alongside them.

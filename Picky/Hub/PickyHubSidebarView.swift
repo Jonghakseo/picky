@@ -22,24 +22,31 @@ struct PickyHubSidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Native traffic lights occupy the top-left corner of the
             // full-size content view; keep the wordmark clear of them.
-            Image("PickyHubBrandLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 128)
-                .padding(.top, 52)
-                .padding(.leading, 4)
-                .accessibilityLabel(Text("hub.brand.accessibilityLabel"))
-                .accessibilityAddTraits(.isButton)
-                .onTapGesture { navigator.select(.dashboard) }
+            Button { navigator.select(.dashboard) } label: {
+                Image("PickyHubBrandLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 128)
+                    .frame(minHeight: PickyHubTheme.Control.minimumHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focused($focusedControl, equals: "home")
+            .pickyHubFocusRing(isFocused: focusedControl == "home", cornerRadius: PickyHubTheme.Radius.control)
+            .padding(.top, 52)
+            .padding(.leading, DS.Spacing.space1)
+            .accessibilityLabel(Text("hub.brand.accessibilityLabel"))
 
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(PickyHubPage.allCases) { page in
-                    PickyHubNavRow(page: page, isSelected: navigator.selectedPage == page) {
-                        navigator.select(page)
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+                    ForEach(PickyHubPage.allCases) { page in
+                        PickyHubNavRow(page: page, isSelected: navigator.selectedPage == page) {
+                            navigator.select(page)
+                        }
                     }
                 }
             }
-            .padding(.top, 35)
+            .padding(.top, PickyHubTheme.Spacing.group)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("hub.nav.accessibilityLabel"))
 
@@ -69,6 +76,7 @@ private struct PickyHubNavRow: View {
     let page: PickyHubPage
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
@@ -80,12 +88,12 @@ private struct PickyHubNavRow: View {
                     .frame(width: 18, height: 18)
                 Text(page.titleKey)
                     .pickyFont(size: PickyHubTheme.Typography.nav, weight: .semibold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             .foregroundColor(isSelected ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textSecondary)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+            .padding(.vertical, DS.Spacing.space1)
             .frame(minHeight: PickyHubTheme.Layout.navRowMinHeight)
             .background(
                 RoundedRectangle(cornerRadius: PickyHubTheme.Radius.nav, style: .continuous)
@@ -97,7 +105,7 @@ private struct PickyHubNavRow: View {
         .focused($isFocused)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.nav)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
         .accessibilityLabel(Text(page.titleKey))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
@@ -225,9 +233,14 @@ struct PickyHubSidebarFooter: View {
             Image(systemName: systemName)
                 .pickyFont(size: 10.5, weight: .semibold)
                 .foregroundColor(appearanceStore.mode == target ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textTertiary)
-                .frame(width: 14, height: 14)
+                .frame(width: PickyHubTheme.Control.minimumHeight, height: PickyHubTheme.Control.minimumHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control)
+                        .fill(appearanceStore.mode == target ? PickyHubTheme.Colors.navHighlight : Color.clear)
+                )
+                .contentShape(Rectangle())
         }
-        .buttonStyle(CompanionPanelIconActionStyle(isSelected: appearanceStore.mode == target))
+        .buttonStyle(PickyHubPressStyle())
         .help(Text(label))
         .accessibilityLabel(Text(label))
         .accessibilityAddTraits(appearanceStore.mode == target ? [.isSelected] : [])
@@ -241,6 +254,7 @@ private struct PickyHubFooterButton: View {
     @FocusState.Binding var focusedControl: String?
     let focusID: String
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     private var isFocused: Bool { focusedControl == focusID }
@@ -253,11 +267,11 @@ private struct PickyHubFooterButton: View {
                     .frame(width: 14)
                 Text(title)
                     .pickyFont(size: 12, weight: .medium)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(foreground)
             .padding(.horizontal, 8)
-            .frame(minHeight: 28)
+            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
             .background(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                     .fill(isHovering ? PickyHubTheme.Colors.navHighlight : Color.clear)
@@ -268,7 +282,7 @@ private struct PickyHubFooterButton: View {
         .focused($focusedControl, equals: focusID)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: DS.CornerRadius.small)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
         .help(Text(title))
         .accessibilityLabel(Text(title))
     }

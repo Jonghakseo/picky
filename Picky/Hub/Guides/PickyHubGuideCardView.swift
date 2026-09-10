@@ -9,6 +9,7 @@ struct PickyHubGuideCardView: View {
     let entry: PickyHubGuideEntry
     var isFocused = false
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     var body: some View {
@@ -18,41 +19,44 @@ struct PickyHubGuideCardView: View {
                     .aspectRatio(16 / 9, contentMode: .fit)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 7) {
-                        Text(entry.kind.titleKey)
+                    HStack(spacing: PickyHubTheme.Spacing.related) {
+                        Text(LocalizedStringKey(entry.kind.titleKey))
                         Text(displayDate)
                     }
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
 
                     Text(entry.title.resolved(for: LocaleManager.shared.effectiveLocale))
-                        .pickyFont(size: 16, weight: .bold)
+                        .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
                         .tracking(-0.4)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
                         .multilineTextAlignment(.leading)
-                        .padding(.top, 8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, PickyHubTheme.Spacing.related)
 
                     Text(entry.summary.resolved(for: LocaleManager.shared.effectiveLocale))
                         .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                         .multilineTextAlignment(.leading)
-                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 5)
+                        .padding(.top, PickyHubTheme.Spacing.related)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
+                .padding(PickyHubTheme.Spacing.cardInset)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(PickyHubTheme.Colors.canvas)
-            .pickyHubCard(radius: PickyHubTheme.Radius.card, border: isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.border)
+            .pickyHubCard(
+                radius: PickyHubTheme.Radius.card,
+                fill: PickyHubTheme.Colors.surface,
+                border: isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.border
+            )
             .clipShape(RoundedRectangle(cornerRadius: PickyHubTheme.Radius.card, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: PickyHubTheme.Radius.card, style: .continuous))
         }
         .buttonStyle(.plain)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.card)
         .onHover { isHovering = $0 }
-        .animation(PickyHubTheme.Motion.hover, value: isHovering)
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint(Text("hub.guides.card.playHint"))
     }

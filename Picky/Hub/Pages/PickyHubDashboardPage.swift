@@ -66,13 +66,13 @@ struct PickyHubDashboardPage: View {
 
     private var greetingCard: some View {
         let greeting = PickyHubDashboardPresentation.greeting(date: Date(), locale: LocaleManager.shared.effectiveLocale)
-        return HStack(spacing: 17) {
+        return HStack(spacing: PickyHubTheme.Spacing.field) {
             Image("PickyHubSymbol")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 48, height: 48)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 Text(greeting.title)
                     .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .bold)
                     .tracking(-0.5)
@@ -83,35 +83,26 @@ struct PickyHubDashboardPage: View {
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
             }
         }
-        .padding(.horizontal, 21)
-        .padding(.vertical, 19)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.canvas, shadow: true)
+        .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.canvas)
         .accessibilityElement(children: .combine)
     }
 
     private var prerequisitesCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.group) {
             if case .installedStale = shellCommandStatus {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .pickyFont(size: 13, weight: .semibold)
-                        .foregroundColor(PickyHubTheme.Colors.warning)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("status.shellCommand.stale.title")
-                            .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
-                            .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                        Text("status.shellCommand.stale.subtitle")
-                            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
-                            .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                    }
-                    Spacer(minLength: 8)
-                    PickyHubButton(title: "status.shellCommand.stale.reinstall", role: .secondary) {
-                        ShellCommandMenuController.shared.showInstallerAlert()
+                ViewThatFits(in: .horizontal) {
+                    staleShellCommandRow
+                    VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                        staleShellCommandDetails
+                        PickyHubButton(title: "status.shellCommand.stale.reinstall", role: .secondary) {
+                            ShellCommandMenuController.shared.showInstallerAlert()
+                        }
                     }
                 }
-                .padding(12)
+                .padding(PickyHubTheme.Spacing.rowVertical)
+                .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
                 .pickyHubCard(fill: PickyHubTheme.Colors.surface, border: PickyHubTheme.Colors.warning)
             }
             if !permissions.allGranted {
@@ -119,9 +110,36 @@ struct PickyHubDashboardPage: View {
                 CompanionPanelPrerequisitesView(permissions: permissions)
             }
         }
-        .padding(16)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .pickyHubCard(radius: PickyHubTheme.Radius.card)
         .accessibilityElement(children: .contain)
+    }
+
+    private var staleShellCommandRow: some View {
+        HStack(alignment: .top, spacing: PickyHubTheme.Spacing.related) {
+            staleShellCommandDetails
+            Spacer(minLength: PickyHubTheme.Spacing.related)
+            PickyHubButton(title: "status.shellCommand.stale.reinstall", role: .secondary) {
+                ShellCommandMenuController.shared.showInstallerAlert()
+            }
+        }
+    }
+
+    private var staleShellCommandDetails: some View {
+        HStack(alignment: .top, spacing: PickyHubTheme.Spacing.related) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .pickyFont(size: 13, weight: .semibold)
+                .foregroundColor(PickyHubTheme.Colors.warning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+                Text("status.shellCommand.stale.title")
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                Text("status.shellCommand.stale.subtitle")
+                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                    .foregroundColor(PickyHubTheme.Colors.textSecondary)
+            }
+        }
     }
 
     private var workSummary: some View {
@@ -136,7 +154,7 @@ struct PickyHubDashboardPage: View {
             Text(PickyHubDashboardPresentation.workScope(filter: statisticsStore.filter))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                .padding(.bottom, 12)
+                .padding(.bottom, PickyHubTheme.Spacing.field)
             switch statisticsStore.state {
             case .idle, .loading:
                 PickyHubLoadingRow(message: "hub.stats.loading")
@@ -144,7 +162,7 @@ struct PickyHubDashboardPage: View {
                 PickyHubInlineStatus(tone: .error, message: message, actionTitle: "hub.common.retry") {
                     statisticsStore.refresh()
                 }
-                .padding(16)
+                .padding(PickyHubTheme.Spacing.cardInset)
                 .pickyHubCard()
             case .loaded(let snapshot):
                 let records = PickyHubStatisticsAggregator.records(in: snapshot, filter: statisticsStore.filter)
@@ -165,7 +183,7 @@ struct PickyHubDashboardPage: View {
     }
 
     private var dashboardEmptyWorkCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(PickyHubDashboardPresentation.emptyWorkTitle(period: statisticsStore.filter.period))
                 .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .bold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
@@ -176,7 +194,7 @@ struct PickyHubDashboardPage: View {
                 navigator.select(.quickStart)
             }
         }
-        .padding(20)
+        .padding(PickyHubTheme.Spacing.cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pickyHubCard(radius: PickyHubTheme.Radius.card)
     }
@@ -192,7 +210,7 @@ struct PickyHubDashboardPage: View {
             }
             if guides.isEmpty {
                 PickyHubInlineStatus(tone: .neutral, message: L10n.t("hub.dashboard.guides.empty"))
-                    .padding(16)
+                    .padding(PickyHubTheme.Spacing.cardInset)
                     .pickyHubCard()
             } else {
                 guideCarousel
@@ -299,10 +317,10 @@ struct PickyHubDashboardPage: View {
                                  actionTitle: quickStartLauncher.retryWillOpenExistingSession ? "hub.quickStart.recover" : "hub.common.retry") {
                 Task { await quickStartLauncher.retry() }
             }
-            .padding(.top, 12)
+            .padding(.top, PickyHubTheme.Spacing.field)
         case .started:
             PickyHubInlineStatus(tone: .success, message: L10n.t("hub.dashboard.quickStart.started"))
-                .padding(.top, 12)
+                .padding(.top, PickyHubTheme.Spacing.field)
         }
     }
 
@@ -317,7 +335,7 @@ struct PickyHubDashboardPage: View {
             }
             if pluginCatalog.recommended.isEmpty {
                 PickyHubInlineStatus(tone: .neutral, message: L10n.t("hub.dashboard.plugins.empty"))
-                    .padding(16)
+                    .padding(PickyHubTheme.Spacing.cardInset)
                     .pickyHubCard()
             } else {
                 VStack(spacing: 0) {
@@ -366,33 +384,26 @@ struct PickyHubDashboardPage: View {
             }
             if let error = pluginCatalog.lastError {
                 PickyHubInlineStatus(tone: .error, message: error)
-                    .padding(.top, 12)
+                    .padding(.top, PickyHubTheme.Spacing.related)
             } else if let feedback = pluginCatalog.feedback {
                 PickyHubInlineStatus(tone: .success, message: feedback)
-                    .padding(.top, 12)
+                    .padding(.top, PickyHubTheme.Spacing.related)
             }
         }
     }
 
     private var shareSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Image(systemName: "square.and.arrow.up")
-                .pickyFont(size: 26, weight: .semibold)
-                .foregroundColor(PickyHubTheme.Colors.action)
-                .frame(height: 31)
-                .accessibilityHidden(true)
-                .padding(.bottom, 6)
-            Text("hub.dashboard.share.title")
-                .pickyFont(size: PickyHubTheme.Typography.sectionTitle, weight: .heavy)
-                .tracking(-1)
-                .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                .accessibilityAddTraits(.isHeader)
+            PickyHubSectionHeading(
+                systemImage: "square.and.arrow.up",
+                title: "hub.dashboard.share.title"
+            )
             Text("hub.dashboard.share.message")
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .frame(maxWidth: 320, alignment: .leading)
-                .padding(.top, 12)
-            HStack(spacing: 8) {
+                .padding(.top, PickyHubTheme.Spacing.field)
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 PickyHubIconCircleButton(systemImage: "doc.on.doc", accessibilityLabel: "hub.dashboard.share.copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(PickyHubShareLinks.homepage.absoluteString, forType: .string)
@@ -423,10 +434,10 @@ struct PickyHubDashboardPage: View {
                     NSWorkspace.shared.open(PickyHubShareLinks.linkedIn)
                 }
             }
-            .padding(.top, 17)
+            .padding(.top, PickyHubTheme.Spacing.field)
             if let shareFeedback {
                 PickyHubInlineStatus(tone: .success, message: shareFeedback)
-                    .padding(.top, 8)
+                    .padding(.top, PickyHubTheme.Spacing.related)
             }
         }
     }
@@ -463,16 +474,16 @@ private struct PickyHubDashboardGuideCard: View {
                 }
                 .frame(height: 138)
                 .clipped()
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                     Text(entry.title.resolved(for: locale))
                         .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(PickyHubDashboardPresentation.relativeGuideDate(entry.publishedDate, locale: locale))
                         .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                         .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 }
-                .padding(13)
+                .padding(PickyHubTheme.Spacing.cardInset)
             }
             .frame(width: 246, alignment: .leading)
             .background(PickyHubTheme.Colors.surface)
@@ -502,19 +513,19 @@ private struct PickyHubDashboardQuickStartGrid: View {
         ))
         LazyVGrid(columns: columns, spacing: PickyHubTheme.Layout.quickGap) {
             ForEach(workflows) { workflow in
-                HStack(spacing: 14) {
+                HStack(spacing: PickyHubTheme.Spacing.field) {
                     PickyHubPlaceholderVisual(systemImage: workflow.systemImage)
                         .frame(width: 112)
                         .frame(maxHeight: .infinity)
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                         Text(workflow.titleKey)
                             .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
                             .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                         Text(workflow.descriptionKey)
                             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                             .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 4)
                         PickyHubPillButton(
                             title: "hub.dashboard.quickStart.start",
@@ -527,7 +538,7 @@ private struct PickyHubDashboardQuickStartGrid: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(minHeight: 150)
-                .padding(12)
+                .padding(PickyHubTheme.Spacing.cardInset)
                 .pickyHubCard(radius: PickyHubTheme.Radius.card)
             }
         }
@@ -548,9 +559,9 @@ private struct PickyHubDashboardPluginRow: View {
     @State private var isHoveringInstalled = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-          HStack(spacing: 12) {
-            HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+          HStack(spacing: PickyHubTheme.Spacing.field) {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
                 Text(item.title)
                     .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
@@ -568,7 +579,7 @@ private struct PickyHubDashboardPluginRow: View {
             Text(item.summary)
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             if item.isInstalled {
                 Button(action: onRemove) {
@@ -593,8 +604,8 @@ private struct PickyHubDashboardPluginRow: View {
               PickyHubInlineStatus(tone: .error, message: error)
           }
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 8)
+        .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
+        .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
     }
 }
 

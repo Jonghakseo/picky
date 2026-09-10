@@ -53,7 +53,12 @@ final class PickyStatusItemController: NSObject, NSMenuDelegate {
     }
 
     func showHub() {
-        hubWindowController.show(fromDisplayID: statusItemDisplayID)
+        // Status items can be mirrored across menu bars; their backing window
+        // is not necessarily on the display where the user clicked.
+        let clickedDisplayID = NSScreen.screens.first {
+            $0.frame.contains(NSEvent.mouseLocation)
+        }?.pickyDisplayID
+        hubWindowController.show(fromDisplayID: clickedDisplayID ?? statusItemDisplayID)
     }
 
     // MARK: - Status item

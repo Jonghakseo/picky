@@ -42,6 +42,24 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
         guard let window else { return }
         foregroundContextPreserver.recordExternalForegroundBeforeHubActivation(hubIsVisible: isVisible)
         startTrackingExternalActivations()
+        // Apply the explicit destination after autosave restoration, including
+        // when reusing an existing window. Deep links keep the current frame.
+        if let displayID,
+           let screen = NSScreen.screens.first(where: { $0.pickyDisplayID == displayID }),
+           window.screen?.pickyDisplayID != displayID {
+            let visible = screen.visibleFrame
+            let size = NSSize(
+                width: min(window.frame.width, visible.width),
+                height: min(window.frame.height, visible.height)
+            )
+            let frame = NSRect(
+                x: visible.midX - size.width / 2,
+                y: visible.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+            window.setFrame(frame, display: true)
+        }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         dependencies.navigator.isWindowVisible = true

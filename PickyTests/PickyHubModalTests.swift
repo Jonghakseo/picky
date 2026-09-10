@@ -120,7 +120,6 @@ struct PickyHubModalTests {
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
             styleMask: [.titled], backing: .buffered, defer: false
         )
-        window.isReleasedWhenClosed = false
         let content = NSView(frame: window.contentView?.bounds ?? .zero)
         let trigger = NSView(frame: content.bounds)
         let modalResponder = NSView(frame: content.bounds)
@@ -147,7 +146,6 @@ struct PickyHubModalTests {
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
             styleMask: [.titled], backing: .buffered, defer: false
         )
-        window.isReleasedWhenClosed = false
         let content = NSView(frame: window.contentView?.bounds ?? .zero)
         let trigger = NSView(frame: content.bounds)
         let modalResponder = NSView(frame: content.bounds)
@@ -179,8 +177,6 @@ struct PickyHubModalTests {
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
             styleMask: [.titled], backing: .buffered, defer: false
         )
-        firstWindow.isReleasedWhenClosed = false
-        secondWindow.isReleasedWhenClosed = false
         let firstContent = NSView(frame: firstWindow.contentView?.bounds ?? .zero)
         let trigger = NSView(frame: firstContent.bounds)
         firstContent.addSubview(trigger)

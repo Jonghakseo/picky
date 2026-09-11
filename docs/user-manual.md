@@ -46,6 +46,7 @@ Hub behavior:
 - The first open from a menu-bar display centers Hub on that display. Hub remembers its frame.
 - Summoning an already open or minimized Hub brings it forward without moving it, even when you click the menu-bar icon on another display. The selected page and each visited page's scroll state remain available while the window stays alive.
 - Close Hub with the title-bar close control or `Cmd + W`. This closes the window, not Picky or its Pickles.
+- Read-only descriptions, paths, errors, and statistics values can be selected and copied. Navigation labels, buttons, and clickable cards keep their normal interaction instead of starting text selection.
 - Hub is excluded from Picky's screen captures. When you begin a voice/context capture, Picky returns focus to the external app you were using.
 
 ### 2.1 Sidebar pages
@@ -499,7 +500,7 @@ The composer bottom action row includes two independent controls for successful 
 
 Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles. **Hub → Settings → Notifications, permissions, and privacy** supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
 
-Both defaults are off on a fresh install, so background work stays quiet until you enable a channel.
+Both defaults are off on a fresh install, so background work stays quiet until you enable a channel. Clicking a delivered macOS notification opens that Pickle in the HUD without opening Hub; reopening Picky from its Dock icon still brings Hub forward.
 
 ### 8.10 Inline questions and confirmations
 

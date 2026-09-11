@@ -556,40 +556,33 @@ private struct PickyHubSettingsGroupBadge: View {
     @State private var isHovering = false
     @FocusState private var isFocused: Bool
 
+    private var badgeShape: RoundedRectangle {
+        RoundedRectangle(
+            cornerRadius: PickyHubTheme.Control.minimumHeight / 2,
+            style: .circular
+        )
+    }
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: PickyHubTheme.Spacing.related) {
-                Circle()
-                    .fill(PickyHubTheme.Colors.action)
-                    .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
-                    .opacity(isSelected ? 1 : 0)
-                    .accessibilityHidden(true)
-                Text(group.titleKey)
-                    .pickyFont(
-                        size: PickyHubTheme.Typography.caption,
-                        weight: isSelected ? .semibold : .regular
-                    )
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            .foregroundColor(isSelected || isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary)
-            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
-            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(
-                        isSelected
-                            ? PickyHubTheme.Colors.actionTint
-                            : (isHovering ? PickyHubTheme.Colors.navHighlight : Color.clear)
-                    )
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(
-                        isSelected || isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.borderSoft,
-                        lineWidth: 1
-                    )
-            )
-            .contentShape(Capsule(style: .continuous))
+            Text(group.titleKey)
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
+                .fixedSize(horizontal: true, vertical: false)
+                .foregroundColor(isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary)
+                .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+                .frame(minHeight: PickyHubTheme.Control.minimumHeight)
+                .background(
+                    badgeShape
+                        .fill(isHovering ? PickyHubTheme.Colors.navHighlight : Color.clear)
+                )
+                .overlay(
+                    badgeShape
+                        .strokeBorder(
+                            isSelected || isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.borderSoft,
+                            lineWidth: 1
+                        )
+                )
+                .contentShape(badgeShape)
         }
         .buttonStyle(PickyHubPressStyle())
         .focused($isFocused)

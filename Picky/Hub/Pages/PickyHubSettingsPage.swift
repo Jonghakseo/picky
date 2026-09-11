@@ -12,7 +12,6 @@ struct PickyHubSettingsPage: View {
     @ObservedObject private var permissions: PickyPermissionMonitor
     @EnvironmentObject private var navigator: PickyHubNavigator
     @EnvironmentObject private var modalHost: PickyHubModalHost
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var statisticsResetState: PickyHubStatisticsResetState = .idle
     @State private var onboardingReplayState: PickyHubOnboardingReplayState = .idle
     @State private var onboardingReplayTransaction: PickyHubOnboardingReplaySaveTransaction?
@@ -21,6 +20,8 @@ struct PickyHubSettingsPage: View {
     @State private var activeSettingsGroup: PickyHubSettingsGroup = .general
     @State private var settingsGroupOffsets: [String: CGFloat] = [:]
     @State private var pinnedNavigationHeight: CGFloat = 0
+    @State private var pendingGroupScrollTarget: String?
+    @State private var scrollCoordinator = PickyHubSettingsScrollCoordinator()
     @FocusState private var focusedSettingsControl: String?
 
     private static let scrollCoordinateSpace = "PickyHubSettingsScroll"
@@ -74,21 +75,33 @@ struct PickyHubSettingsPage: View {
                                 }
                             }
                         } header: {
-                            groupLinks(proxy)
-                                .padding(.vertical, DS.Spacing.space3)
-                                .background(PickyHubTheme.Colors.canvas)
-                                .background {
-                                    GeometryReader { geometry in
-                                        Color.clear.preference(
-                                            key: PickyHubSettingsNavigationHeightPreference.self,
-                                            value: geometry.size.height
-                                        )
-                                    }
+                            VStack(alignment: .leading, spacing: 0) {
+                                groupLinks(proxy)
+                                    .padding(.vertical, DS.Spacing.space3)
+                                Divider().overlay(PickyHubTheme.Colors.borderSoft)
+                                Color.clear.frame(height: PickyHubTheme.Spacing.field)
+                            }
+                            .background {
+                                PickyHubTheme.Colors.canvas
+                                    .padding(
+                                        .horizontal,
+                                        -PickyHubTheme.Layout.contentHorizontalPadding
+                                    )
+                            }
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(
+                                        key: PickyHubSettingsNavigationHeightPreference.self,
+                                        value: geometry.size.height
+                                    )
                                 }
-                                .overlay(alignment: .bottom) {
-                                    Divider().overlay(PickyHubTheme.Colors.borderSoft)
-                                }
-                                .zIndex(1)
+                            }
+                            .zIndex(1)
+                        }
+                    }
+                    .background {
+                        PickyHubSettingsScrollViewResolver { scrollView in
+                            scrollCoordinator.attach(to: scrollView)
                         }
                     }
                     .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
@@ -105,10 +118,12 @@ struct PickyHubSettingsPage: View {
                 .onPreferenceChange(PickyHubSettingsGroupOffsetPreference.self) { offsets in
                     settingsGroupOffsets = offsets
                     updateActiveSettingsGroup()
+                    applyPendingGroupScrollAdjustment(using: offsets)
                 }
                 .onPreferenceChange(PickyHubSettingsNavigationHeightPreference.self) { height in
                     pinnedNavigationHeight = height
                     updateActiveSettingsGroup()
+                    applyPendingGroupScrollAdjustment(using: settingsGroupOffsets)
                 }
             }
             // The full-size transparent titlebar lets scroll content underlap its
@@ -250,9 +265,25 @@ struct PickyHubSettingsPage: View {
     }
 
     private func scrollTo(_ target: String, with proxy: ScrollViewProxy) {
-        withAnimation(reduceMotion ? nil : PickyHubTheme.Motion.page) {
-            proxy.scrollTo(target, anchor: .top)
+        pendingGroupScrollTarget = PickyHubSettingsGroup.allCases.contains { $0.id == target }
+            ? target
+            : nil
+        proxy.scrollTo(target, anchor: .top)
+    }
+
+    private func applyPendingGroupScrollAdjustment(using offsets: [String: CGFloat]) {
+        guard let target = pendingGroupScrollTarget,
+              let targetOffset = offsets[target],
+              pinnedNavigationHeight > 0
+        else { return }
+
+        let clearance = pinnedNavigationHeight + PickyHubTheme.Spacing.field
+        if targetOffset >= clearance - 0.5 {
+            pendingGroupScrollTarget = nil
+            return
         }
+        guard scrollCoordinator.align(targetOffset: targetOffset, below: clearance) else { return }
+        pendingGroupScrollTarget = nil
     }
 
     private func updateActiveSettingsGroup() {
@@ -554,7 +585,7 @@ private struct PickyHubSettingsGroupBadge: View {
             .overlay(
                 Capsule(style: .continuous)
                     .stroke(
-                        isSelected || isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.border,
+                        isSelected || isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.borderSoft,
                         lineWidth: 1
                     )
             )
@@ -567,6 +598,64 @@ private struct PickyHubSettingsGroupBadge: View {
         .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
         .accessibilityLabel(Text(group.titleKey))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct PickyHubSettingsScrollViewResolver: NSViewRepresentable {
+    let onResolve: (NSScrollView) -> Void
+
+    func makeNSView(context: Context) -> PickyHubSettingsScrollHostView {
+        let view = PickyHubSettingsScrollHostView()
+        view.onResolve = onResolve
+        return view
+    }
+
+    func updateNSView(_ nsView: PickyHubSettingsScrollHostView, context: Context) {
+        nsView.onResolve = onResolve
+        nsView.resolve()
+    }
+
+    static func dismantleNSView(_ nsView: PickyHubSettingsScrollHostView, coordinator: ()) {
+        nsView.onResolve = nil
+    }
+}
+
+private final class PickyHubSettingsScrollHostView: NSView {
+    var onResolve: ((NSScrollView) -> Void)?
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        resolve()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        resolve()
+    }
+
+    func resolve() {
+        guard let scrollView = enclosingScrollView else { return }
+        onResolve?(scrollView)
+    }
+}
+
+@MainActor
+private final class PickyHubSettingsScrollCoordinator {
+    private weak var scrollView: NSScrollView?
+
+    func attach(to scrollView: NSScrollView) {
+        self.scrollView = scrollView
+    }
+
+    func align(targetOffset: CGFloat, below clearance: CGFloat) -> Bool {
+        guard targetOffset < clearance - 0.5, let scrollView else { return false }
+        let clipView = scrollView.contentView
+        let currentOrigin = clipView.bounds.origin
+        let minimumY = -scrollView.contentInsets.top
+        let adjustedY = max(minimumY, currentOrigin.y - (clearance - targetOffset))
+        clipView.scroll(to: CGPoint(x: currentOrigin.x, y: adjustedY))
+        scrollView.reflectScrolledClipView(clipView)
+        return true
     }
 }
 

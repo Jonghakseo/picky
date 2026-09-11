@@ -44,6 +44,35 @@ struct PickyHubSettingsRuntimeContractTests {
         }
     }
 
+    @Test func groupNavigationKeepsTargetHeadingBelowPinnedBadges() throws {
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let fixture = try PickyHubRenderGalleryFixture()
+            fixture.navigator.select(.settings)
+            let (window, host) = mountProductionHub(fixture)
+            defer {
+                window.contentView = nil
+                window.close()
+                dismantle(host)
+                fixture.removeTemporaryState()
+            }
+
+            #expect(waitForHost(host) {
+                (try? renderedText(in: host).contains(normalized(L10n.t("hub.page.settings.subtitle")))) == true
+            })
+            fixture.navigator.showSettings(group: .agents)
+
+            let targetSubtitle = normalized(L10n.t("hub.settings.group.agents.subtitle"))
+            #expect(waitForHost(host, timeout: 5) {
+                guard fixture.navigator.pendingSettingsNavigation == nil else { return false }
+                guard let lines = try? renderedTextLines(
+                    in: host,
+                    outputName: "settings-group-agents-target.png"
+                ) else { return false }
+                return normalized(lines.map(\.text).joined()).contains(targetSubtitle)
+            })
+        }
+    }
+
     @Test func settingsGroupBadgesCoverScrolledContentAtViewportTop() throws {
         try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
             let fixture = try PickyHubRenderGalleryFixture()

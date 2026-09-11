@@ -97,6 +97,51 @@ struct PickyHubRenderGalleryTests {
         }
     }
 
+    @Test func hubReadOnlyTextSelectionDoesNotLeakIntoActionLabels() throws {
+        let content = VStack(alignment: .leading) {
+            PickyHubPageHeader(
+                title: "Nonselectable Hub title",
+                subtitle: "Selectable Hub body"
+            )
+            PickyHubButton(title: "Nonselectable Hub action", role: .primary) { }
+        }
+        .frame(width: 520, height: 220)
+
+        let host = NSHostingView(
+            rootView: content.environment(\.pickyHubTextSelectionEnabled, true)
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 520, height: 220)
+        host.layoutSubtreeIfNeeded()
+
+        func textFields(in view: NSView) -> [NSTextField] {
+            ((view as? NSTextField).map { [$0] } ?? [])
+                + view.subviews.flatMap { textFields(in: $0) }
+        }
+
+        let selectedFields = textFields(in: host).filter(\.isSelectable)
+        let selectedBody = try #require(selectedFields.first { $0.stringValue == "Selectable Hub body" })
+        #expect(!selectedBody.isEditable)
+        #expect(selectedFields.allSatisfy { $0.stringValue != "Nonselectable Hub title" })
+        #expect(selectedFields.allSatisfy { $0.stringValue != "Nonselectable Hub action" })
+
+        host.rootView = content.environment(\.pickyHubTextSelectionEnabled, false)
+        host.layoutSubtreeIfNeeded()
+        #expect(textFields(in: host).allSatisfy { !$0.isSelectable })
+
+        let fixture = try PickyHubRenderGalleryFixture()
+        defer { fixture.removeTemporaryState() }
+        let conversationHost = NSHostingView(
+            rootView: PickyHubConversationPage(dependencies: fixture.dependencies)
+                .environment(\.pickyHubTextSelectionEnabled, true)
+                .environment(\.locale, Locale(identifier: "en"))
+        )
+        conversationHost.frame = NSRect(x: 0, y: 0, width: 1020, height: 720)
+        conversationHost.layoutSubtreeIfNeeded()
+        let conversationFields = textFields(in: conversationHost).filter(\.isSelectable)
+        #expect(conversationFields.contains { $0.stringValue == "Pick up the most recent conversation with Picky." })
+        #expect(conversationFields.allSatisfy { $0.stringValue != "Recent Conversation" })
+    }
+
     @Test func statisticsNativeSelectorsUpdateTheActiveFilter() async throws {
         let fixture = try PickyHubRenderGalleryFixture()
         defer { fixture.removeTemporaryState() }

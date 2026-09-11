@@ -286,6 +286,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
             }
         }
     }
@@ -309,6 +310,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                         .foregroundColor(supportingTextColor)
                         .lineSpacing(DS.Spacing.space1)
                         .fixedSize(horizontal: false, vertical: true)
+                        .pickyHubSelectableText()
                 }
 
                 content()
@@ -338,6 +340,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                 .foregroundColor(supportingTextColor)
                 .lineSpacing(DS.Spacing.space1)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 
@@ -349,6 +352,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                 .foregroundColor(supportingTextColor)
                 .lineSpacing(DS.Spacing.space1)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 
@@ -358,6 +362,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
             .foregroundColor(DS.Colors.warningText)
             .lineSpacing(DS.Spacing.space1)
             .fixedSize(horizontal: false, vertical: true)
+            .pickyHubSelectableText()
     }
 
     @ViewBuilder
@@ -372,6 +377,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                             .lineSpacing(DS.Spacing.space1)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .pickyHubSelectableText()
                     }
                 }
                 .padding(.top, DS.Spacing.space2)

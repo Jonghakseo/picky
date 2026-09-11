@@ -385,6 +385,7 @@ private struct PickyHubSettingsGroupSection<Content: View>: View {
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
             }
             content()
         }
@@ -570,6 +571,7 @@ private struct PickyHubPickleFolderControls: View {
                     Text("hub.settings.folders.empty")
                         .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                        .pickyHubSelectableText()
                 } else {
                     ForEach(folders, id: \.self) { path in
                         let contextualActionLabel = Text(actionTitle) + Text(": ") + Text(path)
@@ -579,6 +581,7 @@ private struct PickyHubPickleFolderControls: View {
                                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
+                                .pickyHubSelectableText()
                             Button(action: { action(path) }) {
                                 Image(systemName: "xmark")
                                     .pickyFont(size: 10, weight: .bold)
@@ -801,6 +804,7 @@ private struct PickyHubSettingsRow<Control: View>: View {
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 }
@@ -831,6 +835,7 @@ private struct PickyHubSettingsNotice: View {
             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
             .foregroundColor(PickyHubTheme.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
+            .pickyHubSelectableText()
             .padding(PickyHubTheme.Spacing.cardInset)
             .pickyHubCard(radius: PickyHubTheme.Radius.card, fill: PickyHubTheme.Colors.surface)
     }

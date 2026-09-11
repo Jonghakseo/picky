@@ -82,6 +82,7 @@ struct PickyHubQuickStartPage: View {
             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
             .foregroundColor(PickyHubTheme.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
+            .pickyHubSelectableText()
             .padding(.top, PickyHubTheme.Spacing.group)
     }
 

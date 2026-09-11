@@ -99,6 +99,7 @@ struct CompanionPanelSettingsView: View {
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
                     .padding(.top, 12)
             }
         }
@@ -364,6 +365,7 @@ struct CompanionPanelSettingsView: View {
                         .font(PickyHUDTypography.supporting)
                         .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
+                        .pickyHubSelectableText()
                 }
 
                 Divider()
@@ -541,6 +543,7 @@ struct CompanionPanelSettingsView: View {
                             .font(PickyHUDTypography.supporting)
                             .foregroundColor(supportingTextColor)
                             .fixedSize(horizontal: false, vertical: true)
+                            .pickyHubSelectableText()
                             .padding(.top, 7)
                     }
                 }
@@ -581,6 +584,7 @@ struct CompanionPanelSettingsView: View {
                                 .font(PickyHUDTypography.supporting)
                                 .foregroundColor(supportingTextColor)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .pickyHubSelectableText()
                                 .padding(.bottom, DS.Spacing.space2)
                             Divider()
                                 .background(DS.Colors.borderSubtle.opacity(0.3))
@@ -710,6 +714,7 @@ struct CompanionPanelSettingsView: View {
                 .font(PickyHUDTypography.supporting)
                 .foregroundColor(supportingTextColor)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 
@@ -811,6 +816,7 @@ struct CompanionPanelSettingsView: View {
                         .font(PickyHUDTypography.supporting)
                         .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
+                        .pickyHubSelectableText()
                 }
 
                 if presentation.includesShellCommandControl {
@@ -831,6 +837,7 @@ struct CompanionPanelSettingsView: View {
                     .font(PickyHUDTypography.supportingMedium)
                     .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
 
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(PickyPiOAuthLoginProvider.allCases) { provider in
@@ -864,6 +871,7 @@ struct CompanionPanelSettingsView: View {
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
             }
         }
     }
@@ -884,6 +892,7 @@ struct CompanionPanelSettingsView: View {
                         .font(PickyHUDTypography.supporting)
                         .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
+                        .pickyHubSelectableText()
                 }
                 Spacer(minLength: 8)
                 oauthStatusPill(status)
@@ -894,6 +903,7 @@ struct CompanionPanelSettingsView: View {
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
             }
 
             HStack(spacing: 8) {
@@ -1064,6 +1074,7 @@ struct CompanionPanelSettingsView: View {
                 .font(PickyHUDTypography.supporting)
                 .foregroundColor(supportingTextColor)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 
@@ -1074,6 +1085,7 @@ struct CompanionPanelSettingsView: View {
                     .font(PickyHUDTypography.supportingMedium)
                     .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
 
                 VStack(spacing: 0) {
                     let tools = PickyBuiltinTool.allCases
@@ -1106,9 +1118,11 @@ struct CompanionPanelSettingsView: View {
                         .font(PickyHUDTypography.supporting)
                         .foregroundColor(supportingTextColor)
                         .fixedSize(horizontal: false, vertical: true)
+                        .pickyHubSelectableText()
                     Text(verbatim: tool.rawValue)
                         .font(PickyHUDTypography.supportingMonospaced)
                         .foregroundColor(DS.Colors.textTertiary.opacity(0.7))
+                        .pickyHubSelectableText()
                 }
                 Spacer(minLength: 8)
                 Toggle("", isOn: binding)
@@ -1132,6 +1146,7 @@ struct CompanionPanelSettingsView: View {
                     .font(PickyHUDTypography.supportingMedium)
                     .foregroundColor(supportingTextColor)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
 
                 Button(action: replayOnboarding) {
                     HStack(spacing: 6) {
@@ -1217,6 +1232,7 @@ struct CompanionPanelSettingsView: View {
                                 .font(PickyHUDTypography.supporting)
                                 .foregroundColor(supportingTextColor)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .pickyHubSelectableText()
                         }
                     }
 
@@ -1251,6 +1267,7 @@ struct CompanionPanelSettingsView: View {
                             .font(PickyHUDTypography.supporting)
                             .foregroundColor(supportingTextColor)
                             .fixedSize(horizontal: false, vertical: true)
+                            .pickyHubSelectableText()
                     }
 
                     providerPicker(title: "settings.voice.provider.tts", capability: .speechPlayback, selection: $viewModel.settings.ttsProvider, isEnabled: viewModel.settings.ttsEnabled)
@@ -1277,6 +1294,7 @@ struct CompanionPanelSettingsView: View {
                                 .font(PickyHUDTypography.supporting)
                                 .foregroundColor(supportingTextColor)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .pickyHubSelectableText()
                         }
                         azureSecureField(
                             label: "settings.voice.azure.tts.apiKey",
@@ -1570,6 +1588,7 @@ struct CompanionPanelSettingsView: View {
                 .font(PickyHUDTypography.supporting)
                 .foregroundColor(supportingTextColor)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 
@@ -1693,6 +1712,7 @@ struct CompanionPanelSettingsView: View {
                 .font(PickyHUDTypography.supporting)
                 .foregroundColor(DS.Colors.warningText)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
 
             switch edgeTTSVoiceCatalog.state {
             case .idle, .loading:
@@ -1701,15 +1721,18 @@ struct CompanionPanelSettingsView: View {
                     Text("settings.voice.edge.loading")
                         .font(PickyHUDTypography.supporting)
                         .foregroundColor(supportingTextColor)
+                        .pickyHubSelectableText()
                 }
             case .failed(let message):
                 Text(L10n.t("settings.voice.edge.selectedVoice", viewModel.settings.edgeTTSVoice))
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(supportingTextColor)
+                    .pickyHubSelectableText()
                 Text(message)
                     .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
                 Button("settings.voice.edge.retry") { edgeTTSVoiceCatalog.refresh() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)

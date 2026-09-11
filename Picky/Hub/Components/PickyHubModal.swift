@@ -252,6 +252,7 @@ struct PickyHubConfirmDialog: View {
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
                 .padding(.top, 8)
             HStack(spacing: 8) {
                 Spacer(minLength: 0)

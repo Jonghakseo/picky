@@ -42,10 +42,12 @@ struct PickyHubGuideVideoDialog: View {
                 Text("hub.guides.video.error.title")
                     .pickyFont(size: 16, weight: .bold)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                    .pickyHubSelectableText()
                 Text("hub.guides.video.error.message")
                     .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
+                    .pickyHubSelectableText()
                 ViewThatFits(in: .horizontal) {
                     videoActions(horizontal: true)
                     videoActions(horizontal: false)

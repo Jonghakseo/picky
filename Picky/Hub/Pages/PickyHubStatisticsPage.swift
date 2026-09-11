@@ -156,6 +156,7 @@ struct PickyHubStatisticsPage: View {
                 Text(PickyHubStatisticsPresentation.updatedDescription(date))
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                    .pickyHubSelectableText()
             }
             PickyHubTextLink(title: "hub.stats.refresh") {
                 statisticsStore.refresh()
@@ -234,6 +235,7 @@ private struct PickyHubWorkDistribution: View {
                             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
                             .foregroundColor(PickyHubTheme.Colors.textPrimary)
                             .frame(width: 112, alignment: .leading)
+                            .pickyHubSelectableText()
                         GeometryReader { proxy in
                             RoundedRectangle(cornerRadius: PickyHubTheme.Radius.pill, style: .continuous)
                                 .fill(PickyHubTheme.Colors.barTrack)
@@ -249,6 +251,7 @@ private struct PickyHubWorkDistribution: View {
                             .monospacedDigit()
                             .foregroundColor(PickyHubTheme.Colors.textSecondary)
                             .frame(width: 92, alignment: .trailing)
+                            .pickyHubSelectableText()
                     }
                 }
             }
@@ -294,6 +297,7 @@ private struct PickyHubPickleRecordsTable: View {
             Text("hub.stats.work.records.caption")
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
         }
     }
@@ -303,6 +307,7 @@ private struct PickyHubPickleRecordsTable: View {
             .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
             .foregroundColor(PickyHubTheme.Colors.textTertiary)
             .frame(width: width, height: 36, alignment: number ? .trailing : .leading)
+            .pickyHubSelectableText()
     }
 
     private func cell(_ value: String, width: CGFloat, primary: Bool = false, number: Bool = false) -> some View {
@@ -314,6 +319,7 @@ private struct PickyHubPickleRecordsTable: View {
             .monospacedDigit()
             .frame(width: width, alignment: number ? .trailing : .leading)
             .frame(minHeight: 48)
+            .pickyHubSelectableText()
             .help(value)
     }
 }
@@ -353,6 +359,7 @@ private struct PickyHubStatisticsUsageTab: View {
                     Text("hub.stats.usage.chart.legend")
                         .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                        .pickyHubSelectableText()
                 }
                 PickyHubUsageLineChart(days: days, period: filter.period)
             }
@@ -388,11 +395,13 @@ private struct PickyHubUsageSummaryCards: View {
             Text(label)
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                .pickyHubSelectableText()
             Text(PickyHubTokenFormatter.string(value))
                 .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
                 .tracking(-1)
                 .monospacedDigit()
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                .pickyHubSelectableText()
         }
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
         .padding(PickyHubTheme.Spacing.cardInset)
@@ -438,6 +447,7 @@ private struct PickyHubModelUsageTable: View {
             .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
             .foregroundColor(PickyHubTheme.Colors.textTertiary)
             .frame(width: width, height: 36, alignment: number ? .trailing : .leading)
+            .pickyHubSelectableText()
     }
 
     private func cell(_ value: String, width: CGFloat, primary: Bool = false, number: Bool = false) -> some View {
@@ -449,6 +459,7 @@ private struct PickyHubModelUsageTable: View {
             .fixedSize(horizontal: false, vertical: primary)
             .frame(width: width, alignment: number ? .trailing : .leading)
             .frame(minHeight: 42)
+            .pickyHubSelectableText()
             .help(value)
     }
 }

@@ -51,12 +51,14 @@ struct PickyHubPluginCardView: View {
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
 
             Text(meta)
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 .lineLimit(1)
+                .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
 
             if let error = item.errorMessage {

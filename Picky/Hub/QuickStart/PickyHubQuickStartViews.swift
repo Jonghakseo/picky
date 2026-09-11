@@ -39,6 +39,7 @@ struct PickyHubQuickStartWorkflowCard: View {
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
 
             ViewThatFits(in: .horizontal) {
@@ -106,10 +107,12 @@ struct PickyHubQuickStartResumeCard: View {
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.warning)
                     .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
             }
             Text(L10n.t("hub.quickStart.resume.lastStarted", record.startedAt.formatted(date: .abbreviated, time: .shortened)))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                .pickyHubSelectableText()
         }
     }
 
@@ -140,6 +143,7 @@ struct PickyHubQuickStartSuccessView: View {
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .multilineTextAlignment(.center)
+                .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
             PickyHubButton(title: "hub.quickStart.success.showWorkflows", role: .secondary, action: onAcknowledge)
                 .padding(.top, PickyHubTheme.Spacing.field)

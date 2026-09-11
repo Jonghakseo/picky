@@ -21,6 +21,7 @@ struct PickyHubClassificationSettingsView: View {
                         .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .pickyHubSelectableText()
                 }
                 Spacer(minLength: PickyHubTheme.Spacing.field)
                 if hasConfirmedSnapshot {
@@ -34,6 +35,7 @@ struct PickyHubClassificationSettingsView: View {
                     Text("hub.settings.classification.unknown")
                         .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                        .pickyHubSelectableText()
                 }
             }
 
@@ -43,6 +45,7 @@ struct PickyHubClassificationSettingsView: View {
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
 
             if statisticsStore.isUpdatingClassification {
                 PickyHubInlineStatus(tone: .neutral, message: L10n.t("hub.settings.classification.saving"))

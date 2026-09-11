@@ -45,6 +45,7 @@ struct PickyHubPluginsPage: View {
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
                     .padding(.top, PickyHubTheme.Spacing.related)
+                    .pickyHubSelectableText()
                     .accessibilityAddTraits(.updatesFrequently)
                     .accessibilityLabel(Text(statusMessage))
 

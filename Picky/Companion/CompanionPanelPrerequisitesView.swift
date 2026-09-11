@@ -20,16 +20,19 @@ struct CompanionPanelPrerequisitesCopyView: View {
             Text("prereq.copy.runsLocally")
                 .pickyFont(size: 12, weight: .bold)
                 .foregroundColor(DS.Colors.textSecondary)
+                .pickyHubSelectableText()
 
             Text("prereq.copy.contextHandoff")
                 .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
 
             Text("prereq.copy.noAccount")
                 .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -146,6 +149,7 @@ struct CompanionPanelPrerequisitesView: View {
                     Text(isGranted ? "prereq.screenRecording.detail.granted" : "prereq.screenRecording.detail.missing")
                         .pickyFont(size: 10)
                         .foregroundColor(DS.Colors.textTertiary)
+                        .pickyHubSelectableText()
                 }
             }
 

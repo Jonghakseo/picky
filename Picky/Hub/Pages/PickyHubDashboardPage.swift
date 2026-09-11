@@ -81,6 +81,7 @@ struct PickyHubDashboardPage: View {
                 Text(greeting.subtitle)
                     .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                    .pickyHubSelectableText()
             }
         }
         .padding(PickyHubTheme.Spacing.cardInset)
@@ -135,9 +136,11 @@ struct PickyHubDashboardPage: View {
                 Text("status.shellCommand.stale.title")
                     .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                    .pickyHubSelectableText()
                 Text("status.shellCommand.stale.subtitle")
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                    .pickyHubSelectableText()
             }
         }
     }
@@ -154,6 +157,7 @@ struct PickyHubDashboardPage: View {
             Text(PickyHubDashboardPresentation.workScope(filter: statisticsStore.filter))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                .pickyHubSelectableText()
                 .padding(.bottom, PickyHubTheme.Spacing.field)
             switch statisticsStore.state {
             case .idle, .loading:
@@ -187,9 +191,11 @@ struct PickyHubDashboardPage: View {
             Text(PickyHubDashboardPresentation.emptyWorkTitle(period: statisticsStore.filter.period))
                 .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .bold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                .pickyHubSelectableText()
             Text("hub.dashboard.work.empty.message")
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                .pickyHubSelectableText()
             PickyHubTextLink(title: "hub.dashboard.work.empty.action") {
                 navigator.select(.quickStart)
             }
@@ -402,6 +408,7 @@ struct PickyHubDashboardPage: View {
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .frame(maxWidth: 320, alignment: .leading)
+                .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.field)
             HStack(spacing: PickyHubTheme.Spacing.related) {
                 PickyHubIconCircleButton(systemImage: "doc.on.doc", accessibilityLabel: "hub.dashboard.share.copy") {
@@ -526,6 +533,7 @@ private struct PickyHubDashboardQuickStartGrid: View {
                             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                             .foregroundColor(PickyHubTheme.Colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .pickyHubSelectableText()
                         Spacer(minLength: 4)
                         PickyHubPillButton(
                             title: "hub.dashboard.quickStart.start",
@@ -580,6 +588,7 @@ private struct PickyHubDashboardPluginRow: View {
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
             Spacer(minLength: 0)
             if item.isInstalled {
                 Button(action: onRemove) {

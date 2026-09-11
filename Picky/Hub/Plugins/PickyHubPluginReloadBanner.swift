@@ -76,6 +76,7 @@ struct PickyHubPluginReloadBanner: View {
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 

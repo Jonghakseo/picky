@@ -88,6 +88,7 @@ private struct PickyHubWorkInsightCard: View {
                     .accessibilityAddTraits(.isButton)
             } else {
                 cardBody
+                    .pickyHubSelectableText()
             }
         }
         .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
@@ -219,6 +220,7 @@ struct PickyHubUsageLineChart: View {
                         .foregroundColor(PickyHubTheme.Colors.textTertiary)
                         .lineLimit(1)
                         .frame(width: labelWidth)
+                        .pickyHubSelectableText()
                         .position(x: inset + CGFloat(index) * step, y: chartHeight + DS.Spacing.space5)
                 }
             }

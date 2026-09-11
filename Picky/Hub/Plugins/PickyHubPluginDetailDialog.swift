@@ -39,6 +39,7 @@ struct PickyHubPluginDetailDialog: View {
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.field)
 
             Text("hub.plugins.detail.useCases")
@@ -54,6 +55,7 @@ struct PickyHubPluginDetailDialog: View {
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 }
             }
+            .pickyHubSelectableText()
             .padding(.top, PickyHubTheme.Spacing.related)
 
             HStack(spacing: PickyHubTheme.Spacing.related) {
@@ -168,6 +170,7 @@ struct PickyHubPluginDetailDialog: View {
         Text("hub.plugins.detail.remove.prompt")
             .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
             .foregroundColor(PickyHubTheme.Colors.textPrimary)
+            .pickyHubSelectableText()
     }
 
     private func remove() {

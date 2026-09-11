@@ -133,6 +133,7 @@ private struct PickyHubConversationTimeline: View {
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 

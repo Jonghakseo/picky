@@ -15,12 +15,45 @@ private struct PickyHubContentWidthKey: EnvironmentKey {
     static let defaultValue: CGFloat = PickyHubTheme.Layout.contentMaxWidth
 }
 
+private struct PickyHubTextSelectionEnabledKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// Width of the main content column, provided above each page by the hub
     /// root so page-level grid policies receive the current window width.
     var pickyHubContentWidth: CGFloat {
         get { self[PickyHubContentWidthKey.self] }
         set { self[PickyHubContentWidthKey.self] = newValue }
+    }
+
+    /// Enables only text explicitly marked as read-only Hub content. This is
+    /// separate from SwiftUI's global textSelection environment so controls,
+    /// navigation labels, and clickable cards never inherit selection.
+    var pickyHubTextSelectionEnabled: Bool {
+        get { self[PickyHubTextSelectionEnabledKey.self] }
+        set { self[PickyHubTextSelectionEnabledKey.self] = newValue }
+    }
+}
+
+private struct PickyHubSelectableTextModifier: ViewModifier {
+    @Environment(\.pickyHubTextSelectionEnabled) private var isEnabled
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.textSelection(.enabled)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Marks read-only body, path, error, or statistics text as selectable when
+    /// rendered inside the Hub without changing control-label interaction.
+    func pickyHubSelectableText() -> some View {
+        modifier(PickyHubSelectableTextModifier())
     }
 }
 
@@ -96,6 +129,7 @@ struct PickyHubPageHeader: View {
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, PickyHubTheme.Layout.sectionSpacing)
@@ -481,6 +515,7 @@ struct PickyHubEmptyState: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 360)
+                .pickyHubSelectableText()
             if let actionTitle, let action {
                 PickyHubButton(title: actionTitle, role: .primary, systemImage: actionSystemImage, action: action)
                     .padding(.top, 8)
@@ -517,6 +552,7 @@ struct PickyHubInlineStatus: View {
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(tone == .error ? DS.Colors.destructiveText : PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
             if let actionTitle, let action {
                 PickyHubTextLink(title: actionTitle, action: action)
             }
@@ -554,6 +590,7 @@ struct PickyHubLoadingRow: View {
             Text(message)
                 .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                .pickyHubSelectableText()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, PickyHubTheme.Spacing.rowVertical)

@@ -71,6 +71,7 @@ struct PickyHubRootView: View {
         .environmentObject(dependencies.statisticsStore)
         .environmentObject(dependencies.quickStartLauncher)
         .environmentObject(dependencies.pluginCatalog)
+        .environment(\.pickyHubTextSelectionEnabled, true)
         .task(id: navigator.shouldRefreshStatistics) {
             guard navigator.shouldRefreshStatistics else { return }
             while !Task.isCancelled {

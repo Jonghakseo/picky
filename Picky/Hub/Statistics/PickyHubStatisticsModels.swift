@@ -148,7 +148,7 @@ enum PickyHubStatisticsPeriod: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var titleKey: LocalizedStringKey {
+    private var titleLocalizationKey: String {
         switch self {
         case .thisWeek: "hub.stats.period.thisWeek"
         case .thisMonth: "hub.stats.period.thisMonth"
@@ -156,6 +156,9 @@ enum PickyHubStatisticsPeriod: String, CaseIterable, Identifiable {
         case .all: "hub.stats.period.all"
         }
     }
+
+    var titleKey: LocalizedStringKey { LocalizedStringKey(titleLocalizationKey) }
+    var localizedTitle: String { L10n.t(titleLocalizationKey) }
 
     /// Inclusive lower bound, `nil` for all time.
     func startDate(now: Date, calendar: Calendar) -> Date? {

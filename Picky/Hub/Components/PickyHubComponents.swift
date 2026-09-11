@@ -65,6 +65,20 @@ struct PickyHubPageScroll<Content: View>: View {
     }
 }
 
+/// Hub-wide selector chrome backed by the shared native popup implementation.
+/// This preserves AppKit menu, keyboard, focus, and accessibility behavior.
+struct PickyHubMenuPicker<Value: Hashable>: View {
+    let title: String
+    @Binding var selection: Value
+    let options: [PickyNativeMenuOption<Value>]
+
+    var body: some View {
+        PickyNativeMenuPicker(title: title, selection: $selection, options: options)
+            .environment(\.pickyUsesSubtleMenuChrome, true)
+            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
+    }
+}
+
 // MARK: - Headings
 
 struct PickyHubPageHeader: View {

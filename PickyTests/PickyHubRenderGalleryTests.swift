@@ -97,6 +97,38 @@ struct PickyHubRenderGalleryTests {
         }
     }
 
+    @Test func statisticsNativeSelectorsUpdateTheActiveFilter() async throws {
+        let fixture = try PickyHubRenderGalleryFixture()
+        defer { fixture.removeTemporaryState() }
+        fixture.statisticsStore.refresh()
+        try await waitUntilLoaded(fixture.statisticsStore)
+        let root = PickyHubStatisticsPage(dependencies: fixture.dependencies)
+            .environmentObject(fixture.navigator)
+            .environmentObject(fixture.statisticsStore)
+            .frame(width: 1020, height: 720)
+        let host = NSHostingView(rootView: root)
+        host.frame = NSRect(x: 0, y: 0, width: 1020, height: 720)
+        host.layoutSubtreeIfNeeded()
+
+        func menus(in view: NSView) -> [NSPopUpButton] {
+            ((view as? NSPopUpButton).map { [$0] } ?? [])
+                + view.subviews.flatMap { menus(in: $0) }
+        }
+
+        let selectors = menus(in: host)
+        let period = try #require(selectors.first { $0.numberOfItems == PickyHubStatisticsPeriod.allCases.count })
+        let allIndex = try #require(PickyHubStatisticsPeriod.allCases.firstIndex(of: .all))
+        period.selectItem(at: allIndex)
+        #expect(period.sendAction(period.action, to: period.target))
+        #expect(fixture.statisticsStore.filter.period == .all)
+
+        let project = try #require(selectors.first { $0.itemTitles.contains("studio") })
+        let studioIndex = try #require(project.itemTitles.firstIndex(of: "studio"))
+        project.selectItem(at: studioIndex)
+        #expect(project.sendAction(project.action, to: project.target))
+        #expect(fixture.statisticsStore.filter.project == "studio")
+    }
+
     @Test func embeddedNativeSelectorPersistsItsChosenReasoningLevel() async throws {
         let fixture = try PickyHubRenderGalleryFixture()
         defer { fixture.removeTemporaryState() }

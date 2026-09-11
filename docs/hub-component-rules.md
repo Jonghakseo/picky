@@ -14,7 +14,7 @@ Use the existing Hub components and semantic tokens instead of another design sy
 | Card/grid gap | 16pt |
 | Page/section separation | 32pt; heading to content 16pt |
 | Card shape | 12pt radius, neutral surface, subtle border, no decorative shadow |
-| Controls | 8pt radius, at least 32pt actionable height, 12pt horizontal inset |
+| Controls | 8pt radius, at least 32pt actionable height, 12pt horizontal inset. Dropdown selectors use `PickyHubMenuPicker`, backed by the shared native popup control. |
 | Type | Page 24pt, section 20pt, card/subsection 18pt, body 14pt, supporting 13pt, metadata 12pt; scale with app font setting |
 | Text | Leading alignment and natural wrapping; truncate only explicitly secondary metadata such as paths |
 | Actions | Standard Button semantics, visible labels or accessibility labels for icons; selected state has a non-color cue |

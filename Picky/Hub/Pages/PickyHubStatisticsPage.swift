@@ -51,44 +51,39 @@ struct PickyHubStatisticsPage: View {
     @ViewBuilder
     private var filterControls: some View {
         statisticsPicker(
-            title: "hub.stats.filter.period",
+            titleKey: "hub.stats.filter.period",
             selection: Binding(
                 get: { statisticsStore.filter.period },
                 set: { statisticsStore.filter.period = $0 }
-            )
-        ) {
-            ForEach(PickyHubStatisticsPeriod.allCases) { period in
-                Text(period.titleKey).tag(period)
+            ),
+            options: PickyHubStatisticsPeriod.allCases.map {
+                .init(value: $0, title: $0.localizedTitle)
             }
-        }
+        )
         statisticsPicker(
-            title: "hub.stats.filter.project",
+            titleKey: "hub.stats.filter.project",
             selection: Binding(
                 get: { statisticsStore.filter.project },
                 set: { statisticsStore.filter.project = $0 }
-            )
-        ) {
-            Text("hub.stats.filter.allProjects").tag(String?.none)
-            ForEach(PickyHubStatisticsAggregator.projects(in: statisticsStore.snapshot), id: \.self) { project in
-                Text(project).tag(Optional(project))
-            }
-        }
+            ),
+            options: [.init(value: String?.none, title: L10n.t("hub.stats.filter.allProjects"))]
+                + PickyHubStatisticsAggregator.projects(in: statisticsStore.snapshot).map {
+                    .init(value: Optional($0), title: $0)
+                }
+        )
     }
 
-    private func statisticsPicker<Selection: Hashable, Content: View>(
-        title: LocalizedStringKey,
+    private func statisticsPicker<Selection: Hashable>(
+        titleKey: String,
         selection: Binding<Selection>,
-        @ViewBuilder content: () -> Content
+        options: [PickyNativeMenuOption<Selection>]
     ) -> some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
-            Text(title)
+            Text(LocalizedStringKey(titleKey))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
-            Picker(title, selection: selection, content: content)
-                .pickerStyle(.menu)
-                .labelsHidden()
+            PickyHubMenuPicker(title: L10n.t(titleKey), selection: selection, options: options)
                 .frame(minWidth: 150, maxWidth: PickyHubTheme.Control.maximumFieldWidth, alignment: .leading)
-                .accessibilityLabel(Text(title))
         }
     }
 

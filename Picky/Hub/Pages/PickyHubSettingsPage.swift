@@ -463,7 +463,7 @@ private struct PickyHubGeneralControls: View {
     var body: some View {
         PickyHubSettingsList {
             PickyHubSettingsRow(title: "hub.settings.appearance", detail: "hub.settings.appearance.detail") {
-                PickyNativeMenuPicker(
+                PickyHubMenuPicker(
                     title: menuTitle("hub.settings.appearance"),
                     selection: Binding(get: { appearanceStore.mode }, set: appearanceStore.setMode),
                     options: PickyAppearanceMode.allCases.map { mode in
@@ -473,7 +473,7 @@ private struct PickyHubGeneralControls: View {
                 .pickyHubSettingsNativeMenuWidth()
             }
             PickyHubSettingsRow(title: "hub.settings.fontScale", detail: "hub.settings.fontScale.detail") {
-                PickyNativeMenuPicker(
+                PickyHubMenuPicker(
                     title: menuTitle("hub.settings.fontScale"),
                     selection: Binding(get: { fontScaleStore.scale }, set: fontScaleStore.setScale),
                     options: [0.9, 1.0, 1.1, 1.2, 1.3].map { .init(value: $0, title: "\(Int($0 * 100))%") }
@@ -483,7 +483,7 @@ private struct PickyHubGeneralControls: View {
             fontScaleRow(title: "hub.settings.reportFontScale", detail: "hub.settings.reportFontScale.detail", target: .report)
             fontScaleRow(title: "hub.settings.terminalFontScale", detail: "hub.settings.terminalFontScale.detail", target: .terminal)
             PickyHubSettingsRow(title: "hub.settings.updateChannel", detail: "hub.settings.updateChannel.detail") {
-                PickyNativeMenuPicker(
+                PickyHubMenuPicker(
                     title: menuTitle("hub.settings.updateChannel"),
                     selection: $settingsViewModel.settings.updateChannel,
                     options: PickyUpdateChannel.allCases.map { .init(value: $0, title: $0.displayName) }
@@ -518,7 +518,7 @@ private struct PickyHubGeneralControls: View {
 
     private func fontScaleRow(title: String, detail: LocalizedStringKey, target: PickyHubFontScaleTarget) -> some View {
         PickyHubSettingsRow(title: LocalizedStringKey(title), detail: detail) {
-            PickyNativeMenuPicker(title: menuTitle(title), selection: Binding(
+            PickyHubMenuPicker(title: menuTitle(title), selection: Binding(
                 get: {
                     switch target {
                     case .report: settingsViewModel.settings.fontScales.markdownReport

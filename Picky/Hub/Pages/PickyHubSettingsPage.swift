@@ -18,7 +18,12 @@ struct PickyHubSettingsPage: View {
     @State private var onboardingReplayTransaction: PickyHubOnboardingReplaySaveTransaction?
     @State private var settingsNavigationState = PickyHubSettingsNavigationState()
     @State private var pendingDisclosureScrollTarget: String?
+    @State private var activeSettingsGroup: PickyHubSettingsGroup = .general
+    @State private var settingsGroupOffsets: [String: CGFloat] = [:]
+    @State private var pinnedNavigationHeight: CGFloat = 0
     @FocusState private var focusedSettingsControl: String?
+
+    private static let scrollCoordinateSpace = "PickyHubSettingsScroll"
 
     init(dependencies: PickyHubDependencies) {
         self.dependencies = dependencies
@@ -27,57 +32,93 @@ struct PickyHubSettingsPage: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    // Keep the page's initial top inset with the scrolling title,
-                    // not the lazy container. A container inset becomes a gap above
-                    // the pinned header in the Hub's full-size titlebar window.
-                    PickyHubPageHeader(title: PickyHubPage.settings.titleKey, subtitle: "hub.page.settings.subtitle")
-                        .padding(.top, PickyHubTheme.Layout.contentTopPadding)
-                    Section {
-                        // Keep all targets instantiated so settings deep links can scroll
-                        // to a group or expanded leaf before it enters the viewport.
-                        VStack(alignment: .leading, spacing: 0) {
-                            if restartRequired {
-                                PickyHubInlineStatus(
-                                    tone: .warning,
-                                    message: L10n.t("hub.settings.restart.message"),
-                                    actionTitle: "hub.settings.restart.action",
-                                    action: { PickyRelauncher.relaunchAndTerminate() }
-                                )
-                                .padding(.bottom, PickyHubTheme.Spacing.field)
-                            }
-                            ForEach(PickyHubSettingsGroup.allCases) { group in
-                                PickyHubSettingsGroupSection(group: group) {
-                                    groupContent(group, scrollProxy: proxy)
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        // Keep the page's initial top inset with the scrolling title,
+                        // not the lazy container. A container inset becomes a gap above
+                        // the pinned header in the Hub's full-size titlebar window.
+                        PickyHubPageHeader(title: PickyHubPage.settings.titleKey, subtitle: "hub.page.settings.subtitle")
+                            .padding(.top, PickyHubTheme.Layout.contentTopPadding)
+                        Section {
+                            // Keep all targets instantiated so settings deep links can scroll
+                            // to a group or expanded leaf before it enters the viewport.
+                            VStack(alignment: .leading, spacing: 0) {
+                                if restartRequired {
+                                    PickyHubInlineStatus(
+                                        tone: .warning,
+                                        message: L10n.t("hub.settings.restart.message"),
+                                        actionTitle: "hub.settings.restart.action",
+                                        action: { PickyRelauncher.relaunchAndTerminate() }
+                                    )
+                                    .padding(.bottom, PickyHubTheme.Spacing.field)
                                 }
-                                .id(group.id)
+                                ForEach(PickyHubSettingsGroup.allCases) { group in
+                                    PickyHubSettingsGroupSection(group: group) {
+                                        groupContent(group, scrollProxy: proxy)
+                                    }
+                                    .id(group.id)
+                                    .background {
+                                        GeometryReader { geometry in
+                                            Color.clear.preference(
+                                                key: PickyHubSettingsGroupOffsetPreference.self,
+                                                value: [
+                                                    group.id: geometry.frame(
+                                                        in: .named(Self.scrollCoordinateSpace)
+                                                    ).minY,
+                                                ]
+                                            )
+                                        }
+                                    }
+                                }
                             }
+                        } header: {
+                            groupLinks(proxy)
+                                .padding(.vertical, DS.Spacing.space3)
+                                .background(PickyHubTheme.Colors.canvas)
+                                .background {
+                                    GeometryReader { geometry in
+                                        Color.clear.preference(
+                                            key: PickyHubSettingsNavigationHeightPreference.self,
+                                            value: geometry.size.height
+                                        )
+                                    }
+                                }
+                                .overlay(alignment: .bottom) {
+                                    Divider().overlay(PickyHubTheme.Colors.borderSoft)
+                                }
+                                .zIndex(1)
                         }
-                    } header: {
-                        groupLinks(proxy)
-                            // Keep breathing room inside the pinned surface. Padding the
-                            // scroll container itself leaves a transparent titlebar gap.
-                            .padding(.top, DS.Spacing.space3)
-                            // Pinned section headers overlay scrolling content, so keep this
-                            // canvas opaque rather than allowing labels to show through.
-                            .background(PickyHubTheme.Colors.canvas)
-                            .overlay(alignment: .bottom) {
-                                Divider().overlay(PickyHubTheme.Colors.borderSoft)
-                            }
-                            .zIndex(1)
                     }
+                    .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
+                    .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
+                    .padding(.bottom, PickyHubTheme.Layout.contentBottomPadding)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: PickyHubTheme.Layout.contentMaxWidth, alignment: .leading)
-                .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
-                .padding(.bottom, PickyHubTheme.Layout.contentBottomPadding)
-                .frame(maxWidth: .infinity)
+                .coordinateSpace(name: Self.scrollCoordinateSpace)
+                .environment(\.pickyUsesSubtleMenuChrome, true)
+                .onAppear { consumePendingSettingsNavigation(with: proxy) }
+                .onChange(of: navigator.pendingSettingsNavigation) { _, _ in
+                    consumePendingSettingsNavigation(with: proxy)
+                }
+                .onPreferenceChange(PickyHubSettingsGroupOffsetPreference.self) { offsets in
+                    settingsGroupOffsets = offsets
+                    updateActiveSettingsGroup()
+                }
+                .onPreferenceChange(PickyHubSettingsNavigationHeightPreference.self) { height in
+                    pinnedNavigationHeight = height
+                    updateActiveSettingsGroup()
+                }
             }
-            .environment(\.pickyUsesSubtleMenuChrome, true)
-            .onAppear { consumePendingSettingsNavigation(with: proxy) }
-            .onChange(of: navigator.pendingSettingsNavigation) { _, _ in
-                consumePendingSettingsNavigation(with: proxy)
+            // The full-size transparent titlebar lets scroll content underlap its
+            // safe area. This sibling mask stays outside the pinned Section's
+            // clipping boundary and keeps that strip visually quiet.
+            .overlay(alignment: .top) {
+                PickyHubTheme.Colors.canvas
+                    .frame(height: viewport.safeAreaInsets.top)
+                    .offset(y: -viewport.safeAreaInsets.top)
+                    .allowsHitTesting(false)
             }
         }
     }
@@ -87,34 +128,21 @@ struct PickyHubSettingsPage: View {
     }
 
     private func groupLinks(_ proxy: ScrollViewProxy) -> some View {
-        LazyVGrid(
-            columns: [
-                GridItem(
-                    .adaptive(
-                        minimum: PickyHubSettingsLayout.groupLinkMinimumWidth,
-                        maximum: PickyHubSettingsLayout.groupLinkMaximumWidth
-                    ),
-                    spacing: PickyHubTheme.Spacing.field,
-                    alignment: .leading
-                )
-            ],
-            alignment: .leading,
-            spacing: PickyHubTheme.Spacing.field
+        PickyHubSettingsBadgeLayout(
+            spacing: PickyHubTheme.Spacing.related,
+            maximumItemsPerRow: PickyHubSettingsLayout.maximumBadgesPerRow
         ) {
             ForEach(PickyHubSettingsGroup.allCases) { group in
-                Button {
+                PickyHubSettingsGroupBadge(
+                    group: group,
+                    isSelected: activeSettingsGroup == group
+                ) {
                     scrollTo(group.id, with: proxy)
-                } label: {
-                    Text(group.titleKey)
-                        .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(PickyHubSettingsJumpStyle())
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("hub.settings.groupLinks"))
-        .padding(.bottom, PickyHubTheme.Spacing.field)
     }
 
     @ViewBuilder
@@ -224,6 +252,21 @@ struct PickyHubSettingsPage: View {
     private func scrollTo(_ target: String, with proxy: ScrollViewProxy) {
         withAnimation(reduceMotion ? nil : PickyHubTheme.Motion.page) {
             proxy.scrollTo(target, anchor: .top)
+        }
+    }
+
+    private func updateActiveSettingsGroup() {
+        guard !settingsGroupOffsets.isEmpty else { return }
+        let activationLine = pinnedNavigationHeight + PickyHubTheme.Spacing.field
+        let orderedOffsets = PickyHubSettingsGroup.allCases.compactMap { group in
+            settingsGroupOffsets[group.id].map { (group: group, offset: $0) }
+        }
+        let nextGroup = orderedOffsets
+            .filter { $0.offset <= activationLine }
+            .max { $0.offset < $1.offset }?.group
+            ?? orderedOffsets.min { $0.offset < $1.offset }?.group
+        if let nextGroup, nextGroup != activeSettingsGroup {
+            activeSettingsGroup = nextGroup
         }
     }
 
@@ -418,29 +461,134 @@ enum PickyHubSettingsControlMutation {
     }
 }
 
-/// Keep long localized jump labels visible; AppKit's bordered button truncates
-/// them even when the SwiftUI label requests multiple lines.
-private struct PickyHubSettingsJumpStyle: ButtonStyle {
-    @State private var isHovered = false
+private struct PickyHubSettingsBadgeLayout: Layout {
+    let spacing: CGFloat
+    let maximumItemsPerRow: Int
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundColor(isHovered ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary)
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let maximumWidth = proposal.width ?? .greatestFiniteMagnitude
+        var lineWidth: CGFloat = 0
+        var maximumLineWidth: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var itemsOnLine = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let itemWidth = lineWidth == 0 ? size.width : size.width + spacing
+            let reachedItemLimit = itemsOnLine == maximumItemsPerRow
+            if lineWidth > 0, reachedItemLimit || lineWidth + itemWidth > maximumWidth {
+                maximumLineWidth = max(maximumLineWidth, lineWidth)
+                totalHeight += lineHeight + spacing
+                lineWidth = size.width
+                lineHeight = size.height
+                itemsOnLine = 1
+            } else {
+                lineWidth += itemWidth
+                lineHeight = max(lineHeight, size.height)
+                itemsOnLine += 1
+            }
+        }
+
+        maximumLineWidth = max(maximumLineWidth, lineWidth)
+        return CGSize(width: proposal.width ?? maximumLineWidth, height: totalHeight + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        var origin = bounds.origin
+        var lineHeight: CGFloat = 0
+        var itemsOnLine = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let reachedItemLimit = itemsOnLine == maximumItemsPerRow
+            if origin.x > bounds.minX, reachedItemLimit || origin.x + size.width > bounds.maxX {
+                origin.x = bounds.minX
+                origin.y += lineHeight + spacing
+                lineHeight = 0
+                itemsOnLine = 0
+            }
+            subview.place(at: origin, proposal: ProposedViewSize(size))
+            origin.x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+            itemsOnLine += 1
+        }
+    }
+}
+
+private struct PickyHubSettingsGroupBadge: View {
+    let group: PickyHubSettingsGroup
+    let isSelected: Bool
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: PickyHubTheme.Spacing.related) {
+                Circle()
+                    .fill(PickyHubTheme.Colors.action)
+                    .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
+                    .opacity(isSelected ? 1 : 0)
+                    .accessibilityHidden(true)
+                Text(group.titleKey)
+                    .pickyFont(
+                        size: PickyHubTheme.Typography.caption,
+                        weight: isSelected ? .semibold : .regular
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .foregroundColor(isSelected || isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary)
             .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
-            .padding(.vertical, PickyHubTheme.Spacing.related)
             .frame(minHeight: PickyHubTheme.Control.minimumHeight)
             .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                    .fill(configuration.isPressed || isHovered ? PickyHubTheme.Colors.navHighlight : PickyHubTheme.Colors.surface)
+                Capsule(style: .continuous)
+                    .fill(
+                        isSelected
+                            ? PickyHubTheme.Colors.actionTint
+                            : (isHovering ? PickyHubTheme.Colors.navHighlight : Color.clear)
+                    )
             )
-            .contentShape(RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous))
-            .onHover { isHovered = $0 }
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(
+                        isSelected || isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.border,
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(PickyHubPressStyle())
+        .focused($isFocused)
+        .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.pill)
+        .onHover { isHovering = $0 }
+        .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
+        .accessibilityLabel(Text(group.titleKey))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct PickyHubSettingsGroupOffsetPreference: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private struct PickyHubSettingsNavigationHeightPreference: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
 private enum PickyHubSettingsLayout {
-    static let groupLinkMinimumWidth: CGFloat = 156
-    static let groupLinkMaximumWidth: CGFloat = 176
+    /// Seven badges read as a balanced 4 + 3 directory instead of leaving an orphan on wide layouts.
+    static let maximumBadgesPerRow = 4
     /// Bounds native popup menus without changing the width of other row controls.
     static let nativeMenuWidth: CGFloat = 180
     static let stackedRowMinimumWidth: CGFloat = 560

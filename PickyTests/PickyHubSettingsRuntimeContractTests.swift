@@ -44,7 +44,7 @@ struct PickyHubSettingsRuntimeContractTests {
         }
     }
 
-    @Test func settingsGroupLinksCoverScrolledContentAtViewportTop() throws {
+    @Test func settingsGroupBadgesCoverScrolledContentAtViewportTop() throws {
         try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
             let fixture = try PickyHubRenderGalleryFixture()
             fixture.navigator.select(.settings)
@@ -68,22 +68,22 @@ struct PickyHubSettingsRuntimeContractTests {
             scrollView.reflectScrolledClipView(scrollView.contentView)
 
             let pageSubtitle = normalized(L10n.t("hub.page.settings.subtitle"))
-            let advancedGroup = normalized(L10n.t("hub.settings.group.advanced.title"))
+            let groupTitles = PickyHubSettingsGroup.allCases.map {
+                normalized(L10n.t("hub.settings.group.\($0.rawValue).title"))
+            }
             var scrolledLines: [RenderedTextLine] = []
             #expect(waitForHost(host) {
                 guard let lines = try? renderedTextLines(in: host, outputName: "settings-pinned-header-scrolled.png") else { return false }
                 scrolledLines = lines
                 let visibleText = normalized(lines.map(\.text).joined())
-                return !visibleText.contains(pageSubtitle) && visibleText.contains(advancedGroup)
+                return !visibleText.contains(pageSubtitle)
+                    && groupTitles.allSatisfy { visibleText.contains($0) }
             })
 
             // The topmost text in the production bitmap must be a pinned category
-            // control, not a setting row scrolled into the titlebar area.
-            let groupTitles = Set(PickyHubSettingsGroup.allCases.map {
-                normalized(L10n.t("hub.settings.group.\($0.rawValue).title"))
-            })
+            // badge, not a setting row bleeding through the transparent titlebar.
             let topmostLine = try #require(scrolledLines.max { $0.bounds.maxY < $1.bounds.maxY })
-            #expect(groupTitles.contains(normalized(topmostLine.text)))
+            #expect(Set(groupTitles).contains(normalized(topmostLine.text)))
         }
     }
 
@@ -177,10 +177,19 @@ struct PickyHubSettingsRuntimeContractTests {
         )
         let host = NSHostingView(rootView: AnyView(LocalizedHostingRoot { root }))
         host.frame = NSRect(x: 0, y: 0, width: 1020, height: 720)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        let window = PickyHubWindow(
+            contentRect: host.frame,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.contentView = host
-        // Attach the real AX tree, but never order or activate this window.
+        host.frame = window.contentView?.bounds ?? host.frame
+        window.layoutIfNeeded()
+        // Attach the production full-size titlebar geometry, but never order or activate this window.
         return (window, host)
     }
 

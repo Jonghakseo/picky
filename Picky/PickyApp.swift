@@ -205,6 +205,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private let hubNavigator = PickyHubNavigator()
     private let hubModalHost = PickyHubModalHost()
     private let hubForegroundContextPreserver = PickyHubForegroundContextPreserver()
+    private let appActivationRouter = PickyAppActivationRouter()
     private lazy var hubSettingsViewModel = PickySettingsViewModel(store: settingsStore, persistence: settingsPersistence)
 
     override init() {
@@ -377,7 +378,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // HUD panels can be visible while Hub is minimized or the app is hidden,
         // so AppKit's aggregate hasVisibleWindows flag is not a Hub visibility test.
-        hubWindowController?.show()
+        // Defer presentation briefly because a notification response can arrive
+        // immediately before or after this reopen callback; notification intent wins.
+        appActivationRouter.handleReopen { [weak self] in
+            self?.hubWindowController?.show()
+        }
         return false
     }
 
@@ -728,9 +733,10 @@ extension CompanionAppDelegate: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let identifier = response.notification.request.identifier
-        let sessionID = identifier.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? identifier
         Task { @MainActor [weak self] in
-            self?.hudOverlayManager.focusSession(id: sessionID)
+            self?.appActivationRouter.handleNotificationResponse(identifier: identifier) { [weak self] sessionID in
+                self?.hudOverlayManager.focusSession(id: sessionID)
+            }
             completionHandler()
         }
     }

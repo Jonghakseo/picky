@@ -814,7 +814,7 @@ private struct PickyHubPickleFolderControls: View {
                                 .pickyHubSelectableText()
                             Button(action: { action(path) }) {
                                 Image(systemName: "xmark")
-                                    .pickyFont(size: 10, weight: .bold)
+                                    .pickyFont(size: 10, weight: .semibold)
                                     .frame(
                                         width: PickyHubTheme.Control.minimumHeight,
                                         height: PickyHubTheme.Control.minimumHeight

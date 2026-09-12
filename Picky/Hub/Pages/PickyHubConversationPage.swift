@@ -125,7 +125,7 @@ private struct PickyHubConversationTimeline: View {
     private var headerText: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text("hub.nav.conversation")
-                .pickyFont(size: PickyHubTheme.Typography.pageTitle, weight: .heavy)
+                .pickyFont(size: PickyHubTheme.Typography.pageTitle, weight: .semibold)
                 .tracking(-0.8)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .accessibilityAddTraits(.isHeader)

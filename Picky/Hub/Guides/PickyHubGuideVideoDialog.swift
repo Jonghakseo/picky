@@ -40,7 +40,7 @@ struct PickyHubGuideVideoDialog: View {
                     .foregroundColor(PickyHubTheme.Colors.warning)
                     .accessibilityHidden(true)
                 Text("hub.guides.video.error.title")
-                    .pickyFont(size: 16, weight: .bold)
+                    .pickyFont(size: 16, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     .pickyHubSelectableText()
                 Text("hub.guides.video.error.message")

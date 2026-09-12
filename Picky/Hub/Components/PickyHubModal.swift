@@ -177,7 +177,7 @@ struct PickyHubModalOverlay<Content: View>: View {
     }
 }
 
-/// Header row shared by hub dialogs: eyebrow meta, title, close glyph.
+/// Header row shared by Hub dialogs: title, optional supporting metadata, and close glyph.
 struct PickyHubModalHeader: View {
     var meta: String?
     let title: String
@@ -186,17 +186,17 @@ struct PickyHubModalHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
-                if let meta, !meta.isEmpty {
-                    Text(meta)
-                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
-                        .foregroundColor(PickyHubTheme.Colors.textTertiary)
-                }
                 Text(title)
-                    .pickyFont(size: PickyHubTheme.Typography.modalTitle, weight: .bold)
+                    .pickyFont(size: PickyHubTheme.Typography.modalTitle, weight: .semibold)
                     .tracking(-0.6)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
+                if let meta, !meta.isEmpty {
+                    Text(meta)
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                        .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                }
             }
             Spacer(minLength: 8)
             if let onClose {
@@ -214,7 +214,7 @@ struct PickyHubModalCloseButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
-                .pickyFont(size: 12, weight: .bold)
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(isHovering ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textTertiary)
                 .frame(width: PickyHubTheme.Control.minimumHeight, height: PickyHubTheme.Control.minimumHeight)
                 .background(Circle().fill(isHovering ? PickyHubTheme.Colors.navHighlight : Color.clear))
@@ -244,7 +244,7 @@ struct PickyHubConfirmDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .pickyFont(size: 18, weight: .bold)
+                .pickyFont(size: 18, weight: .semibold)
                 .tracking(-0.5)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .accessibilityAddTraits(.isHeader)

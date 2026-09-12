@@ -70,7 +70,7 @@ struct PickyHubPluginReloadBanner: View {
     private var reloadCopy: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text("hub.plugins.reload.title")
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
             Text("hub.plugins.reload.message")
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)

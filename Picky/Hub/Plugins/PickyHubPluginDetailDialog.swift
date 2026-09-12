@@ -43,7 +43,7 @@ struct PickyHubPluginDetailDialog: View {
                 .padding(.top, PickyHubTheme.Spacing.field)
 
             Text("hub.plugins.detail.useCases")
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .padding(.top, PickyHubTheme.Spacing.group)
 
@@ -183,7 +183,7 @@ private struct PickyHubPluginUseCaseLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: PickyHubTheme.Spacing.related) {
             configuration.icon
-                .pickyFont(size: 5, weight: .bold)
+                .pickyFont(size: 5, weight: .semibold)
                 .accessibilityHidden(true)
             configuration.title
         }

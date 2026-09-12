@@ -121,7 +121,7 @@ struct PickyHubPageHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(title)
-                .pickyFont(size: PickyHubTheme.Typography.pageTitle, weight: .heavy)
+                .pickyFont(size: PickyHubTheme.Typography.pageTitle, weight: .semibold)
                 .tracking(-0.8)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .accessibilityAddTraits(.isHeader)
@@ -162,7 +162,7 @@ struct PickyHubSectionHeading: View {
                         .accessibilityHidden(true)
                 }
                 Text(title)
-                    .pickyFont(size: PickyHubTheme.Typography.sectionTitle, weight: .heavy)
+                    .pickyFont(size: PickyHubTheme.Typography.sectionTitle, weight: .semibold)
                     .tracking(-1)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     .accessibilityAddTraits(.isHeader)
@@ -200,7 +200,7 @@ struct PickyHubTextLink: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.action)
                 .underline(isHovering)
                 .padding(.horizontal, DS.Spacing.space1)
@@ -274,10 +274,10 @@ struct PickyHubPillButton: View {
                     ProgressView().controlSize(.mini)
                 } else if let systemImage {
                     Image(systemName: systemImage)
-                        .pickyFont(size: 10, weight: .bold)
+                        .pickyFont(size: 10, weight: .semibold)
                 }
                 Text(title)
-                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .bold)
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(PickyHubTheme.Colors.action)
@@ -330,7 +330,7 @@ struct PickyHubButton: View {
                     ProgressView().controlSize(.mini)
                 } else if let systemImage {
                     Image(systemName: systemImage)
-                        .pickyFont(size: 11, weight: .bold)
+                        .pickyFont(size: 11, weight: .semibold)
                 }
                 Text(title)
                     .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
@@ -470,7 +470,7 @@ struct PickyHubStatusBadge: View {
     let text: LocalizedStringKey
     var body: some View {
         Text(text)
-            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .bold)
+            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
             .foregroundColor(PickyHubTheme.Colors.badgeText)
             .padding(.horizontal, 9)
             .frame(minWidth: 52, minHeight: 33)

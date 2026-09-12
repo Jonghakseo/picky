@@ -27,7 +27,7 @@ struct PickyHubGuideCardView: View {
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
 
                     Text(entry.title.resolved(for: LocaleManager.shared.effectiveLocale))
-                        .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
+                        .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                         .tracking(-0.4)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
                         .multilineTextAlignment(.leading)

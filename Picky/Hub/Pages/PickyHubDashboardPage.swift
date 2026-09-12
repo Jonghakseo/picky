@@ -74,7 +74,7 @@ struct PickyHubDashboardPage: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 Text(greeting.title)
-                    .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .bold)
+                    .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .semibold)
                     .tracking(-0.5)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     .accessibilityAddTraits(.isHeader)
@@ -189,7 +189,7 @@ struct PickyHubDashboardPage: View {
     private var dashboardEmptyWorkCard: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(PickyHubDashboardPresentation.emptyWorkTitle(period: statisticsStore.filter.period))
-                .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .pickyHubSelectableText()
             Text("hub.dashboard.work.empty.message")
@@ -483,7 +483,7 @@ private struct PickyHubDashboardGuideCard: View {
                 .clipped()
                 VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                     Text(entry.title.resolved(for: locale))
-                        .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
+                        .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(PickyHubDashboardPresentation.relativeGuideDate(entry.publishedDate, locale: locale))
@@ -526,7 +526,7 @@ private struct PickyHubDashboardQuickStartGrid: View {
                         .frame(maxHeight: .infinity)
                     VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                         Text(workflow.titleKey)
-                            .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
+                            .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                             .foregroundColor(PickyHubTheme.Colors.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(workflow.descriptionKey)
@@ -571,7 +571,7 @@ private struct PickyHubDashboardPluginRow: View {
           HStack(spacing: PickyHubTheme.Spacing.field) {
             HStack(spacing: PickyHubTheme.Spacing.related) {
                 Text(item.title)
-                    .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
+                    .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 Button(action: onDetail) {
                     Image(systemName: "info.circle")
@@ -593,7 +593,7 @@ private struct PickyHubDashboardPluginRow: View {
             if item.isInstalled {
                 Button(action: onRemove) {
                     Text(isHoveringInstalled ? "hub.dashboard.plugins.remove" : "hub.dashboard.plugins.installed")
-                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .bold)
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                         .foregroundColor(isHoveringInstalled ? PickyHubTheme.Colors.danger : PickyHubTheme.Colors.badgeText)
                         .frame(minWidth: 52, minHeight: 33)
                         .background(isHoveringInstalled ? PickyHubTheme.Colors.dangerTint : PickyHubTheme.Colors.canvas)

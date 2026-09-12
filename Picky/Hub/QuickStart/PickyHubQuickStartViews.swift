@@ -30,7 +30,7 @@ struct PickyHubQuickStartWorkflowCard: View {
                 .accessibilityHidden(true)
 
             Text(workflow.titleKey)
-                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                 .tracking(-0.4)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .padding(.top, PickyHubTheme.Spacing.field)
@@ -97,10 +97,10 @@ struct PickyHubQuickStartResumeCard: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text("hub.quickStart.resume.kicker")
-                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.action)
             Text(workflow.titleKey)
-                .pickyFont(size: PickyHubTheme.Typography.body, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
             if record.deliveryState != .accepted {
                 Text("hub.quickStart.resume.pending")
@@ -130,13 +130,13 @@ struct PickyHubQuickStartSuccessView: View {
     var body: some View {
         VStack(spacing: 0) {
             Image(systemName: "checkmark")
-                .pickyFont(size: 22, weight: .bold)
+                .pickyFont(size: 22, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.success)
                 .frame(width: 46, height: 46)
                 .background(Circle().fill(PickyHubTheme.Colors.successBackground))
                 .accessibilityHidden(true)
             Text("hub.quickStart.success.title")
-                .pickyFont(size: 20, weight: .bold)
+                .pickyFont(size: 20, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .padding(.top, PickyHubTheme.Spacing.field)
             Text("hub.quickStart.success.message")

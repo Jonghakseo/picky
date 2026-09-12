@@ -56,7 +56,7 @@ enum PickyHubTheme {
     }
 
     enum Typography {
-        /// Section title (24/750, -1 tracking).
+        /// Section title (20pt semibold, -1 tracking).
         static let sectionTitle: CGFloat = 20
         static let pageTitle: CGFloat = 24
         static let cardTitle: CGFloat = 18

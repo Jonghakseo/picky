@@ -15,8 +15,8 @@ Use the existing Hub components and semantic tokens instead of another design sy
 | Page/section separation | 32pt; heading to content 16pt |
 | Card shape | 12pt radius, neutral surface, subtle border, no decorative shadow |
 | Controls | 8pt radius, at least 32pt actionable height, 12pt horizontal inset. Dropdown selectors use `PickyHubMenuPicker`, backed by the shared native popup control. |
-| Type | Page 24pt, section 20pt, card/subsection 18pt, body 14pt, supporting 13pt, metadata 12pt; scale with app font setting |
-| Text | Leading alignment and natural wrapping; truncate only explicitly secondary metadata such as paths |
+| Type | Page 24pt, section 20pt, card/subsection 18pt, body 14pt, supporting 13pt, metadata 12pt; scale with app font setting. Use only regular, medium, and semibold. Reserve semibold for headings, controls, and short status emphasis; never use bold or heavy. |
+| Text | Leading alignment and natural wrapping; truncate only explicitly secondary metadata such as paths. Put supporting labels and metadata below their title instead of using eyebrow text above it. |
 | Text selection | The Hub root enables `pickyHubTextSelectionEnabled`, but only read-only body, path, error, and statistics text marked with `pickyHubSelectableText()` becomes selectable. Never apply SwiftUI `textSelection` to the Hub root, controls, tabs, navigation, or clickable-card labels. |
 | Actions | Standard Button semantics, visible labels or accessibility labels for icons; selected state has a non-color cue |
 | Disclosures | Whole label row activates; expanded content is leading-aligned; expose current state |

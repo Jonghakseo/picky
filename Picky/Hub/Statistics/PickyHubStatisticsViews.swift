@@ -16,20 +16,20 @@ struct PickyHubWorkInsightCards: View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: PickyHubTheme.Spacing.field), count: PickyHubGridPolicy.columnCount(for: contentWidth / fontScale, spacing: PickyHubTheme.Spacing.field))
         LazyVGrid(columns: columns, spacing: PickyHubTheme.Spacing.field) {
             PickyHubWorkInsightCard(
-                eyebrow: "hub.dashboard.insight.topCategory",
+                label: "hub.dashboard.insight.topCategory",
                 title: insights.topCategory?.category.title ?? L10n.t("hub.dashboard.insight.classifying"),
                 badges: topCategoryBadges,
                 isPrimary: true,
                 action: actions?.topCategory
             )
             PickyHubWorkInsightCard(
-                eyebrow: "hub.dashboard.insight.deepestPickle",
+                label: "hub.dashboard.insight.deepestPickle",
                 title: insights.deepestPickle?.record.title ?? L10n.t("hub.dashboard.insight.noData"),
                 badges: deepestBadges,
                 action: actions?.deepestPickle
             )
             PickyHubWorkInsightCard(
-                eyebrow: "hub.dashboard.insight.focusedProject",
+                label: "hub.dashboard.insight.focusedProject",
                 title: insights.focusedProject?.project ?? L10n.t("hub.dashboard.insight.noData"),
                 badges: focusedProjectBadges,
                 action: actions?.focusedProject
@@ -68,7 +68,7 @@ struct PickyHubWorkInsightActions {
 }
 
 private struct PickyHubWorkInsightCard: View {
-    let eyebrow: LocalizedStringKey
+    let label: LocalizedStringKey
     let title: String
     let badges: [String]
     var isPrimary = false
@@ -102,18 +102,19 @@ private struct PickyHubWorkInsightCard: View {
 
     private var cardBody: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
-            Text(eyebrow)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
             Text(title)
-                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                 .tracking(-0.8)
+                .foregroundColor(isPrimary ? PickyHubTheme.Colors.textOnAction : PickyHubTheme.Colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text(label)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .foregroundColor(isPrimary ? PickyHubTheme.Colors.textOnAction : PickyHubTheme.Colors.textSecondary)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: DS.Spacing.space1) { badgeViews }
                 VStack(alignment: .leading, spacing: DS.Spacing.space1) { badgeViews }
             }
         }
-        .foregroundColor(isPrimary ? PickyHubTheme.Colors.textOnAction : PickyHubTheme.Colors.textPrimary)
         .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
         .padding(PickyHubTheme.Spacing.cardInset)
         .background(

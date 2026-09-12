@@ -42,7 +42,7 @@ struct PickyHubPluginCardView: View {
             }
 
             Text(item.title)
-                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, PickyHubTheme.Spacing.field)

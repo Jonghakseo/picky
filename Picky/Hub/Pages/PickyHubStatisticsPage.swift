@@ -397,7 +397,7 @@ private struct PickyHubUsageSummaryCards: View {
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .pickyHubSelectableText()
             Text(PickyHubTokenFormatter.string(value))
-                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .bold)
+                .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                 .tracking(-1)
                 .monospacedDigit()
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)

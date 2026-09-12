@@ -11,6 +11,7 @@ import AVFoundation
 import SwiftUI
 
 struct CompanionPanelPrerequisitesCopyView: View {
+    @Environment(\.pickyHubTypographyEnabled) private var usesHubTypography
     /// The copy view is only embedded by the Status tab when prerequisites are
     /// still missing, so the body always renders the "setup needed" wording.
     /// Kept as its own view (rather than inlined) so the Status tab and any
@@ -18,7 +19,7 @@ struct CompanionPanelPrerequisitesCopyView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("prereq.copy.runsLocally")
-                .pickyFont(size: 12, weight: .bold)
+                .pickyFont(size: 12, weight: usesHubTypography ? .regular : .bold)
                 .foregroundColor(DS.Colors.textSecondary)
                 .pickyHubSelectableText()
 
@@ -40,14 +41,17 @@ struct CompanionPanelPrerequisitesCopyView: View {
 
 struct CompanionPanelPrerequisitesView: View {
     @ObservedObject var permissions: PickyPermissionMonitor
+    @Environment(\.pickyHubTypographyEnabled) private var usesHubTypography
 
     var body: some View {
         VStack(spacing: 2) {
-            Text("prereq.heading")
-                .pickyFont(size: 10, weight: .semibold, design: .rounded)
-                .foregroundColor(DS.Colors.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 6)
+            if !usesHubTypography {
+                Text("prereq.heading")
+                    .pickyFont(size: 10, weight: .semibold, design: .rounded)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 6)
+            }
 
             microphonePermissionRow
 

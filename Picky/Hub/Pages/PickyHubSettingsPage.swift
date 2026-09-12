@@ -1006,7 +1006,7 @@ private struct PickyHubSettingsRow<Control: View>: View {
     private var labels: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             Text(title)
-                .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
             Text(detail)
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
@@ -1028,7 +1028,7 @@ private struct PickyHubSettingsDisclosure<Content: View>: View {
                 .padding(.top, DS.Spacing.space2)
                 .onAppear(perform: onExpandedContentAppear)
         } label: {
-            Text(title).pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold).foregroundColor(PickyHubTheme.Colors.textSecondary)
+            Text(title).pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium).foregroundColor(PickyHubTheme.Colors.textSecondary)
         }
         .disclosureGroupStyle(PickySettingsDisclosureStyle())
         .padding(PickyHubTheme.Spacing.cardInset)

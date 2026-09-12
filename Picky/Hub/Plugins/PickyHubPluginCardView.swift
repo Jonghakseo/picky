@@ -48,14 +48,14 @@ struct PickyHubPluginCardView: View {
                 .padding(.top, PickyHubTheme.Spacing.field)
 
             Text(item.summary)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
 
             Text(meta)
-                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 .lineLimit(1)
                 .pickyHubSelectableText()
@@ -179,7 +179,6 @@ struct PickyHubCronJobsDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.group) {
             PickyHubModalHeader(
-                meta: L10n.t("hub.plugins.card.cronMeta"),
                 title: L10n.t("extensions.cron.jobs.title"),
                 onClose: { modalHost.dismiss() }
             )

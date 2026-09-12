@@ -130,7 +130,7 @@ private struct PickyHubConversationTimeline: View {
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Text("hub.page.conversation.subtitle")
-                .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .pickyHubSelectableText()
@@ -177,7 +177,7 @@ private struct PickyHubConversationTimeline: View {
                 ZStack(alignment: .topLeading) {
                     if draft.isEmpty {
                         Text("hub.conversation.composer.placeholder")
-                            .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                            .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                             .foregroundColor(PickyHubTheme.Colors.textTertiary)
                             .padding(.top, 2)
                             .allowsHitTesting(false)

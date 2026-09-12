@@ -1,6 +1,6 @@
 # Hub component rules
 
-Applies only to the Hub window: Dashboard, Statistics, Guides, Quick Start, Plugins, Conversation, Settings, sidebar, and Hub dialogs. Pickle HUD, Dock, cursor overlays, standalone Companion settings, and shared conversation/bubble implementations are outside this change.
+Applies only to the Hub window: Dashboard, Statistics, Guides, Quick Start, Plugins, Conversation, Settings, sidebar, and Hub dialogs. Pickle HUD, Dock, cursor overlays, standalone Companion settings, and shared conversation/bubble implementations retain their standalone appearance. Embedded shared UI opts into Hub typography through `pickyHubTypographyEnabled`; that environment defaults to false.
 
 ## Decision
 
@@ -15,8 +15,8 @@ Use the existing Hub components and semantic tokens instead of another design sy
 | Page/section separation | 32pt; heading to content 16pt |
 | Card shape | 12pt radius, neutral surface, subtle border, no decorative shadow |
 | Controls | 8pt radius, at least 32pt actionable height, 12pt horizontal inset. Dropdown selectors use `PickyHubMenuPicker`, backed by the shared native popup control. |
-| Type | Page 24pt, section 20pt, card/subsection 18pt, body 14pt, supporting 13pt, metadata 12pt; scale with app font setting. Use only regular, medium, and semibold. Reserve semibold for headings, controls, and short status emphasis; never use bold or heavy. |
-| Text | Leading alignment and natural wrapping; truncate only explicitly secondary metadata such as paths. Put supporting labels and metadata below their title instead of using eyebrow text above it. |
+| Type | Page 24pt, section 20pt, card/subsection 18pt, body 14pt, supporting 13pt, metadata 12pt; scale with app font setting. Use only regular, medium, and semibold. Reserve semibold for headings, the selected navigation item, and short important warnings. Use medium for ordinary controls, table labels, and badges; regular for descriptions, metadata, unselected navigation, and table values. Never use bold or heavy. |
+| Text | Leading alignment and natural wrapping; truncate only explicitly secondary metadata such as paths. Delete redundant eyebrow copy rather than relocating it. Guide kind/date chrome, the duplicate resume kicker, feedback/cron modal subtitles, and the Hub prerequisite kicker are omitted. Keep metric labels, filter scope, recovery warnings, and plugin version/provider information because they explain the data or next action. |
 | Text selection | The Hub root enables `pickyHubTextSelectionEnabled`, but only read-only body, path, error, and statistics text marked with `pickyHubSelectableText()` becomes selectable. Never apply SwiftUI `textSelection` to the Hub root, controls, tabs, navigation, or clickable-card labels. |
 | Actions | Standard Button semantics, visible labels or accessibility labels for icons; selected state has a non-color cue |
 | Disclosures | Whole label row activates; expanded content is leading-aligned; expose current state |
@@ -45,10 +45,10 @@ References: [Picky principles](../design/PRINCIPLES.md), [tokens](../design/TOKE
 
 The existing design-token lint does not scan the entire Hub tree. Its pass is supplemental, not proof that every Hub style follows this document. Render review and the shared components remain necessary.
 
-## Executed verification
+## Earlier component-rule verification
 
 - The selective-text AppKit regression passed. Marked Hub body text and the production Conversation subtitle became non-editable selectable fields, while page titles and button labels stayed non-selectable; disabling the Hub environment removed selection.
-- Final production gallery succeeded: 27 standard page/dialog scenes, four full settings scenes, fourteen full/enlarged page scenes, two expanded-disclosure renders, and two populated guide-card renders. The regenerated Settings light/dark, Statistics narrow-dark, and Dashboard dark scenes retained their expected geometry and styling.
+- The earlier production gallery generated 49 PNGs: 27 standard page/dialog scenes, four full settings scenes, fourteen full/enlarged page scenes, two expanded-disclosure renders, and two populated guide-card renders. Later direct inspection found a stale modal in the eighteen full-page scenes. Those baseline images are excluded from visual comparison; the corrected gallery waits for render-phase dismissal before capturing full pages.
 - Inspected light/dark overview, enlarged-page layouts, Quick Start's corrected leading heading, and the populated guide card. The latter has OCR assertions for the final title word and absence of an untranslated kind key.
 - Eighteen existing contracts passed across `PickyHubLayoutPolicyTests`, `PickyHubModalTests`, `PickyHubPageMountTests`, and `PickyHubSettingsRuntimeContractTests`. After the final scroll-container adjustment, the seven page-mount/settings contracts passed again; subsequent changes affected only guide-card text and its render assertions.
 - The gallery's native-menu and reasoning/dispatch persistence regressions passed. The exported-snapshot test returned early because no export request was supplied and is not counted as exercised evidence.
@@ -56,3 +56,32 @@ The existing design-token lint does not scan the entire Hub tree. Its pass is su
 - Native pointer/keyboard/VoiceOver operation, video playback, and live external-service actions remain unverified. These results are not an accessibility certification or a performance claim.
 
 Preview: `build/render-gallery/hub/common-rules-preview.html` (theme/size selector), plus `overview-wide-dark.png`, `overview-wide-light.png`, and `overview-large.png` in the same directory. The normal gallery script regenerates the raw PNGs; the task-specific overview/preview files are generated review artifacts.
+
+## Restrained Hub typography
+
+`PickyHubRootView` supplies `pickyHubTypographyEnabled` to retained pages and the
+modal overlay. It defaults to false, so the standalone Companion, HUD, and
+Quick Input keep their existing presentation. This is a presentation-only gate;
+it does not change permission requests, save state, feedback submission, or
+session routing.
+
+The embedded audit covers these production paths:
+
+- Prerequisites copy and permission rows: remove the Hub-only prerequisite
+  kicker and use regular for the introductory copy. Permission names and grant
+  actions remain visible.
+- Companion settings: the dirty-state Save label uses medium inside Hub instead
+  of the shared `metaBold` token. Native popup labels, IME input, disclosures,
+  and archived-session rows use regular, medium, or semibold.
+- Feedback: the attachment remove glyph uses medium inside Hub. The successful
+  send callback still dismisses only the originating presentation.
+- Cron jobs: title, action, status, and monospace metadata tokens already use
+  regular, medium, or semibold. Setup, retry, and job navigation are unchanged.
+- Main conversation: the production `PickyMainAgentMarkdownText` maps explicit
+  Markdown strong emphasis to semibold only in Hub, with regular paragraph and
+  bullet copy. Links, italics, inline code, and the unstyled Markdown cache are
+  preserved. Shared HUD conversation bubbles are not on this route.
+
+System-owned permission dialogs, native alert typography, and the YouTube
+player's remote content are outside Picky's typography policy. Offscreen PNGs
+verify static layout, not native focus, hover, video playback, or permissions.

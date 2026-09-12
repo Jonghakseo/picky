@@ -19,23 +19,15 @@ struct PickyHubGuideCardView: View {
                     .aspectRatio(16 / 9, contentMode: .fit)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: PickyHubTheme.Spacing.related) {
-                        Text(LocalizedStringKey(entry.kind.titleKey))
-                        Text(displayDate)
-                    }
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
-                    .foregroundColor(PickyHubTheme.Colors.textTertiary)
-
                     Text(entry.title.resolved(for: LocaleManager.shared.effectiveLocale))
                         .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                         .tracking(-0.4)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, PickyHubTheme.Spacing.related)
 
                     Text(entry.summary.resolved(for: LocaleManager.shared.effectiveLocale))
-                        .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                        .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -83,11 +75,7 @@ struct PickyHubGuideCardView: View {
         .accessibilityHidden(true)
     }
 
-    private var displayDate: String {
-        entry.publishedOn.replacingOccurrences(of: "-", with: ".")
-    }
-
     private var accessibilityLabel: Text {
-        Text("\(entry.title.resolved(for: LocaleManager.shared.effectiveLocale)), \(L10n.t(entry.kind.titleKey)), \(displayDate), \(L10n.t("hub.guides.card.playHint"))")
+        Text("\(entry.title.resolved(for: LocaleManager.shared.effectiveLocale)), \(L10n.t("hub.guides.card.playHint"))")
     }
 }

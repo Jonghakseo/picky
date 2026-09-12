@@ -217,7 +217,7 @@ struct PickyHubUsageLineChart: View {
                 }
                 ForEach(labelIndices, id: \.self) { index in
                     Text(axisLabel(days[index].day))
-                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textTertiary)
                         .lineLimit(1)
                         .frame(width: labelWidth)

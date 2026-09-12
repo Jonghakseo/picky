@@ -15,6 +15,7 @@ import Combine
 import SwiftUI
 
 struct CompanionPanelSettingsView: View {
+    @Environment(\.pickyHubTypographyEnabled) private var usesHubTypography
     @ObservedObject var viewModel: PickySettingsViewModel
     let companionManager: CompanionManager
     @ObservedObject var mainConversation: PickyMainAgentConversationStore
@@ -1436,7 +1437,7 @@ struct CompanionPanelSettingsView: View {
                     Image(systemName: "square.and.arrow.down")
                         .font(PickyHUDTypography.minimumSemibold)
                     Text("common.save")
-                        .font(PickyHUDTypography.metaBold)
+                        .font(usesHubTypography ? PickyHUDTypography.metaMedium : PickyHUDTypography.metaBold)
                 }
                 .foregroundColor(DS.Colors.accentText)
                 .padding(.horizontal, 9)

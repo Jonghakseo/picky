@@ -84,10 +84,10 @@ private struct PickyHubNavRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: page.systemImage)
-                    .pickyFont(size: 14, weight: .semibold)
+                    .pickyFont(size: 14, weight: .medium)
                     .frame(width: 18, height: 18)
                 Text(page.titleKey)
-                    .pickyFont(size: PickyHubTheme.Typography.nav, weight: .semibold)
+                    .pickyFont(size: PickyHubTheme.Typography.nav, weight: isSelected ? .semibold : .regular)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }

@@ -61,6 +61,8 @@ struct PickyMainAgentTranscriptRow: View {
 /// compact Messages and Quick Input surfaces, not the larger report viewer.
 struct PickyMainAgentMarkdownText: View {
     let markdown: String
+    @Environment(\.pickyHubTypographyEnabled) private var usesHubTypography
+    @Environment(\.pickyAppFontScale) private var fontScale
     private let renderer = PickyReportMarkdownRenderer()
 
     var body: some View {
@@ -82,13 +84,13 @@ struct PickyMainAgentMarkdownText: View {
     private func blockView(_ block: PickyReportMarkdownRenderer.Block) -> some View {
         switch block {
         case .heading(let level, let text):
-            Text(renderer.inlineAttributedString(for: text))
+            Text(renderer.inlineAttributedString(for: text, strongEmphasisFont: usesHubTypography ? font(forHeadingLevel: level) : nil))
                 .font(font(forHeadingLevel: level))
                 .foregroundStyle(DS.Colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
-            Text(renderer.inlineAttributedString(for: text))
-                .pickyFont(size: 11.5, weight: .medium)
+            Text(renderer.inlineAttributedString(for: text, strongEmphasisFont: usesHubTypography ? .system(size: 11.5 * fontScale, weight: .semibold) : nil))
+                .pickyFont(size: 11.5, weight: usesHubTypography ? .regular : .medium)
                 .foregroundStyle(DS.Colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
@@ -96,8 +98,8 @@ struct PickyMainAgentMarkdownText: View {
                 Text("•")
                     .pickyFont(size: 11.5, weight: .semibold)
                     .foregroundStyle(DS.Colors.textSecondary)
-                Text(renderer.inlineAttributedString(for: text))
-                    .pickyFont(size: 11.5, weight: .medium)
+                Text(renderer.inlineAttributedString(for: text, strongEmphasisFont: usesHubTypography ? .system(size: 11.5 * fontScale, weight: .semibold) : nil))
+                    .pickyFont(size: 11.5, weight: usesHubTypography ? .regular : .medium)
                     .foregroundStyle(DS.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -131,10 +133,11 @@ struct PickyMainAgentMarkdownText: View {
     }
 
     private func font(forHeadingLevel level: Int) -> Font {
+        let scale = usesHubTypography ? fontScale : 1
         switch level {
-        case 1: return .system(size: 13.5, weight: .semibold)
-        case 2: return .system(size: 12.5, weight: .semibold)
-        default: return .system(size: 12, weight: .semibold)
+        case 1: return .system(size: 13.5 * scale, weight: .semibold)
+        case 2: return .system(size: 12.5 * scale, weight: .semibold)
+        default: return .system(size: 12 * scale, weight: .semibold)
         }
     }
 }

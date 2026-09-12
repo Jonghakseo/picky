@@ -72,6 +72,7 @@ struct PickyHubRootView: View {
         .environmentObject(dependencies.quickStartLauncher)
         .environmentObject(dependencies.pluginCatalog)
         .environment(\.pickyHubTextSelectionEnabled, true)
+        .environment(\.pickyHubTypographyEnabled, true)
         .task(id: navigator.shouldRefreshStatistics) {
             guard navigator.shouldRefreshStatistics else { return }
             while !Task.isCancelled {
@@ -124,7 +125,6 @@ struct PickyHubFeedbackDialog: View {
 
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
             PickyHubModalHeader(
-                meta: L10n.t("settings.section.feedback.subtitle"),
                 title: L10n.t("settings.section.feedback.title"),
                 onClose: { modalHost.dismiss() }
             )

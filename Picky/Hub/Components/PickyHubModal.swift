@@ -199,7 +199,7 @@ struct PickyHubModalHeader: View {
                     .accessibilityAddTraits(.isHeader)
                 if let meta, !meta.isEmpty {
                     Text(meta)
-                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 }
             }
@@ -254,7 +254,7 @@ struct PickyHubConfirmDialog: View {
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Text(message)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .pickyHubSelectableText()

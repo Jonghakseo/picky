@@ -115,13 +115,28 @@ struct PickyReportMarkdownRenderer {
         return blocks
     }
 
-    func inlineAttributedString(for markdown: String) -> AttributedString {
+    func inlineAttributedString(for markdown: String, strongEmphasisFont: Font? = nil) -> AttributedString {
         let key = markdown as NSString
+        var value: AttributedString
         if let cached = Self.inlineCache.object(forKey: key) {
-            return cached.value
+            value = cached.value
+        } else {
+            value = computeInlineAttributedString(for: markdown)
+            Self.inlineCache.setObject(InlineCacheEntry(value: value), forKey: key, cost: markdown.utf8.count)
         }
-        let value = computeInlineAttributedString(for: markdown)
-        Self.inlineCache.setObject(InlineCacheEntry(value: value), forKey: key, cost: markdown.utf8.count)
+        // Keep the cached Markdown neutral. A Hub render must not change the
+        // default strong-emphasis treatment in standalone transcript/report views.
+        if let strongEmphasisFont {
+            for run in value.runs {
+                guard var intent = run.inlinePresentationIntent, intent.contains(.stronglyEmphasized) else { continue }
+                intent.remove(.stronglyEmphasized)
+                value[run.range].inlinePresentationIntent = intent
+                var font = strongEmphasisFont
+                if intent.contains(.code) { font = font.monospaced() }
+                if intent.contains(.emphasized) { font = font.italic() }
+                value[run.range].font = font
+            }
+        }
         return value
     }
 

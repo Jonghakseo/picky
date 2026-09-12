@@ -36,7 +36,7 @@ struct PickyHubQuickStartWorkflowCard: View {
                 .padding(.top, PickyHubTheme.Spacing.field)
 
             Text(workflow.descriptionKey)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .pickyHubSelectableText()
@@ -96,9 +96,6 @@ struct PickyHubQuickStartResumeCard: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
-            Text("hub.quickStart.resume.kicker")
-                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
-                .foregroundColor(PickyHubTheme.Colors.action)
             Text(workflow.titleKey)
                 .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
@@ -110,7 +107,7 @@ struct PickyHubQuickStartResumeCard: View {
                     .pickyHubSelectableText()
             }
             Text(L10n.t("hub.quickStart.resume.lastStarted", record.startedAt.formatted(date: .abbreviated, time: .shortened)))
-                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 .pickyHubSelectableText()
         }
@@ -140,7 +137,7 @@ struct PickyHubQuickStartSuccessView: View {
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .padding(.top, PickyHubTheme.Spacing.field)
             Text("hub.quickStart.success.message")
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .multilineTextAlignment(.center)
                 .pickyHubSelectableText()

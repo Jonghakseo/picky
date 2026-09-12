@@ -36,7 +36,7 @@ struct PickyHubPluginDetailDialog: View {
             PickyHubModalHeader(meta: meta, title: item.title, onClose: { modalHost.dismiss() })
 
             Text(item.summary)
-                .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .pickyHubSelectableText()
@@ -51,7 +51,7 @@ struct PickyHubPluginDetailDialog: View {
                 ForEach(item.useCases, id: \.self) { useCase in
                     Label(useCase, systemImage: "circle.fill")
                         .labelStyle(PickyHubPluginUseCaseLabelStyle())
-                        .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                        .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                         .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 }
             }

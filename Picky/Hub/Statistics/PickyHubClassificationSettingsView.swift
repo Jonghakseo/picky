@@ -15,7 +15,7 @@ struct PickyHubClassificationSettingsView: View {
             HStack(alignment: .center, spacing: PickyHubTheme.Spacing.field) {
                 VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                     Text("hub.settings.classification.title")
-                        .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
+                        .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     Text("hub.settings.classification.detail")
                         .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)

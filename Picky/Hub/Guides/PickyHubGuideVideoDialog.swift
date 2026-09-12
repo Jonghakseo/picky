@@ -19,7 +19,6 @@ struct PickyHubGuideVideoDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PickyHubModalHeader(
-                meta: "\(L10n.t(entry.kind.titleKey)) · \(longDate)",
                 title: entry.title.resolved(for: LocaleManager.shared.effectiveLocale),
                 onClose: { modalHost.dismiss() }
             )
@@ -44,7 +43,7 @@ struct PickyHubGuideVideoDialog: View {
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     .pickyHubSelectableText()
                 Text("hub.guides.video.error.message")
-                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                     .foregroundColor(PickyHubTheme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
                     .pickyHubSelectableText()
@@ -109,8 +108,4 @@ struct PickyHubGuideVideoDialog: View {
         }
     }
 
-    private var longDate: String {
-        guard let date = entry.publishedDate else { return entry.publishedOn }
-        return date.formatted(.dateTime.year().month(.wide).day())
-    }
 }

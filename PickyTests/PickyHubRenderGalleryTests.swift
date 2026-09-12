@@ -67,6 +67,67 @@ struct PickyHubRenderGalleryTests {
         let widthClass: String
     }
 
+    @Test func restrainedMarkdownPreservesLinksAndStylesWithoutChangingDefaultCache() throws {
+        let renderer = PickyReportMarkdownRenderer()
+        let source = "plain **strong** ***both*** **[linked](https://example.com)** and `code`"
+        let emphasis = Font.system(size: 15, weight: .semibold)
+        let styled = renderer.inlineAttributedString(for: source, strongEmphasisFont: emphasis)
+        #expect(String(styled.characters) == "plain strong both linked and code")
+        #expect(!styled.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
+        let strong = try #require(styled.runs.first { String(styled[$0.range].characters) == "strong" })
+        #expect(strong.font == emphasis)
+        let both = try #require(styled.runs.first { String(styled[$0.range].characters) == "both" })
+        #expect(both.font == emphasis.italic())
+        #expect(both.inlinePresentationIntent?.contains(.emphasized) == true)
+        let link = try #require(styled.runs.first { $0.link != nil })
+        #expect(link.link == URL(string: "https://example.com"))
+        #expect(link.font == emphasis)
+        #expect(styled.runs.contains { $0.inlinePresentationIntent?.contains(.code) == true })
+        let unstyled = renderer.inlineAttributedString(for: source)
+        #expect(unstyled.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
+        #expect(unstyled.runs.allSatisfy { $0.font == nil }, "Hub fonts must not leak through the shared Markdown cache")
+    }
+
+    @Test func resumeCardHasOneContinueActionAndKeepsUnconfirmedDeliveryWarning() throws {
+        let workflow = try #require(PickyHubQuickStartWorkflow.all.first)
+        let output = (try? String(contentsOf: Self.outputRequestFile, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            for appearance in [Appearance.light, .dark] {
+                let record = PickyHubQuickStartRecord(
+                    workflowID: workflow.id, sessionID: "typography-resume", cwd: "/tmp/project",
+                    startedAt: Date(timeIntervalSince1970: 1_784_000_000), deliveryState: .deliveryUnknown
+                )
+                let size = CGSize(width: 540, height: 280)
+                let root = PickyHubQuickStartResumeCard(workflow: workflow, record: record, action: {})
+                    .environment(\.pickyAppFontScale, 1.3)
+                    .environment(\.pickyHubTypographyEnabled, true)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .padding(PickyHubTheme.Spacing.field)
+                    .frame(width: size.width, height: size.height, alignment: .topLeading)
+                    .background(PickyHubTheme.Colors.canvas)
+                    .preferredColorScheme(appearance.colorScheme)
+                let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
+                    root, logicalSize: size, scale: Self.renderScale, appearance: appearance.nsAppearance
+                ))
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                #expect(text.components(separatedBy: "Continue").count - 1 == 1,
+                        "Continue must appear only on the action, not again as a kicker: \(text)")
+                #expect(text.contains("First instruction not confirmed"), "Do not delete the recovery warning: \(text)")
+                if let output, !output.isEmpty {
+                    let directory = URL(fileURLWithPath: output).appendingPathComponent("typography")
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try png.write(to: directory.appendingPathComponent("resume-130-\(appearance.rawValue).png"))
+                }
+            }
+        }
+    }
+
     @Test func fontScaleMenusRetainPercentageOptionsAcrossControlActivation() throws {
         let fixture = try PickyHubRenderGalleryFixture()
         defer { fixture.removeTemporaryState() }
@@ -308,6 +369,12 @@ struct PickyHubRenderGalleryTests {
         let settingsOutput = output.appendingPathComponent("settings-full", isDirectory: true)
         try FileManager.default.createDirectory(at: settingsOutput, withIntermediateDirectories: true)
         fixture.dependencies.modalHost.dismiss()
+        // Dismissal publishes its render-phase removal on the next main-queue
+        // turn. Do not capture a full page behind the previous reset dialog.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        try #require(fixture.dependencies.modalHost.renderedPresentation == nil)
         fixture.navigator.select(.settings)
         try LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
             for (width, appearance, scale, mode) in [
@@ -384,10 +451,28 @@ struct PickyHubRenderGalleryTests {
                 try VNImageRequestHandler(cgImage: image).perform([request])
                 let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
                 #expect(visibleText.contains("ZEBRA"), "The full guide title must remain visible, not ellipsized")
-                #expect(!visibleText.contains("hub.guides.kind"), "Guide kind must be localized, not a raw key")
+                #expect(!visibleText.contains("2026"), "The decorative guide date must be absent, not relocated")
+                #expect(!visibleText.contains("hub.guides.kind"), "No raw guide metadata key may be visible")
                 let png = try #require(bitmap.representation(using: .png, properties: [:]))
                 try png.write(to: auditOutput.appendingPathComponent("guide-card-130-\(appearance.rawValue).png"))
             }
+        }
+        let typographyOutput = output.appendingPathComponent("typography", isDirectory: true)
+        try FileManager.default.createDirectory(at: typographyOutput, withIntermediateDirectories: true)
+        for appearance in [Appearance.light, .dark] {
+            let size = CGSize(width: 620, height: 300)
+            let root = PickyMainAgentMarkdownText(markdown: "# Result\nPlain text with **important detail**, *emphasis*, ***both*** and **[a link](https://example.com)**.\n- A bullet with **one emphasis** and `inline code`.\n```\nlet answer = 42\n```")
+                .environment(\.pickyHubTypographyEnabled, true)
+                .environment(\.pickyAppFontScale, 1.3)
+                .padding(PickyHubTheme.Spacing.cardInset)
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
+                .background(PickyHubTheme.Colors.canvas)
+                .preferredColorScheme(appearance.colorScheme)
+            let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
+                root, logicalSize: size, scale: Self.renderScale, appearance: appearance.nsAppearance
+            ))
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: typographyOutput.appendingPathComponent("markdown-130-\(appearance.rawValue).png"))
         }
         fixture.fontScaleStore.setScale(1)
 

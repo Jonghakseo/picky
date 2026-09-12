@@ -79,7 +79,7 @@ struct PickyHubQuickStartPage: View {
         }
 
         Text("hub.quickStart.footer")
-            .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+            .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
             .foregroundColor(PickyHubTheme.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .pickyHubSelectableText()

@@ -20,7 +20,17 @@ private struct PickyHubTextSelectionEnabledKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct PickyHubTypographyEnabledKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
+    /// Shared content opts into Hub typography without restyling standalone panels.
+    var pickyHubTypographyEnabled: Bool {
+        get { self[PickyHubTypographyEnabledKey.self] }
+        set { self[PickyHubTypographyEnabledKey.self] = newValue }
+    }
+
     /// Width of the main content column, provided above each page by the hub
     /// root so page-level grid policies receive the current window width.
     var pickyHubContentWidth: CGFloat {
@@ -193,7 +203,7 @@ struct PickyHubPageHeader: View {
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Text(subtitle)
-                .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .pickyHubSelectableText()
@@ -267,7 +277,7 @@ struct PickyHubTextLink: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                 .foregroundColor(PickyHubTheme.Colors.action)
                 .underline(isHovering)
                 .padding(.horizontal, DS.Spacing.space1)
@@ -341,10 +351,10 @@ struct PickyHubPillButton: View {
                     ProgressView().controlSize(.mini)
                 } else if let systemImage {
                     Image(systemName: systemImage)
-                        .pickyFont(size: 10, weight: .semibold)
+                        .pickyFont(size: 10, weight: .medium)
                 }
                 Text(title)
-                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(PickyHubTheme.Colors.action)
@@ -397,10 +407,10 @@ struct PickyHubButton: View {
                     ProgressView().controlSize(.mini)
                 } else if let systemImage {
                     Image(systemName: systemImage)
-                        .pickyFont(size: 11, weight: .semibold)
+                        .pickyFont(size: 11, weight: .medium)
                 }
                 Text(title)
-                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(foreground)
@@ -476,7 +486,7 @@ struct PickyHubIconCircleButton: View {
                     Image(systemName: systemImage)
                 }
             }
-                .pickyFont(size: 14, weight: .semibold)
+                .pickyFont(size: 14, weight: .medium)
                 .foregroundColor(isHovering ? hoverForeground : foreground)
                 .frame(width: size, height: size)
                 .background(Circle().fill(fill))
@@ -515,7 +525,7 @@ struct PickyHubBadgePill: View {
 
     var body: some View {
         Text(text)
-            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
+            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
             .monospacedDigit()
             .foregroundColor(onAccent ? PickyHubTheme.Colors.textOnAction : PickyHubTheme.Colors.textPrimary)
             .padding(.horizontal, 8)
@@ -537,7 +547,7 @@ struct PickyHubStatusBadge: View {
     let text: LocalizedStringKey
     var body: some View {
         Text(text)
-            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
+            .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
             .foregroundColor(PickyHubTheme.Colors.badgeText)
             .padding(.horizontal, 9)
             .frame(minWidth: 52, minHeight: 33)
@@ -577,7 +587,7 @@ struct PickyHubEmptyState: View {
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .multilineTextAlignment(.center)
             Text(message)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -612,7 +622,7 @@ struct PickyHubInlineStatus: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: icon)
-                .pickyFont(size: 11, weight: .semibold)
+                .pickyFont(size: 11, weight: .medium)
                 .foregroundColor(color)
                 .accessibilityHidden(true)
             Text(message)
@@ -655,7 +665,7 @@ struct PickyHubLoadingRow: View {
         HStack(spacing: 10) {
             ProgressView().controlSize(.small)
             Text(message)
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 .pickyHubSelectableText()
         }
@@ -676,7 +686,7 @@ struct PickyHubPlaceholderVisual: View {
                 .fill(PickyHubTheme.Colors.muted)
             if let systemImage {
                 Image(systemName: systemImage)
-                    .pickyFont(size: 22, weight: .semibold)
+                    .pickyFont(size: 22, weight: .medium)
                     .foregroundColor(Color.white.opacity(0.85))
             }
         }

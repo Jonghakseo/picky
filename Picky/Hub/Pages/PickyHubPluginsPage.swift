@@ -42,7 +42,7 @@ struct PickyHubPluginsPage: View {
                 searchAndFilters
 
                 Text(statusMessage)
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
+                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
                     .padding(.top, PickyHubTheme.Spacing.related)
                     .pickyHubSelectableText()
@@ -109,7 +109,7 @@ struct PickyHubPluginsPage: View {
 
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 Text("hub.plugins.category.label")
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
+                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                     .foregroundColor(PickyHubTheme.Colors.textTertiary)
 
                 PickyHubWrappingHStack(spacing: PickyHubTheme.Spacing.related) {
@@ -354,7 +354,7 @@ private struct PickyHubPluginCategoryChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .semibold)
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .medium)
                 .foregroundColor(isSelected ? PickyHubTheme.Colors.textOnAction : (isHovering ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary))
                 .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
                 .frame(minHeight: PickyHubTheme.Control.minimumHeight)

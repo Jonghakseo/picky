@@ -68,6 +68,7 @@ enum PickyFeedbackSendErrorDescription {
 }
 
 struct CompanionPanelFeedbackView: View {
+    @Environment(\.pickyHubTypographyEnabled) private var usesHubTypography
     @ObservedObject var viewModel: PickySettingsViewModel
     var onSendSucceeded: () -> Void = {}
 
@@ -293,7 +294,7 @@ struct CompanionPanelFeedbackView: View {
                 removeMediaAttachment(attachment)
             } label: {
                 Image(systemName: "xmark")
-                    .pickyFont(size: 9, weight: .bold)
+                    .pickyFont(size: 9, weight: usesHubTypography ? .medium : .bold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 18, height: 18)
                     .background(Circle().fill(DS.Colors.surface2.opacity(0.75)))

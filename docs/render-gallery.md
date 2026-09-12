@@ -151,3 +151,25 @@ full-height viewport (3200pt wide-layout height; 2400pt narrow/enlarged height)
 to inspect content below the initial screen and 130% text reflow. The normal
 27-scene manifest remains unchanged. Tall viewports do not establish ordinary
 window scroll behavior; use the normal-size scenes alongside them.
+
+### Hub typography refinement scenes
+
+The Hub gallery also writes `typography/resume-130-light.png` and
+`typography/resume-130-dark.png` from the production Quick Start resume card.
+The OCR contract requires exactly one Continue action and the unconfirmed
+first-instruction warning. The populated `component-audit/guide-card-130-*.png`
+scenes require the final title word and no decorative publication date.
+`typography/markdown-130-*.png` shows the shared main-agent Markdown renderer
+with Hub typography, including strong emphasis, italic text, a strong link,
+and code. A separate attributed-text contract verifies the emphasis font and
+that Hub styling does not alter the default Markdown cache.
+
+These four additional PNGs do not change the standard 27-scene manifest.
+Compare the full-height `component-audit/dashboard-*.png` scenes as well as the
+normal window; the normal viewport alone cannot establish that lower cards and
+plugin rows remain readable. The font policy applies to Picky-owned Hub content,
+not system dialogs or remote video content.
+The gallery awaits the modal host's queued render-phase dismissal before moving
+from the standard dialog scenes to full-height pages, then requires that no
+rendered presentation remains. A logically dismissed but still-rendered dialog
+is not valid full-page evidence.

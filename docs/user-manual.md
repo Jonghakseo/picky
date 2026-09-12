@@ -77,10 +77,14 @@ For every curated plugin, Hub shows its category, provider, use cases, descripti
 
 The catalog includes tools such as `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, generative UI, delayed actions, local memory, clipboard access, and cross-agent bridges. It also includes:
 
-- **Cron** — schedules local Pi jobs and configures a persistent macOS LaunchAgent during install and update. An installed row provides **View jobs**, a read-only list of schedule and run status that never opens prompt contents, working directories, or run logs. If daemon setup fails after the npm package installs, use **Set up** to retry without reinstalling. Removal asks for confirmation, runs Cron's uninstall command, verifies that the LaunchAgent is unloaded, and only then removes the npm package.
+- **Cron** schedules local Pi jobs and configures a persistent macOS LaunchAgent during installation or explicit setup. The patched update path lets active jobs finish before replacing an outdated running scheduler; it does not reinstall the LaunchAgent or start a stopped scheduler. A changed package path or agent directory requires a separate migration after work stops. An installed row provides **View jobs**, a read-only list of schedule and run status that never opens prompt contents, working directories, or run logs. Use **Set up** only when installation or an explicit migration requires LaunchAgent configuration. Removal asks for confirmation, runs Cron's uninstall command, verifies that the LaunchAgent is unloaded, and only then removes the npm package.
 - **Memory Layer** — adds local `remember`, `recall`, `memory_list`, and `forget` tools so Pi can reuse durable memories across sessions.
 
 Hub checks npm for newer versions of installed curated plugins. When an installed, non-pinned plugin has an update available, **Update** appears with its other actions.
+
+Memory Layer and Cron installs and updates are temporarily blocked while the safe migration is validated; their update offers are hidden. Existing installations are not automatically changed. Plugin reload alone does not replace every Picky or external Pi runtime. Before upgrading these packages outside Hub, stop old writers and active scheduled work, back up memory/session/cron data, and follow the [extension safety cutover](extension-safety-cutover.md). Do not assume restarting Picky also stops external Pi terminals.
+
+With the patched Cron extension, PTT pauses delivery to the main session until replacement input is accepted. If recording is cancelled without sending input, delivery remains paused until the next input or session replacement. Duplicated or handed-off Pickles get independent Pi session identities; existing session files are not rewritten automatically.
 
 ### 2.4 Settings
 

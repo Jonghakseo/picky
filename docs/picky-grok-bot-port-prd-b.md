@@ -1,46 +1,60 @@
 # 기획서 B · Pi 코어로 만드는 로컬 Grok Bot
 
-- 버전: B 0.1
-- 조사·작성일: 2026-09-12 (KST)
+- 버전: B 0.2
+- 원자료 조사일: 2026-09-12 (KST)
+- 0.2 개정일: 2026-09-12 (KST)
 - 상태: 독립 대안 설계. 구현·출시 승인이나 기능 구현 완료를 뜻하지 않는다.
-- 비교 대상 A: [봇 중심 MVP v0.4](./picky-pickle-bot-mvp-prd.md). A는 수정하거나 폐기하지 않는다.
+- 비교 대상 A: [봇 중심 MVP v0.4](./picky-pickle-bot-mvp-prd.md). 이전 대안으로 원문을 보존한다. 사용자 Pi 호환 전제는 B 0.2에서 폐기한다.
+- 개정 기준: B 0.1 `5b56577d5`. 사용자 Pi 재사용·선택 플러그인·TUI 전환을 전용 내장 런타임으로 대체한다.
 - Picky 조사 기준: `6444d2593`
 - OpenMausBot 조사 기준: `f4d562c2d811b9734ddbe8a2873a4cb94f51b747`
 - Pi SDK 기준: `0.84.4`, 공식 리비전 `b79e4cc834970cca69daebffab7df1da7d1e52c4`
 
 > Grok Bot의 사용 경험을 로컬 Mac으로 옮긴다.
-> OpenMausBot처럼 메신저와 로컬 실행 서버를 구성하되, 에이전트 코어는 Pi 하나로 통일한다.
+> OpenMausBot처럼 메신저와 로컬 실행 서버를 구성한다. Pi는 사용자 CLI가 아니라 Picky가 소유하는 내부 코어다.
 
 B는 기존 Picky에 봇 이름과 메신저 창만 붙이는 안이 아니다. **봇 목록, 그룹 대화, 지속되는 업무 방식, Routine, 컴퓨터 제어, 승인, 결과물을 하나의 제품으로 다시 구성한다.** A에서 후순위였던 협업과 자동화도 완성 범위에 넣는다.
 
 ## 1. B의 기준과 A와의 차이
 
-| 질문 | A | B |
+| 질문 | A 및 B 0.1의 이전 전제 | B 0.2 |
 | --- | --- | --- |
-| 어디서 시작하는가 | 기존 Picky의 입력·세션 경험을 작은 봇 MVP로 발전 | Grok Bot의 완성된 제품 흐름에서 필요한 기능을 역산 |
-| 구현 참고 | 기존 Picky의 점진적 개편 | OpenMausBot의 메신저·harness·제어 계약, 기존 Picky/Pi의 검증 가능한 기반 |
-| 주 화면 | CBO와 Pickle의 1:1 메신저 | 봇·그룹 roster, 대화, 컴퓨터·자료·Routine 상세가 연결된 작업 앱 |
-| 협업·자동화 | 기본 위임 우선, 그룹·Routine 확대는 후순위 | 그룹 대화, 봇 간 인계, 일정·이벤트 Routine을 완성 제품의 필수 기능으로 취급 |
-| 업무 방식 | Pi 지침·기억과 스냅샷 복제 | 기억·Skill 관리, 시연 학습, 복제·내보내기·가져오기를 연결 |
-| 구현 순서의 의미 | 작은 MVP의 출시 경계 | 큰 목표를 단계적으로 구현하되, 중간 단계를 전체 포팅 완료라고 부르지 않음 |
+| 제품 목표 | A는 작은 봇 MVP, B 0.1은 Grok 기능 포팅 | Grok Bot의 전체 데스크톱 흐름을 유지 |
+| 런타임 소유자 | 사용자의 Pi 환경·인증·확장 재사용 | Pi SDK와 모든 실행 구성을 Picky가 번들·버전·배포·관리 |
+| 확장 기능 | 사용자 설치·선택 플러그인과 연동 | 메모리·서브에이전트·Cron 등을 모두 필수 내장. 옵트아웃 없음 |
+| 프롬프트·Skill | 전역/프로젝트 Pi 자원 discovery와 사용자 설정 존중 | 시스템 프롬프트·코어 Skill은 제품 자원. 학습 자료도 Picky 저장소 안에서만 관리 |
+| 직접 제어 | 앱 상세에서 Pi/TUI·외부 세션 재개까지 접근 | 대화·상세·질문·중단·결과·Computer 제어를 앱 안에서 완결 |
+| 협업·자동화 | B 0.1부터 그룹·Routine을 완성 범위에 포함 | 같은 범위를 내장 런타임 위에서 제공 |
+| 이전·호환 | 외부 Pi 파일 재개·동기화·handoff 유지 | Picky 데이터 이전만 설계. 사용자 Pi 설치·세션과의 운영 호환은 종료 |
 
-기준은 세 가지로 나눈다.
+### 1.1 새로 확정한 제품 원칙
+
+**Picky는 사용자의 Pi에 붙는 클라이언트가 아니다. Pi를 엔진으로 내장한 독립 제품이다.** 사용자의 로컬 Pi 런타임을 존중·재사용한다는 이전 철학을 전면 폐기한다.
+
+- 모든 extension·시스템 프롬프트·Skill은 Picky의 내장 코드·제품 자원 또는 Picky 관리 업무 데이터로만 제공한다. 사용자의 Pi 설치나 플러그인이 없어도 동일한 제품 기능을 제공한다.
+- 메모리 레이어·서브에이전트·Cron을 포함해 현재 선택 플러그인이 제공하는 기능은 필수 내장으로 전환한다. 앱·봇별 해제 토글, `no-extensions` 축소 모드, 사용자 플러그인으로 교체하는 우회 경로를 제공하지 않는다.
+- 사용자 `~/.pi`, `~/.agents`, 프로젝트의 Pi 확장·prompt·Skill 경로를 런타임 구성으로 자동 발견·참조·실행하지 않는다. 사용자 Pi의 인증·모델·세션·설정과도 분리한다.
+- `Pi에서 열기`, TUI 전환, Pi resume 명령 복사, 외부 Pi 세션 재개·동기화·handoff는 사용자 기능에서 제거한다. 숨겨 둔 고급 옵션이나 복구 안내로 남기지 않는다.
+- 개별 Routine의 일시중지·삭제, 실행 중인 서브에이전트의 취소, 기억 확인·수정·삭제는 유지한다. 특정 작업을 관리하는 것과 내장 엔진을 끄는 것은 다르다.
+- 내장 기능이라는 이유로 외부 계정 연결, 파일 접근, 녹화·전송·자동 실행 권한을 자동 부여하지 않는다. 기능 제공은 필수지만 행동 권한은 별도다.
+
+이 절은 사용자가 확정한 방향이다. 아래의 세부 구현 방식은 제안이며 아직 제품 코드에 적용되지 않았다. 기존 사용자 Pi 호환 규칙을 B의 제약으로 다시 가져오지 않는다.
+
+### 1.2 그대로 유지할 요구
+
+Picky는 고정 CBO이고 사용자는 Pickle에 직접 말할 수도 있다. Pickle은 각각 고정 홈과 하나의 지속형 대화 세션을 갖고, 내부 Pi SDK가 이를 실행한다. repo/worktree는 별도 작업 대상이다. 음성·PTT·Quick Input·화면 맥락은 유지한다. 필요하면 같은 작업의 진행·결과·diff·도구 이력·Computer까지 앱 안에서 확인하고 제어한다.
+
+단일 지속 대화는 내장 서브에이전트의 임시 작업 context까지 금지한다는 뜻이 아니다. 자식 실행은 부모에 귀속되고 별도 장기 봇·대화가 되지 않는 계약을 §7.7에 둔다. 사용자 Pi 플러그인의 내부 동작을 그대로 호환해야 한다는 제약은 없다.
+
+**Grok의 내부 세션 구조가 Pi의 구조와 같다는 뜻은 아니다.** Grok에서 Chief of Staff는 사용 패턴이며, Picky의 고정 CBO는 이를 기본값으로 삼는 차이다. [G01][G03]
+
+### 1.3 무엇을 참고하는가
 
 - **Grok Bot은 무엇을 만들지의 기준**이다. 공개 문서에 있는 사용자 흐름과 기능을 따른다.
-- **OpenMausBot은 어떻게 로컬 앱으로 구성할지의 참고**다. 실제 소유권·승인·저장 구현을 읽고 필요한 패턴을 가져온다. 저장소를 통째로 복사한다는 결정은 아니다.
-- **Pi는 판단·도구 실행·대화·컴팩션의 코어**다. 그 위에 별도의 범용 agent loop, 모델 라우터, 다중 CLI 엔진을 다시 만들지 않는다.
+- **OpenMausBot은 로컬 제품 구성의 참고**다. UI와 harness의 계약을 가져오되 여러 사용자 CLI driver와 설정 호환 계층은 가져오지 않는다.
+- **Pi는 Picky 내부의 단일 agent 코어**다. SDK의 판단·도구 실행·대화·컴팩션과 확장 API를 사용한다. 확장 API는 내장 모듈의 구현 방식일 뿐 사용자 플러그인 모델이 아니다.
 
-### 그대로 유지할 요구
-
-Picky는 고정 CBO이고 사용자는 Pickle에 직접 말할 수도 있다. Pickle은 각각 고정 홈과 하나의 지속형 Pi 세션을 갖는다. repo/worktree는 별도 작업 대상이다. 음성·PTT·Quick Input·화면 맥락은 메신저로 들어오는 기존 입력 경로로 유지한다. 평소에는 맡기고, 필요하면 같은 작업의 상세·Pi·터미널까지 들어간다.
-
-이는 Picky의 제품 결정이다. **Grok의 내부 세션 구조가 Pi의 단일 세션과 같다는 뜻은 아니다.** Grok에서 Chief of Staff는 사용 패턴이며, Picky의 고정 CBO는 이를 기본값으로 삼는 차이다. [G01][G03]
-
-### 여기서 말하는 전면 포팅
-
-일상적인 봇 제품의 기능과 정보 구조가 대상이다. xAI의 비공개 코드·프롬프트·모델 품질을 재현하거나, 상표·아바타·그래픽을 복제하는 작업이 아니다.
-
-xAI 계정·과금·SSO·클라우드 운영·기업 인증, Windows/Linux 클라이언트와 네이티브 모바일 앱은 로컬 macOS 제품의 동일 범위로 주장하지 않는다. 모바일 원격 접근은 별도 선택 확장이다. 기능을 빠뜨린 채 같다고 말하는 대신, 아래 대응표에 로컬 치환과 차이를 표시한다.
+일상적인 봇 제품의 기능과 정보 구조가 대상이다. xAI의 비공개 코드·프롬프트·모델 품질이나 상표·그래픽을 복제하지 않는다. xAI 계정·과금·SSO·클라우드 운영, Windows/Linux 클라이언트·네이티브 모바일 앱의 동등성은 기본 범위 밖이다. 모바일 원격 접근은 별도 선택 확장이다.
 
 ## 2. 조사에서 확인한 사실
 
@@ -74,7 +88,7 @@ Grok의 공식 디자인은 Bot, Chat, Prompt, Tool, Artifact를 주요 객체�
 | Team package는 구조화된 역할·playbook·Skill·Routine 정의를 가져오고 Routine을 비활성화 | 휴대 가능한 정의와 실행 권한을 분리하는 방식 참고 |
 | Routine 실행은 새 detached task/thread를 할당 | 실행·receipt UI는 참고하되, 입력은 원래 Pi 세션으로 전달 |
 | 사람이 컴퓨터를 잡으면 봇의 클릭·입력을 거부. 뒤로 queue하지 않음 | 채택. 오래된 클릭이 나중에 다른 화면에 실행되는 일을 막음 |
-| 자체 `MEMORY.md`·topic memory와 별도 MCP·provider 관리 | Pi의 기억 확장·Skill·MCP 경로와 이중 운영하지 않음 |
+| 자체 `MEMORY.md`·topic memory와 별도 MCP·provider 관리 | Picky 내장 기억·Skill·연동부로 책임을 통합. 사용자 Pi나 OpenMaus의 별도 실행 계층을 병행하지 않음 |
 
 직접 확인한 주요 경로는 `server/store.ts`, `server/drivers/pi.ts`, `src/state/store.tsx`, `server/bot-package.ts`, `server/routines.ts`, `server/computer-control.ts`, `server/workspace.ts`다. [O02][O03][O04][O05][O06][O07][O09]
 
@@ -82,17 +96,17 @@ OpenMausBot의 Local VM은 새 하이퍼바이저를 자체 개발한 형태가 
 
 OpenMaus README는 일부 API key를 Unix mode `0600`의 `config.json`에 평문 저장한다고 명시한다. write-only 설정 UI가 암호화 저장을 뜻하지는 않는다. 이 저장 방식을 B의 비밀 입력 계약으로 그대로 가져오지 않는다. [O01]
 
-### 2.3 Pi 기본 코어와 확장을 구분해야 한다
+### 2.3 Pi SDK 기본 기능과 Picky 내장 기능은 다르다
 
-Pi SDK는 세션, 모델·인증, streaming, 로컬 도구, Skill/resource loading, steer·follow-up·abort·compaction과 확장 지점을 제공한다. 범용 MCP 연결, Bot roster, Routine scheduler, 기업형 권한 broker는 기본 코어 기능이 아니다. 사용자 질문 도구와 확장 UI가 있다는 사실을 모든 도구의 승인 제어가 있다는 뜻으로 해석하지 않는다. [P01][P02][P03]
+Pi SDK는 세션, 모델·인증 API, streaming, 로컬 도구, resource loading, steer·follow-up·abort·compaction과 확장 지점을 제공한다. 범용 MCP, 메모리 레이어, 서브에이전트, Cron, Bot roster, 권한 broker가 모두 SDK 기본 기능인 것은 아니다. **SDK에 없다는 이유로 사용자 플러그인 설치를 요구하지 않고 Picky가 내장한다.** [P01][P02][P03]
 
-현재 Picky에는 재사용할 기반이 더 있다.
+조사 기준의 기존 Picky에는 다음 구현이 있다. 이는 이전 제품의 사실이며 B의 최종 배포 방식이 아니다.
 
 - `MainAgentCoordinator`, Pickle별 runtime/daemon 소유권, 메시지 journal, 상태·질문·결과 projection.
-- 같은 Pi 파일 재개, steer/follow-up queue, 터미널 tail·sync와 오래된 runtime 폐기.
-- `memory-layer`의 agent-scoped 기억, Cron의 같은 세션 전달·reload lease·PTT 전달 보류를 다루는 확장 연동 경로와 통합 테스트.
+- 같은 Pi 파일 재개, steer/follow-up, 터미널 tail/sync. 내부 대화 복구는 재사용할 수 있지만 외부 Pi·TUI 사용자 경로는 제거 대상이다.
+- 선택 memory/cron 확장의 기억 소유권·같은 세션 전달·reload lease·PTT 보류를 다루는 연동 코드와 테스트.
 
-마지막 항목은 **배포가 끝났다는 뜻이 아니다.** `memory-layer`와 `cron`의 curated 설치·업데이트는 현재 안전 보류 상태다. 검토된 새 배포물, 그 내용에 대한 통합 검증, 기존 writer와 scheduler의 이전을 끝내기 전에는 B의 준비된 의존성으로 계산하지 않는다. 이번 조사에서 해당 테스트를 실행하지도 않았다. [C01][C02][C04][C05]
+기존 memory/cron curated 설치·업데이트는 안전 보류 상태다. **내장화가 그 구현의 결함을 해결했다는 뜻은 아니다.** B는 사용자 npm 배포물을 기다려 설치하는 대신, 검토·라이선스 확인을 마친 소스와 수정 사항을 제품 버전으로 고정하고 실제 번들 산출물로 검증한다. 기존 writer·scheduler를 이전하는 안전 절차도 필요하다. 현재 제품의 보류를 이번 문서 변경으로 해제하지 않으며, 이전에 읽은 테스트를 실행 성공으로 간주하지 않는다. [C01][C02][C03][C04][C05]
 
 ## 3. 기능 대응표와 완성 범위
 
@@ -105,15 +119,15 @@ Pi SDK는 세션, 모델·인증, streaming, 로컬 도구, Skill/resource loadi
 | F03 | DM·추가 지시·스레드·반응 | chat/thread와 질문 UI | 같은 Pi 세션의 대화, 결과 답장·steer·queue·stop, 대화별 draft |
 | F04 | 여러 봇의 그룹 대화·멘션 | channel/room roster·responder | Room journal, 멘션·공유 맥락. Room별 Pi 세션 생성 금지 |
 | F05 | 봇 간 비동기 인계 | harness/팀 제어 경로 | 원 요청·담당자·수락·결과가 보이는 전달과 답변 |
-| F06 | 역할별 기억·지속 지침 | `MEMORY.md`와 topic memory | Pi 기억 확장 재사용, 봇별 소유권·확인·수정·잊기·출처 |
-| F07 | 공통 Skill·봇별 활성화 | portable Skill와 package | 공통 catalog, 봇별 enable/pin, Pi Skill 형식과 실행 |
+| F06 | 역할별 기억·지속 지침 | `MEMORY.md`와 topic memory | 필수 내장 메모리 레이어, 봇별 소유권·확인·수정·잊기·출처 |
+| F07 | 공통 Skill·봇별 활성화 | portable Skill와 package | 필수 내장 코어 Skill과 Picky 관리 업무 Skill. 사용자 Pi discovery·해제 토글 없음 |
 | F08 | 봇 Duplicate·공유 | profile Duplicate, 별도 team import | 역할 복제와 로컬 기억 스냅샷 복제 구분. 새 홈·새 Pi 세션 |
-| F09 | 일정 Routine·관리·test/history | scheduler·receipts·관리 API | 원래 Pickle 세션에서 실행, pause/edit/test/history/삭제 |
+| F09 | 일정 Routine·관리·test/history | scheduler·receipts·관리 API | 필수 내장 Cron에서 원래 Pickle 세션으로 전달. 개별 Routine은 pause/edit/test/history/삭제 |
 | F10 | 외부 이벤트 trigger | 인증된 전용 webhook receiver | 지원 source의 polling·webhook adapter. localhost의 도달성 명시 |
 | F11 | 시연으로 Skill 만들기 | 이번 조사에서 동등한 전체 실행 경로 미확인 | 사용자 시작·종료 녹화, Pi가 Skill 초안 생성, 안전 재현 후 저장 |
 | F12 | 컴퓨터 status·preview | Computer panel, host/browser/VM/cloud provider | 관리 browser·Mac desktop이 필수. preview·takeover·복귀를 연결하며 격리 컴퓨터는 선택 확장 |
-| F13 | 사람이 takeover하고 반환 | ComputerControl의 human hold/refusal | 컴퓨터와 Pi 직접 조작의 소유권을 각각 명시, stale action 거부 |
-| F14 | 연결 앱·Plugin·계정 | Composio 및 custom MCP registry | 기존 Pi MCP·도구·package를 재사용. Composio/Box 계정은 필수 아님 |
+| F13 | 사람이 takeover하고 반환 | ComputerControl의 human hold/refusal | 앱 내 Computer takeover·반환과 stale action 거부. Pi/TUI 전환은 없음 |
+| F14 | 연결 앱·Plugin·계정 | Composio 및 custom MCP registry | Picky 내장 도구·MCP 연결부를 제공. 사용자 Pi 설정은 재사용하지 않으며 외부 계정 연결은 별도 |
 | F15 | 행동 승인·Auto Review | provider permission broker·질문 구분 | action 귀속 승인, 범위 규칙, 선택적 모델 검토, 실제 coverage 표시 |
 | F16 | secure secret request | write-only 설정, 권한·인증 경로 | 일반 질문과 별도의 비밀 입력. transcript·모델에 원문 비밀 제외 |
 | F17 | 파일 첨부·링크·결과 preview | attachment 저장·screen evidence | 파일·이미지·보고서·diff·검증 결과를 원 요청에 연결 |
@@ -123,7 +137,7 @@ Pi SDK는 세션, 모델·인증, streaming, 로컬 도구, Skill/resource loadi
 | F21 | 음성 입력·대화 | dictation·TTS 경로 | 기존 Picky PTT·Quick Input·음성 제공자를 유지. 원격 TTS 필수화 금지 |
 | F22 | 영속 컴퓨터·백그라운드 실행 | 로컬 저장·runtime lifecycle | Mac이 켜져 있는 동안의 지속 실행. 절전·종료는 지연·중단으로 표시 |
 | F23 | 복구·삭제·설정·내보내기 | store, lifecycle, portable package | Bot·Pi 기록·Routine·shared resource의 삭제 범위를 구별, 안전 백업·복구 |
-| F24 | usage·운영 설정 | provider/model·비용 관련 설정 | Pi 모델·생각 수준은 고급 설정, 실행량·알려진 비용·자동화 예산 표시 |
+| F24 | usage·운영 설정 | provider/model·비용 관련 설정 | Picky가 지원하는 모델·추론 설정, 실행량·알려진 비용·자동화 예산 표시 |
 | F25 | 모바일에서 같은 팀 제어 | companion/원격 기능이 별도 존재 | 선택 확장. 같은 local agentd에 승인된 원격 경로로 접근, 네이티브 모바일 동등성은 별도 |
 
 F01~F24가 이 설계의 로컬 데스크톱 완성 목표다. F25와 기업용 계정·과금 인프라는 기본 출시 범위 밖이다. F11·F18처럼 OpenMaus에서 대응 실행 경로를 이번 조사로 확인하지 못한 기능도 Grok의 제품 목표에서는 빼지 않는다. [G01][G03][G04][G05][G06][G07][G08][G10][O01]
@@ -134,9 +148,9 @@ F01~F24가 이 설계의 로컬 데스크톱 완성 목표다. F25와 기업용 
 | --- | --- | --- |
 | F01~F03 봇·대화·CBO | Pickle identity·main agent·CLI 위임·Conversation | 고정 CBO 정책, 자동 재사용/생성, 통합 roster·메신저 |
 | F04~F05 그룹·인계 | Dock 분류 그룹, main/child routing | 별도 Room journal·참여 관계·mailbox·인계 receipt. 기존 분류 그룹과 구별 |
-| F06~F10 기억·Skill·복제·Routine | Pi resource loading, 기억/Cron 연동과 안전 보류, 기존 대화 복사 | 검증된 package cutover, catalog·scope·export/import·같은 세션 Routine UI |
-| F11~F13 시연·Computer·직접 제어 | 중립 화면 capture·pointer overlay, Pi terminal/sync | 실제 GUI 제어·녹화·Skill 생성, Computer/Pi 각각의 소유권. capture는 제어가 아님 |
-| F14~F16 연결·승인·비밀 | Pi 확장과 질문 UI bridge | 연결 account/capability 표출, 실행 전 승인 broker·coverage, 별도 secret 흐름 |
+| F06~F10 기억·Skill·복제·Routine | Pi resource loading, 기억/Cron 연동과 안전 보류, 기존 대화 복사 | 필수 내장 메모리·서브에이전트·Cron, 폐쇄형 로더, 자체 schema 이전·snapshot·Routine UI |
+| F11~F13 시연·Computer·직접 제어 | 중립 화면 capture·pointer overlay, Pi terminal/sync | 실제 GUI 제어·녹화·Skill 생성과 앱 내 복구. 외부 Pi/TUI 제거, capture는 제어가 아님 |
+| F14~F16 연결·승인·비밀 | Pi 확장과 질문 UI bridge | 내장 연결부·Picky 전용 인증, 실행 전 승인 broker·coverage, 별도 secret 흐름 |
 | F17~F19 결과·widget·검색 | artifact/report·변경 파일·대화 이력 | 원 요청의 근거·버전 연결, 구조화 카드·제한된 widget, 전역 index |
 | F20~F21 알림·입력 | Dock 읽음·상태, PTT·Quick Input·음성 제공자 | 질문/승인/실패의 attention, 원 대화로 deep link, 승인된 선택 알림 경로 |
 | F22~F24 지속 실행·복구·운영 | app-owned daemon·session store·reconnect | 서비스/절전 정책, Routine 포함 백업·삭제, 알려진 실행량·비용 표출 |
@@ -165,7 +179,7 @@ F01~F24가 이 설계의 로컬 데스크톱 완성 목표다. F25와 기업용 
 - 목록에는 봇·그룹을 표시한다. 여러 task가 생겼다고 연락처가 갈라지지 않는다.
 - header에서 실행 상태·중단·컴퓨터 접근을 찾을 수 있다. 모델과 실행 설정은 고급 메뉴에 둔다.
 - 일반 도구는 짧은 activity와 상세 이력으로 접는다. 질문·승인·실패·검증 누락은 접지 않는다.
-- 전체 컴퓨터/Pi/터미널은 직접 작업을 위한 더 깊은 접근이다. 로그를 열었다고 제어권을 가져가지는 않는다.
+- Computer는 앱 안에서 직접 제어한다. 실행 로그·diff·결과도 앱 안에서 열며, Pi/TUI·외부 세션으로 전환하지 않는다. 읽기 전용 상세를 연다고 실행을 멈추지 않는다.
 - Dock은 상태 확인과 해당 대화로 돌아오는 진입점이다. 기존 작은 대화 카드를 또 하나의 주 화면으로 유지하지 않는다.
 
 OpenMaus의 공개 화면에서는 roster, 중앙 대화, 우측 Computer 패널, inline 질문을 확인했다. 이를 레이아웃 참고로 쓰되, 그 스크린샷을 현재 모든 기능의 실행 증거로 사용하지 않는다. [O13]
@@ -174,7 +188,7 @@ OpenMaus의 공개 화면에서는 roster, 중앙 대화, 우측 Computer 패널
 
 Routine은 대화에서 만들고 생성 카드로 확인한다. 봇 상세에서 일정·다음 실행·최근 결과를 보고, 전체 자동화 목록은 여러 봇의 책임을 훑는 용도로 쓴다. Skills·Memory도 대화에서 관리할 수 있고 상세에서 저장 결과를 확인한다.
 
-연결 앱 화면은 설치 여부·연결 계정·허용 도구·다시 인증할 이유를 보여준다. 일상적인 의뢰마다 모델·폴더·provider·queue 종류를 고르게 하지 않는다.
+연결 앱 화면은 내장 지원 여부·연결 계정·허용 도구·다시 인증할 이유를 보여준다. 사용자 플러그인 설치·해제 화면은 없으며 메모리·서브에이전트·Cron을 켜야 시작되는 설정도 없다. 일상적인 의뢰마다 모델·폴더·provider·queue 종류를 고르게 하지 않는다.
 
 ### 4.3 macOS 동작을 보존한다
 
@@ -184,14 +198,14 @@ Routine은 대화에서 만들고 생성 카드로 확인한다. 봇 상세에�
 
 ### 5.1 처음 열고 일을 맡기기
 
-1. 기존 Pi 환경이 있으면 사용 가능한 인증·모델·도구를 확인한다. 새 서비스 계정부터 만들게 하지 않는다.
-2. 없으면 Pi가 지원하는 인증 경로를 한 번 설정한다. 로컬 실행이 무료 추론이나 완전한 오프라인을 뜻하지 않음을 알린다.
-3. Picky 대화가 열린다. 사용자는 파일을 붙이거나 지금 보고 있는 화면에서 말한다.
+1. Picky가 번들 runtime과 필수 내장 모듈의 버전·무결성·저장소를 확인한다. Pi CLI 설치 여부를 검사하거나 설치를 요구하지 않는다.
+2. 모델 접속이 필요하면 Picky 안에서 API/OAuth 또는 지원 로컬 모델 연결을 설정한다. 사용자 Pi 인증 파일을 읽거나 자동 가져오지 않는다. 로컬 실행이 무료 추론·완전 오프라인을 뜻하지 않음을 알린다.
+3. 내장 메모리·서브에이전트·Cron을 별도로 켤 필요 없이 Picky 대화가 열린다. 사용자는 파일을 붙이거나 현재 화면에서 말한다.
 4. Picky가 직접 처리하거나 기존 담당자를 찾고, 필요하면 새 Pickle을 만든다.
-5. 실제 생성·수락을 확인한 뒤 담당자를 알린다. 권한이 부족하면 필요한 대상·효과만 확인한다.
-6. 결과·근거·남은 질문이 원 대화로 돌아온다. 필요하면 담당자의 상세로 이동한다.
+5. 실제 생성·수락 후 담당자를 알린다. 작업공간·계정·Computer 권한이 부족하면 필요한 범위만 확인한다.
+6. 결과·근거·질문이 원 대화로 돌아온다. 상세·수정·중단도 Picky 안에서 처리한다.
 
-Computer나 MCP가 아직 준비되지 않았어도 대화·로컬 코드 작업은 가능한 범위에서 시작한다. 준비되지 않은 도구를 썼다고 가장하거나 자동으로 다른 실행 위치로 바꾸지 않는다.
+내장 모듈 누락·손상은 준비 오류다. 사용자 Pi로 fallback하거나 필수 기능을 끈 축소 모드를 정상 제품으로 표시하지 않는다. 반면 외부 서비스 미연결·TCC 미허용은 해당 행동의 준비 상태이며, 내장 엔진의 옵트아웃과 다르다.
 
 ### 5.2 팀이 협업하고 사용자가 개입하기
 
@@ -230,110 +244,149 @@ Grok의 시연 학습은 최대 10분, 마이크 미녹음으로 문서화돼 �
 1. 사용자가 같은 담당자의 방식으로 다른 PR을 동시에 처리해 달라고 한다.
 2. 필요한 역할·Skill·선택된 기억의 스냅샷을 만든다. 진행 중 대화나 compaction 요약을 대신 복사하지 않는다.
 3. 새 Pickle에 새 홈·새 Pi 세션을 만들고 자료의 새 소유자를 연결한다. Routine은 일시중지로 들어온다.
-4. 두 코드 수정이 충돌할 수 있으면 기존 Skill/`gw` 절차로 별도 worktree를 준비한다. 읽기 전용 검토에 worktree를 강제하지 않는다.
-5. 원본은 원래 일을 계속한다. 복제본은 새 요청만 처리하고 자기 기억·Skill을 독립적으로 수정한다.
+4. 두 코드 수정이 충돌할 수 있으면 Picky 내장 Git/worktree 절차로 별도 작업공간을 준비한다. 사용자의 Pi Skill이나 shell 함수 설치를 전제로 하지 않으며, 읽기 전용 검토에 worktree를 강제하지 않는다.
+5. 원본은 원래 일을 계속한다. 복제본은 새 요청만 처리하고 자기 기억·업무 Skill을 독립적으로 관리한다. 공통 내장 코어는 수정하거나 해제하지 않는다.
 
 Pi가 직접 코드를 작성·테스트한다. 별도 Cursor Cloud Agent가 필수인 구조로 만들지 않는다. Grok 공식 engineering 가이드의 cloud-agent 관리 사례는 피드백 루프의 참고이며, 그 실행 인프라까지 필수로 가져오는 것은 아니다. [G12]
 
-### 5.5 컴퓨터 또는 Pi를 직접 조작하기
+### 5.5 컴퓨터 직접 제어와 앱 내 실행 관리
 
 컴퓨터 preview는 읽기 전용이다. 사용자가 직접 잡으면 해당 자원의 봇 입력을 거부하고, 반환 뒤 새 화면 상태를 확인한다. 오래된 클릭·키 입력은 재생하지 않는다.
 
-Pi 직접 조작은 별도 문제다. 같은 세션을 두 프로세스가 동시에 쓰지 않도록 관리 경로에서 자동 입력을 보류하고, 실행을 정리한 뒤 소유권을 넘긴다. 돌아오면 JSONL과 작업공간을 동기화하고 대기 입력을 재개한다. 컴퓨터를 잡는 것과 Pi 대화의 writer를 넘기는 것을 하나의 flag로 처리하지 않는다.
+에이전트 실행은 대화의 수정·추가 지시·중단·질문 응답으로 관리한다. 자세한 로그·diff·작업공간·하위 실행과 결과를 볼 수 있지만, Pi TUI나 외부 Pi writer로 소유권을 넘기지는 않는다. 장애 복구도 제품 안에서 수행한다. 재시도가 완료된 외부 효과를 반복할 위험이 있으면 확인 필요 상태를 먼저 보여준다.
 
 ## 6. 구현 방식과 책임
 
 ### 6.1 권장안
 
-**기존 Picky의 native shell·agentd·Pi adapter를 유지하고, 메신저와 봇 제품 모델을 OpenMaus 방식으로 재구성한다.** UI를 지금의 Dock 중심 구성에 맞춰 축소하지 않되, 이미 있는 입력·세션·프로토콜 안전 장치를 버리지 않는다.
+**기존 native 입력·메신저 구성요소와 agentd를 활용하되, 실행부는 Picky 전용 내장 runtime으로 재구성한다.** Pi SDK를 사용하는 것은 유지하지만 사용자 Pi 호환용 adapter·discovery·세션 공유를 유지하는 것이 목표는 아니다.
 
 | 접근 | 장점 | 비용·문제 | 판단 |
 | --- | --- | --- | --- |
-| OpenMaus fork 후 Pi-only화 | 메신저·Computer·Routine UI를 가장 직접적으로 출발점으로 삼음 | task별 session/Routine·자체 memory/MCP 계층 변경, Picky native 입력·기존 기록 재통합, fork·라이선스 관리 | 별도 실험 앱에는 가능. Picky 본체의 기본안으로는 비추천 |
-| 기존 Picky 기반의 OpenMaus형 제품 재구성 | Pi SDK·voice·context·CLI·소유권·저장 기반 재사용 | Room, resource catalog, 승인·Computer 제어와 메신저 구현 필요 | 권장 |
-| 새 harness·VM·agent engine 전면 자체 개발 | 모든 계층을 직접 통제 | Pi와 역할 중복, GUI·배포·인증·복구 범위까지 불필요하게 커짐 | 제외 |
+| 사용자 Pi 호환 계층 유지 | 기존 플러그인 설정을 재사용 | 재현 불가능한 환경·버전·권한·필수 기능 누락, 사용자 결정과 충돌 | 폐기 |
+| Picky 소유 runtime + Pi SDK + 내장 모듈 | 한 제품 버전으로 코드·정책·상태·검증 책임을 통제 | 내장 모듈 패키징·인증·schema 이전·복구 구현 필요 | 채택 |
+| OpenMaus 전체 fork 또는 새 agent engine | 이미 있는 UI를 활용하거나 모든 계층 직접 작성 | 다중 driver/세션 모델 재작업, native 입력 재통합 또는 Pi와 실행 엔진 중복 | 참고만 하고 기본안으로 채택하지 않음 |
 
-컴퓨터 backend는 교체 가능한 도구 경계로 둔다. VZ 하이퍼바이저를 새로 작성하는 일을 메신저의 선행 조건으로 만들지 않는다. OpenMaus의 Local VM 방식이나 기존 로컬 도구를 검증해 사용한다.
+내장화는 모든 기능을 처음부터 재작성하라는 뜻이 아니다. 검토된 확장 코드를 SDK의 extension API로 포함할 수 있지만 소스·버전·의존성·설정·배포를 Picky가 소유한다. 사용자 Pi 설치·업데이트나 전역 package manager를 통해 동작시키지 않는다.
 
 ### 6.2 실행 구조
 
 ```mermaid
 flowchart TD
-    UI[Picky 메신저 · Dock · PTT · Quick Input] <-->|기존 typed WebSocket| D[agentd 제어 · 전달 · journal]
-    D --> CBO[Picky의 지속형 Pi 세션]
-    D --> A[Pickle A의 지속형 Pi 세션]
-    D --> B[Pickle B의 지속형 Pi 세션]
-    CBO -->|생성 · 인계 요청| D
-    A -->|결과 · 인계 · 승인 요청| D
-    B -->|결과 · 인계 · 승인 요청| D
-    R[Pi Routine 확장 · trigger adapter] -->|소유 봇에 입력| D
-    A --> T[Pi 도구 · Skill · MCP 확장]
+    UI[Picky 메신저 · Dock · PTT · Quick Input] <-->|typed WebSocket| D[agentd 제어 · 전달 · journal]
+    D --> CBO[Picky CBO 지속 대화]
+    D --> A[Pickle A 지속 대화]
+    D --> B[Pickle B 지속 대화]
+    CORE[번들 Pi SDK · 시스템 프롬프트 · 필수 내장 모듈] --> CBO
+    CORE --> A
+    CORE --> B
+    CBO -->|생성 · 인계| D
+    A -->|결과 · 승인 요청| D
+    B -->|결과 · 승인 요청| D
+    R[내장 Cron · trigger adapter] -->|소유 봇의 mailbox| D
+    A --> S[부모에 귀속된 내장 서브에이전트 실행]
+    CORE --> S
+    S -->|결과| A
+    A --> T[내장 도구 · 기억 · Skill · MCP 연결부]
     B --> T
+    CBO --> T
+    S --> T
     T --> W[허용된 repo · worktree · 외부 서비스]
-    T --> CP[Computer provider · 자원 제어]
-    CP --> MAC[로컬 browser · Mac desktop]
-    CP --> VM[선택한 로컬 격리 컴퓨터]
+    T --> CP[내장 Computer 제어부]
+    CP --> MAC[관리 browser · opt-in Mac desktop]
+    CP --> VM[선택 로컬 격리 컴퓨터]
 ```
 
-화살표는 논리적 책임이다. `T`를 공용 가변 Pi 세션이나 봇 권한을 합치는 프로세스로 해석하지 않는다. 기존 primary/child daemon의 소유권은 출발점으로 유지한다. 일반 Pickle에서 팀·Room 도구를 사용할 수 있도록 현재 primary-only 제어 경로를 좁은 명령으로 확장해야 한다. child에 CBO의 전체 권한을 복사하지 않는다. [C01][C08]
+`CORE`는 같은 버전의 코드·계약이며 봇들의 가변 세션을 합치는 객체가 아니다. 각 주 세션과 하위 실행의 데이터·권한은 별도 범위다. 기존 primary/child daemon의 소유권과 메시지 projection을 재사용하되, 세션 생성·자원 공급·재연결은 모두 Picky 내부 경로로 닫는다. [C01][C08]
 
 | 주체 | 맡을 일 | 맡지 않을 일 |
 | --- | --- | --- |
-| Swift 앱 | 중립 입력, 메신저·상세·질문·비밀 입력, 사용자의 실제 제어, macOS 통합 | 역할·의도를 키워드로 분류, 별도 agent loop |
-| agentd | Bot/Room 참조, 입력 수락·전달, runtime 소유권, durable journal, 승인 귀속, 자원 lease | 작업 방법을 독자적으로 추론하거나 기억 내용을 별도 AI로 관리 |
-| Pi SDK와 세션 | 이해·계획·도구 선택·코딩·대화·컴팩션·steer/follow-up | 봇 registry, 네이티브 메신저, 모든 도구의 보안 격리를 기본 제공한다고 간주 |
-| Pi 확장·package | 기억·Skill·Routine·MCP·Computer 도구를 세션에서 사용 | 별도의 숨은 장기 bot/session pool 구성 |
-| Computer backend | 화면·입력·브라우저·sandbox lifecycle과 실제 지원 capability | Pi와 별개인 두 번째 일반 목적 에이전트로 작업 의도 재해석 |
+| Swift 앱 | 중립 입력, 메신저·상세·질문·비밀 입력, Computer takeover, macOS 통합 | 의도를 키워드로 분류, Pi/TUI 전환 제공 |
+| agentd | Bot/Room·전달·journal·소유권·승인·자원 lease·runtime 수명 | 사용자 Pi process 탐색·접속·세션 tail 동기화 |
+| 내장 Pi SDK | 이해·계획·도구 선택·코딩·대화·컴팩션·steer/follow-up | 사용자 CLI 실행을 fallback으로 사용, 기본 SDK만으로 모든 부가 기능이 있다고 간주 |
+| 필수 내장 모듈 | 메모리·서브에이전트·Cron·Skill·도구·MCP·질문·제품 정책 | 전역 확장 발견, 사용자 opt-in 의존, 임의 플러그인 설치·교체 |
+| Computer backend | 화면·입력·실제 환경의 lifecycle과 capability | Pi와 별개인 두 번째 일반 목적 agent loop |
 
-명령은 실행을 요청하고, 이벤트는 이미 수락되거나 관찰된 사실을 전달한다. UI가 API 응답만 보고 가상의 완료 메시지를 만들지 않는다. 요청 ID·origin·Bot·turn·Room·결과 참조를 저장해 재접속과 중복 전송에도 귀속을 유지한다.
+명령은 실행 요청이고 이벤트는 수락·관찰한 사실이다. 요청 ID·origin·Bot·turn·Room·자식 run·결과 참조로 재접속과 중복 전달의 귀속을 유지한다. 발신자는 도구 인자의 `botId`가 아니라 실제 runtime에 바인딩한다. CBO도 허용된 관리 범위만 사용하며, 역할·기억·업무 Skill 수정은 실제 권한을 늘리지 않는다.
 
-발신자는 도구 인자의 `botId`가 아니라 runtime에 바인딩된 실제 봇으로 확인한다. CBO도 부여된 관리 범위 안에서만 다른 봇의 자료를 읽거나 내보낸다. 자료 관리 경로는 정규화·심볼릭 링크·홈 밖 경로를 검사한다. 역할 설명이나 기억 파일을 수정해 실제 권한을 늘릴 수는 없다. 이 관리 도구의 정책과 같은 OS 사용자 shell의 접근 권한은 별개다.
+### 6.3 필수 내장 구성과 상태의 구분
+
+| 구성 | 제품 계약 | 사용자가 관리할 수 있는 것 |
+| --- | --- | --- |
+| 메모리 레이어 | 항상 제공, 설치·해제·대체 불가 | 저장된 기억·범위·출처 확인, 수정·삭제 |
+| 서브에이전트 | 항상 제공, Picky runtime과 부모 권한으로 실행 | 개별 실행의 진행·결과 확인과 취소 |
+| Cron/Routine 엔진 | 항상 제공, Picky 소유 scheduler와 저장소 사용 | 개별 일정·trigger 생성·수정·pause·삭제 |
+| 시스템 프롬프트·코어 Skill | 제품 버전으로 고정한 필수 자원, 사용자 override·해제 불가 | 설명·기능 확인, 업무 입력·선호·학습 자료 관리 |
+| 나머지 기존 플러그인 기능 | 같은 내장 manifest와 배포·검증 체계로 이전 | 각 기능의 작업·연결·데이터 범위 관리 |
+
+필수 구성은 모든 제품 runtime에 존재한다. 현재 Picky가 선택 플러그인으로 제공하던 기능을 내장 manifest에 빠짐없이 대응시킨다. 사용자가 개인 Pi에 추가한 임의 설치본까지 가져온다는 뜻은 아니다.
+
+항상 존재한다는 말은 매번 서브에이전트를 생성하거나 사용자가 등록하지 않은 일정을 실행한다는 뜻이 아니다. 연결 계정·TCC·외부 효과의 승인도 여전히 필요하다.
+
+시연으로 만든 업무 Skill과 기억은 Picky 관리 데이터다. 배포된 코어 코드·프롬프트를 덮어쓰는 임의 확장이 아니며, 사용자 Pi 경로의 파일과 링크하지 않는다. 코어 Skill의 가용성을 봇별로 끄는 UI는 없다. 어떤 업무 Skill을 적용할지는 역할·요청과 내장 정책이 판단한다.
+
+### 6.4 배포·프롬프트·격리의 책임
+
+- 제품 release manifest에 Pi SDK, 필수 모듈, 시스템 프롬프트, 코어 Skill, 의존 runtime과 schema 버전을 고정한다. 호환되는 묶음으로 업데이트하고 데이터 schema까지 고려해 복구한다.
+- 필수 모듈 누락·초기화 실패·무결성 불일치는 준비 오류다. 사용자 Pi 경로로 fallback하거나 자동으로 모듈을 끄지 않는다. 진단·데이터 보존·앱 내 복구 UI는 사용할 수 있어야 한다.
+- 시스템 프롬프트와 standing rule은 매 turn에 제품 자원으로 구성한다. transcript의 첫 메시지에만 넣지 않는다. 재연결·컴팩션·내장 자식 실행에도 같은 정책 버전을 적용한다. 현재 every-turn contract 적용 경로는 참고할 수 있다. [C14]
+- runtime의 경로·의존성 해석·설정·인증·환경 변수는 Picky가 명시적으로 공급한다. 사용자 Pi, 전역/프로젝트 확장, shell startup에 따라 실행 구성이 달라지지 않아야 한다.
+- 기존 플러그인을 내장할 때 라이선스·출처·수정·고정 버전과 실제 번들 검증을 남긴다. 사용자의 설치본이나 안전 보류된 npm 버전을 이름만 바꿔 그대로 안전하다고 간주하지 않는다.
+
+여기서 필수인 것은 사용자 Pi의 코드·설정·상태와 제품 runtime의 분리다. 이 분리만으로 같은 OS 사용자 권한의 모든 shell·파일 접근을 sandbox했다고 주장하지 않는다. 실제 실행 환경·자원 접근 경계는 §10~11에서 따로 다룬다.
 
 ## 7. Bot·홈·workspace·Room·Pi 세션
 
 ### 7.1 데이터의 소유 단위
 
-아래 이름은 설계 개념이며 현재 protocol에 모두 존재한다는 뜻은 아니다.
+아래 이름은 설계 개념이며 현재 protocol에 모두 존재한다는 뜻은 아니다. 외부 Pi의 저장 파일·ID·형식은 사용자용 API 계약이 아니다.
 
 | 개념 | 소유와 수명 |
 | --- | --- |
-| Bot/Pickle | 안정적인 ID·역할·고정 홈·유일한 Pi 세션 참조. 이름 변경과 요청 추가로 바뀌지 않음 |
-| Agent home | 공통 관리 루트 아래 Bot ID별 경로. Pi runtime cwd의 기준 |
-| Workspace binding | 요청이 실제로 다룰 repo/worktree·파일 범위. 홈과 별개 |
-| Room | 참여 봇·가입 구간·이력 grant·공유 지침·메시지·인계. 별도 Pi 세션이나 대리 bot이 아님 |
-| Message/Thread/Reaction | 안정적인 메시지·parent/root 참조, 실제 actor의 반응, 사용자별 읽음 cursor. 실행 권한과 별개 |
-| Delivery/Request | 사람·다른 봇·Routine에서 온 입력의 ID, origin, 대상, thread, 권한 범위, 결과 참조 |
-| Routine/Run | 정의와 실행 receipt. receipt가 새 Pi 세션의 소유권 단위는 아님 |
-| Artifact | 생성·수정한 파일/결과의 위치·버전·출처·권한·관련 요청 |
-| Approval/Control lease | 특정 action 또는 실행 자원에 대한 제한된 제어 상태. 프로필과 복제 자료에 포함하지 않음 |
+| Bot/Pickle | 안정적인 ID·역할·고정 홈·하나의 지속 대화 참조. 내부 Pi SDK가 실행 |
+| Agent home | Picky 관리 루트 아래 Bot ID별 고정 실행 홈 |
+| Workspace binding | 실제 repo/worktree·파일 범위. 홈과 별개 |
+| Runtime release | 내장 코드·시스템 프롬프트·코어 Skill·의존성·schema의 버전 묶음 |
+| Subagent run | 부모 Bot/request에 귀속된 임시 context·실행·결과. 장기 봇/대화 아님 |
+| Room | 참여·이력 grant·공유 메시지·인계. 별도 Pi 세션 아님 |
+| Message/Thread/Reaction | message·parent/root 참조, 실제 actor의 반응, 사용자별 읽음 cursor |
+| Delivery/Request | origin·대상·thread·권한·자식 실행·결과 참조 |
+| Routine/Run | 내장 엔진의 정의와 실행 receipt. 주 대화 세션 추가 없음 |
+| Artifact | 파일/결과의 위치·버전·출처·권한·관련 요청 |
+| Approval/Control lease | action 또는 실행 자원에 대한 제한된 제어. 복제 자료에 포함하지 않음 |
 
 ```text
-<Picky 관리 루트>/
-  pickles/<bot-id>/    고정 실행 홈, Pi 세션과 봇 소유 자료·참조
-  shared/             공통 Skill 버전·허용된 공유 자료
-  rooms/              Room journal과 참여 관계
-  snapshots/          불변 복제 manifest와 허용된 자료
+<Picky 앱 번들>/
+  runtime/                고정 Pi SDK·필수 모듈·의존 runtime
+  system-prompts/         제품 시스템 프롬프트
+  core-skills/            필수 내장 Skill
 
-<repo 또는 worktree>/  코드·Git·빌드의 실제 작업 대상
-<기존 Pi 설정>/         인증·모델·전역 확장, 무조건 봇 홈에 복사하지 않음
+<Picky 전용 관리 루트>/
+  runtime-state/          제품 설정·모델·인증 참조·schema 상태
+  pickles/<bot-id>/       고정 홈·지속 대화·기억·업무 Skill·하위 실행 기록
+  rooms/                 Room journal과 참여 관계
+  routines/              내장 Cron 정의·실행 receipt
+  snapshots/             허용된 데이터와 불변 manifest
+
+<repo 또는 worktree>/     명시적으로 연결한 실제 작업 대상
 ```
 
-이 구조는 소유 관계의 예시다. 기존 JSON journal을 전부 새 DB로 옮기거나 Pi 기억을 새 파일 포맷으로 다시 쓰라는 지시가 아니다.
+정확한 경로명은 구현 시 정하되, 사용자 Pi 디렉터리를 symlink·실행 cwd·상태 저장소·실패 fallback으로 사용하지 않는다. auth 원문 대신 Picky 소유 보안 저장소 참조를 관리한다. 원본 사용자 Pi 데이터는 이 구조 밖에 두고 변경하지 않는다.
 
-### 7.2 `cwd` 하나로 모든 경로를 해결하지 않는다
+### 7.2 닫힌 자원 로더와 workspace
 
-Pi 0.84.4에서 `cwd`는 프로젝트 resource discovery와 도구 경로에, `agentDir`는 전역 설정·확장·인증·모델 등에 영향을 준다. custom `ResourceLoader`, `modelRuntime`, `SessionManager.create(cwd, sessionDir)`와 `open(path, sessionDir, cwdOverride)`는 공개 API로 확인했다. [P02]
+Pi 0.84.4의 `DefaultResourceLoader`는 `cwd`와 `agentDir` 외에도 전역·상위 프로젝트의 `.agents/skills` 등을 발견한다. 따라서 `agentDir`만 새 폴더로 바꾸는 것으로 요구를 충족하지 못한다. 공식 SDK는 custom `ResourceLoader`를 주면 그 두 경로가 resource discovery를 결정하지 않는다고 명시한다. [P02]
 
-B의 제안은 다음과 같다.
+B는 Picky 전용 로더와 명시적 모델·설정·인증 서비스를 사용한다.
 
-1. Pi runtime의 cwd는 고정 홈으로 둔다. 새 요청이나 Room 전환 때 이를 repo로 바꾸지 않는다.
-2. 실제 코드 명령과 파일 경로는 명시적인 workspace에 적용한다. 새 홈 안에 엉뚱한 Git 저장소나 결과물을 만들지 않는다.
-3. workspace의 `AGENTS.md`·프로젝트 Skill·설정·trust 결정은 그 프로젝트에서 로드한다. 홈에서 자동 발견되는 자료만으로 대체하지 않는다.
-4. 봇별 자료는 custom loader·추가 resource 경로·명시적 세션 저장 위치로 연결한다. `agentDir = agentHome`만 넣으면 인증과 모델 설정까지 갈라질 수 있다.
-5. 기존 Pi 인증은 유지하거나 `ModelRuntime`으로 명시적으로 연결한다. 인증 파일을 복제 snapshot에 넣지 않는다.
-6. Pi에서 다시 열 때도 같은 홈·세션·resource 구성이 적용돼야 한다. 설정을 agentd의 메모리에만 두지 않는다.
+1. 허용된 번들 manifest와 Picky 관리 업무 데이터만 로드한다. 전역/프로젝트 extension·Skill·prompt discovery와 사용자 package 설치·reload 경로는 제공하지 않는다.
+2. 모델·인증·설정 서비스도 Picky 소유 경로로 초기화한다. custom loader만 교체한 뒤 SDK의 기본 인증/설정 서비스가 사용자 `~/.pi`를 읽게 두지 않는다.
+3. Pi runtime cwd는 고정 홈, 실제 파일·Git·빌드는 명시적 workspace로 구분한다. repo 선택이 사용자 Pi의 프로젝트 설정을 활성화하지 않는다.
+4. repo의 `AGENTS.md`·README·개발 규칙은 허용된 프로젝트 참고 자료로 읽을 수 있다. 제품 시스템 프롬프트나 실행 가능한 extension으로 승격하지 않으며 내장 안전 정책을 덮어쓰지 못한다. 사용자 Pi Skill 파일은 자동 가져오지 않는다.
+5. 실행 환경에 사용자 Pi용 override·전역 module 경로·shell startup을 묵시적으로 상속하지 않는다. 실제 빌드에 필요한 개발 도구·환경은 workspace 실행 권한과 명시적 설정으로 연결한다. 로컬 Git·컴파일러를 쓰는 것은 사용자 Pi 런타임 호환과 다르다.
+6. 서비스 재시작·컴팩션·하위 실행도 같은 닫힌 구성을 사용한다. 외부 Pi가 파일을 다시 열 수 있어야 한다는 조건은 없다.
 
-API 존재와 올바른 동작은 다르다. 같은 파일 재개, workspace 지침 전환, Skill 내부 상대경로, custom memory 위치, 프로젝트 trust를 함께 검증한 뒤 이 결합을 확정한다.
+공개 SDK API 존재가 이 격리의 동작 증거는 아니다. 사용자 Pi가 없는 환경과 오염된 전역/프로젝트 설정이 있는 환경에서 모두 동일한 내장 구성을 실행하는지 검증해야 한다.
 
 ### 7.3 그룹이 늘어도 봇의 Pi 세션은 늘지 않는다
 
@@ -343,13 +396,13 @@ API 존재와 올바른 동작은 다르다. 같은 파일 재개, workspace 지
 - 조율 담당은 Room 참여자여야 한다. CBO라는 이유로 참여하지 않은 모든 방의 원문을 자동 전달하지 않는다.
 - 다른 방의 모든 transcript를 매번 합치지 않는다. 현재 요청에 필요한 Room 이력·결과 참조를 전달한다.
 - 수정 지시는 대상 요청·turn에 연결한다. Room B의 추가 의뢰가 Room A의 진행 중 작업을 실수로 steer하지 않게 한다.
-- 병렬 실행이 필요하면 다른 visible Pickle을 재사용하거나 복제한다. OpenMaus의 task별 `resumeCursor` 구조는 도입하지 않는다.
+- 독립적인 장기 담당자가 필요하면 다른 visible Pickle을 재사용·복제한다. 한 요청의 한정된 하위 작업은 내장 서브에이전트를 사용할 수 있다. Room·의뢰마다 주 대화 `resumeCursor`를 추가하지 않는다.
 
 Grok의 bot-to-group 인계는 현재 text-only로 문서화돼 있다. B도 우선 텍스트와 허용된 artifact 참조로 연결하며, 원본 파일을 다른 방에 복사·전송할 때는 별도 범위를 검사한다. 사용자 첨부 전체를 금지한다는 뜻은 아니다. [G04]
 
 하나의 Pi 세션이 여러 Room을 오가므로 **Room을 모델 맥락의 보안 격리로 약속하지 않는다.** 전달 범위와 실제 도구 권한을 제한하되, 엄격히 분리해야 하는 업무는 별도 봇·허용 자원으로 나눈다.
 
-기존 Pi subagent 확장은 SDK 기본 기능이 아니며 독립 Pi process/context를 만들 수 있다. B가 새로 관리하는 장기 병렬 담당자는 visible Pickle로만 만든다. 기존 도구 내부 임시 subagent의 허용 범위와 호환성은 구현 전 결정 항목으로 남기며, 숨은 세션 풀을 허용하는 예외로 사용하지 않는다. [P01]
+Pi SDK 자체의 기본 subagent 기능을 가정하지 않는다. B가 구현·배포하는 필수 내장 서브에이전트의 계약은 §7.7을 따른다. 기존 사용자 subagent 플러그인과의 실행 호환은 요구하지 않는다. [P01]
 
 ### 7.4 Room 참여와 이력 접근
 
@@ -380,27 +433,38 @@ Grok의 bot-to-group 인계는 현재 text-only로 문서화돼 있다. B도 우
 
 이 계약은 Picky의 전달·검색·자료 도구에 적용한다. 임의 host shell까지 제한하는 OS 격리와 혼동하지 않는다.
 
+### 7.7 내장 서브에이전트와 하나의 지속 대화
+
+- 모든 Pickle은 내장 서브에이전트를 사용할 수 있다. 별도 설치·설정 파일·역할 스킬·사용자 `pi` 실행 파일을 요구하지 않는다.
+- 한 요청의 조사·구현·검토를 한정된 자식 run으로 수행한다. 필요하면 독립 임시 Pi SDK context를 만들 수 있지만 부모의 장기 대화를 교체하거나 두 번째 연락처·상시 세션 pool로 사용하지 않는다.
+- 자식에게 부모 request, runtime release, 허용된 입력·workspace·도구·기억 범위, deadline·재귀/동시성·사용량 상한을 바인딩한다. 부모 권한보다 넓힐 수 없다.
+- 자식은 부모 세션 파일에 직접 쓰지 않는다. 결과·오류·검증 근거는 run ID로 반환하고 주 대화가 수락한다. Cron·기억 등 내장 서비스는 scope를 공유하는 서비스이며 자식마다 독립 스케줄러·전역 저장소를 시작하지 않는다.
+- 부모의 진행 상세에서 자식의 실행·결과·실패·중단을 확인한다. 취소는 자식과 자원이 정리될 때까지 추적하고, 이미 완료된 외부 효과는 취소했다고 가장하지 않는다.
+- 앱 복구는 실행 receipt와 알려진 결과를 확인한다. 결과 불명의 외부 행동을 자식 재생으로 반복하거나 외부 Pi 세션에서 복구하도록 안내하지 않는다.
+
+이 임시 context 정책은 B의 구현 제안이다. 유지하는 불변식은 Pickle당 하나의 **지속 대화**이며, 필수 내장 서브에이전트까지 없애는 제약이 아니다.
+
 ## 8. 기억·Skill·복제·팀 package
 
-### 8.1 기억과 능력을 다르게 관리한다
+### 8.1 내장 엔진과 봇의 업무 데이터를 구분한다
 
-- 안정된 선호·역할 지식은 해당 봇의 Pi 기억에 저장한다. 변하는 branch·PR·가격·테스트 결과는 원본을 다시 확인한다.
-- 공통 Skill catalog는 여러 봇이 사용할 수 있다. 봇별 활성화·버전 pin·독립 수정본을 구분한다.
-- 공통 Skill 수정과 특정 봇의 로컬 개선을 같은 동작으로 취급하지 않는다. 새 버전의 영향 범위를 보여준다.
-- 앱은 자료의 목록·출처·사용 범위·저장 결과를 보여준다. OpenMaus의 `MEMORY.md` prompt 주입기를 Pi 기억 확장 위에 추가하지 않는다.
-- 기존 user/project memory와 봇별 memory를 구분한다. 고정 홈 때문에 모든 프로젝트 기억을 하나로 바꾸거나 원래 공유 기억을 복제하지 않는다.
+- 내장 메모리 레이어는 항상 존재한다. 저장된 기억은 Picky 내부의 사용자 공통·workspace·봇 scope로 구분하고 출처·수정·삭제를 관리한다. 사용자 Pi의 메모리 디렉터리와 동기화하지 않는다.
+- 시스템 프롬프트·코어 Skill은 제품 release에 묶인 필수 자원이다. 사용자·봇별 설치/해제·독립 교체·임의 코드 추가를 허용하지 않는다.
+- 시연·업무에서 생긴 Skill은 Picky 관리 저장소의 버전 있는 데이터다. 원문·필요 권한·적용 범위를 검토하며, 내장 ID·시스템 정책·코드를 덮어쓸 수 없다.
+- 봇별 기억과 업무 Skill은 독립 수정할 수 있다. core 기능을 없애는 opt-out과 업무 자료의 수정·삭제를 혼동하지 않는다. 안정된 선호는 저장하되 변하는 PR·branch·가격·테스트 결과는 다시 확인한다.
+- 내장 기억의 판단·사용은 Pi 코어와 내장 도구가 담당한다. 앱 UI가 별도 AI 기억 엔진을 운영하거나 OpenMaus memory 주입기와 이중 저장하지 않는다.
 
-현재 Picky 확장 테스트의 agent-scoped 기억은 Pi의 `memory-layer-agent` custom entry를 사용한다. 따라서 봇 소유 기억이 반드시 별도 `memory/*.md` 파일이어야 하는 것은 아니다. **권위 있는 Pi 저장 형식과 소유자 ID를 보존한다.** [C04][C05]
+기존 테스트의 `memory-layer-agent` custom entry는 데이터 소유권·재연결의 참고다. 필요한 구현은 검토 후 내장할 수 있지만 외부 Pi의 저장 형식을 영구 호환 계약으로 삼지 않는다. Picky가 하나의 권위 있는 저장 schema와 migration을 소유한다. [C04][C05]
 
 ### 8.2 세 가지 복사 목적
 
 | 동작 | 포함 | 제외 |
 | --- | --- | --- |
-| 역할 복제 | 프로필·업무 지침·활성 Skill의 고정 버전·Routine 정의 | 학습된 기억, 대화, 실행 상태, 권한·비밀 |
+| 역할 복제 | 프로필·업무 지침·업무 Skill 버전·내장 기능 참조·Routine 정의 | 학습된 기억, 대화, 실행 상태, 내장 실행 코드, 권한·비밀 |
 | 로컬 업무 기억 스냅샷 복제 | 위 자료와 사용자가 포함하기로 한 봇별 기억 | 대화·compaction 요약·queue·질문·승인·실행 이력·credential |
-| 휴대 가능한 팀 package | 역할·Room 구성·playbook·허용된 Skill·Routine 정의 | 개인 기억·대화·인증·권한·절대 로컬 경로·실행 중 상태 |
+| 휴대 가능한 팀 package | 역할·Room 구성·playbook·허용된 업무 Skill·Routine 정의 | 임의 extension·시스템 프롬프트 override·개인 기억·대화·인증·권한·절대 경로·실행 상태 |
 
-첫 동작은 Grok의 Duplicate에 가깝고, 둘째는 앞서 요청한 추가 기능이다. 셋째는 OpenMaus team package의 안전한 경계를 참고한다. Grok과 OpenMaus의 일반 Duplicate가 기억까지 복사한다고 설명하지 않는다. Grok 복제 Routine의 활성 상태는 공개 자료로 확인하지 못했으며, B의 일시중지 가져오기는 별도 안전 정책이다. [G03][O04][O05]
+첫 동작은 Grok의 Duplicate에 가깝고, 둘째는 앞서 요청한 추가 기능이다. 셋째는 OpenMaus team package의 안전한 경계를 참고한다. 다만 B는 Grok과 달리 코어 Skill의 가용성을 봇별로 해제하거나 복제 설정으로 바꾸지 않는다. Grok과 OpenMaus의 일반 Duplicate가 기억까지 복사한다고 설명하지 않는다. Grok 복제 Routine의 활성 상태는 공개 자료로 확인하지 못했으며, B의 일시중지 가져오기는 별도 안전 정책이다. [G03][O04][O05]
 
 ### 8.3 스냅샷 계약
 
@@ -408,7 +472,8 @@ Grok의 bot-to-group 인계는 현재 text-only로 문서화돼 있다. B도 우
 - export 전후에 기억·Skill·Routine 정의의 단조 증가 revision을 모두 비교한다. 중간에 하나라도 바뀌면 혼합 snapshot을 확정하지 않고 제한적으로 재시도하거나 실패를 알린다. run 이력처럼 제외한 자료의 변경은 정의의 revision과 구별한다.
 - revision 읽기를 지원하지 않는 저장소는 짧은 쓰기 checkpoint에서 일관된 읽기를 확보해야 한다. 확보할 수 없으면 snapshot을 만들지 않으며 원본 작업을 몰래 abort하지 않는다.
 - 완성된 manifest와 clone 요청 ID에 새 Bot ID·홈·Pi 세션을 연결한다. 자료·실행 권한·workspace 준비를 모두 확인한 뒤 의뢰를 수락한다. 재시도는 같은 생성 receipt를 이어받아 Bot·Routine을 중복 생성하지 않는다.
-- Pi custom entry에 저장된 기억은 기억 도구의 export/import 경로로 추출하고 새 소유자에 연결한다. JSONL 전체 복사나 대화 요약으로 대신하지 않는다.
+- 기억은 내장 메모리 schema의 export/import 경로로 추출하고 새 소유자에 연결한다. JSONL 전체 복사나 대화 요약으로 대신하지 않는다.
+- snapshot은 필요한 제품/내장 Skill 버전과 업무 데이터만 참조한다. core 코드를 복사·비활성화하거나 사용자 Pi 경로로 연결하지 않는다. 현재 runtime과 호환되지 않는 snapshot은 준비 오류로 표시하고 이전 schema를 검증한다.
 - 변경 가능한 원본 파일을 가리키는 링크는 독립 snapshot이 아니다. 불변 버전 참조와 복제본의 쓰기 공간을 구분한다.
 - Routine은 일시중지로 가져온다. 원본 소유자·경로·대상 계정·다음 실행·밀린 trigger를 그대로 실행하지 않는다.
 - 새 target까지 포함하는 기존 자동화 허용이 있을 때만 활성화할 수 있다. 아니면 정의만 보존한다.
@@ -420,11 +485,11 @@ Grok의 bot-to-group 인계는 현재 text-only로 문서화돼 있다. B도 우
 
 ### 8.4 복제 자료와 실행 권한은 별도로 연결한다
 
-복제본은 원본 grant를 상속하지 않는다. 모델 접속은 사용자가 Picky에 허용한 공통 Pi 인증을 사용할 수 있지만, 그 인증이 업무용 MCP 계정·browser 로그인·workspace 접근 권한을 뜻하지는 않는다.
+복제본은 원본 grant를 상속하지 않는다. 모델 접속에는 사용자가 허용한 Picky 전용 인증을 사용할 수 있지만, 그 인증이 업무용 MCP 계정·browser 로그인·workspace 접근 권한을 뜻하지는 않는다.
 
 - workspace, connector의 account/tool/action/목적지, Computer target/profile, 외부 행동은 새 Bot의 capability manifest에서 기본 미허용이다. 명시적인 기존 사용자 허용이나 이번 의뢰가 덮는 범위만 agentd가 새 소유자에 연결하고 근거를 남긴다.
 - 이미 허용한 repo 작업·알림 대상은 재확인 없이 연결할 수 있다. 복제 버튼을 누르거나 Skill을 활성화했다는 이유만으로 원본의 모든 계정을 연결하지 않는다.
-- 전역 MCP·확장·환경 변수를 그대로 로드한 뒤 UI에서만 숨기지 않는다. 좁은 범위를 강제할 수 없는 adapter는 제한 실행에 노출하지 않는다.
+- 사용자 Pi의 전역 MCP·확장·인증·환경을 로드하지 않는다. 내장 연결부도 새 Bot의 account·action 범위만 노출하며 좁은 범위를 강제할 수 없는 adapter는 제한 실행에 사용하지 않는다.
 - 무제한 host shell이 필요한 코딩은 별도의 사용자 권한 신뢰 실행이다. 기존 허용이 이를 포함할 때만 사용하고, 같은 OS 사용자 자원에 접근할 수 있음을 표시한다. 이를 workspace만 접근 가능한 격리 모드라고 부르지 않는다.
 - 권한이 부족한 복제본은 정의를 보존한 준비 대기 상태다. 몰래 host 실행·다른 계정으로 fallback하거나 원본 Routine을 먼저 켜지 않는다.
 
@@ -436,7 +501,7 @@ Grok의 bot-to-group 인계는 현재 text-only로 문서화돼 있다. B도 우
 
 Pi가 대화에서 Routine의 목적·입력·조건·결과·승인 경계를 작성한다. scheduler는 확정된 일정과 trigger를 감지해 **원래 봇의 mailbox**로 전달한다. 실행 receipt와 대화의 결과를 연결한다.
 
-기존 Pi Cron의 같은 세션 전달 경로를 우선 재사용한다. 다른 cron engine과 별도 headless bot session을 앱에 중복 구현하지 않는다. 다만 현재 확장의 원시 job 모델과 B의 Routine catalog·Room origin·실행 receipt 사이 adapter는 필요하다. 실행 수락과 작업 성공을 다른 상태로 저장한다. [C04][C05]
+Cron은 Picky 필수 내장 서비스다. 검토된 기존 구현을 내부 모듈로 재사용할 수 있지만 사용자 Pi cron 패키지·전역 job 저장소·LaunchAgent와 연동하지 않는다. Picky 소유의 정의·Room origin·receipt와 같은 지속 대화로의 전달을 한 엔진에서 관리한다. 외부 headless Pi를 실행하지 않으며 수락·실제 실행·성공을 다른 상태로 저장한다. [C04][C05]
 
 ### 9.2 실행 정책
 
@@ -445,7 +510,7 @@ Pi가 대화에서 Routine의 목적·입력·조건·결과·승인 경계를 �
 | 봇이 idle | 원래 Pi 세션에서 실행 |
 | 다른 의뢰 수행 중 | 기본 후속 전달. 같은 Routine의 interval 발생이 쌓이지 않도록 합치기 또는 건너뛰기를 기록 |
 | 사용자 질문·승인 대기 | 답변으로 오인하지 않고 대기 |
-| PTT·Pi 직접 조작 중 | 자동 전달 보류. 기존 per-runtime pause와 새로운 takeover 계약 연결 |
+| PTT·앱 내 제어/복구 대기 중 | 해당 요청의 자동 전달 보류. 사용자 Pi로 제어권을 넘기는 상태는 없음 |
 | 사용자의 명확한 수정·중단 | Routine보다 우선. 이미 완료된 외부 행동을 undo했다고 말하지 않음 |
 | Mac 절전·service 종료 | 실행했다고 표시하지 않음. 재개 때 missed/coalesced/skipped 처리 |
 | 중복 event 또는 재전송 | 저장된 delivery ID·receipt로 중복 수락 억제 |
@@ -471,7 +536,7 @@ Pi가 대화에서 Routine의 목적·입력·조건·결과·승인 경계를 �
 
 창을 닫는 것, 앱을 종료하는 것, 실행 서비스를 멈추는 것, Mac 절전은 다르다. 기본 로컬 모드에서는 실행 host가 살아 있어야 한다. 선택적인 백그라운드 서비스 모드는 설정·해제·중단 상태를 사용자에게 보여주고, 하나의 agentd 소유자만 실행되게 한다.
 
-Cron이 별도 LaunchAgent로 살아 있다는 이유로, 종료된 Picky runtime 대신 숨은 Pi 세션을 시작하게 하지 않는다. B 소유 Routine의 실행은 지정된 runtime 소유 경로로만 들어간다. 그 경로가 없으면 지연 상태다. Mac이 꺼져 있는데 계속 일한다는 Grok의 클라우드 약속은 제공하지 않는다.
+내장 Cron은 Picky 실행 host의 수명을 따른다. 백그라운드 host의 설정은 Cron 모듈을 제거하는 opt-out이 아니며, host가 없으면 실행이 지연된다. 사용자 Pi의 Cron/LaunchAgent를 빌려 대신 실행하거나 외부 Pi를 시작하지 않는다. Mac이 꺼져 있는데 계속 일한다는 Grok의 클라우드 약속은 제공하지 않는다.
 
 ## 10. Computer를 로컬로 옮기는 방법
 
@@ -503,7 +568,7 @@ Pi 공식 Gondolin 예제도 host Pi의 built-in tool을 microVM으로 보내는
 
 ### 10.3 실제 자원을 잠근다
 
-home별 lock만으로는 두 봇이 같은 Mac에 동시에 타이핑하는 일을 막을 수 없다. lease는 실제 desktop, browser target/profile, VM target, 터미널 writer 등 자원 ID에 걸어야 한다.
+home별 lock만으로는 두 봇이 같은 Mac에 동시에 타이핑하는 일을 막을 수 없다. lease는 실제 desktop, browser target/profile, VM target, 내부 실행 owner 등 자원 ID에 걸어야 한다.
 
 - preview와 제어를 분리한다. 사람이 잡은 동안 봇의 GUI 입력은 거부한다.
 - lease 반환 뒤 새 화면·target·epoch를 확인한다. 이전 좌표의 클릭을 queue에서 재생하지 않는다.
@@ -511,19 +576,19 @@ home별 lock만으로는 두 봇이 같은 Mac에 동시에 타이핑하는 일�
 - bot별 VM을 쓰면 로그인도 자동으로 공유된다고 약속하지 않는다. 공유 browser와 분리된 VM은 실제 credential 범위가 다르다.
 - managed browser의 여러 page와 여러 browser process의 같은 profile 공유를 혼동하지 않는다. 동시 로그인·profile lock·사용자 개입을 별도로 검증한다.
 
-### 10.4 Pi 터미널도 관리 경로를 거친다
+### 10.4 실행 소유권과 복구는 제품 내부에만 둔다
 
-`Pi에서 열기`와 새 재개 명령은 lease를 얻고 같은 저장 세션을 연다. 자동 입력을 보류한 뒤 이전 writer의 종료·disposal을 확인한다. 복귀 시 sync가 끝난 뒤 전달을 재개한다.
+주 세션의 writer는 Picky runtime 하나다. 업데이트·서비스 재시작·복구 때 이전 owner를 정리하고 저장 checkpoint와 처리한 delivery를 확인한 뒤 새 owner가 이어받는다. 이것은 앱의 내부 복구이며 사용자에게 Pi session 경로나 resume 명령을 제공하는 기능이 아니다.
 
-사용자가 관리 경로 밖에서 임의의 `pi --session`을 실행하면 앱만으로 완전한 단일 writer를 강제할 수 없다. 그런 동작까지 안전하다고 약속하지 않는다. 감지 가능한 외부 변경에는 자동 전달 중지·동기화 필요 상태를 표시하고, 기존 직접 재개 명령의 이전 방법을 안내한다. 기존 terminal tail/sync는 재사용하지만 그 자체를 소유권 보장으로 보지 않는다. [C03][C05]
+외부 Pi writer를 따라가는 tail/sync·CLI 접속·TUI takeover는 제거한다. 예전 deep link·resume/handoff 요청은 명시적인 미지원 응답을 주며 로컬 `pi`를 실행하지 않는다. 진단은 제품 버전·모듈 상태·정제된 실행 기록으로 하고, 실패 시 사용자 Pi 설치·재개를 해결책으로 안내하지 않는다.
 
 ## 11. 연결·승인·비밀·결과의 경계
 
 ### 11.1 연결 앱
 
-Pi에서 이미 쓰는 도구·MCP·Skill·package를 우선한다. Pi SDK 자체에 MCP가 기본 내장됐다고 표시하지 않는다. 설치된 bridge나 필요한 확장을 제품에서 확인하고 안내한다. OpenMaus의 Composio catalog나 별도 MCP process registry를 Pi 위에 다시 올리지 않는다. [P01][O11]
+도구·MCP 연결부·지원 adapter는 Picky가 내장한다. Pi SDK의 기본 기능과 제품의 내장 추가 기능을 구별하되, 필요한 Pi extension을 사용자가 따로 설치하도록 안내하지 않는다. 외부 MCP/서비스 연결은 제품의 계정·endpoint·capability 설정으로 관리한다. 사용자 Pi의 연결 설정·임의 로컬 서버 실행 명령을 자동 가져오지 않는다. [P01][O11]
 
-공통 연결 catalog에는 실제 account, 상태, 허용 도구, 읽기/쓰기 capability, 재인증 필요 여부를 표시한다. 봇마다 노출·사용 범위를 구분하되, checkbox를 끄면 같은 서비스의 browser·shell 경로까지 차단된다고 주장하지 않는다. Grok 문서도 connector 정책과 network 정책을 별도로 설명한다. [G09]
+연결 catalog에는 실제 account, 상태, 허용 tool/action, 읽기/쓰기 capability와 재인증 이유를 표시한다. 연결을 해제해도 MCP 엔진 자체가 제거되는 것은 아니다. 또한 한 연결의 checkbox를 끄는 것이 같은 서비스에 접근하는 모든 browser·shell 네트워크를 차단한다는 뜻은 아니다. [G09]
 
 ### 11.2 질문·승인·비밀은 다른 객체다
 
@@ -546,12 +611,12 @@ Grok형의 자연어 규칙과 선택 가능한 모델 검토를 B의 지원 목
 | Pi tool call·사용자 bash | 실행 전 hook/adapter, 요청·범위·취소 | 텍스트 규칙만으로 임의 shell의 모든 부작용을 이해함 |
 | MCP·외부 도구 | 해당 tool의 전송 전 승인·계정·payload | 도구 노출 제한이 모든 외부 네트워크 접근을 막음 |
 | Computer action | target·lease·epoch·사람 제어·승인 | 봇 홈이 다르면 같은 화면을 안전하게 동시 조작함 |
-| 확장 설치·업데이트·실행 | trust·패키지 무결성·지원 실행 경계 | host extension 코드까지 Pi의 도구 hook이 sandbox함 |
+| 내장 모듈·Skill·제품 업데이트 | release manifest·무결성·schema·실제 실행 경계 | 번들에 넣었다는 이유만으로 코드·권한이 자동으로 안전해짐 |
 | Routine·위임·권한 변경 | 정의·대상·기존 허용 범위·사용량·origin | 생성 권한이 외부 발송·삭제·배포 권한을 함께 줌 |
 
-Pi는 같은 OS 사용자 권한으로 실행되며 기본 sandbox가 없다. **봇별 홈과 메모리 도구의 접근 정책은 OS 수준 격리가 아니다.** Native shell·extension이 가진 접근을 숨기지 않는다. 강한 격리가 필요한 경우 실제 실행 환경·mount·네트워크·credential 경계를 좁히고 별도로 검증해야 한다. [P03][P04]
+Pi SDK 자체에는 기본 sandbox가 없다. B의 폐쇄형 resource loading은 사용자 Pi 코드·설정 혼입을 막는 필수 계약이지만, 같은 OS 사용자 권한의 native shell까지 격리했다는 증거는 아니다. 내장 도구·자식 실행에도 실제 파일·mount·네트워크·credential 경계를 적용하고 검증해야 한다. 사용자 Pi 인증·설정은 runtime 자원으로 사용하지 않는다. [P03][P04]
 
-Picky가 소유하는 비밀은 Keychain 등 적절한 저장 경로를 쓰고 UI에는 설정 여부만 돌려준다. 기존 Pi의 인증 저장 방식을 앱이 자동으로 바꾸거나 전부 암호화됐다고 말하지 않는다. 로컬 first는 로컬 저장·제어의 뜻이지, 선택한 모델 API·MCP·웹으로 데이터가 나가지 않는다는 뜻이 아니다.
+Picky의 모델·connector 비밀은 Picky 전용 인증 경로와 Keychain 등 적절한 저장소로 관리하고 UI에는 설정 여부만 돌려준다. 사용자 Pi의 `auth.json`·credential 환경을 자동 읽기·복사·수정하지 않는다. 로컬 first는 로컬 저장·제어의 뜻이지, 선택한 모델 API·MCP·웹으로 데이터가 나가지 않는다는 뜻이 아니다.
 
 ### 11.4 결과와 interactive artifact
 
@@ -563,42 +628,49 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 
 ## 12. 기존 Picky를 이전하는 방법
 
-1. 기존 Pickle ID, Pi 파일과 header identity, 메시지·결과·읽음·pin·보관 상태를 보존한다. 프로필을 만들기 위해 새 Pi 세션으로 갈아타지 않는다.
-2. 기존 `cwd`를 workspace 의도로 수용하고 고정 home을 별도 배정한다. `pickle-create --cwd <repo>`와 handoff가 지정한 실제 작업 대상을 바꾸지 않는다.
-3. 기존 Pi 파일은 우선 원래 참조로 재개한다. 위치를 옮길 경우 writer를 정리하고 ID·내용·모든 참조·재개 명령과 복구 절차를 함께 검증한다.
-4. 기존 Dock 그룹은 분류·정렬이다. 이를 참여자와 메시지를 가진 Room으로 자동 변환하지 않는다.
-5. 현재 대화 복사 API와 새 역할/기억 복제를 별도 계약으로 둔다. 기존 JSONL snapshot 경로를 새 기능의 내부 구현으로 쓰지 않는다.
-6. 기존 `picky pickle-*`·Pi handoff·외부 automation은 명시적 호환 계층으로 유지한다. 새로운 Room·Routine·clone 참조를 typed protocol에 추가하고 Swift/TypeScript 양쪽을 검증한다.
-7. 삭제·숨김·보관·일시중지·컴퓨터 reset을 분리한다. 숨김은 실행을 멈추지 않으며, 삭제는 관련 Routine을 어떻게 처리했는지 확인해야 한다.
-8. memory/cron 안전 보류는 [cutover 문서](./extension-safety-cutover.md)의 배포물·writer·scheduler 검증을 통과하기 전 해제하지 않는다. 앱 재시작·확장 설치·LaunchAgent 변경은 별도 실행 승인 사항이다.
+**Picky의 데이터 보존과 사용자 Pi 런타임 호환 종료를 구분한다.** 이전 과정이 사용자 Pi의 모든 자료를 검색·이관하는 새 호환 기능이 되어서는 안 된다.
 
-기존 Picky의 높은 영향도 경계는 session schema/store, runtime resource loading, main/child routing, terminal sync, extension lifecycle, Swift projection·입력이다. 그 경계를 새로 검증하지 않고 OpenMaus 화면만 연결해서 끝내지 않는다.
+1. 기존 Picky Bot ID, 메시지·결과·읽음·pin·보관 상태, 작업공간 의도를 보존한다. Dock 분류 그룹을 Room으로 자동 바꾸지 않는다.
+2. 이전 Picky가 이미 참조하던 대화·기억·Routine만 범위를 명시한 일회성 migration 대상으로 삼는다. 임의 사용자 Pi 세션을 찾아 재개하거나 일반 JSONL 가져오기·동기화 UI를 제공하지 않는다.
+3. 실행 writer와 Picky 소유 scheduler를 확인·정리한 뒤 일관된 snapshot을 Picky 전용 저장소로 이전한다. 외부 Pi 파일 참조·symlink는 끊고 원본은 보존한다. 사용자 Pi의 무관한 세션·기억·job·LaunchAgent는 수정하거나 중지하지 않는다.
+4. 내부 Pi ID·저장 포맷은 더 이상 외부 호환 계약이 아니다. migration에서 필요하면 새 내부 ID/schema에 매핑하되 Bot ID·대화·출처를 보존하고 중복 실행을 막는다. 정상 운영에 들어간 뒤에는 그 Bot의 지속 대화 identity를 유지한다.
+5. 과거 tool call·승인·시스템 지침·queue는 실행하거나 권한으로 되살리지 않는다. 과거 대화는 이력이고 새 시스템 정책은 제품의 내장 버전이다. 오래된 원문으로 인해 사용자 Pi 설정을 다시 로드하지 않는다.
+6. 사용자 Pi extension·Skill·prompt·인증·설정은 일괄 복사하지 않는다. 필요한 제품 기능은 내장 구현으로, 계정은 Picky 인증으로 제공한다. 내장화 대상 데이터의 변환이 불가능하면 누락·보관 상태를 표시하고 외부 Pi로 fallback하지 않는다.
+7. Routine은 정의와 실행 receipt를 이전하고 중복 scheduler·미확인 외부 효과를 점검한 뒤 활성화한다. 내장 Cron 필수 제공이 기존 예약의 자동 재활성화 승인은 아니다.
+8. Picky 자체 CLI/API는 제품 제어 경로로 유지할 수 있다. `--cwd`는 workspace 입력으로 수용하되 사용자 Pi session 파일·resume·handoff 관련 명령/필드는 폐기한다. 이전 링크도 Pi를 실행하지 않고 미지원 사유를 표시한다.
+9. 새 메신저에는 Pi/TUI·resume·sync·사용자 플러그인 설치/해제 메뉴를 남기지 않는다. 필요한 진단·복구·중단·상세는 제품 안에서 제공한다.
+10. 내장화의 배포 검증은 실제 제품 bundle을 대상으로 한다. 기존 [안전 cutover 문서][C05]의 writer·scheduler·배포물 검증 교훈은 유지하되, 사용자 npm 업데이트를 B의 정상 설치 경로로 삼지 않는다.
+
+이 문서 수정으로 앱 재시작·migration·사용자 파일 변경·패키지 배포를 실행하지 않는다. 높은 영향도 경계는 자원 로더·인증·모듈 lifecycle·세션 저장소·migration·내장 서브에이전트·Cron·앱 제어 UI다.
 
 ## 13. 구현 단계와 수용 기준
 
 ### 13.1 먼저 확인할 기술 실험
 
-이 단계는 사용자 환경을 바꾸지 않는 격리 실험으로 수행한다. 아래 검증은 이번 문서 작업에서 실행하지 않았다.
+사용자 환경을 바꾸지 않는 격리 fixture와 실제 제품 bundle로 검증한다. 아래는 아직 실행하지 않은 계획이다.
 
 | 실험 | 확인할 결과 | 실패하면 |
 | --- | --- | --- |
-| 고정 home + 실제 workspace | 같은 Pi ID/파일로 재개하면서 올바른 repo 지침·Skill·trust·파일 작업 적용 | 단순 cwd 전환안 폐기, resource/tool 결합 수정 |
-| 기존 기억·Cron 배포물 | 검토된 실제 package에서 agent memory·scope·같은 세션 전달·reload/dispose 안전 확인 | 안전 보류 유지. 설치만 해서 해결됐다고 처리하지 않음 |
-| 대화 없는 기억 snapshot | revision 일치, 새 owner import, 대화 미유입·독립 변경·grant 재계산·Routine 미실행 | raw JSONL 복사나 UI만의 권한 제한으로 우회하지 않음 |
-| Room + 같은 Pi mailbox | 방·thread·Routine·DM의 귀속, 참여 변경·검색·artifact 권한의 최종 결과 보존 | 그룹 UI 확대 전에 전달·접근 계약 수정 |
-| Pi takeover | 관리 경로의 writer 하나, 자동 입력 보류·disposal·sync·재개 | 직접 제어를 동시 writer 방식으로 출시하지 않음 |
-| 필수 Computer provider | browser 두 target 병렬, Mac 입력 직렬화, human hold 중 거부, fresh-frame 복귀 | 해당 필수 provider가 준비될 때까지 F12·F13 완료 표시 금지 |
-| 승인·secret·widget·시연 | 실행 전 정지·만료 거부, 녹화 비밀·취소 자료 미유입, artifact 권한 제한 | 지원 coverage를 좁히고 위험 경로는 막음 |
-| 외부 이벤트의 실행 범위 | 공격 payload에도 고정 origin·계정·도구·목적지·파일 범위를 유지 | 무인 실행 비활성화, 실제 enforcement를 마련한 뒤 재검증 |
+| 사용자 Pi 없는 시작 | 번들 runtime·메모리·서브에이전트·Cron·Skill이 모두 준비됨 | 사용자 Pi 설치를 안내하지 않고 제품 결함으로 처리 |
+| 오염된 전역/프로젝트 환경 | `~/.pi`·`~/.agents`·repo 확장·prompt·Skill·인증·환경 변수를 바꿔도 제품 자원이 동일 | 기본 discovery·auth·환경 상속 경로 차단 |
+| 필수 내장 manifest | 해제 설정/모듈 누락이 축소 정상 모드로 이어지지 않음, every-turn 정책 유지 | 해당 제품 release 준비 실패, 진단·복구 제공 |
+| 고정 home + workspace | 제품 내부 대화 identity 유지, 올바른 repo 작업, 프로젝트 자료가 코어를 덮어쓰지 않음 | 경로·자료 로더·권한 계약 수정 |
+| 내장 메모리·Cron | bundle의 실제 모듈로 저장·재연결·같은 대화 전달·이전/중복 억제 | 외부 extension source로 테스트를 대체하거나 skip하지 않음 |
+| 내장 서브에이전트 | 부모 귀속·임시 context·권한 상한·취소·결과, 외부 Pi process/주 세션 동시 쓰기 없음 | 자식 수명·scope·결과 전달 수정 |
+| 대화 없는 기억 snapshot | revision 일치, 새 owner import, 대화/권한 미유입·Routine 미실행·core 변경 없음 | raw JSONL·사용자 Pi 경로 복사로 우회하지 않음 |
+| Room + 같은 주 mailbox | thread·DM·Routine의 귀속, 참여 변경·검색·artifact 권한 보존 | 전달·접근 계약 수정 |
+| 제품 내부 복구 | 이전 owner 종료·checkpoint·receipt 확인, TUI/resume/handoff 비노출 | 외부 Pi fallback 없이 제품 복구 수정 |
+| 필수 Computer provider | browser 두 target 병렬, Mac 입력 직렬화, human hold 거부·fresh-frame 복귀 | 해당 기능 완료 표시 금지 |
+| 승인·비밀·시연·외부 event | 실제 효과 전 승인, 녹화/비밀/권한 우회 차단 | 위험 실행 차단 후 경계 재검증 |
 
 ### 13.2 구현 순서
 
 | 단계 | 산출물 | 다음 단계로 갈 증거 |
 | --- | --- | --- |
-| 1. 정체성과 실행 계약 | 고정 홈·workspace·Pi ID, 재개·단일 writer, 기존 데이터 호환 | 실제 Pi와 기존 기록으로 동일 세션 유지·올바른 프로젝트 실행 |
+| 1. 전용 runtime과 필수 내장 | 닫힌 로더·Picky 인증·release manifest·기억/서브에이전트/Cron·고정 홈·내부 복구·migration | 사용자 Pi 없이 실행, 외부 자원 혼입 없음, 필수 모듈과 데이터 이전 검증 |
 | 2. 메신저와 제어 | roster·DM·thread·reaction·읽음, 상태·질문·승인·결과, 기존 입력·Dock 연결 | PTT/Quick Input부터 답글·수정·중단까지 같은 요청으로 연결 |
-| 3. 팀과 업무 방식 | Room·참여/이력·인계·Skill/Memory UI·역할/기억 snapshot·portable package | 협업 귀속, 대화 미복제, 허용 범위 내 grant, 원본 보존 |
-| 4. 자동화 | 같은 세션 Routine·이벤트·run history·절전/서비스 정책 | 공격 입력의 권한 우회 거부, busy·질문·PTT·재시작·중복·삭제 동작 |
+| 3. 팀과 업무 방식 | Room·참여/이력·인계·내장 하위 실행 상세·업무 Skill/Memory UI·snapshot·package | 부모/Room 귀속, 대화 미복제, core 비변조, 권한·원본 보존 |
+| 4. 자동화 제품화 | 1단계 내장 Cron의 Routine·이벤트·이력·절전/서비스 UI | engine 옵트아웃 없이 개별 작업 관리, 권한 우회·중복·재시작 검증 |
 | 5. Computer와 학습·결과 | 필수 browser/Mac provider, takeover, 관리 browser 시연 Skill, 파일·widget | §10.1의 필수 제어·병렬성 및 §5.3의 녹화 경계 충족. 격리 provider는 선택 |
 | 6. 제품 통합 | principal별 검색·알림·usage·복구·백업·설치/업데이트 경험 | F01~F24의 로컬 데스크톱 수용 기준과 이전 사용자 흐름 충족 |
 
@@ -608,8 +680,13 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 
 | 시나리오 | 실패로 볼 결과 |
 | --- | --- |
-| 한 Pickle에 여러 의뢰, compaction과 재접속 | Pi ID가 바뀌거나 기억을 잃고도 같은 봇처럼 표시 |
-| 같은 봇이 두 Room과 DM·Routine에 참여 | 숨은 Pi 세션 생성, 다른 방에 답변·승인 적용, private 이력 일괄 전달 |
+| 사용자 Pi 미설치·업데이트·삭제·오염 설정 | 제품 실행 실패 또는 사용자 Pi 코드·인증·prompt·Skill에 따른 동작 변화 |
+| 필수 내장 모듈 누락·해제 설정·초기화 실패 | 기능을 끈 채 정상 시작, 전역 package 설치나 사용자 Pi로 fallback |
+| 컴팩션·재연결·서브에이전트 시작 | 내장 시스템 정책/Skill 버전 유실, 외부 prompt가 대체 |
+| 내장 서브에이전트 병렬·취소·실패 | 부모 권한 확대·주 대화 파일 동시 쓰기·고아 run·중복 결과·외부 Pi 실행 |
+| Pi/TUI·resume·handoff·sync의 과거 메뉴/링크/요청 | 새 사용자 경로에 노출, 숨은 fallback 실행, 내부 session 파일을 재개 기능으로 제공 |
+| 한 Pickle에 여러 의뢰, compaction과 재접속 | 내부 지속 대화 identity가 바뀌거나 기억을 잃고도 같은 봇처럼 표시 |
+| 같은 봇이 두 Room과 DM·Routine에 참여 | 두 번째 지속 대화 생성, 다른 방에 답변·승인 적용, private 이력 일괄 전달 |
 | Room 가입·이력 공유·탈퇴·재가입 | 과거 이력 자동 공개, 회수된 참조의 조회·전달, 이미 남은 Pi 기억까지 지웠다는 표시 |
 | 비참여 Room·타 봇 DM·삭제 자료 검색 | snippet·결과 수·artifact cache를 통한 유출, actor 인자로 사용자 검색 권한 획득 |
 | 과거 메시지의 thread 답글·reaction·재접속 | 새 Pi 세션 생성, 잘못된 root/읽음, 중복 반응, 반응으로 승인·작업 시작 |
@@ -617,39 +694,40 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 | 원본과 복제본이 병렬로 코드 수정 | 원본 대화·미완료 변경·기억 오염, 같은 작업공간에 무단 동시 쓰기 |
 | 역할/기억 snapshot을 새 홈에 적용 | 대화·compaction·secret·grant 유입, 수정 가능한 원본 파일 공유 |
 | export 중 기억·Skill·Routine 동시 수정 및 생성 재시도 | 혼합 revision 확정, 원본 강제 중단, 중복 Bot·Routine 생성 |
-| 전역 MCP·browser·환경 변수가 있는 상태에서 복제 | 미허용 account·target 노출, UI만 숨긴 도구, host 신뢰 실행을 격리라고 표시 |
+| 사용자 Pi 자원이 있는 환경에서 생성·복제 | 전역 설정/인증/Skill 혼입, 미허용 account·target, core 변경·해제, host 실행을 격리로 오표시 |
 | 복제 Routine과 중복 trigger | 승인되지 않은 예약 활성화, 같은 외부 행동 자동 반복 |
 | webhook/메일에 권한 변경·credential 조회·다른 수신자 전송 지시 포함 | trusted metadata 덮어쓰기, 허용 밖 도구·목적지·파일 접근, 위임으로 우회 |
 | Mac 절전·서비스 종료·복구 | 실행하지 않은 일의 완료 표시, 놓친 발송의 무조건 catch-up |
-| Pi 직접 조작 후 복귀 | 두 writer가 동시에 쓰거나 이전 runtime의 stale 분기에서 진행 |
+| 내부 runtime 중단·재연결·업데이트 | 두 writer 동시 실행, stale 분기/중복 효과, 사용자 Pi로 복구 fallback |
 | 사람이 Computer를 조작하고 반환 | 봇의 입력 침범, 과거 좌표 입력이 뒤늦게 실행 |
-| 일반 도구를 접은 대화 | 질문·승인·terminal failure·미검증 결과를 발견할 수 없음 |
+| 일반 도구를 접은 대화 | 질문·승인·최종 실패·미검증 결과를 발견할 수 없음 |
 | 관리 browser 두 target과 opt-in Mac 제어 | browser만으로 완료 선언, 물리 입력 동시 사용, VM 없음을 이유로 묵시적 host 전환 |
 | 녹화로 절차를 배운 뒤 반복 | 시연 파일 수신만으로 학습 완료, 승인된 Skill의 실제 재현 미확인 |
 | 시연 중 secure field·자동완성·타 창 알림 및 취소 | 제외할 비밀이 버퍼·파일·전송 후보에 남음, 범위 밖 수집, preview 전 업로드, 취소 자료 잔존 |
 | 파일·chart·widget 결과 검토 | 원본 불일치·오래된 테스트 근거, 문서 JS의 임의 도구 실행 |
 | 봇·Routine·연결 제거 | 숨김을 중지로 오인, 지워진 봇을 위한 예약 실행, 공유 로그인 삭제 여부 오표시 |
-| 기존 CLI·pin·Dock 그룹·PTT·IME 사용 | 다른 대상 전달, 기존 데이터 삭제, 입력·키보드·접근성 회귀 |
+| Picky 제어 API·pin·Dock 그룹·PTT·IME 사용 | 다른 대상 전달, 제품 데이터 삭제, 입력·키보드·접근성 회귀 |
 | 많은 봇과 긴 대화로 시작·재접속 | 모든 transcript와 이미지 전체를 roster 갱신마다 읽어 UI가 멈춤 |
 
 상태·라우팅·저장은 production 경로를 사용하고 외부 경계만 fake로 둔다. SDK 호출 존재, 테스트 파일 존재, mock 성공은 실제 Pi·Computer·connector 동작을 입증하지 않는다.
 
-기존 `session-supervisor.test.ts`, `runtime/pi-sdk-runtime.test.ts`, `runtime/extension-safety.integration.test.ts`, protocol·terminal sync·Swift ownership 테스트를 재사용하고, Room·snapshot·Computer·approval의 최종 결과에 필요한 사례만 추가한다. UI 검증은 기존 desktop isolation 정책과 performance 계측을 따른다. 실제 반복 사용에는 로컬 코딩·그룹 인계·Routine·사람 개입·복구를 모두 포함한다. [C04][C09][C10]
+기존 session-supervisor·runtime·protocol·Swift ownership의 행동 테스트를 필요한 곳에 재사용한다. 외부 확장 checkout에 의존하던 연동 검증은 실제 내장 bundle을 대상으로 바꾸고 필수 모듈 부재를 skip하지 않는다. 외부 terminal sync의 호환을 유지하는 대신 해당 사용자 경로가 제거됐는지 확인한다. 실제 반복 사용에는 내장 하위 실행·로컬 코딩·그룹·Routine·Computer 개입·내부 복구를 포함하며 UI 검증은 desktop isolation과 performance 정책을 따른다. [C04][C09][C10]
 
 ### 13.4 구현 전에 남은 결정
 
-- 검토된 memory/cron 배포물과 cutover 시점. 현재 보류를 우회하지 않는다.
-- 기존 Pi subagent 내부 임시 세션을 단일 세션 원칙에 어디까지 포함할지와 기존 Skill 호환성.
-- 필수 browser·Mac provider의 구체적인 구현·배포 조합과 지원 OS. §10.1의 최소 완료 범위는 고정하고, 선택 격리 provider의 runtime은 별도 검증해 선택한다.
-- 백그라운드 서비스의 초기 기본값과 missed-run 정책. 어떤 경우에도 Mac 전원·절전 제약은 숨기지 않는다.
+- 내장할 기존 기능 소스의 정확한 revision·라이선스·수정 범위와 제품 bundle 배치. 필수 내장·옵트아웃 불가 원칙 자체는 미결정이 아니다.
+- Picky 전용 저장 schema·기존 제품 데이터 migration과 내장 업데이트의 호환/rollback 경계. 사용자 Pi 운영 호환을 복원하는 대안은 제외한다.
+- 내장 서브에이전트의 구체적인 자원·재귀·동시성 상한과 임시 context 정리. 실행 소유자는 Picky이고 사용자 subagent 플러그인 호환은 고려하지 않는다.
+- 필수 browser·Mac provider의 구현·배포 조합과 지원 OS, 선택 격리 provider의 runtime.
+- 백그라운드 host의 기본값과 missed-run 정책. Cron 모듈은 필수지만 Mac 전원·절전 제약을 숨기지 않는다.
 
-이는 B를 문서로 완성하지 못했다는 뜻이 아니라, 구현 전에 확인하거나 승인할 기술·운영 경계다. 지금 근거 없이 지원된다고 가정하는 것보다 명시적으로 남기는 편이 낫다.
+이 항목들은 확정된 제품 방향 안에서 선택할 구현·운영 경계다. 이 문서가 실제 격리·내장화 완료를 입증하지는 않는다.
 
 ## 14. 조사 범위·근거·재사용 조건
 
 공식 Grok 문서·공개 가이드, 고정 리비전의 OpenMaus 코드·공개 화면, 설치된 Pi SDK의 문서·선언, Picky 소스를 읽었다. Pi의 SDK·security·containerization 문서는 공식 고정 리비전과 설치본의 바이트 일치도 확인했다.
 
-실제 Grok 로그인 계정, OpenMaus packaged app, Computer·connector·Routine 통합을 실행하지 않았다. VM 설치, Picky 앱 재시작, 제품 build/test도 수행하지 않았다. 이 문서의 수용 표는 향후 검증 계획이다.
+실제 Grok 로그인 계정, OpenMaus packaged app, Computer·connector·Routine 통합을 실행하지 않았다. VM 설치, Picky 앱 재시작, 제품 build/test도 수행하지 않았다. B 0.2는 새 사용자 결정을 반영한 문서 개정이며 실제 내장화·격리·migration은 실행하지 않았다. 이 문서의 수용 표는 향후 검증 계획이다.
 
 ### 주요 출처
 
@@ -664,8 +742,8 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 | [takeover][O07], [Local VM][O08], [memory][O09] | 사람이 잡은 자원의 입력 거부·backend·자체 기억 구조 |
 | [permission proxy][O10], [MCP][O11], [라이선스][O12], [공개 화면][O13] | 승인/질문 구분·기존 연결 경계·재사용 조건·정보 구조 |
 | [Pi README][P01], [SDK][P02], [security][P03], [containerization][P04] | 기본 기능과 확장·공개 API·격리 한계 |
-| [Picky runtime][C01], [coordinator][C02], [terminal sync][C03] | 현재 재개·상태·소유권의 구현 기반 |
-| [확장 통합 테스트][C04], [안전 cutover][C05], [bootstrap][C08] | 현재 기억·Cron 연동과 실제 배포 보류 |
+| [Picky runtime][C01], [coordinator][C02], [terminal sync][C03] | 기존 구현의 참고. 외부 Pi/terminal sync는 B에서 제거 대상 |
+| [확장 통합 테스트][C04], [안전 cutover][C05], [bootstrap][C08], [standing rule][C14] | 내장화 시 검증할 기존 계약·결함과 every-turn 프롬프트 적용 |
 | [디자인][C06], [원칙][C07], [격리 검증][C09], [성능][C10] | macOS 제품·검증 기준 |
 
 ### OpenMaus 코드·자산을 재사용할 때
@@ -716,3 +794,4 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 [C11]: ../Picky/CompanionManager.swift
 [C12]: ../Picky/HUD/Conversation/PickyConversationComposerView.swift
 [C13]: ../Picky/HUD/Conversation/PickyArtifactTrayPresentation.swift
+[C14]: ../agentd/src/runtime/picky-runtime-contract-extension.ts

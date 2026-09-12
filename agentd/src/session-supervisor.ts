@@ -6,6 +6,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { MainAgentCoordinator } from "./application/main-agent-coordinator.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
 import { disposeRuntimeHandle } from "./application/runtime-handle-disposal.js";
+import { RuntimeDisposalGate } from "./application/runtime-disposal-gate.js";
 import type { ExternalPickleCompletionRequest } from "./application/pickle-completion-coordinator.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
@@ -70,6 +71,7 @@ export class SessionSupervisor extends EventEmitter {
   private readonly pickleSessionIds = new Set<string>();
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
+  private readonly runtimeDisposalGate = new RuntimeDisposalGate();
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
   private pendingAbortOperations = new Map<string, Promise<PickyAgentSession>>();
   private sessionSeq = new Map<string, number>();
@@ -1583,6 +1585,7 @@ export class SessionSupervisor extends EventEmitter {
     this.pendingRuntimeAbortControllers.set(session.id, new AbortController());
 
     try {
+      await this.runtimeDisposalGate.wait(session.id);
       logAgentd("runtime resume requested", { sessionId: session.id, sessionFilePath });
       const handle = await this.runtime.resume(sessionFilePath, { cwd: session.cwd, sessionId: session.id });
       const currentBeforeAttach = this.mustGet(session.id);
@@ -1779,15 +1782,15 @@ export class SessionSupervisor extends EventEmitter {
   private async detachRuntimeHandle(sessionId: string, abort = false): Promise<void> {
     const handle = this.runtimeHandles.get(sessionId);
     this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
-    // Detach before teardown so terminal events emitted while Pi settles cannot
-    // mutate a session whose external transcript just became authoritative.
+    // Detach before teardown so terminal events cannot mutate an externally synced session.
     this.runtimeHandleUnsubscribes.get(sessionId)?.();
     this.runtimeHandleUnsubscribes.delete(sessionId);
     this.runtimeHandles.delete(sessionId);
-    if (handle) await disposeRuntimeHandle(handle, abort ? "detached-terminal-runtime" : "detached-runtime");
+    await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
   }
 
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
+    await this.runtimeDisposalGate.waitOrDispose(sessionId, handle);
     this.runtimeHandles.set(sessionId, handle);
     this.runtimeHandleUnsubscribes.set(sessionId, handle.subscribe((event) => void this.applyRuntimeEvent(sessionId, event)));
     // Teach the runtime adapter what the host currently surfaces, so it can

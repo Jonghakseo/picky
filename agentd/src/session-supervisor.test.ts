@@ -5085,6 +5085,28 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  it("holds external delivery until the replacement voice prompt is accepted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-external-delivery-pause-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+
+    await supervisor.route(context("첫 음성 입력"));
+    const handle = mainRuntime.handle!;
+    let pauseStateWhileVoicePromptAccepted: boolean | undefined;
+    handle.onFollowUp = (current) => {
+      pauseStateWhileVoicePromptAccepted = current.externalDeliveryPaused.at(-1);
+    };
+    await supervisor.abortMainAgent();
+    expect(handle.externalDeliveryPaused.at(-1)).toBe(true);
+
+    await supervisor.route(context("대체 음성 입력"));
+
+    // Cron observes the same host barrier and therefore cannot queue an external
+    // follow-up until this explicit voice prompt has been accepted by Pi.
+    expect(pauseStateWhileVoicePromptAccepted).toBe(true);
+    expect(handle.externalDeliveryPaused.at(-1)).toBe(false);
+  });
+
   it("reuses the aborted Picky handle for the next voice route without a same-file resume", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-abort-reuse-"));
     const mainRuntime = new ResumeTrackingRuntime();
@@ -7201,6 +7223,74 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["after TUI follow-up"]);
   });
 
+  it("waits for terminal-sync disposal before resuming the same Pi session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-disposal-barrier-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "old prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-sync-disposal-barrier",
+      title: "Terminal sync disposal barrier",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [], artifacts: [], changedFiles: [], messages: [],
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    await supervisor.followUp("terminal-sync-disposal-barrier", "before terminal sync");
+    const staleHandle = runtime.handle!;
+    let releaseDispose!: () => void;
+    const disposalGate = new Promise<void>((resolve) => { releaseDispose = resolve; });
+    staleHandle.dispose = async () => {
+      staleHandle.disposes += 1;
+      await disposalGate;
+    };
+
+    await appendFile(piSessionFile, [
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "terminal prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "terminal reply" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    await supervisor.syncTerminalSession("terminal-sync-disposal-barrier", "a1");
+    await waitUntil(() => staleHandle.disposes === 1);
+
+    const continuing = supervisor.followUp("terminal-sync-disposal-barrier", "after terminal sync");
+    await Promise.resolve();
+    expect(runtime.resumeCalls).toHaveLength(1);
+
+    releaseDispose();
+    await continuing;
+
+    expect(runtime.resumeCalls).toHaveLength(2);
+    expect(runtime.handle).not.toBe(staleHandle);
+    expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["after terminal sync"]);
+
+    const failedHandle = runtime.handle!;
+    failedHandle.dispose = async () => {
+      failedHandle.disposes += 1;
+      throw new Error("shutdown failed");
+    };
+    await appendFile(piSessionFile, [
+      JSON.stringify({ type: "message", id: "u3", parentId: "a2", timestamp: "2026-05-01T00:00:05.000Z", message: { role: "user", content: "new terminal prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a3", parentId: "u3", timestamp: "2026-05-01T00:00:06.000Z", message: { role: "assistant", content: [{ type: "text", text: "new terminal reply" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    await supervisor.syncTerminalSession("terminal-sync-disposal-barrier", "a2");
+    await waitUntil(() => failedHandle.disposes === 1);
+
+    await expect(supervisor.followUp("terminal-sync-disposal-barrier", "must not overlap failed teardown")).rejects.toThrow("Runtime session is not attached");
+    expect(runtime.resumeCalls).toHaveLength(2);
+  });
+
   it("keeps a streaming runtime attached when sync catches up missing live messages", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-live-runtime-"));
     const piSessionFile = join(dir, "pi-session.jsonl");
@@ -9047,6 +9137,7 @@ class ManualHandle implements RuntimeSessionHandle {
   queueSnapshotsAtAbort: Array<{ steering: string[]; followUp: string[] }> = [];
   reloadAuthenticationCalls = 0;
   reloadAuthenticationError?: Error;
+  externalDeliveryPaused: boolean[] = [];
   async steer(prompt: BuiltPrompt): Promise<{ handledSynchronously: boolean }> {
     this.steerPrompts.push(prompt);
     this.steers.push(prompt.text);
@@ -9069,6 +9160,9 @@ class ManualHandle implements RuntimeSessionHandle {
     this.disposed = true;
     await this.abort();
     this.listeners.clear();
+  }
+  setExternalDeliveryPaused(paused: boolean): void {
+    this.externalDeliveryPaused.push(paused);
   }
   async reloadAuthentication(): Promise<void> {
     this.reloadAuthenticationCalls += 1;

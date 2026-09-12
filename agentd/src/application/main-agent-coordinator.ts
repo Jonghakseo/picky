@@ -48,6 +48,9 @@ export class MainAgentCoordinator {
   private mainInteractionGeneration = 0;
   private mainHandleEventGeneration = 0;
   private mainHandleAwaitingPostAbortInput = false;
+  // Unlike event suppression, this barrier is visible to supported Pi extensions.
+  // It keeps external delivery out of the gap between PTT abort and accepted speech.
+  private mainExternalDeliveryPaused = false;
   private mainReuseBarrier: Promise<void> = Promise.resolve();
   private mainThinkingLevel?: ThinkingLevel;
   private mainDraft = "";
@@ -250,6 +253,10 @@ export class MainAgentCoordinator {
     const currentHandle = this.mainHandle;
     const pendingHandlePromise = this.mainHandlePromise;
     const cwd = this.mainState.cwd?.trim() || process.cwd();
+    // Close the extension delivery gate before Pi starts draining the interrupted
+    // turn. A cron follow-up accepted in this window can otherwise run unseen and
+    // become the next voice turn's reply context.
+    this.setMainExternalDeliveryPaused(true, currentHandle);
     this.prepareMainInteractionForAbort(Boolean(currentHandle || pendingHandlePromise));
 
     if (currentHandle) {
@@ -263,7 +270,10 @@ export class MainAgentCoordinator {
 
     if (pendingHandlePromise) {
       const pendingAbort = pendingHandlePromise
-        .then((pendingHandle) => this.abortMainHandle(pendingHandle, "voice-input-pending"))
+        .then(async (pendingHandle) => {
+          this.setMainExternalDeliveryPaused(true, pendingHandle);
+          await this.abortMainHandle(pendingHandle, "voice-input-pending");
+        })
         .catch((error) => {
           logAgentd("main abort pending handle failed", { error: error instanceof Error ? error.message : String(error) });
         });
@@ -399,7 +409,20 @@ export class MainAgentCoordinator {
     this.mainHandlePromise = undefined;
     this.mainReuseBarrier = Promise.resolve();
     this.mainHandleAwaitingPostAbortInput = false;
+    this.mainExternalDeliveryPaused = false;
     this.resetMainInteractionState();
+  }
+
+  private setMainExternalDeliveryPaused(paused: boolean, handle = this.mainHandle): void {
+    this.mainExternalDeliveryPaused = paused;
+    handle?.setExternalDeliveryPaused?.(paused);
+  }
+
+  private releaseMainExternalDeliveryAfterPrompt(handle: RuntimeSessionHandle): void {
+    // A second PTT abort may have arrived while the prompt was being accepted.
+    // It owns the pause, so the older acceptance must never reopen the gate.
+    if (this.mainHandle !== handle || this.mainHandleAwaitingPostAbortInput) return;
+    this.setMainExternalDeliveryPaused(false, handle);
   }
 
   /** Clears UI turn state without invalidating a reusable Pi handle. */
@@ -661,10 +684,12 @@ export class MainAgentCoordinator {
       this.mainDraft = "";
       await handle.interrupt(prompt);
       this.mainIsProcessing = true;
+      this.releaseMainExternalDeliveryAfterPrompt(handle);
       return;
     }
     this.mainIsProcessing = true;
     await handle.followUp(prompt);
+    this.releaseMainExternalDeliveryAfterPrompt(handle);
   }
 
   private recordMainPromptDelivery(): void {
@@ -775,7 +800,8 @@ export class MainAgentCoordinator {
       return handle;
     }
     this.mainHandle = handle;
-    this.mainHandleAwaitingPostAbortInput = false;
+    this.mainHandleAwaitingPostAbortInput = this.mainExternalDeliveryPaused;
+    handle.setExternalDeliveryPaused?.(this.mainExternalDeliveryPaused);
     this.applyMainThinkingLevel(handle);
     this.bindMainHandleEvents(handle);
     return handle;

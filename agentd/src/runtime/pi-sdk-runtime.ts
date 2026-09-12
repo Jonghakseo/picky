@@ -1,87 +1,41 @@
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import {
-  type AgentSession,
-  type AgentSessionRuntime,
-  type AgentSessionServices,
-  type CreateAgentSessionRuntimeFactory,
-  type CreateAgentSessionServicesOptions,
-  type ToolDefinition,
-  createAgentSessionFromServices,
-  createAgentSessionRuntime,
-  createAgentSessionServices,
-  getAgentDir,
-  SessionManager,
+type AgentSessionServices,
+type CreateAgentSessionRuntimeFactory,
+type CreateAgentSessionServicesOptions,
+type ToolDefinition,
+createAgentSessionFromServices,
+createAgentSessionRuntime,
+createAgentSessionServices,
+createEventBus,
+getAgentDir,
+SessionManager
 } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import { ExtensionUiBridge, type DialogMethod } from "../runtime/extension-ui-bridge.js";
-import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
-import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
-import { subagentGroupRunUpdatesFromCustomMessage, subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
-import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
-import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
-import { expectedInputDeliveryIndex, PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
-import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
-import { logAgentd, logLifecycleEvent } from "../local-log.js";
+import { type DialogMethod } from "../runtime/extension-ui-bridge.js";
+import type { AgentRuntime,RuntimeGlobalModelScopeChange,RuntimeModelOption,RuntimeSessionHandle,ThinkingLevel } from "./types.js";
+import { PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
+import { logAgentd } from "../local-log.js";
 import {
-  type ScopedModelOption,
-  applyScopedModelsForCycling,
-  automaticModelFromServices,
-  availableModelsFromServices,
-  currentModelId,
-  currentThinkingLevel,
-  modelFromServices,
-  normalizeModelPattern,
-  runtimeModelOptionFromModel,
-  runtimeModelScopesFromServices,
-  scopedModelsFromServices,
-  synchronizeScopedModelsForCycling,
-  validateExactModelScope,
+availableModelsFromServices,modelFromServices,
+normalizeModelPattern,
+runtimeModelOptionFromModel,scopedModelsFromServices,
+synchronizeScopedModelsForCycling,
+validateExactModelScope
 } from "./pi-model-resolution.js";
 import { PiGlobalSettingsCASStorage } from "./pi-global-settings-cas-storage.js";
 import {
-  isCompacting as piIsCompacting,
-  readModelMetadata as piReadModelMetadata,
-  reloadModelRuntimeCredentials as piReloadModelRuntimeCredentials,
-  tryCompact as piTryCompact,
-  tryCycleModel as piTryCycleModel,
-  tryCycleThinkingLevel as piTryCycleThinkingLevel,
-  availableThinkingLevels as piAvailableThinkingLevels,
-  tryGetBashSurface as piTryGetBashSurface,
-  tryGetContextUsage as piTryGetContextUsage,
-  tryRefreshSystemPromptFromActiveTools as piTryRefreshSystemPromptFromActiveTools,
-  tryReload as piTryReload,
-  trySetThinkingLevel as piTrySetThinkingLevel,
-} from "./pi-capabilities.js";
-import {
-  asRecord,
-  bashResultPreview,
-  branchTranscriptFromEntries,
-  emitUserBash,
-  imageOptions,
-  isAbortedTerminalPiEvent,
-  lastAssistantStopReason,
-  messageOf,
-  normalizeAnswer,
-  normalizeBashExecutionResult,
-  numberValue,
-  queueKindFromStreamingBehavior,
-  repairDanglingToolCalls,
-  shouldEmitContextUsageSnapshotAfterPiEvent,
-  SkillEchoSuppressionTracker,
-  sliceUtf16,
-  stringValue,
-  textFromPiMessageContent,
+branchTranscriptFromEntries
 } from "./pi-sdk-runtime-helpers.js";
-import { createBaseAutocompleteProvider, PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
-import { isRegisteredExtensionCommand, PiPromptQueue, type PiQueueSnapshot } from "./pi-prompt-queue.js";
 import { writeFilePathFromRawArgs } from "./write-file-path.js";
 import { PiSdkRuntimeSession } from "./pi-sdk-runtime-session.js";
 
 // Re-exported so existing importers keep working.
 export { branchTranscriptFromEntries, writeFilePathFromRawArgs };
+
+// This is a deliberately narrow host-extension contract. Each PiSdkRuntime handle
+// owns a separate EventBus, so a PTT pause can never affect another Pickle.
+export const PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL = "picky.external-delivery.pause-state";
+export const PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL = "picky.external-delivery.pause-query";
 
 interface PiSdkRuntimeOptions {
   agentDir?: string;
@@ -180,6 +134,15 @@ export class PiSdkRuntime implements AgentRuntime {
     const cwd = options.cwd ?? process.cwd();
     const sessionId = options.sessionId ?? "picky-pi-session";
     let sessionHandle: PiSdkRuntimeSession | undefined;
+    const externalDeliveryEventBus = createEventBus();
+    let externalDeliveryPaused = false;
+    externalDeliveryEventBus.on(PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, () => {
+      externalDeliveryEventBus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, { paused: externalDeliveryPaused });
+    });
+    const setExternalDeliveryPaused = (paused: boolean): void => {
+      externalDeliveryPaused = paused;
+      externalDeliveryEventBus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, { paused });
+    };
     const inputRewriteObserver = new PiInputRewriteObserver((deliveryID, finalText) => {
       sessionHandle?.recordExpectedInputAlias(deliveryID, finalText);
     });
@@ -196,6 +159,9 @@ export class PiSdkRuntime implements AgentRuntime {
         agentDir,
         resourceLoaderOptions: {
           ...resourceLoaderOptions,
+          // Do not inherit a process-level bus. External delivery policy belongs to
+          // this exact Pi session and must survive extension reload through its own bus.
+          eventBus: externalDeliveryEventBus,
           extensionFactories: [
             ...(resourceLoaderOptions?.extensionFactories ?? []),
             inputRewriteObserver.inlineExtension,
@@ -256,6 +222,7 @@ export class PiSdkRuntime implements AgentRuntime {
         allowedBlockingDialogMethods: this.options.allowedBlockingDialogMethods,
       },
       inputRewriteObserver,
+      setExternalDeliveryPaused,
     );
     sessionHandle = handle;
     await handle.bindCurrentSession();

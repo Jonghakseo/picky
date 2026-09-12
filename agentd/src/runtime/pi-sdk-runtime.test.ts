@@ -8,7 +8,7 @@ import { SessionStore } from "../session-store.js";
 import { PickyAgentSessionSchema } from "../protocol.js";
 import { SubagentRunUpdater } from "../application/subagent-run-updater.js";
 import * as localLog from "../local-log.js";
-import { PiSdkRuntime, writeFilePathFromRawArgs } from "./pi-sdk-runtime.js";
+import { PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, PiSdkRuntime, writeFilePathFromRawArgs } from "./pi-sdk-runtime.js";
 import { createPickyRuntimeContractExtension } from "./picky-runtime-contract-extension.js";
 import { modelScopeRevision } from "./pi-model-resolution.js";
 import { PI_MODEL_SCOPE_CONFLICT_CODE, PI_MODEL_SCOPE_CONFLICT_PREFIX, PiModelScopeConflictError } from "./model-scope-errors.js";
@@ -483,6 +483,41 @@ function makeRuntimeWithInputObserver(fakeSession: InputObserverSession): PiSdkR
 }
 
 describe("PiSdkRuntime", () => {
+  it("keeps the external delivery barrier on a runtime-local extension bus across a state query", async () => {
+    const fakeSession = new FakeSession();
+    const observedPauseStates: boolean[] = [];
+    let eventBus: { emit(channel: string, data: unknown): void } | undefined;
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async (options) => {
+        const bus = options.resourceLoaderOptions?.eventBus as {
+          emit(channel: string, data: unknown): void;
+          on(channel: string, handler: (data: unknown) => void): () => void;
+        };
+        eventBus = bus;
+        bus.on(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, (data) => {
+          observedPauseStates.push((data as { paused?: boolean }).paused === true);
+        });
+        // Mirrors cron initialization after a reload: ask the host for the
+        // current state instead of assuming a fresh unpaused session.
+        bus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, undefined);
+        return { diagnostics: [] };
+      }) as never,
+      createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn(), cwd: options.cwd };
+      }) as never,
+    });
+
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "delivery-pause" });
+    handle.setExternalDeliveryPaused?.(true);
+    eventBus!.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, undefined);
+    handle.setExternalDeliveryPaused?.(false);
+
+    expect(observedPauseStates).toEqual([false, true, true, false]);
+  });
+
   it("disposes a discarded Pi runtime once after settling and rejects later input", async () => {
     const fakeSession = new FakeSession();
     const disposeRuntime = vi.fn(async () => {});

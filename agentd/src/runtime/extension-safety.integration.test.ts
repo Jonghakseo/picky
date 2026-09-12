@@ -131,7 +131,7 @@ const runtime = new PiSdkRuntime({ agentDir, disableBlockingDialogs: true });
 const prompt = (text) => ({ text, imagePaths: [] });
 const sessionFile = (handle) => handle.getSessionFilePath?.();
 
-function turn(handle, text) {
+function turn(handle, text, submit = true) {
   return new Promise(async (resolveTurn, rejectTurn) => {
     let output = "";
     const timeout = setTimeout(() => {
@@ -152,7 +152,7 @@ function turn(handle, text) {
       }
     });
     try {
-      await handle.followUp(prompt(text));
+      if (submit) await handle.followUp(prompt(text));
     } catch (error) {
       clearTimeout(timeout);
       unsubscribe();
@@ -216,10 +216,18 @@ if (!transcript.includes("memory-layer-agent") || !transcript.includes("AGENT_SE
 
 const ownerBeforeReload = await waitForOwner(firstHeader.id);
 if (ownerBeforeReload.state !== "active") throw new Error("cron owner was not active: " + JSON.stringify(ownerBeforeReload));
+first.setExternalDeliveryPaused(true);
+const paused = await deliver(ownerBeforeReload, "paused-before-reload", "CRON_PAUSED_MUST_NOT_RUN");
+if (!paused.deferred || paused.ok) throw new Error("PTT pause accepted cron input: " + JSON.stringify(paused));
 await first.followUp(prompt("/reload"));
 const liveOwner = await waitForOwner(firstHeader.id, ownerBeforeReload.generation);
 if (liveOwner.state !== "active") throw new Error("cron owner did not transfer after Pi reload: " + JSON.stringify(liveOwner));
-const liveTurn = turn(first, "CRON_LIVE");
+const pausedAfterReload = await deliver(liveOwner, "paused-after-reload", "CRON_PAUSED_MUST_NOT_RUN");
+if (!pausedAfterReload.deferred || pausedAfterReload.ok) throw new Error("reload lost PTT pause: " + JSON.stringify(pausedAfterReload));
+if (readFileSync(firstFile, "utf8").includes("CRON_PAUSED_MUST_NOT_RUN")) throw new Error("paused cron input reached persisted session");
+first.setExternalDeliveryPaused(false);
+// Observe only. The bridge is the sole input producer for this turn.
+const liveTurn = turn(first, "CRON_LIVE", false);
 const delivered = await deliver(liveOwner, "live-delivery", "CRON_LIVE");
 if (delivered.outcome !== "queued") throw new Error("cron did not queue into the live Picky session: " + JSON.stringify(delivered));
 const liveOutput = await liveTurn;
@@ -248,7 +256,7 @@ const successorOwner = await waitForOwner(firstHeader.id);
 if (successorOwner.state !== "active" || successorOwner.generation === liveOwner.generation) {
   throw new Error("same-session successor did not replace the draining cron bridge: " + JSON.stringify(successorOwner));
 }
-const successorTurn = turn(successor, "CRON_SUCCESSOR");
+const successorTurn = turn(successor, "CRON_SUCCESSOR", false);
 const successorDelivery = await deliver(successorOwner, "successor-delivery", "CRON_SUCCESSOR");
 if (successorDelivery.outcome !== "queued") throw new Error("successor cron delivery was not queued: " + JSON.stringify(successorDelivery));
 const successorOutput = await successorTurn;

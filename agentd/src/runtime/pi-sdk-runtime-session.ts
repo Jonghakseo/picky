@@ -1,82 +1,70 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
-  type AgentSession,
-  type AgentSessionRuntime,
-  type AgentSessionServices,
-  type CreateAgentSessionRuntimeFactory,
-  type CreateAgentSessionServicesOptions,
-  type ToolDefinition,
-  createAgentSessionFromServices,
-  createAgentSessionRuntime,
-  createAgentSessionServices,
-  getAgentDir,
-  SessionManager,
+type AgentSession,
+type AgentSessionRuntime
 } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage,UserMessage } from "@earendil-works/pi-ai";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import { ExtensionUiBridge, type DialogMethod } from "../runtime/extension-ui-bridge.js";
+import { ExtensionUiBridge,type DialogMethod } from "../runtime/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
-import { subagentGroupRunUpdatesFromCustomMessage, subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
+import { subagentGroupRunUpdatesFromCustomMessage,subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeBashExecutionResult, RuntimeEvent, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
-import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
-import { expectedInputDeliveryIndex, PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
+import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
+import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
+import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
-import { logAgentd, logLifecycleEvent } from "../local-log.js";
+import { logAgentd,logLifecycleEvent } from "../local-log.js";
 import {
-  type ScopedModelOption,
-  applyScopedModelsForCycling,
-  automaticModelFromServices,
-  availableModelsFromServices,
-  currentModelId,
-  currentThinkingLevel,
-  modelFromServices,
-  normalizeModelPattern,
-  runtimeModelOptionFromModel,
-  runtimeModelScopesFromServices,
-  scopedModelsFromServices,
-  synchronizeScopedModelsForCycling,
-  validateExactModelScope,
+type ScopedModelOption,
+applyScopedModelsForCycling,
+automaticModelFromServices,
+availableModelsFromServices,
+currentModelId,
+currentThinkingLevel,
+modelFromServices,
+normalizeModelPattern,
+runtimeModelOptionFromModel,
+runtimeModelScopesFromServices,
+scopedModelsFromServices
 } from "./pi-model-resolution.js";
-import { PiGlobalSettingsCASStorage } from "./pi-global-settings-cas-storage.js";
 import {
-  isCompacting as piIsCompacting,
-  readModelMetadata as piReadModelMetadata,
-  reloadModelRuntimeCredentials as piReloadModelRuntimeCredentials,
-  tryCompact as piTryCompact,
-  tryCycleModel as piTryCycleModel,
-  tryCycleThinkingLevel as piTryCycleThinkingLevel,
-  availableThinkingLevels as piAvailableThinkingLevels,
-  tryGetBashSurface as piTryGetBashSurface,
-  tryGetContextUsage as piTryGetContextUsage,
-  tryRefreshSystemPromptFromActiveTools as piTryRefreshSystemPromptFromActiveTools,
-  tryReload as piTryReload,
-  trySetThinkingLevel as piTrySetThinkingLevel,
+isCompacting as piIsCompacting,
+readModelMetadata as piReadModelMetadata,
+reloadModelRuntimeCredentials as piReloadModelRuntimeCredentials,
+tryCompact as piTryCompact,
+tryCycleModel as piTryCycleModel,
+tryCycleThinkingLevel as piTryCycleThinkingLevel,
+availableThinkingLevels as piAvailableThinkingLevels,
+tryGetBashSurface as piTryGetBashSurface,
+tryGetContextUsage as piTryGetContextUsage,
+tryRefreshSystemPromptFromActiveTools as piTryRefreshSystemPromptFromActiveTools,
+tryReload as piTryReload,
+trySetThinkingLevel as piTrySetThinkingLevel,
 } from "./pi-capabilities.js";
 import {
-  asRecord,
-  bashResultPreview,
-  branchTranscriptFromEntries,
-  emitUserBash,
-  imageOptions,
-  isAbortedTerminalPiEvent,
-  lastAssistantStopReason,
-  messageOf,
-  normalizeAnswer,
-  normalizeBashExecutionResult,
-  numberValue,
-  queueKindFromStreamingBehavior,
-  repairDanglingToolCalls,
-  shouldEmitContextUsageSnapshotAfterPiEvent,
-  SkillEchoSuppressionTracker,
-  sliceUtf16,
-  stringValue,
-  textFromPiMessageContent,
+asRecord,
+bashResultPreview,
+branchTranscriptFromEntries,
+emitUserBash,
+imageOptions,
+isAbortedTerminalPiEvent,
+lastAssistantStopReason,
+messageOf,
+normalizeAnswer,
+normalizeBashExecutionResult,
+numberValue,
+queueKindFromStreamingBehavior,
+repairDanglingToolCalls,
+shouldEmitContextUsageSnapshotAfterPiEvent,
+SkillEchoSuppressionTracker,
+sliceUtf16,
+stringValue,
+textFromPiMessageContent,
 } from "./pi-sdk-runtime-helpers.js";
-import { createBaseAutocompleteProvider, PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
-import { isRegisteredExtensionCommand, PiPromptQueue, type PiQueueSnapshot } from "./pi-prompt-queue.js";
+import { createBaseAutocompleteProvider,PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
+import { isRegisteredExtensionCommand,PiPromptQueue,type PiQueueSnapshot } from "./pi-prompt-queue.js";
 import { writeFilePathFromRawArgs } from "./write-file-path.js";
 
 // Soft cap for the per-session `slashExpansions` map. A long-lived Pi session can submit many
@@ -140,6 +128,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     private configuredThinkingLevel?: ThinkingLevel,
     private readonly bridgeOptions: { disableBlockingDialogs?: boolean; allowedBlockingDialogMethods?: readonly DialogMethod[] } = {},
     private readonly inputRewriteObserver: PiInputRewriteObserver = new PiInputRewriteObserver(() => {}),
+    private readonly setExternalDeliveryPausedState: (paused: boolean) => void = () => {},
   ) {
     this.promptQueue = new PiPromptQueue(id, SLASH_EXPANSION_MAP_CAP);
     this.uiBridge = this.createBridge();
@@ -366,6 +355,11 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   setHostPendingExtensionUiPresent(present: () => boolean): void {
     this.hostPendingExtensionUiPresent = present;
+  }
+
+  setExternalDeliveryPaused(paused: boolean): void {
+    if (this.disposed) return;
+    this.setExternalDeliveryPausedState(paused);
   }
 
   getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {

@@ -189,6 +189,12 @@ export interface RuntimeSessionHandle {
    * Ordinary user aborts deliberately keep the handle reusable.
    */
   dispose?(): Promise<void>;
+  /**
+   * Temporarily stop extension-originated input delivery while Picky is replacing
+   * a main voice turn. The Pi session stays reusable; supported extensions defer
+   * their own external delivery until the host releases this barrier.
+   */
+  setExternalDeliveryPaused?(paused: boolean): void;
   /** Reload credentials changed by another local Pi/Picky process without replacing the session. */
   reloadAuthentication?(): Promise<void>;
   /** Mirrors Pi TUI `/compact`: aborts an active turn first, then compacts the session. */

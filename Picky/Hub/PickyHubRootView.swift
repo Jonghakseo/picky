@@ -120,13 +120,18 @@ struct PickyHubFeedbackDialog: View {
     @EnvironmentObject private var modalHost: PickyHubModalHost
 
     var body: some View {
+        let presentationID = modalHost.presentationID
+
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
             PickyHubModalHeader(
                 meta: L10n.t("settings.section.feedback.subtitle"),
                 title: L10n.t("settings.section.feedback.title"),
                 onClose: { modalHost.dismiss() }
             )
-            CompanionPanelFeedbackView(viewModel: viewModel)
+            CompanionPanelFeedbackView(
+                viewModel: viewModel,
+                onSendSucceeded: { modalHost.dismiss(ifPresenting: presentationID) }
+            )
         }
         .padding(PickyHubTheme.Spacing.cardInset)
     }

@@ -105,6 +105,18 @@ struct PickyHubModalTests {
         #expect(host.presentationID == nil)
     }
 
+    @Test func guardedDismissalOnlyClosesThePresentationThatStartedTheWork() {
+        let host = PickyHubModalHost()
+        let firstID = host.present(accessibilityLabel: "Feedback") { EmptyView() }
+        let secondID = host.present(accessibilityLabel: "Replacement") { EmptyView() }
+
+        host.dismiss(ifPresenting: firstID)
+        #expect(host.presentationID == secondID)
+
+        host.dismiss(ifPresenting: secondID)
+        #expect(host.presentationID == nil)
+    }
+
     private func waitUntil(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now.advanced(by: .seconds(1))
         while !condition(), ContinuousClock.now < deadline {

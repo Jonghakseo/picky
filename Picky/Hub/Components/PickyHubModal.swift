@@ -66,6 +66,11 @@ final class PickyHubModalHost: ObservableObject {
         return next.id
     }
 
+    func dismiss(ifPresenting presentationID: UUID?) {
+        guard let presentationID, presentation?.id == presentationID else { return }
+        dismiss()
+    }
+
     func dismiss() {
         guard let current = presentation, current.canDismiss() else { return }
         presentation = nil

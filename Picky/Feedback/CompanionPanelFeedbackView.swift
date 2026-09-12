@@ -69,6 +69,7 @@ enum PickyFeedbackSendErrorDescription {
 
 struct CompanionPanelFeedbackView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
+    var onSendSucceeded: () -> Void = {}
 
     @State private var category: PickyFeedbackCategory = .bug
     @State private var message: String = ""
@@ -580,6 +581,7 @@ struct CompanionPanelFeedbackView: View {
             selectedMediaAttachments = []
             mediaAttachmentNotice = nil
             scheduleSentStatusReset()
+            onSendSucceeded()
         case .preserve:
             break
         }

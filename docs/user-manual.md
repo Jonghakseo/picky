@@ -525,6 +525,8 @@ When a Pickle launches Pi subagents (single `run`, parallel `batch`, or sequenti
 
 While running, the bubble lists one row per agent with its status icon, agent name, run number, task preview, and elapsed time; chain invocations also show the step order. When available, a context-usage ring and percentage appear before the elapsed time, calculated as used context tokens divided by that subagent model's context window. The ring progresses from green through informational blue and warning amber to destructive red as usage approaches the limit. A second line shows the current activity once, with the cumulative tool-call count kept as separate right-aligned metadata; the count remains visible even when no activity text is available. The bubble collapses to a one-line summary once every run settles, and can be expanded again at any time.
 
+Continuing a subagent run creates a separate invocation bubble under the same agent name. Earlier invocation results remain available, and successful completion cleanup does not count as a failed or cancelled run.
+
 After a run completes, its row keeps the latest context-usage reading and swaps the task preview for a preview of the subagent's response. Click a completed row to open the full response in the Markdown report viewer (the row tooltip still shows the original task). Full response text is kept for the most recent runs; older runs keep only the short preview.
 
 ### 8.12 Extension message bubbles

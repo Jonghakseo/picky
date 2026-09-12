@@ -118,7 +118,10 @@ export function subagentRunUpdatesFromToolResult(
 }
 
 /** Parses the subagent CLI command passed through Pi's `subagent` tool. */
-export function subagentLaunchIntentFromToolArgs(args: unknown): SubagentLaunchIntent | undefined {
+export function subagentLaunchIntentFromToolArgs(
+  args: unknown,
+  knownRuns: readonly PickySubagentRun[] = [],
+): SubagentLaunchIntent | undefined {
   const command = commandFromToolArgs(args);
   if (!command) return undefined;
 
@@ -127,6 +130,7 @@ export function subagentLaunchIntentFromToolArgs(args: unknown): SubagentLaunchI
   const action = launchAction(tokens[1]?.value);
   if (!action) return undefined;
 
+  if (tokens[1]?.value === "continue") return continueLaunchIntent(command, tokens, knownRuns);
   if (action === "run") return runLaunchIntent(command, tokens);
   const entries = multiLaunchEntries(tokens);
   return entries.length > 0 ? { action, entries } : undefined;
@@ -139,7 +143,9 @@ export function subagentRunUpdateFromDiagnostic(data: unknown): SubagentDiagnost
   const recordedAt = isoTimestamp(data.recordedAt);
   if (!identity || !recordedAt) return undefined;
 
-  const status = diagnosticStatus(data.event, data.code);
+  const status = data.event === "kill_result" && data.cause === "session_done_marker_fallback"
+    ? undefined
+    : diagnosticStatus(data.event, data.code);
   if (!status) return undefined;
   return {
     ...identity,
@@ -235,6 +241,22 @@ function shellTokens(command: string): ShellToken[] {
 function launchAction(value: string | undefined): SubagentLaunchAction | undefined {
   if (value === "continue") return "run";
   return value === "run" || value === "batch" || value === "chain" ? value : undefined;
+}
+
+function continueLaunchIntent(
+  command: string,
+  tokens: ShellToken[],
+  knownRuns: readonly PickySubagentRun[],
+): SubagentLaunchIntent | undefined {
+  const runId = Number(tokens[2]?.value);
+  if (!Number.isSafeInteger(runId) || runId < 0) return undefined;
+  const delimiterIndex = tokens.findIndex((token, index) => index > 2 && token.value === "--");
+  if (delimiterIndex < 0) return undefined;
+  const options = tokens.slice(3, delimiterIndex);
+  const agentIndex = options.findIndex((token) => token.value === "--agent");
+  const agent = agentIndex >= 0 ? options[agentIndex + 1]?.value : knownRuns.find((run) => run.runId === runId)?.agent;
+  const task = command.slice(tokens[delimiterIndex]!.end).trim();
+  return nonEmptyString(agent) && task ? { action: "run", entries: [{ agent, task }] } : undefined;
 }
 
 function runLaunchIntent(command: string, tokens: ShellToken[]): SubagentLaunchIntent | undefined {

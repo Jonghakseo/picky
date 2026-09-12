@@ -181,10 +181,13 @@ describe("subagent run state", () => {
       action: "chain",
       entries: [{ agent: "scout", task: "Find risks" }, { agent: "worker", task: "implement" }],
     });
-    expect(subagentLaunchIntentFromToolArgs({ command: "subagent continue worker -- inspect the current state" })).toEqual({
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent continue 2 --agent worker -- inspect the current state" })).toEqual({
       action: "run",
       entries: [{ agent: "worker", task: "inspect the current state" }],
     });
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent continue 2 -- inspect" }, [{ runId: 2, agent: "reviewer", task: "old", status: "done" }])).toEqual({ action: "run", entries: [{ agent: "reviewer", task: "inspect" }] });
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent continue worker -- inspect" })).toBeUndefined();
+    expect(subagentLaunchIntentFromToolArgs({ command: "subagent continue 99 -- inspect" })).toBeUndefined();
     expect(subagentLaunchIntentFromToolArgs({ command: "subagent status" })).toBeUndefined();
   });
 
@@ -209,6 +212,7 @@ describe("subagent run state", () => {
     });
     expect(subagentRunUpdateFromDiagnostic({ ...spawn, event: "settled", code: 0 })).toMatchObject({ status: "done" });
     expect(subagentRunUpdateFromDiagnostic({ ...spawn, event: "settled", code: 143 })).toMatchObject({ status: "error" });
+    expect(subagentRunUpdateFromDiagnostic({ ...spawn, event: "kill_result", cause: "session_done_marker_fallback" })).toBeUndefined();
     expect(subagentRunUpdateFromDiagnostic({ ...spawn, event: "kill_result" })).toMatchObject({ status: "error", errorClass: "aborted" });
     expect(subagentRunUpdateFromDiagnostic({ recordedAt: "2026-08-02T05:26:36.115Z", event: "session_shutdown" })).toBeUndefined();
   });

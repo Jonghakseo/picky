@@ -20,7 +20,7 @@ export class SubagentInvocationTracker {
   captureLaunchIntent(event: Record<string, unknown>): PickySubagentInvocation | undefined {
     if (event.type !== "tool_execution_start" || event.toolName !== "subagent") return undefined;
     const invocationId = stringValue(event.toolCallId);
-    const intent = subagentLaunchIntentFromToolArgs(event.args);
+    const intent = subagentLaunchIntentFromToolArgs(event.args, [...this.runsById.values()]);
     if (!invocationId || !intent) return undefined;
     this.activeInvocationIDs.push(invocationId);
     this.pendingLaunches.push(...intent.entries.map((entry) => ({ ...entry, invocationId })));

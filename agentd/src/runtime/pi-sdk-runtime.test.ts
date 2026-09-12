@@ -4,6 +4,9 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
+import { SessionStore } from "../session-store.js";
+import { PickyAgentSessionSchema } from "../protocol.js";
+import { SubagentRunUpdater } from "../application/subagent-run-updater.js";
 import * as localLog from "../local-log.js";
 import { PiSdkRuntime, writeFilePathFromRawArgs } from "./pi-sdk-runtime.js";
 import { createPickyRuntimeContractExtension } from "./picky-runtime-contract-extension.js";
@@ -690,6 +693,72 @@ describe("PiSdkRuntime", () => {
       startedAt: "2026-08-02T05:27:00.115Z",
     }));
     expect(updates.at(-1)?.update).not.toHaveProperty("elapsedMs");
+  });
+
+  it("persists successful run and continuation separately after completion cleanup", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-subagent-continue-"));
+    try {
+      const store = new SessionStore(dir);
+      let session = PickyAgentSessionSchema.parse({
+        id: "continued-session", title: "Continue", status: "running",
+        createdAt: "2026-09-12T04:00:00.000Z", updatedAt: "2026-09-12T04:00:00.000Z",
+      });
+      const fakeSession = new FakeSession();
+      const handle = await makeRuntime(fakeSession).prewarm({ cwd: dir, sessionId: session.id });
+      let pending = Promise.resolve();
+      const updates: RuntimeEvent[] = [];
+      const updater = new SubagentRunUpdater({
+        currentRuns: () => session.subagentRuns,
+        patchSession: async (_id, patch) => {
+          session = PickyAgentSessionSchema.parse({ ...session, ...patch });
+          await store.save(session);
+        },
+        nextSeq: () => 1,
+        emitUpdated: async () => {},
+      });
+      handle.subscribe((event) => {
+        updates.push(event);
+        if (event.type === "subagent_run_update") {
+          pending = pending.then(() => updater.update(session.id, event.update));
+        }
+      });
+      for (const [invocationId, command, response] of [
+        ["first", "subagent run worker -- implement memory", "Implemented memory"],
+        ["second", "subagent continue 2 -- fix memory gaps", "Fixed memory gaps"],
+      ]) {
+        fakeSession.emit("event", { type: "tool_execution_start", toolCallId: invocationId, toolName: "subagent", args: { command } });
+        for (const data of [
+          { event: "spawn" },
+          { event: "kill_result", cause: "session_done_marker_fallback", signal: "SIGTERM", killSent: true },
+          { event: "settled", code: 0 },
+        ]) {
+          fakeSession.emit("event", {
+            type: "entry_appended",
+            entry: { type: "custom", customType: "subagent-runner-diagnostic", data: {
+              schemaVersion: 1, recordedAt: "2026-09-12T04:13:11.549Z", runId: 2, agent: "worker", ...data,
+            } },
+          });
+        }
+        fakeSession.emit("event", { type: "tool_execution_end", toolCallId: invocationId, toolName: "subagent", result: {
+          content: [{ type: "text", text: `[subagent:worker#2] completed\nPrompt: task\n\n${response}` }],
+        } });
+      }
+      await pending;
+      const restored = (await new SessionStore(dir).loadAll())[0]!;
+      expect(restored.subagentRuns).toHaveLength(2);
+      expect(restored.subagentRuns).toMatchObject([
+        { runId: 2, agent: "worker", invocationId: "first", status: "done", task: "implement memory", resultText: "Implemented memory" },
+        { runId: 2, agent: "worker", invocationId: "second", status: "done", task: "fix memory gaps", resultText: "Fixed memory gaps" },
+      ]);
+      expect(restored.subagentRuns?.every((run) => run.errorClass === undefined)).toBe(true);
+      const invocations = updates.filter((event) => event.type === "subagent_invocation");
+      expect(invocations).toContainEqual(expect.objectContaining({ invocation: expect.objectContaining({
+        invocationId: "second", completed: true, planned: [{ agent: "worker", task: "fix memory gaps" }],
+      }) }));
+      expect(updates.some((event) => event.type === "subagent_run_update" && event.update.status === "error")).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("merges batch completion responses into existing diagnostic run state", async () => {

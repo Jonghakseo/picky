@@ -19919,18 +19919,34 @@
         }
       }
     },
-    "hub.plugins.feedback.setup": {
+    "hub.plugins.feedback.settingUp": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set up %@."
+            "value": "Setting up the Cron daemon…"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ 설정을 완료했습니다."
+            "value": "Cron 데몬 설정 중…"
+          }
+        }
+      }
+    },
+    "hub.plugins.feedback.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ daemon setup verified."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 데몬 설정을 확인했습니다."
           }
         }
       }

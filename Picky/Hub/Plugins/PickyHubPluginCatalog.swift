@@ -76,6 +76,8 @@ struct PickyHubPluginItem: Identifiable, Equatable {
     let status: PickyCuratedPluginInstaller.Status
     let installedVersion: String?
     let errorMessage: String?
+    let successMessage: String?
+    let progressMessage: String?
     let hasUpdate: Bool
     let isBusy: Bool
 
@@ -88,7 +90,14 @@ struct PickyHubPluginItem: Identifiable, Equatable {
     var metaLine: String { "\(metadata.category.title) · \(metadata.provider)" }
 
     static func == (lhs: PickyHubPluginItem, rhs: PickyHubPluginItem) -> Bool {
-        lhs.plugin.id == rhs.plugin.id && lhs.status == rhs.status && lhs.installedVersion == rhs.installedVersion && lhs.errorMessage == rhs.errorMessage && lhs.hasUpdate == rhs.hasUpdate && lhs.isBusy == rhs.isBusy
+        lhs.plugin.id == rhs.plugin.id
+            && lhs.status == rhs.status
+            && lhs.installedVersion == rhs.installedVersion
+            && lhs.errorMessage == rhs.errorMessage
+            && lhs.successMessage == rhs.successMessage
+            && lhs.progressMessage == rhs.progressMessage
+            && lhs.hasUpdate == rhs.hasUpdate
+            && lhs.isBusy == rhs.isBusy
     }
 }
 
@@ -109,9 +118,11 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     private var pendingFeedbackByPluginID: [String: PendingFeedback] = [:]
     private var failedRetriesByPluginID: [String: () -> Void] = [:]
     @Published private var errorsByPluginID: [String: String] = [:]
+    @Published private var successesByPluginID: [String: String] = [:]
 
     private struct PendingFeedback {
         let successKey: String
+        let progressMessage: String?
         let title: String
         let retry: () -> Void
     }
@@ -142,6 +153,8 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
                 status: row.status,
                 installedVersion: row.installedVersion,
                 errorMessage: errorsByPluginID[row.id],
+                successMessage: successesByPluginID[row.id],
+                progressMessage: pendingFeedbackByPluginID[row.id]?.progressMessage,
                 hasUpdate: row.hasUpdate,
                 isBusy: row.isBusy
             )
@@ -193,7 +206,12 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     }
 
     func setup(_ item: PickyHubPluginItem) {
-        beginMutation(item, successKey: "hub.plugins.feedback.setup", retry: { [weak self] in self?.setup(item) }) {
+        beginMutation(
+            item,
+            successKey: "hub.plugins.feedback.setup",
+            progressMessage: L10n.t("hub.plugins.feedback.settingUp"),
+            retry: { [weak self] in self?.setup(item) }
+        ) {
             curated.setup(item.plugin, pluginReloadController: pluginReloadController)
         }
     }
@@ -210,16 +228,20 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     private func beginMutation(
         _ item: PickyHubPluginItem,
         successKey: String,
+        progressMessage: String? = nil,
         retry: @escaping () -> Void,
         start: () -> Bool
     ) {
         guard pendingFeedbackByPluginID[item.id] == nil else { return }
-        pendingFeedbackByPluginID[item.id] = PendingFeedback(successKey: successKey, title: item.title, retry: retry)
+        pendingFeedbackByPluginID[item.id] = PendingFeedback(
+            successKey: successKey, progressMessage: progressMessage, title: item.title, retry: retry
+        )
         errorsByPluginID[item.id] = nil
         guard start() else {
             pendingFeedbackByPluginID[item.id] = nil
             return
         }
+        successesByPluginID[item.id] = nil
         failedRetriesByPluginID[item.id] = nil
         feedback = nil
         feedbackPluginID = nil
@@ -240,7 +262,9 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
             lastError = nil
             guard let pending else { return }
             feedbackPluginID = outcome.pluginID
-            feedback = L10n.t(pending.successKey, pending.title)
+            let message = L10n.t(pending.successKey, pending.title)
+            successesByPluginID[outcome.pluginID] = message
+            feedback = message
             feedbackIsError = false
         case .failure(let error):
             let message = error.localizedDescription

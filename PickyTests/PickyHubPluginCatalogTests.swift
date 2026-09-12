@@ -3,7 +3,10 @@
 //  PickyTests
 //
 
+import AppKit
 import Foundation
+import SwiftUI
+import Vision
 import Testing
 @testable import Picky
 
@@ -213,6 +216,118 @@ struct PickyHubPluginCatalogTests {
         #expect(catalog.feedbackIsError)
     }
 
+    @Test func setupSuccessStaysOnItsCardAcrossOtherPluginOperationsAndRepeatedSetup() async throws {
+        let client = HubPluginFanoutClient()
+        let catalog = makeCatalog(plugins: [.cron, .diffReview], client: client, status: .installed(isPinned: false))
+        let cron = try #require(catalog.item(id: "cron"))
+        let other = try #require(catalog.item(id: "diff-review"))
+        let success = L10n.t("hub.plugins.feedback.setup", cron.title)
+
+        catalog.setup(cron)
+        #expect(catalog.item(id: cron.id)?.progressMessage == L10n.t("hub.plugins.feedback.settingUp"))
+        #expect(catalog.item(id: cron.id)?.isBusy == true)
+        try await waitUntil { client.sentCommands.count == 1 }
+        let setup = try #require(client.sentCommands.first)
+        #expect(setup.type == .setupPackage)
+        client.complete(setup, operation: .setup, ok: true)
+        try await waitUntil { catalog.item(id: cron.id)?.successMessage == success }
+        #expect(catalog.item(id: cron.id)?.progressMessage == nil)
+        #expect(catalog.item(id: cron.id)?.isInstalled == true)
+
+        catalog.update(other)
+        try await waitUntil { client.sentCommands.count == 2 }
+        client.complete(try #require(client.sentCommands.last), operation: .update, ok: true)
+        try await waitUntil { catalog.item(id: other.id)?.successMessage != nil }
+        #expect(catalog.item(id: cron.id)?.successMessage == success)
+
+        catalog.setup(cron)
+        #expect(catalog.item(id: cron.id)?.successMessage == nil)
+        #expect(catalog.item(id: cron.id)?.progressMessage != nil)
+        try await waitUntil { client.sentCommands.count == 3 }
+        client.complete(try #require(client.sentCommands.last), operation: .setup, ok: true)
+        try await waitUntil { catalog.item(id: cron.id)?.successMessage == success }
+        #expect(catalog.item(id: cron.id)?.isBusy == false)
+    }
+
+    @Test func failedSetupCanBeRetriedWithoutKeepingStaleCardFeedback() async throws {
+        let client = HubPluginFanoutClient()
+        let catalog = makeCatalog(plugins: [.cron], client: client, status: .installed(isPinned: false))
+        let cron = try #require(catalog.item(id: "cron"))
+        catalog.setup(cron)
+        try await waitUntil { client.sentCommands.count == 1 }
+        client.complete(
+            try #require(client.sentCommands.first), operation: .setup, ok: false, errorMessage: "Daemon unavailable"
+        )
+        try await waitUntil { catalog.feedbackIsError }
+        #expect(catalog.item(id: cron.id)?.errorMessage == "Daemon unavailable")
+        #expect(catalog.item(id: cron.id)?.progressMessage == nil)
+        #expect(catalog.item(id: cron.id)?.successMessage == nil)
+
+        catalog.retryFeedback()
+        #expect(catalog.item(id: cron.id)?.errorMessage == nil)
+        #expect(catalog.item(id: cron.id)?.progressMessage != nil)
+        try await waitUntil { client.sentCommands.count == 2 }
+        client.complete(try #require(client.sentCommands.last), operation: .setup, ok: true)
+        try await waitUntil { catalog.item(id: cron.id)?.successMessage != nil }
+        #expect(catalog.item(id: cron.id)?.errorMessage == nil)
+        #expect(catalog.item(id: cron.id)?.progressMessage == nil)
+    }
+
+    @Test func cronCardRendersCommonActionsAndDaemonFeedbackFromCompletionEvents() async throws {
+        let client = HubPluginFanoutClient()
+        let catalog = makeCatalog(plugins: [.cron], client: client, status: .installed(isPinned: false))
+        let cron = try #require(catalog.item(id: "cron"))
+
+        catalog.setup(cron)
+        try await waitUntil { client.sentCommands.count == 1 }
+        try renderCronCard(catalog, state: "setting-up", expectedText: L10n.t("hub.plugins.feedback.settingUp"))
+        client.complete(
+            try #require(client.sentCommands.first), operation: .setup, ok: false, errorMessage: "Daemon unavailable"
+        )
+        try await waitUntil { catalog.feedbackIsError }
+        try renderCronCard(catalog, state: "failed", expectedText: "Daemon unavailable")
+
+        catalog.retryFeedback()
+        try await waitUntil { client.sentCommands.count == 2 }
+        client.complete(try #require(client.sentCommands.last), operation: .setup, ok: true)
+        try await waitUntil { catalog.item(id: cron.id)?.successMessage != nil }
+        try renderCronCard(catalog, state: "succeeded", expectedText: L10n.t("hub.plugins.feedback.setup", cron.title))
+    }
+
+    private func renderCronCard(_ catalog: PickyHubPluginCatalogViewModel, state: String, expectedText: String) throws {
+        let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("build/render-gallery/cron-feedback", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        for (width, scale, appearance) in [(420.0, 1.0, NSAppearance.Name.aqua), (320.0, 1.3, .darkAqua)] {
+            let size = CGSize(width: width, height: 640)
+            let root = CronCardFixture(catalog: catalog)
+                .environment(\.locale, LocaleManager.shared.effectiveLocale)
+                .fixedSize(horizontal: false, vertical: true)
+                .environment(\.pickyAppFontScale, scale)
+                .padding(PickyHubTheme.Spacing.field)
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
+            let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
+                root, logicalSize: size, scale: 2, appearance: appearance
+            ))
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["ko-KR", "en-US"]
+            try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([request])
+            let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            let visibleWords = text.filter { $0.isLetter || $0.isNumber }
+            let expectedWords = expectedText.filter { $0.isLetter || $0.isNumber }
+            #expect(visibleWords.localizedCaseInsensitiveContains(expectedWords), "Missing card feedback: \(text)")
+            #expect(text.contains(L10n.t("hub.plugins.card.viewJobs")), "Cron jobs must remain accessible")
+            #expect(text.contains(L10n.t("hub.plugins.card.setupDaemon")), "Daemon setup must be a visible action")
+            #expect(
+                text.components(separatedBy: L10n.t("hub.plugins.detail.installed")).count >= 3,
+                "Both the installed badge and common removal control must be visible: \(text)"
+            )
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: output.appendingPathComponent("cron-\(state)-\(Int(width))-\(Int(scale * 100)).png"))
+        }
+    }
+
     private func makeCatalog(
         plugins: [PickyCuratedPlugin],
         client: HubPluginFanoutClient = HubPluginFanoutClient(),
@@ -288,5 +403,20 @@ private final class HubPluginFanoutClient: PickyAgentClient, @unchecked Sendable
                 errorMessage: errorMessage
             ))
         )))
+    }
+}
+
+private struct CronCardFixture: View {
+    @ObservedObject var catalog: PickyHubPluginCatalogViewModel
+    @FocusState private var focusedControl: String?
+
+    var body: some View {
+        if let item = catalog.item(id: "cron") {
+            PickyHubPluginCardView(
+                item: item, onDetail: {}, onInstall: {}, onRemove: {}, onUpdate: {},
+                onViewCronJobs: {}, onSetupCronDaemon: { catalog.setup(item) },
+                focusedControl: $focusedControl
+            )
+        }
     }
 }

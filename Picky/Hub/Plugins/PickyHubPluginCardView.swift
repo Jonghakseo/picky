@@ -61,8 +61,14 @@ struct PickyHubPluginCardView: View {
                 .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
 
-            if let error = item.errorMessage {
+            if let progress = item.progressMessage {
+                PickyHubInlineStatus(tone: .neutral, message: progress)
+                    .padding(.top, PickyHubTheme.Spacing.field)
+            } else if let error = item.errorMessage {
                 PickyHubInlineStatus(tone: .error, message: error)
+                    .padding(.top, PickyHubTheme.Spacing.field)
+            } else if let success = item.successMessage {
+                PickyHubInlineStatus(tone: .success, message: success)
                     .padding(.top, PickyHubTheme.Spacing.field)
             }
 
@@ -70,6 +76,14 @@ struct PickyHubPluginCardView: View {
 
             actionRow
                 .padding(.top, PickyHubTheme.Spacing.field)
+
+            if item.plugin.kind == .cron, item.isInstalled {
+                ViewThatFits(in: .horizontal) {
+                    cronActions(isVertical: false)
+                    cronActions(isVertical: true)
+                }
+                .padding(.top, PickyHubTheme.Spacing.related)
+            }
         }
         .padding(PickyHubTheme.Spacing.cardInset)
         .frame(maxWidth: .infinity, minHeight: 224, alignment: .topLeading)
@@ -96,21 +110,7 @@ struct PickyHubPluginCardView: View {
 
     @ViewBuilder
     private func actionRow(isVertical: Bool) -> some View {
-        if item.plugin.kind == .cron, item.isInstalled {
-            if isVertical {
-                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
-                    detailButton
-                    PickyHubButton(title: "hub.plugins.card.viewJobs", role: .secondary, action: onViewCronJobs)
-                    cronMenu
-                }
-            } else {
-                HStack(spacing: PickyHubTheme.Spacing.related) {
-                    detailButton
-                    PickyHubButton(title: "hub.plugins.card.viewJobs", role: .secondary, action: onViewCronJobs)
-                    cronMenu
-                }
-            }
-        } else if isVertical {
+        if isVertical {
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 detailButton
                 if item.isInstalled {
@@ -156,30 +156,20 @@ struct PickyHubPluginCardView: View {
         .accessibilityLabel(Text(L10n.t("hub.plugins.card.remove", item.title)))
     }
 
-    private var cronMenu: some View {
-        Menu {
-            Button(L10n.t("hub.plugins.card.setupDaemon"), action: onSetupCronDaemon)
-            if item.hasUpdate {
-                Button(L10n.t("hub.plugins.card.update"), action: onUpdate)
-            }
-            Divider()
-            Button(L10n.t("hub.plugins.card.remove"), role: .destructive, action: onRemove)
-        } label: {
-            if item.isBusy {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 34, height: PickyHubTheme.Control.minimumHeight)
-            } else {
-                Image(systemName: "ellipsis.circle")
-                    .pickyFont(size: 15, weight: .semibold)
-                    .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                    .frame(width: 34, height: PickyHubTheme.Control.minimumHeight)
-            }
+    private func cronActions(isVertical: Bool) -> some View {
+        let layout = isVertical
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: PickyHubTheme.Spacing.related))
+            : AnyLayout(HStackLayout(spacing: PickyHubTheme.Spacing.related))
+        return layout {
+            PickyHubButton(title: "hub.plugins.card.viewJobs", role: .secondary, action: onViewCronJobs)
+            PickyHubButton(
+                title: "hub.plugins.card.setupDaemon",
+                role: .secondary,
+                isBusy: item.progressMessage != nil,
+                action: onSetupCronDaemon
+            )
+            .disabled(item.isBusy)
         }
-        .menuStyle(.borderlessButton)
-        .disabled(item.isBusy)
-        .help(Text("hub.plugins.card.more"))
-        .accessibilityLabel(Text("hub.plugins.card.more"))
     }
 }
 

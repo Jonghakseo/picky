@@ -14,7 +14,7 @@ struct PickyHubGuidesPage: View {
     @State private var entries: [PickyHubGuideEntry] = []
 
     var body: some View {
-        PickyHubPageScroll {
+        PickyHubPageScroll(page: .guides) {
             PickyHubPageHeader(title: PickyHubPage.guides.titleKey, subtitle: "hub.page.guides.subtitle")
 
             if entries.isEmpty {

@@ -19,7 +19,7 @@ struct PickyHubQuickStartPage: View {
     }
 
     var body: some View {
-        PickyHubPageScroll {
+        PickyHubPageScroll(page: .quickStart) {
             PickyHubPageHeader(title: PickyHubPage.quickStart.titleKey, subtitle: "hub.page.quickStart.subtitle")
 
             switch launcher.phase {

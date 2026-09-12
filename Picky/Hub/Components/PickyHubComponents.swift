@@ -7,6 +7,7 @@
 //  seven screens read as one product.
 //
 
+import AppKit
 import SwiftUI
 
 // MARK: - Content measure
@@ -81,8 +82,11 @@ enum PickyHubGridPolicy {
 /// measured width published into the environment. Pages that need their own
 /// scroll ownership (the conversation page) do not use this.
 struct PickyHubPageScroll<Content: View>: View {
+    let page: PickyHubPage
     var showsIndicators = false
     @ViewBuilder var content: () -> Content
+    @EnvironmentObject private var navigator: PickyHubNavigator
+    @State private var scrollCoordinator = PickyHubPageScrollCoordinator()
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: showsIndicators) {
@@ -94,7 +98,70 @@ struct PickyHubPageScroll<Content: View>: View {
                 .padding(.top, PickyHubTheme.Layout.contentTopPadding)
                 .padding(.bottom, PickyHubTheme.Layout.contentBottomPadding)
                 .frame(maxWidth: .infinity)
+                .background {
+                    PickyHubEnclosingScrollViewResolver { scrollView in
+                        scrollCoordinator.attach(to: scrollView)
+                    }
+                }
         }
+        .onChange(of: navigator.pageScrollResetRequest, initial: true) { _, request in
+            guard let request, request.page == page, navigator.selectedPage == page else { return }
+            scrollCoordinator.scrollToTop()
+        }
+    }
+}
+
+@MainActor
+private final class PickyHubPageScrollCoordinator {
+    private weak var scrollView: NSScrollView?
+
+    func attach(to scrollView: NSScrollView) {
+        self.scrollView = scrollView
+    }
+
+    func scrollToTop() {
+        guard let scrollView else { return }
+        let clipView = scrollView.contentView
+        clipView.scroll(to: CGPoint(x: clipView.bounds.origin.x, y: -scrollView.contentInsets.top))
+        scrollView.reflectScrolledClipView(clipView)
+    }
+}
+
+struct PickyHubEnclosingScrollViewResolver: NSViewRepresentable {
+    let onResolve: (NSScrollView) -> Void
+
+    func makeNSView(context: Context) -> PickyHubScrollHostView {
+        let view = PickyHubScrollHostView()
+        view.onResolve = onResolve
+        return view
+    }
+
+    func updateNSView(_ nsView: PickyHubScrollHostView, context: Context) {
+        nsView.onResolve = onResolve
+        nsView.resolve()
+    }
+
+    static func dismantleNSView(_ nsView: PickyHubScrollHostView, coordinator: ()) {
+        nsView.onResolve = nil
+    }
+}
+
+final class PickyHubScrollHostView: NSView {
+    var onResolve: ((NSScrollView) -> Void)?
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        resolve()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        resolve()
+    }
+
+    func resolve() {
+        guard let scrollView = enclosingScrollView else { return }
+        onResolve?(scrollView)
     }
 }
 

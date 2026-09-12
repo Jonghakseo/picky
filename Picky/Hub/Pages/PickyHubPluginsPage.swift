@@ -29,7 +29,7 @@ struct PickyHubPluginsPage: View {
     }
 
     var body: some View {
-        PickyHubPageScroll {
+        PickyHubPageScroll(page: .plugins) {
             VStack(alignment: .leading, spacing: 0) {
                 PickyHubPageHeader(title: PickyHubPage.plugins.titleKey, subtitle: "hub.page.plugins.subtitle")
 

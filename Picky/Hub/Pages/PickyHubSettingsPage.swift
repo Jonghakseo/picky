@@ -100,7 +100,7 @@ struct PickyHubSettingsPage: View {
                         }
                     }
                     .background {
-                        PickyHubSettingsScrollViewResolver { scrollView in
+                        PickyHubEnclosingScrollViewResolver { scrollView in
                             scrollCoordinator.attach(to: scrollView)
                         }
                     }
@@ -114,6 +114,9 @@ struct PickyHubSettingsPage: View {
                 .onAppear { consumePendingSettingsNavigation(with: proxy) }
                 .onChange(of: navigator.pendingSettingsNavigation) { _, _ in
                     consumePendingSettingsNavigation(with: proxy)
+                }
+                .onChange(of: navigator.pageScrollResetRequest, initial: true) { _, request in
+                    resetScrollIfRequested(request)
                 }
                 .onPreferenceChange(PickyHubSettingsGroupOffsetPreference.self) { offsets in
                     settingsGroupOffsets = offsets
@@ -269,6 +272,12 @@ struct PickyHubSettingsPage: View {
             ? target
             : nil
         proxy.scrollTo(target, anchor: .top)
+    }
+
+    private func resetScrollIfRequested(_ request: PickyHubPageScrollResetRequest?) {
+        guard let request, request.page == .settings, navigator.selectedPage == .settings else { return }
+        pendingGroupScrollTarget = nil
+        scrollCoordinator.scrollToTop()
     }
 
     private func applyPendingGroupScrollAdjustment(using offsets: [String: CGFloat]) {
@@ -594,50 +603,19 @@ private struct PickyHubSettingsGroupBadge: View {
     }
 }
 
-private struct PickyHubSettingsScrollViewResolver: NSViewRepresentable {
-    let onResolve: (NSScrollView) -> Void
-
-    func makeNSView(context: Context) -> PickyHubSettingsScrollHostView {
-        let view = PickyHubSettingsScrollHostView()
-        view.onResolve = onResolve
-        return view
-    }
-
-    func updateNSView(_ nsView: PickyHubSettingsScrollHostView, context: Context) {
-        nsView.onResolve = onResolve
-        nsView.resolve()
-    }
-
-    static func dismantleNSView(_ nsView: PickyHubSettingsScrollHostView, coordinator: ()) {
-        nsView.onResolve = nil
-    }
-}
-
-private final class PickyHubSettingsScrollHostView: NSView {
-    var onResolve: ((NSScrollView) -> Void)?
-
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        resolve()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        resolve()
-    }
-
-    func resolve() {
-        guard let scrollView = enclosingScrollView else { return }
-        onResolve?(scrollView)
-    }
-}
-
 @MainActor
 private final class PickyHubSettingsScrollCoordinator {
     private weak var scrollView: NSScrollView?
 
     func attach(to scrollView: NSScrollView) {
         self.scrollView = scrollView
+    }
+
+    func scrollToTop() {
+        guard let scrollView else { return }
+        let clipView = scrollView.contentView
+        clipView.scroll(to: CGPoint(x: clipView.bounds.origin.x, y: -scrollView.contentInsets.top))
+        scrollView.reflectScrolledClipView(clipView)
     }
 
     func align(targetOffset: CGFloat, below clearance: CGFloat) -> Bool {

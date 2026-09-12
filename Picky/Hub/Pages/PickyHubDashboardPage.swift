@@ -32,7 +32,7 @@ struct PickyHubDashboardPage: View {
     }
 
     var body: some View {
-        PickyHubPageScroll {
+        PickyHubPageScroll(page: .dashboard) {
             VStack(alignment: .leading, spacing: 0) {
                 greetingCard
 

@@ -13,7 +13,7 @@ struct PickyHubStatisticsPage: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            PickyHubPageScroll {
+            PickyHubPageScroll(page: .statistics) {
                 VStack(alignment: .leading, spacing: 0) {
                     PickyHubPageHeader(title: PickyHubPage.statistics.titleKey, subtitle: "hub.page.statistics.subtitle")
                     filters

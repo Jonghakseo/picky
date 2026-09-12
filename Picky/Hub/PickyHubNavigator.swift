@@ -119,10 +119,17 @@ struct PickyHubSettingsNavigationState: Equatable {
     }
 }
 
+struct PickyHubPageScrollResetRequest: Equatable {
+    let page: PickyHubPage
+    let token: UInt64
+}
+
 @MainActor
 final class PickyHubNavigator: ObservableObject {
     @Published var selectedPage: PickyHubPage = .dashboard
+    @Published private(set) var pageScrollResetRequest: PickyHubPageScrollResetRequest?
     @Published var isWindowVisible = false
+    private var nextPageScrollResetToken: UInt64 = 0
 
     var shouldRefreshStatistics: Bool {
         isWindowVisible && (selectedPage == .dashboard || selectedPage == .statistics)
@@ -140,6 +147,11 @@ final class PickyHubNavigator: ObservableObject {
 
     func select(_ page: PickyHubPage) {
         selectedPage = page
+        nextPageScrollResetToken &+= 1
+        pageScrollResetRequest = PickyHubPageScrollResetRequest(
+            page: page,
+            token: nextPageScrollResetToken
+        )
     }
 
     func showStatistics(tab: PickyHubStatisticsTab = .work, anchor: PickyHubStatisticsAnchor? = nil) {

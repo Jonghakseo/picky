@@ -73,6 +73,43 @@ struct PickyHubSettingsRuntimeContractTests {
         }
     }
 
+    @Test func selectingSettingsAgainResetsItsScrollViewToTop() throws {
+        let fixture = try PickyHubRenderGalleryFixture()
+        fixture.navigator.select(.settings)
+        let (window, host) = mountProductionHub(fixture)
+        defer {
+            window.contentView = nil
+            window.close()
+            dismantle(host)
+            fixture.removeTemporaryState()
+        }
+
+        #expect(waitForHost(host) {
+            scrollViews(in: host).contains { scrollView in
+                (scrollView.documentView?.bounds.height ?? 0) > scrollView.contentView.bounds.height
+            }
+        })
+        let scrollView = try #require(scrollViews(in: host).first { scrollView in
+            (scrollView.documentView?.bounds.height ?? 0) > scrollView.contentView.bounds.height
+        })
+        let documentView = try #require(scrollView.documentView)
+        let initialOffset = scrollView.contentView.bounds.origin.y
+        let maximumOffset = documentView.bounds.height - scrollView.contentView.bounds.height
+        let scrolledOffset = min(initialOffset + 280, maximumOffset)
+        try #require(scrolledOffset > initialOffset + 1)
+        scrollView.contentView.scroll(to: CGPoint(x: 0, y: scrolledOffset))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        #expect(scrollView.contentView.bounds.origin.y > initialOffset + 1)
+
+        fixture.navigator.select(.dashboard)
+        #expect(waitForHost(host) { fixture.navigator.selectedPage == .dashboard })
+        fixture.navigator.select(.settings)
+
+        #expect(waitForHost(host) {
+            abs(scrollView.contentView.bounds.origin.y + scrollView.contentInsets.top) <= 0.5
+        })
+    }
+
     @Test func settingsGroupBadgesCoverScrolledContentAtViewportTop() throws {
         try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
             let fixture = try PickyHubRenderGalleryFixture()

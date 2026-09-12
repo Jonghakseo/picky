@@ -3,8 +3,8 @@
 //  Picky
 //
 //  Window content: sidebar + retained page host. Pages mount on first visit
-//  and then stay alive, preserving scroll position and transient state without
-//  constructing every Hub page during window focus.
+//  and then stay alive, preserving transient state without constructing every
+//  Hub page during window focus. Page-owned scroll views reset on tab selection.
 //
 
 import Combine

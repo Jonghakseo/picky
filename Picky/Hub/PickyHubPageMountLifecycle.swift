@@ -4,8 +4,8 @@
 //
 //  Owns the Hub page-mount invariant: a destination is created only after it
 //  is selected, then remains in the window's view tree for the lifetime of
-//  that tree so SwiftUI keeps its identity, scroll position, and transient
-//  control state.
+//  that tree so SwiftUI keeps its identity and transient control state. Each
+//  page remains responsible for its scroll position when selected.
 //
 
 import Combine

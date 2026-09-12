@@ -109,6 +109,9 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     private var _disconnectCalls = 0
     private var _sendAwaitingErrorResult: PickyErrorEvent?
     private var _abortMainAgentGate: FakeAbortGate?
+    private var _pickleDeliveryGate: FakeCaptureGate?
+    private var _acknowledgesCommands = false
+    private var _acknowledgesPickleDelivery = true
     private var _shouldFailSubmissions = false
     var submissions: [PickyAgentSubmission] { lock.withLock { _submissions } }
     var commands: [PickyCommandEnvelope] { lock.withLock { _commands } }
@@ -121,6 +124,18 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
     var abortMainAgentGate: FakeAbortGate? {
         get { lock.withLock { _abortMainAgentGate } }
         set { lock.withLock { _abortMainAgentGate = newValue } }
+    }
+    var pickleDeliveryGate: FakeCaptureGate? {
+        get { lock.withLock { _pickleDeliveryGate } }
+        set { lock.withLock { _pickleDeliveryGate = newValue } }
+    }
+    var acknowledgesCommands: Bool {
+        get { lock.withLock { _acknowledgesCommands } }
+        set { lock.withLock { _acknowledgesCommands = newValue } }
+    }
+    var acknowledgesPickleDelivery: Bool {
+        get { lock.withLock { _acknowledgesPickleDelivery } }
+        set { lock.withLock { _acknowledgesPickleDelivery = newValue } }
     }
     var shouldFailSubmissions: Bool {
         get { lock.withLock { _shouldFailSubmissions } }
@@ -150,6 +165,15 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
             _calls.append("send:\(command.type.rawValue)")
             _commands.append(command)
         }
+        let isPickleDelivery = command.type == .followUp || command.type == .steer
+        if acknowledgesCommands, !isPickleDelivery || acknowledgesPickleDelivery {
+            emit(.protocolEvent(PickyEventEnvelope(
+                id: "ack-\(command.id)",
+                protocolVersion: pickyAgentProtocolVersion,
+                timestamp: Date(),
+                event: .ack(PickyAckEvent(commandId: command.id))
+            )))
+        }
     }
     func sendAwaitingError(
         _ command: PickyCommandEnvelope,
@@ -159,6 +183,8 @@ private final class FakeVoiceClient: PickyAgentClient, @unchecked Sendable {
         try await send(command)
         if command.type == .abortMainAgent {
             await abortMainAgentGate?.wait()
+        } else if command.type == .followUp || command.type == .steer {
+            await pickleDeliveryGate?.wait()
         }
         return lock.withLock { _sendAwaitingErrorResult }
     }
@@ -1692,12 +1718,155 @@ struct PickyCompanionManagerTests {
         let firstCancellation = Task { await manager.cancelMainTurn() }
         try await waitUntil { client.commands.contains { $0.type == .abortMainAgent } }
 
-        #expect(await manager.sendDirectMessage("second armed", source: .quickInput))
+        let deliveryGate = FakeCaptureGate()
+        client.pickleDeliveryGate = deliveryGate
+        let secondDispatch = Task { await manager.sendDirectMessage("second armed", source: .quickInput) }
+        try await deliveryGate.waitUntilEntered()
         await gate.release()
         #expect(!(await firstCancellation.value))
 
         #expect(await manager.cancelMainTurn())
-        #expect(client.commands.filter { $0.type == .abort && $0.sessionId == "pickle-target" }.count == 2)
+        #expect(client.commands.filter { $0.type == .abort && $0.sessionId == "pickle-target" }.count == 1)
+        await deliveryGate.release()
+        #expect(!(await secondDispatch.value))
+    }
+
+    @Test(arguments: [PickyArmedPickleDispatchMode.followUp, .steer], [false, true])
+    func deliveredQuickInputSurvivesMainTurnCancellation(
+        mode: PickyArmedPickleDispatchMode,
+        sticky: Bool
+    ) async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: sticky)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: mode
+        )
+        manager.start()
+        defer { manager.stop() }
+
+        let input = manager.quickInputPanelManager.viewModelForTesting
+        input.beginPresentation(recipient: .pickle(sessionID: "pickle-target", label: "Pickle"))
+        input.draftText = "continue this work"
+        input.submit()
+        try await waitUntil { !manager.quickInputPanelManager.isSending }
+        #expect(client.commands.contains { $0.type == (mode == .followUp ? .followUp : .steer) })
+        #expect(!manager.quickInputPanelManager.isPanelVisible)
+        #expect(selection.screenContextTargetSessionID == (sticky ? "pickle-target" : nil))
+
+        #expect(await manager.cancelMainTurn())
+        #expect(!client.commands.contains { $0.type == .abort })
+    }
+
+    @Test(arguments: [PickyArmedPickleDispatchMode.followUp, .steer], [false, true])
+    func deliveredQuickInputSurvivesNextPushToTalkPress(
+        mode: PickyArmedPickleDispatchMode,
+        sticky: Bool
+    ) async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-target", sticky: sticky)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: mode
+        )
+        defer { manager.stop() }
+        #expect(await manager.sendDirectMessage("continue this work", source: .quickInput))
+
+        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        try await waitUntil { client.commands.contains { $0.type == .abortMainAgent } }
+        #expect(!client.commands.contains { $0.type == .abort })
+        manager.handleShortcutTransition(.released)
+    }
+
+    @Test(arguments: [true, false])
+    func handedOffPickleCompletesThroughV2AfterGlobalEscape(acknowledgesDelivery: Bool) async throws {
+        let client = FakeVoiceClient()
+        client.acknowledgesCommands = true
+        client.acknowledgesPickleDelivery = acknowledgesDelivery
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-handoff-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let router = PickyAgentClientRouter(
+            primaryClient: client,
+            pool: PickyAgentDaemonPool(configuration: .init(token: "test", appSupportRoot: root)),
+            supportsSessionProjectionV2: true
+        )
+        let storage = PickyRegistrySessionProjectionStorage()
+        let selection = FakeVoiceSelectionStore()
+        let viewModel = PickySessionListViewModel(client: router, selectionStore: selection, sessionProjectionStorage: storage)
+        let manager = CompanionManager(
+            agentClient: router,
+            ownsAgentClientLifecycle: false,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: .followUp
+        )
+        manager.bindAgentEvents()
+        viewModel.start()
+        defer { manager.stop(); viewModel.stop() }
+        try await waitUntil { client.commands.contains { $0.type == .registerAppCapabilities } }
+        let snapshotJSON = """
+        {"sessionId":"pickle-v2","epoch":"companion-test","revision":1,"complete":true,"omittedFields":[],"projection":{"id":"pickle-v2","title":"Pickle","status":"running","createdAt":"2026-09-12T05:50:08Z","updatedAt":"2026-09-12T05:50:08Z"}}
+        """
+        let snapshot = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickySessionProjectionSnapshot.self, from: Data(snapshotJSON.utf8)
+        )
+        client.emit(.protocolEvent(PickyEventEnvelope(
+            id: "bootstrap", protocolVersion: pickyAgentProtocolVersion, timestamp: Date(),
+            event: .sessionProjectionSnapshot(snapshot)
+        )))
+        try await waitUntil { viewModel.sessionStore(sessionID: "pickle-v2")?.dockStore.projection?.status == .running }
+        selection.setScreenContextTarget(sessionID: "pickle-v2", sticky: false)
+
+        // Exercise real router success, including the unchanged error-only timeout contract.
+        #expect(await manager.sendDirectMessage("continue this work", source: .quickInput))
+        #expect(await manager.cancelMainTurn(source: .escapeDoubleTap))
+        #expect(!client.commands.contains { $0.type == .abort })
+        #expect(storage.session(id: "pickle-v2")?.status == .running)
+        #expect(viewModel.sessionStore(sessionID: "pickle-v2")?.dockStore.projection?.status == .running)
+
+        client.emit(.protocolEvent(PickyEventEnvelope(
+            id: "completed", protocolVersion: pickyAgentProtocolVersion, timestamp: Date(),
+            event: .sessionProjectionTransaction(projectionTransaction(sessionID: "pickle-v2", status: .completed))
+        )))
+        try await waitUntil { viewModel.sessionStore(sessionID: "pickle-v2")?.dockStore.projection?.status == .completed }
+        #expect(storage.session(id: "pickle-v2")?.status == .completed)
+        #expect(viewModel.sessions.first { $0.id == "pickle-v2" }?.status == .completed)
+    }
+
+    @Test func latePickleDeliveryDoesNotReleaseNewerPendingDispatch() async throws {
+        let client = FakeVoiceClient()
+        let firstGate = FakeCaptureGate()
+        client.pickleDeliveryGate = firstGate
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-first", sticky: false)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+            armedPickleDispatchMode: .followUp
+        )
+        let firstDispatch = Task { await manager.sendDirectMessage("first", source: .quickInput) }
+        try await firstGate.waitUntilEntered()
+
+        let secondGate = FakeCaptureGate()
+        client.pickleDeliveryGate = secondGate
+        selection.setScreenContextTarget(sessionID: "pickle-second", sticky: false)
+        let secondDispatch = Task { await manager.sendDirectMessage("second", source: .quickInput) }
+        try await secondGate.waitUntilEntered()
+        await firstGate.release()
+        #expect(!(await firstDispatch.value))
+        #expect(selection.screenContextTargetSessionID == "pickle-second")
+
+        #expect(await manager.cancelMainTurn())
+        #expect(client.commands.filter { $0.type == .abort }.map(\.sessionId) == ["pickle-second"])
+        await secondGate.release()
+        #expect(!(await secondDispatch.value))
     }
 
     @Test func cancelDuringArmedPickleCapturePreventsLateFollowUpDispatch() async throws {

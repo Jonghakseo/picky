@@ -72,7 +72,7 @@ final class PickyMainCancelPillPanelManager {
     /// that should be visible again.
     private var dismissGeneration = 0
 
-    var onCancel: () async -> Bool = { false }
+    var onCancel: (PickyMainTurnCancellationSource) async -> Bool = { _ in false }
     /// Called after either a successful or failed cancellation attempt has
     /// restored its visual state, so the panel converges against current
     /// in-flight and key-window state rather than a stale pre-attempt snapshot.
@@ -106,7 +106,7 @@ final class PickyMainCancelPillPanelManager {
         if nextState == .cancelled {
             // Keep the armed state while the abort is in flight. Only a
             // confirmed daemon abort is allowed to show the cancelled label.
-            cancel()
+            cancel(source: .escapeDoubleTap)
         } else {
             viewModel.state = nextState
             scheduleEscapeReset()
@@ -174,7 +174,7 @@ final class PickyMainCancelPillPanelManager {
                     currentState: self.viewModel.state
                 )
             },
-            onCancel: { [weak self] in self?.cancel() }
+            onCancel: { [weak self] in self?.cancel(source: .stopButton) }
         )
         let host = PickyMainCancelPillHostingView(
             rootView: LocalizedHostingRoot { view },
@@ -229,7 +229,7 @@ final class PickyMainCancelPillPanelManager {
         }
     }
 
-    private func cancel() {
+    private func cancel(source: PickyMainTurnCancellationSource) {
         guard viewModel.state != .cancelled, cancellationAttemptID == nil else { return }
         escapeResetTask?.cancel()
         escapeResetTask = nil
@@ -238,7 +238,7 @@ final class PickyMainCancelPillPanelManager {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let succeeded = await self.onCancel()
+            let succeeded = await self.onCancel(source)
             guard self.cancellationAttemptID == attemptID else { return }
             self.cancellationAttemptID = nil
             self.viewModel.state = PickyMainCancelPillPolicy.stateAfterCancellationAttempt(succeeded: succeeded)

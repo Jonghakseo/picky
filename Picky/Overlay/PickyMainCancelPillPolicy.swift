@@ -16,6 +16,12 @@ enum PickyMainCancelPillState: Equatable {
     case cancelled
 }
 
+enum PickyMainTurnCancellationSource: String {
+    case escapeDoubleTap
+    case stopButton
+    case voiceBargeIn
+}
+
 enum PickyMainCancelPillPolicy {
     static let escapeConfirmationWindow: TimeInterval = 0.8
     static let cancellationConfirmationDuration: TimeInterval = 1.2
@@ -65,9 +71,9 @@ enum PickyMainCancelPillPolicy {
         hasPendingAgentResponse || voiceState == .responding
     }
 
-    /// An armed follow-up belongs to the active main turn and is therefore
-    /// always cancelled. The voice snapshot remains narrow-gated so a stale
-    /// PTT target cannot cancel a Pickle after its response has settled.
+    /// A pending armed delivery belongs to the active main turn until handoff
+    /// succeeds. The voice snapshot remains narrow-gated so a stale PTT target
+    /// cannot cancel a Pickle after its response has settled.
     static func followUpAbortTarget(
         activeMainTurnFollowUpSessionID: String?,
         voiceFollowUpSessionID: String?,

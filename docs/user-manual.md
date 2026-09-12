@@ -181,6 +181,8 @@ Quick Input captures the current context just like voice input.
 
 When a Pickle is armed for screen input, Quick Input names that Pickle in the placeholder, hides main-agent history, and keeps that recipient fixed for the submission. If delivery fails, the draft, recipient, and any drawn ink are restored so you can add more marks and retry. A fresh Quick Input presentation uses the currently armed recipient and never silently reuses an earlier failed target.
 
+After a successful handoff, the Pickle runs independently. The main-agent **Stop** pill, its Escape double-tap shortcut, and starting another Push-to-Talk input do not cancel that delivered work. Use **Stop** on the Pickle itself to cancel it. You can still cancel a Quick Input handoff while Picky is capturing or sending it. Pinning a Pickle keeps it selected for future inputs, not attached to the main agent's cancellation controls.
+
 Quick Input is suppressed while Push-to-Talk or dictation is active, and also while you are mid-rebind in the shortcut editor, so the two input modes do not fight for focus or hijack capture.
 
 ### 5.1 Main-agent activity, questions, and cancellation

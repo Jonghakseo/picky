@@ -432,9 +432,9 @@ final class CompanionManager: ObservableObject {
     var pendingAgentResponseStartedAt: Date? {
         didSet { updateMainCancelPillPresentation() }
     }
-    /// Follow-up destination for the currently cancellable turn. Voice uses its
-    /// utterance snapshot; Quick Input records its armed Pickle after agentd
-    /// accepts the dispatch so both cancellation surfaces stop the same work.
+    /// Follow-up destination while Picky owns the pending delivery. Voice uses
+    /// its utterance snapshot; Quick Input releases its target after a successful
+    /// handoff so main-turn cancellation cannot stop independent Pickle work.
     var activeMainTurnFollowUpSessionID: String? {
         didSet { updateMainCancelPillPresentation() }
     }
@@ -1089,9 +1089,9 @@ final class CompanionManager: ObservableObject {
     }
 
     private func wireMainCancelPill() {
-        mainCancelPillPanelManager.onCancel = { [weak self] in
+        mainCancelPillPanelManager.onCancel = { [weak self] source in
             guard let self else { return false }
-            return await self.cancelMainTurn()
+            return await self.cancelMainTurn(source: source)
         }
         mainCancelPillPanelManager.onCancellationAttemptResolved = { [weak self] in
             self?.updateMainCancelPillPresentation()
@@ -1693,11 +1693,8 @@ final class CompanionManager: ObservableObject {
             guard isCurrentArmedPickleDispatch(dispatch) else { return false }
             activeArmedPickleDispatch?.contextID = captureResult.contextPacket.id
 
-            // `sendAwaitingError` waits up to 1s for the daemon to emit a
-            // `type="error"` rejection (e.g. `Unknown session: …` when the
-            // target Pickle lives in a child daemon the router can't reach).
-            // agentd has no positive ack today, so absence of error within
-            // the window is treated as success.
+            // A matching ack confirms success early. A rejection within 1s
+            // fails delivery; silence remains a compatibility success.
             let commandType: PickyCommandType
             let context: PickyContextPacket
             switch dispatchMode {
@@ -1740,6 +1737,9 @@ final class CompanionManager: ObservableObject {
                 ? L10n.t("directMessage.steerDelivered")
                 : L10n.t("directMessage.followUpDelivered")
             clearScreenContextTargetIfCurrent(targetSessionID)
+            // Delivery is over. The Pickle owns the work from here, including
+            // queued follow-ups; only its own Stop control should abort it.
+            finishArmedPickleDispatch(dispatch)
             return true
         } catch {
             guard isCurrentArmedPickleDispatch(dispatch) else { return false }

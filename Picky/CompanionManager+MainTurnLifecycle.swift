@@ -66,23 +66,20 @@ extension CompanionManager {
         if cancellation.shouldSettleLocalState {
             settleMainTurnAfterCancellation()
         }
-        // Open a new turn generation so the captured cancellation's late
-        // acknowledgment fails `cancelMainTurn`'s generation guard instead of
-        // settling (and resetting) the user's next voice input.
+        // A late cancellation acknowledgment must not settle the next voice input.
         mainTurnGeneration &+= 1
         Task { [weak self] in
-            _ = await self?.cancelMainTurn(cancellation, stopsLocalSpeech: false)
+            _ = await self?.cancelMainTurn(cancellation, stopsLocalSpeech: false, source: .voiceBargeIn)
         }
         updateVoiceInputAudioSuppression(isVoiceInputActive: true)
         reduceVoiceInteraction(.abort)
     }
 
-    /// Stops the current main turn regardless of whether it originated from
-    /// voice or typed Quick Input. A Pickle follow-up needs its own session
-    /// abort in addition to the main-agent abort.
+    /// Stops the main turn and any pending Pickle delivery. A successfully
+    /// handed-off Pickle runs independently.
     @discardableResult
-    func cancelMainTurn() async -> Bool {
-        await cancelMainTurn(makeMainTurnCancellation(), stopsLocalSpeech: true)
+    func cancelMainTurn(source: PickyMainTurnCancellationSource = .stopButton) async -> Bool {
+        await cancelMainTurn(makeMainTurnCancellation(), stopsLocalSpeech: true, source: source)
     }
 
     private func makeMainTurnCancellation() -> MainTurnCancellation {
@@ -112,11 +109,15 @@ extension CompanionManager {
 
     private func cancelMainTurn(
         _ cancellation: MainTurnCancellation,
-        stopsLocalSpeech: Bool
+        stopsLocalSpeech: Bool,
+        source: PickyMainTurnCancellationSource
     ) async -> Bool {
-        // Stop local narration immediately, but keep the in-flight projection
-        // intact until agentd accepted the main abort. That lets the pill remain
-        // usable when transport or command delivery fails.
+        PickyLog.notice(
+            .sessionUI,
+            prefix: "Picky cancellation",
+            message: "event=mainTurnCancellationRequested source=\(source.rawValue) followUpSessionID=\(cancellation.followUpSessionID ?? "none") generation=\(cancellation.generation)"
+        )
+        // Stop narration now; keep cancellation retryable until agentd accepts.
         if stopsLocalSpeech {
             stopCurrentSpeech()
         }
@@ -152,9 +153,7 @@ extension CompanionManager {
             return false
         }
 
-        // A PTT or typed submission may have started another turn while the
-        // daemon was processing this cancellation. Never settle or confirm a
-        // cancellation result against that newer turn.
+        // Never settle a newer PTT or typed turn with this cancellation result.
         guard mainTurnGeneration == cancellation.generation else { return false }
         if let armedPickleDispatchToken = cancellation.armedPickleDispatchToken,
            activeArmedPickleDispatch?.token == armedPickleDispatchToken {

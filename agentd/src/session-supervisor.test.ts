@@ -1,6 +1,7 @@
 import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState, PickyPreparedVisualNarrationVisual, PickyQueueItem, PickySessionMessage, PickySessionProjectionMutation, PickyVisualNarrationSegmentIdentity } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
@@ -964,7 +965,7 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const sourceFilePath = join(dir, "source-pi.jsonl");
-    await writeFile(sourceFilePath, '{"type":"user_text","text":"original task"}\n{"type":"agent_text","text":"partial answer"}\n');
+    await writeFile(sourceFilePath, '{"type":"session","version":3,"id":"11111111-1111-4111-8111-111111111111","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp/project"}\n{"type":"custom","id":"memory-entry","customType":"memory-layer-agent-memory","details":{"ownerSessionId":"11111111-1111-4111-8111-111111111111"}}\n{"type":"user_text","text":"original task"}\n{"type":"agent_text","text":"partial answer"}\n');
 
     const pickle = await supervisor.createPickleFromHandoff(
       contextWithPiSessionFile("continue this work", sourceFilePath),
@@ -982,7 +983,13 @@ describe("SessionSupervisor", () => {
 
     const copied = await readFile(runtime.resumeCalls[0]!.sessionFilePath, "utf8");
     const original = await readFile(sourceFilePath, "utf8");
-    expect(copied).toBe(original);
+    const copiedHeader = JSON.parse(copied.split("\n")[0]!) as { id: string };
+    expect(copied).not.toBe(original);
+    expect(copiedHeader.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
+    expect(copiedHeader.id).not.toBe("11111111-1111-4111-8111-111111111111");
+    expect(copied).toContain('"ownerSessionId":"11111111-1111-4111-8111-111111111111"');
+    expect(SessionManager.open(runtime.resumeCalls[0]!.sessionFilePath, undefined, "/tmp/project").getSessionId()).toBe(copiedHeader.id);
+    expect(await readFile(sourceFilePath, "utf8")).toBe(original);
     expect(supervisor.isPickleSession(pickle.id)).toBe(true);
     expect(pickle.notifyMainOnCompletion).toBe(true);
     expect(pickle.notifyMacOSOnCompletion).toBe(true);
@@ -995,7 +1002,7 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const sourceFilePath = join(dir, "source-pi.jsonl");
-    await writeFile(sourceFilePath, '{"type":"user_text","text":"hello"}\n{"type":"agent_text","text":"world"}\n');
+    await writeFile(sourceFilePath, '{"type":"session","version":3,"id":"22222222-2222-4222-8222-222222222222","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp/project"}\n{"type":"user_text","text":"hello"}\n{"type":"agent_text","text":"world"}\n');
     const source = await supervisor.pinPickleSession(contextWithPiSessionFile("original work", sourceFilePath), "Original work");
 
     const fork = await supervisor.duplicatePickleSession(source.id);
@@ -1020,7 +1027,10 @@ describe("SessionSupervisor", () => {
 
     const copied = await readFile(resume!.sessionFilePath, "utf8");
     const original = await readFile(sourceFilePath, "utf8");
-    expect(copied).toBe(original);
+    const copiedHeader = JSON.parse(copied.split("\n")[0]!) as { id: string };
+    expect(copiedHeader.id).not.toBe("22222222-2222-4222-8222-222222222222");
+    expect(SessionManager.open(resume!.sessionFilePath, undefined, "/tmp/project").getSessionId()).toBe(copiedHeader.id);
+    expect(await readFile(sourceFilePath, "utf8")).toBe(original);
   });
 
   it("copies the source Pickle session's message history and notify-on-completion preference", async () => {
@@ -1766,9 +1776,9 @@ describe("SessionSupervisor", () => {
     expect([...published[0]!]).toEqual(["picky_screen_overlay"]);
   });
 
-  it("recreates the main session when a toggle changes the custom tool registry", async () => {
+  it("disposes the main session without a hidden resume when a toggle changes the custom tool registry", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-toggle-tool-registry-"));
-    const mainRuntime = new ManualRuntime();
+    const mainRuntime = new ResumeTrackingRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), {
       mainRuntime,
       mainCustomToolsBuilder: (disabled) =>
@@ -1781,7 +1791,9 @@ describe("SessionSupervisor", () => {
     await supervisor.setDisabledBuiltinTools(["read_picky_user_guide"]);
 
     // Pi resolves the tool registry when a handle is created, so this one still needs a reset.
-    await waitUntil(() => handle?.aborts === 1);
+    await waitUntil(() => handle?.disposes === 1);
+    expect(mainRuntime.resumeCalls).toEqual([]);
+    await expect(handle!.followUp({ text: "deferred cron input", imagePaths: [] })).rejects.toThrow(/disposed/);
   });
 
   it("drops DSL overlays after the turn context is replaced", async () => {
@@ -5004,6 +5016,7 @@ describe("SessionSupervisor", () => {
     await settle();
 
     expect(previousHandle?.aborts).toBe(1);
+    expect(previousHandle?.disposes).toBe(1);
     expect(supervisor.listMainMessages()).toEqual([]);
     expect(await store.loadMainAgentState()).toEqual({ messages: [] });
 
@@ -5012,6 +5025,23 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.createCalls).toBe(2);
     expect(mainRuntime.handle).not.toBe(previousHandle);
     expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["새 질문"]);
+  });
+
+  it("leaves a reset cron-owning Picky session draining without creating a hidden resume host", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-reset-draining-"));
+    const mainRuntime = new ResumeTrackingRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+
+    await supervisor.route(context("cron 작업이 있는 질문"));
+    const discardedHandle = mainRuntime.handle;
+    discardedHandle?.emit({ type: "log", line: "pi session: /tmp/picky-main-cron-owner.jsonl" });
+    await waitUntil(() => supervisor.mainAgentSessionInfo().sessionFilePath === "/tmp/picky-main-cron-owner.jsonl");
+
+    await supervisor.resetMainAgent();
+
+    expect(discardedHandle?.disposes).toBe(1);
+    expect(mainRuntime.resumeCalls).toEqual([]);
+    await expect(discardedHandle!.followUp({ text: "deferred cron input", imagePaths: [] })).rejects.toThrow(/disposed/);
   });
 
   it("aborts the active Picky turn without clearing visible message history", async () => {
@@ -5045,8 +5075,8 @@ describe("SessionSupervisor", () => {
     nextHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    expect(mainRuntime.createCalls).toBe(2);
-    expect(nextHandle).not.toBe(previousHandle);
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(nextHandle).toBe(previousHandle);
     expect(replies).toEqual([{ contextId: "context-새 질문", text: "새 답변" }]);
     expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
       { role: "user", text: "이전 질문" },
@@ -5055,11 +5085,10 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  it("prewarms a resumed Picky handle after abort before the next voice route", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-abort-resume-"));
-    const store = new SessionStore(dir);
-    const mainRuntime = new DeferredResumeRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
+  it("reuses the aborted Picky handle for the next voice route without a same-file resume", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-abort-reuse-"));
+    const mainRuntime = new ResumeTrackingRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     await supervisor.route(context("이전 음성 입력"));
     const interruptedHandle = mainRuntime.handle;
@@ -5067,24 +5096,19 @@ describe("SessionSupervisor", () => {
     await settle();
 
     await supervisor.abortMainAgent();
-    await waitUntil(() => mainRuntime.resumeCalls.length === 1);
-    expect(mainRuntime.resumeCalls).toEqual([{
-      sessionFilePath: "/tmp/picky-main-after-abort.jsonl",
-      cwd: "/tmp/project",
-      sessionId: "picky",
-    }]);
+    // Events from the settled old turn must stay invisible while PTT records.
+    interruptedHandle?.emit({ type: "assistant_delta", delta: "늦은 이전 답변" });
+    interruptedHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitForRuntimeEvents(supervisor, "picky");
 
-    const nextRoute = supervisor.route(context("다음 음성 입력"));
-    // The next route joins the already-started resume instead of issuing a
-    // second one (or creating a fresh runtime) after STT has finished.
-    expect(mainRuntime.resumeCalls).toHaveLength(1);
-    mainRuntime.resolvePendingResume();
-    await nextRoute;
+    await supervisor.route(context("다음 음성 입력"));
 
-    expect(mainRuntime.resumeCalls).toHaveLength(1);
-    expect(mainRuntime.handle).not.toBe(interruptedHandle);
+    expect(mainRuntime.resumeCalls).toEqual([]);
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle).toBe(interruptedHandle);
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
     expect(mainRuntime.handle?.followUps[0]?.text).toContain("다음 음성 입력");
+    expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["이전 음성 입력", "다음 음성 입력"]);
   });
 
   it("aborts a pending prewarmed Picky handle after voice input cancels it", async () => {
@@ -5108,8 +5132,9 @@ describe("SessionSupervisor", () => {
 
     await supervisor.route(context("새 음성 입력"));
 
-    expect(mainRuntime.createCalls).toBe(1);
-    expect(mainRuntime.handle).not.toBe(pendingHandle);
+    expect(mainRuntime.createCalls).toBe(0);
+    expect(mainRuntime.handle).toBe(pendingHandle);
+    expect(pendingHandle?.followUps[0]?.text).toContain("새 음성 입력");
     expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["새 음성 입력"]);
   });
 
@@ -5774,7 +5799,10 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
+    // The same reusable handle receives the new user turn once. The old deferred
+    // Pickle completion must not be appended as a second follow-up after abort.
+    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(1);
+    expect(mainRuntime.handle?.followUps[0]?.text).toContain("다음 질문");
   });
 
   it("drops a queued Pickle completion when the user steers the Pickle session before Picky drains it", async () => {
@@ -7259,7 +7287,8 @@ describe("SessionSupervisor", () => {
       handle.emit({ type: "status", status: "completed", summary: "Late completion" });
       await settle();
 
-      expect(handle.aborts).toBe(0);
+      expect(handle.aborts).toBe(1);
+      expect(handle.disposes).toBe(1);
       expect(unhandledRejections).toEqual([]);
       expect((supervisor as unknown as { runtimeHandleUnsubscribes: Map<string, () => void> }).runtimeHandleUnsubscribes.has(session.id)).toBe(false);
     } finally {
@@ -8425,6 +8454,7 @@ describe("SessionSupervisor deleteSession", () => {
       await settle();
 
       expect(handle.aborts).toBe(1);
+      expect(handle.disposes).toBe(1);
       expect(unhandledRejections).toEqual([]);
       expect(supervisor.get(session.id)).toBeUndefined();
       expect((await store.loadAll()).find((entry) => entry.id === session.id)).toBeUndefined();
@@ -8993,6 +9023,7 @@ class ManualHandle implements RuntimeSessionHandle {
   compactCalls: Array<string | undefined> = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
+    if (this.disposed) throw new Error(`Runtime session ${this.id} has been disposed`);
     this.followUps.push(prompt);
     if (this.isStreaming) {
       // Mirror Pi's queued path: track the queued text and emit the matching queue_update so the
@@ -9011,6 +9042,8 @@ class ManualHandle implements RuntimeSessionHandle {
   queuedSteerTexts: string[] = [];
   steerOutcome: { handledSynchronously: boolean } = { handledSynchronously: false };
   aborts = 0;
+  disposes = 0;
+  private disposed = false;
   queueSnapshotsAtAbort: Array<{ steering: string[]; followUp: string[] }> = [];
   reloadAuthenticationCalls = 0;
   reloadAuthenticationError?: Error;
@@ -9030,6 +9063,12 @@ class ManualHandle implements RuntimeSessionHandle {
       followUp: [...this.queuedFollowUpTexts],
     });
     this.aborts += 1;
+  }
+  async dispose(): Promise<void> {
+    this.disposes += 1;
+    this.disposed = true;
+    await this.abort();
+    this.listeners.clear();
   }
   async reloadAuthentication(): Promise<void> {
     this.reloadAuthenticationCalls += 1;
@@ -9143,6 +9182,15 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
+  }
+}
+
+class ResumeTrackingRuntime extends ManualRuntime {
+  resumeCalls: Array<{ sessionFilePath: string; cwd?: string; sessionId?: string }> = [];
+
+  async resume(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.resumeCalls.push({ sessionFilePath, cwd: options.cwd, sessionId: options.sessionId });
+    return new ManualHandle(options.sessionId ?? "picky");
   }
 }
 

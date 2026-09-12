@@ -78,6 +78,45 @@ describe("PiExtensionCommandRunner", () => {
     ]);
   });
 
+  it("dispatches the safe runtime update command", async () => {
+    const child = new FakeRpcChild();
+    const requests: Array<Record<string, unknown>> = [];
+    child.stdin.on("data", (chunk) => {
+      const frame = JSON.parse(chunk.toString()) as Record<string, unknown>;
+      requests.push(frame);
+      if (frame.type === "get_commands") {
+        child.respond({ id: frame.id, type: "response", command: "get_commands", success: true, data: { commands: [{ name: "cron", source: "extension" }] } });
+      } else if (frame.type === "prompt") {
+        child.respond({ type: "extension_ui_request", id: "notify-1", method: "notify", notifyType: "info", message: "cron daemon updated" });
+        child.respond({ id: frame.id, type: "response", command: "prompt", success: true });
+        child.exit();
+      }
+    });
+    const runner = new PiExtensionCommandRunner({ resolveRpcEntry: () => "/tmp/rpc-entry.mjs", spawn: () => child });
+
+    await expect(runner.run({ ...request(), command: "update" })).resolves.toMatchObject({ ok: true, notifications: ["cron daemon updated"] });
+    expect(requests.at(-1)).toEqual({ id: "picky-cron-prompt", type: "prompt", message: "/cron update-runtime" });
+  });
+
+  it("rejects update RPC acceptance without a completion notification", async () => {
+    const child = new FakeRpcChild();
+    child.stdin.on("data", (chunk) => {
+      const frame = JSON.parse(chunk.toString()) as Record<string, unknown>;
+      if (frame.type === "get_commands") {
+        child.respond({ id: frame.id, type: "response", command: "get_commands", success: true, data: { commands: [{ name: "cron", source: "extension" }] } });
+      } else if (frame.type === "prompt") {
+        child.respond({ id: frame.id, type: "response", command: "prompt", success: true });
+        child.exit();
+      }
+    });
+    const runner = new PiExtensionCommandRunner({ resolveRpcEntry: () => "/tmp/rpc-entry.mjs", spawn: () => child });
+
+    await expect(runner.run({ ...request(), command: "update" })).resolves.toMatchObject({
+      ok: false,
+      errorMessage: "Cron update did not confirm command completion after RPC acceptance",
+    });
+  });
+
   it("fails closed without sending a prompt when the isolated extension did not register Cron", async () => {
     const child = new FakeRpcChild();
     const requests: Array<Record<string, unknown>> = [];
@@ -109,7 +148,7 @@ describe("PiExtensionCommandRunner", () => {
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
   });
 
-  it("retains error notifications as lifecycle context while waiting for the durable probe", async () => {
+  it("treats an error notification as a failed lifecycle command", async () => {
     const child = new FakeRpcChild();
     child.stdin.on("data", (chunk) => {
       const frame = JSON.parse(chunk.toString()) as Record<string, unknown>;
@@ -123,7 +162,12 @@ describe("PiExtensionCommandRunner", () => {
     });
     const runner = new PiExtensionCommandRunner({ resolveRpcEntry: () => "/tmp/rpc-entry.mjs", spawn: () => child });
 
-    await expect(runner.run(request())).resolves.toMatchObject({ ok: true, notifications: ["launchctl warning"] });
+    await expect(runner.run(request())).resolves.toMatchObject({
+      ok: false,
+      errorMessage: "Cron install command reported failure: launchctl warning",
+      notifications: ["launchctl warning"],
+    });
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
   });
 
   it("records extension errors without treating them as a successful lifecycle acknowledgement", async () => {

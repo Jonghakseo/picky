@@ -76,6 +76,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   followUpMode: PickyQueueMode = "one-at-a-time";
   isStreaming = false;
   isCompacting = false;
+  private disposed = false;
 
   constructor(
     readonly id: string,
@@ -83,6 +84,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   ) {}
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
+    this.assertNotDisposed();
     this.followUpQueue.push(prompt.text);
     this.appendMockTurn(prompt.text, `Mock response to: ${prompt.text}`);
     this.emitQueueUpdate();
@@ -91,6 +93,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   }
 
   async steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult> {
+    this.assertNotDisposed();
     this.steering.push(prompt.text);
     this.emitQueueUpdate();
     this.emit({ type: "log", line: `${STEER_PREFIX}${prompt.text}` });
@@ -98,10 +101,20 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   }
 
   async abort(): Promise<void> {
+    if (this.disposed) return;
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled by app" });
   }
 
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.steering = [];
+    this.followUpQueue = [];
+    this.listeners.clear();
+  }
+
   async compact(_customInstructions?: string): Promise<void> {
+    this.assertNotDisposed();
     // Match AgentSession.compact(): an active turn is stopped before manual compaction starts.
     this.isStreaming = false;
     this.isCompacting = true;
@@ -158,6 +171,10 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
     const target = scopedModels[nextIndex]!;
     this.modelIndex = this.models.findIndex((model) => model.provider === target.provider && model.modelId === target.modelId);
     return this.currentAssistantRunMetadata();
+  }
+
+  private assertNotDisposed(): void {
+    if (this.disposed) throw new Error(`Mock runtime session ${this.id} has been disposed`);
   }
 
   private availableInGlobalScope(): RuntimeModelOption[] {

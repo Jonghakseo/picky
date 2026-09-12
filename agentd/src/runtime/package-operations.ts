@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { DefaultPackageManager, getAgentDir, SettingsManager, type ProgressEvent } from "@earendil-works/pi-coding-agent";
 import type { WebSocket } from "ws";
 import { resolveNpmCommand } from "../domain/npm-command.js";
+import { curatedPackageSafetyError } from "../domain/curated-package-safety.js";
 import { logAgentd } from "../local-log.js";
 import { CronPackageLifecycle, isCronPackageSource, type CronLifecycleResult } from "../application/cron-package-lifecycle.js";
 import { CancellablePackageProcessController, installCancellablePackageCommands } from "../application/package-process-controller.js";
@@ -74,10 +75,19 @@ export function createDefaultPackageManager(
   if (processController) installCancellablePackageCommands(packageManager as object, processController);
 
   return {
-    installAndPersist: (packageSource) => packageManager.installAndPersist(packageSource),
+    installAndPersist: async (packageSource) => {
+      const safetyError = curatedPackageSafetyError(packageSource);
+      if (safetyError) throw new Error(safetyError);
+      await packageManager.installAndPersist(packageSource);
+    },
     removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
-    checkAvailableUpdates: () => (packageManager as DefaultPackageManager).checkForAvailableUpdates(),
-    update: (packageSource) => (packageManager as DefaultPackageManager).update(packageSource),
+    checkAvailableUpdates: async () => (await (packageManager as DefaultPackageManager).checkForAvailableUpdates())
+      .filter(({ source }) => !curatedPackageSafetyError(source)),
+    update: async (packageSource) => {
+      const safetyError = curatedPackageSafetyError(packageSource);
+      if (safetyError) throw new Error(safetyError);
+      await (packageManager as DefaultPackageManager).update(packageSource);
+    },
     resolveInstalledExtension: (source) => resolveInstalledExtensionPath(packageManager as DefaultPackageManager, source),
     setProgressCallback: (callback) => packageManager.setProgressCallback(callback),
     cancel: processController ? () => processController.cancelAll() : undefined,

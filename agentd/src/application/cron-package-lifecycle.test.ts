@@ -10,6 +10,8 @@ const piBinary = "/tmp/picky-pi";
 function probe(overrides: Partial<CronLifecycleProbe> = {}): CronLifecycleProbe {
   return {
     isInstalled: vi.fn(async () => false),
+    isConfigured: vi.fn(async () => false),
+    isMatchingPlist: vi.fn(async () => false),
     isUninstalled: vi.fn(async () => false),
     ...overrides,
   };
@@ -55,6 +57,7 @@ describe("CronPackageLifecycle", () => {
       plistPath: "/tmp/dev.pi.cron.plist",
       daemonPath: "/tmp/cron-package/daemon.mjs",
       piBinaryPath: piBinary,
+      agentDir: "/tmp/picky-agent",
     });
   });
 
@@ -89,7 +92,7 @@ describe("CronPackageLifecycle", () => {
     expect(runCommand).not.toHaveBeenCalled();
   });
 
-  it("reruns install for an update even when the previous durable state still looks valid", async () => {
+  it("drains through the update command instead of reinstalling an active daemon", async () => {
     const runCommand = vi.fn(async () => ({ ok: true, stderr: "", notifications: [], extensionErrors: [] }));
     const subject = lifecycle({ runCommand, probe: probe({ isInstalled: async () => true }) });
 
@@ -99,7 +102,51 @@ describe("CronPackageLifecycle", () => {
       desiredState: "installed",
       forceCommand: true,
     })).resolves.toEqual({ ok: true });
-    expect(runCommand).toHaveBeenCalledWith(expect.objectContaining({ command: "install" }));
+    expect(runCommand).toHaveBeenCalledWith(expect.objectContaining({
+      command: "update",
+      environment: expect.objectContaining({
+        PI_CRON_SUPPRESS_AUTO_UPGRADE: "1",
+        PI_CRON_UPDATE_COMMAND_TIMEOUT_MS: "895000",
+      }),
+      timeoutMs: 900_000,
+    }));
+  });
+
+  it("uses the non-starting update command when a matching LaunchAgent is unloaded", async () => {
+    const runCommand = vi.fn(async () => ({ ok: true, stderr: "", notifications: [], extensionErrors: [] }));
+    const subject = lifecycle({ runCommand, probe: probe({
+      isInstalled: async () => false,
+      isConfigured: async () => true,
+      isMatchingPlist: async () => true,
+    }) });
+
+    await expect(subject.reconcile({
+      source: CRON_PACKAGE_SOURCE,
+      agentDir: "/tmp/picky-agent",
+      desiredState: "installed",
+      forceCommand: true,
+    })).resolves.toEqual({ ok: true });
+    expect(runCommand).toHaveBeenCalledWith(expect.objectContaining({ command: "update" }));
+  });
+
+  it("fails closed when an update would migrate an existing LaunchAgent", async () => {
+    const runCommand = vi.fn();
+    const subject = lifecycle({ runCommand, probe: probe({
+      isInstalled: async () => false,
+      isConfigured: async () => true,
+      isMatchingPlist: async () => false,
+    }) });
+
+    await expect(subject.reconcile({
+      source: CRON_PACKAGE_SOURCE,
+      agentDir: "/tmp/picky-agent",
+      desiredState: "installed",
+      forceCommand: true,
+    })).resolves.toMatchObject({
+      ok: false,
+      errorMessage: expect.stringContaining("Automatic migration is blocked"),
+    });
+    expect(runCommand).not.toHaveBeenCalled();
   });
 
   it("reports a visible lifecycle failure when no executable Pi path is available", async () => {
@@ -154,7 +201,7 @@ describe("CronPackageLifecycle", () => {
     await writeFile(plutilPath, `#!/bin/sh
 case "$2" in
   ProgramArguments) printf '%s\\n' '["/usr/bin/node","/tmp/cron/daemon.mjs"]' ;;
-  EnvironmentVariables) printf '%s\\n' '{"PI_CRON_PI_BIN":"/tmp/picky-pi"}' ;;
+  EnvironmentVariables) printf '%s\\n' '{"PI_CRON_PI_BIN":"/tmp/picky-pi","PI_CODING_AGENT_DIR":"/tmp/picky-agent"}' ;;
   *) exit 2 ;;
 esac
 `);
@@ -167,7 +214,7 @@ if [ "\${PICKY_TEST_LAUNCHCTL_EXIT:-0}" -ne 0 ]; then
   fi
   exit "$PICKY_TEST_LAUNCHCTL_EXIT"
 fi
-printf 'arguments = {\\n\\t%s\\n}\\nenvironment = {\\n\\tPI_CRON_PI_BIN => %s\\n}\\n' "\${PICKY_TEST_LOADED_DAEMON:-/tmp/cron/daemon.mjs}" "\${PICKY_TEST_LOADED_PI:-/tmp/picky-pi}"
+printf 'arguments = {\\n\\t%s\\n}\\nenvironment = {\\n\\tPI_CRON_PI_BIN => %s\\n\\tPI_CODING_AGENT_DIR => %s\\n}\\n' "\${PICKY_TEST_LOADED_DAEMON:-/tmp/cron/daemon.mjs}" "\${PICKY_TEST_LOADED_PI:-/tmp/picky-pi}" "\${PICKY_TEST_LOADED_AGENT_DIR:-/tmp/picky-agent}"
 `);
     await Promise.all([chmod(plutilPath, 0o755), chmod(launchctlPath, 0o755)]);
 
@@ -177,16 +224,30 @@ printf 'arguments = {\\n\\t%s\\n}\\nenvironment = {\\n\\tPI_CRON_PI_BIN => %s\\n
         PI_CRON_LAUNCHCTL_BIN: launchctlPath,
         PICKY_TEST_LAUNCHCTL_EXIT: "0",
       });
-      await expect(loadedProbe.isInstalled({
+      const exactConfiguration = {
         plistPath,
         daemonPath: "/tmp/cron/daemon.mjs",
         piBinaryPath: "/tmp/picky-pi",
-      })).resolves.toBe(true);
+        agentDir: "/tmp/picky-agent",
+      };
+      await expect(loadedProbe.isInstalled(exactConfiguration)).resolves.toBe(true);
+      await expect(loadedProbe.isMatchingPlist(exactConfiguration)).resolves.toBe(true);
+      await expect(loadedProbe.isConfigured({ plistPath })).resolves.toBe(true);
       await expect(loadedProbe.isInstalled({
         plistPath,
         daemonPath: "/tmp/cron/daemon.mjs",
         piBinaryPath: "/tmp/other-pi",
+        agentDir: "/tmp/picky-agent",
       })).resolves.toBe(false);
+      const matchingUnloadedProbe = new DefaultCronLifecycleProbe({
+        PI_CRON_PLUTIL_BIN: plutilPath,
+        PI_CRON_LAUNCHCTL_BIN: launchctlPath,
+        PICKY_TEST_LAUNCHCTL_EXIT: "1",
+        PICKY_TEST_LAUNCHCTL_MISSING: "1",
+      });
+      await expect(matchingUnloadedProbe.isInstalled(exactConfiguration)).resolves.toBe(false);
+      await expect(matchingUnloadedProbe.isMatchingPlist(exactConfiguration)).resolves.toBe(true);
+      await expect(matchingUnloadedProbe.isConfigured({ plistPath })).resolves.toBe(true);
       const staleLoadedProbe = new DefaultCronLifecycleProbe({
         PI_CRON_PLUTIL_BIN: plutilPath,
         PI_CRON_LAUNCHCTL_BIN: launchctlPath,
@@ -198,9 +259,14 @@ printf 'arguments = {\\n\\t%s\\n}\\nenvironment = {\\n\\tPI_CRON_PI_BIN => %s\\n
         plistPath,
         daemonPath: "/tmp/cron/daemon.mjs",
         piBinaryPath: "/tmp/picky-pi",
+        agentDir: "/tmp/picky-agent",
       })).resolves.toBe(false);
+      await expect(staleLoadedProbe.isMatchingPlist(exactConfiguration)).resolves.toBe(true);
 
       await unlink(plistPath);
+      // A loaded service without a plist is still an active configuration and must
+      // block automatic migration. An unknown launchctl failure is also unsafe.
+      await expect(loadedProbe.isConfigured({ plistPath })).resolves.toBe(true);
       const unloadedProbe = new DefaultCronLifecycleProbe({
         PI_CRON_PLUTIL_BIN: plutilPath,
         PI_CRON_LAUNCHCTL_BIN: launchctlPath,
@@ -208,6 +274,7 @@ printf 'arguments = {\\n\\t%s\\n}\\nenvironment = {\\n\\tPI_CRON_PI_BIN => %s\\n
         PICKY_TEST_LAUNCHCTL_MISSING: "1",
       });
       await expect(unloadedProbe.isUninstalled({ plistPath })).resolves.toBe(true);
+      await expect(unloadedProbe.isConfigured({ plistPath })).resolves.toBe(false);
       await expect(loadedProbe.isUninstalled({ plistPath })).resolves.toBe(false);
       const genericFailureProbe = new DefaultCronLifecycleProbe({
         PI_CRON_PLUTIL_BIN: plutilPath,
@@ -215,6 +282,7 @@ printf 'arguments = {\\n\\t%s\\n}\\nenvironment = {\\n\\tPI_CRON_PI_BIN => %s\\n
         PICKY_TEST_LAUNCHCTL_EXIT: "1",
       });
       await expect(genericFailureProbe.isUninstalled({ plistPath })).resolves.toBe(false);
+      await expect(genericFailureProbe.isConfigured({ plistPath })).resolves.toBe(true);
       const unverifiedProbe = new DefaultCronLifecycleProbe({
         PI_CRON_PLUTIL_BIN: plutilPath,
         PI_CRON_LAUNCHCTL_BIN: join(root, "missing-launchctl"),

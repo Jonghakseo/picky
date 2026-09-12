@@ -6,13 +6,15 @@ const PROMPT_REQUEST_ID = "picky-cron-prompt";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_FORCE_KILL_GRACE_MS = 1_000;
 
-export type PiExtensionCommand = "install" | "uninstall";
+export type PiExtensionCommand = "install" | "uninstall" | "update";
 
 export interface PiExtensionCommandRunRequest {
   agentDir: string;
   extensionPath: string;
   command: PiExtensionCommand;
   environment: NodeJS.ProcessEnv;
+  /** Long-running safe updates wait for Cron to drain active work before replacement. */
+  timeoutMs?: number;
 }
 
 export interface PiExtensionCommandRunResult {
@@ -42,6 +44,7 @@ export interface PiExtensionCommandRunnerDependencies {
 interface RunnerState {
   failure?: string;
   promptAcknowledged: boolean;
+  updateCompletionAcknowledged: boolean;
   registered: boolean;
   notifications: string[];
   extensionErrors: string[];
@@ -87,6 +90,7 @@ export class PiExtensionCommandRunner {
       let stderr = "";
       const state: RunnerState = {
         promptAcknowledged: false,
+        updateCompletionAcknowledged: false,
         registered: false,
         notifications: [],
         extensionErrors: [],
@@ -125,6 +129,9 @@ export class PiExtensionCommandRunner {
         if (code !== 0 && !state.failure) fail(`Pi RPC exited with ${signal ? `signal ${signal}` : `code ${code ?? "unknown"}`}`);
         if (!state.registered && !state.failure) fail("Cron command was not registered by the isolated extension");
         if (!state.promptAcknowledged && !state.failure) fail("Pi RPC did not acknowledge the Cron command prompt");
+        if (request.command === "update" && !state.updateCompletionAcknowledged && !state.failure) {
+          fail("Cron update did not confirm command completion after RPC acceptance");
+        }
         if (state.extensionErrors.length > 0 && !state.failure) fail(`Cron extension error: ${state.extensionErrors.join("; ")}`);
         resolve({
           ok: state.failure === undefined,
@@ -161,10 +168,11 @@ export class PiExtensionCommandRunner {
         complete(null, null);
       });
       child.once("exit", complete);
+      const timeoutMs = request.timeoutMs ?? this.dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       timeout = setTimeout(() => {
-        fail(`Pi RPC lifecycle command timed out after ${this.dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`);
+        fail(`Pi RPC lifecycle command timed out after ${timeoutMs}ms`);
         terminate();
-      }, this.dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      }, timeoutMs);
       send({ id: GET_COMMANDS_REQUEST_ID, type: "get_commands" });
     });
   }
@@ -190,7 +198,7 @@ function processRpcFrame(
     return;
   }
   if (event.type === "extension_ui_request") {
-    processExtensionUiRequest(event, state, actions);
+    processExtensionUiRequest(event, command, state, actions);
     return;
   }
   if (event.type === "response") processResponse(event, command, state, actions);
@@ -198,12 +206,20 @@ function processRpcFrame(
 
 function processExtensionUiRequest(
   event: Record<string, unknown>,
+  command: PiExtensionCommand,
   state: RunnerState,
   actions: FrameActions,
 ): void {
   const method = String(event.method);
   if (method === "notify") {
-    state.notifications.push(typeof event.message === "string" ? event.message : JSON.stringify(event));
+    const message = typeof event.message === "string" ? event.message : JSON.stringify(event);
+    state.notifications.push(message);
+    if (event.notifyType === "error") {
+      actions.fail(`Cron ${command} command reported failure: ${message}`);
+      actions.terminate();
+      return;
+    }
+    if (command === "update") state.updateCompletionAcknowledged = true;
     return;
   }
   if (!["confirm", "select", "input", "editor"].includes(method)) return;
@@ -251,7 +267,11 @@ function processCommandsResponse(
   actions.send({
     id: PROMPT_REQUEST_ID,
     type: "prompt",
-    message: command === "install" ? "/cron install" : "/cron uninstall --yes",
+    message: command === "install"
+      ? "/cron install"
+      : command === "uninstall"
+        ? "/cron uninstall --yes"
+        : "/cron update-runtime",
   });
 }
 

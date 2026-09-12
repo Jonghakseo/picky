@@ -143,10 +143,12 @@ enum PickyCuratedPluginInstaller {
     }
 
     @discardableResult
+    // Allow the package mutation (110s) and cron's bounded runtime drain (900s)
+    // to finish before presenting a transport timeout.
     static func update(
         source: String,
         client: any PickyAgentClient,
-        timeoutNanoseconds: UInt64 = 180_000_000_000
+        timeoutNanoseconds: UInt64 = 1_020_000_000_000
     ) async -> Result<Void, CommandError> {
         await run(operation: .update, source: source, client: client, timeoutNanoseconds: timeoutNanoseconds)
     }

@@ -13,7 +13,11 @@ const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
 export type CronLifecycleDesiredState = "installed" | "uninstalled";
 
 export interface CronLifecycleProbe {
-  isInstalled(input: { plistPath: string; daemonPath: string; piBinaryPath: string }): Promise<boolean>;
+  isInstalled(input: { plistPath: string; daemonPath: string; piBinaryPath: string; agentDir: string }): Promise<boolean>;
+  /** True if launchd or its plist may still own Cron. Unknown state is configured. */
+  isConfigured(input: { plistPath: string }): Promise<boolean>;
+  /** Checks static plist contents without requiring the service to be loaded. */
+  isMatchingPlist(input: { plistPath: string; daemonPath: string; piBinaryPath: string; agentDir: string }): Promise<boolean>;
   isUninstalled(input: { plistPath: string }): Promise<boolean>;
 }
 
@@ -22,8 +26,9 @@ export interface CronPackageLifecycleDependencies {
   runCommand?: (input: {
     agentDir: string;
     extensionPath: string;
-    command: "install" | "uninstall";
+    command: "install" | "uninstall" | "update";
     environment: NodeJS.ProcessEnv;
+    timeoutMs?: number;
   }) => Promise<PiExtensionCommandRunResult>;
   probe?: CronLifecycleProbe;
   environment?: NodeJS.ProcessEnv;
@@ -92,26 +97,89 @@ export class CronPackageLifecycle {
     if (!piBinaryPath || !(await (this.dependencies.isExecutable ?? executableFile)(piBinaryPath))) {
       return { ok: false, errorMessage: "Cron setup requires an executable Pi binary path (PI_CRON_PI_BIN)" };
     }
-    const alreadyInstalled = await this.isInstalled(plistPath, daemonPath, piBinaryPath);
-    if (alreadyInstalled && !input.forceCommand) return { ok: true };
-
+    const alreadyInstalled = await this.isInstalled(plistPath, daemonPath, piBinaryPath, input.agentDir);
+    if (input.forceCommand) {
+      return await this.updateInstalledRuntime({
+        alreadyInstalled,
+        plistPath,
+        daemonPath,
+        agentDir: input.agentDir,
+        extensionPath,
+        piBinaryPath,
+        environment,
+      });
+    }
+    if (alreadyInstalled) return { ok: true };
     const run = await this.safeRun({
       agentDir: input.agentDir,
       extensionPath,
       command: "install",
       environment: { ...environment, PI_CODING_AGENT_DIR: input.agentDir, PI_CRON_PI_BIN: piBinaryPath },
     });
-    const reconciled = await this.isInstalled(plistPath, daemonPath, piBinaryPath);
+    const reconciled = await this.isInstalled(plistPath, daemonPath, piBinaryPath, input.agentDir);
     return reconciled
       ? { ok: true }
       : { ok: false, errorMessage: lifecycleFailureMessage("install", run) };
   }
 
+  private async updateInstalledRuntime(input: {
+    alreadyInstalled: boolean;
+    plistPath: string;
+    daemonPath: string;
+    agentDir: string;
+    extensionPath: string;
+    piBinaryPath: string;
+    environment: NodeJS.ProcessEnv;
+  }): Promise<CronLifecycleResult> {
+    // A package update must never use `/cron install`: that bootout/bootstrap cycle
+    // can kill an active daemon before its SIGUSR2 drain completes. `update-runtime`
+    // leaves a stopped daemon stopped, while safely replacing a manual active daemon.
+    // A configured-but-mismatched plist needs an explicit migration because it may
+    // still point at another package or agent dir.
+    if (!input.alreadyInstalled) {
+      const [configured, matchingPlist] = await Promise.all([
+        this.probe().isConfigured({ plistPath: input.plistPath }).catch(() => true),
+        this.probe().isMatchingPlist({
+          plistPath: input.plistPath,
+          daemonPath: input.daemonPath,
+          piBinaryPath: input.piBinaryPath,
+          agentDir: input.agentDir,
+        }).catch(() => false),
+      ]);
+      if (configured && !matchingPlist) {
+        return {
+          ok: false,
+          errorMessage: "Cron update found a LaunchAgent configuration that does not match the updated package or agent directory. Automatic migration is blocked and the running daemon was not changed. Schedule a maintenance window, confirm work has drained, then explicitly reinstall from the updated package.",
+        };
+      }
+    }
+
+    const run = await this.safeRun({
+      agentDir: input.agentDir,
+      extensionPath: input.extensionPath,
+      command: "update",
+      // The isolated RPC session must not schedule a detached coordinator that races
+      // its awaited `/cron update-runtime` command.
+      environment: {
+        ...input.environment,
+        PI_CODING_AGENT_DIR: input.agentDir,
+        PI_CRON_PI_BIN: input.piBinaryPath,
+        PI_CRON_SUPPRESS_AUTO_UPGRADE: "1",
+        PI_CRON_UPDATE_COMMAND_TIMEOUT_MS: "895000",
+      },
+      timeoutMs: 900_000,
+    });
+    return run.ok
+      ? { ok: true }
+      : { ok: false, errorMessage: lifecycleFailureMessage("update", run) };
+  }
+
   private async safeRun(input: {
     agentDir: string;
     extensionPath: string;
-    command: "install" | "uninstall";
+    command: "install" | "uninstall" | "update";
     environment: NodeJS.ProcessEnv;
+    timeoutMs?: number;
   }): Promise<PiExtensionCommandRunResult> {
     try {
       return await (this.dependencies.runCommand ?? ((request) => new PiExtensionCommandRunner().run(request)))(input);
@@ -130,8 +198,8 @@ export class CronPackageLifecycle {
     return this.dependencies.probe ?? new DefaultCronLifecycleProbe(this.dependencies.environment ?? process.env);
   }
 
-  private async isInstalled(plistPath: string, daemonPath: string, piBinaryPath: string): Promise<boolean> {
-    return await this.probe().isInstalled({ plistPath, daemonPath, piBinaryPath }).catch(() => false);
+  private async isInstalled(plistPath: string, daemonPath: string, piBinaryPath: string, agentDir: string): Promise<boolean> {
+    return await this.probe().isInstalled({ plistPath, daemonPath, piBinaryPath, agentDir }).catch(() => false);
   }
 
   private async isUninstalled(plistPath: string): Promise<boolean> {
@@ -142,7 +210,7 @@ export class CronPackageLifecycle {
 export class DefaultCronLifecycleProbe implements CronLifecycleProbe {
   constructor(private readonly environment: NodeJS.ProcessEnv = process.env) {}
 
-  async isInstalled(input: { plistPath: string; daemonPath: string; piBinaryPath: string }): Promise<boolean> {
+  async isInstalled(input: { plistPath: string; daemonPath: string; piBinaryPath: string; agentDir: string }): Promise<boolean> {
     try {
       await access(input.plistPath, constants.F_OK);
       const [programArguments, environmentVariables, launchctl] = await Promise.all([
@@ -152,10 +220,34 @@ export class DefaultCronLifecycleProbe implements CronLifecycleProbe {
       ]);
       return Array.isArray(programArguments)
         && programArguments.includes(input.daemonPath)
-        && isExactCronPiBinary(environmentVariables, input.piBinaryPath)
+        && isExactCronEnvironment(environmentVariables, input)
         && launchctl.loaded
         && launchctlBlockValues(launchctl.output, "arguments").includes(input.daemonPath)
-        && launchctlEnvironmentValue(launchctl.output, "PI_CRON_PI_BIN") === input.piBinaryPath;
+        && launchctlEnvironmentValue(launchctl.output, "PI_CRON_PI_BIN") === input.piBinaryPath
+        && launchctlEnvironmentValue(launchctl.output, "PI_CODING_AGENT_DIR") === input.agentDir;
+    } catch {
+      return false;
+    }
+  }
+
+  async isConfigured(input: { plistPath: string }): Promise<boolean> {
+    const [plist, launchctl] = await Promise.all([
+      pathPresence(input.plistPath),
+      launchctlPrint(this.environment),
+    ]);
+    return plist !== "absent" || launchctl.loaded || !launchctl.verified;
+  }
+
+  async isMatchingPlist(input: { plistPath: string; daemonPath: string; piBinaryPath: string; agentDir: string }): Promise<boolean> {
+    try {
+      await access(input.plistPath, constants.F_OK);
+      const [programArguments, environmentVariables] = await Promise.all([
+        plistValue(input.plistPath, "ProgramArguments", this.environment),
+        plistValue(input.plistPath, "EnvironmentVariables", this.environment),
+      ]);
+      return Array.isArray(programArguments)
+        && programArguments.includes(input.daemonPath)
+        && isExactCronEnvironment(environmentVariables, input);
     } catch {
       return false;
     }
@@ -212,11 +304,15 @@ async function launchctlPrint(environment: NodeJS.ProcessEnv): Promise<{ loaded:
 }
 
 async function pathIsExplicitlyAbsent(path: string): Promise<boolean> {
+  return (await pathPresence(path)) === "absent";
+}
+
+async function pathPresence(path: string): Promise<"present" | "absent" | "unknown"> {
   try {
     await access(path, constants.F_OK);
-    return false;
+    return "present";
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT";
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "absent" : "unknown";
   }
 }
 
@@ -248,13 +344,17 @@ function processOptions(environment: NodeJS.ProcessEnv): { env: NodeJS.ProcessEn
   return { env: environment, timeout, killSignal: "SIGKILL" };
 }
 
-function isExactCronPiBinary(environmentVariables: unknown, piBinaryPath: string): boolean {
+function isExactCronEnvironment(
+  environmentVariables: unknown,
+  input: { piBinaryPath: string; agentDir: string },
+): boolean {
   return environmentVariables !== null
     && typeof environmentVariables === "object"
-    && (environmentVariables as Record<string, unknown>).PI_CRON_PI_BIN === piBinaryPath;
+    && (environmentVariables as Record<string, unknown>).PI_CRON_PI_BIN === input.piBinaryPath
+    && (environmentVariables as Record<string, unknown>).PI_CODING_AGENT_DIR === input.agentDir;
 }
 
-function lifecycleFailureMessage(command: "install" | "uninstall", run: PiExtensionCommandRunResult): string {
+function lifecycleFailureMessage(command: "install" | "uninstall" | "update", run: PiExtensionCommandRunResult): string {
   const details = [run.errorMessage, ...run.extensionErrors, ...run.notifications, run.stderr.trim()]
     .filter((value): value is string => Boolean(value))
     .join("; ");

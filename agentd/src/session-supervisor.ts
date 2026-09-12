@@ -5,6 +5,7 @@ import { extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { MainAgentCoordinator } from "./application/main-agent-coordinator.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
+import { disposeRuntimeHandle } from "./application/runtime-handle-disposal.js";
 import type { ExternalPickleCompletionRequest } from "./application/pickle-completion-coordinator.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
@@ -667,7 +668,7 @@ export class SessionSupervisor extends EventEmitter {
       if (!resume) throw new Error("Runtime cannot resume handoff sessions");
       const handle = await resume(newFilePath, { cwd, sessionId: id });
       if (this.mustGet(id).status === "cancelled") {
-        await handle.abort();
+        await disposeRuntimeHandle(handle, "cancelled-handoff-resume");
         logAgentd("pickle handoff resume resolved after session was cancelled", { sessionId: id });
         return this.mustGet(id);
       }
@@ -721,7 +722,7 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("empty pickle session queued", { sessionId: id, cwd: pickleContext.cwd, contextId: context.id });
       const handle = await this.runtime.prewarm({ cwd: pickleContext.cwd, sessionId: id });
       if (this.mustGet(id).status === "cancelled") {
-        await handle.abort();
+        await disposeRuntimeHandle(handle, "cancelled-empty-pickle-prewarm");
         logAgentd("empty pickle prewarm resolved after session was cancelled", { sessionId: id });
         return this.mustGet(id);
       }
@@ -756,8 +757,9 @@ export class SessionSupervisor extends EventEmitter {
    * of the source's Pi JSONL transcript. The new session inherits cwd, message history, and
    * notification preference, but starts with empty activity counters / artifacts / changed-files
    * (per-session usage telemetry should not double-count). Forking is allowed regardless of the
-   * source's status: a running source's JSONL is copied byte-for-byte and trimmed to the last
-   * complete line so the runtime can resume on a non-corrupt transcript even mid-turn.
+   * source's status: a running source's JSONL is trimmed to the last complete
+   * line and receives a fresh Pi session-header UUID, so the runtime resumes a
+   * non-corrupt independent branch even mid-turn.
    *
    * The new title is `(copy) <source title>`; Pi will rename the underlying session as soon as
    * the user runs `/name` (existing `refreshPickleSessionTitleFromPi` flow handles the resync).
@@ -883,7 +885,7 @@ export class SessionSupervisor extends EventEmitter {
       this.runtimeEventHandler.resetAssistantDraft(id);
       const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
       if (this.mustGet(id).status === "cancelled") {
-        await handle.abort();
+        await disposeRuntimeHandle(handle, "cancelled-runtime-create");
         logAgentd("runtime create resolved after session was cancelled", { sessionId: id });
         return this.mustGet(id);
       }
@@ -1585,11 +1587,7 @@ export class SessionSupervisor extends EventEmitter {
       const handle = await this.runtime.resume(sessionFilePath, { cwd: session.cwd, sessionId: session.id });
       const currentBeforeAttach = this.mustGet(session.id);
       if (["failed", "cancelled"].includes(currentBeforeAttach.status) && currentBeforeAttach.status !== session.status) {
-        try {
-          await handle.abort();
-        } catch (abortError) {
-          logAgentd("runtime resume aborted after terminal state failed", { sessionId: session.id, error: abortError instanceof Error ? abortError.message : String(abortError) });
-        }
+        await disposeRuntimeHandle(handle, "discarded-terminal-runtime-resume");
         pendingHandle.reject(new Error(`Runtime resume discarded because session is ${currentBeforeAttach.status}`));
         return undefined;
       }
@@ -1780,14 +1778,13 @@ export class SessionSupervisor extends EventEmitter {
 
   private async detachRuntimeHandle(sessionId: string, abort = false): Promise<void> {
     const handle = this.runtimeHandles.get(sessionId);
-    if (abort && handle) {
-      await handle.abort();
-      await this.waitForRuntimeEvents(sessionId);
-    }
     this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
+    // Detach before teardown so terminal events emitted while Pi settles cannot
+    // mutate a session whose external transcript just became authoritative.
     this.runtimeHandleUnsubscribes.get(sessionId)?.();
     this.runtimeHandleUnsubscribes.delete(sessionId);
     this.runtimeHandles.delete(sessionId);
+    if (handle) await disposeRuntimeHandle(handle, abort ? "detached-terminal-runtime" : "detached-runtime");
   }
 
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {

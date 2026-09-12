@@ -42,7 +42,13 @@ export class MainAgentCoordinator {
   private mainHandle?: RuntimeSessionHandle;
   private mainHandlePromise?: Promise<RuntimeSessionHandle>;
   private mainHandleUnsubscribe?: () => void;
+  // Handle disposal invalidates this generation. PTT interruption keeps the same
+  // handle, so user-route and event generations are intentionally separate.
   private mainHandleGeneration = 0;
+  private mainInteractionGeneration = 0;
+  private mainHandleEventGeneration = 0;
+  private mainHandleAwaitingPostAbortInput = false;
+  private mainReuseBarrier: Promise<void> = Promise.resolve();
   private mainThinkingLevel?: ThinkingLevel;
   private mainDraft = "";
   private mainAssistantDeltaSeen = false;
@@ -222,15 +228,15 @@ export class MainAgentCoordinator {
     this.detachMainHandleForInterruption();
     await this.patchMainState({ messages: [], sessionFilePath: undefined, cwd: undefined, compactSummary: undefined, epochStartedAt: undefined, epochTurnCount: undefined, lastRolloverAt: undefined, lastRolloverReason: undefined, contextUsage: undefined });
 
-    if (currentHandle) await this.abortResetMainHandle(currentHandle, "current");
+    // Pi emits session_shutdown during disposal. Cron intentionally keeps any
+    // session lease draining until a genuine successor starts or agentd exits,
+    // so due session jobs defer instead of running against a hidden owner.
+    if (currentHandle) await this.disposeMainHandle(currentHandle, "current");
     if (pendingHandlePromise) {
       void pendingHandlePromise
         .then(async (pendingHandle) => {
-          if (pendingHandle !== currentHandle) await this.abortResetMainHandle(pendingHandle, "pending");
-          if (this.mainHandle === pendingHandle) {
-            this.detachMainHandleForInterruption();
-            await this.patchMainState({ sessionFilePath: undefined, cwd: undefined, compactSummary: undefined, epochStartedAt: undefined, epochTurnCount: undefined, lastRolloverAt: undefined, lastRolloverReason: undefined, contextUsage: undefined });
-          }
+          if (pendingHandle === currentHandle) return;
+          await this.disposeMainHandle(pendingHandle, "pending");
         })
         .catch((error) => {
           logAgentd("main reset pending handle failed", { error: error instanceof Error ? error.message : String(error) });
@@ -241,39 +247,35 @@ export class MainAgentCoordinator {
   async abortMainAgent(): Promise<void> {
     logAgentd("main abort requested", { messages: this.mainState.messages.length, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0, wasProcessing: this.mainIsProcessing ? 1 : 0 });
     await this.cancelMainPendingExtensionUi();
-    this.clearMainActivity();
     const currentHandle = this.mainHandle;
     const pendingHandlePromise = this.mainHandlePromise;
-    this.detachMainHandleForInterruption();
-    const generation = this.mainHandleGeneration;
     const cwd = this.mainState.cwd?.trim() || process.cwd();
-
-    // PTT aborts the active turn while the user is about to record the next
-    // one. Once the runtime has acknowledged that interruption, immediately
-    // resume the persisted Pi session in the background. A following route
-    // shares mainHandlePromise rather than paying resume latency after STT.
-    const prewarmAfterAbort = async (): Promise<void> => {
-      if (generation !== this.mainHandleGeneration) return;
-      if (!this.mainState.sessionFilePath?.trim() || !this.deps.options.mainRuntime?.resume) return;
-      try {
-        logAgentd("main resume prewarm after abort", { cwd, generation });
-        await this.ensurePrewarmedMainHandle(cwd);
-      } catch (error) {
-        logAgentd("main resume prewarm after abort failed", { error: error instanceof Error ? error.message : String(error) });
-      }
-    };
+    this.prepareMainInteractionForAbort(Boolean(currentHandle || pendingHandlePromise));
 
     if (currentHandle) {
-      await this.abortResetMainHandle(currentHandle, "voice-input");
-      void prewarmAfterAbort();
-    } else {
-      void prewarmAfterAbort();
+      // PTT interrupts only the running turn. Rebinding this same handle gives
+      // queued old callbacks an obsolete event generation while preserving the
+      // Pi session and its cron bridge for the next spoken input.
+      this.bindMainHandleEvents(currentHandle);
+      await this.abortMainHandle(currentHandle, "voice-input");
+      return;
     }
+
     if (pendingHandlePromise) {
-      void pendingHandlePromise.catch((error) => {
-        logAgentd("main abort pending handle failed", { error: error instanceof Error ? error.message : String(error) });
-      });
+      const pendingAbort = pendingHandlePromise
+        .then((pendingHandle) => this.abortMainHandle(pendingHandle, "voice-input-pending"))
+        .catch((error) => {
+          logAgentd("main abort pending handle failed", { error: error instanceof Error ? error.message : String(error) });
+        });
+      this.mainReuseBarrier = pendingAbort;
+      return;
     }
+
+    // There is no live session to preserve, for example immediately after a
+    // daemon restart. Prewarm the persisted transcript normally.
+    void this.ensurePrewarmedMainHandle(cwd).catch((error) => {
+      logAgentd("main resume prewarm after abort failed", { error: error instanceof Error ? error.message : String(error) });
+    });
   }
 
   async setMainAgentThinkingLevel(level: ThinkingLevel): Promise<void> {
@@ -339,7 +341,9 @@ export class MainAgentCoordinator {
     // only observable on a fresh handle. Prompt-only identifiers skip this teardown.
     const currentHandle = this.mainHandle;
     this.detachMainHandleForInterruption();
-    if (currentHandle) await this.abortResetMainHandle(currentHandle, "builtin-tools-switch");
+    // As with reset, do not revive a detached session just to clear cron's
+    // draining lease. Deferred session jobs wait for a real Pi successor.
+    if (currentHandle) await this.disposeMainHandle(currentHandle, "builtin-tools-switch");
     await this.patchMainState({ sessionFilePath: undefined });
   }
 
@@ -386,12 +390,27 @@ export class MainAgentCoordinator {
   }
 
   private detachMainHandleForInterruption(): void {
-    this.clearMainActivity();
     this.mainHandleGeneration += 1;
+    this.mainInteractionGeneration += 1;
+    this.mainHandleEventGeneration += 1;
     this.mainHandleUnsubscribe?.();
     this.mainHandleUnsubscribe = undefined;
     this.mainHandle = undefined;
     this.mainHandlePromise = undefined;
+    this.mainReuseBarrier = Promise.resolve();
+    this.mainHandleAwaitingPostAbortInput = false;
+    this.resetMainInteractionState();
+  }
+
+  /** Clears UI turn state without invalidating a reusable Pi handle. */
+  private prepareMainInteractionForAbort(awaitingReplacementInput: boolean): void {
+    this.mainInteractionGeneration += 1;
+    this.resetMainInteractionState();
+    this.mainHandleAwaitingPostAbortInput = awaitingReplacementInput;
+  }
+
+  private resetMainInteractionState(): void {
+    this.clearMainActivity();
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
     this.mainVisualNarration.reset();
@@ -464,11 +483,23 @@ export class MainAgentCoordinator {
     }
   }
 
-  private async abortResetMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
+  private async abortMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
     try {
       await handle.abort();
     } catch (error) {
-      logAgentd("main reset abort failed", { label, error: error instanceof Error ? error.message : String(error) });
+      logAgentd("main abort failed", { label, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private async disposeMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
+    if (!handle.dispose) {
+      await this.abortMainHandle(handle, `${label}-legacy`);
+      return;
+    }
+    try {
+      await handle.dispose();
+    } catch (error) {
+      logAgentd("main runtime dispose failed", { label, error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -482,7 +513,7 @@ export class MainAgentCoordinator {
       logAgentd("main input buffered during compaction", { contextId: context.id, queued: this.mainPendingCompactionContexts.length });
       return;
     }
-    const generation = this.mainHandleGeneration;
+    const interactionGeneration = this.mainInteractionGeneration;
     this.mainContext = context;
     this.mainContextGeneration += 1;
     this.beginMainTurn(context.id, { context, generation: this.mainContextGeneration });
@@ -494,21 +525,27 @@ export class MainAgentCoordinator {
     try {
       if (this.mainHandlePromise && !this.mainHandle) {
         const handle = await this.mainHandlePromise;
-        if (generation !== this.mainHandleGeneration) return;
+        if (interactionGeneration !== this.mainInteractionGeneration) return;
+        await this.mainReuseBarrier;
+        if (interactionGeneration !== this.mainInteractionGeneration) return;
         await this.deliverMainPrompt(handle, prompt);
         return;
       }
       if (!this.mainHandle) {
-        const initial = this.createInitialMainHandle(prompt, context.cwd, generation);
+        const initial = this.createInitialMainHandle(prompt, context.cwd, this.mainHandleGeneration);
         const trackedPromise = initial.then(({ handle }) => handle).finally(() => {
           if (this.mainHandlePromise === trackedPromise) this.mainHandlePromise = undefined;
         });
         this.mainHandlePromise = trackedPromise;
         const handle = await initial;
-        if (generation !== this.mainHandleGeneration) return;
+        if (interactionGeneration !== this.mainInteractionGeneration) return;
+        await this.mainReuseBarrier;
+        if (interactionGeneration !== this.mainInteractionGeneration) return;
         if (!handle.initialPromptAlreadySent) await this.deliverMainPrompt(handle.handle, prompt);
         return;
       }
+      await this.mainReuseBarrier;
+      if (interactionGeneration !== this.mainInteractionGeneration) return;
       await this.deliverMainPrompt(this.mainHandle, prompt);
     } finally {
       if (transcript) await this.appendMainMessage("user", transcript);
@@ -612,6 +649,10 @@ export class MainAgentCoordinator {
   }
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
+    // The next user prompt is the explicit boundary that lets post-abort events
+    // flow again. PiSdkRuntime separately filters the old abort drain until its
+    // next agent_start, so both untagged SDK events and queued callbacks are safe.
+    this.mainHandleAwaitingPostAbortInput = false;
     this.recordMainPromptDelivery();
     if (this.mainIsProcessing && handle.interrupt) {
       logAgentd("main interrupt", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: this.activeMainRuntimeInputId });
@@ -665,7 +706,7 @@ export class MainAgentCoordinator {
     const handle = await this.deps.options.mainRuntime.prewarm({ cwd, sessionId: "picky" });
     logAgentd("main prewarmed", { cwd });
     if (generation !== this.mainHandleGeneration) {
-      await this.abortResetMainHandle(handle, "stale-prewarm");
+      await this.disposeMainHandle(handle, "stale-prewarm");
       return handle;
     }
     // Attach BEFORE the patchMainState file I/O so the runtime's setTimeout(0) for
@@ -683,7 +724,7 @@ export class MainAgentCoordinator {
     this.recordMainPromptDelivery();
     const handle = await this.deps.options.mainRuntime!.create(prompt, { cwd, sessionId: "picky" });
     if (generation !== this.mainHandleGeneration) {
-      await this.abortResetMainHandle(handle, "stale-initial");
+      await this.disposeMainHandle(handle, "stale-initial");
       return { handle, initialPromptAlreadySent: true };
     }
     // Attach BEFORE the patchMainState file I/O. mainRuntime.create() schedules the
@@ -714,7 +755,7 @@ export class MainAgentCoordinator {
       const handle = await this.deps.options.mainRuntime.resume(sessionFilePath, { cwd, sessionId: "picky" });
       logAgentd("main resumed", { sessionFilePath, cwd });
       if (generation !== this.mainHandleGeneration) {
-        await this.abortResetMainHandle(handle, "stale-resume");
+        await this.disposeMainHandle(handle, "stale-resume");
         return handle;
       }
       // Attach BEFORE the patchMainState file I/O so the resume-path setTimeout(0) for
@@ -730,17 +771,24 @@ export class MainAgentCoordinator {
 
   private attachMainHandle(handle: RuntimeSessionHandle, generation = this.mainHandleGeneration): RuntimeSessionHandle {
     if (generation !== this.mainHandleGeneration) {
-      void this.abortResetMainHandle(handle, "stale-attach");
+      void this.disposeMainHandle(handle, "stale-attach");
       return handle;
     }
     this.mainHandle = handle;
+    this.mainHandleAwaitingPostAbortInput = false;
     this.applyMainThinkingLevel(handle);
-    this.mainHandleUnsubscribe?.();
-    this.mainHandleUnsubscribe = handle.subscribe((event) => {
-      if (generation !== this.mainHandleGeneration) return;
-      void this.applyMainRuntimeEvent(event);
-    });
+    this.bindMainHandleEvents(handle);
     return handle;
+  }
+
+  /** Rebind the same reusable handle after PTT abort so queued callbacks go stale. */
+  private bindMainHandleEvents(handle: RuntimeSessionHandle): void {
+    this.mainHandleUnsubscribe?.();
+    const eventGeneration = ++this.mainHandleEventGeneration;
+    this.mainHandleUnsubscribe = handle.subscribe((event) => {
+      if (eventGeneration !== this.mainHandleEventGeneration) return;
+      void this.applyMainRuntimeEvent(event, eventGeneration);
+    });
   }
 
   private applyMainThinkingLevel(handle: RuntimeSessionHandle | undefined, level = this.mainThinkingLevel): void {
@@ -780,7 +828,8 @@ export class MainAgentCoordinator {
   }
 
   // eslint-disable-next-line complexity, max-lines-per-function -- Main-turn streaming and terminal guards share one ordered state owner to prevent duplicate replies.
-  private async applyMainRuntimeEvent(event: RuntimeEvent): Promise<void> {
+  private async applyMainRuntimeEvent(event: RuntimeEvent, eventGeneration: number): Promise<void> {
+    if (eventGeneration !== this.mainHandleEventGeneration || this.mainHandleAwaitingPostAbortInput) return;
     if (event.type === "log") {
       const sessionFilePath = piSessionFilePathFromLogLine(event.line);
       if (sessionFilePath) await this.patchMainState({ sessionFilePath });

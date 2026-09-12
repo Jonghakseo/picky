@@ -38,6 +38,41 @@ function subject(input: {
 }
 
 describe("PackageOperations Cron lifecycle sequencing", () => {
+  it("rejects held curated installs and updates before mutation and reports unchanged files", async () => {
+    const mutations = packageManager();
+    const manager = createDefaultPackageManager({ cwd: "/tmp", agentDir: "/tmp/unused-safety-agent" }, {
+      createSettingsManager: () => SettingsManager.inMemory({}),
+      createPackageManager: () => mutations,
+    });
+    const { operations, events, reconcile } = subject({ packageManager: manager });
+    for (const source of [CRON_PACKAGE_SOURCE, `${CRON_PACKAGE_SOURCE}@0.3.0`, "npm:@ryan_nookpi/pi-extension-memory-layer", "npm:@ryan_nookpi/pi-extension-memory-layer@0.4.0"]) {
+      for (const operation of ["install", "update"] as const) {
+        const requestId = `${operation}-${source}`;
+        await operations.runOperation({} as WebSocket, requestId, operation, source);
+        expect(events).toContainEqual(expect.objectContaining({ requestId, ok: false, errorMessage: expect.stringContaining("temporarily held") }));
+        expect(events.find((event) => event.requestId === requestId && event.type === "packageOperationCompleted")?.packageChanged).not.toBe(true);
+      }
+    }
+    expect(mutations.installAndPersist).not.toHaveBeenCalled();
+    expect(mutations.update).not.toHaveBeenCalled();
+    expect(reconcile).not.toHaveBeenCalled();
+    await operations.runOperation({} as WebSocket, "unrelated", "install", "npm:@example/plugin");
+    expect(mutations.installAndPersist).toHaveBeenCalledWith("npm:@example/plugin");
+  });
+
+  it("hides held package updates without hiding other packages", async () => {
+    const manager = createDefaultPackageManager({ cwd: "/tmp", agentDir: "/tmp/unused-safety-agent" }, {
+      createSettingsManager: () => SettingsManager.inMemory({}),
+      createPackageManager: () => ({
+        ...packageManager(),
+        checkForAvailableUpdates: async () => [{ source: CRON_PACKAGE_SOURCE }, { source: "npm:@ryan_nookpi/pi-extension-memory-layer" }, { source: "npm:@example/plugin" }],
+      }),
+    });
+    const { operations, events } = subject({ packageManager: manager });
+    await operations.runUpdateCheck({} as WebSocket, "safety-check");
+    expect(events).toContainEqual({ type: "packageUpdatesAvailable", commandId: "safety-check", sources: ["npm:@example/plugin"] });
+  });
+
   it("resolves setup only from existing configured package files without installing", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-cron-existing-"));
     const packageRoot = join(root, "npm", "node_modules", "@ryan_nookpi", "pi-extension-cron");

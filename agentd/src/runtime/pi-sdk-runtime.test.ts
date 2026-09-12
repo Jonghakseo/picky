@@ -21,6 +21,7 @@ class FakeSession extends EventEmitter {
   followUps: string[] = [];
   steers: string[] = [];
   aborts = 0;
+  waitForIdleCalls = 0;
   compactionAborts = 0;
   abortOrder: string[] = [];
   newSessions = 0;
@@ -104,6 +105,10 @@ class FakeSession extends EventEmitter {
     this.aborts += 1;
     this.abortOrder.push("session");
     this.isStreaming = false;
+  }
+
+  async waitForIdle(): Promise<void> {
+    this.waitForIdleCalls += 1;
   }
 
   abortCompaction(): void {
@@ -478,6 +483,104 @@ function makeRuntimeWithInputObserver(fakeSession: InputObserverSession): PiSdkR
 }
 
 describe("PiSdkRuntime", () => {
+  it("disposes a discarded Pi runtime once after settling and rejects later input", async () => {
+    const fakeSession = new FakeSession();
+    const disposeRuntime = vi.fn(async () => {});
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async () => ({ diagnostics: [] })) as never,
+      createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          services: result.services,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+          cwd: options.cwd,
+          dispose: disposeRuntime,
+        };
+      }) as never,
+    });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "discarded-session" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await Promise.all([handle.dispose!(), handle.dispose!()]);
+    fakeSession.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "late" } });
+
+    expect(fakeSession.aborts).toBe(1);
+    expect(fakeSession.waitForIdleCalls).toBe(1);
+    expect(disposeRuntime).toHaveBeenCalledOnce();
+    expect(events).toEqual([]);
+    await expect(handle.followUp({ text: "must not reach disposed extensions", imagePaths: [] })).rejects.toThrow(/disposed/);
+  });
+
+  it("marks an initial handle opened from a persisted JSONL as a documented Pi resume", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-pi-runtime-resume-event-"));
+    const sessionFilePath = join(dir, "persisted.jsonl");
+    await writeFile(sessionFilePath, `${JSON.stringify({
+      type: "session",
+      version: 3,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      cwd: "/tmp/project",
+    })}\n`);
+    const fakeSession = new FakeSession();
+    let sessionStartEvent: unknown;
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async () => ({ diagnostics: [] })) as never,
+      createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        sessionStartEvent = options.sessionStartEvent;
+        const result = await factory({
+          cwd: options.cwd,
+          agentDir: options.agentDir,
+          sessionManager: options.sessionManager,
+          sessionStartEvent: options.sessionStartEvent,
+        });
+        return {
+          session: result.session,
+          services: result.services,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+          cwd: options.cwd,
+        };
+      }) as never,
+    });
+
+    await runtime.resume!(sessionFilePath, { cwd: "/tmp/project", sessionId: "picky" });
+
+    expect(sessionStartEvent).toEqual({
+      type: "session_start",
+      reason: "resume",
+      previousSessionFile: sessionFilePath,
+    });
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("suppresses settled aborted-turn events until Pi starts the next turn", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.abort();
+    fakeSession.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "stale" } });
+    fakeSession.emit("event", { type: "tool_execution_start", toolCallId: "old-tool", toolName: "read", args: {} });
+    fakeSession.emit("event", { type: "agent_end", messages: [] });
+    fakeSession.emit("event", { type: "agent_start" });
+    fakeSession.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "fresh" } });
+
+    expect(events).toEqual([
+      { type: "status", status: "cancelled", summary: "Cancelled" },
+      { type: "status", status: "running", summary: "Agent started" },
+      { type: "assistant_delta", delta: "fresh" },
+    ]);
+  });
+
   it("creates a Pi session through injected documented factory hooks without live model calls", async () => {
     const fakeSession = new FakeSession();
     const runtime = new PiSdkRuntime({

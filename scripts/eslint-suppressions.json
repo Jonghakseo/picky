@@ -28,11 +28,11 @@
     "directive": "// eslint-disable-next-line complexity -- This is the exhaustive Pi event adapter; keeping event variants together makes unknown events fail closed."
   },
   {
-    "path": "agentd/src/runtime/pi-sdk-runtime.ts",
+    "path": "agentd/src/runtime/pi-sdk-runtime-session.ts",
     "directive": "// eslint-disable-next-line complexity -- Queue translation, recovery interception, and terminal de-duplication must run in one ordered adapter pipeline."
   },
   {
-    "path": "agentd/src/runtime/pi-sdk-runtime.ts",
+    "path": "agentd/src/runtime/pi-sdk-runtime-session.ts",
     "directive": "// eslint-disable-next-line complexity -- Recovery events form one ordered state machine whose cancellation and compaction side effects must stay atomic."
   },
   {

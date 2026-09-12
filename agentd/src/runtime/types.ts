@@ -183,6 +183,12 @@ export interface RuntimeSessionHandle {
   interrupt?(prompt: BuiltPrompt): Promise<void>;
   steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
+  /**
+   * Permanently release a discarded runtime. Implementations must make this
+   * idempotent and emit Pi's session-shutdown lifecycle before invalidation.
+   * Ordinary user aborts deliberately keep the handle reusable.
+   */
+  dispose?(): Promise<void>;
   /** Reload credentials changed by another local Pi/Picky process without replacing the session. */
   reloadAuthentication?(): Promise<void>;
   /** Mirrors Pi TUI `/compact`: aborts an active turn first, then compacts the session. */

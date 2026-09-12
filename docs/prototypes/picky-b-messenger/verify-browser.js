@@ -1,0 +1,210 @@
+// Uses the existing playwright-cli installation, without installing packages or opening a user browser profile.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { createRequire } = require('node:module');
+const { execFileSync } = require('node:child_process');
+const cli = process.env.PLAYWRIGHT_CLI || execFileSync('which', ['playwright-cli'], { encoding: 'utf8' }).trim();
+const { chromium } = createRequire(fs.realpathSync(cli))('playwright-core');
+const evidence = '/private/tmp/picky-b02-evidence';
+fs.mkdirSync(evidence, { recursive: true });
+const checks = [];
+
+async function main() {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, timezoneId: 'Asia/Seoul' });
+  const page = await context.newPage();
+  const errors = [];
+  const external = [];
+  const directory = pathToFileURL(__dirname + '/').href;
+  context.on('page', p => p.on('pageerror', error => errors.push(String(error))));
+  page.on('pageerror', error => errors.push(String(error)));
+  context.on('request', request => { if (!request.url().startsWith(directory)) external.push(request.url()); });
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  const input = () => page.getByRole('textbox', { name: '메시지', exact: true });
+  const choose = id => page.getByLabel('목업 장면 미리보기').selectOption(id);
+  const sceneIs = async id => assert.equal(await page.getByLabel('목업 장면 미리보기').inputValue(), id);
+  const send = async text => { await input().fill(text); await page.getByRole('button', { name: '보내기', exact: true }).click(); };
+  const mint = () => page.getByRole('button', { name: '민트 대화', exact: true }).click();
+  const app = () => page.locator('#app-window');
+  const shot = name => page.screenshot({ path: path.join(evidence, name + '.png'), fullPage: true });
+  try {
+    await page.clock.install({ time: new Date('2026-09-13T09:00:00+09:00') });
+    await page.clock.pauseAt(new Date('2026-09-13T09:00:01+09:00'));
+    await page.goto(pathToFileURL(path.join(__dirname, 'index.html')).href);
+    for (const id of ['S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07']) {
+      await choose(id);
+      const text = await app().innerText();
+      for (const forbidden of ['booking-web', '/workspace/', '입력은 그대로 표시', '실제 전달 없는', '전송 모드']) assert(!text.includes(forbidden), `${id} exposed ${forbidden}`);
+      assert.equal(await app().getByRole('button', { name: /^(중단|요청 중단|실행 기록 확인|이번 실행 허용)$/ }).count(), 0);
+      assert.equal(await page.getByLabel('메시지 전달 방식').count(), 0);
+    }
+    checks.push('All scenes remove workspace, helper copy, stop UI and mode selector');
+
+    await choose('S01');
+    await shot('S01-clean-light');
+    await send('날짜 변경 오류를 고치고 별도로 검토해줘. 배포는 하지 마.');
+    await sceneIs('S02');
+    assert(await page.getByText('날짜 변경 오류를 고치고 별도로 검토해줘. 배포는 하지 마.', { exact: true }).isVisible());
+    await page.getByRole('button', { name: '그룹 대화 열기' }).click();
+    await sceneIs('S03');
+    await input().fill('그룹 초안');
+    await mint();
+    assert.equal(await input().inputValue(), '');
+    await input().fill('민트 초안');
+    await page.getByRole('button', { name: '예약 날짜 수정 대화', exact: true }).click();
+    assert.equal(await input().inputValue(), '그룹 초안');
+    await input().fill('인원 UI는 그대로 두고 날짜 로직만 바꿔줘.');
+    await input().press('Alt+Enter');
+    await sceneIs('S04');
+    assert.equal(await page.getByLabel('현재 요청 뒤에 추가한 작업').count(), 0);
+    checks.push('Request, team, per-conversation drafts and ordinary/Option Enter steering');
+
+    await mint();
+    await shot('S04-ask-light');
+    assert(await page.getByText('수정과 테스트를 마쳤어요. PR로 공유할까요?', { exact: true }).isVisible());
+    await send('PR 설명은 짧게 써줘.');
+    await sceneIs('S04');
+    await page.getByRole('button', { name: 'PR로 공유', exact: true }).click();
+    await sceneIs('S05');
+    assert.equal(await app().getByRole('article', { name: '모카 메시지', exact: true }).count(), 0);
+    assert.equal(await app().getByRole('article', { name: 'Picky 메시지', exact: true }).count(), 0);
+    const handoff = '날짜 변경 로직과 회귀 테스트를 확인했습니다. 인원 선택 UI는 변경하지 않았습니다.';
+    assert.equal(await page.getByText(handoff, { exact: true }).isVisible(), false);
+    await page.getByText('모카가 민트에게 메시지를 보냈어요', { exact: true }).click();
+    assert(await page.getByText(handoff, { exact: true }).isVisible());
+    await page.getByText('모카가 민트에게 메시지를 보냈어요', { exact: true }).click();
+    assert(await page.getByText('#128', { exact: true }).isVisible());
+    assert(await page.getByText('fix/date-change', { exact: true }).isVisible());
+    assert(!(await page.getByLabel('선택한 대화').innerText()).includes('8개'));
+    await shot('S05-mint-minimal');
+    const popupPromise = context.waitForEvent('page');
+    await page.getByRole('link', { name: 'PR 보기 ↗', exact: true }).click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState();
+    assert(popup.url().includes('/pull-request.html'));
+    assert(await popup.getByRole('heading', { name: '날짜를 바꿔도 선택한 인원 유지', exact: true }).isVisible());
+    await popup.screenshot({ path: path.join(evidence, 'PR-part.png'), fullPage: true });
+    await popup.close();
+    checks.push('Agent ask controls sharing, DM has correct speakers, handoff is folded and PR is minimal');
+
+    await choose('S04');
+    await page.getByRole('button', { name: '수정안만 남기기', exact: true }).click();
+    await sceneIs('S05');
+    assert.equal(await page.getByRole('link', { name: 'PR 보기 ↗', exact: true }).count(), 0);
+    await page.getByRole('button', { name: '상세', exact: true }).click();
+    await page.getByRole('tab', { name: '검증 기록', exact: true }).click();
+    assert(await page.getByText('테스트 통과', { exact: true }).isVisible());
+    checks.push('Declining PR sharing does not falsely make automatic tests unexecuted');
+
+    await choose('S03');
+    await mint();
+    await send('중단하지 마');
+    await sceneIs('S04');
+    await send('이 작업 중단해줘');
+    await sceneIs('S07');
+    assert(await page.getByText('진행 중인 작업을 중단했어요.', { exact: true }).isVisible());
+    assert.equal(await page.getByRole('dialog', { name: /중단/ }).count(), 0);
+    await choose('S02');
+    await send('그만해');
+    await page.getByRole('button', { name: '상세', exact: true }).click();
+    await page.getByRole('tab', { name: '변경 파일', exact: true }).click();
+    assert(await page.getByText('아직 변경 파일이 없어요', { exact: true }).isVisible());
+    checks.push('Chat stops the scoped task, not a negative phrase, and early stop invents no diff');
+
+    await choose('S03');
+    await mint();
+    await input().fill('한글 조합');
+    await input().evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })));
+    await sceneIs('S03');
+    assert.equal(await input().inputValue(), '한글 조합');
+    await input().press('Shift+Enter');
+    assert((await input().inputValue()).includes('\n'));
+    await input().fill('5분 뒤 민트에게만 보낼 메시지');
+    await page.getByRole('button', { name: '메시지 예약 전송', exact: true }).click();
+    const frame = page.frameLocator('#schedule-frame');
+    await frame.getByRole('button', { name: '예약하기', exact: true }).waitFor({ state: 'visible' });
+    await frame.getByRole('button', { name: '예약하기', exact: true }).click();
+    await page.getByText('예약 메시지 1개', { exact: true }).waitFor({ state: 'visible' });
+    assert(await page.getByText('예약 메시지 1개', { exact: true }).isVisible());
+    assert.equal(await app().getByRole('article', { name: '나 메시지', exact: true }).getByText('5분 뒤 민트에게만 보낼 메시지', { exact: true }).count(), 0);
+    await page.getByRole('button', { name: '모카 대화', exact: true }).click();
+    await page.clock.fastForward(299000);
+    await sceneIs('S03');
+    await page.clock.fastForward(2000);
+    assert.equal(await page.getByRole('heading', { level: 1 }).textContent(), '모카');
+    assert.equal(await page.getByText('5분 뒤 민트에게만 보낼 메시지', { exact: true }).count(), 0);
+    await mint();
+    assert.equal(await page.getByText('5분 뒤 민트에게만 보낼 메시지', { exact: true }).count(), 1);
+    await page.clock.fastForward(10000);
+    assert.equal(await page.getByText('5분 뒤 민트에게만 보낼 메시지', { exact: true }).count(), 1);
+    checks.push('DOM IME/newline, delayed delivery, captured recipient and exactly-once mock dispatch');
+
+    await choose('S03');
+    await mint();
+    await input().fill('예약을 변경한 뒤 삭제할 메시지');
+    await page.getByRole('button', { name: '메시지 예약 전송', exact: true }).click();
+    await frame.getByRole('radio', { name: '날짜와 시간 지정', exact: true }).check();
+    await frame.getByLabel('보낼 날짜와 시간').fill('2026-09-13T10:30');
+    await frame.getByRole('button', { name: '예약하기', exact: true }).click();
+    await page.getByText('예약 메시지 1개', { exact: true }).click();
+    await page.getByRole('button', { name: '변경', exact: true }).click();
+    await frame.getByRole('button', { name: '예약 변경', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await frame.getByLabel('보낼 날짜와 시간').inputValue(), '2026-09-13T10:30');
+    await frame.getByRole('button', { name: '30분', exact: true }).click();
+    await shot('schedule-light');
+    await frame.getByRole('button', { name: '예약 변경', exact: true }).click();
+    await page.getByText('예약 메시지 1개', { exact: true }).click();
+    await page.getByRole('button', { name: '삭제', exact: true }).click();
+    await page.clock.fastForward(3600000);
+    assert.equal(await page.getByText('예약을 변경한 뒤 삭제할 메시지', { exact: true }).count(), 0);
+    checks.push('Absolute time, reschedule and deletion prevent later dispatch');
+
+    await choose('S06');
+    await mint();
+    await page.clock.fastForward(5001);
+    await sceneIs('S05');
+    await choose('S06');
+    await mint();
+    await send('멈춰줘');
+    await page.clock.fastForward(5001);
+    await sceneIs('S07');
+    checks.push('Pickle resolves mock outcome itself and stale recovery cannot override stop');
+
+    await choose('S05');
+    await mint();
+    await page.getByLabel('화면 밝기').selectOption('dark');
+    await page.getByLabel('정보 밀도').selectOption('compact');
+    await shot('S05-dark-compact');
+    await page.getByRole('button', { name: /^이 화면 피드백/ }).click();
+    const note = 'B.02 PR 카드 피드백 <b>원문 그대로</b>';
+    await page.getByRole('textbox', { name: '의견', exact: true }).fill(note);
+    await page.getByRole('button', { name: '의견 담기', exact: true }).click();
+    await page.getByRole('button', { name: '닫기', exact: true }).click();
+    await page.reload();
+    await page.getByRole('button', { name: /^이 화면 피드백/ }).click();
+    assert(await page.getByText(note, { exact: true }).isVisible());
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Markdown 내려받기', exact: true }).click();
+    const download = await downloadPromise;
+    assert.equal(download.suggestedFilename(), 'picky-b02-feedback.md');
+    await download.saveAs(path.join(evidence, 'feedback.md'));
+    assert(fs.readFileSync(path.join(evidence, 'feedback.md'), 'utf8').includes(note));
+    await page.getByRole('button', { name: '닫기', exact: true }).click();
+    checks.push('Visual variants and literal feedback persist and export');
+
+    for (const width of [1024, 390]) {
+      await page.setViewportSize({ width, height: 850 });
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await shot('S05-dark-' + width);
+    }
+    assert.deepEqual(errors, [], 'Browser and CSP errors');
+    assert.deepEqual(external, [], 'No external requests from mock or parts');
+    checks.push('Responsive file-based pages with no browser errors or external requests');
+    console.log(JSON.stringify({ checksPassed: checks.length, checks, errors, external, evidence }, null, 2));
+  } finally {
+    await browser.close();
+  }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

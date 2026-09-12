@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self' file:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Picky · 메신저 클릭 목업 B.02</title>
+<style>
+/* Prototype-only roles. Normal conversation size is a proposed window variant, not a HUD token change. */
+:root{color-scheme:light;--canvas:#eef0ef;--panel:#fff;--rail:#f7f8f8;--control:#f0f1f1;--hover:#e5e7e6;--pressed:#d9dbda;--text:#1a1c1b;--secondary:#525956;--muted:#636c67;--line:#e2e6e3;--strong:#c7ceca;--action:#2563eb;--action-text:#1d4ed8;--action-soft:#edf3ff;--on-action:#fff;--success:#24713f;--success-soft:#edf7ef;--warning:#875500;--warning-soft:#fff6e5;--danger:#ad3434;--danger-soft:#fff0ef;--violet:#72548e;--violet-soft:#f3eef8;--shadow:0 14px 48px #1a1c1b10,0 1px 3px #1a1c1b08;--body-size:14px;--row-pad:12px;--message-gap:28px;--message-pad:32px;--radius:12px;--space:4px}
+:root[data-theme="dark"]{color-scheme:dark;--canvas:#0d0f0e;--panel:#171918;--rail:#131514;--control:#202221;--hover:#2b2e2c;--pressed:#363c38;--text:#eceeed;--secondary:#adb5b2;--muted:#98a39c;--line:#303632;--strong:#465149;--action:#2563eb;--action-text:#84b3ff;--action-soft:#1c2c45;--success:#91d6a5;--success-soft:#1b3022;--warning:#f0c477;--warning-soft:#332b1b;--danger:#f0a49b;--danger-soft:#382422;--violet:#cab5e4;--violet-soft:#2b2535;--shadow:0 14px 48px #0003}
+:root[data-density="compact"]{--body-size:13px;--row-pad:8px;--message-gap:18px;--message-pad:24px}
+*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--text);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;-webkit-font-smoothing:antialiased}button,input,textarea,select{font:inherit;color:inherit}button{cursor:default}button,select,input,textarea{border:1px solid var(--strong);border-radius:8px;background:var(--panel)}button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:6px 11px;white-space:nowrap}button:hover:not(:disabled){background:var(--hover)}button:active:not(:disabled){background:var(--pressed)}button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--action-text);outline-offset:2px}a{color:var(--action-text);text-underline-offset:3px}svg{width:18px;height:18px;flex:none;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}p,h1,h2,h3{margin:0}p+p{margin-top:10px}h1{font-size:16px;font-weight:650;letter-spacing:-.35px}h2{font-size:15px;font-weight:650}h3{font-size:14px;font-weight:650}small,.small{font-size:11.5px}code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}code{overflow-wrap:anywhere}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}strong{font-weight:650}hr{border:0;border-top:1px solid var(--line);margin:18px 0}[hidden]{display:none!important}.subtle{color:var(--secondary)}.muted{color:var(--muted)}.row{display:flex;align-items:center;gap:10px}.between{justify-content:space-between}.wrap{flex-wrap:wrap}.grow{flex:1;min-width:0}.stack{display:grid;gap:12px}.primary{background:var(--action);color:var(--on-action);border-color:var(--action)}.primary:hover:not(:disabled){background:var(--action-text);color:var(--on-action)}:root[data-theme="dark"] .primary:hover:not(:disabled){background:#1d4ed8;color:#fff}.ghost{border-color:transparent;background:transparent}.danger{color:var(--danger)}.icon-button{width:32px;padding:6px}.tag{display:inline-flex;align-items:center;gap:5px;color:var(--secondary);background:var(--control);border-radius:6px;padding:3px 7px;font-size:11px;font-weight:550;white-space:nowrap}.tag svg{width:13px;height:13px}.tag.running{color:var(--action-text);background:var(--action-soft)}.tag.success{color:var(--success);background:var(--success-soft)}.tag.warning{color:var(--warning);background:var(--warning-soft)}.tag.danger{color:var(--danger);background:var(--danger-soft)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.review-bar{max-width:1464px;margin:auto;padding:18px 24px 14px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}.wordmark{font-size:17px;font-weight:750;letter-spacing:-.5px}.study-label{font-size:10px;font-weight:650;letter-spacing:1.1px;color:var(--secondary)}.review-controls{margin-left:auto;display:flex;align-items:center;gap:8px}.review-controls select{padding:6px 24px 6px 8px;font-size:12px;max-width:130px}.review-controls label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--secondary)}.preview-boundary{font-size:11px;color:var(--secondary)}.stage{max-width:1464px;margin:auto;padding:0 24px}.window{display:grid;grid-template-columns:238px minmax(0,1fr);height:calc(100dvh - 157px);min-height:650px;max-height:1120px;border:1px solid var(--strong);border-radius:var(--radius);background:var(--panel);box-shadow:var(--shadow);overflow:hidden}.window.has-inspector{grid-template-columns:224px minmax(350px,1fr) 344px}.sidebar{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;overflow:hidden}.sidebar-head{height:73px;display:flex;align-items:center;padding:0 20px;gap:10px;border-bottom:1px solid var(--line)}.sidebar-head .brand-icon{width:28px;height:28px;background:var(--action);color:white;border-radius:8px;display:grid;place-items:center;font-size:16px;font-weight:700}.sidebar-head span:last-child{font-size:11px;color:var(--secondary);margin-left:auto}.search{margin:16px 12px 12px;position:relative}.search svg{position:absolute;left:10px;top:9px;width:15px;height:15px;color:var(--muted)}.search input{width:100%;height:34px;padding:7px 8px 7px 31px;background:var(--panel);border-color:var(--line);font-size:12px}.roster{padding:0 8px;overflow:auto;flex:1}.section-label{display:flex;align-items:center;justify-content:space-between;padding:16px 12px 7px;font-size:11px;color:var(--muted);font-weight:600}.contact{display:flex;text-align:left;justify-content:initial;width:100%;gap:10px;padding:var(--row-pad) 10px;border:0;border-radius:8px;background:transparent;margin-bottom:3px;white-space:normal}.contact[aria-current="page"]{background:var(--action-soft);color:var(--text)}.contact .name{font-size:13px;font-weight:600}.contact .preview{display:block;max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--secondary);margin-top:2px}.avatar{display:grid;place-items:center;flex:none;width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:var(--control);color:var(--secondary);font-size:13px;font-weight:650}.avatar.picky{background:var(--action);border-color:var(--action);color:#fff}.avatar.luna{background:var(--violet-soft);color:var(--violet)}.avatar.mint{background:var(--success-soft);color:var(--success)}.avatar.moka{background:var(--warning-soft);color:var(--warning)}.avatar.room{background:var(--panel);color:var(--secondary)}.status-mark{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px}.status-mark svg{width:11px;height:11px}.sidebar-foot{padding:16px;border-top:1px solid var(--line);font-size:11px;color:var(--secondary)}.sidebar-foot .row{gap:7px;margin-bottom:4px}.sidebar-foot svg{width:15px;height:15px}.sidebar-foot small{display:block;font-size:10px;color:var(--muted)}.conversation{display:flex;flex-direction:column;min-width:0;min-height:0}.conversation-head{height:73px;padding:0 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);flex:none}.conversation-head .subtitle{font-size:11px;color:var(--secondary);margin-top:3px}.head-actions{display:flex;gap:6px}.context-line{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 24px;border-bottom:1px solid var(--line);font-size:11px;color:var(--secondary);min-height:38px}.context-line svg{width:13px;height:13px}.context-line button{min-height:23px;padding:1px 5px;font-size:11px}.message-scroll{flex:1;overflow:auto;min-height:0;scroll-behavior:auto}.messages{display:flex;flex-direction:column;gap:var(--message-gap);max-width:890px;padding:var(--message-pad);margin:0 auto;width:100%}.date-marker{font-size:10px;text-align:center;color:var(--muted);letter-spacing:.4px}.message{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;align-items:start}.message-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 6px;font-size:12px}.message-meta time{font-size:10px;color:var(--muted)}.role-label{font-size:10px;color:var(--secondary)}.message-body{font-size:var(--body-size);line-height:1.8;overflow-wrap:anywhere}.message-body .card{font-size:13px;line-height:1.6}.user-message{display:flex;justify-content:flex-end}.user-message>div{max-width:87%}.user-message .message-meta{justify-content:flex-end}.user-bubble{padding:12px 16px;background:var(--control);border-radius:12px 12px 4px 12px;font-size:var(--body-size);line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}.card{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin-top:14px;overflow:hidden}.card-content{padding:16px}.card-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}.card-head strong{font-size:13px}.card-footer{padding:12px 16px;border-top:1px solid var(--line);background:var(--rail);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.team-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.team-row:first-of-type{border-top:0}.team-row .avatar{width:28px;height:28px;border-radius:8px;font-size:11px}.team-row button{font-size:11px;min-height:26px}.team-row .tag{margin-left:auto}.activity-button{margin-top:12px;background:var(--rail);border-color:var(--line);width:100%;justify-content:space-between;text-align:left;white-space:normal;font-size:12px;padding:11px 12px}.activity-button span{display:flex;align-items:center;gap:8px}.activity-button svg{width:15px;height:15px}.event-line{display:flex;gap:8px;align-items:flex-start;padding:11px 12px;background:var(--action-soft);color:var(--action-text);border-radius:8px;font-size:12px;margin-top:12px}.event-line svg{width:15px;height:15px;margin-top:2px}.approval{border-color:var(--strong)}.approval-top{padding:13px 16px;background:var(--warning-soft);color:var(--warning);display:flex;align-items:center;gap:8px;font-weight:600;font-size:12px}.facts{margin:12px 0 0;display:grid;grid-template-columns:70px minmax(0,1fr);gap:8px;font-size:12px}.facts dt{color:var(--secondary)}.facts dd{margin:0;overflow-wrap:anywhere}.command{display:block;background:var(--control);padding:10px 12px;border-radius:6px;line-height:1.7;margin-top:12px}.risk-note{display:flex;gap:7px;font-size:11px;color:var(--secondary);margin-top:12px;line-height:1.7}.risk-note svg{width:14px;height:14px;margin-top:2px}.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.result-metric{border-left:2px solid var(--strong);padding-left:10px}.result-metric strong{display:block;font-size:16px}.welcome{padding:32px 0 8px}.welcome h2{font-size:23px;font-weight:650;letter-spacing:-.7px;line-height:1.4}.welcome p{font-size:13px;color:var(--secondary);margin-top:12px;line-height:1.8}.scope-note{margin-top:22px;border-left:2px solid var(--strong);padding-left:14px;font-size:12px;color:var(--secondary)}.queue{border-top:1px solid var(--line);padding:10px 24px;background:var(--rail);display:grid;gap:7px}.queue-item{display:flex;align-items:center;gap:8px;font-size:11px}.queue-item span{overflow-wrap:anywhere;min-width:0}.queue-item button{min-height:24px;padding:1px 7px;font-size:11px}.composer{padding:14px 24px 16px;flex:none;border-top:1px solid var(--line)}.composer-shell{border:1px solid var(--strong);border-radius:10px;background:var(--panel);padding:10px 12px}.composer-target{font-size:11px;color:var(--secondary);display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px}.composer-target select{font-size:11px;padding:3px 5px;background:var(--rail);max-width:165px;border-color:var(--line)}textarea#message-input{display:block;resize:vertical;min-height:62px;max-height:155px;width:100%;border:0;padding:5px 1px;background:transparent;font-size:13px;line-height:1.7;outline-offset:0}textarea#message-input:focus-visible{outline:none}.composer-shell:focus-within{border-color:var(--action-text)}.composer-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}.composer-bottom button{font-size:12px}.composer-hint{font-size:10px;color:var(--muted)}.composer-info{font-size:10px;color:var(--muted);margin-top:7px;display:flex;justify-content:space-between;gap:8px}.suggestion{font-size:11px;white-space:normal;text-align:left;justify-content:flex-start;max-width:100%;margin-bottom:9px;background:var(--rail);border-color:var(--line);min-height:29px}.inspector{border-left:1px solid var(--line);background:var(--rail);min-width:0;display:flex;flex-direction:column;overflow:hidden}.inspector-head{height:73px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--line);flex:none}.inspector-tabs{display:flex;gap:4px;padding:12px 14px;border-bottom:1px solid var(--line);flex:none}.inspector-tabs button{flex:1;min-height:29px;font-size:11px;border:0;background:transparent}.inspector-tabs button[aria-selected="true"]{background:var(--panel);color:var(--action-text);box-shadow:0 0 0 1px var(--line)}.inspector-body{padding:18px;overflow:auto;flex:1;font-size:12px}.inspector-body h3{font-size:12px;margin-bottom:12px}.inspector-body section+section{margin-top:24px}.info-block{padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-top:10px}.check-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:13px}.check-row svg{width:15px;height:15px;margin-top:2px}.check-row strong{display:block;font-size:12px}.check-row p{font-size:11px;margin-top:3px;color:var(--secondary)}.diff{font-size:11px;line-height:1.9;border:1px solid var(--line);border-radius:8px;overflow:auto;background:var(--panel)}.diff>div{padding:10px 12px;background:var(--control);font:11px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}.diff pre{font-size:11px;white-space:pre;overflow:auto;padding:10px 0;line-height:1.9}.diff-line{display:block;padding:0 10px}.diff-line.add{background:var(--success-soft);color:var(--success)}.diff-line.remove{background:var(--danger-soft);color:var(--danger)}.log-entry{padding:9px 0;border-bottom:1px solid var(--line);font-size:11px}.log-entry time{color:var(--muted);font:10px ui-monospace,SFMono-Regular,Menlo,monospace}.log-entry p{margin:4px 0 0;overflow-wrap:anywhere}.review-footer{max-width:1464px;margin:auto;padding:12px 24px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}.scene-picker{display:flex;align-items:center;gap:8px}.scene-picker select{font-size:12px;padding:6px 22px 6px 8px;max-width:180px}.scene-caption{font-size:11px;color:var(--secondary);max-width:560px}.review-footer .links{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px}.notice{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 16px;background:var(--text);color:var(--panel);border-radius:8px;font-size:12px;max-width:min(90vw,560px);z-index:10;box-shadow:var(--shadow)}dialog{border:1px solid var(--strong);border-radius:14px;background:var(--panel);color:var(--text);width:min(620px,calc(100vw - 36px));max-height:85dvh;padding:24px;box-shadow:var(--shadow)}dialog::backdrop{background:#1117}dialog h2{font-size:17px;margin-bottom:10px}dialog p{font-size:13px;color:var(--secondary);line-height:1.8}dialog .dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:20px}dialog label{display:block;margin:16px 0 7px;font-size:12px;font-weight:600}dialog textarea{width:100%;min-height:110px;resize:vertical;padding:10px;font-size:13px;line-height:1.6}#feedback-context{font-size:11px;color:var(--secondary);padding:10px 12px;border-radius:8px;background:var(--control);margin-top:14px}#feedback-list{display:grid;gap:10px;max-height:220px;overflow:auto;margin-top:12px}.feedback-note{padding:12px;background:var(--rail);border:1px solid var(--line);border-radius:8px}.feedback-note p{white-space:pre-wrap;font-size:12px;margin-top:7px}.feedback-note small{font-size:10px;color:var(--secondary)}
+@media(min-width:1500px){.window{min-height:720px}.messages{max-width:840px}}@media(max-width:1100px){.window{grid-template-columns:208px minmax(0,1fr)}.window.has-inspector{grid-template-columns:208px minmax(0,1fr);grid-template-rows:minmax(480px,1fr) 300px;height:auto;min-height:800px;max-height:none}.has-inspector .sidebar{grid-row:1/3}.has-inspector .inspector{grid-column:2;grid-row:2;border-left:0;border-top:1px solid var(--line)}.inspector-head{height:48px}.inspector-tabs{padding:8px 14px}.review-controls{gap:6px}.review-bar{gap:12px}.preview-boundary{font-size:10px}.messages{padding:24px}.conversation-head{padding:0 18px}.composer{padding:12px 18px}}@media(max-width:700px){.review-bar,.review-footer{padding:12px}.stage{padding:0 12px}.review-controls{width:100%;margin-left:0;flex-wrap:wrap}.window,.window.has-inspector{grid-template-columns:155px minmax(0,1fr);min-height:700px}.contact{gap:7px;padding:10px 7px}.contact .avatar{width:26px;height:26px;font-size:11px}.contact .preview{max-width:92px;font-size:10px}.status-mark{display:none}.sidebar-head{padding:0 12px}.sidebar-head span:last-child{display:none}.sidebar-foot{padding:12px;font-size:10px}.section-label{padding-left:8px}.conversation-head{padding:0 12px;gap:8px}.conversation-head>.avatar{display:none}.head-actions{gap:0}.head-actions button{padding:5px;font-size:11px}.context-line{padding:8px 12px;gap:5px}.messages{padding:18px 12px}.message{grid-template-columns:26px minmax(0,1fr);gap:8px}.message>.avatar{width:26px;height:26px;font-size:11px;border-radius:8px}.message-body{font-size:13px}.welcome h2{font-size:19px}.card-content{padding:12px}.team-row{gap:6px}.team-row .tag{font-size:10px;padding:2px 4px}.team-row .ghost{padding:2px 5px}.composer{padding:10px}.composer-info span:last-child,.composer-hint{display:none}.composer-target{flex-wrap:wrap}.result-grid{grid-template-columns:1fr}.queue{padding:10px}.review-footer .links{margin-left:0}.scene-caption{max-width:100%}.review-controls select{max-width:116px}.facts{grid-template-columns:52px minmax(0,1fr);font-size:11px}.card-footer{padding:10px 12px}.user-message>div{max-width:96%}.user-bubble{padding:10px;font-size:13px}}
+@media(max-width:470px){.window,.window.has-inspector{grid-template-columns:1fr;grid-template-rows:auto minmax(580px,1fr);height:auto;max-height:none}.sidebar,.has-inspector .sidebar{grid-row:1;display:block;border-right:0;border-bottom:1px solid var(--line)}.sidebar-head,.search,.sidebar-foot,.section-label{display:none}.roster{display:flex;overflow-x:auto;padding:8px;gap:5px}.contact{width:auto;min-width:96px;flex:none;margin:0;padding:7px}.contact .preview{display:none}.contact .name{font-size:12px}.contact .avatar{width:24px;height:24px}.has-inspector .inspector{grid-column:1;grid-row:3;height:340px}.conversation{min-height:580px;max-height:810px}.welcome{padding-top:16px}.review-controls label{gap:3px}.review-controls button{font-size:11px;padding:6px 8px}.preview-boundary{margin-left:auto}.review-footer{gap:9px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}@media(prefers-contrast:more){:root{--line:var(--strong)}button,input,textarea{border-width:1px}.tag{box-shadow:inset 0 0 0 1px currentColor}}
+</style>
+</head>
+<body>
+<header class="review-bar" aria-label="목업 리뷰 도구">
+  <div><span class="wordmark">Picky</span> <span class="study-label">MESSENGER / B.02</span></div>
+  <span class="preview-boundary">오프라인 목업 · 실제 실행 없음</span>
+  <div class="review-controls">
+    <label>화면 <select id="theme-select" aria-label="화면 밝기"><option value="light">라이트</option><option value="dark">다크</option></select></label>
+    <label>밀도 <select id="density-select" aria-label="정보 밀도"><option value="comfortable">여유 있게</option><option value="compact">촘촘하게</option></select></label>
+    <button id="feedback-open" data-action="feedback">이 화면 피드백 <span id="feedback-count"></span></button>
+  </div>
+</header>
+<div class="stage">
+  <div id="app-window" class="window">
+    <aside class="sidebar" aria-label="대화 목록">
+      <div class="sidebar-head"><div class="brand-icon" aria-hidden="true">P</div><strong>Picky</strong><span>내 팀</span></div>
+      <div class="search"><span id="search-icon"></span><input id="contact-search" type="search" placeholder="대화 찾기" aria-label="대화 이름과 역할 찾기"></div>
+      <nav id="roster" class="roster" aria-label="봇과 그룹"></nav>
+
+    </aside>
+    <main class="conversation" aria-label="선택한 대화">
+      <header class="conversation-head"><div id="header-avatar"></div><div class="grow"><h1 id="conversation-title"></h1><div class="subtitle" id="conversation-subtitle"></div></div><div class="head-actions"><button id="detail-button" class="ghost" data-action="details" aria-controls="inspector" aria-expanded="false">상세</button></div></header>
+
+      <div class="message-scroll" id="message-scroll"><div class="messages" id="messages"></div></div>
+      <div id="scheduled-messages" class="queue" aria-label="예약 메시지" hidden></div>
+      <form id="composer" class="composer">
+        <div class="composer-shell"><textarea id="message-input" rows="2" aria-label="메시지"></textarea><div class="composer-bottom"><span></span><div class="row" style="gap:4px"><button type="submit" id="send-button" class="primary">보내기</button><button type="button" id="schedule-button" class="primary icon-button" data-action="schedule" aria-label="메시지 예약 전송" title="예약 전송">⌄</button></div></div></div>
+      </form>
+    </main>
+    <aside id="inspector" class="inspector" aria-label="요청 상세" hidden>
+      <div class="inspector-head"><div><h2 id="inspector-title" tabindex="-1">요청 상세</h2></div><button id="inspector-close" class="ghost icon-button" data-action="close-details" aria-label="상세 닫기"></button></div>
+      <div class="inspector-tabs" role="tablist" aria-label="상세 종류"><button id="tab-overview" role="tab" aria-controls="inspector-body" data-action="panel" data-panel="overview">진행</button><button id="tab-files" role="tab" aria-controls="inspector-body" data-action="panel" data-panel="files">변경 파일</button><button id="tab-checks" role="tab" aria-controls="inspector-body" data-action="panel" data-panel="checks">검증 기록</button></div>
+      <div id="inspector-body" class="inspector-body" role="tabpanel" tabindex="0"></div>
+    </aside>
+  </div>
+</div>
+<footer class="review-footer" aria-label="목업 장면 탐색">
+  <div class="scene-picker"><button id="scene-previous" class="icon-button" data-action="previous" aria-label="이전 목업 장면"></button><select id="scene-select" aria-label="목업 장면 미리보기"><option value="S01">S01 · 의뢰</option><option value="S02">S02 · 팀 배정</option><option value="S03">S03 · 실행 중</option><option value="S04">S04 · 선택 질문</option><option value="S05">S05 · 결과</option><option value="S06">S06 · 자동 확인</option><option value="S07">S07 · 대화로 중단</option></select><button id="scene-next" class="icon-button" data-action="next" aria-label="다음 목업 장면"></button></div>
+
+  <div class="links"><a href="../../picky-b-messenger-ux-spec.md">화면별 UX 명세</a><button class="ghost" data-action="reset">처음부터</button></div>
+</footer>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<dialog id="schedule-dialog" aria-label="메시지 예약 전송" style="padding:0;width:min(460px,calc(100vw - 24px));height:min(610px,85dvh)"><iframe id="schedule-frame" title="메시지 예약 설정" src="about:blank" style="display:block;border:0;width:100%;height:min(610px,85dvh)"></iframe></dialog>
+<dialog id="feedback-dialog" aria-labelledby="feedback-title"><div class="row between"><h2 id="feedback-title">이 화면에 의견 남기기</h2><button class="ghost icon-button" data-action="close-feedback" aria-label="피드백 닫기">×</button></div><p>무엇이 먼저 보여야 할까요? 입력 대상이나 다음 행동이 헷갈리는 곳, 너무 빽빽하거나 비어 보이는 곳을 적어주세요.</p><div id="feedback-context"></div><label for="feedback-text">의견</label><textarea id="feedback-text" placeholder="예: 예약 전송을 어디서 설정하는지 바로 찾기 어려워요." autofocus></textarea><div class="row between wrap" style="margin-top:10px"><small id="feedback-storage" class="muted"></small><button id="feedback-save" class="primary" data-action="save-feedback">의견 담기</button></div><hr><div class="row between"><strong class="small">담아 둔 의견</strong><span id="saved-count" class="muted small"></span></div><div id="feedback-list"></div><div class="dialog-actions"><button id="feedback-clear" class="ghost danger" data-action="clear-feedback">의견 모두 지우기</button><button id="feedback-download" data-action="download-feedback">Markdown 내려받기</button><button data-action="close-feedback">닫기</button></div><p class="small muted" style="margin-top:12px">이 브라우저에만 보관합니다. 자동 전송하지 않습니다. 내려받은 파일을 대화에 첨부해 주세요.</p></dialog>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const paths = {search:'m21 21-4.5-4.5 M19 10.5a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0',folder:'M3 7V5h6l2 2h10v12H3Z',check:'m5 12 4 4L19 6',clock:'M12 8v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',arrow:'M5 12h14m-5-5 5 5-5 5',back:'m14 6-6 6 6 6',chevron:'m9 6 6 6-6 6',close:'m6 6 12 12M18 6 6 18',shield:'M12 3 4 6v6c0 4 8 9 8 9s8-5 8-9V6Z m-4 9 3 3 5-6',code:'m8 6-6 6 6 6m8-12 6 6-6 6m-3-14-2 16',file:'M5 3h9l5 5v13H5Z M14 3v6h5 M8 13h8m-8 4h6',alert:'M12 3 2 21h20Z M12 9v5m0 3v1',pause:'M8 5v14m8-14v14',people:'M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M2 21v-2a6 6 0 0 1 12 0v2 M16 3a4 4 0 0 1 0 8m1 3a5 5 0 0 1 5 5v2',layers:'m12 3 10 5-10 5L2 8Z m0 10L2 13m10 5 10-5 M2 18l10 5 10-5',laptop:'M4 4h16v12H4Z M2 20h20l-2-4H4Z'};
+const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
+const people = {picky:{name:'Picky',role:'CBO',glyph:'P'},luna:{name:'루나',role:'조사',glyph:'루'},mint:{name:'민트',role:'구현',glyph:'민'},moka:{name:'모카',role:'검토',glyph:'모'},room:{name:'예약 날짜 수정',role:'그룹',glyph:'#'}};
+const screens = ['S01','S02','S03','S04','S05','S06','S07'];
+const sampleRequest = '예약 화면에서 날짜를 바꾸면 인원이 초기화돼. 원인을 조사하고 수정한 뒤 별도로 검토해줘. 배포는 하지 마.';
+const sampleCorrection = '인원 선택 UI는 건드리지 말고, 날짜 변경 로직만 수정해줘.';
+
+const params = new URLSearchParams(location.hash.slice(1));
+const allowed = (value, list, fallback) => list.includes(value) ? value : fallback;
+let theme = allowed(params.get('theme'), ['light','dark'], 'light');
+let density = allowed(params.get('density'), ['comfortable','compact'], 'comfortable');
+let nextScheduleId = 1;
+let schedules = [];
+let scheduleEditor = null;
+let recoveryTimer;
+function scene(id) {
+  return {screen:id,view:['S01','S02','S05'].includes(id)?'picky':'room',panel:null,hasChanges:!['S01','S02'].includes(id),request:id==='S01'?'':sampleRequest,decision:id==='S05'?'share':null,drafts:{picky:id==='S01'?sampleRequest:'',room:'',mint:'',luna:'',moka:''},chat:{picky:[],room:[],mint:[],luna:[],moka:[]},recovered:false};
+}
+let state = scene(allowed(params.get('screen'), screens, 'S01'));
+state.view = allowed(params.get('view'), Object.keys(people), state.view);
+if(state.screen==='S01' && state.view==='room') state.view='picky';
+state.panel = allowed(params.get('panel'), ['overview','files','checks'], null);
+let toastTimer;
+let feedbackContext;
+let feedback = [];
+let feedbackStorage = true;
+const feedbackKey = 'picky.mockup.b01.feedback';
+try { const saved = JSON.parse(localStorage.getItem(feedbackKey)||'[]'); feedback = Array.isArray(saved) ? saved.filter(x => x && typeof x.text==='string' && typeof x.context==='string' && typeof x.time==='string') : []; } catch { feedbackStorage=false; }
+function avatar(id) {const p=people[id];return `<div class="avatar ${id}" aria-hidden="true">${p.glyph}</div>`;}
+function tag(text, tone='', glyph='') {return `<span class="tag ${tone}">${glyph?icon(glyph):''}${esc(text)}</span>`;}
+function button(text, action, extra='', cls='') {return `<button type="button" class="${cls}" data-action="${action}" ${extra}>${text}</button>`;}
+function message(id, text, time='09:42') {return `<article class="message" aria-label="${people[id].name} 메시지">${avatar(id)}<div><div class="message-meta"><strong>${people[id].name}</strong><span class="role-label">${people[id].role}</span><time>${time}</time></div><div class="message-body">${text}</div></div></article>`;}
+function user(text) {return `<article class="user-message" aria-label="나 메시지"><div><div class="message-meta"><strong>나</strong></div><div class="user-bubble">${esc(text)}</div></div></article>`;}
+function currentStatus() {return ({S01:['대기','','clock'],S02:['팀 배정됨','running','people'],S03:['작업 중','running','clock'],S04:['답변 대기','warning','people'],S05:['완료','success','check'],S06:['작업 중','running','clock'],S07:['중단됨','','pause']})[state.screen];}
+function personStatus(id) {
+  if(state.screen==='S01') return '대기';
+  if(id==='room') return currentStatus()[0];
+  if(id==='picky') return state.screen==='S05'?'결과 도착':state.screen==='S07'?'중단 확인':'조율 중';
+  if(id==='luna') return state.hasChanges?'조사 완료':state.screen==='S07'?'요청 중단':'조사 수락';
+  if(id==='mint') return currentStatus()[0];
+  return state.screen==='S05'?'검토 의견 도착':state.screen==='S07'?'검토 취소':'인계 대기';
+}
+function syncHash() {
+  const p=new URLSearchParams({screen:state.screen,view:state.view,theme,density});
+  if(state.panel) p.set('panel',state.panel);
+  history.replaceState(null,'','#'+p.toString());
+}
+function notify(text) {clearTimeout(toastTimer);$('notice').textContent=text;$('notice').hidden=false;toastTimer=setTimeout(()=>{$('notice').hidden=true;},3800);}
+function renderRoster() {
+  const query=$('contact-search').value.trim().toLocaleLowerCase();
+  let html='';
+  for(const id of Object.keys(people)) {
+    if(id==='room' && state.screen==='S01') continue;
+    const p=people[id];
+    if(query && !(p.name+' '+p.role).toLocaleLowerCase().includes(query)) continue;
+    if(id==='picky') html+='<div class="section-label">내 비서</div>';
+    if(id==='luna') html+='<div class="section-label">Pickles <span>3</span></div>';
+    if(id==='room') html+='<div class="section-label">그룹 대화</div>';
+    html+=`<button id="route-${id}" class="contact" data-action="navigate" data-view="${id}" ${state.view===id?'aria-current="page"':''} aria-label="${p.name} 대화"><span>${avatar(id)}</span><span class="grow"><span class="name">${p.name}</span><span class="preview">${p.role} · ${personStatus(id)}</span></span>${id==='mint'&&['S03','S04','S06'].includes(state.screen)?'<span class="status-mark">'+icon(state.screen==='S03'?'clock':'alert')+'</span>':''}</button>`;
+  }
+  $('roster').innerHTML=html || '<p class="subtle small" style="padding:16px">일치하는 대화가 없습니다.</p>';
+}
+function teamCard() {
+  const rows=[['luna','원인 조사'],['mint','수정'],['moka','검토']].map(([id,task])=>`<div class="team-row">${avatar(id)}<div class="grow"><strong>${people[id].name}</strong><span class="muted small" style="margin-left:8px">${task}</span></div>${button('대화','navigate',`data-view="${id}"`,'ghost')}</div>`).join('');
+  return `<div class="card"><div class="card-content">${rows}</div><div class="card-footer">${button('그룹 대화 열기 '+icon('arrow'),'group','','primary')}</div></div>`;
+}
+function handoff(from,recipient,text) {
+  return `<details class="card" style="padding:10px 12px"><summary class="small subtle">${people[from].name}가 ${people[recipient].name}에게 메시지를 보냈어요</summary><p class="small" style="margin-top:10px">${esc(text)}</p></details>`;
+}
+function activeSpeaker() {return state.view==='room'?'mint':state.view;}
+function workMessages() {
+  if(state.view==='room') return message('luna','<p>날짜를 바꿀 때 인원 선택값도 초기화되고 있어요. 민트에게 원인을 전달했어요.</p>')+message('mint','<p>인원 선택 UI는 그대로 두고 날짜 변경 로직을 수정하고 있어요.</p>');
+  if(state.view==='picky') return message('picky','<p>루나가 찾은 원인을 민트가 수정하고 있어요. 모카가 이어서 검토할 거예요.</p>');
+  if(state.view==='mint') return message('mint','<p>날짜를 바꿔도 인원 선택값이 유지되도록 수정하고 있어요.</p>'+handoff('luna','mint','날짜 갱신 이벤트가 인원 선택값까지 초기화하고 있습니다.'));
+  return message(state.view,state.view==='luna'?'<p>원인을 찾아 민트에게 전달했어요.</p>':'<p>민트의 수정안을 검토하고 있어요.</p>');
+}
+function questionCard() {
+  return message(activeSpeaker(),`<p>수정과 테스트를 마쳤어요. PR로 공유할까요?</p><div class="card"><div class="card-content"><div class="row wrap">${button('PR로 공유','answer','data-answer="share"','primary')}${button('수정안만 남기기','answer','data-answer="keep"')}</div></div></div>`,'09:45');
+}
+function resultMessages() {
+  const shared=state.decision==='share';
+  const owner=activeSpeaker();
+  let html=message(owner,`<p>${shared?'PR을 만들었어요.':'수정안을 남겼어요.'} 날짜를 바꿔도 선택한 인원은 유지됩니다.</p>${shared?`<div class="card"><div class="card-content row wrap">${icon('code')}<strong>#128</strong><code class="grow">fix/date-change</code><a href="pull-request.html#theme=${theme}" target="_blank" rel="noopener">PR 보기 ↗</a></div></div>`:''}`,'09:49');
+  const review='날짜 변경 로직과 회귀 테스트를 확인했습니다. 인원 선택 UI는 변경하지 않았습니다.';
+  if(state.view==='room') html+=message('moka','<p>'+review+'</p>','09:48');
+  else if(state.view==='mint') html+=message('mint',handoff('moka','mint',review),'09:49');
+  else if(state.view==='picky') html+=message('picky',handoff('mint','picky','수정과 별도 검토를 마쳤습니다.'),'09:49');
+  return html;
+}
+function renderMessages() {
+  let html='<div class="date-marker">오늘</div>';
+  const active=['picky','room','mint'].includes(state.view);
+  if(state.screen==='S01') html+=message(state.view,'<p>어떤 일을 도와드릴까요?</p>');
+  else if(state.screen==='S02') html+=state.view==='picky'?user(state.request)+message('picky','<p>루나가 조사하고, 민트가 수정하고, 모카가 검토할게요.</p>'+teamCard()):message(state.view,'<p>맡은 일을 확인했어요.</p>'+button('그룹 대화 보기','group'));
+  else if(['S03','S04'].includes(state.screen)) html+=workMessages();
+  for(const item of state.chat[state.view]) html+=user(item.text)+message(activeSpeaker(),'<p>'+esc(item.reply)+'</p>','09:44');
+  if(state.screen==='S04'&&active) html+=questionCard();
+  if(state.screen==='S05') html+=active?resultMessages():message(state.view,'<p>맡은 일을 마쳤어요.</p>');
+  if(state.screen==='S06') html+=message(activeSpeaker(),'<p>처리 결과를 다시 확인하고 있어요. 확인되는 대로 마무리할게요.</p>');
+  if(state.screen==='S07'&&!state.chat[state.view].length) html+=user('이 작업 중단해줘')+message(activeSpeaker(),'<p>진행 중인 작업을 중단했어요.</p>');
+  $('messages').innerHTML=html;
+}
+function overviewPanel() {
+  if(!state.hasChanges) return '<section><h3>아직 변경된 내용이 없어요</h3></section>';
+  return `<section>${tag(currentStatus()[0],currentStatus()[1],currentStatus()[2])}</section><section><h3>진행</h3><div class="check-row">${icon('check')}<div><strong>루나 · 원인 조사</strong></div></div><div class="check-row">${icon('code')}<div><strong>민트 · 수정</strong></div></div><div class="check-row">${icon('check')}<div><strong>모카 · 검토</strong></div></div></section><section><h3>민트의 하위 실행</h3><p class="subtle small">재현 조건 확인 · 회귀 사례 점검</p></section>`;
+}
+function filesPanel() {
+  if(!state.hasChanges) return '<section><h3>아직 변경 파일이 없어요</h3></section>';
+  return `<section><h3>변경 파일 2개</h3><div class="diff"><div>BookingForm.tsx</div><pre><span class="diff-line">  function onDateChange(date) {</span><span class="diff-line remove">−   resetBooking({ date });</span><span class="diff-line add">+   setBooking(current =&gt; ({</span><span class="diff-line add">+     ...current, date</span><span class="diff-line add">+   }));</span><span class="diff-line">  }</span></pre></div><div class="info-block"><code>booking-form.test.tsx</code><p class="small subtle">날짜 변경 시 인원을 유지하는 회귀 사례</p></div></section>`;
+}
+function checksPanel() {
+  if(state.screen==='S06') return '<section><h3>처리 기록 확인 중</h3><p class="subtle small">종료 기록을 조회하고 있습니다. 같은 작업을 다시 실행하지 않습니다.</p></section>';
+  if(!['S04','S05'].includes(state.screen)) return '<section><h3>검증 기록</h3><p class="subtle small">현재 작업의 검증 결과가 여기에 모입니다.</p></section>';
+  return `<section>${tag('테스트 통과','success','check')}<p class="subtle small" style="margin-top:12px">회귀 사례 8개 · 민트<br>모카의 별도 검토 완료</p></section><section><h3>관찰 정보</h3><p class="subtle small">revision mock-r3 · 09:48${state.recovered?'<br>저장된 종료 기록을 재확인했습니다.':''}</p></section>`;
+}
+
+function renderInspector() {
+  $('inspector').hidden=!state.panel;
+  $('app-window').classList.toggle('has-inspector',!!state.panel);
+  $('detail-button').setAttribute('aria-expanded',String(!!state.panel));
+  if(!state.panel) return;
+  for(const id of ['overview','files','checks']) {const tab=$('tab-'+id);tab.setAttribute('aria-selected',String(state.panel===id));tab.tabIndex=state.panel===id?0:-1;}
+  $('inspector-body').setAttribute('aria-labelledby','tab-'+state.panel);
+  $('inspector-body').innerHTML=state.panel==='files'?filesPanel():state.panel==='checks'?checksPanel():overviewPanel();
+}
+function renderSchedules() {
+  const rows=schedules.filter(item=>item.target===state.view);
+  $('scheduled-messages').hidden=!rows.length;
+  $('scheduled-messages').innerHTML=rows.length?`<details><summary class="small">예약 메시지 ${rows.length}개</summary>${rows.map(item=>`<div class="queue-item" style="margin-top:10px"><span class="grow"><strong>${new Date(item.dueAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</strong><br>${esc(item.text)}</span>${button('변경','edit-schedule',`data-id="${item.id}"`,'ghost')}${button('삭제','delete-schedule',`data-id="${item.id}"`,'ghost')}</div>`).join('')}</details>`:'';
+}
+function renderComposer() {
+  $('message-input').value=state.drafts[state.view]||'';
+  $('message-input').placeholder=people[state.view].name+'에게 메시지 보내기';
+  $('send-button').disabled=!$('message-input').value.trim();
+  $('schedule-button').disabled=!$('message-input').value.trim();
+  renderSchedules();
+}
+function render(scrollEnd=false) {
+  const focused=document.activeElement?.id;
+  const oldTop=$('message-scroll').scrollTop;
+  document.documentElement.dataset.theme=theme;document.documentElement.dataset.density=density;
+  $('theme-select').value=theme;$('density-select').value=density;
+  renderRoster();$('header-avatar').innerHTML=avatar(state.view);$('conversation-title').textContent=people[state.view].name;
+  $('conversation-subtitle').textContent=state.view==='room'?'Picky, 루나, 민트, 모카':people[state.view].role+' · '+personStatus(state.view);
+  $('detail-button').disabled=state.screen==='S01';
+  renderMessages();renderComposer();renderInspector();$('scene-select').value=state.screen;
+  $('scene-previous').disabled=state.screen==='S01';$('scene-next').disabled=state.screen==='S07';
+  $('feedback-count').textContent=feedback.length?String(feedback.length):'';syncHash();
+  $('message-scroll').scrollTop=scrollEnd?$('message-scroll').scrollHeight:oldTop;
+  if(focused&&$(focused)&&!$(focused).disabled&&document.activeElement===document.body)$(focused).focus({preventScroll:true});
+}
+function beginRecovery() {
+  clearTimeout(recoveryTimer);
+  if(state.screen!=='S06')return;
+  const owner=state;
+  recoveryTimer=setTimeout(()=>{if(state!==owner||state.screen!=='S06')return;state.screen='S05';state.decision='share';state.recovered=true;render(true);},5000);
+}
+function changeScene(id) {
+  state=scene(id);schedules=[];scheduleEditor=null;$('schedule-dialog').close();$('contact-search').value='';
+  render(['S04','S05','S06','S07'].includes(id));if(['S01','S02','S03'].includes(id))$('message-scroll').scrollTop=0;
+  beginRecovery();
+}
+function navigate(view) {
+  if(!people[view]||(view==='room'&&state.screen==='S01'))return;
+  state.view=view;if(view==='room'&&state.screen==='S02'){state.screen='S03';state.hasChanges=true;}
+  render(true);
+}
+// This fixed demo recognizes a few stop phrases. Production intent belongs to Pi, not the Swift UI or a keyword parser.
+function dispatchMessage(target,text) {
+  const active=['picky','room','mint'].includes(target);
+  const stop=/^(?:이\s*(?:작업|요청)\s*)?(?:중단(?:해(?:줘)?|하자)?|그만(?:해(?:줘)?)?|멈춰(?:줘)?|stop)[.!\s]*$/i.test(text);
+  if(stop&&active&&state.screen!=='S01') {state.chat[target].push({text,reply:'진행 중인 작업을 중단했어요.'});state.screen='S07';state.decision=null;clearTimeout(recoveryTimer);}
+  else if(state.screen==='S01'&&target==='picky') {state.request=text;state.screen='S02';}
+  else {
+    state.chat[target].push({text,reply:stop?'이 대화에 진행 중인 작업은 없어요.':'반영할게요.'});
+    if(active&&state.screen==='S03'){state.screen='S04';state.hasChanges=true;}
+    else if(active&&['S01','S05','S07'].includes(state.screen)){state.screen='S03';state.hasChanges=true;state.decision=null;}
+  }
+  render(true);
+}
+function submit() {
+  const text=$('message-input').value.trim();if(!text)return;
+  const target=state.view;state.drafts[target]='';dispatchMessage(target,text);$('message-input').focus({preventScroll:true});
+}
+function openSchedule(id) {
+  const existing=id?schedules.find(item=>String(item.id)===String(id)):null;
+  const text=existing?existing.text:$('message-input').value.trim();if(!text)return;
+  scheduleEditor={token:String(Date.now())+'-'+Math.random(),id:existing?.id||null,target:existing?.target||state.view,text,dueAt:existing?.dueAt||null,owner:state};
+  $('schedule-frame').hidden=true;
+  $('schedule-frame').src='schedule-message.html#theme='+theme;
+  $('schedule-dialog').showModal();
+}
+function tickSchedules() {
+  const due=schedules.filter(item=>item.dueAt<=Date.now());if(!due.length)return;
+  schedules=schedules.filter(item=>item.dueAt>Date.now());
+  for(const item of due)dispatchMessage(item.target,item.text);
+  renderSchedules();
+}
+
+function showPanel(panel) {state.panel=allowed(panel,['overview','files','checks'],'overview');render();$('inspector-title').focus({preventScroll:true});}
+function contextText() {return `${state.screen} · ${people[state.view].name} · ${currentStatus()[0]} · ${theme==='light'?'라이트':'다크'} · ${density==='comfortable'?'여유 있게':'촘촘하게'} · 상세 ${state.panel||'닫힘'}`;}
+function persistFeedback() {try{localStorage.setItem(feedbackKey,JSON.stringify(feedback));feedbackStorage=true;}catch{feedbackStorage=false;}}
+function renderFeedback() {
+  $('feedback-context').textContent=feedbackContext;
+  $('feedback-storage').textContent=feedbackStorage?'이 브라우저에 보관 · 외부 전송 없음':'브라우저 저장 불가 · 창을 닫기 전에 내려받아 주세요';
+  $('saved-count').textContent=feedback.length+'개';
+  $('feedback-count').textContent=feedback.length?String(feedback.length):'';
+  $('feedback-list').innerHTML=feedback.length?feedback.map(n=>`<article class="feedback-note"><small>${esc(n.context)}</small><p>${esc(n.text)}</p></article>`).join(''):'<p class="muted small">아직 담아 둔 의견이 없습니다.</p>';
+  $('feedback-download').disabled=!feedback.length;$('feedback-clear').disabled=!feedback.length;
+  $('feedback-save').disabled=!$('feedback-text').value.trim();
+}
+function downloadFeedback() {
+  if(!feedback.length) return;
+  const text='# Picky B.02 목업 피드백\n\n제품 동작 검증이 아닌 화면·상태·흐름에 대한 의견입니다.\n\n'+feedback.map((n,i)=>`## 의견 ${i+1}\n\n- 화면: ${n.context}\n- 기록 시각: ${n.time}\n\n${n.text}\n`).join('\n');
+  const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'}));
+  const a=document.createElement('a');a.href=url;a.download='picky-b02-feedback.md';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+$('composer').addEventListener('submit',event=>{event.preventDefault();submit();});
+$('message-input').addEventListener('input',()=>{state.drafts[state.view]=$('message-input').value;const empty=!$('message-input').value.trim();$('send-button').disabled=empty;$('schedule-button').disabled=empty;});
+$('message-input').addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing||event.keyCode===229||event.shiftKey)return;event.preventDefault();submit();});
+$('contact-search').addEventListener('input',renderRoster);
+$('theme-select').addEventListener('change',event=>{theme=event.target.value;render();});
+$('density-select').addEventListener('change',event=>{density=event.target.value;render();});
+$('scene-select').addEventListener('change',event=>changeScene(event.target.value));
+$('feedback-text').addEventListener('input',()=>{$('feedback-save').disabled=!$('feedback-text').value.trim();});
+$('feedback-dialog').addEventListener('close',()=>{$('feedback-clear').dataset.confirm='';$('feedback-clear').textContent='의견 모두 지우기';});
+$('schedule-dialog').addEventListener('close',()=>{scheduleEditor=null;$('schedule-button').focus({preventScroll:true});});
+$('schedule-frame').addEventListener('load',()=>{if(!scheduleEditor)return;$('schedule-frame').contentWindow.postMessage({type:'schedule.init',token:scheduleEditor.token,target:people[scheduleEditor.target].name,text:scheduleEditor.text,dueAt:scheduleEditor.dueAt},location.protocol==='file:'?'*':location.origin);});
+window.addEventListener('message',event=>{
+  if(event.source!==$('schedule-frame').contentWindow||(location.protocol!=='file:'&&event.origin!==location.origin)||!scheduleEditor)return;
+  const data=event.data;
+  if(!data||data.token!==scheduleEditor.token||scheduleEditor.owner!==state)return;
+  if(data.type==='schedule.ready'){$('schedule-frame').hidden=false;return;}
+  if(data.type==='schedule.cancel'){$('schedule-dialog').close();return;}
+  if(data.type!=='schedule.submit'||!Number.isFinite(data.dueAt)||data.dueAt<=Date.now())return;
+  const entry={id:scheduleEditor.id||nextScheduleId++,target:scheduleEditor.target,text:scheduleEditor.text,dueAt:data.dueAt};
+  if(scheduleEditor.id){if(!schedules.some(item=>item.id===scheduleEditor.id)){$('schedule-dialog').close();return;}schedules=schedules.map(item=>item.id===entry.id?entry:item);}
+  else{schedules.push(entry);if(state.drafts[entry.target]===entry.text)state.drafts[entry.target]='';}
+  $('schedule-dialog').close();renderComposer();
+});
+$('inspector').addEventListener('keydown',event=>{if(event.key==='Escape'){state.panel=null;render();$('detail-button').focus();}if(!['ArrowLeft','ArrowRight'].includes(event.key)||event.target.getAttribute('role')!=='tab')return;event.preventDefault();const tabs=['overview','files','checks'];state.panel=tabs[(tabs.indexOf(state.panel)+(event.key==='ArrowRight'?1:2))%3];renderInspector();syncHash();$('tab-'+state.panel).focus();});
+document.addEventListener('click',event=>{
+  const el=event.target.closest('[data-action]');if(!el||el.disabled)return;
+  switch(el.dataset.action){
+    case 'navigate':navigate(el.dataset.view);break;
+    case 'group':navigate('room');break;
+    case 'details':showPanel('overview');break;
+    case 'panel':showPanel(el.dataset.panel);break;
+    case 'close-details':state.panel=null;render();$('detail-button').focus();break;
+    case 'answer':if(state.screen!=='S04')break;state.decision=el.dataset.answer;state.screen='S05';render(true);break;
+    case 'schedule':openSchedule();break;
+    case 'edit-schedule':openSchedule(el.dataset.id);break;
+    case 'delete-schedule':schedules=schedules.filter(item=>String(item.id)!==el.dataset.id);renderSchedules();break;
+    case 'previous':case 'next':changeScene(screens[Math.max(0,Math.min(6,screens.indexOf(state.screen)+(el.dataset.action==='next'?1:-1)))]);break;
+    case 'reset':changeScene('S01');break;
+    case 'feedback':if(!feedbackContext||!$('feedback-text').value.trim())feedbackContext=contextText();renderFeedback();$('feedback-dialog').showModal();break;
+    case 'close-feedback':$('feedback-dialog').close();break;
+    case 'save-feedback':{const text=$('feedback-text').value.trim();if(!text)break;feedback.push({context:feedbackContext,text,time:new Date().toISOString()});persistFeedback();$('feedback-text').value='';renderFeedback();break;}
+    case 'clear-feedback':if(el.dataset.confirm!=='yes'){el.dataset.confirm='yes';el.textContent='한 번 더 눌러 모두 삭제';break;}feedback=[];persistFeedback();el.dataset.confirm='';el.textContent='의견 모두 지우기';renderFeedback();break;
+    case 'download-feedback':downloadFeedback();break;
+  }
+});
+window.addEventListener('hashchange',()=>{const p=new URLSearchParams(location.hash.slice(1));state=scene(allowed(p.get('screen'),screens,'S01'));schedules=[];state.view=allowed(p.get('view'),Object.keys(people),state.view);if(state.screen==='S01'&&state.view==='room')state.view='picky';state.panel=allowed(p.get('panel'),['overview','files','checks'],null);theme=allowed(p.get('theme'),['light','dark'],theme);density=allowed(p.get('density'),['comfortable','compact'],density);render(true);beginRecovery();});
+setInterval(tickSchedules,1000);
+
+$('search-icon').innerHTML=icon('search');$('inspector-close').innerHTML=icon('close');$('scene-previous').innerHTML=icon('back');$('scene-next').innerHTML=icon('chevron');
+render(['S04','S05','S06','S07'].includes(state.screen));beginRecovery();
+</script>
+</body>
+</html>

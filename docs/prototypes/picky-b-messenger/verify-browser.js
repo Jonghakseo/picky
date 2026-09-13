@@ -7,7 +7,7 @@ const { createRequire } = require('node:module');
 const { execFileSync } = require('node:child_process');
 const cli = process.env.PLAYWRIGHT_CLI || execFileSync('which', ['playwright-cli'], { encoding: 'utf8' }).trim();
 const { chromium } = createRequire(fs.realpathSync(cli))('playwright-core');
-const evidence = '/private/tmp/picky-b05-evidence';
+const evidence = '/private/tmp/picky-b06-evidence';
 fs.mkdirSync(evidence, { recursive: true });
 const checks = [];
 
@@ -251,7 +251,7 @@ async function main() {
     await page.getByLabel('정보 밀도').selectOption('compact');
     await shot('S05-dark-compact');
     await page.getByRole('button', { name: /^이 화면 피드백/ }).click();
-    const note = 'B.05 PR 카드 피드백 <b>원문 그대로</b>';
+    const note = 'B.06 PR 카드 피드백 <b>원문 그대로</b>';
     await page.getByRole('textbox', { name: '의견', exact: true }).fill(note);
     await page.getByRole('button', { name: '의견 담기', exact: true }).click();
     await page.getByRole('button', { name: '닫기', exact: true }).click();
@@ -261,7 +261,7 @@ async function main() {
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Markdown 내려받기', exact: true }).click();
     const download = await downloadPromise;
-    assert.equal(download.suggestedFilename(), 'picky-b05-feedback.md');
+    assert.equal(download.suggestedFilename(), 'picky-b06-feedback.md');
     await download.saveAs(path.join(evidence, 'feedback.md'));
     assert(fs.readFileSync(path.join(evidence, 'feedback.md'), 'utf8').includes(note));
     await page.getByRole('button', { name: '닫기', exact: true }).click();
@@ -282,6 +282,7 @@ async function main() {
     checks.push('Read-only pair view fits dark desktop and narrow widths; Escape restores the originating chip');
     await verifyFeedback05({ page, checks, shot, choose, input, sceneIs, conversation });
     await verifyManagement({ page, checks, shot, choose, input, sceneIs, conversation });
+    await verifyRoutineHistory({ page, checks, shot, choose, input, sceneIs });
     assert.deepEqual(errors, [], 'Browser and CSP errors');
     assert.deepEqual(external, [], 'No external requests from mock or parts');
     checks.push('Responsive file-based pages with no browser errors or external requests');
@@ -458,7 +459,7 @@ async function verifyManagement({ page, checks, shot, choose, input, sceneIs, co
   await page.evaluate(() => window.addEventListener('message', event => { if (event.data?.type === 'bot-panel.ready') window.__lastPanelToken = event.data.token; }));
   async function staleAction(token, action, payload = {}) {
     const liveToken = await readyToken();
-    const frame = page.frames().find(frame => /\/(?:bot-overview|bot-settings|routine-editor|computer-settings)\.html\?/.test(frame.url()));
+    const frame = page.frames().find(frame => /\/(?:bot-overview|bot-settings|routine-editor|routine-history|computer-settings)\.html\?/.test(frame.url()));
     await frame.evaluate(({ token, action, payload, liveToken }) => {
       parent.postMessage({ type: 'bot-panel.action', token, action, payload }, '*');
       // A valid close from the same sender is an observable FIFO barrier for the stale action.
@@ -545,9 +546,9 @@ async function verifyManagement({ page, checks, shot, choose, input, sceneIs, co
   assert.equal(routine.triggers.length, 2);
   assert.equal(routine.triggers[0].time, '10:15');
   assert.equal(routine.triggers[1].kind, 'event');
-  assert(await panel.getByRole('button', { name: /날짜 변경 재확인/ }).getByText('연결 필요', { exact: true }).isVisible());
+  assert(await panel.getByRole('button', { name: /날짜 변경 재확인 편집/ }).getByText('연결 필요', { exact: true }).isVisible());
   assert.equal((await saved()).luna.routines.length, 1);
-  await panel.getByRole('button', { name: /날짜 변경 재확인/ }).click();
+  await panel.getByRole('button', { name: /날짜 변경 재확인 편집/ }).click();
   await panel.getByRole('textbox', { name: '지침', exact: true }).waitFor({ state: 'visible' });
   await shot('routine-editor-light');
   await panel.getByRole('textbox', { name: '이름', exact: true }).fill('아직 저장하지 않은 루틴');
@@ -565,29 +566,33 @@ async function verifyManagement({ page, checks, shot, choose, input, sceneIs, co
   await close();
   await page.reload();
   await open();
-  await panel.getByRole('button', { name: /날짜 변경 재확인/ }).click();
+  await panel.getByRole('button', { name: /날짜 변경 재확인 편집/ }).click();
   assert.equal(await panel.getByRole('checkbox', { name: '루틴 활성', exact: true }).isChecked(), false);
-  assert(await panel.getByText(/^모의 실행 기록 ·/).first().isVisible());
+  await panel.getByRole('button', { name: '히스토리 보기', exact: true }).click();
+  await panel.getByRole('heading', { name: '루틴 히스토리', exact: true }).waitFor({ state: 'visible' });
+  assert.equal(await panel.locator('summary').count(), 1);
+  await panel.getByRole('button', { name: '루틴 편집', exact: true }).click();
+  await panel.getByRole('textbox', { name: '지침', exact: true }).waitFor({ state: 'visible' });
   checks.push('Routine creation, multiple triggers, pause and preview receipts survive reload; unsaved definitions cannot be tested');
 
   await page.evaluate(() => window.addEventListener('message', event => { if (event.data?.type === 'bot-panel.ready') window.__lastPanelToken = event.data.token; }));
   await back();
-  await panel.getByRole('button', { name: /회귀 테스트 점검/ }).click();
+  await panel.getByRole('button', { name: /회귀 테스트 점검 편집/ }).click();
   await panel.getByRole('textbox', { name: '지침', exact: true }).waitFor({ state: 'visible' });
   const oldRoutineToken = await readyToken();
   await back();
-  await panel.getByRole('button', { name: /날짜 변경 재확인/ }).click();
+  await panel.getByRole('button', { name: /날짜 변경 재확인 편집/ }).click();
   await panel.getByRole('textbox', { name: '지침', exact: true }).waitFor({ state: 'visible' });
   await staleAction(oldRoutineToken, 'routine.delete');
   assert.equal((await saved()).mint.routines.length, 2);
   await open();
-  await panel.getByRole('button', { name: /날짜 변경 재확인/ }).click();
+  await panel.getByRole('button', { name: /날짜 변경 재확인 편집/ }).click();
   await panel.getByRole('button', { name: '루틴 삭제', exact: true }).click();
   await panel.getByRole('button', { name: '삭제 확인', exact: true }).click();
   await home();
   assert.equal((await saved()).mint.routines.length, 1);
   assert.equal((await saved()).luna.routines.length, 1);
-  assert.equal(await panel.getByRole('button', { name: /날짜 변경 재확인/ }).count(), 0);
+  assert.equal(await panel.getByRole('button', { name: /날짜 변경 재확인 편집/ }).count(), 0);
   checks.push('Routine deletion is scoped and confirmed; an old editor cannot delete a different routine');
 
   await panel.getByRole('button', { name: '컴퓨터 환경', exact: true }).click();
@@ -620,7 +625,7 @@ async function verifyManagement({ page, checks, shot, choose, input, sceneIs, co
     await root.waitFor({ state: 'hidden' });
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '민트 피클 관리');
     await open();
-    await panel.getByRole('button', { name: /회귀 테스트 점검/ }).click();
+    await panel.getByRole('button', { name: /회귀 테스트 점검 편집/ }).click();
     await panel.getByRole('textbox', { name: '지침', exact: true }).waitFor({ state: 'visible' });
     const routineFrame = page.frames().find(frame => /\/routine-editor\.html\?/.test(frame.url()));
     assert(await routineFrame.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -630,6 +635,128 @@ async function verifyManagement({ page, checks, shot, choose, input, sceneIs, co
     await close();
   }
   checks.push('Management panels fit light/dark desktop and narrow layouts; Escape restores the original control');
+}
+
+async function verifyRoutineHistory({ page, checks, shot, choose, input, sceneIs }) {
+  const panel = page.frameLocator('#bot-management-frame');
+  const root = page.locator('#bot-management');
+  const home = () => panel.getByRole('button', { name: '피클 설정', exact: true }).waitFor({ state: 'visible' });
+  const open = async (name = '민트') => { await page.getByRole('button', { name: name + ' 피클 관리', exact: true }).click(); await home(); };
+  const close = async () => { await panel.getByRole('button', { name: '피클 관리 닫기', exact: true }).click(); await root.waitFor({ state: 'hidden' }); };
+  const history = async name => { await panel.getByRole('button', { name: name + ' 히스토리', exact: true }).click(); await panel.getByRole('heading', { name: '루틴 히스토리', exact: true }).waitFor({ state: 'visible' }); };
+  const edit = async () => { await panel.getByRole('button', { name: '루틴 편집', exact: true }).click(); await panel.getByRole('textbox', { name: '지침', exact: true }).waitFor({ state: 'visible' }); };
+  const save = async () => { await panel.getByRole('button', { name: '루틴 저장', exact: true }).click(); await home(); };
+  const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('picky.mockup.b04.bot-management')));
+  const receipt = async () => {
+    const count = (await saved()).bots.mint.routines[0].history.length + 1;
+    await panel.getByRole('button', { name: '테스트 실행', exact: true }).click();
+    await panel.getByText(`실행 기록 ${count}개`, { exact: true }).waitFor({ state: 'visible' });
+  };
+  const historyFromEditor = async () => { await panel.getByRole('button', { name: '히스토리 보기', exact: true }).click(); await panel.getByRole('heading', { name: '루틴 히스토리', exact: true }).waitFor({ state: 'visible' }); };
+  const frame = () => page.frames().find(frame => /\/routine-history\.html\?/.test(frame.url()));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByLabel('화면 밝기').selectOption('light');
+  await choose('S03');
+  await input().fill('히스토리를 읽어도 남는 대화 초안');
+  const transcript = await page.locator('#messages').innerText();
+  const before = await saved();
+  await open();
+  await history('회귀 테스트 점검');
+  assert(await panel.getByText(/아직 실행 기록이 없어요/).isVisible());
+  assert.equal(await panel.locator('summary').count(), 0);
+  await shot('routine-history-empty-light');
+  await close();
+  assert.deepEqual(await saved(), before);
+  assert.equal(await input().inputValue(), '히스토리를 읽어도 남는 대화 초안');
+  assert.equal(await page.locator('#messages').innerText(), transcript);
+  checks.push('History is reachable from a routine with no receipts; reading its empty state changes neither storage nor conversation');
+
+  const original = '인원 <b>선택</b> 유지 여부를 확인해줘. 배포하지 마.';
+  const revised = '변경된 지침입니다. 이전 실행 기록에는 이 문장을 덮어쓰지 마.';
+  const name = '변경된 회귀 점검';
+  await open(); await history('회귀 테스트 점검'); await edit();
+  await panel.getByRole('textbox', { name: '지침', exact: true }).fill(original);
+  await save();
+  await panel.getByRole('button', { name: '회귀 테스트 점검 편집', exact: true }).click();
+  await receipt();
+  const first = (await saved()).bots.mint.routines[0].history[0];
+  assert.equal(first.definition.prompt, original);
+  await panel.getByRole('textbox', { name: '이름', exact: true }).fill('히스토리에서도 유지할 미저장 이름');
+  await historyFromEditor();
+  await panel.locator('summary').first().click();
+  assert(await panel.getByText(original, { exact: true }).isVisible());
+  assert.equal(await panel.locator('.run-content b').count(), 0);
+  await edit();
+  assert.equal(await panel.getByRole('textbox', { name: '이름', exact: true }).inputValue(), '히스토리에서도 유지할 미저장 이름');
+  await panel.getByRole('textbox', { name: '이름', exact: true }).fill(name);
+  await panel.getByRole('textbox', { name: '지침', exact: true }).fill(revised);
+  await save();
+  await panel.getByRole('button', { name: name + ' 편집', exact: true }).click();
+  await page.clock.runFor(1000);
+  await receipt(); await historyFromEditor();
+  const runs = (await saved()).bots.mint.routines[0].history;
+  assert.equal(runs.length, 2);
+  assert.deepEqual(await panel.locator('summary time').evaluateAll(times => times.map(time => time.dateTime)), [runs[1].at, first.at]);
+  await shot('routine-history-list-light');
+  await panel.locator('summary').nth(1).press('Enter');
+  assert(await panel.getByText(original, { exact: true }).isVisible());
+  assert(await panel.getByText('회귀 테스트 점검', { exact: true }).isVisible());
+  assert.equal(await panel.getByText(revised, { exact: true }).isVisible(), false);
+  await shot('routine-history-detail-light');
+  await panel.locator('summary').nth(1).press('Escape');
+  assert.equal(await panel.locator('details[open]').count(), 0);
+  await panel.locator('summary').nth(1).press('Escape');
+  await root.waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '민트 피클 관리');
+  assert.equal(await input().inputValue(), '히스토리를 읽어도 남는 대화 초안');
+  assert.equal(await page.locator('#messages').innerText(), transcript); await sceneIs('S03');
+  checks.push('Run details are newest first and keep the tested definition after edits; history preserves unsaved forms, chat and keyboard focus');
+
+  await page.reload(); await open(); await history(name);
+  await panel.locator('summary').nth(1).click();
+  assert(await panel.getByText(original, { exact: true }).isVisible());
+  const oldToken = new URL(frame().url()).searchParams.get('panel');
+  const stored = await saved();
+  await page.getByRole('button', { name: '루나 대화', exact: true }).click(); await home();
+  await history('예약 화면 변경 조사');
+  assert(await panel.getByText(/아직 실행 기록이 없어요/).isVisible());
+  const liveToken = new URL(frame().url()).searchParams.get('panel');
+  await frame().evaluate(({ oldToken, liveToken }) => {
+    parent.postMessage({ type: 'bot-panel.action', token: oldToken, action: 'routine.history', payload: { id: 'mint-weekly' } }, '*');
+    parent.postMessage({ type: 'bot-panel.action', token: liveToken, action: 'routine.history', payload: { id: 'mint-weekly' } }, '*');
+    parent.postMessage({ type: 'bot-panel.action', token: liveToken, action: 'routine.test', payload: {} }, '*');
+    // The allowed close is a FIFO receipt for all attempted reads/writes above.
+    parent.postMessage({ type: 'bot-panel.action', token: liveToken, action: 'close', payload: {} }, '*');
+  }, { oldToken, liveToken });
+  await root.waitFor({ state: 'hidden' });
+  assert.deepEqual(await saved(), stored);
+  assert.equal(await page.getByLabel('선택한 대화', { exact: true }).getByRole('heading', { level: 1 }).textContent(), '루나');
+  await open('루나'); await history('예약 화면 변경 조사');
+  assert.equal(await panel.locator('summary').count(), 0); await close();
+  checks.push('Persisted history remains with its Pickle; old frames, foreign routine IDs and test requests from the read-only history cannot cross owners or mutate receipts');
+
+  // A real legacy browser record has no definition. Do not fill it with the current instructions.
+  await page.evaluate(() => {
+    const key = 'picky.mockup.b04.bot-management'; const value = JSON.parse(localStorage.getItem(key));
+    value.bots.mint.routines[0].history.unshift({ id: 'legacy-preview', at: '2026-09-12T00:00:00Z', status: 'preview', summary: 'B.04에서 저장한 원본 모의 기록' });
+    localStorage.setItem(key, JSON.stringify(value));
+  });
+  await page.getByRole('button', { name: '민트 대화', exact: true }).click();
+  await page.reload(); await open(); await history(name);
+  await panel.locator('summary').last().click();
+  assert(await panel.getByText('이전 목업 기록에는 당시 지침·실행 시기가 저장되어 있지 않아요.', { exact: true }).isVisible());
+  assert.equal(await panel.getByText(revised, { exact: true }).isVisible(), false);
+  await close(); await page.getByLabel('화면 밝기').selectOption('dark');
+  for (const width of [1024, 390]) {
+    await page.setViewportSize({ width, height: 850 }); await open(); await history(name);
+    assert(await frame().evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await shot('routine-history-list-dark-' + width);
+    await panel.locator('summary').first().press('Enter');
+    assert(await panel.getByText(revised, { exact: true }).isVisible());
+    await shot('routine-history-detail-dark-' + width);
+    await close();
+  }
+  checks.push('Legacy receipts explicitly lack old definitions; history lists and details remain readable in dark 1024/390 layouts');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -2,7 +2,7 @@
 'use strict';
 window.createMockBotManagement = function createMockBotManagement(options) {
   const ids = ['picky', 'luna', 'mint', 'moka'];
-  const pages = { home: 'bot-overview.html', settings: 'bot-settings.html', routine: 'routine-editor.html', computer: 'computer-settings.html' };
+  const pages = { home: 'bot-overview.html', settings: 'bot-settings.html', routine: 'routine-editor.html', history: 'routine-history.html', computer: 'computer-settings.html' };
   const providers = ['isolated-linux', 'browser', 'host-mac'];
   const key = 'picky.mockup.b04.bot-management';
   const clone = value => structuredClone(value);
@@ -21,6 +21,10 @@ window.createMockBotManagement = function createMockBotManagement(options) {
     }
     return { name: value.name, prompt: value.prompt, enabled: value.enabled, triggers };
   }
+  function runValue(run) {
+    if (!run || !text(run.id, 80, true) || !text(run.at, 40, true) || !Number.isFinite(Date.parse(run.at)) || run.status !== 'preview' || !text(run.summary, 500)) return null;
+    return { id: run.id, at: run.at, status: 'preview', summary: run.summary, definition: routineValue(run.definition) };
+  }
   const weekly = () => ({ kind: 'weekly', weekday: 1, time: '09:00', timezone: 'Asia/Seoul', repository: 'example/booking' });
   const initialNames = { picky: '주간 진행 상황 정리', luna: '예약 화면 변경 조사', mint: '회귀 테스트 점검', moka: '수정안 검토 모음' };
   const data = Object.fromEntries(ids.map(id => [id, {
@@ -31,7 +35,7 @@ window.createMockBotManagement = function createMockBotManagement(options) {
   // Stored display data cannot add bots, sessions, permissions or executable actions.
   try {
     const raw = localStorage.getItem(key);
-    if (raw && raw.length <= 1000000) {
+    if (raw && raw.length <= 8000000) {
       const saved = JSON.parse(raw);
       if (saved?.version === 1) for (const id of ids) {
         const bot = saved.bots?.[id];
@@ -44,8 +48,8 @@ window.createMockBotManagement = function createMockBotManagement(options) {
             const value = routineValue(row);
             if (!value || !text(row.id, 80, true) || seen.has(row.id)) return [];
             seen.add(row.id);
-            const history = Array.isArray(row.history) ? row.history.slice(-20).filter(run => run && text(run.id, 80, true) && text(run.at, 40, true) && Number.isFinite(Date.parse(run.at)) && run.status === 'preview' && text(run.summary, 500)) : [];
-            return [{ id: row.id, ...value, history: history.map(run => ({ id: run.id, at: run.at, status: 'preview', summary: run.summary })) }];
+            const history = Array.isArray(row.history) ? row.history.slice(-20).map(runValue).filter(Boolean) : [];
+            return [{ id: row.id, ...value, history }];
           });
         }
       }
@@ -68,7 +72,9 @@ window.createMockBotManagement = function createMockBotManagement(options) {
   function send(message) { frame.contentWindow.postMessage({ token: current.token, ...message }, origin); }
   function payload() {
     const bot = data[current.botId];
-    return { type: 'bot-panel.init', botId: current.botId, view: current.view, ...clone(bot), routine: clone(selectedRoutine()), draft: clone(drafts.get(draftKey(current)) || null) };
+    // Only the selected routine needs full historical definitions; list entries stay small.
+    const routines = bot.routines.map(row => ({ ...clone(row), history: row.history.map(({ definition, ...run }) => run) }));
+    return { type: 'bot-panel.init', botId: current.botId, view: current.view, profile: clone(bot.profile), computer: clone(bot.computer), routines, routine: clone(selectedRoutine()), draft: clone(drafts.get(draftKey(current)) || null) };
   }
   function load(view, routineId = null, focus = true) {
     const botId = options.selected();
@@ -139,6 +145,9 @@ window.createMockBotManagement = function createMockBotManagement(options) {
       case 'routine.open':
         if (!bot.routines.some(row => row.id === raw?.id)) return;
         load('routine', raw.id); break;
+      case 'routine.history':
+        if (!bot.routines.some(row => row.id === raw?.id)) return;
+        load('history', raw.id); break;
       case 'profile.save': {
         if (current.view !== 'settings') return;
         const value = profileValue(raw);
@@ -175,7 +184,7 @@ window.createMockBotManagement = function createMockBotManagement(options) {
           return;
         }
         // This is a labeled preview receipt, not an accepted or completed Pi execution.
-        routine.history.push({ id: crypto.randomUUID(), at: new Date().toISOString(), status: 'preview', summary: '저장된 루틴의 화면 흐름을 확인했습니다. 실제 도구 호출은 없습니다.' });
+        routine.history.push({ id: crypto.randomUUID(), at: new Date().toISOString(), status: 'preview', summary: '저장된 루틴의 화면 흐름을 확인했습니다. 실제 도구 호출은 없습니다.', definition: clone(routineValue(routine)) });
         routine.history = routine.history.slice(-20);
         persist(); load('routine', routine.id); break;
       }
@@ -191,6 +200,6 @@ window.createMockBotManagement = function createMockBotManagement(options) {
   return {
     open, close, sync,
     isOpen: () => !!current,
-    context: () => current ? '피클 관리 / ' + ({ home: '컴퓨터·루틴', settings: '설정', routine: '루틴 편집', computer: '컴퓨터 환경' }[current.view]) : '피클 관리 닫힘',
+    context: () => current ? '피클 관리 / ' + ({ home: '컴퓨터·루틴', settings: '설정', routine: '루틴 편집', history: '루틴 히스토리', computer: '컴퓨터 환경' }[current.view]) : '피클 관리 닫힘',
   };
 };

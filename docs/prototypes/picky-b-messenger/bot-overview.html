@@ -33,7 +33,7 @@
     </section>
     <p id="panel-error" class="error" role="alert" aria-live="polite"></p>
   </div>
-  <div id="preview-banner" class="preview-banner" hidden>B.04 목업 · 실제 실행 없음 · <a href="index.html">메신저로 돌아가기</a></div>
+  <div id="preview-banner" class="preview-banner" hidden>B.06 목업 · 실제 실행 없음 · <a href="index.html">메신저로 돌아가기</a></div>
 </main>
 <script src="bot-panel-bridge.js"></script>
 <script>
@@ -66,14 +66,20 @@ function render(data) {
   list.replaceChildren();
   $('empty-state').hidden = data.routines.length > 0;
   for (const routine of data.routines) {
+    const item = document.createElement('div'); item.className = 'routine-item';
     const row = document.createElement('button');
-    row.type = 'button'; row.className = 'routine-row'; row.dataset.id = routine.id;
+    row.type = 'button'; row.className = 'routine-row'; row.dataset.id = routine.id; row.dataset.action = 'routine.open';
+    row.setAttribute('aria-label', routine.name + ' 편집');
     const copy = document.createElement('span'); copy.className = 'routine-copy';
     const name = document.createElement('strong'); name.textContent = routine.name || '이름 없는 루틴';
     const detail = document.createElement('span'); detail.className = 'subtle'; detail.textContent = triggerSummary(routine.triggers);
     copy.append(name, detail);
     const status = document.createElement('span'); status.className = 'routine-status'; status.textContent = routineStatus(routine);
-    row.append(copy, status); list.append(row);
+    row.append(copy, status);
+    const history = document.createElement('button'); history.type = 'button'; history.className = 'routine-history-link';
+    history.dataset.id = routine.id; history.dataset.action = 'routine.history'; history.textContent = '히스토리';
+    history.setAttribute('aria-label', routine.name + ' 히스토리'); history.title = `실행 기록 ${routine.history.length}개`;
+    item.append(row, history); list.append(item);
   }
 }
 BotPanel.register(render);
@@ -81,7 +87,7 @@ $('settings').addEventListener('click', () => BotPanel.action('settings'));
 $('computer').addEventListener('click', () => BotPanel.action('computer'));
 $('close').addEventListener('click', () => BotPanel.action('close'));
 $('routine-new').addEventListener('click', () => BotPanel.action('routine.new'));
-$('routine-list').addEventListener('click', event => { const row = event.target.closest('[data-id]'); if (row) BotPanel.action('routine.open', { id: row.dataset.id }); });
+$('routine-list').addEventListener('click', event => { const row = event.target.closest('[data-id]'); if (row) BotPanel.action(row.dataset.action, { id: row.dataset.id }); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); BotPanel.action('close'); } });
 BotPanel.preview({ type: 'bot-panel.init', token: 'preview-overview', botId: 'picky', view: 'home', profile: { name: 'Picky', label: '조율', description: '', notifications: true }, computer: { provider: 'isolated-linux' }, routines: [{ id: 'weekday-check', name: '예약 화면 확인', prompt: '예약 날짜 흐름을 확인해요.', enabled: true, triggers: [{ kind: 'weekly', weekday: 1, time: '09:00', timezone: 'Asia/Seoul', repository: '' }], history: [] }], routine: null, draft: null });
 if (window.parent === window) $('preview-banner').hidden = false;

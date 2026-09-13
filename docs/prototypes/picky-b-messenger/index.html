@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data:; frame-src 'self' file:; connect-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Picky · 메신저 클릭 목업 B.05</title>
+<title>Picky · 메신저 클릭 목업 B.06</title>
 <style>
 /* Prototype-only roles. Normal conversation size is a proposed window variant, not a HUD token change. */
 :root{color-scheme:light;--canvas:#eef0ef;--panel:#fff;--rail:#f7f8f8;--control:#f0f1f1;--hover:#e5e7e6;--pressed:#d9dbda;--text:#1a1c1b;--secondary:#525956;--muted:#636c67;--line:#e2e6e3;--strong:#c7ceca;--action:#2563eb;--action-text:#1d4ed8;--action-soft:#edf3ff;--on-action:#fff;--success:#24713f;--success-soft:#edf7ef;--warning:#875500;--warning-soft:#fff6e5;--danger:#ad3434;--danger-soft:#fff0ef;--violet:#72548e;--violet-soft:#f3eef8;--shadow:0 14px 48px #1a1c1b10,0 1px 3px #1a1c1b08;--body-size:14px;--row-pad:12px;--message-gap:28px;--message-pad:32px;--radius:12px;--space:4px}
@@ -21,7 +21,7 @@
 </head>
 <body>
 <header class="review-bar" aria-label="목업 리뷰 도구">
-  <div><span class="wordmark">Picky</span> <span class="study-label">MESSENGER / B.05</span></div>
+  <div><span class="wordmark">Picky</span> <span class="study-label">MESSENGER / B.06</span></div>
   <span class="preview-boundary">오프라인 목업 · 실제 실행 없음</span>
   <div class="review-controls">
     <label>화면 <select id="theme-select" aria-label="화면 밝기"><option value="light">라이트</option><option value="dark">다크</option></select></label>
@@ -393,9 +393,9 @@ function renderFeedback() {
 }
 function downloadFeedback() {
   if(!feedback.length) return;
-  const text='# Picky B.05 목업 피드백\n\n제품 동작 검증이 아닌 화면·상태·흐름에 대한 의견입니다.\n\n'+feedback.map((n,i)=>`## 의견 ${i+1}\n\n- 화면: ${n.context}\n- 기록 시각: ${n.time}\n\n${n.text}\n`).join('\n');
+  const text='# Picky B.06 목업 피드백\n\n제품 동작 검증이 아닌 화면·상태·흐름에 대한 의견입니다.\n\n'+feedback.map((n,i)=>`## 의견 ${i+1}\n\n- 화면: ${n.context}\n- 기록 시각: ${n.time}\n\n${n.text}\n`).join('\n');
   const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'}));
-  const a=document.createElement('a');a.href=url;a.download='picky-b05-feedback.md';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const a=document.createElement('a');a.href=url;a.download='picky-b06-feedback.md';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 $('composer').addEventListener('submit',event=>{event.preventDefault();submit();});
 $('message-input').addEventListener('input',()=>{sizeComposer();state.drafts[state.view]=$('message-input').value;const empty=!$('message-input').value.trim();$('send-button').disabled=empty;$('schedule-button').disabled=empty;});

@@ -18,6 +18,7 @@
   </header>
   <form id="routine-form" class="panel-body" novalidate>
     <section class="panel-section">
+      <div id="history-entry" class="section-heading" hidden><span id="history-count" class="subtle"></span><button id="history" type="button">히스토리 보기</button></div>
       <div class="routine-toolbar"><div class="switch-row"><input id="enabled" type="checkbox"><label for="enabled">루틴 활성</label></div><div id="existing-actions" class="row" hidden><button id="test" type="button">테스트 실행</button><button id="delete" class="danger" type="button">루틴 삭제</button></div></div>
           <div id="delete-confirm" class="inline-confirm" hidden><span>이 루틴을 삭제할까요?</span><button id="delete-approve" class="danger" type="button">삭제 확인</button><button id="delete-cancel" type="button">취소</button></div>
       <div class="field-group"><label for="name">이름</label><input id="name" class="text-input" type="text" maxlength="100" required autocomplete="off"></div>
@@ -28,14 +29,11 @@
       <div id="trigger-list" class="trigger-list"></div>
       <p id="trigger-note" class="field-note">최대 4개까지 추가할 수 있어요.</p>
     </section>
-    <section id="history-section" class="panel-section" hidden aria-labelledby="history-heading">
-      <div class="section-heading"><h2 id="history-heading">실행 기록</h2></div>
-      <div id="history-list" class="history-list"></div>
-    </section>
+    <p id="latest-run" class="field-note" role="status" hidden></p>
     <p id="panel-error" class="error" role="alert" aria-live="polite"></p>
     <div class="footer-actions"><button id="discard" type="button">변경 취소</button><button class="primary" type="submit">루틴 저장</button></div>
   </form>
-  <div id="preview-banner" class="preview-banner" hidden>B.04 목업 · 실제 실행 없음 · <a href="index.html">메신저로 돌아가기</a></div>
+  <div id="preview-banner" class="preview-banner" hidden>B.06 목업 · 실제 실행 없음 · <a href="index.html">메신저로 돌아가기</a></div>
 </main>
 <script src="bot-panel-bridge.js"></script>
 <script>
@@ -87,7 +85,6 @@ function markDirty() {
   $('test').disabled = dirty;
   $('test').title = dirty ? '변경을 저장한 뒤 테스트할 수 있어요.' : '';
 }
-function renderHistory(history) { const list = $('history-list'); list.replaceChildren(); $('history-section').hidden = !history.length; for (const item of history) { const row = document.createElement('article'); row.className = 'history-row'; const time = document.createElement('time'); time.textContent = `모의 실행 기록 · ${item.at}`; const summary = document.createElement('p'); summary.textContent = item.summary; row.append(time, summary); list.append(row); } }
 function render(data) {
   document.documentElement.dataset.theme = new URLSearchParams(location.hash.slice(1)).get('theme') === 'dark' ? 'dark' : 'light';
   existing = Boolean(data.routine);
@@ -100,7 +97,10 @@ function render(data) {
   $('trigger-list').replaceChildren();
   (Array.isArray(source.triggers) ? source.triggers.slice(0, 4) : []).forEach(addTrigger);
   if (!$('trigger-list').children.length && !data.draft) addTrigger();
-  updateTriggerLimit(); renderHistory(existing ? data.routine.history : []);
+  updateTriggerLimit();
+  const history = data.routine?.history || [];
+  $('history-entry').hidden = !existing; $('history-count').textContent = `실행 기록 ${history.length}개`;
+  $('latest-run').hidden = !history.length; $('latest-run').textContent = history.at(-1)?.summary || '';
   $('existing-actions').hidden = !existing; markDirty(); $('delete-confirm').hidden = true; BotPanel.clearError();
 }
 function notifyDraft() { markDirty(); BotPanel.draft(values()); }
@@ -114,6 +114,7 @@ $('back').addEventListener('click', () => BotPanel.action('home'));
 $('close').addEventListener('click', () => BotPanel.action('close'));
 $('discard').addEventListener('click', () => BotPanel.action('discard'));
 $('test').addEventListener('click', () => BotPanel.action('routine.test'));
+$('history').addEventListener('click', () => BotPanel.action('routine.history', { id: BotPanel.context().routine.id }));
 $('delete').addEventListener('click', () => { $('delete-confirm').hidden = false; });
 $('delete-cancel').addEventListener('click', () => { $('delete-confirm').hidden = true; });
 $('delete-approve').addEventListener('click', () => BotPanel.action('routine.delete'));

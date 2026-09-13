@@ -1,17 +1,17 @@
 'use strict';
 (function () {
   const BOT_IDS = new Set(['picky', 'luna', 'mint', 'moka']);
-  const VIEWS = new Set(['home', 'settings', 'routine', 'computer']);
+  const VIEWS = new Set(['home', 'settings', 'routine', 'history', 'computer']);
   const PROVIDERS = new Set(['isolated-linux', 'browser', 'host-mac']);
   const TRIGGER_KINDS = new Set(['weekly', 'daily', 'event']);
   const TIMEZONES = new Set(['Asia/Seoul', 'UTC']);
   const ACTIONS = new Set([
     'home', 'settings', 'computer', 'close', 'discard', 'routine.new',
-    'routine.open', 'profile.save', 'routine.save', 'routine.test',
+    'routine.open', 'routine.history', 'profile.save', 'routine.save', 'routine.test',
     'routine.delete', 'computer.save'
   ]);
   const MAX = { token: 128, text: 4000, id: 96, routines: 32, triggers: 4, history: 30 };
-  const expectedView = { 'bot-overview.html': 'home', 'bot-settings.html': 'settings', 'routine-editor.html': 'routine', 'computer-settings.html': 'computer' }[location.pathname.split('/').at(-1)];
+  const expectedView = { 'bot-overview.html': 'home', 'bot-settings.html': 'settings', 'routine-editor.html': 'routine', 'routine-history.html': 'history', 'computer-settings.html': 'computer' }[location.pathname.split('/').at(-1)];
   let current = null;
   let renderer = null;
 
@@ -31,11 +31,14 @@
     return text(trigger.repository, 160);
   }
 
+  function validDefinition(value) {
+    return value && text(value.name, 100, false) && text(value.prompt, MAX.text, false) && typeof value.enabled === 'boolean'
+      && Array.isArray(value.triggers) && value.triggers.length <= MAX.triggers && value.triggers.every(trigger => validTrigger(trigger));
+  }
+
   function validRoutine(routine) {
-    if (!routine || !text(routine.id, MAX.id, false) || !text(routine.name, 100, false) || !text(routine.prompt, MAX.text, false)) return false;
-    if (typeof routine.enabled !== 'boolean' || !Array.isArray(routine.triggers) || routine.triggers.length > MAX.triggers) return false;
-    if (!routine.triggers.every(trigger => validTrigger(trigger)) || !Array.isArray(routine.history) || routine.history.length > MAX.history) return false;
-    return routine.history.every(item => item && text(item.id, MAX.id, false) && text(item.at, 64, false) && item.status === 'preview' && text(item.summary, 600));
+    if (!validDefinition(routine) || !text(routine.id, MAX.id, false) || !Array.isArray(routine.history) || routine.history.length > MAX.history) return false;
+    return routine.history.every(item => item && text(item.id, MAX.id, false) && text(item.at, 64, false) && Number.isFinite(Date.parse(item.at)) && item.status === 'preview' && text(item.summary, 600) && (item.definition == null || validDefinition(item.definition)));
   }
 
   function validDraft(draft, view) {
@@ -71,7 +74,7 @@
     if (!parentEvent(event)) return;
     const data = event.data;
     if (!data || typeof data !== 'object') return;
-    try { if (JSON.stringify(data).length > 150000) return; } catch { return; }
+    try { if (JSON.stringify(data).length > 2000000) return; } catch { return; }
     if (data.type === 'bot-panel.init') {
       const next = validContext(data);
       if (!next || !renderer) return;

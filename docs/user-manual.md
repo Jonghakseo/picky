@@ -101,6 +101,8 @@ The controls at the bottom of the sidebar are always available:
 - **Quit**: asks for confirmation before terminating Picky. When saved settings require a fresh process, this becomes **Restart**.
 - **Light/Dark icons**: select and persist Hub's appearance.
 
+The installed Picky version and build number appear below these controls.
+
 ## 3. Global shortcuts
 
 Default shortcuts:

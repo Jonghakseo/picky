@@ -8,6 +8,20 @@
 import Foundation
 
 enum AppBundleConfiguration {
+    static var appVersionDisplay: String? {
+        formatAppVersion(
+            appName: stringValue(forKey: "CFBundleName") ?? "Picky",
+            version: stringValue(forKey: "CFBundleShortVersionString"),
+            build: stringValue(forKey: "CFBundleVersion")
+        )
+    }
+
+    static func formatAppVersion(appName: String, version: String?, build: String?) -> String? {
+        guard let version, !version.isEmpty else { return nil }
+        guard let build, !build.isEmpty else { return "\(appName) \(version)" }
+        return "\(appName) \(version) (\(build))"
+    }
+
     static func stringValue(forKey key: String) -> String? {
         if let value = Bundle.main.object(forInfoDictionaryKey: key) as? String {
             let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)

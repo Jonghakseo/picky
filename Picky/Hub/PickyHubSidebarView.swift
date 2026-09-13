@@ -192,6 +192,15 @@ struct PickyHubSidebarFooter: View {
                 appearanceButton(systemName: "sun.max.fill", target: .light, label: "hub.appearance.light")
                 appearanceButton(systemName: "moon.fill", target: .dark, label: "hub.appearance.dark")
             }
+
+            if let appVersionDisplay = AppBundleConfiguration.appVersionDisplay {
+                Text(appVersionDisplay)
+                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
+                    .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                    .padding(.horizontal, DS.Spacing.space2)
+                    .padding(.top, DS.Spacing.space1)
+                    .pickyHubSelectableText()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             screens = NSScreen.screens

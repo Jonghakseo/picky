@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data:; frame-src 'self' file:; connect-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Picky · 메신저 클릭 목업 B.04</title>
+<title>Picky · 메신저 클릭 목업 B.05</title>
 <style>
 /* Prototype-only roles. Normal conversation size is a proposed window variant, not a HUD token change. */
 :root{color-scheme:light;--canvas:#eef0ef;--panel:#fff;--rail:#f7f8f8;--control:#f0f1f1;--hover:#e5e7e6;--pressed:#d9dbda;--text:#1a1c1b;--secondary:#525956;--muted:#636c67;--line:#e2e6e3;--strong:#c7ceca;--action:#2563eb;--action-text:#1d4ed8;--action-soft:#edf3ff;--on-action:#fff;--success:#24713f;--success-soft:#edf7ef;--warning:#875500;--warning-soft:#fff6e5;--danger:#ad3434;--danger-soft:#fff0ef;--violet:#72548e;--violet-soft:#f3eef8;--shadow:0 14px 48px #1a1c1b10,0 1px 3px #1a1c1b08;--body-size:14px;--row-pad:12px;--message-gap:28px;--message-pad:32px;--radius:12px;--space:4px}
@@ -21,7 +21,7 @@
 </head>
 <body>
 <header class="review-bar" aria-label="목업 리뷰 도구">
-  <div><span class="wordmark">Picky</span> <span class="study-label">MESSENGER / B.04</span></div>
+  <div><span class="wordmark">Picky</span> <span class="study-label">MESSENGER / B.05</span></div>
   <span class="preview-boundary">오프라인 목업 · 실제 실행 없음</span>
   <div class="review-controls">
     <label>화면 <select id="theme-select" aria-label="화면 밝기"><option value="light">라이트</option><option value="dark">다크</option></select></label>
@@ -35,7 +35,7 @@
       <div class="sidebar-head"><div class="brand-icon" aria-hidden="true">P</div><strong>Picky</strong><button id="new-chat" class="ghost new-chat" data-action="new-chat" aria-label="새 대화" title="새 대화">+</button></div>
       <div class="search"><button id="contact-search" class="search-trigger" data-action="search" aria-label="대화 검색" aria-haspopup="dialog"><span id="search-icon"></span>검색<kbd>⌘ K</kbd></button></div>
       <nav id="roster" class="roster" aria-label="봇과 그룹"></nav>
-
+      <div class="sidebar-foot"><button id="app-settings-button" class="ghost" data-action="app-settings" aria-haspopup="dialog" aria-label="앱 설정" title="앱 설정 (⌘,)"><span id="settings-icon" aria-hidden="true"></span><span>앱 설정</span><kbd>⌘ ,</kbd></button></div>
     </aside>
     <main class="conversation" aria-label="선택한 대화">
       <header class="conversation-head"><div id="header-avatar"></div><div class="grow"><h1 id="conversation-title"></h1><div class="subtitle" id="conversation-subtitle"></div></div><div class="head-actions"><button id="detail-button" class="ghost" data-action="details" aria-controls="inspector" aria-expanded="false">상세</button><button id="management-button" class="ghost icon-button" data-action="management" aria-controls="bot-management" aria-expanded="false" aria-label="피클 관리" title="피클 관리"></button></div></header>
@@ -64,8 +64,10 @@
 <dialog id="schedule-dialog" aria-label="메시지 예약 전송"><iframe id="schedule-frame" title="메시지 예약 설정" src="about:blank"></iframe></dialog>
 <dialog id="agent-chat-dialog" aria-label="에이전트 간 대화"><iframe id="agent-chat-frame" title="에이전트 간 읽기 전용 대화" src="about:blank"></iframe></dialog>
 <dialog id="picker-dialog" aria-label="대화 검색 및 선택"><iframe id="picker-frame" title="대화 찾기" src="about:blank"></iframe></dialog>
+<dialog id="app-settings-dialog" aria-label="앱 설정"><iframe id="app-settings-frame" title="앱 화면 설정" src="about:blank"></iframe></dialog>
 <dialog id="feedback-dialog" aria-labelledby="feedback-title"><div class="row between"><h2 id="feedback-title">이 화면에 의견 남기기</h2><button class="ghost icon-button" data-action="close-feedback" aria-label="피드백 닫기">×</button></div><p>무엇이 먼저 보여야 할까요? 입력 대상이나 다음 행동이 헷갈리는 곳, 너무 빽빽하거나 비어 보이는 곳을 적어주세요.</p><div id="feedback-context"></div><label for="feedback-text">의견</label><textarea id="feedback-text" placeholder="예: 예약 전송을 어디서 설정하는지 바로 찾기 어려워요." autofocus></textarea><div class="row between wrap" style="margin-top:10px"><small id="feedback-storage" class="muted"></small><button id="feedback-save" class="primary" data-action="save-feedback">의견 담기</button></div><hr><div class="row between"><strong class="small">담아 둔 의견</strong><span id="saved-count" class="muted small"></span></div><div id="feedback-list"></div><div class="dialog-actions"><button id="feedback-clear" class="ghost danger" data-action="clear-feedback">의견 모두 지우기</button><button id="feedback-download" data-action="download-feedback">Markdown 내려받기</button><button data-action="close-feedback">닫기</button></div><p class="small muted" style="margin-top:12px">이 브라우저에만 보관합니다. 자동 전송하지 않습니다. 내려받은 파일을 대화에 첨부해 주세요.</p></dialog>
 <script src="bot-management.js"></script>
+<script src="app-settings.js"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -89,7 +91,7 @@ let agentChat = null;
 let picker = null;
 let recoveryTimer;
 function scene(id) {
-  return {screen:id,view:['S01','S02','S05'].includes(id)?'picky':'mint',roomJoined:false,panel:null,hasChanges:!['S01','S02'].includes(id),request:id==='S01'?'':sampleRequest,decision:id==='S05'?'share':null,drafts:{picky:id==='S01'?sampleRequest:'',room:'',mint:'',luna:'',moka:''},chat:{picky:[],room:[],mint:[],luna:[],moka:[]},recovered:false};
+  return {screen:id,view:['S01','S02','S05'].includes(id)?'picky':'mint',roomJoined:false,panel:null,hasChanges:!['S01','S02'].includes(id),request:id==='S01'?'':sampleRequest,decision:id==='S05'?'share':null,drafts:{picky:id==='S01'?sampleRequest:'',room:'',mint:'',luna:'',moka:''},chat:{picky:[],room:[],mint:[],luna:[],moka:[]},read:Object.fromEntries(Object.keys(people).map(id=>[id,new Set()])),recovered:false};
 }
 let state = scene(allowed(params.get('screen'), screens, 'S01'));
 state.view = allowed(params.get('view'), Object.keys(people), state.view);
@@ -106,20 +108,48 @@ const management = createMockBotManagement({
   selected: () => state.view, owner: () => state, theme: () => theme,
   closeRequest: () => { state.panel = null; }, render: () => render(), notify,
 });
+const appSettings = createMockAppSettings({
+  frame: $('app-settings-frame'), dialog: $('app-settings-dialog'), button: $('app-settings-button'),
+  initial: { theme: params.get('theme'), density: params.get('density') }, notify,
+  apply: values => { theme = values.theme; density = values.density; render(); },
+});
+({ theme, density } = appSettings.values);
 function avatar(id) {const p=people[id];return `<div class="avatar ${id}" aria-hidden="true">${p.glyph}</div>`;}
 function tag(text, tone='', glyph='') {return `<span class="tag ${tone}">${glyph?icon(glyph):''}${esc(text)}</span>`;}
 function button(text, action, extra='', cls='') {return `<button type="button" class="${cls}" data-action="${action}" ${extra}>${text}</button>`;}
-function message(id, text, time='09:42') {return `<article class="message ${state.view==='room'?'':'dm-message'}" aria-label="${esc(people[id].name)} 메시지">${avatar(id)}<div><div class="message-meta"><strong>${esc(people[id].name)}</strong><span class="role-label">${people[id].role}</span><time>${time}</time></div><div class="message-body">${text}</div></div></article>`;}
+function message(id, text, time='09:42', view=state.view) {return `<article class="message ${view==='room'?'':'dm-message'}" aria-label="${esc(people[id].name)} 메시지">${avatar(id)}<div><div class="message-meta"><strong>${esc(people[id].name)}</strong><span class="role-label">${people[id].role}</span><time>${time}</time></div><div class="message-body">${text}</div></div></article>`;}
 function user(text) {return `<article class="user-message" aria-label="나 메시지"><div><div class="message-meta"><strong>나</strong></div><div class="user-bubble">${esc(text)}</div></div></article>`;}
 function currentStatus() {return ({S01:['대기','','clock'],S02:['팀 배정됨','running','people'],S03:['작업 중','running','clock'],S04:['답변 대기','warning','people'],S05:['완료','success','check'],S06:['작업 중','running','clock'],S07:['중단됨','','pause']})[state.screen];}
-function personStatus(id) {
-  if(state.screen==='S01') return '대기';
-  if(id==='room') return currentStatus()[0];
-  if(id==='picky') return state.screen==='S05'?'결과 도착':state.screen==='S07'?'중단 확인':'조율 중';
-  if(id==='luna') return state.hasChanges?'조사 완료':state.screen==='S07'?'요청 중단':'조사 수락';
-  if(id==='mint') return currentStatus()[0];
-  return state.screen==='S05'?'검토 의견 도착':state.screen==='S07'?'검토 취소':'인계 대기';
+function personActivity(id) {
+  if(state.screen==='S01')return ['idle','대기'];
+  if(id==='luna'&&state.hasChanges)return ['completed','조사 완료'];
+  if(state.screen==='S07')return ['stopped','중단됨'];
+  if(state.screen==='S05')return ['completed',id==='moka'?'검토 완료':'완료'];
+  if(state.screen==='S04'&&['picky','mint','room'].includes(id))return ['waiting','답변 대기'];
+  if(state.screen==='S02'&&['mint','moka'].includes(id))return ['queued','인계 대기'];
+  return ['running',id==='picky'?'조율 중':id==='luna'?'조사 중':id==='moka'?'검토 중':'작업 중'];
 }
+function activity(kind,label,id='') {
+  const glyph={completed:'check',waiting:'alert',stopped:'pause',queued:'clock'}[kind];
+  return `<span ${id?`id="${id}"`:''} class="activity-state ${kind}" role="img" aria-label="${esc(label)}" title="${esc(label)}">${glyph?icon(glyph):'<span class="activity-ring" aria-hidden="true"></span>'}</span>`;
+}
+function presenceAvatar(id,location) {
+  const [kind,label]=personActivity(id);
+  return `<span class="presence-avatar">${avatar(id)}${activity(kind,label,'activity-'+location+'-'+id)}</span>`;
+}
+function unreadCount(view) {return conversationEntries(view).filter(item=>item.incoming&&!state.read[view].has(item.id)).length;}
+function atBottom() {const el=$('message-scroll');return el.scrollHeight-el.scrollTop-el.clientHeight<=12;}
+function markVisibleRead() {
+  if(document.visibilityState!=='visible'||document.querySelector('dialog[open]')||!atBottom())return false;
+  const bounds=$('message-scroll').getBoundingClientRect();
+  if(!bounds.width||!bounds.height)return false;
+  const last=$('messages').querySelector('article:last-of-type')?.getBoundingClientRect();
+  if(last&&(last.bottom>Math.min(bounds.bottom,innerHeight)+1||last.bottom<=Math.max(bounds.top,0)))return false;
+  let changed=false;
+  for(const item of conversationEntries(state.view))if(item.incoming&&!state.read[state.view].has(item.id)){state.read[state.view].add(item.id);changed=true;}
+  return changed;
+}
+function refreshRead() {if(markVisibleRead())renderRoster();}
 function syncHash() {
   const p=new URLSearchParams({screen:state.screen,view:state.view,theme,density});
   if(state.panel) p.set('panel',state.panel);
@@ -140,9 +170,8 @@ function preview(id) {
 function renderRoster() {
   const time={S01:'09:42',S02:'09:43',S03:'09:44',S04:'09:45',S05:'09:49',S06:'09:50',S07:'09:51'}[state.screen];
   $('roster').innerHTML=Object.keys(people).filter(id=>id!=='room'||state.roomJoined).map(id=>{
-    const p=people[id];
-    const status=id==='mint'&&['S03','S04','S06'].includes(state.screen)?`<span class="status-mark" aria-label="${personStatus(id)}">${icon(state.screen==='S04'?'people':'clock')}</span>`:'';
-    return `<button id="route-${id}" class="contact" data-action="navigate" data-view="${id}" ${state.view===id?'aria-current="page"':''} aria-label="${esc(p.name)} 대화">${avatar(id)}<span class="grow"><span class="contact-title"><span class="name">${esc(p.name)}</span><time>${time}</time></span><span class="preview">${id==='room'?'그룹 · ':''}${esc(preview(id))}</span></span>${status}</button>`;
+    const p=people[id],count=unreadCount(id);
+    return `<button id="route-${id}" class="contact" data-action="navigate" data-view="${id}" data-unread="${count>0}" ${state.view===id?'aria-current="page"':''} aria-label="${esc(p.name)} 대화" aria-describedby="activity-roster-${id}${count?' unread-'+id:''}">${presenceAvatar(id,'roster')}<span class="grow"><span class="contact-title"><span class="name">${esc(p.name)}</span><time>${time}</time></span><span class="contact-preview"><span class="preview">${id==='room'?'그룹 · ':''}${esc(preview(id))}</span>${count?`<span id="unread-${id}" class="unread-badge" aria-label="읽지 않은 메시지 ${count}개" title="읽지 않은 메시지 ${count}개">${count>99?'99+':count}</span>`:''}</span></span></button>`;
   }).join('');
 }
 function agentRecord(id) {
@@ -157,11 +186,11 @@ function agentRecord(id) {
   else return null;
   return {id,from,to,participants:[from,to].map(key=>({id:key,...people[key]})),messages:rows.map(([sender,text],index)=>({id:id+'-'+index,sender,text,time:'09:'+String(43+index)}))};
 }
-function handoff(id) {
+function handoff(id,view=state.view) {
   const record=agentRecord(id);if(!record)return '';
-  const outgoing=state.view===record.from,peer=outgoing?record.to:record.from;
-  const label=state.view==='room'?`${people[record.from].name} → ${people[record.to].name}`:`${outgoing?'메시지 보냄':'메시지 받음'} ${people[peer].name}`;
-  return `<div class="agent-event"><button id="handoff-${id}" data-action="agent-chat" data-chat="${id}" aria-haspopup="dialog" aria-label="${esc(people[record.from].name)} ↔ ${esc(people[record.to].name)} 대화 보기"><span>${outgoing?'메시지 보냄':'메시지 받음'}</span>${avatar(peer)}<span>${state.view==='room'?esc(label):esc(people[peer].name)}</span>${icon('chevron')}</button></div>`;
+  const outgoing=view===record.from,peer=outgoing?record.to:record.from;
+  const label=view==='room'?`${people[record.from].name} → ${people[record.to].name}`:`${outgoing?'메시지 보냄':'메시지 받음'} ${people[peer].name}`;
+  return `<div class="agent-event"><button id="handoff-${id}" data-action="agent-chat" data-chat="${id}" aria-haspopup="dialog" aria-label="${esc(people[record.from].name)} ↔ ${esc(people[record.to].name)} 대화 보기"><span>${outgoing?'메시지 보냄':'메시지 받음'}</span>${avatar(peer)}<span>${view==='room'?esc(label):esc(people[peer].name)}</span>${icon('chevron')}</button></div>`;
 }
 function openAgentChat(id) {
   const record=agentRecord(id);if(!record)return;
@@ -185,43 +214,40 @@ function openPicker(mode='search') {
   $('picker-frame').hidden=true;$('picker-frame').src='chat-picker.html#theme='+theme;$('picker-dialog').showModal();
 }
 
-function activeSpeaker() {return state.view==='room'?'mint':state.view;}
-function workMessages() {
-  if(state.view==='room') return message('luna','<p>날짜를 바꿀 때 인원 선택값도 초기화되고 있어요.</p>')+message('mint','<p>인원 선택 UI는 그대로 두고 날짜 변경 로직을 수정하고 있어요.</p>');
-  if(state.view==='picky') return message('picky','<p>날짜 변경 로직을 수정하고 있어요.</p>')+handoff('assign-mint');
-  if(state.view==='mint') return message('mint','<p>날짜를 바꿔도 인원 선택값이 유지되도록 수정하고 있어요.</p>')+handoff('luna-mint');
-  return message(state.view,state.view==='luna'?'<p>원인을 찾아 민트에게 전달했어요.</p>':'<p>민트의 수정안을 검토하고 있어요.</p>');
+// Rendering and unread counts use the same fixture entries. Repainting never creates a message.
+function conversationEntries(view) {
+  const rows=[],speaker=view==='room'?'mint':view,active=['picky','room','mint'].includes(view);
+  const incoming=(id,sender,html,time='09:42',counted=true)=>rows.push({id,incoming:counted,html:message(sender,html,time,view)});
+  const decoration=html=>rows.push({incoming:false,html});
+  const delivery=id=>decoration(handoff(id,view));
+  if(state.screen==='S01')incoming('welcome',view==='room'?'picky':view,'<p>어떤 일을 도와드릴까요?</p>','09:42',false);
+  else if(state.screen==='S02') {
+    if(view==='picky'){decoration(user(state.request));incoming('assignment','picky','<p>담당자들에게 전달했어요.</p>');['luna','mint','moka'].forEach(id=>delivery('assign-'+id));}
+    else incoming('accepted',speaker,'<p>맡은 일을 확인했어요.</p>');
+  } else if(['S03','S04'].includes(state.screen)) {
+    if(view==='room'){incoming('luna-work','luna','<p>날짜를 바꿀 때 인원 선택값도 초기화되고 있어요.</p>');incoming('mint-work','mint','<p>인원 선택 UI는 그대로 두고 날짜 변경 로직을 수정하고 있어요.</p>');}
+    else if(view==='picky'){incoming('work','picky','<p>날짜 변경 로직을 수정하고 있어요.</p>');delivery('assign-mint');}
+    else if(view==='mint'){incoming('work','mint','<p>날짜를 바꿔도 인원 선택값이 유지되도록 수정하고 있어요.</p>');delivery('luna-mint');}
+    else incoming('work',view,view==='luna'?'<p>원인을 찾아 민트에게 전달했어요.</p>':'<p>민트의 수정안을 검토하고 있어요.</p>');
+  }
+  for(const item of state.chat[view]){decoration(user(item.text));incoming(item.id,speaker,'<p>'+esc(item.reply)+'</p>','09:44');}
+  if(state.screen==='S04'&&active)incoming('share-question',speaker,`<p>수정과 테스트를 마쳤어요. PR로 공유할까요?</p><div class="card"><div class="card-content"><div class="row wrap">${button('PR로 공유','answer','data-answer="share"','primary')}${button('수정안만 남기기','answer','data-answer="keep"')}</div></div></div>`,'09:45');
+  if(state.screen==='S05') {
+    if(active){
+      const shared=state.decision==='share';
+      incoming('result',speaker,`<p>${shared?'PR을 만들었어요.':'수정안을 남겼어요.'} 날짜를 바꿔도 선택한 인원은 유지됩니다.</p>${shared?`<div class="card"><div class="card-content row wrap">${icon('code')}<strong>#128</strong><code class="grow">fix/date-change</code><a href="pull-request.html#theme=${theme}" target="_blank" rel="noopener">PR 보기 ↗</a></div></div>`:''}`,'09:49');
+      if(view==='room')incoming('review','moka','<p>날짜 변경 로직과 회귀 테스트를 확인했습니다. 인원 선택 UI는 변경하지 않았습니다.</p>','09:48');
+      else if(view==='mint')delivery('moka-mint');else delivery('mint-picky');
+    } else incoming('result',view,'<p>맡은 일을 마쳤어요.</p>');
+  }
+  if(state.screen==='S06')incoming('recovery',speaker,'<p>처리 결과를 다시 확인하고 있어요. 확인되는 대로 마무리할게요.</p>');
+  if(state.screen==='S07'&&!state.chat[view].length){decoration(user('이 작업 중단해줘'));incoming('stopped',speaker,'<p>진행 중인 작업을 중단했어요.</p>');}
+  return rows;
 }
-
-function questionCard() {
-  return message(activeSpeaker(),`<p>수정과 테스트를 마쳤어요. PR로 공유할까요?</p><div class="card"><div class="card-content"><div class="row wrap">${button('PR로 공유','answer','data-answer="share"','primary')}${button('수정안만 남기기','answer','data-answer="keep"')}</div></div></div>`,'09:45');
-}
-function resultMessages() {
-  const shared=state.decision==='share';
-  const owner=activeSpeaker();
-  let html=message(owner,`<p>${shared?'PR을 만들었어요.':'수정안을 남겼어요.'} 날짜를 바꿔도 선택한 인원은 유지됩니다.</p>${shared?`<div class="card"><div class="card-content row wrap">${icon('code')}<strong>#128</strong><code class="grow">fix/date-change</code><a href="pull-request.html#theme=${theme}" target="_blank" rel="noopener">PR 보기 ↗</a></div></div>`:''}`,'09:49');
-  const review='날짜 변경 로직과 회귀 테스트를 확인했습니다. 인원 선택 UI는 변경하지 않았습니다.';
-  if(state.view==='room') html+=message('moka','<p>'+review+'</p>','09:48');
-  else if(state.view==='mint') html+=handoff('moka-mint');
-  else if(state.view==='picky') html+=handoff('mint-picky');
-  return html;
-}
-function renderMessages() {
-  let html='<div class="date-marker">오늘</div>';
-  const active=['picky','room','mint'].includes(state.view);
-  if(state.screen==='S01') html+=message(state.view==='room'?'picky':state.view,'<p>어떤 일을 도와드릴까요?</p>');
-  else if(state.screen==='S02') html+=state.view==='picky'?user(state.request)+message('picky','<p>담당자들에게 전달했어요.</p>')+['luna','mint','moka'].map(id=>handoff('assign-'+id)).join(''):message(activeSpeaker(),'<p>맡은 일을 확인했어요.</p>');
-  else if(['S03','S04'].includes(state.screen)) html+=workMessages();
-  for(const item of state.chat[state.view]) html+=user(item.text)+message(activeSpeaker(),'<p>'+esc(item.reply)+'</p>','09:44');
-  if(state.screen==='S04'&&active) html+=questionCard();
-  if(state.screen==='S05') html+=active?resultMessages():message(state.view,'<p>맡은 일을 마쳤어요.</p>');
-  if(state.screen==='S06') html+=message(activeSpeaker(),'<p>처리 결과를 다시 확인하고 있어요. 확인되는 대로 마무리할게요.</p>');
-  if(state.screen==='S07'&&!state.chat[state.view].length) html+=user('이 작업 중단해줘')+message(activeSpeaker(),'<p>진행 중인 작업을 중단했어요.</p>');
-  $('messages').innerHTML=html;
-}
+function renderMessages() { $('messages').innerHTML='<div class="date-marker">오늘</div>'+conversationEntries(state.view).map(item=>item.html).join(''); }
 function overviewPanel() {
   if(!state.hasChanges) return '<section><h3>아직 변경된 내용이 없어요</h3></section>';
-  return `<section>${tag(currentStatus()[0],currentStatus()[1],currentStatus()[2])}</section><section><h3>진행</h3><div class="check-row">${icon('check')}<div><strong>루나 · 원인 조사</strong></div></div><div class="check-row">${icon('code')}<div><strong>민트 · 수정</strong></div></div><div class="check-row">${icon('check')}<div><strong>모카 · 검토</strong></div></div></section><section><h3>민트의 하위 실행</h3><p class="subtle small">재현 조건 확인 · 회귀 사례 점검</p></section>`;
+  return `<section>${activity(({S03:'running',S04:'waiting',S05:'completed',S06:'running',S07:'stopped'})[state.screen]||'queued',currentStatus()[0])}</section><section><h3>진행</h3><div class="check-row">${icon('check')}<div><strong>루나 · 원인 조사</strong></div></div><div class="check-row">${icon('code')}<div><strong>민트 · 수정</strong></div></div><div class="check-row">${icon('check')}<div><strong>모카 · 검토</strong></div></div></section><section><h3>민트의 하위 실행</h3><p class="subtle small">재현 조건 확인 · 회귀 사례 점검</p></section>`;
 }
 function filesPanel() {
   if(!state.hasChanges) return '<section><h3>아직 변경 파일이 없어요</h3></section>';
@@ -261,20 +287,23 @@ function render(scrollEnd=false) {
   const oldTop=$('message-scroll').scrollTop;
   document.documentElement.dataset.theme=theme;document.documentElement.dataset.density=density;
   $('theme-select').value=theme;$('density-select').value=density;
-  renderRoster();$('header-avatar').innerHTML=avatar(state.view);$('conversation-title').textContent=people[state.view].name;
-  $('conversation-subtitle').textContent=state.view==='room'?'나 · Picky · 루나 · 민트 · 모카':personStatus(state.view);
+  $('header-avatar').innerHTML=presenceAvatar(state.view,'header');$('conversation-title').textContent=people[state.view].name;
+  $('conversation-title').setAttribute('aria-describedby','activity-header-'+state.view);
+  $('conversation-subtitle').textContent=state.view==='room'?'나 · Picky · 루나 · 민트 · 모카':'';
+  $('conversation-subtitle').hidden=state.view!=='room';
   $('detail-button').disabled=state.screen==='S01';
   renderMessages();renderComposer();management.sync();renderInspector();$('scene-select').value=state.screen;
   $('scene-previous').disabled=state.screen==='S01';$('scene-next').disabled=state.screen==='S07';
   $('feedback-count').textContent=feedback.length?String(feedback.length):'';syncHash();
   $('message-scroll').scrollTop=scrollEnd?$('message-scroll').scrollHeight:oldTop;
+  markVisibleRead();renderRoster();
   if(focused&&$(focused)&&!$(focused).disabled&&document.activeElement===document.body)$(focused).focus({preventScroll:true});
 }
 function beginRecovery() {
   clearTimeout(recoveryTimer);
   if(state.screen!=='S06')return;
   const owner=state;
-  recoveryTimer=setTimeout(()=>{if(state!==owner||state.screen!=='S06')return;state.screen='S05';state.decision='share';state.recovered=true;render(true);},5000);
+  recoveryTimer=setTimeout(()=>{if(state!==owner||state.screen!=='S06')return;state.screen='S05';state.decision='share';state.recovered=true;render(atBottom());},5000);
 }
 function changeScene(id) {
   closeTransient();state=scene(id);schedules=[];
@@ -288,21 +317,22 @@ function navigate(view) {
 }
 // This fixed demo recognizes a few stop phrases. Production intent belongs to Pi, not Swift or a keyword parser.
 
-function dispatchMessage(target,text) {
+function dispatchMessage(target,text,reveal=false) {
+  const follow=target===state.view&&(reveal||atBottom());
   const active=['picky','room','mint'].includes(target);
   const stop=/^(?:이\s*(?:작업|요청)\s*)?(?:중단(?:해(?:줘)?|하자)?|그만(?:해(?:줘)?)?|멈춰(?:줘)?|stop)[.!\s]*$/i.test(text);
-  if(stop&&active&&state.screen!=='S01') {state.chat[target].push({text,reply:'진행 중인 작업을 중단했어요.'});state.screen='S07';state.decision=null;clearTimeout(recoveryTimer);}
+  if(stop&&active&&state.screen!=='S01') {state.chat[target].push({id:crypto.randomUUID(),text,reply:'진행 중인 작업을 중단했어요.'});state.screen='S07';state.decision=null;clearTimeout(recoveryTimer);}
   else if(state.screen==='S01'&&target==='picky') {state.request=text;state.screen='S02';}
   else {
-    state.chat[target].push({text,reply:stop?'이 대화에 진행 중인 작업은 없어요.':'반영할게요.'});
+    state.chat[target].push({id:crypto.randomUUID(),text,reply:stop?'이 대화에 진행 중인 작업은 없어요.':'반영할게요.'});
     if(active&&state.screen==='S03'){state.screen='S04';state.hasChanges=true;}
     else if(active&&['S01','S05','S07'].includes(state.screen)){state.screen='S03';state.hasChanges=true;state.decision=null;}
   }
-  render(true);
+  render(follow);
 }
 function submit() {
   const text=$('message-input').value.trim();if(!text)return;
-  const target=state.view;state.drafts[target]='';dispatchMessage(target,text);$('message-input').focus({preventScroll:true});
+  const target=state.view;state.drafts[target]='';dispatchMessage(target,text,true);$('message-input').focus({preventScroll:true});
 }
 function scheduleContext(existing=null) {
   const text=existing?existing.text:$('message-input').value.trim();if(!text)return null;
@@ -336,7 +366,7 @@ function saveSchedule(context,dueAt){
   return true;
 }
 function closeTransient(){
-  management.close(false);
+  management.close(false);appSettings.close(false);
   if($('schedule-menu').matches(':popover-open'))$('schedule-menu').hidePopover();
   scheduleDraft=null;scheduleEditor=null;agentChat=null;picker=null;
   for(const id of ['schedule-dialog','agent-chat-dialog','picker-dialog'])$(id).close();
@@ -350,7 +380,7 @@ function tickSchedules() {
 }
 
 function showPanel(panel) {management.close(false);state.panel=allowed(panel,['overview','files','checks'],'overview');render();$('inspector-title').focus({preventScroll:true});}
-function contextText() {return `${state.screen} · ${people[state.view].name} · ${currentStatus()[0]} · ${theme==='light'?'라이트':'다크'} · ${density==='comfortable'?'여유 있게':'촘촘하게'} · 상세 ${state.panel||'닫힘'} · ${management.context()}`;}
+function contextText() {return `${state.screen} · ${people[state.view].name} · ${currentStatus()[0]} · ${theme==='light'?'라이트':'다크'} · ${density==='comfortable'?'여유 있게':'촘촘하게'} · 상세 ${state.panel||'닫힘'} · ${management.context()}${$('app-settings-dialog').open?' · 앱 설정':''}`;}
 function persistFeedback() {try{localStorage.setItem(feedbackKey,JSON.stringify(feedback));feedbackStorage=true;}catch{feedbackStorage=false;}}
 function renderFeedback() {
   $('feedback-context').textContent=feedbackContext;
@@ -363,16 +393,21 @@ function renderFeedback() {
 }
 function downloadFeedback() {
   if(!feedback.length) return;
-  const text='# Picky B.04 목업 피드백\n\n제품 동작 검증이 아닌 화면·상태·흐름에 대한 의견입니다.\n\n'+feedback.map((n,i)=>`## 의견 ${i+1}\n\n- 화면: ${n.context}\n- 기록 시각: ${n.time}\n\n${n.text}\n`).join('\n');
+  const text='# Picky B.05 목업 피드백\n\n제품 동작 검증이 아닌 화면·상태·흐름에 대한 의견입니다.\n\n'+feedback.map((n,i)=>`## 의견 ${i+1}\n\n- 화면: ${n.context}\n- 기록 시각: ${n.time}\n\n${n.text}\n`).join('\n');
   const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'}));
-  const a=document.createElement('a');a.href=url;a.download='picky-b04-feedback.md';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const a=document.createElement('a');a.href=url;a.download='picky-b05-feedback.md';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 $('composer').addEventListener('submit',event=>{event.preventDefault();submit();});
 $('message-input').addEventListener('input',()=>{sizeComposer();state.drafts[state.view]=$('message-input').value;const empty=!$('message-input').value.trim();$('send-button').disabled=empty;$('schedule-button').disabled=empty;});
 $('message-input').addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing||event.keyCode===229||event.shiftKey)return;event.preventDefault();submit();});
-document.addEventListener('keydown',event=>{if(event.metaKey&&event.key.toLowerCase()==='k'&&!document.querySelector('dialog[open]')){event.preventDefault();openPicker();}});
-$('theme-select').addEventListener('change',event=>{theme=event.target.value;render();});
-$('density-select').addEventListener('change',event=>{density=event.target.value;render();});
+document.addEventListener('keydown',event=>{if(!event.metaKey||event.isComposing||document.querySelector('dialog[open]'))return;if(event.key===','){event.preventDefault();appSettings.open();}else if(event.key.toLowerCase()==='k'){event.preventDefault();openPicker();}});
+$('theme-select').addEventListener('change',event=>appSettings.change({theme:event.target.value,density}));
+$('density-select').addEventListener('change',event=>appSettings.change({theme,density:event.target.value}));
+$('message-scroll').addEventListener('scroll',refreshRead,{passive:true});
+window.addEventListener('scroll',refreshRead,{passive:true});
+window.addEventListener('resize',refreshRead);
+document.addEventListener('visibilitychange',refreshRead);
+document.addEventListener('close',refreshRead,true);
 $('scene-select').addEventListener('change',event=>changeScene(event.target.value));
 $('feedback-text').addEventListener('input',()=>{$('feedback-save').disabled=!$('feedback-text').value.trim();});
 $('feedback-dialog').addEventListener('close',()=>{$('feedback-clear').dataset.confirm='';$('feedback-clear').textContent='의견 모두 지우기';});
@@ -415,6 +450,7 @@ document.addEventListener('click',event=>{
     case 'navigate':navigate(el.dataset.view);break;
     case 'search':openPicker();break;
     case 'new-chat':openPicker('new');break;
+    case 'app-settings':appSettings.open();break;
     case 'agent-chat':openAgentChat(el.dataset.chat);break;
     case 'details':showPanel('overview');break;
     case 'management':if(management.isOpen()){management.close();}else{management.open();}break;
@@ -435,9 +471,10 @@ document.addEventListener('click',event=>{
     case 'download-feedback':downloadFeedback();break;
   }
 });
-window.addEventListener('hashchange',()=>{closeTransient();const p=new URLSearchParams(location.hash.slice(1));state=scene(allowed(p.get('screen'),screens,'S01'));schedules=[];state.view=allowed(p.get('view'),Object.keys(people),state.view);state.roomJoined=state.view==='room'||p.get('group')==='1';state.panel=allowed(p.get('panel'),['overview','files','checks'],null);theme=allowed(p.get('theme'),['light','dark'],theme);density=allowed(p.get('density'),['comfortable','compact'],density);render(true);beginRecovery();});
+window.addEventListener('hashchange',()=>{closeTransient();const p=new URLSearchParams(location.hash.slice(1));state=scene(allowed(p.get('screen'),screens,'S01'));schedules=[];state.view=allowed(p.get('view'),Object.keys(people),state.view);state.roomJoined=state.view==='room'||p.get('group')==='1';state.panel=allowed(p.get('panel'),['overview','files','checks'],null);theme=allowed(p.get('theme'),['light','dark'],theme);density=allowed(p.get('density'),['comfortable','compact'],density);appSettings.change({theme,density});render(true);beginRecovery();});
 setInterval(tickSchedules,1000);
 
+$('settings-icon').innerHTML='<svg viewBox="0 0 24 24"><path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z"/><circle cx="12" cy="12" r="3"/></svg>';
 $('management-button').innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>';
 $('send-button').innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>';$('search-icon').innerHTML=icon('search');$('inspector-close').innerHTML=icon('close');$('scene-previous').innerHTML=icon('back');$('scene-next').innerHTML=icon('chevron');
 render(['S04','S05','S06','S07'].includes(state.screen));beginRecovery();

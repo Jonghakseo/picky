@@ -1,4 +1,4 @@
-/* B.04 messenger-window variants. Picky semantic colors remain the source; no native HUD tokens change. */
+/* B.05 messenger-window variants. Picky semantic colors remain the source; no native HUD tokens change. */
 .window{grid-template-columns:280px minmax(0,1fr)}
 .window.has-inspector{grid-template-columns:260px minmax(320px,1fr) 320px}
 .sidebar-head{height:60px;border-bottom:0;padding:0 16px}
@@ -65,3 +65,31 @@ textarea#message-input{min-height:32px;max-height:140px;resize:none;flex:1;font-
 }
 
 .conversation-head h1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Status has shape and an accessible name. Only an active progress ring repeats. */
+.presence-avatar{position:relative;display:inline-flex;flex:none}
+.activity-state{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;color:var(--secondary);background:var(--panel);flex:none}
+.presence-avatar .activity-state{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;border:2px solid var(--panel)}
+.activity-state svg{width:12px;height:12px;stroke-width:2.4}
+.activity-state.running{color:var(--action-text)}.activity-state.completed{color:var(--success);background:var(--success-soft)}
+.activity-state.waiting{color:var(--warning);background:var(--warning-soft)}.activity-state.stopped,.activity-state.queued{background:var(--control)}
+.activity-ring{display:block;width:11px;height:11px;border:2px solid currentColor;border-radius:50%}
+.running .activity-ring{border-right-color:transparent;animation:activity-turn 1.2s linear infinite}
+.idle .activity-ring{width:7px;height:7px;border-width:1.5px}
+@keyframes activity-turn{to{transform:rotate(360deg)}}
+.contact-preview{display:flex;align-items:center;gap:8px;min-width:0;margin-top:4px}
+.contact-preview .preview{flex:1;min-width:0;margin:0}
+.unread-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:18px;height:18px;padding:0 5px;border-radius:10px;background:var(--action);color:var(--on-action);font-size:10px;font-weight:650;line-height:1}
+.contact[data-unread=true] .name{font-weight:650}.contact[data-unread=true] .preview{color:var(--text)}
+.sidebar .sidebar-foot{display:block;padding:10px 12px;color:var(--secondary);border-top:1px solid var(--line)}
+#app-settings-button{width:100%;justify-content:flex-start;padding:8px;gap:8px;font-size:12px}
+#app-settings-button kbd{margin-left:auto;color:var(--muted);font:11px -apple-system,BlinkMacSystemFont,sans-serif}
+#app-settings-dialog{padding:0;width:min(460px,calc(100vw - 24px));height:min(560px,88dvh)}
+#app-settings-frame{display:block;width:100%;height:100%;border:0}
+@media(max-width:480px){
+  .contact-preview{margin-top:3px;justify-content:flex-start}.presence-avatar .activity-state{width:15px;height:15px;right:-3px;bottom:-3px}
+  .activity-state svg{width:10px;height:10px}.activity-ring{width:9px;height:9px}
+  .sidebar .sidebar-foot{padding:3px 8px}.sidebar-foot #app-settings-button{width:auto;min-height:30px;padding:4px 8px}
+  #app-settings-button kbd{display:none}
+}
+@media(prefers-reduced-motion:reduce){.running .activity-ring{animation:none}}
+@media(prefers-contrast:more){.activity-state{outline:1px solid currentColor}.unread-badge{outline:1px solid var(--text)}}

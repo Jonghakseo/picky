@@ -7,7 +7,7 @@ const { createRequire } = require('node:module');
 const { execFileSync } = require('node:child_process');
 const cli = process.env.PLAYWRIGHT_CLI || execFileSync('which', ['playwright-cli'], { encoding: 'utf8' }).trim();
 const { chromium } = createRequire(fs.realpathSync(cli))('playwright-core');
-const evidence = '/private/tmp/picky-b04-evidence';
+const evidence = '/private/tmp/picky-b05-evidence';
 fs.mkdirSync(evidence, { recursive: true });
 const checks = [];
 
@@ -251,7 +251,7 @@ async function main() {
     await page.getByLabel('정보 밀도').selectOption('compact');
     await shot('S05-dark-compact');
     await page.getByRole('button', { name: /^이 화면 피드백/ }).click();
-    const note = 'B.04 PR 카드 피드백 <b>원문 그대로</b>';
+    const note = 'B.05 PR 카드 피드백 <b>원문 그대로</b>';
     await page.getByRole('textbox', { name: '의견', exact: true }).fill(note);
     await page.getByRole('button', { name: '의견 담기', exact: true }).click();
     await page.getByRole('button', { name: '닫기', exact: true }).click();
@@ -261,7 +261,7 @@ async function main() {
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Markdown 내려받기', exact: true }).click();
     const download = await downloadPromise;
-    assert.equal(download.suggestedFilename(), 'picky-b04-feedback.md');
+    assert.equal(download.suggestedFilename(), 'picky-b05-feedback.md');
     await download.saveAs(path.join(evidence, 'feedback.md'));
     assert(fs.readFileSync(path.join(evidence, 'feedback.md'), 'utf8').includes(note));
     await page.getByRole('button', { name: '닫기', exact: true }).click();
@@ -280,6 +280,7 @@ async function main() {
       await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '모카 ↔ 민트 대화 보기');
     }
     checks.push('Read-only pair view fits dark desktop and narrow widths; Escape restores the originating chip');
+    await verifyFeedback05({ page, checks, shot, choose, input, sceneIs, conversation });
     await verifyManagement({ page, checks, shot, choose, input, sceneIs, conversation });
     assert.deepEqual(errors, [], 'Browser and CSP errors');
     assert.deepEqual(external, [], 'No external requests from mock or parts');
@@ -289,6 +290,160 @@ async function main() {
     await browser.close();
   }
 }
+async function verifyFeedback05({ page, checks, shot, choose, input, sceneIs, conversation }) {
+  const route = name => page.getByRole('button', { name: name + ' 대화', exact: true });
+  const unread = name => page.locator('#roster button[aria-label="' + name + ' 대화"] .unread-badge');
+  const assertUnread = async (name, count) => {
+    if (count) { await unread(name).filter({ hasText: new RegExp('^' + count + '$') }).waitFor({ state: 'visible' }); assert.equal(await unread(name).getAttribute('aria-label'), '읽지 않은 메시지 ' + count + '개'); }
+    else await unread(name).waitFor({ state: 'hidden' });
+  };
+  const head = () => conversation().locator('header');
+  const settings = page.frameLocator('#app-settings-frame');
+  const dialog = page.getByRole('dialog', { name: '앱 설정', exact: true });
+  const settingsReady = () => settings.getByRole('radio', { name: '다크', exact: true }).waitFor({ state: 'visible' });
+  const openSettings = async () => { await page.getByRole('button', { name: '앱 설정', exact: true }).click(); await settingsReady(); };
+  const closeSettings = async () => { await settings.getByRole('button', { name: '앱 설정 닫기', exact: true }).press('Escape'); await dialog.waitFor({ state: 'hidden' }); await page.waitForFunction(() => document.activeElement?.id === 'app-settings-button'); };
+  const schedule = async text => {
+    await input().fill(text);
+    await page.getByRole('button', { name: '메시지 예약 전송', exact: true }).click();
+    await page.getByRole('menuitem', { name: '직접 시간 설정…', exact: true }).click();
+    await page.frameLocator('#schedule-frame').getByRole('button', { name: '예약하기', exact: true }).click();
+    await page.getByRole('dialog', { name: '메시지 예약 전송', exact: true }).waitFor({ state: 'hidden' });
+  };
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByLabel('화면 밝기').selectOption('light');
+  await page.getByLabel('정보 밀도').selectOption('comfortable');
+  await choose('S03');
+  const running = head().getByRole('img', { name: '작업 중', exact: true });
+  assert(await running.isVisible());
+  assert(!(await head().innerText()).includes('작업 중'));
+  assert(await running.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getComputedTiming().iterations === Infinity)));
+  await shot('activity-running-light');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  assert(await running.isVisible());
+  assert.equal(await running.evaluate(el => el.getAnimations({ subtree: true }).length), 0);
+  await shot('activity-running-reduced-motion');
+  await choose('S04');
+  assert(await head().getByRole('img', { name: '답변 대기', exact: true }).isVisible());
+  assert(await conversation().getByRole('button', { name: 'PR로 공유', exact: true }).isVisible());
+  await choose('S07');
+  assert(await head().getByRole('img', { name: '중단됨', exact: true }).isVisible());
+  await choose('S02');
+  assert(await route('모카').getByRole('img', { name: '인계 대기', exact: true }).isVisible());
+  await choose('S01');
+  assert(await head().getByRole('img', { name: '대기', exact: true }).isVisible());
+  assert.equal(await page.locator('.unread-badge').count(), 0);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  checks.push('Status text becomes named visual signals; running motion stops under Reduce Motion without hiding state or asks');
+
+  await choose('S05');
+  assert(await head().getByRole('img', { name: '완료', exact: true }).isVisible());
+  await assertUnread('Picky', 0); await assertUnread('루나', 1); await assertUnread('민트', 1);
+  await shot('activity-completed-unread-light');
+  await route('루나').click();
+  assert(await head().getByRole('img', { name: '조사 완료', exact: true }).isVisible());
+  assert(!(await head().innerText()).includes('조사 완료'));
+  await assertUnread('루나', 0); await assertUnread('민트', 1);
+  await page.getByLabel('화면 밝기').selectOption('dark');
+  await page.getByLabel('정보 밀도').selectOption('compact');
+  await assertUnread('루나', 0); await assertUnread('민트', 1);
+  await route('민트').click(); await assertUnread('민트', 0);
+  assert(await head().getByRole('img', { name: '완료', exact: true }).isVisible());
+  await choose('S02');
+  await assertUnread('민트', 1);
+  await page.getByRole('button', { name: 'Picky ↔ 민트 대화 보기', exact: true }).click();
+  await page.frameLocator('#agent-chat-frame').getByRole('button', { name: '대화 닫기', exact: true }).click();
+  await page.getByRole('dialog', { name: '에이전트 간 대화', exact: true }).waitFor({ state: 'hidden' });
+  await assertUnread('민트', 1);
+  checks.push('Unread badges belong to incoming conversation messages, clear on reading, and do not reset on repaint or pair inspection');
+
+  await page.getByLabel('화면 밝기').selectOption('light');
+  await page.getByLabel('정보 밀도').selectOption('comfortable');
+  await choose('S03');
+  await schedule('읽지 않은 응답을 확인할 예약');
+  await route('모카').click();
+  await page.clock.fastForward(300001);
+  await sceneIs('S04');
+  assert.equal(await conversation().getByRole('heading', { level: 1 }).textContent(), '모카');
+  await assertUnread('민트', 2); await assertUnread('모카', 0);
+  await shot('unread-background-delivery');
+  await route('민트').click(); await assertUnread('민트', 0);
+  await schedule('설정 뒤에 도착하는 응답');
+  await openSettings();
+  await page.clock.fastForward(300001);
+  await assertUnread('민트', 1);
+  await closeSettings(); await assertUnread('민트', 0);
+  // Browsing older messages is not the same as seeing a newly appended reply.
+  for (let i = 0; i < 9; i++) { await input().fill('이전 내용을 확인할 메시지 ' + i); await input().press('Enter'); }
+  await schedule('위로 스크롤한 동안 도착하는 응답');
+  await page.locator('#message-scroll').evaluate(el => { el.scrollTop = 0; });
+  await page.clock.fastForward(300001);
+  assert.equal(await page.locator('#message-scroll').evaluate(el => el.scrollTop), 0);
+  await assertUnread('민트', 1);
+  await page.locator('#message-scroll').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await assertUnread('민트', 0);
+  await choose('S03');
+  await schedule('관리 화면 뒤에서 도착하는 응답');
+  await page.setViewportSize({ width: 1024, height: 850 });
+  await page.getByRole('button', { name: '민트 피클 관리', exact: true }).click();
+  const management = page.frameLocator('#bot-management-frame');
+  await management.getByRole('button', { name: '피클 설정', exact: true }).waitFor({ state: 'visible' });
+  await page.clock.fastForward(300001);
+  await assertUnread('민트', 2);
+  assert.equal(await conversation().isVisible(), false);
+  await management.getByRole('button', { name: '피클 관리 닫기', exact: true }).click();
+  await assertUnread('민트', 0);
+  checks.push('Scheduled replies update only the destination unread count; dialogs, hidden chats and older-message scrolling do not mark new replies read');
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await choose('S03');
+  await input().fill('앱 설정에서도 보존하는 대화 초안');
+  const transcript = await page.locator('#messages').innerText();
+  const botSettingsBefore = await page.evaluate(() => localStorage.getItem('picky.mockup.b04.bot-management'));
+  await page.evaluate(() => window.addEventListener('message', event => { if (event.data?.type === 'app-settings.ready') window.__appearanceToken = event.data.token; }));
+  await openSettings();
+  await shot('app-settings-light');
+  const firstToken = await page.evaluate(() => window.__appearanceToken);
+  await settings.getByRole('radio', { name: '다크', exact: true }).check();
+  await settings.getByRole('radio', { name: '촘촘하게', exact: true }).check();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark' && document.documentElement.dataset.density === 'compact');
+  assert.equal(await page.locator('#message-input').inputValue(), '앱 설정에서도 보존하는 대화 초안');
+  assert.equal(await page.locator('#messages').innerText(), transcript);
+  await sceneIs('S03');
+  await closeSettings();
+  await input().press('Meta+,'); await settingsReady();
+  assert(await settings.getByRole('radio', { name: '다크', exact: true }).isChecked());
+  assert(await settings.getByRole('radio', { name: '촘촘하게', exact: true }).isChecked());
+  const liveToken = await page.evaluate(() => window.__appearanceToken);
+  assert.notEqual(firstToken, liveToken);
+  const frame = page.frames().find(frame => /\/app-settings\.html\?/.test(frame.url()));
+  await frame.evaluate(({ firstToken, liveToken }) => {
+    parent.postMessage({ type: 'app-settings.change', token: firstToken, theme: 'light', density: 'comfortable' }, '*');
+    parent.postMessage({ type: 'app-settings.change', token: liveToken, theme: 'invalid', density: 'comfortable' }, '*');
+    parent.postMessage({ type: 'app-settings.close', token: liveToken }, '*');
+  }, { firstToken, liveToken });
+  await dialog.waitFor({ state: 'hidden' });
+  assert.equal(await page.getByLabel('화면 밝기').inputValue(), 'dark');
+  assert.equal(await page.getByLabel('정보 밀도').inputValue(), 'compact');
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('picky.mockup.b05.appearance'))), { theme: 'dark', density: 'compact' });
+  assert.equal(await page.evaluate(() => localStorage.getItem('picky.mockup.b04.bot-management')), botSettingsBefore);
+  await page.goto(page.url().split('#')[0]);
+  assert.equal(await page.getByLabel('화면 밝기').inputValue(), 'dark');
+  assert.equal(await page.getByLabel('정보 밀도').inputValue(), 'compact');
+  for (const width of [1024, 390]) {
+    await page.setViewportSize({ width, height: 850 });
+    await openSettings();
+    const live = page.frames().find(frame => /\/app-settings\.html\?/.test(frame.url()));
+    assert(await live.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await shot('app-settings-dark-' + width);
+    await closeSettings();
+    await choose('S05');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await shot('unread-dark-' + width);
+  }
+  checks.push('Lower-left app settings and Command-comma control persisted appearance only, preserve drafts, reject stale updates and fit narrow layouts');
+}
+
 async function verifyManagement({ page, checks, shot, choose, input, sceneIs, conversation }) {
   const panel = page.frameLocator('#bot-management-frame');
   const root = page.locator('#bot-management');

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Picky · 앱 설정</title>
+<link rel="stylesheet" href="parts.css">
+<style>
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:24px}header button{border:0;background:transparent;font-size:22px;width:36px;padding:0}h1:focus{outline:0}.settings-section{margin:0 0 24px}.choices{display:grid;grid-template-columns:1fr 1fr;gap:8px}.choices label{display:flex;align-items:center;gap:8px;margin:0;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:default}.choices label:hover{background:var(--hover)}.choices label:has(input:checked){background:var(--control);border-color:var(--blue-text)}fieldset{padding:0;border:0}legend{padding:0;margin:0 0 12px;color:var(--text);font-size:14px;font-weight:600}.shortcuts{display:grid;grid-template-columns:1fr auto;gap:8px;color:var(--secondary);font-size:12px}.shortcuts dt,.shortcuts dd{margin:0}.shortcuts dd{text-align:right}kbd{font:inherit}.note{border-top:1px solid var(--line);padding-top:16px;margin-top:24px}a{font-size:12px}[hidden]{display:none!important}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}@media(prefers-contrast:more){.choices label{border-color:var(--text)}}
+</style>
+</head>
+<body>
+<main>
+  <header><h1 id="title" tabindex="-1">앱 설정</h1><button id="close" aria-label="앱 설정 닫기" title="닫기" disabled>×</button></header>
+  <fieldset id="appearance" class="settings-section" disabled><legend>화면 밝기</legend><div class="choices"><label><input type="radio" name="theme" value="light" checked>라이트</label><label><input type="radio" name="theme" value="dark">다크</label></div></fieldset>
+  <fieldset id="density" class="settings-section" disabled><legend>대화 밀도</legend><div class="choices"><label><input type="radio" name="density" value="comfortable" checked>여유 있게</label><label><input type="radio" name="density" value="compact">촘촘하게</label></div></fieldset>
+  <p class="subtle">동작 줄이기는 시스템 설정을 따릅니다.</p>
+  <section class="settings-section"><h2>키보드</h2><dl class="shortcuts"><dt>앱 설정</dt><dd><kbd>⌘ ,</kbd></dd><dt>대화 검색</dt><dd><kbd>⌘ K</kbd></dd><dt>메시지 보내기</dt><dd><kbd>Enter</kbd></dd><dt>줄바꿈</dt><dd><kbd>Shift Enter</kbd></dd></dl></section>
+  <p class="subtle note">B.05 목업에서는 화면 설정만 미리 볼 수 있어요. macOS나 실제 Picky의 설정은 바뀌지 않습니다.</p>
+  <a id="standalone" href="index.html">메신저에서 설정 열기 ↗</a>
+</main>
+<script>
+'use strict';
+const expected = new URLSearchParams(location.search).get('panel');
+const embedded = parent !== window;
+const origin = location.protocol === 'file:' ? '*' : location.origin;
+let token = null;
+const initialTheme = new URLSearchParams(location.hash.slice(1)).get('theme');
+document.documentElement.dataset.theme = initialTheme === 'dark' ? 'dark' : 'light';
+function send(type) {
+  if (!token) return;
+  parent.postMessage({ type, token, theme: document.querySelector('[name=theme]:checked').value, density: document.querySelector('[name=density]:checked').value }, origin);
+}
+function render(data) {
+  document.documentElement.dataset.theme = data.theme;
+  document.querySelector('[name=theme][value="' + data.theme + '"]').checked = true;
+  document.querySelector('[name=density][value="' + data.density + '"]').checked = true;
+}
+window.addEventListener('message', event => {
+  if (!embedded || event.source !== parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin)) return;
+  const data = event.data;
+  if (!data || typeof expected !== 'string' || !expected || data.token !== expected) return;
+  if (!['light', 'dark'].includes(data.theme) || !['comfortable', 'compact'].includes(data.density)) return;
+  if (data.type === 'app-settings.init') {
+    token = data.token;
+    render(data);
+    document.getElementById('appearance').disabled = false;
+    document.getElementById('density').disabled = false;
+    document.getElementById('close').disabled = false;
+    document.getElementById('standalone').hidden = true;
+    send('app-settings.ready');
+  } else if (token && data.type === 'app-settings.values') render(data);
+  else if (token && data.type === 'app-settings.focus') document.getElementById('title').focus({ preventScroll: true });
+});
+document.querySelectorAll('input').forEach(input => input.addEventListener('change', () => send('app-settings.change')));
+document.getElementById('close').addEventListener('click', () => send('app-settings.close'));
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); send('app-settings.close'); } });
+</script>
+</body>
+</html>

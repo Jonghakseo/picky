@@ -2404,6 +2404,46 @@ describe("SessionSupervisor", () => {
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
   });
 
+  it("keeps a cancelled session running when queued input starts after manual compaction", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-compact-queue-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+    let finishCompaction!: () => void;
+    const compactionCanFinish = new Promise<void>((resolve) => { finishCompaction = resolve; });
+
+    runtime.handle!.onCompact = async (handle) => {
+      handle.isCompacting = true;
+      handle.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "manual" });
+      await compactionCanFinish;
+      handle.isCompacting = false;
+      handle.emit({ type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, compactionReason: "manual" });
+      handle.isStreaming = true;
+      handle.emit({ type: "status", status: "running", summary: "Agent started" });
+    };
+    runtime.handle!.onSteer = (handle, prompt) => {
+      if (!handle.isCompacting) return;
+      handle.queuedSteerTexts.push(prompt.text);
+      handle.emit({ type: "queue_update", steering: [...handle.queuedSteerTexts], followUp: [] });
+    };
+
+    runtime.handle!.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "cancelled");
+    const compact = supervisor.steer(pickle.id, "/compact");
+    await waitUntil(() => runtime.handle!.isCompacting);
+
+    await supervisor.steer(pickle.id, "continue after compaction");
+    finishCompaction();
+    await compact;
+    await waitForRuntimeEvents(supervisor, pickle.id);
+
+    expect(supervisor.get(pickle.id)).toMatchObject({
+      status: "running",
+      lastSummary: "Agent started",
+    });
+  });
+
   it("ignores automatic compaction events while terminal manual compaction is active", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

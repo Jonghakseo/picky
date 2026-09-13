@@ -342,8 +342,12 @@ export class RuntimeEventHandler {
       await this.dependencies.messageBuilder.recordSystemMessage(sessionId, compactFailureMessage(event.summary, currentSession.contextUsage));
     }
 
-    const restoreManualTerminalStatus = isManualTerminalCompactionEvent
+    const finishesManualTerminalCompaction = isManualTerminalCompactionEvent
       && (event.compactionCompleted || event.compactionFailed || (event.noTurnRan && terminal));
+    // A running compaction_end means Pi already has queued input to continue. The old terminal
+    // status belongs to the pre-compaction turn and must not overwrite that new turn. Still clear
+    // the restoration guard below so the following agent_start status can reach the HUD.
+    const restoreManualTerminalStatus = finishesManualTerminalCompaction && event.status !== "running";
     const patch: Partial<PickyAgentSession> = {
       status: restoreManualTerminalStatus ? manualTerminalCompactionStatus : event.status,
       lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary,
@@ -397,7 +401,7 @@ export class RuntimeEventHandler {
       if (linkArtifacts.length > 0) patch.artifacts = mergeArtifacts(existingArtifacts, linkArtifacts);
     }
     await this.dependencies.patchSession(sessionId, patch);
-    if (restoreManualTerminalStatus) this.manualTerminalCompactionStatuses.delete(sessionId);
+    if (finishesManualTerminalCompaction) this.manualTerminalCompactionStatuses.delete(sessionId);
     if (terminal) {
       this.assistantDrafts.set(sessionId, "");
       this.thinkingDrafts.set(sessionId, "");

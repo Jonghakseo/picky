@@ -1,0 +1,49 @@
+/* B.03 messenger-window variants. Picky semantic colors remain the source; no native HUD tokens change. */
+.window{grid-template-columns:280px minmax(0,1fr)}
+.window.has-inspector{grid-template-columns:260px minmax(320px,1fr) 320px}
+.sidebar-head{height:60px;border-bottom:0;padding:0 16px}
+.sidebar-head .new-chat{margin-left:auto;font-size:22px;min-width:32px}
+.search{margin:4px 12px 12px}
+.search-trigger{width:100%;justify-content:flex-start;color:var(--secondary);background:var(--control);border:0;height:36px}
+.search-trigger kbd{margin-left:auto;font-size:11px;color:var(--muted)}
+.roster{padding:0 8px}.contact{padding:12px 10px;align-items:center;gap:12px}
+.contact .avatar{width:36px;height:36px;border-radius:12px}
+.contact .name{font-size:14px;font-weight:550}.contact .preview{font-size:12px;max-width:none;margin-top:4px}
+.contact-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.contact-title time{font-size:10px;color:var(--secondary);font-weight:400;white-space:nowrap}
+.contact .status-mark{margin-left:4px}.contact[aria-current=page]{background:var(--hover)}
+.conversation-head{height:60px;padding:0 24px}.conversation-head .subtitle{font-size:11px}
+.messages{max-width:none;gap:18px;padding:24px}.date-marker{margin:0 0 12px}
+.dm-message{display:block}.dm-message>.avatar,.dm-message .message-meta{display:none}
+.dm-message .message-body{display:inline-block;background:var(--control);border-radius:12px 12px 12px 4px;padding:10px 14px;max-width:min(760px,90%);line-height:1.65}
+.dm-message .message-body .card{margin-top:10px;background:transparent;border:0}
+.dm-message .card-content{padding:0}.dm-message .message-body .row{gap:12px}
+.user-message .message-meta{display:none}.user-bubble{background:var(--hover);border-radius:12px 12px 4px 12px;padding:10px 14px}
+.user-message>div{max-width:min(760px,90%)}
+.agent-event{align-self:center;max-width:100%}
+.agent-event button{border:0;background:transparent;color:var(--secondary);min-height:30px;font-size:12px;padding:4px 8px;gap:7px;white-space:normal}
+.agent-event button:hover{background:var(--control)}.agent-event .avatar{width:20px;height:20px;font-size:10px;border-radius:6px}.agent-event svg{width:12px;height:12px}
+.composer{padding:12px 20px 16px;border-top:0}
+.composer-shell{display:flex;align-items:flex-end;gap:10px;padding:8px 10px 8px 14px;border-radius:20px;background:var(--control);border-color:var(--line)}
+textarea#message-input{min-height:32px;max-height:140px;resize:none;flex:1;font-size:14px;line-height:1.6;padding:4px 0}
+.composer-bottom{margin:0;flex:none;align-self:flex-end}.send-split{display:inline-flex;gap:0;overflow:hidden;border-radius:8px}
+.send-split button{border:0;border-radius:0;min-height:32px;height:32px;padding:6px 9px}
+.send-split #send-button{width:34px}.send-split #schedule-button{width:28px;position:relative;padding:5px}
+.send-split #schedule-button::before{content:"";position:absolute;left:0;top:7px;bottom:7px;border-left:1px solid var(--on-action)}
+.send-split svg{width:17px;height:17px}.send-split:focus-within{outline:2px solid var(--action-text);outline-offset:3px}
+.send-split button:focus-visible{outline:0;background:var(--action-text)}
+[popover]{position:fixed;inset:auto;margin:0;padding:6px;background:var(--panel);color:var(--text);border:1px solid var(--strong);border-radius:12px;box-shadow:var(--shadow);max-width:calc(100vw - 24px)}
+#schedule-menu{width:280px}.menu-caption{font-size:12px;font-weight:550;padding:8px 10px;color:var(--secondary)}
+#schedule-menu button{display:flex;justify-content:space-between;text-align:left;width:100%;border:0;background:transparent;padding:9px 10px;font-size:13px;min-height:38px}
+#schedule-menu button:hover,#schedule-menu button:focus-visible{background:var(--hover)}
+#schedule-menu small{font-size:11px;color:var(--secondary)}#schedule-menu hr{margin:5px 0}
+#schedule-dialog{padding:0;width:min(420px,calc(100vw - 24px));height:min(430px,85dvh)}
+#schedule-frame,#agent-chat-frame,#picker-frame{display:block;border:0;width:100%;height:100%}
+#agent-chat-dialog{padding:0;width:min(880px,calc(100vw - 24px));height:min(720px,88dvh)}
+#picker-dialog{padding:0;width:min(620px,calc(100vw - 24px));height:min(560px,85dvh)}
+@media(max-width:1100px){.window,.window.has-inspector{grid-template-columns:240px minmax(0,1fr)}}
+@media(max-width:700px){.window,.window.has-inspector{grid-template-columns:180px minmax(0,1fr)}.contact-title time{display:none}.contact .preview{font-size:11px}.contact .name{font-size:13px}.contact{padding:10px 6px;gap:8px}.messages{padding:18px 12px}.composer{padding:10px}.dm-message .message-body{max-width:96%}.search-trigger kbd{display:none}}
+@media(max-width:480px){.window,.window.has-inspector{grid-template-columns:minmax(0,1fr)}.sidebar-head,.search{display:none}.contact .preview,.contact-title time,.contact .status-mark{display:none}.contact .avatar{width:24px;height:24px}.contact{padding:7px;gap:7px}.contact .name{font-size:12px}.agent-event button{font-size:11px}.composer-shell{padding:8px 10px;border-radius:16px}textarea#message-input{font-size:13px}.conversation-head{padding:0 12px}.dm-message .message-body{max-width:100%}.user-message>div{max-width:96%}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+.search svg{position:static;width:16px;height:16px}
+:root[data-theme=dark] .conversation{background:var(--canvas)}

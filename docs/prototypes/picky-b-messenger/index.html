@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self' file:; connect-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Picky · 메신저 클릭 목업 B.02</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data:; frame-src 'self' file:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Picky · 메신저 클릭 목업 B.03</title>
 <style>
 /* Prototype-only roles. Normal conversation size is a proposed window variant, not a HUD token change. */
 :root{color-scheme:light;--canvas:#eef0ef;--panel:#fff;--rail:#f7f8f8;--control:#f0f1f1;--hover:#e5e7e6;--pressed:#d9dbda;--text:#1a1c1b;--secondary:#525956;--muted:#636c67;--line:#e2e6e3;--strong:#c7ceca;--action:#2563eb;--action-text:#1d4ed8;--action-soft:#edf3ff;--on-action:#fff;--success:#24713f;--success-soft:#edf7ef;--warning:#875500;--warning-soft:#fff6e5;--danger:#ad3434;--danger-soft:#fff0ef;--violet:#72548e;--violet-soft:#f3eef8;--shadow:0 14px 48px #1a1c1b10,0 1px 3px #1a1c1b08;--body-size:14px;--row-pad:12px;--message-gap:28px;--message-pad:32px;--radius:12px;--space:4px}
@@ -17,10 +17,11 @@
 @media(max-width:470px){.window,.window.has-inspector{grid-template-columns:1fr;grid-template-rows:auto minmax(580px,1fr);height:auto;max-height:none}.sidebar,.has-inspector .sidebar{grid-row:1;display:block;border-right:0;border-bottom:1px solid var(--line)}.sidebar-head,.search,.sidebar-foot,.section-label{display:none}.roster{display:flex;overflow-x:auto;padding:8px;gap:5px}.contact{width:auto;min-width:96px;flex:none;margin:0;padding:7px}.contact .preview{display:none}.contact .name{font-size:12px}.contact .avatar{width:24px;height:24px}.has-inspector .inspector{grid-column:1;grid-row:3;height:340px}.conversation{min-height:580px;max-height:810px}.welcome{padding-top:16px}.review-controls label{gap:3px}.review-controls button{font-size:11px;padding:6px 8px}.preview-boundary{margin-left:auto}.review-footer{gap:9px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}@media(prefers-contrast:more){:root{--line:var(--strong)}button,input,textarea{border-width:1px}.tag{box-shadow:inset 0 0 0 1px currentColor}}
 </style>
+<link rel="stylesheet" href="messenger.css">
 </head>
 <body>
 <header class="review-bar" aria-label="목업 리뷰 도구">
-  <div><span class="wordmark">Picky</span> <span class="study-label">MESSENGER / B.02</span></div>
+  <div><span class="wordmark">Picky</span> <span class="study-label">MESSENGER / B.03</span></div>
   <span class="preview-boundary">오프라인 목업 · 실제 실행 없음</span>
   <div class="review-controls">
     <label>화면 <select id="theme-select" aria-label="화면 밝기"><option value="light">라이트</option><option value="dark">다크</option></select></label>
@@ -31,8 +32,8 @@
 <div class="stage">
   <div id="app-window" class="window">
     <aside class="sidebar" aria-label="대화 목록">
-      <div class="sidebar-head"><div class="brand-icon" aria-hidden="true">P</div><strong>Picky</strong><span>내 팀</span></div>
-      <div class="search"><span id="search-icon"></span><input id="contact-search" type="search" placeholder="대화 찾기" aria-label="대화 이름과 역할 찾기"></div>
+      <div class="sidebar-head"><div class="brand-icon" aria-hidden="true">P</div><strong>Picky</strong><button id="new-chat" class="ghost new-chat" data-action="new-chat" aria-label="새 대화" title="새 대화">+</button></div>
+      <div class="search"><button id="contact-search" class="search-trigger" data-action="search" aria-label="대화 검색" aria-haspopup="dialog"><span id="search-icon"></span>검색<kbd>⌘ K</kbd></button></div>
       <nav id="roster" class="roster" aria-label="봇과 그룹"></nav>
 
     </aside>
@@ -42,7 +43,7 @@
       <div class="message-scroll" id="message-scroll"><div class="messages" id="messages"></div></div>
       <div id="scheduled-messages" class="queue" aria-label="예약 메시지" hidden></div>
       <form id="composer" class="composer">
-        <div class="composer-shell"><textarea id="message-input" rows="2" aria-label="메시지"></textarea><div class="composer-bottom"><span></span><div class="row" style="gap:4px"><button type="submit" id="send-button" class="primary">보내기</button><button type="button" id="schedule-button" class="primary icon-button" data-action="schedule" aria-label="메시지 예약 전송" title="예약 전송">⌄</button></div></div></div>
+        <div class="composer-shell"><textarea id="message-input" rows="1" aria-label="메시지"></textarea><div class="composer-bottom"><div class="send-split" role="group" aria-label="메시지 전송"><button type="submit" id="send-button" class="primary" aria-label="보내기" title="보내기"></button><button type="button" id="schedule-button" class="primary" data-action="schedule" aria-label="메시지 예약 전송" aria-haspopup="menu" aria-expanded="false" title="나중에 예약">⌄</button></div></div></div>
       </form>
     </main>
     <aside id="inspector" class="inspector" aria-label="요청 상세" hidden>
@@ -58,7 +59,10 @@
   <div class="links"><a href="../../picky-b-messenger-ux-spec.md">화면별 UX 명세</a><button class="ghost" data-action="reset">처음부터</button></div>
 </footer>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
-<dialog id="schedule-dialog" aria-label="메시지 예약 전송" style="padding:0;width:min(460px,calc(100vw - 24px));height:min(610px,85dvh)"><iframe id="schedule-frame" title="메시지 예약 설정" src="about:blank" style="display:block;border:0;width:100%;height:min(610px,85dvh)"></iframe></dialog>
+<div id="schedule-menu" popover role="menu" aria-label="나중에 예약"><div class="menu-caption">나중에 예약</div><button id="schedule-soon" role="menuitem" data-action="schedule-quick" data-minutes="30">30분 후</button><button role="menuitem" data-action="schedule-tomorrow">내일 오전 9시 <small id="tomorrow-date"></small></button><hr><button role="menuitem" data-action="schedule-custom">직접 시간 설정…</button></div>
+<dialog id="schedule-dialog" aria-label="메시지 예약 전송"><iframe id="schedule-frame" title="메시지 예약 설정" src="about:blank"></iframe></dialog>
+<dialog id="agent-chat-dialog" aria-label="에이전트 간 대화"><iframe id="agent-chat-frame" title="에이전트 간 읽기 전용 대화" src="about:blank"></iframe></dialog>
+<dialog id="picker-dialog" aria-label="대화 검색 및 선택"><iframe id="picker-frame" title="대화 찾기" src="about:blank"></iframe></dialog>
 <dialog id="feedback-dialog" aria-labelledby="feedback-title"><div class="row between"><h2 id="feedback-title">이 화면에 의견 남기기</h2><button class="ghost icon-button" data-action="close-feedback" aria-label="피드백 닫기">×</button></div><p>무엇이 먼저 보여야 할까요? 입력 대상이나 다음 행동이 헷갈리는 곳, 너무 빽빽하거나 비어 보이는 곳을 적어주세요.</p><div id="feedback-context"></div><label for="feedback-text">의견</label><textarea id="feedback-text" placeholder="예: 예약 전송을 어디서 설정하는지 바로 찾기 어려워요." autofocus></textarea><div class="row between wrap" style="margin-top:10px"><small id="feedback-storage" class="muted"></small><button id="feedback-save" class="primary" data-action="save-feedback">의견 담기</button></div><hr><div class="row between"><strong class="small">담아 둔 의견</strong><span id="saved-count" class="muted small"></span></div><div id="feedback-list"></div><div class="dialog-actions"><button id="feedback-clear" class="ghost danger" data-action="clear-feedback">의견 모두 지우기</button><button id="feedback-download" data-action="download-feedback">Markdown 내려받기</button><button data-action="close-feedback">닫기</button></div><p class="small muted" style="margin-top:12px">이 브라우저에만 보관합니다. 자동 전송하지 않습니다. 내려받은 파일을 대화에 첨부해 주세요.</p></dialog>
 <script>
 'use strict';
@@ -78,13 +82,16 @@ let density = allowed(params.get('density'), ['comfortable','compact'], 'comfort
 let nextScheduleId = 1;
 let schedules = [];
 let scheduleEditor = null;
+let scheduleDraft = null;
+let agentChat = null;
+let picker = null;
 let recoveryTimer;
 function scene(id) {
-  return {screen:id,view:['S01','S02','S05'].includes(id)?'picky':'room',panel:null,hasChanges:!['S01','S02'].includes(id),request:id==='S01'?'':sampleRequest,decision:id==='S05'?'share':null,drafts:{picky:id==='S01'?sampleRequest:'',room:'',mint:'',luna:'',moka:''},chat:{picky:[],room:[],mint:[],luna:[],moka:[]},recovered:false};
+  return {screen:id,view:['S01','S02','S05'].includes(id)?'picky':'mint',roomJoined:false,panel:null,hasChanges:!['S01','S02'].includes(id),request:id==='S01'?'':sampleRequest,decision:id==='S05'?'share':null,drafts:{picky:id==='S01'?sampleRequest:'',room:'',mint:'',luna:'',moka:''},chat:{picky:[],room:[],mint:[],luna:[],moka:[]},recovered:false};
 }
 let state = scene(allowed(params.get('screen'), screens, 'S01'));
 state.view = allowed(params.get('view'), Object.keys(people), state.view);
-if(state.screen==='S01' && state.view==='room') state.view='picky';
+state.roomJoined=state.view==='room'||params.get('group')==='1';
 state.panel = allowed(params.get('panel'), ['overview','files','checks'], null);
 let toastTimer;
 let feedbackContext;
@@ -95,7 +102,7 @@ try { const saved = JSON.parse(localStorage.getItem(feedbackKey)||'[]'); feedbac
 function avatar(id) {const p=people[id];return `<div class="avatar ${id}" aria-hidden="true">${p.glyph}</div>`;}
 function tag(text, tone='', glyph='') {return `<span class="tag ${tone}">${glyph?icon(glyph):''}${esc(text)}</span>`;}
 function button(text, action, extra='', cls='') {return `<button type="button" class="${cls}" data-action="${action}" ${extra}>${text}</button>`;}
-function message(id, text, time='09:42') {return `<article class="message" aria-label="${people[id].name} 메시지">${avatar(id)}<div><div class="message-meta"><strong>${people[id].name}</strong><span class="role-label">${people[id].role}</span><time>${time}</time></div><div class="message-body">${text}</div></div></article>`;}
+function message(id, text, time='09:42') {return `<article class="message ${state.view==='room'?'':'dm-message'}" aria-label="${people[id].name} 메시지">${avatar(id)}<div><div class="message-meta"><strong>${people[id].name}</strong><span class="role-label">${people[id].role}</span><time>${time}</time></div><div class="message-body">${text}</div></div></article>`;}
 function user(text) {return `<article class="user-message" aria-label="나 메시지"><div><div class="message-meta"><strong>나</strong></div><div class="user-bubble">${esc(text)}</div></div></article>`;}
 function currentStatus() {return ({S01:['대기','','clock'],S02:['팀 배정됨','running','people'],S03:['작업 중','running','clock'],S04:['답변 대기','warning','people'],S05:['완료','success','check'],S06:['작업 중','running','clock'],S07:['중단됨','','pause']})[state.screen];}
 function personStatus(id) {
@@ -109,37 +116,76 @@ function personStatus(id) {
 function syncHash() {
   const p=new URLSearchParams({screen:state.screen,view:state.view,theme,density});
   if(state.panel) p.set('panel',state.panel);
+  if(state.roomJoined) p.set('group','1');
   history.replaceState(null,'','#'+p.toString());
 }
 function notify(text) {clearTimeout(toastTimer);$('notice').textContent=text;$('notice').hidden=false;toastTimer=setTimeout(()=>{$('notice').hidden=true;},3800);}
+function preview(id) {
+  if(state.screen==='S01')return '어떤 일을 도와드릴까요?';
+  if(state.screen==='S07')return '진행 중인 작업을 중단했어요.';
+  if(state.screen==='S06')return '처리 결과를 다시 확인하고 있어요.';
+  if(state.screen==='S05')return ['picky','mint','room'].includes(id)?(state.decision==='share'?'PR을 만들었어요.':'수정안을 남겼어요.'):'맡은 일을 마쳤어요.';
+  if(state.screen==='S04'&&['picky','mint','room'].includes(id))return 'PR로 공유할까요?';
+  if(state.screen==='S02')return id==='picky'?'담당자들에게 전달했어요.':'맡은 일을 확인했어요.';
+  const last=state.chat[id].at(-1);if(last)return last.reply;
+  return {picky:'날짜 변경 로직을 수정하고 있어요.',luna:'원인을 찾아 민트에게 전달했어요.',mint:'인원 선택값이 유지되도록 수정하고 있어요.',moka:'민트의 수정안을 검토하고 있어요.',room:'민트: 날짜 변경 로직을 수정하고 있어요.'}[id];
+}
 function renderRoster() {
-  const query=$('contact-search').value.trim().toLocaleLowerCase();
-  let html='';
-  for(const id of Object.keys(people)) {
-    if(id==='room' && state.screen==='S01') continue;
+  const time={S01:'09:42',S02:'09:43',S03:'09:44',S04:'09:45',S05:'09:49',S06:'09:50',S07:'09:51'}[state.screen];
+  $('roster').innerHTML=Object.keys(people).filter(id=>id!=='room'||state.roomJoined).map(id=>{
     const p=people[id];
-    if(query && !(p.name+' '+p.role).toLocaleLowerCase().includes(query)) continue;
-    if(id==='picky') html+='<div class="section-label">내 비서</div>';
-    if(id==='luna') html+='<div class="section-label">Pickles <span>3</span></div>';
-    if(id==='room') html+='<div class="section-label">그룹 대화</div>';
-    html+=`<button id="route-${id}" class="contact" data-action="navigate" data-view="${id}" ${state.view===id?'aria-current="page"':''} aria-label="${p.name} 대화"><span>${avatar(id)}</span><span class="grow"><span class="name">${p.name}</span><span class="preview">${p.role} · ${personStatus(id)}</span></span>${id==='mint'&&['S03','S04','S06'].includes(state.screen)?'<span class="status-mark">'+icon(state.screen==='S03'?'clock':'alert')+'</span>':''}</button>`;
+    const status=id==='mint'&&['S03','S04','S06'].includes(state.screen)?`<span class="status-mark" aria-label="${personStatus(id)}">${icon(state.screen==='S04'?'people':'clock')}</span>`:'';
+    return `<button id="route-${id}" class="contact" data-action="navigate" data-view="${id}" ${state.view===id?'aria-current="page"':''} aria-label="${p.name} 대화">${avatar(id)}<span class="grow"><span class="contact-title"><span class="name">${p.name}</span><time>${time}</time></span><span class="preview">${id==='room'?'그룹 · ':''}${esc(preview(id))}</span></span>${status}</button>`;
+  }).join('');
+}
+function agentRecord(id) {
+  const assignments={luna:'날짜를 바꾸면 인원이 초기화되는 원인을 조사해줘.',mint:'인원 선택 UI는 그대로 두고 날짜 변경 로직을 수정해줘.',moka:'민트의 수정안과 회귀 사례를 별도로 검토해줘.'};
+  let from,to,rows;
+  if(id.startsWith('assign-')&&assignments[id.slice(7)]) {
+    from='picky';to=id.slice(7);rows=[[from,assignments[to]],[to,'확인했어요. 맡은 일을 진행할게요.']];
+    if(state.hasChanges)rows.push([to,preview(to)]);
+  } else if(id==='luna-mint') {from='luna';to='mint';rows=[['luna','날짜 갱신 이벤트가 인원 선택값까지 초기화하고 있습니다.'],['mint','인원 선택값은 유지하고 날짜만 갱신하도록 수정할게요.']];}
+  else if(id==='moka-mint') {from='moka';to='mint';rows=[['mint','날짜 변경 로직과 회귀 사례를 검토해줘.'],['moka','날짜 변경 로직과 회귀 테스트를 확인했습니다. 인원 선택 UI는 변경하지 않았습니다.'],['mint','확인했어요. 결과를 공유할게요.']];}
+  else if(id==='mint-picky') {from='mint';to='picky';rows=[['mint','수정과 별도 검토를 마쳤습니다.'],['picky','확인했어요. 사용자에게 결과를 전달할게요.']];}
+  else return null;
+  return {id,from,to,participants:[from,to].map(key=>({id:key,...people[key]})),messages:rows.map(([sender,text],index)=>({id:id+'-'+index,sender,text,time:'09:'+String(43+index)}))};
+}
+function handoff(id) {
+  const record=agentRecord(id);if(!record)return '';
+  const outgoing=state.view===record.from,peer=outgoing?record.to:record.from;
+  const label=state.view==='room'?`${people[record.from].name} → ${people[record.to].name}`:`${outgoing?'메시지 보냄':'메시지 받음'} ${people[peer].name}`;
+  return `<div class="agent-event"><button id="handoff-${id}" data-action="agent-chat" data-chat="${id}" aria-haspopup="dialog" aria-label="${people[record.from].name} ↔ ${people[record.to].name} 대화 보기"><span>${outgoing?'메시지 보냄':'메시지 받음'}</span>${avatar(peer)}<span>${state.view==='room'?esc(label):people[peer].name}</span>${icon('chevron')}</button></div>`;
+}
+function openAgentChat(id) {
+  const record=agentRecord(id);if(!record)return;
+  agentChat={token:String(Date.now())+'-'+Math.random(),record,owner:state,returnTo:'handoff-'+id};
+  $('agent-chat-frame').hidden=true;$('agent-chat-frame').src='agent-conversation.html#theme='+theme;$('agent-chat-dialog').showModal();
+}
+function pickerItems() {
+  const ids=Object.keys(people).filter(id=>id!=='room'||state.roomJoined);
+  const items=ids.flatMap(id=>[{id:'chat/'+id,target:id,kind:id==='room'?'group':'bot',name:people[id].name,excerpt:preview(id),glyph:people[id].glyph},...(id===state.view?[]:[{id:'message/'+id,target:id,kind:'message',name:people[id].name+'의 메시지',excerpt:preview(id),glyph:people[id].glyph}])]);
+  // Search the visible mock transcript, not only its latest sidebar preview. Production searches the authorized journal.
+  for(const [index,article] of Array.from($('messages').querySelectorAll('article')).entries()){
+    const body=article.querySelector('.message-body,.user-bubble');if(!body)continue;
+    const sender=article.getAttribute('aria-label').replace(/ 메시지$/,'');
+    items.push({id:'message/'+state.view+'/'+index,target:state.view,kind:'message',name:sender+'의 메시지',excerpt:body.textContent.trim(),glyph:sender==='나'?'나':people[state.view].glyph});
   }
-  $('roster').innerHTML=html || '<p class="subtle small" style="padding:16px">일치하는 대화가 없습니다.</p>';
+  return items;
 }
-function teamCard() {
-  const rows=[['luna','원인 조사'],['mint','수정'],['moka','검토']].map(([id,task])=>`<div class="team-row">${avatar(id)}<div class="grow"><strong>${people[id].name}</strong><span class="muted small" style="margin-left:8px">${task}</span></div>${button('대화','navigate',`data-view="${id}"`,'ghost')}</div>`).join('');
-  return `<div class="card"><div class="card-content">${rows}</div><div class="card-footer">${button('그룹 대화 열기 '+icon('arrow'),'group','','primary')}</div></div>`;
+function openPicker(mode='search') {
+  const items=pickerItems().filter(item=>mode!=='new'||item.kind!=='message');
+  picker={token:String(Date.now())+'-'+Math.random(),mode,items,owner:state,returnTo:mode==='new'?'new-chat':'contact-search'};
+  $('picker-frame').hidden=true;$('picker-frame').src='chat-picker.html#theme='+theme;$('picker-dialog').showModal();
 }
-function handoff(from,recipient,text) {
-  return `<details class="card" style="padding:10px 12px"><summary class="small subtle">${people[from].name}가 ${people[recipient].name}에게 메시지를 보냈어요</summary><p class="small" style="margin-top:10px">${esc(text)}</p></details>`;
-}
+
 function activeSpeaker() {return state.view==='room'?'mint':state.view;}
 function workMessages() {
-  if(state.view==='room') return message('luna','<p>날짜를 바꿀 때 인원 선택값도 초기화되고 있어요. 민트에게 원인을 전달했어요.</p>')+message('mint','<p>인원 선택 UI는 그대로 두고 날짜 변경 로직을 수정하고 있어요.</p>');
-  if(state.view==='picky') return message('picky','<p>루나가 찾은 원인을 민트가 수정하고 있어요. 모카가 이어서 검토할 거예요.</p>');
-  if(state.view==='mint') return message('mint','<p>날짜를 바꿔도 인원 선택값이 유지되도록 수정하고 있어요.</p>'+handoff('luna','mint','날짜 갱신 이벤트가 인원 선택값까지 초기화하고 있습니다.'));
+  if(state.view==='room') return message('luna','<p>날짜를 바꿀 때 인원 선택값도 초기화되고 있어요.</p>')+message('mint','<p>인원 선택 UI는 그대로 두고 날짜 변경 로직을 수정하고 있어요.</p>');
+  if(state.view==='picky') return message('picky','<p>날짜 변경 로직을 수정하고 있어요.</p>')+handoff('assign-mint');
+  if(state.view==='mint') return message('mint','<p>날짜를 바꿔도 인원 선택값이 유지되도록 수정하고 있어요.</p>')+handoff('luna-mint');
   return message(state.view,state.view==='luna'?'<p>원인을 찾아 민트에게 전달했어요.</p>':'<p>민트의 수정안을 검토하고 있어요.</p>');
 }
+
 function questionCard() {
   return message(activeSpeaker(),`<p>수정과 테스트를 마쳤어요. PR로 공유할까요?</p><div class="card"><div class="card-content"><div class="row wrap">${button('PR로 공유','answer','data-answer="share"','primary')}${button('수정안만 남기기','answer','data-answer="keep"')}</div></div></div>`,'09:45');
 }
@@ -149,15 +195,15 @@ function resultMessages() {
   let html=message(owner,`<p>${shared?'PR을 만들었어요.':'수정안을 남겼어요.'} 날짜를 바꿔도 선택한 인원은 유지됩니다.</p>${shared?`<div class="card"><div class="card-content row wrap">${icon('code')}<strong>#128</strong><code class="grow">fix/date-change</code><a href="pull-request.html#theme=${theme}" target="_blank" rel="noopener">PR 보기 ↗</a></div></div>`:''}`,'09:49');
   const review='날짜 변경 로직과 회귀 테스트를 확인했습니다. 인원 선택 UI는 변경하지 않았습니다.';
   if(state.view==='room') html+=message('moka','<p>'+review+'</p>','09:48');
-  else if(state.view==='mint') html+=message('mint',handoff('moka','mint',review),'09:49');
-  else if(state.view==='picky') html+=message('picky',handoff('mint','picky','수정과 별도 검토를 마쳤습니다.'),'09:49');
+  else if(state.view==='mint') html+=handoff('moka-mint');
+  else if(state.view==='picky') html+=handoff('mint-picky');
   return html;
 }
 function renderMessages() {
   let html='<div class="date-marker">오늘</div>';
   const active=['picky','room','mint'].includes(state.view);
-  if(state.screen==='S01') html+=message(state.view,'<p>어떤 일을 도와드릴까요?</p>');
-  else if(state.screen==='S02') html+=state.view==='picky'?user(state.request)+message('picky','<p>루나가 조사하고, 민트가 수정하고, 모카가 검토할게요.</p>'+teamCard()):message(state.view,'<p>맡은 일을 확인했어요.</p>'+button('그룹 대화 보기','group'));
+  if(state.screen==='S01') html+=message(state.view==='room'?'picky':state.view,'<p>어떤 일을 도와드릴까요?</p>');
+  else if(state.screen==='S02') html+=state.view==='picky'?user(state.request)+message('picky','<p>담당자들에게 전달했어요.</p>')+['luna','mint','moka'].map(id=>handoff('assign-'+id)).join(''):message(activeSpeaker(),'<p>맡은 일을 확인했어요.</p>');
   else if(['S03','S04'].includes(state.screen)) html+=workMessages();
   for(const item of state.chat[state.view]) html+=user(item.text)+message(activeSpeaker(),'<p>'+esc(item.reply)+'</p>','09:44');
   if(state.screen==='S04'&&active) html+=questionCard();
@@ -199,15 +245,16 @@ function renderComposer() {
   $('message-input').placeholder=people[state.view].name+'에게 메시지 보내기';
   $('send-button').disabled=!$('message-input').value.trim();
   $('schedule-button').disabled=!$('message-input').value.trim();
-  renderSchedules();
+  sizeComposer();renderSchedules();
 }
+function sizeComposer(){const input=$('message-input');input.style.height='auto';input.style.height=Math.min(input.scrollHeight,140)+'px';}
 function render(scrollEnd=false) {
   const focused=document.activeElement?.id;
   const oldTop=$('message-scroll').scrollTop;
   document.documentElement.dataset.theme=theme;document.documentElement.dataset.density=density;
   $('theme-select').value=theme;$('density-select').value=density;
   renderRoster();$('header-avatar').innerHTML=avatar(state.view);$('conversation-title').textContent=people[state.view].name;
-  $('conversation-subtitle').textContent=state.view==='room'?'Picky, 루나, 민트, 모카':people[state.view].role+' · '+personStatus(state.view);
+  $('conversation-subtitle').textContent=state.view==='room'?'나 · Picky · 루나 · 민트 · 모카':personStatus(state.view);
   $('detail-button').disabled=state.screen==='S01';
   renderMessages();renderComposer();renderInspector();$('scene-select').value=state.screen;
   $('scene-previous').disabled=state.screen==='S01';$('scene-next').disabled=state.screen==='S07';
@@ -222,16 +269,17 @@ function beginRecovery() {
   recoveryTimer=setTimeout(()=>{if(state!==owner||state.screen!=='S06')return;state.screen='S05';state.decision='share';state.recovered=true;render(true);},5000);
 }
 function changeScene(id) {
-  state=scene(id);schedules=[];scheduleEditor=null;$('schedule-dialog').close();$('contact-search').value='';
+  closeTransient();state=scene(id);schedules=[];
   render(['S04','S05','S06','S07'].includes(id));if(['S01','S02','S03'].includes(id))$('message-scroll').scrollTop=0;
   beginRecovery();
 }
 function navigate(view) {
-  if(!people[view]||(view==='room'&&state.screen==='S01'))return;
-  state.view=view;if(view==='room'&&state.screen==='S02'){state.screen='S03';state.hasChanges=true;}
+  if(!people[view]||(view==='room'&&!state.roomJoined))return;
+  state.view=view;if(view!=='picky'&&state.screen==='S02'){state.screen='S03';state.hasChanges=true;}
   render(true);
 }
-// This fixed demo recognizes a few stop phrases. Production intent belongs to Pi, not the Swift UI or a keyword parser.
+// This fixed demo recognizes a few stop phrases. Production intent belongs to Pi, not Swift or a keyword parser.
+
 function dispatchMessage(target,text) {
   const active=['picky','room','mint'].includes(target);
   const stop=/^(?:이\s*(?:작업|요청)\s*)?(?:중단(?:해(?:줘)?|하자)?|그만(?:해(?:줘)?)?|멈춰(?:줘)?|stop)[.!\s]*$/i.test(text);
@@ -248,14 +296,43 @@ function submit() {
   const text=$('message-input').value.trim();if(!text)return;
   const target=state.view;state.drafts[target]='';dispatchMessage(target,text);$('message-input').focus({preventScroll:true});
 }
-function openSchedule(id) {
-  const existing=id?schedules.find(item=>String(item.id)===String(id)):null;
-  const text=existing?existing.text:$('message-input').value.trim();if(!text)return;
-  scheduleEditor={token:String(Date.now())+'-'+Math.random(),id:existing?.id||null,target:existing?.target||state.view,text,dueAt:existing?.dueAt||null,owner:state};
-  $('schedule-frame').hidden=true;
-  $('schedule-frame').src='schedule-message.html#theme='+theme;
-  $('schedule-dialog').showModal();
+function scheduleContext(existing=null) {
+  const text=existing?existing.text:$('message-input').value.trim();if(!text)return null;
+  return {token:String(Date.now())+'-'+Math.random(),id:existing?.id||null,target:existing?.target||state.view,text,dueAt:existing?.dueAt||null,owner:state,draft:state.drafts[state.view]};
 }
+function tomorrow(){const date=new Date();date.setDate(date.getDate()+1);date.setHours(9,0,0,0);return date;}
+function openScheduleMenu(){
+  scheduleDraft=scheduleContext();if(!scheduleDraft)return;
+  $('tomorrow-date').textContent=tomorrow().toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
+  const menu=$('schedule-menu');menu.showPopover();
+  const anchor=$('schedule-button').getBoundingClientRect(),bounds=menu.getBoundingClientRect();
+  menu.style.left=Math.max(12,Math.min(anchor.right-bounds.width,innerWidth-bounds.width-12))+'px';
+  menu.style.top=Math.max(12,anchor.top-bounds.height-8)+'px';
+  $('schedule-button').setAttribute('aria-expanded','true');$('schedule-soon').focus({preventScroll:true});
+}
+function openSchedule(id) {
+  const existing=id?schedules.find(item=>String(item.id)===String(id)):null;if(id&&!existing)return;
+  scheduleEditor=scheduleContext(existing);if(!scheduleEditor)return;
+  $('schedule-frame').hidden=true;$('schedule-frame').src='schedule-message.html#theme='+theme;$('schedule-dialog').showModal();
+}
+function customSchedule(){
+  const captured=scheduleDraft;$('schedule-menu').hidePopover();
+  if(!captured||captured.owner!==state)return;
+  scheduleEditor=captured;$('schedule-frame').hidden=true;$('schedule-frame').src='schedule-message.html#theme='+theme;$('schedule-dialog').showModal();
+}
+function saveSchedule(context,dueAt){
+  if(!context||context.owner!==state||!Number.isFinite(dueAt)||dueAt<=Date.now())return false;
+  const entry={id:context.id||nextScheduleId++,target:context.target,text:context.text,dueAt};
+  if(context.id){if(!schedules.some(item=>item.id===context.id))return false;schedules=schedules.map(item=>item.id===entry.id?entry:item);}
+  else{schedules.push(entry);if(state.drafts[entry.target]===context.draft)state.drafts[entry.target]='';}
+  return true;
+}
+function closeTransient(){
+  if($('schedule-menu').matches(':popover-open'))$('schedule-menu').hidePopover();
+  scheduleDraft=null;scheduleEditor=null;agentChat=null;picker=null;
+  for(const id of ['schedule-dialog','agent-chat-dialog','picker-dialog'])$(id).close();
+}
+
 function tickSchedules() {
   const due=schedules.filter(item=>item.dueAt<=Date.now());if(!due.length)return;
   schedules=schedules.filter(item=>item.dueAt>Date.now());
@@ -277,20 +354,20 @@ function renderFeedback() {
 }
 function downloadFeedback() {
   if(!feedback.length) return;
-  const text='# Picky B.02 목업 피드백\n\n제품 동작 검증이 아닌 화면·상태·흐름에 대한 의견입니다.\n\n'+feedback.map((n,i)=>`## 의견 ${i+1}\n\n- 화면: ${n.context}\n- 기록 시각: ${n.time}\n\n${n.text}\n`).join('\n');
+  const text='# Picky B.03 목업 피드백\n\n제품 동작 검증이 아닌 화면·상태·흐름에 대한 의견입니다.\n\n'+feedback.map((n,i)=>`## 의견 ${i+1}\n\n- 화면: ${n.context}\n- 기록 시각: ${n.time}\n\n${n.text}\n`).join('\n');
   const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'}));
-  const a=document.createElement('a');a.href=url;a.download='picky-b02-feedback.md';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const a=document.createElement('a');a.href=url;a.download='picky-b03-feedback.md';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 $('composer').addEventListener('submit',event=>{event.preventDefault();submit();});
-$('message-input').addEventListener('input',()=>{state.drafts[state.view]=$('message-input').value;const empty=!$('message-input').value.trim();$('send-button').disabled=empty;$('schedule-button').disabled=empty;});
+$('message-input').addEventListener('input',()=>{sizeComposer();state.drafts[state.view]=$('message-input').value;const empty=!$('message-input').value.trim();$('send-button').disabled=empty;$('schedule-button').disabled=empty;});
 $('message-input').addEventListener('keydown',event=>{if(event.key!=='Enter'||event.isComposing||event.keyCode===229||event.shiftKey)return;event.preventDefault();submit();});
-$('contact-search').addEventListener('input',renderRoster);
+document.addEventListener('keydown',event=>{if(event.metaKey&&event.key.toLowerCase()==='k'&&!document.querySelector('dialog[open]')){event.preventDefault();openPicker();}});
 $('theme-select').addEventListener('change',event=>{theme=event.target.value;render();});
 $('density-select').addEventListener('change',event=>{density=event.target.value;render();});
 $('scene-select').addEventListener('change',event=>changeScene(event.target.value));
 $('feedback-text').addEventListener('input',()=>{$('feedback-save').disabled=!$('feedback-text').value.trim();});
 $('feedback-dialog').addEventListener('close',()=>{$('feedback-clear').dataset.confirm='';$('feedback-clear').textContent='의견 모두 지우기';});
-$('schedule-dialog').addEventListener('close',()=>{scheduleEditor=null;$('schedule-button').focus({preventScroll:true});});
+$('schedule-dialog').addEventListener('close',()=>{if($('schedule-dialog').open)return;scheduleEditor=null;$('schedule-button').focus({preventScroll:true});});
 $('schedule-frame').addEventListener('load',()=>{if(!scheduleEditor)return;$('schedule-frame').contentWindow.postMessage({type:'schedule.init',token:scheduleEditor.token,target:people[scheduleEditor.target].name,text:scheduleEditor.text,dueAt:scheduleEditor.dueAt},location.protocol==='file:'?'*':location.origin);});
 window.addEventListener('message',event=>{
   if(event.source!==$('schedule-frame').contentWindow||(location.protocol!=='file:'&&event.origin!==location.origin)||!scheduleEditor)return;
@@ -299,22 +376,44 @@ window.addEventListener('message',event=>{
   if(data.type==='schedule.ready'){$('schedule-frame').hidden=false;return;}
   if(data.type==='schedule.cancel'){$('schedule-dialog').close();return;}
   if(data.type!=='schedule.submit'||!Number.isFinite(data.dueAt)||data.dueAt<=Date.now())return;
-  const entry={id:scheduleEditor.id||nextScheduleId++,target:scheduleEditor.target,text:scheduleEditor.text,dueAt:data.dueAt};
-  if(scheduleEditor.id){if(!schedules.some(item=>item.id===scheduleEditor.id)){$('schedule-dialog').close();return;}schedules=schedules.map(item=>item.id===entry.id?entry:item);}
-  else{schedules.push(entry);if(state.drafts[entry.target]===entry.text)state.drafts[entry.target]='';}
+  saveSchedule(scheduleEditor,data.dueAt);
   $('schedule-dialog').close();renderComposer();
 });
+$('schedule-menu').addEventListener('toggle',event=>{if(event.newState==='closed'&&!$('schedule-menu').matches(':popover-open')){scheduleDraft=null;$('schedule-button').setAttribute('aria-expanded','false');}});
+$('schedule-menu').addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault();const items=Array.from($('schedule-menu').querySelectorAll('[role=menuitem]'));const index=items.indexOf(document.activeElement);items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:items.length-1))%items.length].focus();});
+$('agent-chat-frame').addEventListener('load',()=>{if(!agentChat)return;const record=agentChat.record;$('agent-chat-frame').contentWindow.postMessage({type:'agent-chat.init',token:agentChat.token,participants:record.participants,messages:record.messages,conversationId:[record.from,record.to].sort().join('/')},location.protocol==='file:'?'*':location.origin);});
+$('agent-chat-dialog').addEventListener('close',()=>{if($('agent-chat-dialog').open)return;const target=agentChat?.returnTo;agentChat=null;if(target&&$(target))$(target).focus({preventScroll:true});});
+$('picker-frame').addEventListener('load',()=>{if(!picker)return;$('picker-frame').contentWindow.postMessage({type:'picker.init',token:picker.token,mode:picker.mode,items:picker.items},location.protocol==='file:'?'*':location.origin);});
+$('picker-dialog').addEventListener('close',()=>{if($('picker-dialog').open)return;const target=picker?.returnTo;picker=null;if(target&&$(target))$(target).focus({preventScroll:true});});
+window.addEventListener('message',event=>{
+  if(location.protocol!=='file:'&&event.origin!==location.origin)return;
+  const data=event.data;if(!data)return;
+  if(event.source===$('agent-chat-frame').contentWindow&&agentChat&&data.token===agentChat.token&&agentChat.owner===state){
+    if(data.type==='agent-chat.ready')$('agent-chat-frame').hidden=false;
+    if(data.type==='agent-chat.close')$('agent-chat-dialog').close();
+  }
+  if(event.source!==$('picker-frame').contentWindow||!picker||data.token!==picker.token||picker.owner!==state)return;
+  if(data.type==='picker.ready'){$('picker-frame').hidden=false;$('picker-frame').contentWindow.postMessage({type:'picker.focus',token:picker.token},location.protocol==='file:'?'*':location.origin);}
+  if(data.type==='picker.close')$('picker-dialog').close();
+  if(data.type==='picker.pick') {const item=picker.items.find(item=>item.id===data.id);if(!item)return;$('picker-dialog').close();navigate(item.target);}
+  if(data.type==='picker.group'&&picker.mode==='new'){$('picker-dialog').close();state.roomJoined=true;navigate('room');}
+});
+window.addEventListener('resize',()=>{if($('schedule-menu').matches(':popover-open'))$('schedule-menu').hidePopover();});
 $('inspector').addEventListener('keydown',event=>{if(event.key==='Escape'){state.panel=null;render();$('detail-button').focus();}if(!['ArrowLeft','ArrowRight'].includes(event.key)||event.target.getAttribute('role')!=='tab')return;event.preventDefault();const tabs=['overview','files','checks'];state.panel=tabs[(tabs.indexOf(state.panel)+(event.key==='ArrowRight'?1:2))%3];renderInspector();syncHash();$('tab-'+state.panel).focus();});
 document.addEventListener('click',event=>{
   const el=event.target.closest('[data-action]');if(!el||el.disabled)return;
   switch(el.dataset.action){
     case 'navigate':navigate(el.dataset.view);break;
-    case 'group':navigate('room');break;
+    case 'search':openPicker();break;
+    case 'new-chat':openPicker('new');break;
+    case 'agent-chat':openAgentChat(el.dataset.chat);break;
     case 'details':showPanel('overview');break;
     case 'panel':showPanel(el.dataset.panel);break;
     case 'close-details':state.panel=null;render();$('detail-button').focus();break;
     case 'answer':if(state.screen!=='S04')break;state.decision=el.dataset.answer;state.screen='S05';render(true);break;
-    case 'schedule':openSchedule();break;
+    case 'schedule':openScheduleMenu();break;
+    case 'schedule-custom':customSchedule();break;
+    case 'schedule-quick':case 'schedule-tomorrow':{const captured=scheduleDraft;const dueAt=el.dataset.action==='schedule-tomorrow'?tomorrow().getTime():Date.now()+Number(el.dataset.minutes)*60000;saveSchedule(captured,dueAt);$('schedule-menu').hidePopover();renderComposer();break;}
     case 'edit-schedule':openSchedule(el.dataset.id);break;
     case 'delete-schedule':schedules=schedules.filter(item=>String(item.id)!==el.dataset.id);renderSchedules();break;
     case 'previous':case 'next':changeScene(screens[Math.max(0,Math.min(6,screens.indexOf(state.screen)+(el.dataset.action==='next'?1:-1)))]);break;
@@ -326,10 +425,10 @@ document.addEventListener('click',event=>{
     case 'download-feedback':downloadFeedback();break;
   }
 });
-window.addEventListener('hashchange',()=>{const p=new URLSearchParams(location.hash.slice(1));state=scene(allowed(p.get('screen'),screens,'S01'));schedules=[];state.view=allowed(p.get('view'),Object.keys(people),state.view);if(state.screen==='S01'&&state.view==='room')state.view='picky';state.panel=allowed(p.get('panel'),['overview','files','checks'],null);theme=allowed(p.get('theme'),['light','dark'],theme);density=allowed(p.get('density'),['comfortable','compact'],density);render(true);beginRecovery();});
+window.addEventListener('hashchange',()=>{closeTransient();const p=new URLSearchParams(location.hash.slice(1));state=scene(allowed(p.get('screen'),screens,'S01'));schedules=[];state.view=allowed(p.get('view'),Object.keys(people),state.view);state.roomJoined=state.view==='room'||p.get('group')==='1';state.panel=allowed(p.get('panel'),['overview','files','checks'],null);theme=allowed(p.get('theme'),['light','dark'],theme);density=allowed(p.get('density'),['comfortable','compact'],density);render(true);beginRecovery();});
 setInterval(tickSchedules,1000);
 
-$('search-icon').innerHTML=icon('search');$('inspector-close').innerHTML=icon('close');$('scene-previous').innerHTML=icon('back');$('scene-next').innerHTML=icon('chevron');
+$('send-button').innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>';$('search-icon').innerHTML=icon('search');$('inspector-close').innerHTML=icon('close');$('scene-previous').innerHTML=icon('back');$('scene-next').innerHTML=icon('chevron');
 render(['S04','S05','S06','S07'].includes(state.screen));beginRecovery();
 </script>
 </body>

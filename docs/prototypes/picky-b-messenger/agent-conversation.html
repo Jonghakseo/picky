@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="parts.css">
+<title>에이전트 간 대화</title>
+<style>
+:root{color-scheme:light} :root[data-theme="dark"]{color-scheme:dark}
+html,body{height:100%;overflow:hidden} body{background:var(--canvas);font-size:14px}
+.agent-chat{height:100dvh;min-height:0;padding:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--canvas)}
+.chat-header,.chat-footer{background:var(--panel);padding:16px 20px;border-color:var(--line)}
+.chat-header{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+.chat-heading{font-size:16px;line-height:1.3;letter-spacing:-.2px}.participant-note{font-size:11px;color:var(--secondary);margin-top:2px}
+.avatar{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:9px;border:1px solid var(--line);background:var(--control);color:var(--secondary);font-size:12px;font-weight:700}.chat-header .avatar:first-child{background:var(--blue);border-color:var(--blue);color:#fff}
+.chat-scroll{overflow:auto;min-height:0;padding:18px 20px}.message-list{display:grid;gap:16px;max-width:680px;margin:auto}
+.message{display:grid;grid-template-columns:30px minmax(0,1fr);gap:9px;align-items:start}.message-sender{font-size:12px;font-weight:650}.message-time{font-size:10px;color:var(--secondary);margin-left:6px}.bubble{margin:5px 0 0;padding:10px 12px;border:0;border-radius:4px 12px 12px;background:var(--control);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}
+.chat-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line)}.read-only{display:flex;align-items:center;gap:6px;min-width:0;color:var(--secondary);font-size:12px}.lock{font-size:14px;line-height:1}.chat-footer button{flex:none}
+.preview-label{position:absolute;top:5px;right:8px;font-size:10px;color:var(--secondary)}
+@media(max-width:430px){.chat-header,.chat-footer,.chat-scroll{padding-left:14px;padding-right:14px}.chat-footer{align-items:flex-start;flex-direction:column}.chat-footer button{align-self:flex-end}.message-list{gap:14px}}
+</style>
+</head>
+<body>
+<main class="agent-chat" aria-labelledby="conversation-title">
+  <span id="preview-label" class="preview-label" hidden>목업 미리보기</span>
+  <header class="chat-header">
+    <span id="avatar-first" class="avatar" aria-hidden="true">P</span>
+    <span id="avatar-second" class="avatar" aria-hidden="true">루</span>
+    <div>
+      <h1 id="conversation-title" class="chat-heading">Picky ↔ 루나</h1>
+    </div>
+  </header>
+  <section id="chat-scroll" class="chat-scroll" aria-label="보기 전용 대화">
+    <div id="message-list" class="message-list"></div>
+  </section>
+  <footer class="chat-footer">
+    <div class="read-only"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5Z"/></svg><span>이 대화는 보기 전용이에요</span></div>
+    <button id="close-button" type="button">대화 닫기</button>
+  </footer>
+</main>
+<script>
+'use strict';
+const LIMITS={token:128,conversation:128,participants:2,messages:80,id:96,name:48,glyph:4,text:1200,time:64};
+const $=id=>document.getElementById(id);
+let context=null;
+
+function isText(value,max){return typeof value==='string'&&value.length>0&&value.length<=max;}
+function validContext(data){
+  if(!data||data.type!=='agent-chat.init'||!isText(data.token,LIMITS.token)||!isText(data.conversationId,LIMITS.conversation))return null;
+  if(!Array.isArray(data.participants)||data.participants.length!==LIMITS.participants||!Array.isArray(data.messages)||data.messages.length>LIMITS.messages)return null;
+  const ids=new Set();
+  for(const participant of data.participants){
+    if(!participant||!isText(participant.id,LIMITS.id)||!isText(participant.name,LIMITS.name)||!isText(participant.glyph,LIMITS.glyph)||ids.has(participant.id))return null;
+    ids.add(participant.id);
+  }
+  for(const message of data.messages){
+    if(!message||!isText(message.id,LIMITS.id)||!ids.has(message.sender)||!isText(message.text,LIMITS.text)||!isText(message.time,LIMITS.time))return null;
+  }
+  return data;
+}
+function applyTheme(){
+  const theme=new URLSearchParams(location.hash.slice(1)).get('theme');
+  document.documentElement.dataset.theme=theme==='dark'?'dark':'light';
+}
+function render(data){
+  const [first,second]=data.participants;
+  $('avatar-first').textContent=first.glyph;$('avatar-second').textContent=second.glyph;
+  $('conversation-title').textContent=`${first.name} ↔ ${second.name}`;
+  const names=new Map(data.participants.map(participant=>[participant.id,participant]));
+  const list=$('message-list');list.replaceChildren();
+  for(const message of data.messages){
+    const sender=names.get(message.sender);
+    const article=document.createElement('article');article.className='message';article.setAttribute('aria-label',`${sender.name} 메시지`);
+    const avatar=document.createElement('span');avatar.className='avatar';avatar.setAttribute('aria-hidden','true');avatar.textContent=sender.glyph;
+    const content=document.createElement('div');
+    const label=document.createElement('div');label.className='message-sender';label.textContent=sender.name;
+    const time=document.createElement('time');time.className='message-time';time.textContent=message.time;label.append(' ',time);
+    const bubble=document.createElement('p');bubble.className='bubble';bubble.textContent=message.text;
+    content.append(label,bubble);article.append(avatar,content);list.append(article);
+  }
+  $('chat-scroll').scrollTop=0;
+}
+function targetOrigin(){return location.protocol==='file:'?'*':location.origin;}
+function send(type){if(context&&window.parent!==window)window.parent.postMessage({type,token:context.token},targetOrigin());}
+function close(){if(context){send('agent-chat.close');return;}location.href='index.html';}
+
+applyTheme();
+const preview={
+  type:'agent-chat.init',token:'local-preview',conversationId:'mock-preview',
+  participants:[{id:'picky',name:'Picky',glyph:'P'},{id:'luna',name:'루나',glyph:'루'}],
+  messages:[
+    {id:'preview-1',sender:'picky',text:'예약 날짜 변경 흐름을 확인해 줄래요?',time:'09:32'},
+    {id:'preview-2',sender:'luna',text:'네, 변경 뒤 인원 수가 유지되는지 먼저 살펴볼게요.',time:'09:33'}
+  ]
+};
+if(window.parent===window){$('preview-label').hidden=false;render(preview);}
+window.addEventListener('message',event=>{
+  if(window.parent===window||event.source!==window.parent)return;
+  if(location.protocol==='file:'?event.origin!=='null':event.origin!==location.origin)return;
+  const data=validContext(event.data);if(!data)return;
+  context=data;$('preview-label').hidden=true;render(context);send('agent-chat.ready');
+});
+$('close-button').addEventListener('click',close);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();close();}});
+</script>
+</body>
+</html>

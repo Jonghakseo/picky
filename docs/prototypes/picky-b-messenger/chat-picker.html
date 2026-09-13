@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'"><link rel="stylesheet" href="parts.css"><title>대화 찾기</title>
+<style>
+body{height:100dvh;display:flex;flex-direction:column}header{display:flex;align-items:center;gap:12px;padding:18px;border-bottom:1px solid var(--line)}header label{margin:0;font-size:17px}#query{flex:1;min-width:0;border:0;background:transparent;outline:0;font-size:16px;padding:4px}#close{border:0;background:transparent;font-size:19px;padding:2px 8px}nav{display:flex;gap:4px;padding:10px 14px;border-bottom:1px solid var(--line)}nav button{border:0;background:transparent;color:var(--secondary)}nav button[aria-pressed=true]{background:var(--control);color:var(--text)}#results{padding:10px;overflow:auto;flex:1}.result{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border:0;background:transparent;text-align:left;margin-bottom:4px}.result[aria-selected=true]{background:var(--hover)}.avatar{width:32px;height:32px;border-radius:10px;background:var(--control);display:grid;place-items:center;flex:none;font-size:13px}.copy{min-width:0;flex:1}.name{display:block;font-size:14px}.excerpt{display:block;color:var(--secondary);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}kbd{font-size:11px;color:var(--secondary)}#empty{position:absolute;top:45%;left:0;width:100%;text-align:center;color:var(--secondary);padding:20px;font-size:13px}footer{margin:0;border-top:1px solid var(--line);padding:12px 18px;justify-content:space-between}.note{font-size:11px;color:var(--secondary)}[hidden]{display:none!important}
+</style></head><body>
+<header><label for="query">검색</label><input id="query" type="search" autocomplete="off" aria-label="대화 검색" placeholder="검색"><button id="close" aria-label="검색 닫기">×</button></header>
+<nav aria-label="검색 종류"><button data-filter="all" aria-pressed="true">전체</button><button data-filter="bot" aria-pressed="false">Pickle</button><button data-filter="message" aria-pressed="false">메시지</button><button data-filter="group" aria-pressed="false">그룹</button></nav>
+<div id="results" role="listbox" aria-label="검색 결과"></div><p id="empty" hidden>일치하는 결과가 없어요.</p>
+<footer><span class="note" id="scope">현재 목업의 대화</span><button id="group" hidden>그룹 대화 시작</button></footer>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+document.documentElement.dataset.theme=new URLSearchParams(location.hash.slice(1)).get('theme')==='dark'?'dark':'light';
+let context=null,filter='all',selection=0,visible=[];
+function send(type,extra={}){if(context&&parent!==window)parent.postMessage({type,token:context.token,...extra},location.protocol==='file:'?'*':location.origin);}
+function render(){
+ const query=$('query').value.trim().toLocaleLowerCase();
+ visible=(context?.items||[]).filter(item=>(filter==='all'||item.kind===filter)&&(!query||(item.name+' '+item.excerpt).toLocaleLowerCase().includes(query)));
+ selection=Math.min(selection,Math.max(0,visible.length-1));$('results').replaceChildren();$('empty').hidden=visible.length>0;
+ visible.forEach((item,index)=>{
+  const button=document.createElement('button');button.className='result';button.setAttribute('role','option');button.setAttribute('aria-selected',String(index===selection));button.setAttribute('aria-label',item.name);button.id='result-'+index;
+  const avatar=document.createElement('span');avatar.className='avatar';avatar.textContent=item.glyph;avatar.setAttribute('aria-hidden','true');
+  const copy=document.createElement('span');copy.className='copy';const name=document.createElement('span');name.className='name';name.textContent=item.name;
+  const excerpt=document.createElement('span');excerpt.className='excerpt';excerpt.textContent=item.excerpt;copy.append(name,excerpt);
+  const key=document.createElement('kbd');key.textContent=index<9?'⌘'+(index+1):'';button.append(avatar,copy,key);button.addEventListener('click',()=>send('picker.pick',{id:item.id}));$('results').append(button);
+ });
+ $('query').setAttribute('aria-controls','results');if(visible.length)$('query').setAttribute('aria-activedescendant','result-'+selection);else $('query').removeAttribute('aria-activedescendant');
+ document.querySelectorAll('[data-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.filter===filter)));
+}
+window.addEventListener('message',event=>{
+ if(parent===window||event.source!==parent||(location.protocol!=='file:'&&event.origin!==location.origin))return;
+ const data=event.data;
+ if(data?.type==='picker.focus'&&context&&data.token===context.token){$('query').focus();return;}
+ if(!data||data.type!=='picker.init'||typeof data.token!=='string'||!Array.isArray(data.items))return;
+ if(data.items.length>100||!data.items.every(item=>item&&['bot','group','message'].includes(item.kind)&&['id','name','excerpt','glyph'].every(key=>typeof item[key]==='string')))return;
+ context=data;filter='all';selection=0;$('query').value='';$('query').placeholder=data.mode==='new'?'받는 사람 찾기':'대화와 메시지 검색';$('group').hidden=data.mode!=='new';render();send('picker.ready');
+});
+$('query').addEventListener('input',()=>{selection=0;render();});
+document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{filter=button.dataset.filter;selection=0;render();}));
+$('close').addEventListener('click',()=>send('picker.close'));$('group').addEventListener('click',()=>send('picker.group'));
+document.addEventListener('keydown',event=>{
+ if(event.isComposing||event.keyCode===229)return;
+ if(event.key==='Escape'){event.preventDefault();send('picker.close');}
+ const shortcut=event.metaKey&&/^[1-9]$/.test(event.key)?visible[Number(event.key)-1]:null;
+ if(shortcut){event.preventDefault();send('picker.pick',{id:shortcut.id});return;}
+ if(['ArrowDown','ArrowUp'].includes(event.key)&&visible.length){event.preventDefault();selection=(selection+(event.key==='ArrowDown'?1:visible.length-1))%visible.length;render();$('result-'+selection).scrollIntoView({block:'nearest'});}
+ if(event.key==='Enter'&&event.target===$('query')&&visible[selection]){event.preventDefault();send('picker.pick',{id:visible[selection].id});}
+});
+if(parent===window){$('scope').textContent='메신저의 검색 또는 새 대화에서 여는 목업 파트';$('close').onclick=()=>location.href='index.html';render();}
+</script></body></html>

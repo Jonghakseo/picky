@@ -1,36 +1,37 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'"><link rel="stylesheet" href="parts.css"><title>메시지 예약 전송</title></head><body>
-<main><div class="row between"><h1>예약 전송</h1><span id="recipient" class="subtle"></span></div><blockquote id="preview"></blockquote>
-<form id="schedule-form" class="stack"><fieldset><legend>보낼 시간</legend><label><input type="radio" name="timing" value="relative" checked> 지금부터</label><div class="row"><input id="minutes" type="number" min="1" max="525600" value="5" step="1" aria-label="몇 분 뒤"><span>분 뒤</span><button type="button" data-minutes="5">5분</button><button type="button" data-minutes="30">30분</button><button type="button" data-minutes="60">1시간</button></div></fieldset>
-<fieldset><label><input type="radio" name="timing" value="absolute"> 날짜와 시간 지정</label><input id="send-at" type="datetime-local" aria-label="보낼 날짜와 시간"><p id="timezone" class="subtle"></p></fieldset>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'"><link rel="stylesheet" href="parts.css"><title>메시지 예약 전송</title>
+<style>
+body{height:100dvh}main{padding:20px;height:100%;display:flex;flex-direction:column}h1{font-size:17px}.timing-options{margin:24px 0 20px;gap:20px}.timing-options label{margin:0}form{flex:1;display:flex;flex-direction:column}.field{min-height:100px}.field label{font-size:12px;color:var(--secondary)}footer{margin-top:auto;padding-top:12px}#send-at{width:100%}#error{margin-top:8px}[hidden]{display:none!important}
+</style></head><body>
+<main><div class="row between"><h1>예약 전송</h1><span id="recipient" class="subtle"></span></div>
+<form id="schedule-form"><div class="row timing-options"><label><input type="radio" name="timing" value="relative" checked> 몇 분 뒤</label><label><input type="radio" name="timing" value="absolute"> 날짜와 시간 지정</label></div>
+<section id="relative-fields" class="field"><label for="minutes">지금부터</label><div class="row"><input id="minutes" type="number" min="1" max="525600" value="5" step="1" aria-label="몇 분 뒤" required><span>분 뒤에 보내기</span></div></section>
+<section id="absolute-fields" class="field" hidden><label for="send-at">보낼 날짜와 시간</label><input id="send-at" type="datetime-local" disabled><p id="timezone" class="subtle"></p></section>
 <p id="error" class="error" role="alert"></p><footer><button id="cancel" type="button">취소</button><button id="schedule-submit" class="primary" type="submit" disabled>예약하기</button></footer></form></main>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const theme=new URLSearchParams(location.hash.slice(1)).get('theme');document.documentElement.dataset.theme=theme==='dark'?'dark':'light';
-const timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;$('timezone').textContent=timezone;
+document.documentElement.dataset.theme=new URLSearchParams(location.hash.slice(1)).get('theme')==='dark'?'dark':'light';
+$('timezone').textContent=Intl.DateTimeFormat().resolvedOptions().timeZone;
 let context=null;
-function localInput(time){const d=new Date(time);const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
-$('send-at').value=localInput(Date.now()+3600000);
+function localInput(time){const d=new Date(time),pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
 function send(type,extra={}){if(context&&parent!==window)parent.postMessage({type,token:context.token,...extra},location.protocol==='file:'?'*':location.origin);}
+function syncTiming(){const relative=document.querySelector('[name=timing]:checked').value==='relative';$('relative-fields').hidden=!relative;$('absolute-fields').hidden=relative;$('minutes').disabled=!relative;$('send-at').disabled=relative;$('send-at').required=!relative;$('error').textContent='';}
 window.addEventListener('message',event=>{
- if(event.source!==parent||(location.protocol!=='file:'&&event.origin!==location.origin))return;
+ if(event.source!==parent||parent===window||(location.protocol!=='file:'&&event.origin!==location.origin))return;
  const data=event.data;if(!data||data.type!=='schedule.init'||typeof data.token!=='string')return;
- context=data;$('recipient').textContent=data.target+'에게';$('preview').textContent=data.text;$('schedule-submit').disabled=false;
- document.querySelector('[value=relative]').checked=true;$('minutes').value='5';$('send-at').value=localInput(Date.now()+3600000);$('schedule-submit').textContent='예약하기';$('error').textContent='';
+ context=data;$('recipient').textContent=data.target+'에게';$('schedule-submit').disabled=false;
+ document.querySelector('[value=relative]').checked=true;$('minutes').value='5';$('send-at').value=localInput(Date.now()+3600000);$('schedule-submit').textContent='예약하기';
  if(data.dueAt){document.querySelector('[value=absolute]').checked=true;$('send-at').value=localInput(data.dueAt);$('schedule-submit').textContent='예약 변경';}
- send('schedule.ready');
+ syncTiming();send('schedule.ready');
 });
-document.querySelectorAll('[data-minutes]').forEach(button=>button.addEventListener('click',()=>{$('minutes').value=button.dataset.minutes;document.querySelector('[value=relative]').checked=true;}));
-$('minutes').addEventListener('input',()=>{document.querySelector('[value=relative]').checked=true;});
-$('send-at').addEventListener('input',()=>{document.querySelector('[value=absolute]').checked=true;});
+document.querySelectorAll('[name=timing]').forEach(input=>input.addEventListener('change',syncTiming));
 $('cancel').addEventListener('click',()=>send('schedule.cancel'));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();send('schedule.cancel');}});
 $('schedule-form').addEventListener('submit',event=>{
  event.preventDefault();$('error').textContent='';if(!context)return;
- const relative=document.querySelector('[name=timing]:checked').value==='relative';
- const minutes=Number($('minutes').value);
- if(relative&&(!Number.isInteger(minutes)||minutes<1)){ $('error').textContent='1분 이상의 정수를 입력해 주세요.';return; }
+ const relative=document.querySelector('[name=timing]:checked').value==='relative',minutes=Number($('minutes').value);
+ if(relative&&(!Number.isInteger(minutes)||minutes<1||minutes>525600)){$('error').textContent='1~525600분 사이의 정수를 입력해 주세요.';return;}
  const dueAt=relative?Date.now()+minutes*60000:new Date($('send-at').value).getTime();
  if(!Number.isFinite(dueAt)||dueAt<=Date.now()){$('error').textContent='현재보다 나중인 시간을 선택해 주세요.';return;}
  send('schedule.submit',{dueAt});

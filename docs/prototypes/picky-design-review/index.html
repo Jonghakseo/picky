@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Picky DS.01 · 기초</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="foundations">
+  <header class="site-header">
+    <div class="brand"><span class="brand-mark">P</span><span>Picky</span><span class="proposal">DS.01 · DESIGN REVIEW</span></div>
+    <div class="header-actions"><label class="small muted">화면 <select data-theme-select aria-label="화면 밝기"><option value="light">라이트</option><option value="dark">다크</option></select></label></div>
+  </header>
+  <div class="notice"><strong>검수용 제안입니다.</strong> 이 키트는 메신저 목업이나 네이티브 앱에 적용되지 않았습니다. 사용자가 검수 완료를 명시한 뒤에만 메신저 목업에 적용하고 최종 리뷰합니다.</div>
+  <nav class="page-nav" aria-label="DS.01 문서"><a href="index.html" aria-current="page">기초</a><a href="controls.html">컨트롤</a><a href="patterns.html">메신저 패턴</a></nav>
+  <main>
+    <section class="page-intro">
+      <h1>대화와 작업 상태가 먼저 보이는 UI</h1>
+      <p>기존 Picky 디자인 기준을 브라우저에서 비교할 수 있게 구성했습니다. 아래 값은 HTML용 제안이며, macOS의 글꼴 배율·재질·접근성 구현을 검증한 것은 아닙니다.</p>
+      <div class="reference-links"><a href="../../../design/DESIGN.md">Picky 디자인 기준</a><a href="../../../design/TOKENS.md">canonical tokens</a><a href="../../../design/COMPONENTS.md">컴포넌트 계약</a><a href="https://developer.apple.com/design/human-interface-guidelines/designing-for-macos">Apple macOS HIG ↗</a></div>
+    </section>
+    <section class="grid two">
+      <article class="card"><h2>첫 시선의 순서</h2><ol class="rule-list" style="margin-top:12px"><li>실행 중인 Pickle, 입력 대기, 완료 또는 실패를 형태와 이름으로 구분합니다.</li><li>사용자가 할 수 있는 행동에만 Action Blue를 씁니다.</li><li>도구 활동, 질문, 오류와 결과는 내용보다 뒤로 숨기지 않습니다.</li></ol></article>
+      <article class="card"><h2>이번 브라우저 검수 범위</h2><p class="muted" style="margin-top:8px">라이트·다크, 1440/1024/390 폭, hover/pressed/disabled, keyboard, Reduce Motion과 높은 대비를 시연합니다. VoiceOver, IME, native font scaling, material, HUD 성능은 native 구현에서 별도 확인해야 합니다.</p></article>
+    </section>
+    <section class="section">
+      <div class="section-head"><h2>색상 역할과 제안 값</h2><p>라이트(L)·다크(D)에 사용하는 CSS 값입니다.</p></div>
+      <div class="grid three">
+        <article class="card"><h3>표면과 경계</h3>
+          <div class="token"><span class="swatch" style="background:var(--canvas)"></span><span class="grow"><strong>Canvas</strong><code>color.canvas</code></span><code>L #F7F8F8<br>D #101211</code></div>
+          <div class="token"><span class="swatch" style="background:var(--panel)"></span><span class="grow"><strong>Panel</strong><code>color.surface.panel</code></span><code>L #FFFFFF<br>D #171918</code></div>
+          <div class="token"><span class="swatch" style="background:var(--control)"></span><span class="grow"><strong>Control</strong><code>color.surface.control</code></span><code>L #F0F1F1<br>D #202221</code></div>
+          <div class="token"><span class="swatch" style="background:var(--hover)"></span><span class="grow"><strong>Hover</strong><code>color.surface.hover</code></span><code>L #E5E7E6<br>D #272A29</code></div>
+          <div class="token"><span class="swatch" style="background:var(--strong)"></span><span class="grow"><strong>Strong border</strong><code>color.separator.strong</code></span><code>L #AEB7B2<br>D #59635D</code></div>
+        </article>
+        <article class="card"><h3>텍스트와 행동</h3>
+          <div class="token"><span class="swatch" style="background:var(--secondary)"></span><span class="grow"><strong>Secondary text</strong><code>color.text.secondary</code></span><code>L #525956<br>D #ADB5B2</code></div>
+          <div class="token"><span class="swatch" style="background:var(--action-text)"></span><span class="grow"><strong>Action text</strong><code>color.action.text</code></span><code>L #1D4ED8<br>D #84B3FF</code></div>
+          <div class="token"><span class="swatch" style="background:var(--text)"></span><span class="grow"><strong>Primary text</strong><code>color.text.primary</code></span><code>L #1A1C1B<br>D #ECEEED</code></div>
+          <div class="token"><span class="swatch" style="background:var(--action)"></span><span class="grow"><strong>Action fill</strong><code>color.action.fill</code></span><code>#2563EB</code></div>
+          <div class="token"><span class="swatch" style="background:var(--action-hover)"></span><span class="grow"><strong>Hover / pressed</strong><code>button.primary.hover</code></span><code>#1D4ED8<br>white text</code></div>
+        </article>
+        <article class="card"><h3>상태는 행동이 아닙니다</h3>
+          <div class="token"><span class="swatch" style="background:var(--running)"></span><span class="grow"><strong>Running</strong><code>color.status.running</code></span><code>L #1D4ED8<br>D #84B3FF</code></div>
+          <div class="token"><span class="swatch" style="background:var(--warning)"></span><span class="grow"><strong>Waiting</strong><code>color.status.warning</code></span><code>L #875500<br>D #F0C477</code></div>
+          <div class="token"><span class="swatch" style="background:var(--success)"></span><span class="grow"><strong>Completed</strong><code>color.status.success</code></span><code>L #24713F<br>D #91D6A5</code></div>
+          <div class="token"><span class="swatch" style="background:var(--danger)"></span><span class="grow"><strong>Danger</strong><code>color.status.danger</code></span><code>L #AD3434<br>D #F0A49B</code></div>
+          <div class="token"><span class="swatch" style="background:var(--neutral)"></span><span class="grow"><strong>Queued / stopped</strong><code>color.status.neutral</code></span><code>L #5B6460<br>D #B4BDB7</code></div>
+        </article>
+      </div>
+    </section>
+    <section class="section grid two">
+      <article class="card"><h2>타이포그래피</h2>
+        <div class="type-sample"><div class="type-label"><code>type.heading.primary</code><span>17px / 1.35 / 600</span></div><div class="t-heading">다음 행동을 선명하게</div></div>
+        <div class="type-sample"><div class="type-label"><code>type.title</code><span>14px / 1.4 / 600</span></div><div class="t-title">예약 날짜 수정</div></div>
+        <div class="type-sample"><div class="type-label"><code>type.body</code><span>13px / 1.55 / 400</span></div><div class="t-body">날짜가 바뀌어도 선택한 인원을 유지하는지 확인하고 있어요.</div></div>
+        <div class="type-sample"><div class="type-label"><code>type.supporting / meta</code><span>12px / 1.5 / 400 · 10.5px / 1.4 / 400</span></div><div class="t-support">검증 기록과 보조 설명</div><div class="t-meta">09:42 · local-only review specimen</div></div>
+      </article>
+      <article class="card"><h2>간격, shape, icon, motion</h2>
+        <div class="token"><span class="measurement"><span style="width:4px"></span>4px</span><code>space.1</code><span>icon-label</span></div>
+        <div class="token"><span class="measurement"><span style="width:12px"></span>12px</span><code>space.3</code><span>compact group</span></div>
+        <div class="token"><span class="measurement"><span style="width:16px"></span>16px</span><code>space.4</code><span>standard group</span></div>
+        <div class="token"><span class="measurement"><span style="width:24px"></span>24px</span><code>space.6</code><span>panel section</span></div>
+        <div class="token"><strong>shape</strong><code>6 / 8 / 12 / 14px</code></div>
+        <div class="token"><strong>status icon</strong><code>18px SVG · 2px stroke</code></div>
+        <div class="token"><strong>motion</strong><code>140ms / 240ms · running only</code></div>
+      </article>
+    </section>
+    <section class="section grid two">
+      <article class="card"><h2>반응형 우선순위</h2><div class="token"><strong>1440px</strong><span class="muted">sidebar · conversation · one right slot</span></div><div class="token"><strong>1024px</strong><span class="muted">right slot이 conversation을 교체</span></div><div class="token"><strong>390px</strong><span class="muted">작은 글자 대신 불필요한 chrome을 줄임</span></div></article>
+      <article class="card"><h2>적용 전 확인</h2><ul class="rule-list"><li>행동의 파란 버튼과 작업 중인 진행 링을 형태로 구분합니다.</li><li>일반 control은 arrow cursor와 hover state를 사용합니다. pointer는 실제 링크에만 둡니다.</li><li>일반 card와 button에 glow를 추가하지 않습니다.</li><li>details와 management는 같은 right slot을 공유하며 wide size에서 conversation 옆에, 1100px 이하에서 conversation을 대체합니다.</li></ul></article>
+    </section>
+  </main>
+  <section class="feedback-panel"><div class="feedback-card"><div class="section-head"><div><h2>기초 검수 의견</h2><p>승인이나 적용 버튼은 없습니다. 의견은 다음 검토를 위한 기록일 뿐입니다.</p></div><span class="small muted" data-feedback-count></span></div><form class="feedback-form" data-feedback-form><label class="field-label" for="feedback-section">대상</label><select id="feedback-section" data-feedback-section><option>색상 역할</option><option>타이포그래피</option><option>간격과 shape</option><option>반응형과 접근성</option></select><label class="field-label" for="feedback-text">의견</label><textarea id="feedback-text" maxlength="4000" data-feedback-text placeholder="예: 1024px에서 right slot 전환을 더 구체적으로 보고 싶어요."></textarea><div class="feedback-actions"><small data-feedback-storage></small><div class="button-row"><button type="button" data-feedback-download>모든 의견 Markdown 내려받기</button><button class="primary" type="submit">의견 담기</button></div></div></form><div class="feedback-list" data-feedback-list></div></div></section>
+  <footer class="page-footer">DS.01 browser review · native Picky 구현 또는 사용자 승인 증거가 아닙니다.</footer>
+  <script src="review.js"></script>
+</body>
+</html>

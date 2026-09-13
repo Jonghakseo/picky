@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="parts.css">
+<link rel="stylesheet" href="bot-panel.css">
+<title>피클 설정</title>
+</head>
+<body>
+<main class="panel" aria-labelledby="panel-title">
+  <header class="panel-header">
+    <button id="back" class="back-button" type="button" aria-label="관리로 돌아가기">‹ 관리로 돌아가기</button>
+    <div class="title-block"><h1 id="panel-title" data-panel-heading tabindex="-1">설정</h1></div>
+    <button id="close" class="icon-button" type="button" aria-label="피클 관리 닫기" title="피클 관리 닫기">×</button>
+  </header>
+  <form id="settings-form" class="panel-body" novalidate>
+    <section class="panel-section">
+      <div class="field-group"><label for="name">이름</label><input id="name" class="text-input" type="text" maxlength="60" required autocomplete="off"></div>
+      <div class="field-group"><label for="label">레이블</label><input id="label" class="text-input" type="text" maxlength="80" autocomplete="off"></div>
+      <div class="field-group"><label for="description">설명</label><textarea id="description" maxlength="2000"></textarea></div>
+      <div class="switch-row"><input id="notifications" type="checkbox"><label for="notifications">완료와 개입이 필요할 때 알림</label></div>
+      <p id="panel-error" class="error" role="alert" aria-live="polite"></p>
+      <div class="draft-actions"><button id="discard" type="button">변경 취소</button><button class="primary" type="submit">설정 저장</button></div>
+    </section>
+  </form>
+  <div id="preview-banner" class="preview-banner" hidden>B.04 목업 · 실제 실행 없음 · <a href="index.html">메신저로 돌아가기</a></div>
+</main>
+<script src="bot-panel-bridge.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+function values() { return { name: $('name').value, label: $('label').value, description: $('description').value, notifications: $('notifications').checked }; }
+function render(data) {
+  document.documentElement.dataset.theme = new URLSearchParams(location.hash.slice(1)).get('theme') === 'dark' ? 'dark' : 'light';
+  const source = data.draft && typeof data.draft === 'object' ? data.draft : data.profile;
+  $('name').value = typeof source.name === 'string' ? source.name : data.profile.name;
+  $('label').value = typeof source.label === 'string' ? source.label : data.profile.label;
+  $('description').value = typeof source.description === 'string' ? source.description : data.profile.description;
+  $('notifications').checked = typeof source.notifications === 'boolean' ? source.notifications : data.profile.notifications;
+  BotPanel.clearError();
+}
+function notifyDraft() { BotPanel.draft(values()); }
+BotPanel.register(render);
+$('settings-form').addEventListener('input', notifyDraft);
+$('settings-form').addEventListener('change', notifyDraft);
+$('settings-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (event.isComposing) return;
+  const payload = values();
+  if (!payload.name.trim()) { $('panel-error').textContent = '이름을 입력해 주세요.'; $('name').focus(); return; }
+  BotPanel.clearError();
+  BotPanel.action('profile.save', payload);
+});
+$('back').addEventListener('click', () => BotPanel.action('home'));
+$('close').addEventListener('click', () => BotPanel.action('close'));
+$('discard').addEventListener('click', () => BotPanel.action('discard'));
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); BotPanel.action('close'); } });
+BotPanel.preview({ type: 'bot-panel.init', token: 'preview-settings', botId: 'picky', view: 'settings', profile: { name: 'Picky', label: '조율', description: '예약 날짜 변경 작업을 조율해요.', notifications: true }, computer: { provider: 'isolated-linux' }, routines: [], routine: null, draft: null });
+if (window.parent === window) $('preview-banner').hidden = false;
+</script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="parts.css">
+<link rel="stylesheet" href="bot-panel.css">
+<title>루틴 편집</title>
+</head>
+<body>
+<main class="panel" aria-labelledby="panel-title">
+  <header class="panel-header">
+    <button id="back" class="back-button" type="button" aria-label="관리로 돌아가기">‹ 관리로 돌아가기</button>
+    <div class="title-block"><h1 id="panel-title" data-panel-heading tabindex="-1">새 루틴</h1></div>
+    <button id="close" class="icon-button" type="button" aria-label="피클 관리 닫기" title="피클 관리 닫기">×</button>
+  </header>
+  <form id="routine-form" class="panel-body" novalidate>
+    <section class="panel-section">
+      <div class="routine-toolbar"><div class="switch-row"><input id="enabled" type="checkbox"><label for="enabled">루틴 활성</label></div><div id="existing-actions" class="row" hidden><button id="test" type="button">테스트 실행</button><button id="delete" class="danger" type="button">루틴 삭제</button></div></div>
+          <div id="delete-confirm" class="inline-confirm" hidden><span>이 루틴을 삭제할까요?</span><button id="delete-approve" class="danger" type="button">삭제 확인</button><button id="delete-cancel" type="button">취소</button></div>
+      <div class="field-group"><label for="name">이름</label><input id="name" class="text-input" type="text" maxlength="100" required autocomplete="off"></div>
+      <div class="field-group"><label for="prompt">지침</label><textarea id="prompt" maxlength="4000" required></textarea></div>
+    </section>
+    <section class="panel-section" aria-labelledby="triggers-heading">
+      <div class="section-heading"><h2 id="triggers-heading">실행 시기</h2><button id="add-trigger" type="button">실행 시기 추가</button></div>
+      <div id="trigger-list" class="trigger-list"></div>
+      <p id="trigger-note" class="field-note">최대 4개까지 추가할 수 있어요.</p>
+    </section>
+    <section id="history-section" class="panel-section" hidden aria-labelledby="history-heading">
+      <div class="section-heading"><h2 id="history-heading">실행 기록</h2></div>
+      <div id="history-list" class="history-list"></div>
+    </section>
+    <p id="panel-error" class="error" role="alert" aria-live="polite"></p>
+    <div class="footer-actions"><button id="discard" type="button">변경 취소</button><button class="primary" type="submit">루틴 저장</button></div>
+  </form>
+  <div id="preview-banner" class="preview-banner" hidden>B.04 목업 · 실제 실행 없음 · <a href="index.html">메신저로 돌아가기</a></div>
+</main>
+<script src="bot-panel-bridge.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const weekdays = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+let existing = false;
+let savedValue = null;
+function input(type, value, className = '') { const node = document.createElement('input'); node.type = type; node.className = className; node.value = value; return node; }
+function field(labelText, control) { const wrap = document.createElement('div'); wrap.className = 'field-group'; const label = document.createElement('label'); label.textContent = labelText; label.append(control); wrap.append(label); return wrap; }
+function addTrigger(source = { kind: 'weekly', weekday: 1, time: '09:00', timezone: 'Asia/Seoul', repository: '' }) {
+  if ($('trigger-list').children.length >= 4) return;
+  const ordinal = $('trigger-list').children.length + 1;
+  const box = document.createElement('section'); box.className = 'trigger';
+  const top = document.createElement('div'); top.className = 'trigger-top';
+  const kind = document.createElement('select'); kind.className = 'kind'; kind.setAttribute('aria-label', `${ordinal}번째 실행 시기 종류`);
+  [['weekly', '매주'], ['daily', '매일'], ['event', 'PR이 병합될 때']].forEach(([value, label]) => { const option = document.createElement('option'); option.value = value; option.textContent = label; option.selected = value === source.kind; kind.append(option); });
+  const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '삭제'; remove.className = 'remove-trigger'; remove.setAttribute('aria-label', `${ordinal}번째 실행 시기 삭제`);
+  top.append(kind, remove);
+  const details = document.createElement('div'); details.className = 'trigger-grid';
+  const weekday = document.createElement('select'); weekday.className = 'weekday'; weekdays.forEach((label, value) => { const option = document.createElement('option'); option.value = String(value); option.textContent = label; option.selected = value === source.weekday; weekday.append(option); });
+  const time = input('time', source.time ?? '09:00'); time.classList.add('time');
+  const timezone = document.createElement('select'); timezone.className = 'timezone'; [['Asia/Seoul', 'Asia/Seoul'], ['UTC', 'UTC']].forEach(([value, label]) => { const option = document.createElement('option'); option.value = value; option.textContent = label; option.selected = value === source.timezone; timezone.append(option); });
+  const repository = input('text', source.repository || '', 'text-input'); repository.classList.add('repository'); repository.maxLength = 160; repository.placeholder = 'example/booking'; repository.autocomplete = 'off';
+  details.append(field('요일', weekday), field('시간', time), field('시간대', timezone), field('저장소', repository));
+  const eventNote = document.createElement('p'); eventNote.className = 'field-note event-note'; eventNote.textContent = 'GitHub PR 병합 · 계정 연결 필요';
+  box.append(top, details, eventNote); $('trigger-list').append(box); updateTrigger(box); updateTriggerLimit();
+}
+function updateTrigger(box) {
+  const kind = box.querySelector('.kind').value;
+  const weekly = kind === 'weekly'; const timed = kind !== 'event'; const event = kind === 'event';
+  box.querySelector('.weekday').closest('.field-group').hidden = !weekly;
+  box.querySelector('.time').closest('.field-group').hidden = !timed;
+  box.querySelector('.timezone').closest('.field-group').hidden = !timed;
+  box.querySelector('.repository').closest('.field-group').hidden = !event;
+  box.querySelector('.event-note').hidden = !event;
+}
+function updateTriggerLimit() {
+  $('add-trigger').disabled = $('trigger-list').children.length >= 4;
+  [...$('trigger-list').children].forEach((box, index) => {
+    box.querySelector('.kind').setAttribute('aria-label', `${index + 1}번째 실행 시기 종류`);
+    box.querySelector('.remove-trigger').setAttribute('aria-label', `${index + 1}번째 실행 시기 삭제`);
+  });
+}
+function triggers() { return [...$('trigger-list').children].map(box => ({ kind: box.querySelector('.kind').value, weekday: Number(box.querySelector('.weekday').value), time: box.querySelector('.time').value, timezone: box.querySelector('.timezone').value, repository: box.querySelector('.repository').value })); }
+function values() { return { name: $('name').value, prompt: $('prompt').value, enabled: $('enabled').checked, triggers: triggers() }; }
+function markDirty() {
+  const dirty = existing && JSON.stringify(values()) !== JSON.stringify(savedValue);
+  $('test').disabled = dirty;
+  $('test').title = dirty ? '변경을 저장한 뒤 테스트할 수 있어요.' : '';
+}
+function renderHistory(history) { const list = $('history-list'); list.replaceChildren(); $('history-section').hidden = !history.length; for (const item of history) { const row = document.createElement('article'); row.className = 'history-row'; const time = document.createElement('time'); time.textContent = `모의 실행 기록 · ${item.at}`; const summary = document.createElement('p'); summary.textContent = item.summary; row.append(time, summary); list.append(row); } }
+function render(data) {
+  document.documentElement.dataset.theme = new URLSearchParams(location.hash.slice(1)).get('theme') === 'dark' ? 'dark' : 'light';
+  existing = Boolean(data.routine);
+  savedValue = existing ? { name: data.routine.name, prompt: data.routine.prompt, enabled: data.routine.enabled, triggers: data.routine.triggers } : null;
+  const source = data.draft && typeof data.draft === 'object' ? data.draft : (data.routine || { name: '', prompt: '', enabled: true, triggers: [{ kind: 'weekly', weekday: 1, time: '09:00', timezone: 'Asia/Seoul', repository: '' }] });
+  $('panel-title').textContent = existing ? '루틴' : '새 루틴';
+  $('name').value = typeof source.name === 'string' ? source.name : '';
+  $('prompt').value = typeof source.prompt === 'string' ? source.prompt : '';
+  $('enabled').checked = typeof source.enabled === 'boolean' ? source.enabled : true;
+  $('trigger-list').replaceChildren();
+  (Array.isArray(source.triggers) ? source.triggers.slice(0, 4) : []).forEach(addTrigger);
+  if (!$('trigger-list').children.length && !data.draft) addTrigger();
+  updateTriggerLimit(); renderHistory(existing ? data.routine.history : []);
+  $('existing-actions').hidden = !existing; markDirty(); $('delete-confirm').hidden = true; BotPanel.clearError();
+}
+function notifyDraft() { markDirty(); BotPanel.draft(values()); }
+BotPanel.register(render);
+$('routine-form').addEventListener('input', notifyDraft);
+$('routine-form').addEventListener('change', event => { if (event.target.classList.contains('kind')) updateTrigger(event.target.closest('.trigger')); notifyDraft(); });
+$('add-trigger').addEventListener('click', () => { addTrigger(); markDirty(); notifyDraft(); });
+$('trigger-list').addEventListener('click', event => { const button = event.target.closest('.remove-trigger'); if (!button) return; button.closest('.trigger').remove(); updateTriggerLimit(); markDirty(); notifyDraft(); });
+$('routine-form').addEventListener('submit', event => { event.preventDefault(); if (event.isComposing) return; const payload = values(); if (!payload.name.trim() || !payload.prompt.trim()) { $('panel-error').textContent = '이름과 지침을 입력해 주세요.'; return; } if (!payload.triggers.length) { $('panel-error').textContent = '실행 시기를 하나 이상 추가해 주세요.'; return; } BotPanel.clearError(); BotPanel.action('routine.save', payload); });
+$('back').addEventListener('click', () => BotPanel.action('home'));
+$('close').addEventListener('click', () => BotPanel.action('close'));
+$('discard').addEventListener('click', () => BotPanel.action('discard'));
+$('test').addEventListener('click', () => BotPanel.action('routine.test'));
+$('delete').addEventListener('click', () => { $('delete-confirm').hidden = false; });
+$('delete-cancel').addEventListener('click', () => { $('delete-confirm').hidden = true; });
+$('delete-approve').addEventListener('click', () => BotPanel.action('routine.delete'));
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); BotPanel.action('close'); } });
+BotPanel.preview({ type: 'bot-panel.init', token: 'preview-routine', botId: 'picky', view: 'routine', profile: { name: 'Picky', label: '조율', description: '', notifications: true }, computer: { provider: 'isolated-linux' }, routines: [], routine: { id: 'weekday-check', name: '예약 화면 확인', prompt: '예약 날짜를 바꾼 뒤 인원 선택이 유지되는지 확인해요.', enabled: true, triggers: [{ kind: 'weekly', weekday: 1, time: '09:00', timezone: 'Asia/Seoul', repository: '' }], history: [{ id: 'preview', at: '2026-09-13 09:00', status: 'preview', summary: '목업에서 저장된 정의를 확인했어요.' }] }, draft: null });
+if (window.parent === window) $('preview-banner').hidden = false;
+</script>
+</body>
+</html>

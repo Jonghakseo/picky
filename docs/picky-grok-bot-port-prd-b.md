@@ -1,11 +1,11 @@
 # 기획서 B · Pi 코어로 만드는 로컬 Grok Bot
 
-- 버전: B 0.4
+- 버전: B 0.5
 - 원자료 조사일: 2026-09-12 (KST)
-- 0.4 개정일: 2026-09-13 (KST)
+- 0.5 개정일: 2026-09-13 (KST)
 - 상태: 독립 대안 설계. 구현·출시 승인이나 기능 구현 완료를 뜻하지 않는다.
 - 비교 대상 A: [봇 중심 MVP v0.4](./picky-pickle-bot-mvp-prd.md). 이전 대안으로 원문을 보존한다. 사용자 Pi 호환 전제는 B 0.2에서 폐기한다.
-- 개정 기준: B 0.3 `06bca9d67`와 사용자 B.02 목업 피드백·UI 레퍼런스. 전용 내장 런타임과 대화 제어를 유지하고 에이전트 간 대화와 사용자 그룹을 분리한다.
+- 개정 기준: B 0.4 `0b3e5f75a`와 사용자 우측 메뉴·설정·루틴·컴퓨터 레퍼런스. 피클별 관리를 추가하고 OpenMaus 방식의 로컬 Linux 컴퓨터를 구체적인 구현 후보로 검토한다. 전용 내장 런타임·대화 제어·에이전트 대화와 사용자 그룹의 분리는 유지한다.
 - Picky 조사 기준: `6444d2593`
 - OpenMausBot 조사 기준: `f4d562c2d811b9734ddbe8a2873a4cb94f51b747`
 - Pi SDK 기준: `0.84.4`, 공식 리비전 `b79e4cc834970cca69daebffab7df1da7d1e52c4`
@@ -186,7 +186,7 @@ OpenMaus의 공개 화면에서는 roster, 중앙 대화, 우측 Computer 패널
 
 ### 4.2 별도 운영 콘솔을 일상의 관문으로 두지 않는다
 
-Routine은 대화에서 만들고 생성 카드로 확인한다. 봇 상세에서 일정·다음 실행·최근 결과를 보고, 전체 자동화 목록은 여러 봇의 책임을 훑는 용도로 쓴다. Skills·Memory도 대화에서 관리할 수 있고 상세에서 저장 결과를 확인한다.
+Routine은 대화나 선택한 봇의 우측 관리 패널에서 만든다. 같은 정의·수정 revision을 공유하고, 일정·다음 실행·최근 결과를 본다. 전체 자동화 목록은 여러 봇의 책임을 훑는 용도로 쓴다. Skills·Memory도 대화에서 관리할 수 있고 상세에서 저장 결과를 확인한다.
 
 연결 앱 화면은 내장 지원 여부·연결 계정·허용 도구·다시 인증할 이유를 보여준다. 사용자 플러그인 설치·해제 화면은 없으며 메모리·서브에이전트·Cron을 켜야 시작되는 설정도 없다. 일상적인 의뢰마다 모델·폴더·provider·queue 종류를 고르게 하지 않는다.
 
@@ -208,6 +208,23 @@ Routine은 대화에서 만들고 생성 카드로 확인한다. 봇 상세에�
 - 예약 화살표는 보내기와 붙인 분할 버튼이다. 빠른 시간은 작은 메뉴에서 고르고 직접 입력이 필요할 때만 시간 설정을 연다. Slack의 브랜드색·로고를 복제하지 않는다.
 - PR 결과는 짧은 완료 문장, branch, PR 번호, 링크만 기본으로 보인다. 파일·diff·검증·관찰 정보는 상세에서 확인하며, 근거 자체를 삭제하지 않는다.
 - 결과 확인과 복구는 담당 Pickle이 먼저 처리한다. 결과가 불명확하면 읽기 전용 기록 조회·대조부터 하고, 완료된 외부 행동을 확인 없이 재실행하지 않는다. 스스로 해결할 수 없고 사용자의 판단이 필요할 때만 ask한다.
+
+### 4.5 선택한 피클의 관리 패널
+
+오른쪽 관리 패널은 현재 DM 상대의 컴퓨터 상태·미리보기와 Routine 목록을 보여준다. 톱니에서
+이름·레이블·설명·알림을 편집하고, Routine 행이나 추가 버튼으로 활성 상태·이름·지침·실행 시기·
+실행 기록·테스트·삭제에 접근한다. 별도 운영 콘솔을 먼저 방문하게 하지 않는다.
+
+- 요청의 진행·diff·검증을 보는 `상세`와 봇의 지속 설정을 구분한다. 같은 오른쪽 자리를 사용하되 소유 객체가 다르다. 일반 사용자 그룹에 가상의 봇 설정을 만들지 않는다.
+- 열람은 작업·하위 실행을 멈추거나 새로운 Pi turn을 만들지 않는다. 다른 피클로 이동하면 그 피클의 패널을 연다. 수정 중 입력은 소유 봇·대상 정의에 묶어 보존하고, 이전 화면의 늦은 저장으로 다른 피클을 수정하지 않는다.
+- 이름 변경은 표시 이름 변경이며 Bot ID·고정 홈·지속 세션·Routine 소유권을 바꾸지 않는다. 설명은 봇의 사용자 업무 설정이고, 필수 시스템 프롬프트·엔진을 덮어쓰거나 해제하는 경로가 아니다.
+- 알림 설정은 해당 봇의 완료·개입 알림 선호다. OS 허용과 구별하며 대화의 ask·실패·실행 상태를 숨기지 않는다.
+- Routine 편집은 대화에서 생성한 것과 같은 정의·revision·권한 검사를 사용한다. 필수 Cron의 전역 해제 토글이나 다른 scheduler를 추가하지 않는다. 미연결 event는 실행 가능으로 표시하지 않는다.
+- `테스트 실행`은 저장된 revision에 귀속되는 실제 요청이다. 미저장 편집은 먼저 저장·취소하게 한다. 원 소유자의 mailbox와 현재 권한을 재검사하고 수락·실행·결과를 구분한다. 루틴 일시중지는 자동 trigger를 멈추는 것이며, 명시적 테스트의 권한을 만들어 주지는 않는다.
+- 컴퓨터 선택 저장은 설치·연결·계정·mount·TCC 허용이 아니다. 실제 준비 상태·공유 범위·제어 소유자를 표시한다. Linux·browser·내 Mac의 경계는 §10과 [로컬 컴퓨터 설계](./picky-local-computer-design.md)를 따른다.
+
+B.04 HTML은 폼·소유자별 브라우저 저장과 모의 기록만 다룬다. 실제 Routine 테스트 대신 명시적인
+`모의 실행 기록`을 남기고, 컴퓨터는 `설정 필요`로 유지한다. 이는 제품 실행·격리의 완료 근거가 아니다.
 
 ## 5. 대표 사용자 흐름
 
@@ -525,7 +542,7 @@ Pi SDK 자체의 기본 subagent 기능을 가정하지 않는다. B가 구현·
 
 ### 9.1 Pi가 방법을 관리하고 실행 기반은 한 번만 만든다
 
-Pi가 대화에서 Routine의 목적·입력·조건·결과·승인 경계를 작성한다. scheduler는 확정된 일정과 trigger를 감지해 **원래 봇의 mailbox**로 전달한다. 실행 receipt와 대화의 결과를 연결한다.
+Pi가 대화에서 Routine의 목적·입력·조건·결과·승인 경계를 작성한다. 사용자는 같은 정의를 우측 패널에서 직접 작성·수정할 수도 있다. 어느 진입점이든 소유자·revision·권한 경계를 저장하고, 폼 문구를 권한으로 승격하지 않는다. scheduler는 확정된 일정과 trigger를 감지해 **원래 봇의 mailbox**로 전달한다. 실행 receipt와 대화의 결과를 연결한다.
 
 Cron은 Picky 필수 내장 서비스다. 검토된 기존 구현을 내부 모듈로 재사용할 수 있지만 사용자 Pi cron 패키지·전역 job 저장소·LaunchAgent와 연동하지 않는다. Picky 소유의 정의·Room origin·receipt와 같은 지속 대화로의 전달을 한 엔진에서 관리한다. 외부 headless Pi를 실행하지 않으며 수락·실제 실행·성공을 다른 상태로 저장한다. [C04][C05]
 
@@ -585,7 +602,7 @@ Cron은 Picky 필수 내장 서비스다. 검토된 기존 구현을 내부 모�
 | Pi 로컬 workspace | 코드·Git·테스트·파일·CLI | 별도 worktree로 충돌을 줄임. 같은 사용자 권한과 포트·DB·캐시는 공유 |
 | 관리되는 로컬 browser | 전용 profile/page에서 웹 업무·preview·takeover | 실제 browser target 소유권 검사. 사용자의 평소 browser profile을 자동 가져오지 않음 |
 | 이 Mac의 desktop | 로컬 앱·로그인·native workflow | 명시적 opt-in, TCC와 물리 입력의 단일 소유권. 봇별 독립 화면이라고 부르지 않음 |
-| 로컬 격리 컴퓨터 | 사용자의 desktop과 분리된 Linux GUI·웹 자동화 | OpenMaus의 Cua/container 방식을 검토. runtime 설치·이미지·자원·mount·viewer 보안 검증 필요 |
+| 로컬 격리 컴퓨터 | 사용자의 desktop과 분리된 Linux GUI·웹 자동화 | OpenMaus의 봇별 Docker/Podman + Cua 경로를 우선 실험. mount·network·host 도구 경계는 별도로 검증 |
 | 외부 cloud computer | 별도 실행 환경이 필요한 선택 확장 | 기본안 밖. Box 등 새 계정·비용·데이터 전송을 묵시적으로 도입하지 않음 |
 
 F12·F13과 단계 5의 필수 provider는 **관리 browser와 명시적 opt-in Mac desktop**이다. 둘 다 preview·takeover·입력 거부·fresh-frame 복귀·결과 연결을 지원해야 한다. 병렬성 기준은 독립 browser target 두 개이며, 물리 Mac 입력은 하나의 lease로 직렬화한다. 사용자 한 명이 모든 provider를 켜야 한다는 뜻은 아니다.
@@ -594,11 +611,15 @@ F12·F13과 단계 5의 필수 provider는 **관리 browser와 명시적 opt-in 
 
 Computer provider 선택과 Pi core 선택은 다른 문제다. Computer를 VM으로 연결해도 Pi 세션과 고정 홈이 새로 생기거나 바뀌지 않는다. 모델·기억·credential을 guest에 통째로 mount하지 않는다.
 
+2026-09-13 사용자의 로컬 격리 요청에 따라, **분리된 Computer의 우선 구현 후보는 OpenMaus식 피클별 Linux desktop**으로 좁힌다. 현재 Mac은 15.6.1·arm64·48GiB이며 Docker CLI 존재만 확인했다. 실제 engine·이미지·성능은 미검증이다. 이 선택은 위 필수 browser/Mac provider 계약을 없애거나 모든 봇에 VM을 자동 설치하는 결정은 아니다. 구체적인 경계·OS·실험 조건은 [로컬 컴퓨터 설계](./picky-local-computer-design.md)에 둔다.
+
 ### 10.2 OpenMaus에서 참고할 구현
 
-OpenMaus의 `container-computer.ts`는 Cua image digest·driver 버전, private 작업공간, loopback viewer, target lease, CPU·memory·PID 제한을 관리한다. 이 관리 범위와 도구 경계가 참고점이다. 그 숫자나 이미지가 Picky의 모든 지원 Mac에서 그대로 적절하다는 뜻은 아니다. [O08]
+OpenMaus의 `container-computer.ts`는 Cua image digest·driver 버전, 봇별 target·private 작업공간·loopback viewer를 관리한다. Docker/Podman 경로에는 4GiB·2 CPU·512 PID 등의 제한과 실제 설정 검사가 있다. 별도 `computer-control.ts`는 사람 hold 중 입력을 거부한다. 이 관리 범위와 경계가 참고점이며 숫자·이미지가 Picky의 모든 지원 Mac에서 적절하다는 증거는 아니다. [O07][O08]
 
-Docker·Podman·Apple container의 OS·아키텍처·배포 조건은 다르다. Picky의 macOS 14.2 지원을 조용히 높이거나 설치되지 않은 runtime을 있다고 가정하지 않는다. GUI 지원이 필요한데 준비되지 않았으면 setup-needed로 표시하고 다른 실행면으로 몰래 fallback하지 않는다.
+Docker·Podman·Apple container의 OS·아키텍처·배포 조건은 다르다. pinned OpenMaus의 Apple container 어댑터는 피클별 target 생성을 거부하며, Apple의 현행 공식 지원은 macOS 26이다. 이를 macOS 15.6.1이나 Picky 최소 14.2의 기본 경로로 삼지 않는다. Docker Desktop의 지원 버전·구독 조건도 별도 확인한다. GUI가 준비되지 않았으면 setup-needed로 표시하고 다른 실행면으로 몰래 fallback하지 않는다. [근거와 비교](./picky-local-computer-design.md#5-os배포-판단)
+
+기본 Docker Desktop의 컨테이너들은 Linux VM/kernel을 공유하고, RW mount한 host 폴더는 변경할 수 있다. loopback viewer는 outbound network 통제가 아니다. source의 stopped desktop은 재시작을 거부하므로 보존 폴더로 재생성하는 것과 process·창 상태의 복구도 구분한다. guest만 준비하고 host shell·extension 우회를 열어 둔 상태를 Pi 전체의 sandbox라고 표시하지 않는다. [O08]
 
 Pi 공식 Gondolin 예제도 host Pi의 built-in tool을 microVM으로 보내는 패턴을 제공한다. 하지만 그것은 완성된 GUI desktop·공유 로그인·takeover의 증거가 아니며, 다른 host extension까지 격리하는 것도 아니다. B의 shell isolation 참고이지 별도 필수 인프라가 아니다. [P04]
 
@@ -731,6 +752,9 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 | 현재 코딩에 채팅으로 긴급 수정·중단 | 모드 선택 강요, 입력이 queue 뒤로만 밀림, 장기 도구 중 중단 의도 미수신, 다른 요청 중단 |
 | 예약 메시지 수정·삭제·발송 중 화면 전환 | 조기·중복·취소 후 발송, 바뀐 수신자, 새 Pi 세션, 요청하지 않은 권한 확대 |
 | 민트 DM의 모카 인계와 PR 결과 | 모카를 DM 참여자처럼 표시, 인계 내용 기본 펼침, 큰 PR 근거·작업공간 상시 노출 |
+| 피클 관리 열기·이름 변경·다른 피클로 전환 | 원 DM 초안·작업 중단, 새 Bot·홈·세션 생성, 미저장 입력 손실, 이전 폼으로 다른 소유자 설정 변경 |
+| Routine 편집·테스트·삭제 | 다른 봇 정의 수정, 미저장/오래된 revision 실행, 수락만으로 성공 표시, 삭제한 trigger 부활, 실행·불명 결과 기록 소실 |
+| 컴퓨터 환경 선택 | 설정 저장을 설치·계정·mount·TCC 허용으로 오인, Linux에서 Mac 앱 실행 가능 주장, 무단 host fallback |
 | 전달 표시에서 두 봇의 대화 열람 | 사용자 그룹 자동 생성·가입, 다른 쌍/무권한 이력 표시, 새 Pi turn·세션 생성, 원 DM 초안 변경 |
 | 원본과 복제본이 병렬로 코드 수정 | 원본 대화·미완료 변경·기억 오염, 같은 작업공간에 무단 동시 쓰기 |
 | 역할/기억 snapshot을 새 홈에 적용 | 대화·compaction·secret·grant 유입, 수정 가능한 원본 파일 공유 |
@@ -759,7 +783,7 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 - 내장할 기존 기능 소스의 정확한 revision·라이선스·수정 범위와 제품 bundle 배치. 필수 내장·옵트아웃 불가 원칙 자체는 미결정이 아니다.
 - Picky 전용 저장 schema·기존 제품 데이터 migration과 내장 업데이트의 호환/rollback 경계. 사용자 Pi 운영 호환을 복원하는 대안은 제외한다.
 - 내장 서브에이전트의 구체적인 자원·재귀·동시성 상한과 임시 context 정리. 실행 소유자는 Picky이고 사용자 subagent 플러그인 호환은 고려하지 않는다.
-- 필수 browser·Mac provider의 구현·배포 조합과 지원 OS, 선택 격리 provider의 runtime.
+- 필수 browser·Mac provider의 구현·배포 조합과 지원 OS. 선택 Linux provider는 Docker/Podman + Cua가 우선 후보이며 실제 image·engine 버전, 격리 강제·라이선스·복구·성능은 별도 실험으로 확정한다.
 - 백그라운드 host의 기본값과 Routine·예약 메시지의 missed-run 정책. Cron 모듈은 필수지만 Mac 전원·절전 제약을 숨기지 않는다.
 - 중단 버튼 없이 장기 도구 실행·연결 장애 중에도 채팅의 중단 의도를 Pi가 받아 내부 abort로 연결하는 경로와 지연 상한. HTML의 정해진 문장 분기로 대체 검증하지 않는다.
 
@@ -769,7 +793,7 @@ Pi의 구조화된 출력으로 표·차트·Routine·작업·인계 카드를 �
 
 공식 Grok 문서·공개 가이드, 고정 리비전의 OpenMaus 코드·공개 화면, 설치된 Pi SDK의 문서·선언, Picky 소스를 읽었다. Pi의 SDK·security·containerization 문서는 공식 고정 리비전과 설치본의 바이트 일치도 확인했다.
 
-실제 Grok 로그인 계정, OpenMaus packaged app, Computer·connector·Routine 통합을 실행하지 않았다. VM 설치, Picky 앱 재시작, 제품 build/test도 수행하지 않았다. B 0.4는 내장화 결정과 두 차례 목업 피드백을 반영한 문서 개정이다. HTML 목업 검증은 실제 내장화·격리·migration·권한 실행의 검증이 아니다. 이 문서의 수용 표는 향후 검증 계획이다.
+실제 Grok 로그인 계정, OpenMaus packaged app, Computer·connector·Routine 통합을 실행하지 않았다. VM 설치, Picky 앱 재시작, 제품 build/test도 수행하지 않았다. B 0.5는 내장화·메신저 피드백과 피클별 우측 관리·로컬 격리 요청을 반영한 문서 개정이다. HTML 목업 검증은 실제 내장화·격리·migration·권한 실행의 검증이 아니다. 이 문서의 수용 표는 향후 검증 계획이다.
 
 ### 주요 출처
 

@@ -1,0 +1,94 @@
+:root{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
+html,body{height:100%;overflow:hidden}
+body{background:var(--canvas);font-size:14px}
+.panel{height:100dvh;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--canvas)}
+.panel-header{position:relative;z-index:1;min-height:54px;display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.panel-header h1{font-size:16px;line-height:1.35;letter-spacing:-.15px}
+.panel-header .title-block{min-width:0;flex:1}
+.panel-header .subtle{margin:1px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon-button{display:grid;place-items:center;width:34px;min-height:34px;padding:0;border-radius:8px}
+.panel-body{overflow:auto;padding:20px}
+.panel-section{padding:0 0 20px;margin:0 0 20px;border-bottom:1px solid var(--line)}
+.panel-section:last-child{border-bottom:0;margin-bottom:0}
+.section-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.section-heading h2{margin:0;font-size:14px}
+.avatar{display:grid;place-items:center;flex:none;width:30px;height:30px;border:1px solid var(--line);border-radius:9px;background:var(--control);color:var(--secondary);font-size:12px;font-weight:700}
+.avatar-primary{color:#fff;background:var(--blue);border-color:var(--blue)}
+.back-button{border:0;background:transparent;padding:5px 4px;min-height:34px;color:var(--blue-text);white-space:nowrap}
+.back-button:hover:not(:disabled){background:var(--hover)}
+.computer-placeholder{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.computer-display{height:108px;display:grid;place-items:center;margin-bottom:14px;border:1px solid var(--line);border-radius:8px;background:var(--control);color:var(--secondary)}
+.computer-display svg{width:36px;height:36px;stroke-width:1.35}
+.status-line{display:flex;align-items:center;gap:7px;margin:0 0 12px;color:var(--secondary);font-size:12px}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--secondary)}
+.routine-list{display:grid;gap:2px}
+.routine-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px 6px;border:0;border-radius:8px;background:transparent;text-align:left}
+.routine-row:hover{background:var(--hover)}
+.routine-row .routine-copy{min-width:0;flex:1}
+.routine-row strong,.routine-row span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.routine-row strong{font-size:13px;font-weight:600}
+.routine-row .subtle{font-size:11px}
+.routine-status{flex:none;color:var(--secondary);font-size:11px}
+.empty-state{padding:16px 0;color:var(--secondary);font-size:13px}
+.field-group{display:grid;gap:6px;margin-bottom:16px}
+.field-group label,.switch-row label{margin:0;font-size:12px;font-weight:600}
+.field-note{margin:0;color:var(--secondary);font-size:11px}
+.text-input,textarea,select,input[type=time]{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:8px 10px;line-height:1.4}
+textarea{min-height:94px;resize:vertical}
+select{min-height:36px}
+input[type=checkbox],input[type=radio]{accent-color:var(--blue)}
+.switch-row{display:flex;align-items:center;gap:9px;padding:10px 0}
+.switch-row input{width:16px;height:16px}
+.footer-actions{display:flex;justify-content:flex-end;gap:8px;margin:0;padding-top:4px}
+.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.primary:hover:not(:disabled){background:#1d4ed8}
+.danger{color:var(--danger);border-color:currentColor}
+.draft-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:20px}
+.trigger-list{display:grid;gap:12px}
+.trigger{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.trigger-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.trigger-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.trigger-grid .field-group{margin:0}
+.history-list{display:grid;gap:8px}
+.history-row{padding:10px 0;border-bottom:1px solid var(--line)}
+.history-row:last-child{border-bottom:0}
+.history-row time{display:block;color:var(--secondary);font-size:11px}
+.history-row p{margin:2px 0 0;font-size:12px;overflow-wrap:anywhere}
+.mode-options{display:grid;gap:8px}
+.mode-option{display:flex;align-items:flex-start;gap:9px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);cursor:default}
+.mode-option:has(input:checked){border-color:var(--blue-text);background:var(--control)}
+.mode-option input{margin:3px 0 0}
+.mode-option strong,.mode-option span{display:block}
+.mode-option strong{font-size:13px}
+.mode-option span{color:var(--secondary);font-size:11px;margin-top:2px}
+.mode-copy{margin:16px 0;padding:12px;border-left:2px solid var(--line);color:var(--secondary);font-size:12px;line-height:1.6}
+.inline-confirm{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px}
+.preview-banner{padding:8px 14px}
+.panel .preview-banner{position:fixed;right:0;bottom:0;left:0;z-index:2;border-top:1px solid var(--line);border-bottom:0;background:var(--canvas)}
+[hidden]{display:none!important}
+@media(max-width:390px){.panel-body{padding:16px}
+.panel-header{padding:9px 10px}
+.trigger-grid{grid-template-columns:1fr}
+.footer-actions{align-items:stretch;flex-direction:column-reverse}
+.footer-actions button{width:100%}
+.computer-placeholder{padding:12px}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}
+}
+
+
+.panel{padding:0}
+.panel textarea{font:inherit;color:inherit}
+.panel textarea:focus-visible,.panel select:focus-visible{outline:2px solid var(--blue-text);outline-offset:2px}
+.panel-header h1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel:has(.preview-banner:not([hidden])) .panel-body{padding-bottom:64px}
+
+/* Headings receive screen-reader focus, but are not editable controls. */
+[data-panel-heading]:focus{outline:none}
+.trigger-top select{flex:1;min-width:0;width:auto}
+.remove-trigger{flex:none;white-space:nowrap}
+.trigger-grid .field-group:has(.repository){grid-column:1 / -1}
+.field-group input,.field-group select{font-size:14px;font-weight:400}
+.routine-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.routine-toolbar button{white-space:nowrap;font-size:12px}

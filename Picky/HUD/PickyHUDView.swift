@@ -609,6 +609,7 @@ struct PickyHUDView: View {
                 allSessions: dockSnapshot.activeSessions,
                 baseProjection: dockProjection,
                 layout: dockSnapshot.dockLayout,
+                groupMemberIDsByRecency: dockSnapshot.groupMemberIDsByRecency,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,

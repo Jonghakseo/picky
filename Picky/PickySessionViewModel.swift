@@ -392,7 +392,8 @@ final class PickySessionListViewModel: ObservableObject {
             recentPickleCwds: recentPickleCwds,
             isLoadingInitialSessionSnapshot: isLoadingInitialSessionSnapshot,
             openSessionRequest: openSessionRequest,
-            authoritativeRemovalEvent: authoritativeDockRemovalEvent
+            authoritativeRemovalEvent: authoritativeDockRemovalEvent,
+            groupMemberIDsByRecency: PickyDockGroupRecencyPolicy.groups(in: dockLayout, sessions: sessions)
         ))
     }
 

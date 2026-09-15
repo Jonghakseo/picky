@@ -457,7 +457,7 @@ extension PickyHUDOverlayManager {
     /// so they must not be reachable by number or arrow keys either.
     private func dockGroupListRowIDs(group: PickyDockGroup, snapshot: PickyHUDDockSnapshot) -> [String] {
         let activeIDs = Set(snapshot.activeSessions.map(\.id))
-        return group.memberSessionIDs.filter { activeIDs.contains($0) }
+        return snapshot.memberIDsByRecency(in: group).filter { activeIDs.contains($0) }
     }
 
     private func makeDockGroupListPanelContent(
@@ -468,7 +468,7 @@ extension PickyHUDOverlayManager {
     ) -> PickyHUDDockGroupListPanelContent {
         let sessionsByID = Dictionary(snapshot.activeSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let rows = PickyHUDDockGroupListRowProjection.rows(
-            memberSessionIDs: group.memberSessionIDs,
+            memberSessionIDs: snapshot.memberIDsByRecency(in: group),
             activeSessionsByID: sessionsByID,
             updatedAt: { [weak self] sessionID in self?.viewModel.sessionCard(sessionID: sessionID)?.updatedAt },
             makeRow: { session, updatedAt in
@@ -549,13 +549,6 @@ extension PickyHUDOverlayManager {
                 },
                 onUngroupSession: { [weak self] sessionID in
                     self?.ungroupDockGroupListSession(sessionID: sessionID)
-                },
-                onReorderSession: { [weak self] sessionID, visibleIndex in
-                    self?.reorderDockGroupListSession(
-                        groupID: model.content.group.id,
-                        sessionID: sessionID,
-                        visibleIndex: visibleIndex
-                    )
                 },
                 onBeginGroupNameEditing: { [weak self, weak panel = entry.panel] in
                     self?.beginDockGroupListNameEditing(displayID: displayID, childPanel: panel)
@@ -710,23 +703,6 @@ extension PickyHUDOverlayManager {
             ?? L10n.t("group.list.fallbackTitle")
         viewModel.archive(sessionID: sessionID)
         showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
-    }
-
-    /// A drop position among the rendered rows is not a stored member index:
-    /// archived members stay in `memberSessionIDs` without rendering, so the
-    /// visible index has to be translated before the move is emitted.
-    private func reorderDockGroupListSession(groupID: String, sessionID: String, visibleIndex: Int) {
-        let snapshot = viewModel.dockState.snapshot
-        guard let group = snapshot.dockLayout.group(withID: groupID) else { return }
-        let memberIndex = PickyDockGroupMemberIndexPolicy.fullMemberIndex(
-            forVisibleIndex: visibleIndex,
-            memberSessionIDs: group.memberSessionIDs,
-            activeSessionIDs: Set(snapshot.activeSessions.map(\.id))
-        )
-        viewModel.moveSessionInDock(
-            sessionID: sessionID,
-            to: .group(id: groupID, memberIndex: memberIndex)
-        )
     }
 
     private func ungroupDockGroupListSession(sessionID: String) {

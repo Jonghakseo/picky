@@ -350,15 +350,13 @@ struct PickyDockMiniPickleGlyph: View {
     }
 }
 
-/// Presentation-only folder glyph model. It ranks member states without ever
-/// mutating the persisted group membership order.
+/// Folder preview of the leading members in the shared group display order.
 struct PickyHUDDockFolderBadgeViewModel {
     let glyphMemberIDs: [String]
     let overflowCount: Int
 
-    init(memberIDs: [String], statuses: [PickySessionStatus]) {
-        let indices = PickyDockFolderGlyphPolicy.glyphIndices(statuses: statuses, cellCount: 3)
-        self.glyphMemberIDs = indices.compactMap { memberIDs.indices.contains($0) ? memberIDs[$0] : nil }
+    init(memberIDs: [String]) {
+        self.glyphMemberIDs = Array(memberIDs.prefix(3))
         self.overflowCount = PickyDockFolderGlyphPolicy.overflowCount(
             memberCount: memberIDs.count,
             glyphCellCount: 3
@@ -471,12 +469,11 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         }
     }
 
-    /// Up to four cells: the three most important members are shown first,
+    /// Up to four cells: the three most recently updated members are shown first,
     /// then a `+N` cell for every member behind them.
     private var cells: [GridCell] {
         let presentation = PickyHUDDockFolderBadgeViewModel(
-            memberIDs: members.map { $0.id },
-            statuses: members.map { $0.status }
+            memberIDs: members.map { $0.id }
         )
         let membersByID = Dictionary(uniqueKeysWithValues: members.map { ($0.id, $0) })
         var result = presentation.glyphMemberIDs.compactMap { membersByID[$0] }.map { GridCell.member($0) }

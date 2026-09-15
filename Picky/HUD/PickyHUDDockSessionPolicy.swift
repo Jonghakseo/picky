@@ -93,6 +93,14 @@ struct PickyHUDDockSnapshot: Equatable {
     /// Router-validated authoritative removals for HUD-local owners.
     let authoritativeRemovalEvent: PickyHUDDockRemovalEvent?
 
+    /// Immutable presentation order, separate from persisted membership. Only
+    /// an order change invalidates the dock, not every timestamp update.
+    var groupMemberIDsByRecency: [String: [String]] = [:]
+
+    func memberIDsByRecency(in group: PickyDockGroup) -> [String] {
+        groupMemberIDsByRecency[group.id] ?? group.memberSessionIDs
+    }
+
     static let empty = Self(
         activeSessions: [],
         dockLayout: .empty,

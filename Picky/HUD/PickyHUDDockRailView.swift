@@ -37,9 +37,8 @@ enum PickyHUDDockSurfacePresentation {
 
 struct PickyHUDDockRailView: View {
     let sessions: [PickyHUDDockSession]
-    /// Every live session card, including those hidden inside collapsed
-    /// groups. `sessions` only carries the dock-visible slots, so the
-    /// collapsed-group folder grid resolves its members from here.
+    /// All live sessions, including collapsed members. Folder previews resolve
+    /// their timestamp-sorted IDs here; `sessions` only contains visible slots.
     let allSessions: [PickyHUDDockSession]
     /// Projection of the *persisted* layout. Read through the `projection`
     /// computed property below, which overlays the in-flight drag preview
@@ -50,6 +49,7 @@ struct PickyHUDDockRailView: View {
     /// top-level entry indices back to `entries` indices when committing
     /// folder-tile group reorders.
     let layout: PickyDockLayout
+    var groupMemberIDsByRecency: [String: [String]] = [:]
     let activeSessionID: String?
     let openedSessionID: String?
     let previewSessionID: String?
@@ -651,7 +651,7 @@ struct PickyHUDDockRailView: View {
 
     @ViewBuilder
     private func folderTile(for group: PickyDockGroup, slot: PickyDockSlot) -> some View {
-        let memberCards = group.memberSessionIDs.compactMap { id in
+        let memberCards = (groupMemberIDsByRecency[group.id] ?? group.memberSessionIDs).compactMap { id in
             allSessions.first(where: { $0.id == id })
         }
         let unreadCount = memberCards.reduce(0) { count, card in

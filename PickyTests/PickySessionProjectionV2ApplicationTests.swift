@@ -11,6 +11,57 @@ import Testing
 
 @MainActor
 struct PickySessionProjectionV2ApplicationTests {
+    @Test func metadataUpdatesReorderBothGroupSurfacesWithoutPersistingManualOrder() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let layoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "group", name: "Work", color: .blue,
+                                  memberSessionIDs: ["older", "newer", "archived"]))
+        ]))
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage, dockLayoutStore: layoutStore)
+        apply(snapshot(sessionID: "older", title: "Older", status: .running, revision: 1), to: viewModel)
+        apply(snapshot(sessionID: "newer", title: "Newer", status: .completed, revision: 1), to: viewModel)
+        apply(snapshot(sessionID: "archived", title: "Archived", status: .completed, revision: 1, archived: true), to: viewModel)
+        apply(transaction(sessionID: "newer", baseRevision: 1, revision: 2,
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:02.000Z"}}]"#), to: viewModel)
+        viewModel.flushDockStateForTesting()
+        let persisted = viewModel.dockLayout
+        let savedCount = layoutStore.savedLayouts.count
+
+        func visibleIDs() throws -> [String] {
+            let snapshot = viewModel.dockState.snapshot
+            let group = try #require(snapshot.dockLayout.group(withID: "group"))
+            let sessions = Dictionary(uniqueKeysWithValues: snapshot.activeSessions.map { ($0.id, $0) })
+            let rows = PickyHUDDockGroupListRowProjection.rows(
+                memberSessionIDs: snapshot.memberIDsByRecency(in: group),
+                activeSessionsByID: sessions,
+                updatedAt: { viewModel.sessionCard(sessionID: $0)?.updatedAt },
+                makeRow: { PickyHUDDockGroupListRowModel(session: $0, updatedAt: $1) }
+            )
+            let folderIDs = snapshot.memberIDsByRecency(in: group).filter { sessions[$0] != nil }
+            #expect(PickyHUDDockFolderBadgeViewModel(memberIDs: folderIDs).glyphMemberIDs == Array(rows.map(\.id).prefix(3)))
+            #expect(PickyHUDDockGroupListKeyboardPolicy.rowID(forShortcutNumber: 1, rowIDs: rows.map(\.id)) == rows.first?.id)
+            return rows.map(\.id)
+        }
+
+        #expect(try visibleIDs() == ["newer", "older"])
+        let originalSnapshot = viewModel.dockState.snapshot
+        // Both updates are inside the same 20-second preview bucket. Exact
+        // metadata time, not the hover-preview refresh clock, determines order.
+        apply(transaction(sessionID: "older", baseRevision: 1, revision: 2,
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:03.000Z"}}]"#), to: viewModel)
+        viewModel.flushDockStateForTesting()
+        #expect(try visibleIDs() == ["older", "newer"])
+        #expect(originalSnapshot.groupMemberIDsByRecency["group"] == ["newer", "older", "archived"])
+        #expect(viewModel.dockLayout == persisted)
+        #expect(layoutStore.savedLayouts.count == savedCount)
+
+        let sameOrderSnapshot = viewModel.dockState.snapshot
+        apply(transaction(sessionID: "older", baseRevision: 2, revision: 3,
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:04.000Z"}}]"#), to: viewModel)
+        viewModel.flushDockStateForTesting()
+        #expect(viewModel.dockState.snapshot == sameOrderSnapshot)
+    }
+
     @Test func bootstrapSnapshotsInstallCardsWithoutHistoricalAttentionEffects() throws {
         let notifications = PickyNoopNotificationCenter()
         let storage = PickyRegistrySessionProjectionStorage()

@@ -695,7 +695,6 @@ struct PickyHUDDockGroupRenderGalleryTests {
             onStopSession: { _ in },
             onMoveSessionToGroup: { _, _ in },
             onUngroupSession: { _ in },
-            onReorderSession: { _, _ in },
             relativeTime: { _ in "5 min ago" },
             liveRowIDs: { rows.map(\.id) },
             convertScreenPointToPanel: { $0 },

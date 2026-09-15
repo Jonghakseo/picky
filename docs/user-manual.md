@@ -509,7 +509,7 @@ The composer bottom action row includes two independent controls for successful 
 
 Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles. **Hub → Settings → Notifications, permissions, and privacy** supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
 
-Both defaults are off on a fresh install, so background work stays quiet until you enable a channel. Clicking a delivered macOS notification opens that Pickle in the HUD without opening Hub; reopening Picky from its Dock icon still brings Hub forward.
+Both defaults are off on a fresh install, so background work stays quiet until you enable a channel. macOS notifications appear as one-time banners and are removed from Notification Center shortly after display instead of accumulating. Clicking the banner opens that Pickle in the HUD without opening Hub; reopening Picky from its Dock icon still brings Hub forward.
 
 ### 8.10 Inline questions and confirmations
 

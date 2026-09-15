@@ -98,6 +98,12 @@ sanitize_version_part() {
   printf '%s' "$1" | /usr/bin/sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//'
 }
 
+BUNDLE_ID="${PICKY_BUNDLE_ID:-$(read_project_setting PRODUCT_BUNDLE_IDENTIFIER)}"
+if [[ -z "${BUNDLE_ID}" ]]; then
+  echo "❌ Could not resolve PRODUCT_BUNDLE_IDENTIFIER from ${PROJECT_PATH}." >&2
+  exit 1
+fi
+
 MARKETING_VERSION="${PICKY_MARKETING_VERSION:-$(read_project_setting MARKETING_VERSION)}"
 MARKETING_VERSION="${MARKETING_VERSION:-1.0}"
 ALLOW_LEGACY_MARKETING_VERSION="${PICKY_ALLOW_LEGACY_MARKETING_VERSION:-0}"
@@ -263,6 +269,7 @@ xcodebuild \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
+  PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
   MARKETING_VERSION="${MARKETING_VERSION}" \
   CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 XCODEBUILD_STATUS=$?
@@ -304,6 +311,12 @@ mkdir -p "${PACKAGED_APP}"
   --exclude '/Contents/Resources/pi-extensions/' \
   --exclude '/Contents/Resources/pi-skills/' \
   "${BUILT_APP}/" "${PACKAGED_APP}/"
+
+PACKAGED_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${PACKAGED_APP}/Contents/Info.plist" 2>/dev/null || true)"
+if [[ "${PACKAGED_BUNDLE_ID}" != "${BUNDLE_ID}" ]]; then
+  echo "❌ Packaged bundle identifier mismatch: expected ${BUNDLE_ID}, got ${PACKAGED_BUNDLE_ID:-<missing>}." >&2
+  exit 1
+fi
 
 /usr/bin/python3 - "${BUILD_INFO_PATH}" "${APP_NAME}" "${MARKETING_VERSION}" "${BUILD_NUMBER}" "${RELEASE_CHANNEL}" "${GIT_SHA}" "${BUILD_TIMESTAMP}" "${BUILD_LABEL}" "${CONFIGURATION}" <<'PY'
 import json

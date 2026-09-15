@@ -7,11 +7,14 @@ set -euo pipefail
 # macOS TCC permissions (Microphone / Accessibility / Screen Recording) are tied
 # to the app identity. Launching the ad-hoc DerivedData Debug app after each
 # rebuild can make macOS treat it like a new app and ask for permissions again.
-# This script keeps both the signing identity and launch path stable.
+# This script keeps the signing identity, launch path, and development-only
+# bundle identifier stable. The separate identifier prevents macOS notification
+# clicks from resolving to a release or stale DerivedData copy of Picky.
 #
 # Optional overrides:
 #   PICKY_CODE_SIGN_IDENTITY="Apple Development: Name (TEAMID)" ./scripts/run-dev-signed-app.sh
 #   PICKY_DEVELOPMENT_TEAM="TEAMID" ./scripts/run-dev-signed-app.sh
+#   PICKY_BUNDLE_ID="com.example.picky.dev" ./scripts/run-dev-signed-app.sh
 #   PICKY_SKIP_LAUNCH=1 ./scripts/run-dev-signed-app.sh
 #   PICKY_ALLOW_ADHOC=1 ./scripts/run-dev-signed-app.sh  # not recommended for TCC stability
 
@@ -23,7 +26,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 picky_require_pinned_toolchain "run-dev-signed-app"
 
 APP_NAME="${PICKY_APP_NAME:-Picky}"
-BUNDLE_ID="${PICKY_BUNDLE_ID:-com.jonghakseo.picky}"
+BUNDLE_ID="${PICKY_BUNDLE_ID:-com.jonghakseo.picky.dev}"
 BUILD_ROOT="${PICKY_PACKAGE_BUILD_DIR:-${ROOT_DIR}/build/dev-signed}"
 EXPORT_DIR="${PICKY_EXPORT_DIR:-${BUILD_ROOT}/export}"
 PACKAGED_APP="${EXPORT_DIR}/${APP_NAME}.app"
@@ -38,12 +41,13 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 Usage: ./scripts/run-dev-signed-app.sh
 
 Build and relaunch Picky from build/dev-signed/export/Picky.app using a stable
-Apple code-signing identity so macOS TCC permissions are not reset on every
-Debug rebuild.
+Apple code-signing identity and development-only bundle identifier so macOS
+TCC permissions remain stable without colliding with release Picky apps.
 
 Useful overrides:
   PICKY_CODE_SIGN_IDENTITY="Apple Development: Name (TEAMID)"
   PICKY_DEVELOPMENT_TEAM="TEAMID"
+  PICKY_BUNDLE_ID="com.example.picky.dev"
   PICKY_SKIP_LAUNCH=1
   PICKY_SKIP_QUIT=1
   PICKY_CLEAN=1
@@ -207,6 +211,7 @@ echo "🔐 Building ${APP_NAME}.app with stable development signing..."
 echo "   identity: ${CODE_SIGN_DISPLAY_NAME}"
 echo "   identity sha1: ${CODE_SIGN_IDENTITY}"
 echo "   team: ${DEVELOPMENT_TEAM:-<not set>}"
+echo "   bundle id: ${BUNDLE_ID}"
 echo "   configuration: ${CONFIGURATION}"
 echo "   output: ${PACKAGED_APP}"
 
@@ -215,6 +220,7 @@ PICKY_PACKAGE_BUILD_DIR="${BUILD_ROOT}" \
 PICKY_EXPORT_DIR="${EXPORT_DIR}" \
 PICKY_CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
 PICKY_DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
+PICKY_BUNDLE_ID="${BUNDLE_ID}" \
 PICKY_CREATE_ZIP="${CREATE_ZIP}" \
 PICKY_CLEAN="${CLEAN}" \
   "${ROOT_DIR}/scripts/package-signed-app.sh"

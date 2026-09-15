@@ -1184,7 +1184,7 @@ struct PickyConversationContextLineView: View {
         content.body = String(trimmedSummary.prefix(280))
         content.sound = nil
         let request = UNNotificationRequest(identifier: "picky-git-\(action.actionLabel)-\(UUID().uuidString)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
+        PickyTransientNotificationCenter.add(request)
     }
 }
 

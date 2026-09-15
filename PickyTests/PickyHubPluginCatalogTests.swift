@@ -311,6 +311,9 @@ struct PickyHubPluginCatalogTests {
             ))
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
+            // Read the rendered glyphs literally. Korean-first language correction
+            // rewrites the English daemon error "unavailable" as "unavallable".
+            request.usesLanguageCorrection = false
             request.recognitionLanguages = ["ko-KR", "en-US"]
             try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([request])
             let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")

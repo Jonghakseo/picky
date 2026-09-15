@@ -15,33 +15,31 @@ import Vision
 @MainActor
 @Suite(.serialized)
 struct PickyHubSettingsRuntimeContractTests {
-    @Test func toolsDeepLinkMountsSettingsAndExpandsBuiltinToolsOnFirstVisit() throws {
-        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
-            let fixture = try PickyHubRenderGalleryFixture()
-            let (window, host) = mountProductionHub(fixture)
-            defer {
-                window.contentView = nil
-                window.close()
-                dismantle(host)
-                fixture.removeTemporaryState()
-            }
-
-            host.layoutSubtreeIfNeeded()
-            #expect(nativePopUpButtons(in: host).filter { $0.itemTitles.first == "70%" && $0.itemTitles.last == "250%" }.isEmpty)
-
-            let url = try #require(URL(string: "picky://settings/tools"))
-            fixture.navigator.apply(deepLink: try #require(PickyDeepLink(url: url)))
-
-            // Offscreen SwiftUI does not publish its AX text tree. Verify the
-            // actual visible pixels instead, without ordering a window or asking
-            // for screen-recording/accessibility permission.
-            // This is a render/content assertion, not a latency budget. Allow
-            // Vision's first model load; keep performance timing in its own host.
-            #expect(waitForHost(host, timeout: 5) {
-                guard fixture.navigator.pendingSettingsNavigation == nil else { return false }
-                return (try? renderedText(in: host).contains("pickyscreenoverlay")) == true
-            })
+    @Test func toolsDeepLinkMountsSettingsAndExpandsBuiltinToolsOnFirstVisit() async throws {
+        let fixture = try PickyHubRenderGalleryFixture()
+        let (window, host) = mountProductionHub(fixture)
+        defer {
+            window.contentView = nil
+            window.close()
+            dismantle(host)
+            fixture.removeTemporaryState()
         }
+
+        host.layoutSubtreeIfNeeded()
+        #expect(nativePopUpButtons(in: host).filter { $0.itemTitles.first == "70%" && $0.itemTitles.last == "250%" }.isEmpty)
+
+        let url = try #require(URL(string: "picky://settings/tools"))
+        fixture.navigator.apply(deepLink: try #require(PickyDeepLink(url: url)))
+
+        // Offscreen SwiftUI does not publish its AX text tree. Verify the
+        // actual visible pixels instead, without ordering a window or asking
+        // for screen-recording/accessibility permission.
+        // This is a render/content assertion, not a latency budget. Allow
+        // Vision's first model load; keep performance timing in its own host.
+        #expect(await waitForHostAsync(host, timeout: 5) {
+            guard fixture.navigator.pendingSettingsNavigation == nil else { return false }
+            return (try? renderedText(in: host).contains("pickyscreenoverlay")) == true
+        })
     }
 
     @Test func groupNavigationKeepsTargetHeadingBelowPinnedBadges() throws {
@@ -295,6 +293,22 @@ struct PickyHubSettingsRuntimeContractTests {
             RunLoop.main.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.01)))
         } while Date() < deadline
         host.layoutSubtreeIfNeeded()
+        return condition()
+    }
+
+    /// Let the main queue finish AppKit's first layout and deferred SwiftUI
+    /// scrolling. A nested synchronous RunLoop does not service that queue.
+    private func waitForHostAsync(
+        _ host: NSHostingView<AnyView>,
+        timeout: TimeInterval,
+        until condition: @escaping () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            host.layoutSubtreeIfNeeded()
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        } while Date() < deadline
         return condition()
     }
 

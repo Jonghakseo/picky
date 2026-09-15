@@ -150,8 +150,10 @@ struct PickyHUDDockRailPolicyTests {
                 ))
                 #expect(horizontal == PickyHUDDockLayout.horizontalDockRailLength(
                     sessionCount: 4,
+                    groupCount: groupCount,
                     isAddSlotExpanded: false,
-                    metrics: metrics
+                    metrics: metrics,
+                    fontScale: fontScale
                 ))
                 // A CJK-safe label grows the rail's cross axis once per
                 // folder block, never once per member.
@@ -159,6 +161,39 @@ struct PickyHUDDockRailPolicyTests {
                 #expect(horizontalCrossSize == folderCrossSize + labelChrome)
             }
         }
+    }
+
+    @Test func horizontalRailLengthIncludesFontScaledGroupIdentityWidths() {
+        let metrics = PickyHUDDockMetrics(preset: .small)
+        let sessionCount = 5
+        let groupCount = 3
+        let fontScale: CGFloat = 1.3
+        let groupSlotWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
+            metrics: metrics,
+            fontScale: fontScale
+        )
+        let expectedItemWidth = CGFloat(sessionCount - groupCount) * metrics.sessionTileWidth
+            + CGFloat(groupCount) * groupSlotWidth
+        let expectedLength = (metrics.topPadding * 2)
+            + metrics.handleAreaHeight
+            + 2
+            + expectedItemWidth
+            + CGFloat(sessionCount - 1) * metrics.sessionSpacing
+            + 2
+            + PickyHUDDockLayout.addSlotFrameHeight(
+                isExpanded: false,
+                metrics: metrics
+            )
+
+        #expect(groupSlotWidth > metrics.sessionTileWidth)
+        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: sessionCount,
+            groupCount: groupCount,
+            isAddSlotExpanded: false,
+            dockSide: .bottom,
+            metrics: metrics,
+            fontScale: fontScale
+        ) == expectedLength)
     }
 
     @Test func verticalRailLengthUsesHalfHeightForEmptyGroupSlotsOnly() {

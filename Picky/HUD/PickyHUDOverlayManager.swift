@@ -232,8 +232,10 @@ final class PickyHUDOverlayManager {
             cardWidth: cardWidth(for: displayID),
             dockSide: side,
             sessionCount: projectedDockSessionCount(for: displayID),
+            groupCount: projectedDockGroupCount(for: displayID),
             isAddSlotExpanded: false,
             metrics: PickyHUDDockMetrics(preset: currentDockSizePreset),
+            fontScale: fontScaleStore.cgValue,
             dockRailCrossSize: dockRailCrossSize(for: side)
         )
         guard side.orientation == .horizontal,
@@ -280,10 +282,20 @@ final class PickyHUDOverlayManager {
     /// rail. Uses every active session so panel sizing/clamping follows the
     /// actual dock projection without a count cap.
     private func projectedDockSessionCount(for displayID: CGDirectDisplayID) -> Int {
+        projectedDockProjection(for: displayID).slots.count
+    }
+
+    private func projectedDockGroupCount(for displayID: CGDirectDisplayID) -> Int {
+        projectedDockProjection(for: displayID).items.reduce(into: 0) { count, item in
+            if case .group = item { count += 1 }
+        }
+    }
+
+    private func projectedDockProjection(for displayID: CGDirectDisplayID) -> PickyDockProjection {
         PickyDockProjector.project(
             layout: viewModel.dockState.snapshot.dockLayout,
             visibleSessionIDs: Array(viewModel.dockState.snapshot.activeSessions.reversed().map(\.id))
-        ).slots.count
+        )
     }
 
     private func horizontalDockRailLength(
@@ -295,8 +307,10 @@ final class PickyHUDOverlayManager {
         let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let contentLength = PickyHUDDockLayout.horizontalDockRailLength(
             sessionCount: projectedDockSessionCount(for: displayID),
+            groupCount: projectedDockGroupCount(for: displayID),
             isAddSlotExpanded: isAddSlotExpanded,
-            metrics: metrics
+            metrics: metrics,
+            fontScale: fontScaleStore.cgValue
         )
         return PickyHUDDockOverflowPolicy.layout(
             contentLength: contentLength,

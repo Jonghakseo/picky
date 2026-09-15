@@ -247,6 +247,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             listScene("list-one-selected-medium-dark-100.png", group: group(id: "group-one", name: "Solo", color: .blue, memberIDs: [fiveRows[0].id]), rows: [fiveRows[0]], selectedID: fiveRows[0].id, metrics: medium, fontScale: 1, appearance: .dark),
             miniPreviewScene(metrics: medium),
             combinedScene(group: picky, metrics: medium),
+            horizontalFontScaledRailScene(metrics: small),
             lightRailOnDarkBackdropScene(metrics: large),
             lightListOnDarkBackdropScene(group: picky, metrics: large),
             externalDragFeedbackScene(metrics: medium),
@@ -392,6 +393,64 @@ struct PickyHUDDockGroupRenderGalleryTests {
                             y: badgeTopInset
                         )
                 }
+            )
+        )
+    }
+
+    private func horizontalFontScaledRailScene(metrics: PickyHUDDockMetrics) -> Scene {
+        let groups = [
+            group(id: "horizontal-pr", name: "PR있음", color: .purple, memberIDs: [fiveSessions[0].id]),
+            group(id: "horizontal-local", name: "로컬", color: .teal, memberIDs: [fiveSessions[1].id]),
+            group(id: "horizontal-research", name: "리서치", color: .amber, memberIDs: [fiveSessions[2].id]),
+        ]
+        let layout = PickyDockLayout(entries: groups.map { .group($0) } + [
+            .session(id: fiveSessions[3].id),
+            .session(id: fiveSessions[4].id),
+        ])
+        let projection = PickyDockProjector.project(
+            layout: layout,
+            visibleSessionIDs: fiveSessions.map(\.id)
+        )
+        let fontScale: CGFloat = 1.3
+        let railSize = CGSize(
+            width: PickyHUDDockRailLayoutPolicy.contentLength(
+                sessionCount: projection.slots.count,
+                groupCount: groups.count,
+                isAddSlotExpanded: false,
+                dockSide: .bottom,
+                metrics: metrics,
+                fontScale: fontScale
+            ),
+            height: PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
+                groupCount: groups.count,
+                metrics: metrics,
+                fontScale: fontScale
+            )
+        )
+        let contentSize = CGSize(
+            width: railSize.width + (DS.Spacing.space4 * 2),
+            height: railSize.height + (DS.Spacing.space4 * 2)
+        )
+        return Scene(
+            name: "rail-horizontal-three-groups-small-dark-130.png",
+            contentLogicalSize: contentSize,
+            canvasInsets: galleryCanvasInsets,
+            appearance: .dark,
+            preset: metrics.preset,
+            fontScale: fontScale,
+            content: AnyView(
+                dockRail(
+                    sessions: fiveSessions,
+                    allSessions: fiveSessions,
+                    layout: layout,
+                    projection: projection,
+                    dockSide: .bottom,
+                    metrics: metrics,
+                    availableRailLength: railSize.width,
+                    externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore()
+                )
+                .frame(width: railSize.width, height: railSize.height, alignment: .topLeading)
+                .padding(DS.Spacing.space4)
             )
         )
     }

@@ -358,12 +358,22 @@ enum PickyHUDDockLayout {
 
     static func horizontalDockRailLength(
         sessionCount: Int,
+        groupCount: Int = 0,
         isAddSlotExpanded: Bool,
-        metrics: PickyHUDDockMetrics = .medium
+        metrics: PickyHUDDockMetrics = .medium,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
         let sessionsAndSlot: CGFloat = {
             guard sessionCount > 0 else { return metrics.addSlotButtonSide }
+            let measuredGroupCount = max(0, min(groupCount, sessionCount))
+            let groupSlotWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
+                metrics: metrics,
+                fontScale: fontScale
+            )
+            let groupWidthExpansion = CGFloat(measuredGroupCount)
+                * max(0, groupSlotWidth - metrics.sessionTileWidth)
             let sessionRows = CGFloat(sessionCount) * metrics.sessionTileWidth
+                + groupWidthExpansion
             let sessionGaps = CGFloat(max(0, sessionCount - 1)) * metrics.sessionSpacing
             // 2pt parent-HStack spacing between the sessions row and the slot.
             return sessionRows
@@ -413,8 +423,10 @@ enum PickyHUDDockLayout {
         cardWidth: CGFloat,
         dockSide: PickyHUDDockSide,
         sessionCount: Int,
+        groupCount: Int = 0,
         isAddSlotExpanded: Bool,
         metrics: PickyHUDDockMetrics = .medium,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale,
         dockRailCrossSize: CGFloat? = nil
     ) -> CGFloat {
         switch dockSide.orientation {
@@ -426,8 +438,10 @@ enum PickyHUDDockLayout {
         case .horizontal:
             let railLength = horizontalDockRailLength(
                 sessionCount: sessionCount,
+                groupCount: groupCount,
                 isAddSlotExpanded: isAddSlotExpanded,
-                metrics: metrics
+                metrics: metrics,
+                fontScale: fontScale
             ) + (miniPreviewHorizontalReserve(metrics: metrics) * 2)
             return max(cardWidth, railLength) + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
         }

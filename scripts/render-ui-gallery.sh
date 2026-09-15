@@ -304,6 +304,7 @@ EXPECTED=(
   list-one-selected-medium-dark-100.png
   mini-preview-completed-medium-dark-100.png
   combined-folder-panel-medium-dark-100.png
+  rail-horizontal-three-groups-small-dark-130.png
   rail-four-groups-open-session-large-light-dark-backdrop-100.png
   list-five-idle-large-light-dark-backdrop-100.png
   external-drag-feedback-medium-dark-100.png

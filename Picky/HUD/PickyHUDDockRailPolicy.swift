@@ -61,8 +61,10 @@ enum PickyHUDDockRailLayoutPolicy {
         if dockSide.orientation == .horizontal {
             return PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: sessionCount,
+                groupCount: groupCount,
                 isAddSlotExpanded: isAddSlotExpanded,
-                metrics: metrics
+                metrics: metrics,
+                fontScale: fontScale
             )
         }
         let measuredEmptyGroupCount = max(0, min(emptyGroupCount, sessionCount))

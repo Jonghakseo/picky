@@ -104,6 +104,10 @@ if [[ -z "${BUNDLE_ID}" ]]; then
   exit 1
 fi
 
+# Only the exported, runnable package owns the notification identity. Otherwise
+# LaunchServices can launch the incomplete DerivedData app on a notification click.
+BUILD_BUNDLE_ID="${BUNDLE_ID}.build"
+
 MARKETING_VERSION="${PICKY_MARKETING_VERSION:-$(read_project_setting MARKETING_VERSION)}"
 MARKETING_VERSION="${MARKETING_VERSION:-1.0}"
 ALLOW_LEGACY_MARKETING_VERSION="${PICKY_ALLOW_LEGACY_MARKETING_VERSION:-0}"
@@ -199,6 +203,13 @@ if [[ -n "${LIVE_PICKY_PIDS}" ]]; then
   fi
 fi
 
+# Retire the old identity before replacing a pre-isolation intermediate bundle.
+# Unregister while its path still exists; no app is launched or terminated here.
+if [[ -d "${BUILT_APP}" ]]; then
+  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" \
+    -u -R "${BUILT_APP}" >/dev/null 2>&1 || true
+fi
+
 if [[ "${PICKY_CLEAN:-1}" == "1" ]]; then
   rm -rf "${DERIVED_DATA_PATH}"
   rm -rf "${EXPORT_DIR:?}"/*
@@ -269,7 +280,7 @@ xcodebuild \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
-  PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+  PRODUCT_BUNDLE_IDENTIFIER="${BUILD_BUNDLE_ID}" \
   MARKETING_VERSION="${MARKETING_VERSION}" \
   CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 XCODEBUILD_STATUS=$?
@@ -311,6 +322,9 @@ mkdir -p "${PACKAGED_APP}"
   --exclude '/Contents/Resources/pi-extensions/' \
   --exclude '/Contents/Resources/pi-skills/' \
   "${BUILT_APP}/" "${PACKAGED_APP}/"
+
+# Restore the stable runtime identity before sealing the exported bundle.
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "${PACKAGED_APP}/Contents/Info.plist"
 
 PACKAGED_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${PACKAGED_APP}/Contents/Info.plist" 2>/dev/null || true)"
 if [[ "${PACKAGED_BUNDLE_ID}" != "${BUNDLE_ID}" ]]; then
@@ -475,7 +489,9 @@ step_start "reseal_app_bundle"
 # Re-signing the nested Node binary changes the outer app resource seal. Refresh
 # only the app bundle signature here (without --deep) so Node keeps its dedicated
 # JIT entitlements while the final bundle remains sealed and verifiable.
-APP_SEAL_CODESIGN_ARGS=(--force --options runtime --sign "${CODE_SIGN_IDENTITY}")
+# Replace the intermediate signature identifier only on the outer app, not on
+# nested Sparkle/Node executables visited by the earlier --deep signing pass.
+APP_SEAL_CODESIGN_ARGS=(--force --options runtime --identifier "${BUNDLE_ID}" --sign "${CODE_SIGN_IDENTITY}")
 if [[ -f "${ENTITLEMENTS_PLIST}" ]]; then
   APP_SEAL_CODESIGN_ARGS+=(--entitlements "${ENTITLEMENTS_PLIST}")
 fi

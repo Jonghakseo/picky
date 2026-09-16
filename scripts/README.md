@@ -22,8 +22,14 @@ Defaults:
 
 - configuration: `Debug`
 - output app: `build/dev-signed/export/Picky.app`
+- runtime bundle ID: `com.jonghakseo.picky.dev`
+- intermediate bundle ID: `com.jonghakseo.picky.dev.build`
 - zip creation: disabled
 - clean build: disabled, for faster repeated relaunches
+
+Packaging gives the DerivedData app a separate `.build` identity. Only the exported app receives the final bundle and code-signing identifiers. This prevents notification clicks from also launching the incomplete intermediate app. The packager unregisters an existing intermediate bundle before rebuilding to retire registrations made by older scripts. The exported app's signing identity and TCC permissions stay unchanged.
+
+Run the packaging identity regression with `python3 -m unittest scripts.tests.test_package_bundle_identity -v`. It packages a tiny fixture twice and checks the saved bundle IDs, actual signatures, and nested helper identity without launching Picky.
 
 For trusted internal alpha sharing, see `docs/alpha-test-build.md`.
 

@@ -96,6 +96,9 @@ beforeEach(async () => {
   server.onCommand("listDockGroups", (_, send) => {
     send({ type: "dockGroupsSnapshot", groups: [] });
   });
+  server.onCommand("listPickles", (command, send) => {
+    send({ type: "pickleSessionsSnapshot", commandId: (command as { id: string }).id, sessions: [] });
+  });
   appSupportDir = await mkdtemp(join(tmpdir(), "picky-cli-test-"));
   await writeConnectionInfo(appSupportDir, {
     protocolVersion: PROTOCOL_VERSION,
@@ -492,7 +495,11 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("group-1\tResearch\tmembers=2");
   });
 
-  it("main-agent group list excludes archived members unless explicitly included", async () => {
+  it.each([
+    { format: "text", flags: [] },
+    { format: "json", flags: ["--json"] },
+    { format: "main-agent", flags: ["--from-main"] },
+  ])("group list excludes archived members unless explicitly included ($format)", async ({ flags }) => {
     server.onCommand("listDockGroups", (_, send) => {
       send({
         type: "dockGroupsSnapshot",
@@ -515,14 +522,22 @@ describe("picky cli", () => {
       });
     });
 
-    const visible = await runCli(["pickle-group-list", "--from-main"]);
-    const withArchived = await runCli(["pickle-group-list", "--from-main", "--include-archived"]);
+    const visible = await runCli(["pickle-group-list", ...flags]);
+    const withArchived = await runCli(["pickle-group-list", ...flags, "--include-archived"]);
 
     expect(visible.code).toBe(0);
-    expect(visible.stdout).toContain("members=p-active");
-    expect(visible.stdout).not.toContain("p-archived");
     expect(withArchived.code).toBe(0);
-    expect(withArchived.stdout).toContain("members=p-active,p-archived");
+    if (flags.includes("--json")) {
+      expect(JSON.parse(visible.stdout)[0].memberSessionIds).toEqual(["p-active"]);
+      expect(JSON.parse(withArchived.stdout)[0].memberSessionIds).toEqual(["p-active", "p-archived"]);
+    } else if (flags.includes("--from-main")) {
+      expect(visible.stdout).toContain("members=p-active");
+      expect(visible.stdout).not.toContain("p-archived");
+      expect(withArchived.stdout).toContain("members=p-active,p-archived");
+    } else {
+      expect(visible.stdout).toContain("members=1");
+      expect(withArchived.stdout).toContain("members=2");
+    }
   });
 
   it("main-agent group list normalizes and bounds user-controlled fields", async () => {

@@ -356,11 +356,11 @@ program
   .command("pickle-group-list")
   .description("List Pickle dock groups defined in the Picky app dock.")
   .option("--json", "Emit the dock groups JSON to stdout")
-  .option("--include-archived", "Include archived Pickle member IDs in main-agent output")
+  .option("--include-archived", "Include archived Pickle members hidden by default")
   .addHelpText("after", `
 Examples:
   $ picky pickle-group-list
-  $ picky pickle-group-list --from-main --include-archived
+  $ picky pickle-group-list --include-archived
   $ picky pickle-group-list --json
 `)
   .action(async (options: PickleGroupListOptions) => {
@@ -371,7 +371,7 @@ Examples:
         matchEvent: (event) => (event.type === "dockGroupsSnapshot" ? event : null),
       });
       if (snapshot.type !== "dockGroupsSnapshot") return;
-      const groups = isMainAgentCaller && !options.includeArchived
+      const groups = !options.includeArchived
         ? excludeArchivedGroupMembers(snapshot.groups, (await fetchSessionSnapshot(connection)).sessions)
         : snapshot.groups;
       if (options.json) {

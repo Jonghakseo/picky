@@ -2734,6 +2734,7 @@ describe("PiSdkRuntime", () => {
   it("applies Picky defaults to fresh sessions but not resumed transcripts", async () => {
     const fakeSession = new FakeSession();
     const codexModel = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    const updatedModel = { provider: "openai-codex", id: "gpt-6-astra", name: "GPT-6" };
     const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
     const runtime = new PiSdkRuntime({
       getAgentDir: () => "/tmp/.pi/agent",
@@ -2742,7 +2743,7 @@ describe("PiSdkRuntime", () => {
       createServices: vi.fn(async () => ({
         diagnostics: [],
         settingsManager: { getEnabledModels: () => [] },
-        modelRuntime: { getAvailable: async () => [codexModel], hasConfiguredAuth: () => true },
+        modelRuntime: { getAvailable: async () => [codexModel, updatedModel], hasConfiguredAuth: () => true },
       })) as never,
       createSessionFromServices: createSessionFromServices as never,
       createRuntime: vi.fn(async (factory, options) => {
@@ -2751,18 +2752,19 @@ describe("PiSdkRuntime", () => {
       }) as never,
     });
 
+    await runtime.create({ text: "fresh", imagePaths: [] }, { cwd: "/tmp/project", sessionId: "override", modelPattern: "openai-codex/gpt-6-astra", thinkingLevel: "low" });
+    await runtime.create({ text: "automatic", imagePaths: [] }, { cwd: "/tmp/project", sessionId: "automatic", modelPattern: null, thinkingLevel: null });
     await runtime.prewarm({ cwd: "/tmp/project", sessionId: "fresh" });
     await runtime.resume!("/tmp/resumed.jsonl", { cwd: "/tmp/project", sessionId: "resumed" });
 
     const sessionCreationOptions = createSessionFromServices.mock.calls as unknown as Array<[Record<string, unknown>]>;
-    expect(sessionCreationOptions[0]![0]).toEqual(expect.objectContaining({
-      model: codexModel,
-      scopedModels: [],
-      thinkingLevel: "high",
-    }));
+    expect(sessionCreationOptions[0]![0]).toMatchObject({ model: updatedModel, thinkingLevel: "low" });
     expect(sessionCreationOptions[1]![0]).not.toHaveProperty("model");
-    expect(sessionCreationOptions[1]![0]).not.toHaveProperty("scopedModels");
     expect(sessionCreationOptions[1]![0]).not.toHaveProperty("thinkingLevel");
+    expect(sessionCreationOptions[2]![0]).toMatchObject({ model: codexModel, scopedModels: [], thinkingLevel: "high" });
+    expect(sessionCreationOptions[3]![0]).not.toHaveProperty("model");
+    expect(sessionCreationOptions[3]![0]).not.toHaveProperty("scopedModels");
+    expect(sessionCreationOptions[3]![0]).not.toHaveProperty("thinkingLevel");
   });
 
   it("lists scoped models in order and supported thinking levels", async () => {

@@ -26,7 +26,7 @@ import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./applica
 import { PickleSessionTitleRefresher } from "./application/pickle-session-title-refresher.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, type SessionStore } from "./session-store.js";
 import { sessionWithAppendedLog } from "./session-log-append.js";
-import type { AgentRuntime, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, RuntimeCreateOptions, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
 import { KeyedSerialQueue } from "./domain/keyed-serial-queue.js";
 import { executeUserBash as runUserBash, type UserBashDeps } from "./application/user-bash-execution.js";
@@ -623,7 +623,7 @@ export class SessionSupervisor extends EventEmitter {
     this.emit("quickReply", contextId, text, metadata);
   }
 
-  async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean }): Promise<PickyAgentSession> {
+  async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string; notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean; runtimeDefaults?: RuntimeCreateOptions }): Promise<PickyAgentSession> {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
     const sourceSessionFilePath = piSessionFilePathFromHandoffTranscript(handoffContext.transcript);
@@ -632,7 +632,7 @@ export class SessionSupervisor extends EventEmitter {
       return this.createPickleFromResumedHandoff(handoffContext, handoff, sourceSessionFilePath);
     }
     const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), {
-      notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
+      runtimeDefaults: handoff.runtimeDefaults, notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
       notifyMacOSOnCompletion: handoff.notifyMacOSOnCompletion ?? false,
     });
     this.pickleSessionIds.add(session.id);
@@ -865,7 +865,7 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(id);
   }
 
-  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean } = {}): Promise<PickyAgentSession> {
+  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean; runtimeDefaults?: RuntimeCreateOptions } = {}): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = this.sessionIdFactory();
     const session = buildVisibleSession({
@@ -885,7 +885,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.upsert(session);
       logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
       this.runtimeEventHandler.resetAssistantDraft(id);
-      const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
+      const handle = await this.runtime.create(prompt, { ...options.runtimeDefaults, cwd: context.cwd, sessionId: id });
       if (this.mustGet(id).status === "cancelled") {
         await disposeRuntimeHandle(handle, "cancelled-runtime-create");
         logAgentd("runtime create resolved after session was cancelled", { sessionId: id });

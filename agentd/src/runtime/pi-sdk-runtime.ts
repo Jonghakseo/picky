@@ -12,7 +12,7 @@ SessionManager
 } from "@earendil-works/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { type DialogMethod } from "../runtime/extension-ui-bridge.js";
-import type { AgentRuntime,RuntimeGlobalModelScopeChange,RuntimeModelOption,RuntimeSessionHandle,ThinkingLevel } from "./types.js";
+import type { AgentRuntime,RuntimeCreateOptions,RuntimeGlobalModelScopeChange,RuntimeModelOption,RuntimeSessionHandle,ThinkingLevel } from "./types.js";
 import { PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { logAgentd } from "../local-log.js";
 import {
@@ -112,7 +112,7 @@ export class PiSdkRuntime implements AgentRuntime {
     return services;
   }
 
-  async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+  async create(prompt: BuiltPrompt, options: RuntimeCreateOptions): Promise<RuntimeSessionHandle> {
     logAgentd("pi runtime create", { sessionId: options.sessionId, cwd: options.cwd, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     const handle = await this.createHandle(options);
     handle.scheduleInitialPrompt(prompt);
@@ -133,7 +133,9 @@ export class PiSdkRuntime implements AgentRuntime {
     return handle;
   }
 
-  private async createHandle(options: { cwd?: string; sessionId?: string; sessionFilePath?: string }): Promise<PiSdkRuntimeSession> {
+  private async createHandle(options: RuntimeCreateOptions & { sessionFilePath?: string }): Promise<PiSdkRuntimeSession> {
+    const modelPattern = options.modelPattern === undefined ? this.modelPattern : options.modelPattern ?? undefined;
+    const thinkingLevel = options.thinkingLevel === undefined ? this.thinkingLevel : options.thinkingLevel ?? undefined;
     const cwd = options.cwd ?? process.cwd();
     const sessionId = options.sessionId ?? "picky-pi-session";
     let sessionHandle: PiSdkRuntimeSession | undefined;
@@ -176,7 +178,7 @@ export class PiSdkRuntime implements AgentRuntime {
       // is authoritative when resuming, including its model and thinking level.
       const appliesNewPickleDefaults = options.sessionFilePath === undefined;
       const fixedModel = appliesNewPickleDefaults
-        ? await modelFromServices(services, this.modelPattern)
+        ? await modelFromServices(services, modelPattern)
         : undefined;
       // Resolve Pi's effective scope independently of Picky's fresh-session
       // default. A fixed initial model must not shrink later model cycling.
@@ -186,7 +188,7 @@ export class PiSdkRuntime implements AgentRuntime {
         sessionManager,
         sessionStartEvent,
         customTools,
-        ...(appliesNewPickleDefaults && this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}),
+        ...(appliesNewPickleDefaults && thinkingLevel ? { thinkingLevel } : {}),
         // Explicitly pass [] for Pi's all-model semantics. This prevents a
         // fresh Picky default from becoming an accidental one-model scope.
         ...(appliesNewPickleDefaults ? { scopedModels } : {}),
@@ -220,7 +222,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const handle = new PiSdkRuntimeSession(
       sessionId,
       runtime,
-      options.sessionFilePath === undefined ? this.thinkingLevel : undefined,
+      options.sessionFilePath === undefined ? thinkingLevel : undefined,
       {
         disableBlockingDialogs: this.options.disableBlockingDialogs ?? false,
         allowedBlockingDialogMethods: this.options.allowedBlockingDialogMethods,

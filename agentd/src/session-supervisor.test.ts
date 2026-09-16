@@ -962,6 +962,7 @@ describe("SessionSupervisor", () => {
   it("resumes a busy handoff from a snapshot of the source Pi transcript before continuing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-handoff-resume-"));
     const runtime = new ResumableRuntime();
+    const resume = vi.spyOn(runtime, "resume");
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const sourceFilePath = join(dir, "source-pi.jsonl");
@@ -969,9 +970,10 @@ describe("SessionSupervisor", () => {
 
     const pickle = await supervisor.createPickleFromHandoff(
       contextWithPiSessionFile("continue this work", sourceFilePath),
-      { title: "Continue source", instructions: "continue", cwd: "/tmp/override-project", notifyMainOnCompletion: true, notifyMacOSOnCompletion: true },
+      { runtimeDefaults: { modelPattern: "openai-codex/gpt-6-astra", thinkingLevel: "max" }, title: "Continue source", instructions: "continue", cwd: "/tmp/override-project", notifyMainOnCompletion: true, notifyMacOSOnCompletion: true },
     );
 
+    expect(resume).toHaveBeenCalledWith(expect.any(String), { cwd: "/tmp/override-project", sessionId: pickle.id });
     expect(runtime.resumeCalls).toHaveLength(1);
     expect(runtime.resumeCalls[0]?.sessionId).toBe(pickle.id);
     expect(runtime.resumeCalls[0]?.cwd).toBe("/tmp/override-project");

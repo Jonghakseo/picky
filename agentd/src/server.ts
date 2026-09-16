@@ -21,6 +21,7 @@ import type { EdgeTTSService } from "./edge-tts-service.js";
 import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./runtime/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./runtime/package-operations.js";
 import type { PiOAuthHandling } from "./runtime/pi-oauth-service.js";
+import { readNewPickleRuntimeDefaults } from "./application/new-pickle-runtime-defaults.js";
 import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
 import type { HubStatisticsServiceLike } from "./application/hub-statistics-service.js";
 import type { PickleClassifier } from "./application/pickle-classifier.js";
@@ -837,7 +838,7 @@ export class AgentdServer {
           ...(session ? { sessionId: session.id } : {}),
         });
       } else {
-        const [notifyMainOnCompletion, notifyMacOSOnCompletion] = await Promise.all([
+        const [notifyMainOnCompletion, notifyMacOSOnCompletion, runtimeDefaults] = await Promise.all([
           this.newPicklesCompletionDefault(
             "notifications.newPicklesNotifyMainOnCompletion",
             "Main Picky",
@@ -846,9 +847,11 @@ export class AgentdServer {
             "notifications.newPicklesNotifyMacOSOnCompletion",
             "macOS",
           ),
+          readNewPickleRuntimeDefaults(this.settingsControl),
         ]);
         const session = await this.options.supervisor.createPickleFromHandoff(finalContext, {
           title: payload.title!,
+          runtimeDefaults,
           instructions: payload.instructions!,
           ...(payload.cwd ? { cwd: payload.cwd } : {}),
           notifyMainOnCompletion,

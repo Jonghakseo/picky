@@ -273,8 +273,16 @@ export interface RuntimeSessionHandle {
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
 }
 
+export interface RuntimeCreateOptions {
+  cwd?: string;
+  sessionId?: string;
+  /** Undefined preserves startup defaults; null explicitly uses Pi defaults. */
+  modelPattern?: string | null;
+  thinkingLevel?: ThinkingLevel | null;
+}
+
 export interface AgentRuntime {
-  create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
+  create(prompt: BuiltPrompt, options: RuntimeCreateOptions): Promise<RuntimeSessionHandle>;
   prewarm?(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   resume?(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   setThinkingLevel?(level: ThinkingLevel): void;

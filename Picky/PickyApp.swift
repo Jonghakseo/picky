@@ -205,10 +205,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private let hubNavigator = PickyHubNavigator()
     private let hubModalHost = PickyHubModalHost()
     private let hubForegroundContextPreserver = PickyHubForegroundContextPreserver()
-    private let appActivationRouter = PickyAppActivationRouter()
+    private nonisolated let appActivationRouter: PickyAppActivationRouter
     private lazy var hubSettingsViewModel = PickySettingsViewModel(store: settingsStore, persistence: settingsPersistence)
 
     override init() {
+        self.appActivationRouter = PickyAppActivationRouter()
         self.appearanceStore = PickyAppearanceStore(settingsStore: settingsStore)
         self.hudVisibilityStore = PickyHUDVisibilityStore(settingsStore: settingsStore)
         self.fontScaleStore = PickyAppFontScaleStore(settingsStore: settingsStore)
@@ -725,18 +726,22 @@ extension CompanionAppDelegate: UNUserNotificationCenterDelegate {
         completionHandler(PickyNotificationPresentationPolicy.foregroundOptions)
     }
 
-    /// Notification identifiers are emitted by `PickySessionListViewModel.notification(for:)`
-    /// as `\(sessionID):completed`, `\(sessionID):failed`, or `\(sessionID):waiting:\(requestID)`.
-    /// Session IDs are `session-<uuid>` (no colons), so the substring before the first colon is
-    /// the session ID we want to focus in the HUD dock.
+    /// Completion, failure, and input-request notification identifiers start
+    /// with the source session ID, followed by a colon and a deduplication key.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let identifier = response.notification.request.identifier
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+              let notificationResponse = appActivationRouter.recordNotificationResponse(
+                identifier: response.notification.request.identifier
+              ) else {
+            completionHandler()
+            return
+        }
         Task { @MainActor [weak self] in
-            self?.appActivationRouter.handleNotificationResponse(identifier: identifier) { [weak self] sessionID in
+            self?.appActivationRouter.handleNotificationResponse(notificationResponse) { [weak self] sessionID in
                 self?.hudOverlayManager.focusSession(id: sessionID)
             }
             completionHandler()

@@ -407,6 +407,8 @@ Interactions:
 
 The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with the editor in the middle and actions along the bottom, where the model and thinking controls sit beside the other actions. Click either value to open its picker; `Control + P` and `Shift + Tab` still cycle them without opening a picker. Each picker can save the current value as the default for new Pickles. Resumed Pickles keep the model and thinking level stored in their Pi transcript instead.
 
+Picky refreshes Pi's remote model catalog before initial model selection and when loading an active Pickle's model picker. Updating the standalone Pi installation does not update Picky's bundled SDK. Catalog requests respect Pi's cache and `PI_OFFLINE` setting; if a refresh fails or reaches its five-second deadline, existing models remain available. Repeated picker requests share an in-flight refresh and wait at least one minute between attempts.
+
 The model picker follows Pi's effective `enabledModels` scope. **All modelsâ€¦** edits the global scope in `~/.pi/agent/settings.json` with an explicit Apply action. A project override is identified but left unchanged, and scopes containing globs, thinking suffixes, or unresolved model IDs remain read-only to avoid destructive rewrites. A configured default model may start outside the scope; Picky marks it as outside while still allowing it as the initial model.
 
 A control stays disabled while its change is in flight, and a failed change shows a warning icon next to the pair. The editor grows from one through four lines as you type, temporarily expanding the card, then scrolls internally from the fifth line onward.
@@ -892,7 +894,7 @@ To run Picky with a completely different persona or workflow set, change **Hub â
 | Git chip actions | Optional command bound to the diff and branch chips on each Pickle card. Each slot picks a kind (Pi or shell) and a command string; empty commands leave the chip unconfigured. |
 | Archived sessions | Footer disclosure (hidden when empty). Expands to the same restore/delete list available from the HUD, so you can manage archives without leaving Settings. |
 
-Running Pickles can still cycle model/thinking independently from these defaults.
+New Pickles created through the CLI also use the current Pickle model and reasoning defaults. Resumed Pickles keep the settings saved in their transcript. Running Pickles can still cycle model/thinking independently from these defaults.
 
 ### 13.5 Built-in tools (Accounts and agents)
 

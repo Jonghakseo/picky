@@ -22,6 +22,7 @@ runtimeModelOptionFromModel,scopedModelsFromServices,
 synchronizeScopedModelsForCycling,
 validateExactModelScope
 } from "./pi-model-resolution.js";
+import { refreshModelCatalog } from "./pi-model-catalog-refresh.js";
 import { PiGlobalSettingsCASStorage } from "./pi-global-settings-cas-storage.js";
 import {
 branchTranscriptFromEntries
@@ -106,7 +107,9 @@ export class PiSdkRuntime implements AgentRuntime {
   private async createServices(cwd?: string): Promise<AgentSessionServices> {
     const createServices = this.options.createServices ?? createAgentSessionServices;
     const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
-    return await createServices({ cwd: cwd ?? process.cwd(), agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+    const services = await createServices({ cwd: cwd ?? process.cwd(), agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+    await refreshModelCatalog(services);
+    return services;
   }
 
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
@@ -168,6 +171,7 @@ export class PiSdkRuntime implements AgentRuntime {
           ],
         },
       });
+      await refreshModelCatalog(services);
       // Picky defaults establish only a brand-new Pickle. Pi transcript restoration
       // is authoritative when resuming, including its model and thinking level.
       const appliesNewPickleDefaults = options.sessionFilePath === undefined;

@@ -8,6 +8,7 @@ import {
 import type { RuntimeModelOption, RuntimeModelScope, RuntimeSessionOptions, ThinkingLevel } from "./types.js";
 import { readModelMetadata as piReadModelMetadata, readThinkingLevel as piReadThinkingLevel } from "./pi-capabilities.js";
 import { logAgentd } from "../local-log.js";
+import { refreshModelCatalog } from "./pi-model-catalog-refresh.js";
 
 export type ScopedModelOption = NonNullable<CreateAgentSessionFromServicesOptions["scopedModels"]>[number];
 type RuntimeModel = ScopedModelOption["model"];
@@ -87,6 +88,7 @@ export async function runtimeModelScopesFromServices(
 ): Promise<Pick<RuntimeSessionOptions, "models" | "allModels" | "globalScope" | "projectScope" | "effectiveScope">> {
   const settingsManager = services.settingsManager;
   if (typeof settingsManager?.reload === "function") await settingsManager.reload();
+  await refreshModelCatalog(services);
   const available = await availableModelsFromServices(services);
   const globalPatterns = settingsManager?.getGlobalSettings?.().enabledModels;
   const globalScope = {

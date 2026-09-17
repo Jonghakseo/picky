@@ -26,76 +26,30 @@ struct AppleSpeechTranscriptionProviderTests {
         #expect(locales == ["ja-JP", "ko-KR", "en-US"])
     }
 
-    @Test func transcriptAccumulatorKeepsCumulativePartialResultsAsSingleDraft() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
+    @Test func recognitionStateReplacesEarlierPartialWithLatestCompleteResult() {
+        var state = AppleSpeechRecognitionState()
 
-        #expect(accumulator.update(with: "앞부분 내용") == "앞부분 내용")
-        #expect(accumulator.update(with: "앞부분 내용 중간 내용") == "앞부분 내용 중간 내용")
-        #expect(accumulator.update(with: "앞부분 내용 중간 내용 마지막 내용") == "앞부분 내용 중간 내용 마지막 내용")
+        _ = state.update(with: "키 입력 모니터링 몰 로그 이런 걸로라도 내 키 입력 모니터링 블로그")
+        _ = state.update(with: "내 키 입력 모니터링 블로그 이런 걸로라도 내용을")
+        _ = state.update(with: "키 입력 모니터링 블로그 이런 걸로라도 내용을 찾을 수")
+        let transcript = state.update(with: "키 입력 모니터링 블로그 이런 걸로라도 내용을 찾을 수가 없나")
+
+        #expect(transcript == "키 입력 모니터링 블로그 이런 걸로라도 내용을 찾을 수가 없나")
     }
 
-    @Test func transcriptAccumulatorAppendsWhenLongRecognitionResetsToLastChunk() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
+    @Test func recognitionStatePreservesIntentionalRepeatedSpeech() {
+        var state = AppleSpeechRecognitionState()
 
-        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
-        let transcript = accumulator.update(with: "다섯 번째 문장입니다 여섯 번째 문장입니다")
+        let transcript = state.update(with: "다시 확인해 줘 다시 확인해 줘")
 
-        #expect(transcript == "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다 다섯 번째 문장입니다 여섯 번째 문장입니다")
+        #expect(transcript == "다시 확인해 줘 다시 확인해 줘")
     }
 
-    @Test func transcriptAccumulatorExtendsResetChunkWithoutDuplicatingOverlap() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
+    @Test func emptyRecognitionUpdateKeepsLatestCompleteResultForFinalFallback() {
+        var state = AppleSpeechRecognitionState()
 
-        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
-        _ = accumulator.update(with: "다섯 번째 문장입니다")
-        let transcript = accumulator.update(with: "다섯 번째 문장입니다 여섯 번째 문장입니다")
+        _ = state.update(with: "마지막으로 인식된 문장")
 
-        #expect(transcript == "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다 다섯 번째 문장입니다 여섯 번째 문장입니다")
-    }
-
-    @Test func transcriptAccumulatorTreatsShortNonOverlappingUpdateAsRevision() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
-
-        _ = accumulator.update(with: "피키 열어")
-        let transcript = accumulator.update(with: "피키로 열어")
-
-        #expect(transcript == "피키로 열어")
-    }
-
-    @Test func transcriptAccumulatorTreatsLongSimilarIncomingAsRevisionNotAppend() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
-
-        _ = accumulator.update(with: "오늘 예약건 확인하고 결제 상태도 봐줘 그리고 고객 메모도 같이 확인해줘")
-        let transcript = accumulator.update(with: "오늘 예약 건 확인하고 결제 상태도 봐줘 그리고 고객 메모도 같이 확인해줘")
-
-        #expect(transcript == "오늘 예약 건 확인하고 결제 상태도 봐줘 그리고 고객 메모도 같이 확인해줘")
-    }
-
-    @Test func transcriptAccumulatorDoesNotGrowByAppendingRepeatedRevisions() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
-
-        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
-        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세번째 문장입니다 네 번째 문장입니다")
-        let transcript = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세번째 문장입니다 네 번째 문장입니다 다섯 번째 문장입니다")
-
-        #expect(transcript == "첫 번째 문장입니다 두 번째 문장입니다 세번째 문장입니다 네 번째 문장입니다 다섯 번째 문장입니다")
-    }
-
-    @Test func transcriptAccumulatorIgnoresContainedOlderPartialResult() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
-
-        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
-        let transcript = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다")
-
-        #expect(transcript == "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
-    }
-
-    @Test func transcriptAccumulatorTreatsFuzzySameBeginningAsRevisionNotResetChunk() {
-        var accumulator = AppleSpeechTranscriptAccumulator()
-
-        _ = accumulator.update(with: "최근 실행 된 사이트 케이션트 다섯개 개 중 최근 실행 된 사이트 케이션트 5개 중 최근 실행 된 사이트케이션트 5개 중에 몇 개")
-        let transcript = accumulator.update(with: "최근 실행 된 사이트케이션트 5개 중에 몇 개가 최근 실행 된 사이트케이션트 5개 중에 몇 개가")
-
-        #expect(transcript == "최근 실행 된 사이트케이션트 5개 중에 몇 개가 최근 실행 된 사이트케이션트 5개 중에 몇 개가")
+        #expect(state.update(with: "  \n") == "마지막으로 인식된 문장")
     }
 }

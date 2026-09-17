@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import io
 import json
 import re
@@ -247,6 +248,16 @@ def baseline_document(root: Path, baseline_commit: str, scan_roots: Iterable[str
     }
 
 
+def extract_git_archive(archive: tarfile.TarFile, destination: Path) -> None:
+    if "filter" in inspect.signature(archive.extractall).parameters:
+        archive.extractall(destination, filter="data")
+        return
+
+    # Python 3.9 lacks extraction filters. This archive comes directly from a
+    # verified local Git commit, so its member names are constrained by Git.
+    archive.extractall(destination)
+
+
 @contextmanager
 def committed_tree(root: Path, baseline_commit: str) -> Iterator[Path]:
     """Materialize exactly one committed Git tree, never the working tree."""
@@ -270,7 +281,7 @@ def committed_tree(root: Path, baseline_commit: str) -> Iterator[Path]:
     with tempfile.TemporaryDirectory(prefix="picky-ui-token-baseline-") as temporary:
         tree = Path(temporary)
         with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as archive:
-            archive.extractall(tree, filter="data")
+            extract_git_archive(archive, tree)
         yield tree
 
 

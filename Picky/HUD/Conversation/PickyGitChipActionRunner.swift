@@ -82,7 +82,7 @@ struct PickyGitChipActionEnvironment {
             content.body = String(message.prefix(280))
             content.sound = nil
             let request = UNNotificationRequest(identifier: "picky-git-chip-action-\(UUID().uuidString)", content: content, trigger: nil)
-            PickyTransientNotificationCenter.add(request)
+            UNUserNotificationCenter.current().add(request) { _ in }
         }
     )
 }

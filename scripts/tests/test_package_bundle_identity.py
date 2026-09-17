@@ -32,7 +32,7 @@ class PackageBundleIdentityTests(unittest.TestCase):
             environment = {key: value for key, value in os.environ.items()
                            if not key.startswith("PICKY_")}
             environment["DEVELOPER_DIR"] = "/Applications/Xcode.app/Contents/Developer"
-            subprocess.run(["/usr/bin/xcrun", "clang", str(source), "-o", str(executable)],
+            subprocess.run(["/usr/bin/xcrun", "--sdk", "macosx", "clang", str(source), "-o", str(executable)],
                            env=environment, check=True, capture_output=True)
             tools = root / "tools"
             tools.mkdir()

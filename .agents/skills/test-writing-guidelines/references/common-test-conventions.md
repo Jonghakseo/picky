@@ -76,6 +76,14 @@ SUT와 핵심 정책은 실제 구현으로 둔다. fake/mock은 다음 경계�
 - timeout은 실패 시 무한 대기를 막는 안전장치이지 race를 숨기는 수단이 아니다.
 - cancellation, stale callback, late completion이 관련된 변경은 해당 race를 직접 재현한다.
 
+### agentd 비동기 완료 대기
+
+새 테스트에 기존 테스트의 `settle()` 호출을 복사하지 않는다. 저장소 루트의 `scripts/check-architecture-rules.js`가 호출 수 증가를 막는다.
+
+- `waitUntil`/`waitUntilAsync`/`vi.waitFor`로 영속 상태나 실제 이벤트 도착을 기다린다.
+- ‘아무 변화가 없어야 함’을 검증할 때도 먼저 관련 이벤트의 처리가 끝났음을 확인한 뒤 불변 상태를 비교한다. 같은 직렬 이벤트 체인의 영속 로그는 그런 경계가 이미 있을 때만 활용한다. 테스트를 위해 production 신호를 새로 만들지는 않는다.
+- 관련 테스트와 저장소 루트의 `pnpm run check:architecture`를 실행한다. 통과시키려고 호출 수 제한을 올리지 않는다.
+
 ### Swift actor 계약 변경
 
 Swift protocol 또는 공통 client의 global-actor 계약을 바꿀 때에는 첫 빌드 전에 영향받는 conformer와 생성·구독 호출자를 함께 확인한다. 운영 구현뿐 아니라 테스트 fake, factory, 기본 인자 initializer, timeout/Sendable closure를 포함한다. 기존 mutable state의 소유 actor를 유지하고, 비격리 호출자는 필요한 actor 전환을 명시한다. 컴파일을 통과시키려고 무관한 타입 전체에 actor를 붙이거나 `nonisolated`/`@unchecked Sendable`로 검사를 우회하지 않는다.

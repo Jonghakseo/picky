@@ -6375,9 +6375,17 @@ describe("SessionSupervisor", () => {
     await supervisor.listSlashCommands("viewed");
     await supervisor.getAutocompleteCapabilities("viewed");
     await supervisor.listSessionRuntimeOptions("viewed");
-    // The SDK publishes its session-file diagnostic after binding the resumed session.
-    runtime.handle!.emit({ type: "log", line: "pi session: /tmp/view-only.jsonl" });
-    await settle();
+    // Match the SDK's resume diagnostic sequence after the supervisor binds the handle.
+    const diagnostics = [
+      "pi transcript repaired: skipped 1 interrupted tool call(s) (bash) from a previous runtime",
+      'pi diagnostic: {"type":"warning","message":"extension unavailable"}',
+      "pi session: /tmp/view-only.jsonl",
+    ];
+    for (const line of diagnostics) runtime.handle!.emit({ type: "log", line });
+    await waitUntilAsync(async () => {
+      const persisted = await store.loadReadOnly("viewed");
+      return JSON.stringify(persisted?.logs.slice(-diagnostics.length)) === JSON.stringify(diagnostics);
+    });
 
     expect(projected.length).toBeGreaterThan(0);
     expect(projected.map((session) => session.updatedAt)).toEqual(projected.map(() => older));
@@ -6386,7 +6394,10 @@ describe("SessionSupervisor", () => {
 
     await supervisor.steer("viewed", "Read the latest changes");
     runtime.handle!.emit({ type: "tool", toolCallId: "new-read", name: "read", status: "running" });
-    await settle();
+    await waitUntilAsync(async () => {
+      const persisted = await store.loadReadOnly("viewed");
+      return persisted?.tools.some((tool) => tool.toolCallId === "new-read" && tool.status === "running") ?? false;
+    });
     expect((await store.loadReadOnly("viewed"))!.updatedAt > newer).toBe(true);
     expect(supervisor.list()[0]?.id).toBe("viewed");
   });

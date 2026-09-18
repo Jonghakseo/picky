@@ -28,7 +28,10 @@ export function sessionWithAppendedLog(
     ...(userInput && requestText ? { lastRequest: { source: userInput.source, text: requestText } } : {}),
     // Opening a Pickle resumes its runtime for command/autocomplete discovery. These
     // diagnostics describe attachment, not new activity, even when the resume fails.
-    updatedAt: piSessionFilePath || line.startsWith("runtime reattach failed:")
+    updatedAt: piSessionFilePath
+      || line.startsWith("runtime reattach failed:")
+      || line.startsWith("pi transcript repaired:")
+      || line.startsWith("pi diagnostic:")
       ? session.updatedAt
       : now,
   };

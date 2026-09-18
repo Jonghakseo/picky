@@ -94,6 +94,18 @@
 - `PickyTests/PickyIMETextViewTests.swift`
 - `docs/perf-profiling.md`
 
+### 오프스크린 호스트의 AX 조회 정지 진단
+
+비표시 `NSHostingView`의 AX 트리 조회가 멈추면 같은 suite를 긴 제한 시간으로 반복하지 않는다. 모든 AX API의 결함으로 일반화하지 말고, 정지한 호출과 검증하려던 계약을 먼저 분리한다.
+
+1. 정확한 테스트 ID로 단독 실행하고 mount, 초기 스크롤, AX 탐색 전후에 단계 로그를 남긴다. `AGENTS.md`의 Xcode·DerivedData 규칙을 유지한다.
+2. 짧은 캘린더 진단에는 `-test-timeouts-enabled YES -default-test-execution-time-allowance 30 -maximum-test-execution-time-allowance 30`을 사용할 수 있다. 외부 작업 timeout도 별도로 설정한다. 30초를 모든 테스트나 빌드의 전역 제한으로 적용하지 않는다.
+3. 마지막 단계 로그로 정지 범위를 좁힌다. 내부 프레임워크 원인은 stack 등 직접 증거 없이 확정하지 않는다. 실제 선택 테스트 수와 최종 종료 상태를 확인하고, 재시도 로그의 `0 tests passed`가 앞선 실패를 덮지 않게 한다.
+4. 계약이 **이력 도착 후 표시 위치**라면 production 입력 경계에 이력 응답을 전달하고 실제 `NSScrollView` offset과 viewport 안의 기록을 함께 검증한다. private SwiftUI state를 조작하거나 이 검증만을 위한 production 추상화를 추가하지 않는다.
+5. 입력 응답 검증을 이전 주 버튼 클릭·keyboard·popover 동작의 통과로 보고하지 않는다. 클릭이 변경 계약이면 기존 격리 UI 게이트 또는 승인된 실기 검증을 별도로 수행한다. 로컬 UI-effect opt-in이나 앱 재시작으로 우회하지 않는다.
+
+관련 구현과 검증 경계는 저장소의 `PickyTests/PickyHubCalendarRenderTests.swift`, `docs/render-gallery.md`, `docs/test-desktop-isolation.md`를 따른다.
+
 ## 5. app-agentd protocol
 
 변경 세트:

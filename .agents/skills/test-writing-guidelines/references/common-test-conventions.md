@@ -101,6 +101,14 @@ Swift protocol 또는 공통 client의 global-actor 계약을 바꿀 때에는 �
 - snapshot/golden은 serialization 또는 diff 자체가 계약일 때만 사용한다.
 - HUD identity/performance 변경은 `docs/perf-profiling.md`의 측정 근거를 별도로 요구한다.
 
+### OCR 실패와 화면 결함 구분
+
+- OCR assertion이 실패하면 저장된 production PNG와 OCR 원문을 먼저 대조한다. 미표시·clipping·대비 문제인지, 줄 분할·glyph 오인인지 구분하기 전에 제품 레이아웃을 바꾸거나 같은 테스트를 무작정 반복하지 않는다.
+- 줄바꿈 자체가 계약이 아니면 OCR 줄을 공백으로 연결해 필요한 문구를 검증한다. 한 줄 표시가 계약이면 이 정규화로 줄바꿈 결함을 숨기지 않는다.
+- 렌더 scene은 실제 surface에 맞는 배경과 appearance를 명시한다. OCR용 fixture를 짧고 구분 가능한 이름으로 바꾸더라도 동일한 폭·상태·사건 수를 유지하고, 긴 제목 wrapping은 기존 scene에서 계속 검증한다.
+- 핵심 단어를 무시하는 fuzzy matcher, 기대 사건 수 축소, 사용자 정보 제거는 관찰 보정이 아니다. 정상 wrapping은 통과하되 필수 문구나 과거 사건 하나가 빠지면 실패해야 한다.
+- 보정한 PNG를 직접 확인하고 실제 pointer·keyboard 검증과 구분해 보고한다. 이 절차만을 위해 전체 suite를 실행하지 말고 영향받은 scene과 기존 검증을 사용한다. 렌더 해상도와 interaction 한계는 저장소의 `docs/render-gallery.md`를 따른다.
+
 ## Protocol
 
 wire field/type/default가 바뀌면 Swift와 TypeScript 양쪽 테스트 및 fixture를 갱신한다. 새 field가 optional인지, 구버전 payload가 decode되는지, unknown future field가 안전한지 검토한다.

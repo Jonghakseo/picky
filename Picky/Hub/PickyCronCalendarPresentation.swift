@@ -4,6 +4,7 @@ import Foundation
 struct PickyCronCalendarGroup: Identifiable {
     let event: PickyCronCalendarOccurrence
     let count: Int
+    let occurrences: [PickyCronCalendarOccurrence]
     var id: String { event.id }
 }
 
@@ -18,7 +19,7 @@ enum PickyCronCalendarPresentation {
             groups[event.job.id + ":" + event.kind.rawValue + ":" + outcome, default: []].append(event)
         }
         return groups.values.compactMap { items in
-            items.min(by: { $0.date < $1.date }).map { PickyCronCalendarGroup(event: $0, count: items.count) }
+            items.min(by: { $0.date < $1.date }).map { PickyCronCalendarGroup(event: $0, count: items.count, occurrences: items.sorted { $0.date < $1.date }) }
         }.sorted { $0.event.date == $1.event.date ? $0.id < $1.id : $0.event.date < $1.event.date }
     }
 

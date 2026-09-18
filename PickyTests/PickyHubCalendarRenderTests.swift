@@ -80,7 +80,7 @@ struct PickyHubCalendarRenderTests {
                 prompt: .loaded("Back up my Slack messages.\nSave the archive to the project folder.\nReport any files that could not be saved."))
             let image = try rasterize(detail.environment(\.locale, Locale(identifier: "en_US"))
                 .preferredColorScheme(.light).background(PickyHubTheme.Colors.canvas),
-                name: "calendar-instructions", width: 440, height: 540)
+                name: "calendar-instructions", width: 580, height: 620)
             let lines = try recognizedLines(image)
             let text = lines.joined(separator: " ")
             #expect(text.contains("Back up my Slack messages"))
@@ -141,6 +141,32 @@ struct PickyHubCalendarRenderTests {
             let text = try recognizedLines(image).joined(separator: " ")
             #expect(text.contains("Morning archive"), "Loaded historical execution must be in the viewport: \(text)")
             try save(image, name: "calendar-loaded-history")
+        }
+    }
+
+    @Test func longInstructionsStartAtTheTopWithRoomToRead() throws {
+        let job = PickyCronJobPresentation(id: "long-prompt", name: "Long instruction task", status: .active, enabled: true,
+            schedule: "*/10 * * * *", runAtText: nil, nextRunAt: nil, lastRunAt: nil, completedAt: nil, lastExitCode: nil)
+        let text = "Read this first.\n" + Array(repeating: "Review the pending tasks and report changes.\n", count: 60).joined()
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let view = PickyHubCronOccurrenceDetail(occurrence: .init(job: job, date: Date(), kind: .next), prompt: .loaded(text))
+                .preferredColorScheme(.light).background(PickyHubTheme.Colors.canvas)
+            let host = NSHostingView(rootView: AnyView(view))
+            host.frame = NSRect(x: 0, y: 0, width: 580, height: 620)
+            let window = NSWindow(contentRect: host.frame, styleMask: [], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.contentView = nil; window.close(); host.rootView = AnyView(EmptyView()) }
+            try #require(waitForLayout(host) { self.scrollViews(host).contains { $0.contentView.bounds.height >= 300 } })
+            let scroller = try #require(scrollViews(host).first { $0.contentView.bounds.height >= 300 })
+            #expect(scroller.contentView.bounds.minY < 1)
+            let image = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: image)
+            let visible = try recognizedLines(image).joined(separator: " ")
+            #expect(visible.contains("Read this first"), "Prompt must start with the first line: \(visible)")
+            #expect(visible.contains("Long instruction task"))
+            #expect(visible.components(separatedBy: "Review the pending").count >= 5)
+            try save(image, name: "calendar-long-instructions")
         }
     }
 

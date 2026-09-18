@@ -6,11 +6,12 @@ struct PickyHubCronOccurrenceDetail: View {
     let occurrence: PickyCronCalendarOccurrence
     var prompt: PickyCronPromptReadResult = .missing
     var isHistoricalPrompt = false
-    @State private var promptHeight: CGFloat = 64
+    @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
             Text(occurrence.job.name)
+                .textSelection(.enabled)
                 .pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
@@ -46,7 +47,7 @@ struct PickyHubCronOccurrenceDetail: View {
             }
         }
         .padding(PickyHubTheme.Spacing.cardInset)
-        .frame(width: 420, alignment: .leading)
+        .frame(width: 560, alignment: .leading)
     }
 
     @ViewBuilder private var promptContent: some View {
@@ -58,14 +59,10 @@ struct PickyHubCronOccurrenceDetail: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(key: PickyCronPromptHeightKey.self, value: proxy.size.height)
-                        }
-                    }
             }
-            .frame(height: min(320, max(64, promptHeight)))
-            .onPreferenceChange(PickyCronPromptHeightKey.self) { promptHeight = $0 }
+            .defaultScrollAnchor(.top)
+            .frame(height: 320 * min(fontScale, 1.2))
+            .id(occurrence.id)
         case .missing:
             promptError("hub.calendar.promptMissing")
         case .tooLarge:
@@ -84,9 +81,4 @@ struct PickyHubCronOccurrenceDetail: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
-
-private struct PickyCronPromptHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 64
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

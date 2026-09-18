@@ -48,7 +48,42 @@ struct PickyCronCalendarPresentationTests {
         let groups = PickyCronCalendarPresentation.groups(events)
         #expect(groups.count == 2)
         #expect(groups.map(\.count) == [2, 1])
+        #expect(groups[0].occurrences.map { $0.execution?.exitCode } == [0, 0])
+        #expect(groups[1].occurrences.map { $0.execution?.exitCode } == [1])
         #expect(groups.map { $0.event.execution?.exitCode } == [0, 1])
+    }
+
+    @Test func hourlyGroupsOnlyOfferTheOccurrencesShownInThatCell() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_789_696_800))
+        let input = PickyCronCalendarInput(jobs: [job("*/10 * * * *")],
+            interval: .init(start: day, duration: 86400), now: day.addingTimeInterval(-1), calendar: calendar)
+        let layout = PickyCronCalendarLayout(input)
+        let group = try #require(layout.hourGroups[day]?[14]?.first)
+        #expect(group.count == 6)
+        #expect(group.occurrences.map { calendar.component(.minute, from: $0.date) } == [0, 10, 20, 30, 40, 50])
+        #expect(group.occurrences.allSatisfy { calendar.component(.hour, from: $0.date) == 14 })
+        #expect(layout.eventsByDay[day]?.count == 144)
+    }
+
+    @Test func calendarDataReplacesOccurrencesWhenJobsOrFiltersChange() {
+        let day = Calendar.current.startOfDay(for: Date())
+        var input = PickyCronCalendarInput(jobs: [job("*/10 * * * *")],
+            interval: .init(start: day, duration: 86400), now: day)
+        let data = PickyCronCalendarData(input)
+        #expect(!data.layout.events.isEmpty)
+        input.showsRepeating = false
+        data.update(input)
+        #expect(data.layout.events.isEmpty)
+        input.showsRepeating = true
+        data.update(input)
+        #expect(!data.layout.events.isEmpty)
+        input.jobs = []
+        data.update(input)
+        #expect(data.layout.events.isEmpty)
+        #expect(data.layout.dayGroups.isEmpty)
+        #expect(data.layout.hourGroups.isEmpty)
     }
 
     private func job(_ schedule: String = "0 9 * * *") -> PickyCronJobPresentation {

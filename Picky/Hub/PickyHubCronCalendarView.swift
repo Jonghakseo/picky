@@ -6,6 +6,7 @@ struct PickyHubCronCalendarView: View {
     let readPrompt: (PickyCronCalendarOccurrence) -> PickyCronInstructions
     let loadedHistoryInterval: DateInterval?
     let onVisibleIntervalChange: (DateInterval) -> Void
+    @StateObject private var data: PickyCronCalendarData
     @State private var anchor: Date
     @State private var showsMonth: Bool
     @State private var showsRepeating = true
@@ -15,6 +16,7 @@ struct PickyHubCronCalendarView: View {
     @State private var needsEventFocus = false
     @State private var selection: PickyCronCalendarOccurrence?
     @State private var selectedDay: Date?
+    @State private var selectedEventIDs: Set<String>?
     @State private var prompt = PickyCronInstructions(result: .missing)
     @Environment(\.pickyAppFontScale) private var fontScale
 
@@ -31,9 +33,17 @@ struct PickyHubCronCalendarView: View {
         _showsMonth = State(initialValue: showsMonth)
         var calendar = Calendar.current
         calendar.firstWeekday = 2
-        let interval = calendar.dateInterval(of: .weekOfYear, for: now)!
-        let occurrences = PickyCronCalendarProjection.occurrences(jobs: jobs, interval: interval, now: now).occurrences
-        _scrollHour = State(initialValue: PickyCronCalendarPresentation.initialHour(occurrences: occurrences, now: now))
+        let period = calendar.dateInterval(of: showsMonth ? .month : .weekOfYear, for: now)!
+        let first = calendar.dateInterval(of: .weekOfYear, for: period.start)!.start
+        let end = calendar.dateInterval(of: .weekOfYear, for: period.end.addingTimeInterval(-1))!.end
+        let initialInterval = DateInterval(start: first, end: end)
+        _data = StateObject(wrappedValue: PickyCronCalendarData(.init(
+            jobs: jobs, interval: initialInterval, now: now, calendar: calendar
+        )))
+        // The target must exist before the first scroll layout; an onChange-only
+        // target is overwritten by the scroll view's initial position update.
+        let initialEvents = PickyCronCalendarProjection.occurrences(jobs: jobs, interval: initialInterval, now: now).occurrences
+        _scrollHour = State(initialValue: PickyCronCalendarPresentation.initialHour(occurrences: initialEvents, now: now))
     }
 
     private var calendar: Calendar {
@@ -51,16 +61,14 @@ struct PickyHubCronCalendarView: View {
     private var visibleInterval: DateInterval {
         .init(start: days.first!, end: calendar.date(byAdding: .day, value: 1, to: days.last!)!)
     }
-    private var projection: PickyCronCalendarProjectionResult {
-        PickyCronCalendarProjection.occurrences(
-            jobs: jobs.filter { $0.once == true || $0.schedule == nil ? showsOnce : showsRepeating },
-            interval: visibleInterval, now: now
-        )
+    private var input: PickyCronCalendarInput {
+        .init(jobs: jobs, interval: visibleInterval, now: now, showsRepeating: showsRepeating,
+              showsOnce: showsOnce, showsHistory: showsHistory, calendar: calendar)
     }
 
     var body: some View {
-        let result = projection
-        let events = result.occurrences.filter { showsHistory || $0.kind != .actual }
+        let result = data.layout.result
+        let events = data.layout.events
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
             VStack(spacing: 0) {
                 toolbar(events)
@@ -68,9 +76,9 @@ struct PickyHubCronCalendarView: View {
                     if viewport.size.width < 660 * fontScale {
                         agenda(events)
                     } else if showsMonth {
-                        monthGrid(events)
+                        monthGrid()
                     } else {
-                        weekGrid(events)
+                        weekGrid()
                     }
                 }
                 .frame(height: showsMonth ? CGFloat(days.count / 7) * monthRowHeight + 32 : 425)
@@ -88,10 +96,12 @@ struct PickyHubCronCalendarView: View {
             }
             inactiveJobs
         }
+        .onChange(of: input) { _, value in data.update(value) }
         .onChange(of: visibleInterval, initial: true) { _, range in
-            needsEventFocus = events.isEmpty
+            data.update(input)
+            needsEventFocus = data.layout.events.isEmpty
             onVisibleIntervalChange(range)
-            focusSchedule(events)
+            focusSchedule(data.layout.events)
         }
         .popover(isPresented: Binding(
             get: { selection != nil || selectedDay != nil },
@@ -100,21 +110,27 @@ struct PickyHubCronCalendarView: View {
             if let selection {
                 PickyHubCronOccurrenceDetail(occurrence: currentSelection(selection, events: events), prompt: prompt.result, isHistoricalPrompt: prompt.isHistorical)
             } else if let selectedDay {
-                dayList(selectedDay, events: events)
+                dayList(selectedDay)
             }
         }
         .onChange(of: loadedHistoryInterval) { _, _ in
-            focusSchedule(events)
+            data.update(input)
+            focusSchedule(data.layout.events)
             needsEventFocus = false
         }
         .onChange(of: jobs) { _, _ in
-            if needsEventFocus, !events.isEmpty {
-                focusSchedule(events)
+            data.update(input)
+            if needsEventFocus, !data.layout.events.isEmpty {
+                focusSchedule(data.layout.events)
                 needsEventFocus = false
             }
+            if let day = selectedDay, listedEvents(day).isEmpty {
+                selectedDay = nil
+                selectedEventIDs = nil
+            }
             if let selected = selection {
-                if jobs.contains(where: { $0.id == selected.job.id }) {
-                    prompt = readPrompt(currentSelection(selected, events: events))
+                if data.layout.events.contains(where: { $0.id == selected.id }) {
+                    prompt = readPrompt(currentSelection(selected, events: data.layout.events))
                 } else {
                     selection = nil
                     prompt = .init(result: .missing)
@@ -211,7 +227,7 @@ struct PickyHubCronCalendarView: View {
         scrollHour = PickyCronCalendarPresentation.initialHour(occurrences: events, now: now)
     }
 
-    private func weekGrid(_ events: [PickyCronCalendarOccurrence]) -> some View {
+    private func weekGrid() -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Color.clear.frame(width: 48)
@@ -222,7 +238,7 @@ struct PickyHubCronCalendarView: View {
                 LazyVStack(spacing: 0) {
                     ForEach(0..<24, id: \.self) { hour in
                         VStack(spacing: 0) {
-                            hourRow(hour, events: events)
+                            hourRow(hour)
                             Divider()
                         }.id(hour)
                     }
@@ -234,18 +250,17 @@ struct PickyHubCronCalendarView: View {
         }
     }
 
-    private func hourRow(_ hour: Int, events: [PickyCronCalendarOccurrence]) -> some View {
+    private func hourRow(_ hour: Int) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text(String(format: "%02d:00", hour))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 .frame(width: 48).padding(.top, DS.Spacing.space2)
             ForEach(days, id: \.self) { day in
-                let matches = events.filter { calendar.isDate($0.date, inSameDayAs: day) && calendar.component(.hour, from: $0.date) == hour }
-                let groups = PickyCronCalendarPresentation.groups(matches)
+                let groups = data.layout.hourGroups[day]?[hour] ?? []
                 VStack(alignment: .leading, spacing: DS.Spacing.space1) {
                     ForEach(Array(groups.prefix(3)), id: \.id) { group in
-                        eventButton(group.event, count: group.count, day: day)
+                        eventButton(group)
                     }
                     if groups.count > 3 { moreButton(day, count: groups.count - 3) }
                 }
@@ -259,7 +274,7 @@ struct PickyHubCronCalendarView: View {
     }
 
     private var monthRowHeight: CGFloat { 192 * fontScale }
-    private func monthGrid(_ events: [PickyCronCalendarOccurrence]) -> some View {
+    private func monthGrid() -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ForEach(Array(days.prefix(7)), id: \.self) { day in
@@ -268,12 +283,12 @@ struct PickyHubCronCalendarView: View {
             }.pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular).frame(height: 32)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
                 ForEach(days, id: \.self) { day in
-                    let groups = PickyCronCalendarPresentation.groups(events.filter { calendar.isDate($0.date, inSameDayAs: day) })
+                    let groups = data.layout.dayGroups[day] ?? []
                     VStack(alignment: .leading, spacing: DS.Spacing.space1) {
-                        Button { selectedDay = day } label: {
+                        Button { openDay(day) } label: {
                             Text(day, format: .dateTime.day()).frame(minWidth: 32, minHeight: 32)
                         }.buttonStyle(.borderless).accessibilityLabel(day.formatted(date: .complete, time: .omitted))
-                        ForEach(Array(groups.prefix(2)), id: \.id) { group in eventButton(group.event, count: group.count, day: day) }
+                        ForEach(Array(groups.prefix(2)), id: \.id) { group in eventButton(group) }
                         if groups.count > 2 { moreButton(day, count: groups.count - 2) }
                         Spacer(minLength: 0)
                     }
@@ -286,9 +301,14 @@ struct PickyHubCronCalendarView: View {
         }
     }
 
-    private func eventButton(_ event: PickyCronCalendarOccurrence, count: Int = 1, day: Date? = nil) -> some View {
-        Button {
-            if count > 1, let day { selectedDay = day } else { select(event) }
+    private func eventButton(_ group: PickyCronCalendarGroup) -> some View {
+        let event = group.event
+        let count = group.count
+        return Button {
+            if count > 1 {
+                selectedEventIDs = Set(group.occurrences.map(\.id))
+                selectedDay = calendar.startOfDay(for: event.date)
+            } else { select(event) }
         } label: {
             VStack(alignment: .leading, spacing: DS.Spacing.space1) {
                 HStack(spacing: DS.Spacing.space1) {
@@ -309,8 +329,12 @@ struct PickyHubCronCalendarView: View {
         guard event.kind == .actual, let code = event.execution?.exitCode else { return PickyHubTheme.Colors.textSecondary }
         return code == 0 ? PickyHubTheme.Colors.success : DS.Colors.destructiveText
     }
+    private func openDay(_ day: Date) {
+        selectedEventIDs = nil
+        selectedDay = day
+    }
     private func moreButton(_ day: Date, count: Int) -> some View {
-        Button(L10n.t("hub.calendar.more", Int64(count))) { selectedDay = day }
+        Button(L10n.t("hub.calendar.more", Int64(count))) { openDay(day) }
             .buttonStyle(.borderless).pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
     }
     private func dayHeading(_ day: Date) -> some View {
@@ -325,21 +349,24 @@ struct PickyHubCronCalendarView: View {
                 Text("hub.calendar.compactAgenda").foregroundColor(PickyHubTheme.Colors.textTertiary)
                     .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                 ForEach(days, id: \.self) { day in
-                    let groups = PickyCronCalendarPresentation.groups(events.filter { calendar.isDate($0.date, inSameDayAs: day) })
+                    let groups = data.layout.dayGroups[day] ?? []
                     if !groups.isEmpty {
                         Text(day, format: .dateTime.month().day().weekday()).pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
-                        ForEach(groups, id: \.id) { group in eventButton(group.event, count: group.count, day: day) }
+                        ForEach(groups, id: \.id) { group in eventButton(group) }
                     }
                 }
                 if events.isEmpty { Text("hub.calendar.noOccurrences") }
             }.padding(PickyHubTheme.Spacing.field)
         }
     }
-    private func dayList(_ day: Date, events: [PickyCronCalendarOccurrence]) -> some View {
+    private func listedEvents(_ day: Date) -> [PickyCronCalendarOccurrence] {
+        (data.layout.eventsByDay[day] ?? []).filter { selectedEventIDs?.contains($0.id) ?? true }
+    }
+    private func dayList(_ day: Date) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+            LazyVStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
                 Text(day, format: .dateTime.month().day().weekday()).pickyFont(size: PickyHubTheme.Typography.cardTitle, weight: .semibold)
-                ForEach(events.filter { calendar.isDate($0.date, inSameDayAs: day) }) { event in
+                ForEach(listedEvents(day)) { event in
                     Button { selectedDay = nil; select(event) } label: {
                         HStack {
                             Image(systemName: PickyCronCalendarPresentation.symbol(event)).foregroundColor(eventColor(event))

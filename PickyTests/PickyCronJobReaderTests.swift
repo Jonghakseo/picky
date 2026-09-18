@@ -58,6 +58,52 @@ struct PickyCronJobReaderTests {
         #expect(jobs.map(\.status) == [.active, .completed])
     }
 
+    @Test(arguments: [false, true])
+    func removedJobStopsAppearingAfterRereadDespiteRetainedRunFiles(keepOtherJob: Bool) throws {
+        let scratch = try ScratchCronStore()
+        let removed: [String: Any] = [
+            "id": "removed", "name": "Removed", "enabled": true,
+            "schedule": "*/10 * * * *", "once": false,
+            "lastRunAt": "2026-09-18T00:00:00Z", "nextRunAt": "2026-09-18T00:10:00Z"
+        ]
+        let remaining: [[String: Any]] = keepOtherJob
+            ? [["id": "remaining", "name": "Remaining", "enabled": true,
+                "runAt": "2026-09-18T00:30:00Z"]] : []
+        func writeJobs(_ jobs: [[String: Any]]) throws {
+            let data = try JSONSerialization.data(withJSONObject: ["version": 2, "jobs": jobs, "history": []])
+            try scratch.write(String(decoding: data, as: UTF8.self))
+        }
+        try writeJobs([removed] + remaining)
+        let reader = scratch.reader()
+        let runs = reader.jobsURL.deletingLastPathComponent().appendingPathComponent("runs/removed")
+        try FileManager.default.createDirectory(at: runs, withIntermediateDirectories: true)
+        try Data("# cron run: removed\nexitCode: 0\n".utf8)
+            .write(to: runs.appendingPathComponent("2026-09-18T00-00-00-000Z.log"))
+        let now = try #require(PickyCronJobReader.parseDate("2026-09-18T00:00:00Z"))
+        let interval = DateInterval(start: now, duration: 3600)
+        guard case .jobs(let before) = reader.readCalendar(interval: interval) else {
+            Issue.record("Expected scheduled job before removal")
+            return
+        }
+        let beforeEvents = PickyCronCalendarProjection.occurrences(jobs: before, interval: interval, now: now)
+        #expect(beforeEvents.occurrences.contains { $0.job.id == "removed" && $0.kind == .projected })
+
+        // Cron removeJob splices the active index but deliberately keeps run files.
+        try writeJobs(remaining)
+        let after = reader.readCalendar(interval: interval)
+        if keepOtherJob {
+            guard case .jobs(let jobs) = after else {
+                Issue.record("Expected the unrelated job to remain")
+                return
+            }
+            #expect(jobs.map(\.id) == ["remaining"])
+            let events = PickyCronCalendarProjection.occurrences(jobs: jobs, interval: interval, now: now)
+            #expect(events.occurrences.map(\.job.id) == ["remaining"])
+        } else {
+            #expect(after == .empty)
+        }
+    }
+
     @Test func usesEnvironmentAgentDirectoryWhenNoPreferenceIsConfigured() throws {
         let scratch = try ScratchCronStore()
         let environmentAgentDir = scratch.root.appendingPathComponent("environment-agent", isDirectory: true)

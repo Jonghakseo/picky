@@ -19,7 +19,7 @@ enum PickyConversationComposerReturnKeyAction: Equatable {
 }
 
 enum PickyConversationComposerUpArrowKeyAction: Equatable {
-    case clearQueue
+    case restoreQueue
     case navigateAutocomplete
     case recallPreviousMessage
 }

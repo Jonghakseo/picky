@@ -1342,11 +1342,11 @@ struct PickyConversationCardViewTests {
         #expect(optionComposer.activeSubmitKind == .followUp)
     }
 
-    @Test func composerUpArrowMappingRecallsPreviousMessageUnlessModified() {
+    @Test func composerUpArrowMappingRestoresQueuedMessagesWithOption() {
         #expect(PickyConversationComposerView.upArrowKeyAction(for: []) == .recallPreviousMessage)
         #expect(PickyConversationComposerView.upArrowKeyAction(for: [.shift]) == .navigateAutocomplete)
-        #expect(PickyConversationComposerView.upArrowKeyAction(for: [.option]) == .clearQueue)
-        #expect(PickyConversationComposerView.upArrowKeyAction(for: [.option, .shift]) == .clearQueue)
+        #expect(PickyConversationComposerView.upArrowKeyAction(for: [.option]) == .restoreQueue)
+        #expect(PickyConversationComposerView.upArrowKeyAction(for: [.option, .shift]) == .restoreQueue)
     }
 
     @Test func composerPreviousUserMessageSkipsEmptyAndNonUserMessages() {

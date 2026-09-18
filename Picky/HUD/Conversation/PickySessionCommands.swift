@@ -31,6 +31,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func applyAutocomplete(sessionID: String, generation: Int, lines: [String], cursorLine: Int, cursorCol: Int, draftRevision: Int, draftFingerprint: String, item: PickyAutocompleteItem, prefix: String) -> String
     func slashCommandsIncludingRewindTreeCommand(_ commands: [PickySlashCommand], sessionID: String) -> [PickySlashCommand]
     func composerDraftRequest(for sessionID: String) -> PickyComposerDraftRequest?
+    func composerDraftRequestPublisher(for sessionID: String) -> AnyPublisher<PickyComposerDraftRequest?, Never>
     func consumeComposerDraftRequest(sessionID: String, requestID: String)
     func copyMessageText(_ text: String)
     func persistedComposerDraft(for sessionID: String) -> String

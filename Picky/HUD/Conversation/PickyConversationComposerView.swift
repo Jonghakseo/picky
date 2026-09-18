@@ -167,7 +167,7 @@ struct PickyConversationComposerView: View {
             runtimeControls.cancelLoad()
             onTransientHeightChange(0)
         }
-        .onChange(of: commands.composerDraftRequest(for: session.id)) { _, request in
+        .onReceive(commands.composerDraftRequestPublisher(for: session.id)) { request in
             applyComposerDraftRequestIfNeeded(request)
         }
         .onChange(of: focusRequestID) { _, _ in
@@ -832,8 +832,8 @@ struct PickyConversationComposerView: View {
 
     private func handleComposerUpArrowKey(_ modifiers: NSEvent.ModifierFlags) -> Bool {
         switch Self.upArrowKeyAction(for: Self.eventModifiers(from: modifiers)) {
-        case .clearQueue:
-            return clearQueuedMessages()
+        case .restoreQueue:
+            return restoreQueuedMessages()
         case .navigateAutocomplete:
             return moveAutocompleteSelection(.up)
         case .recallPreviousMessage:
@@ -1284,7 +1284,7 @@ struct PickyConversationComposerView: View {
     }
 
     static func upArrowKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerUpArrowKeyAction {
-        if modifiers.contains(.option) { return .clearQueue }
+        if modifiers.contains(.option) { return .restoreQueue }
         if modifiers.isEmpty { return .recallPreviousMessage }
         return .navigateAutocomplete
     }
@@ -1387,7 +1387,7 @@ struct PickyConversationComposerView: View {
     }
 
     @discardableResult
-    private func clearQueuedMessages() -> Bool {
+    private func restoreQueuedMessages() -> Bool {
         guard PickyQueuedInputRestoreAvailability.resolve(
             visibleQueue: session.visibleQueue,
             kind: .all

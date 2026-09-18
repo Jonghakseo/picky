@@ -1105,7 +1105,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.persistedComposerDraft(for: "mixed-queue-session").isEmpty)
     }
 
-    @MainActor @Test func clearQueueRestoringQueuedInputsAppendsDraftBeforeClearCommand() async throws {
+    @MainActor @Test func clearQueueRestoringQueuedInputsPublishesDraftForMountedComposerBeforeClearCommand() async throws {
         let client = FakePickyAgentClient()
         let draftStore = FakeComposerDraftStore()
         draftStore.drafts["queue-session"] = "existing draft"
@@ -1116,16 +1116,27 @@ struct PickySessionViewModelTests {
         )
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-session", status: "running"))))
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "queue-session", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 1))))
+        var publishedRequests: [PickyComposerDraftRequest?] = []
+        let commands: any PickySessionCommands = viewModel
+        let cancellable = commands.composerDraftRequestPublisher(for: "queue-session")
+            .sink { publishedRequests.append($0) }
 
         try await viewModel.clearQueueRestoringQueuedInputs(sessionID: "queue-session", kind: .all)
 
         let draftRequest = try #require(viewModel.composerDraftRequest(for: "queue-session"))
         #expect(draftRequest.text == "existing draft\n\nqueued follow-up")
+        #expect(publishedRequests.last == draftRequest)
         #expect(viewModel.persistedComposerDraft(for: "queue-session") == "existing draft\n\nqueued follow-up")
         let clearCommand = try #require(client.sentCommands.last)
         #expect(clearCommand.type == .clearQueue)
         #expect(clearCommand.sessionId == "queue-session")
         #expect(clearCommand.kind == .all)
+
+        let emissionCountBeforeConsumption = publishedRequests.count
+        viewModel.consumeComposerDraftRequest(sessionID: "queue-session", requestID: draftRequest.id)
+        #expect(publishedRequests.count == emissionCountBeforeConsumption + 1)
+        #expect(publishedRequests[publishedRequests.index(before: publishedRequests.endIndex)] == nil)
+        _ = cancellable
     }
 
     @MainActor @Test func abortRestoringQueuedInputsAppendsDraftAndClearsQueueBeforeAbort() async throws {

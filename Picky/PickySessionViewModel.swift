@@ -824,6 +824,13 @@ final class PickySessionListViewModel: ObservableObject {
         composerDraftController.request(for: sessionID)
     }
 
+    func composerDraftRequestPublisher(for sessionID: String) -> AnyPublisher<PickyComposerDraftRequest?, Never> {
+        $composerDraftRequestsBySessionID
+            .map { $0[sessionID] }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
     func consumeComposerDraftRequest(sessionID: String, requestID: String) {
         composerDraftController.consumeRequest(sessionID: sessionID, requestID: requestID)
         syncComposerDraftRequests()

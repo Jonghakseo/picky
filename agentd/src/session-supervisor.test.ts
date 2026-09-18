@@ -6352,6 +6352,45 @@ describe("SessionSupervisor", () => {
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/product-pi-session.jsonl", cwd: "/tmp/product", sessionId: "restored-product-session" }]);
   });
 
+  it("keeps persisted activity time and projection order when opening a completed Pickle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-view-"));
+    const store = new SessionStore(dir);
+    const older = "2026-05-01T00:00:10.000Z";
+    const newer = "2026-05-02T00:00:10.000Z";
+    for (const [id, updatedAt] of [["viewed", older], ["recent", newer]]) {
+      await store.save({
+        id: id!, title: id!, status: "completed", createdAt: older, updatedAt: updatedAt!,
+        logs: ["Picky handoff: investigate", "pi session: /tmp/view-only.jsonl"],
+        tools: [], artifacts: [], changedFiles: [],
+      });
+    }
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const projected: PickyAgentSession[] = [];
+    supervisor.on("sessionProjectionTransaction", (id, _before, after) => {
+      if (id === "viewed") projected.push(after);
+    });
+
+    await supervisor.listSlashCommands("viewed");
+    await supervisor.getAutocompleteCapabilities("viewed");
+    await supervisor.listSessionRuntimeOptions("viewed");
+    // The SDK publishes its session-file diagnostic after binding the resumed session.
+    runtime.handle!.emit({ type: "log", line: "pi session: /tmp/view-only.jsonl" });
+    await settle();
+
+    expect(projected.length).toBeGreaterThan(0);
+    expect(projected.map((session) => session.updatedAt)).toEqual(projected.map(() => older));
+    expect((await store.loadReadOnly("viewed"))?.updatedAt).toBe(older);
+    expect(supervisor.list().map((session) => session.id)).toEqual(["recent", "viewed"]);
+
+    await supervisor.steer("viewed", "Read the latest changes");
+    runtime.handle!.emit({ type: "tool", toolCallId: "new-read", name: "read", status: "running" });
+    await settle();
+    expect((await store.loadReadOnly("viewed"))!.updatedAt > newer).toBe(true);
+    expect(supervisor.list()[0]?.id).toBe("viewed");
+  });
+
   it("direct runtime selections publish the actual assistant run without changing the cycle scope", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-runtime-control-"));
     const runtime = new ManualRuntime();

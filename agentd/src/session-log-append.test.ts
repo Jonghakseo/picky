@@ -32,6 +32,17 @@ describe("sessionWithAppendedLog", () => {
     expect(session.logs).toEqual(["first"]);
   });
 
+  it.each([
+    "runtime reattached from pi session: /tmp/session.jsonl",
+    "pi session: /tmp/session.jsonl",
+    "runtime reattach failed: session unavailable",
+  ])("preserves activity time for runtime diagnostics: %s", (line) => {
+    const session = makeSession();
+    const next = sessionWithAppendedLog(session, line, NOW);
+    expect(next.logs).toEqual([line]);
+    expect(next.updatedAt).toBe(session.updatedAt);
+  });
+
   it("records the typed last request for user-input journal lines and leaves it untouched otherwise", () => {
     const steered = sessionWithAppendedLog(makeSession(), "steer: focus on the failing test ", NOW);
     expect(steered.lastRequest).toEqual({ source: "steer", text: "focus on the failing test" });

@@ -26,6 +26,10 @@ export function sessionWithAppendedLog(
     artifacts: mergeArtifacts(session.artifacts, linkArtifacts),
     ...(piSessionFilePath ? { piSessionFilePath } : {}),
     ...(userInput && requestText ? { lastRequest: { source: userInput.source, text: requestText } } : {}),
-    updatedAt: now,
+    // Opening a Pickle resumes its runtime for command/autocomplete discovery. These
+    // diagnostics describe attachment, not new activity, even when the resume fails.
+    updatedAt: piSessionFilePath || line.startsWith("runtime reattach failed:")
+      ? session.updatedAt
+      : now,
   };
 }

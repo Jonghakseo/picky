@@ -294,6 +294,160 @@ struct PickyHubPluginCatalogTests {
         try renderCronCard(catalog, state: "succeeded", expectedText: L10n.t("hub.plugins.feedback.setup", cron.title))
     }
 
+    @Test func bundledEntriesShareSearchCategoryAndOrdering() throws {
+        let fixture = try BundledCatalogFixture()
+        defer { fixture.cleanUp() }
+        let catalog = fixture.catalog
+        #expect(catalog.items.map(\.id) == ["picky-handoff", "picky-cli", "diff-review"])
+        for (query, id) in [("picky-handoff", "picky-handoff"), ("/handoff-to-picky", "picky-handoff"),
+                            ("picky-cli", "picky-cli"), ("/skill:picky-cli", "picky-cli")] {
+            catalog.query = query
+            #expect(catalog.filtered.map(\.id) == [id])
+        }
+        catalog.query = "Picky"
+        catalog.category = .taskManagement
+        #expect(catalog.filtered.map(\.id) == ["picky-handoff", "picky-cli"])
+        #expect(catalog.filtered.allSatisfy { $0.metadata.provider == "Picky" && $0.canInstall })
+        catalog.clearFilters()
+        #expect(catalog.filtered.count == 3)
+    }
+
+    @Test(arguments: ["picky-handoff", "picky-cli"])
+    func bundledActionsPersistInstallUpdateAndRemovalWithoutDaemonPackages(id: String) async throws {
+        let fixture = try BundledCatalogFixture()
+        defer { fixture.cleanUp() }
+        let catalog = fixture.catalog
+        let initial = try #require(catalog.item(id: id))
+        catalog.install(initial)
+        catalog.install(initial)
+        #expect(catalog.item(id: id)?.isBusy == true)
+        fixture.bundled.refresh()
+        #expect(catalog.item(id: id)?.isBusy == true)
+        try await waitUntil { catalog.item(id: id)?.successMessage != nil }
+        #expect(catalog.item(id: id)?.bundledStatus == .installed)
+        #expect(fixture.reload.hasPendingChanges)
+        #expect(try String(contentsOf: fixture.targetFile(id), encoding: .utf8) == "original")
+
+        try Data("updated".utf8).write(to: fixture.sourceFile(id))
+        fixture.bundled.refresh()
+        let outdated = try #require(catalog.item(id: id))
+        #expect(outdated.bundledStatus == .outdated)
+        #expect(outdated.hasUpdate && outdated.canRemove && !outdated.canInstall)
+        catalog.update(outdated)
+        try await waitUntil {
+            catalog.item(id: id)?.successMessage == L10n.t("hub.plugins.feedback.updated", outdated.title)
+        }
+        #expect(try String(contentsOf: fixture.targetFile(id), encoding: .utf8) == "updated")
+        #expect(catalog.item(id: id)?.bundledStatus == .installed)
+
+        catalog.remove(try #require(catalog.item(id: id)))
+        try await waitUntil { catalog.item(id: id)?.bundledStatus == .notInstalled }
+        #expect(!FileManager.default.fileExists(atPath: fixture.targetFile(id).path))
+        #expect(fixture.client.sentCommands.isEmpty)
+    }
+
+    @Test(arguments: ["picky-handoff", "picky-cli"])
+    func bundledProtectedPathsAndLegacyLinksKeepTheirActionContracts(id: String) async throws {
+        let fixture = try BundledCatalogFixture()
+        defer { fixture.cleanUp() }
+        let target = fixture.targetFile(id).deletingLastPathComponent()
+        let fm = FileManager.default
+        try fm.createDirectory(at: target, withIntermediateDirectories: true)
+        let marker = target.appendingPathComponent("custom.txt")
+        try Data("user-owned".utf8).write(to: marker)
+        fixture.bundled.refresh()
+        let conflict = try #require(fixture.catalog.item(id: id))
+        #expect(!conflict.canInstall && !conflict.canRemove && !conflict.hasUpdate)
+        #expect(conflict.statusExplanation != nil)
+        fixture.catalog.install(conflict)
+        fixture.catalog.update(conflict)
+        fixture.catalog.remove(conflict)
+        #expect(try String(contentsOf: marker, encoding: .utf8) == "user-owned")
+        #expect(!fixture.reload.hasPendingChanges)
+
+        try fm.removeItem(at: target)
+        let developer = fixture.root.appendingPathComponent("developer")
+        try fm.createDirectory(at: developer, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: target, withDestinationURL: developer)
+        fixture.bundled.refresh()
+        let override = try #require(fixture.catalog.item(id: id))
+        #expect(override.bundledStatus == .developerOverride(target: developer.path))
+        #expect(!override.canInstall && !override.canRemove && !override.hasUpdate)
+        fixture.catalog.install(override)
+        fixture.catalog.remove(override)
+        #expect(try fm.destinationOfSymbolicLink(atPath: target.path) == developer.path)
+
+        try fm.removeItem(at: target)
+        try fm.createSymbolicLink(at: target, withDestinationURL: fixture.sourceFile(id).deletingLastPathComponent())
+        fixture.bundled.refresh()
+        let legacy = try #require(fixture.catalog.item(id: id))
+        #expect(legacy.bundledStatus == .legacySymlink)
+        #expect(legacy.canInstall && !legacy.canRemove)
+        fixture.catalog.install(legacy)
+        try await waitUntil { fixture.catalog.item(id: id)?.bundledStatus == .installed }
+        #expect(fixture.reload.hasPendingChanges)
+        #expect(fixture.client.sentCommands.isEmpty)
+    }
+
+    @Test func bundledFailureRemainsOnItsCardAndCanRetryAfterFilesystemRepair() async throws {
+        let fixture = try BundledCatalogFixture()
+        defer { fixture.cleanUp() }
+        let fm = FileManager.default
+        let parent = fixture.targetFile("picky-handoff").deletingLastPathComponent().deletingLastPathComponent()
+        try fm.createDirectory(at: parent.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("blocked parent".utf8).write(to: parent)
+        fixture.catalog.install(try #require(fixture.catalog.item(id: "picky-handoff")))
+        try await waitUntil { fixture.catalog.feedbackIsError }
+        let failure = try #require(fixture.catalog.item(id: "picky-handoff")?.errorMessage)
+        #expect(!fixture.reload.hasPendingChanges)
+        fixture.bundled.refresh()
+        #expect(fixture.catalog.item(id: "picky-handoff")?.errorMessage == failure)
+        try fm.removeItem(at: parent)
+        fixture.catalog.retryFeedback()
+        try await waitUntil { fixture.catalog.item(id: "picky-handoff")?.bundledStatus == .installed }
+        try await waitUntil { !fixture.catalog.feedbackIsError }
+        #expect(fixture.catalog.item(id: "picky-handoff")?.errorMessage == nil)
+        #expect(fixture.reload.hasPendingChanges)
+        #expect(fixture.client.sentCommands.isEmpty)
+    }
+
+    @Test func staleUpdateCannotOverwriteAReplacementAndKeepsItsErrorAfterAnotherInstall() async throws {
+        let fixture = try BundledCatalogFixture()
+        defer { fixture.cleanUp() }
+        let catalog = fixture.catalog
+        catalog.install(try #require(catalog.item(id: "picky-handoff")))
+        try await waitUntil { catalog.item(id: "picky-handoff")?.successMessage != nil }
+        try Data("new bundle".utf8).write(to: fixture.sourceFile("picky-handoff"))
+        fixture.bundled.refresh()
+        let outdated = try #require(catalog.item(id: "picky-handoff"))
+        #expect(outdated.hasUpdate)
+        let target = fixture.targetFile("picky-handoff").deletingLastPathComponent()
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try Data("user replacement".utf8).write(to: fixture.targetFile("picky-handoff"))
+        catalog.update(outdated)
+        try await waitUntil { catalog.feedbackIsError }
+        let failed = try #require(catalog.item(id: "picky-handoff"))
+        #expect(failed.statusExplanation != nil && !failed.canRemove && !failed.hasUpdate)
+        #expect(failed.errorMessage != nil)
+        catalog.retryFeedback()
+        #expect(catalog.item(id: failed.id)?.errorMessage == failed.errorMessage)
+        catalog.install(try #require(catalog.item(id: "picky-cli")))
+        try await waitUntil { catalog.item(id: "picky-cli")?.successMessage != nil }
+        #expect(catalog.item(id: failed.id)?.errorMessage == failed.errorMessage)
+        #expect(try String(contentsOf: fixture.targetFile("picky-handoff"), encoding: .utf8) == "user replacement")
+        #expect(fixture.client.sentCommands.isEmpty)
+    }
+
+    @Test func missingBundlesDoNotOfferInstallation() throws {
+        let fixture = try BundledCatalogFixture()
+        defer { fixture.cleanUp() }
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("Resources"))
+        fixture.bundled.refresh()
+        #expect(fixture.catalog.items.map(\.id) == ["diff-review"])
+        #expect(fixture.bundled.rows.allSatisfy { $0.status == .bundleMissing })
+    }
+
     private func renderCronCard(_ catalog: PickyHubPluginCatalogViewModel, state: String, expectedText: String) throws {
         let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("build/render-gallery/cron-feedback", isDirectory: true)
@@ -422,4 +576,46 @@ private struct CronCardFixture: View {
             )
         }
     }
+}
+
+@MainActor
+private struct BundledCatalogFixture {
+    let root: URL
+    let client: HubPluginFanoutClient
+    let reload: PickyPluginReloadController
+    let bundled: PickyExtensionsSectionViewModel
+    let catalog: PickyHubPluginCatalogViewModel
+
+    init() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-catalog-\(UUID().uuidString)")
+        let resources = root.appendingPathComponent("Resources")
+        for path in ["pi-extensions/picky-handoff/index.ts", "pi-skills/picky-cli/SKILL.md"] {
+            let file = resources.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try Data("original".utf8).write(to: file)
+        }
+        client = HubPluginFanoutClient()
+        reload = PickyPluginReloadController(client: client)
+        bundled = PickyExtensionsSectionViewModel(
+            bundleResourceURL: resources, homeURL: root.appendingPathComponent("home")
+        )
+        catalog = PickyHubPluginCatalogViewModel(
+            curated: PickyCuratedPluginsViewModel(plugins: [.diffReview], statusForSource: { _ in .notInstalled }),
+            pluginReloadController: reload, bundled: bundled
+        )
+    }
+
+    func sourceFile(_ id: String) -> URL {
+        root.appendingPathComponent(id == "picky-handoff"
+            ? "Resources/pi-extensions/picky-handoff/index.ts" : "Resources/pi-skills/picky-cli/SKILL.md")
+    }
+
+    func targetFile(_ id: String) -> URL {
+        root.appendingPathComponent(id == "picky-handoff"
+            ? "home/.pi/agent/extensions/picky-handoff/index.ts" : "home/.pi/agent/skills/picky-cli/SKILL.md")
+    }
+
+    func cleanUp() { try? FileManager.default.removeItem(at: root) }
 }

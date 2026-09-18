@@ -42,24 +42,26 @@ struct PickyHubPluginDetailDialog: View {
                 .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.field)
 
-            Text("hub.plugins.detail.useCases")
-                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
-                .foregroundColor(PickyHubTheme.Colors.textPrimary)
-                .padding(.top, PickyHubTheme.Spacing.group)
+            if !item.useCases.isEmpty {
+                Text("hub.plugins.detail.useCases")
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                    .padding(.top, PickyHubTheme.Spacing.group)
 
-            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
-                ForEach(item.useCases, id: \.self) { useCase in
-                    Label(useCase, systemImage: "circle.fill")
-                        .labelStyle(PickyHubPluginUseCaseLabelStyle())
-                        .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
-                        .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
+                    ForEach(item.useCases, id: \.self) { useCase in
+                        Label(useCase, systemImage: "circle.fill")
+                            .labelStyle(PickyHubPluginUseCaseLabelStyle())
+                            .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
+                            .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                    }
                 }
+                .pickyHubSelectableText()
+                .padding(.top, PickyHubTheme.Spacing.related)
             }
-            .pickyHubSelectableText()
-            .padding(.top, PickyHubTheme.Spacing.related)
 
             HStack(spacing: PickyHubTheme.Spacing.related) {
-                PickyHubBadgePill(text: item.isInstalled ? L10n.t("hub.plugins.detail.installed") : L10n.t("hub.plugins.detail.notInstalled"))
+                PickyHubBadgePill(text: item.statusLabel)
                 if item.isBusy {
                     ProgressView()
                         .controlSize(.small)
@@ -68,12 +70,17 @@ struct PickyHubPluginDetailDialog: View {
             }
             .padding(.top, PickyHubTheme.Spacing.group)
 
+            if let explanation = item.statusExplanation {
+                PickyHubInlineStatus(tone: item.statusTone, message: explanation)
+                    .padding(.top, PickyHubTheme.Spacing.field)
+            }
+
             if let error = item.errorMessage {
                 PickyHubInlineStatus(tone: .error, message: error)
                     .padding(.top, PickyHubTheme.Spacing.field)
             }
 
-            if confirmsRemoval {
+            if confirmsRemoval && item.canRemove {
                 inlineRemovalConfirmation
                     .padding(.top, PickyHubTheme.Spacing.field)
             }
@@ -117,14 +124,19 @@ struct PickyHubPluginDetailDialog: View {
 
     @ViewBuilder
     private var mutationButton: some View {
-        if item.isInstalled {
+        if item.hasUpdate {
+            PickyHubButton(title: "hub.plugins.card.update", role: .secondary, isBusy: item.isBusy) {
+                pluginCatalog.update(item)
+            }
+        }
+        if item.canRemove {
             PickyHubButton(
                 title: confirmsRemoval ? "hub.plugins.detail.confirmRemove" : "hub.plugins.detail.remove",
                 role: .danger,
                 isBusy: item.isBusy,
                 action: { confirmsRemoval ? remove() : (confirmsRemoval = true) }
             )
-        } else {
+        } else if item.canInstall {
             PickyHubButton(
                 title: "hub.plugins.detail.install",
                 role: .primary,

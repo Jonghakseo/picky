@@ -343,7 +343,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             ),
             pluginCatalog: PickyHubPluginCatalogViewModel(
                 curated: PickyCuratedPluginsViewModel(),
-                pluginReloadController: pluginReloadController
+                pluginReloadController: pluginReloadController,
+                bundled: PickyExtensionsSectionViewModel()
             ),
             requestOnboardingReplay: { [weak self] in self?.startOnboardingIfNeeded() }
         )

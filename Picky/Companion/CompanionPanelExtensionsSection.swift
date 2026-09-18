@@ -11,12 +11,12 @@
 import Combine
 import SwiftUI
 
-private enum PickyBundledPluginKind: String, Equatable {
+enum PickyBundledPluginKind: String, Equatable {
     case `extension`
     case skill
 }
 
-private enum PickyBundledPluginStatus: Equatable {
+enum PickyBundledPluginStatus: Equatable {
     case bundleMissing
     case notInstalled
     case installed
@@ -51,7 +51,7 @@ private enum PickyBundledPluginStatus: Equatable {
 }
 
 @MainActor
-private final class PickyExtensionsSectionViewModel: ObservableObject {
+final class PickyExtensionsSectionViewModel: ObservableObject {
     struct Row: Identifiable, Equatable {
         let id: String
         let name: String
@@ -64,17 +64,27 @@ private final class PickyExtensionsSectionViewModel: ObservableObject {
     @Published private(set) var rows: [Row] = []
     @Published private(set) var lastError: String?
 
-    init() {
+    @Published private(set) var mutationOutcome: PickyCuratedPluginsViewModel.MutationOutcome?
+    private let bundleResourceURL: URL?
+    private let homeURL: URL
+
+    init(bundleResourceURL: URL? = Bundle.main.resourceURL,
+         homeURL: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.bundleResourceURL = bundleResourceURL
+        self.homeURL = homeURL
         refresh()
     }
 
     func refresh() {
+        let busyIDs = Set(rows.filter(\.isBusy).map(\.id))
         let extensionRows = PickyExtensionInstaller.bundledExtensions.map { name in
             Row(
                 id: Self.rowID(kind: .extension, name: name),
                 name: name,
                 kind: .extension,
-                status: PickyBundledPluginStatus(PickyExtensionInstaller.status(named: name)),
+                status: PickyBundledPluginStatus(
+                    PickyExtensionInstaller.status(named: name, bundleResourceURL: bundleResourceURL, homeURL: homeURL)
+                ),
                 description: Self.description(for: name, kind: .extension),
                 isBusy: false
             )
@@ -84,54 +94,73 @@ private final class PickyExtensionsSectionViewModel: ObservableObject {
                 id: Self.rowID(kind: .skill, name: name),
                 name: name,
                 kind: .skill,
-                status: PickyBundledPluginStatus(PickySkillInstaller.status(named: name)),
+                status: PickyBundledPluginStatus(
+                    PickySkillInstaller.status(named: name, bundleResourceURL: bundleResourceURL, homeURL: homeURL)
+                ),
                 description: Self.description(for: name, kind: .skill),
                 isBusy: false
             )
         }
-        rows = extensionRows + skillRows
+        rows = (extensionRows + skillRows).map { row in
+            var row = row
+            row.isBusy = busyIDs.contains(row.id)
+            return row
+        }
     }
 
-    /// Closure the section view installs at body time so install/uninstall
-    /// successes can flag a pending plugin reload on the page-level
-    /// `PickyPluginReloadController`. Injected via @EnvironmentObject from the
-    /// view since the view model has no access to SwiftUI environment.
+    /// The owning surface flags its reload controller after a successful mutation.
     var onPluginStateChanged: (() -> Void)?
 
-    func install(_ row: Row) {
-        guard let index = rows.firstIndex(where: { $0.id == row.id }) else { return }
+    @discardableResult
+    func install(_ row: Row) -> Bool {
+        guard let index = rows.firstIndex(where: { $0.id == row.id }), !rows[index].isBusy else { return false }
         rows[index].isBusy = true
         lastError = nil
+        let bundleResourceURL = self.bundleResourceURL
+        let homeURL = self.homeURL
         DispatchQueue.global(qos: .userInitiated).async {
             let result: Result<Void, Error>
             switch row.kind {
             case .extension:
-                result = PickyExtensionInstaller.install(named: row.name).mapError { $0 as Error }
+                result = PickyExtensionInstaller.install(
+                    named: row.name, bundleResourceURL: bundleResourceURL, homeURL: homeURL
+                ).mapError { $0 as Error }
             case .skill:
-                result = PickySkillInstaller.install(named: row.name).mapError { $0 as Error }
+                result = PickySkillInstaller.install(
+                    named: row.name, bundleResourceURL: bundleResourceURL, homeURL: homeURL
+                ).mapError { $0 as Error }
             }
             DispatchQueue.main.async { [weak self] in
                 self?.applyMutationResult(rowID: row.id, result: result)
             }
         }
+        return true
     }
 
-    func uninstall(_ row: Row) {
-        guard let index = rows.firstIndex(where: { $0.id == row.id }) else { return }
+    @discardableResult
+    func uninstall(_ row: Row) -> Bool {
+        guard let index = rows.firstIndex(where: { $0.id == row.id }), !rows[index].isBusy else { return false }
         rows[index].isBusy = true
         lastError = nil
+        let bundleResourceURL = self.bundleResourceURL
+        let homeURL = self.homeURL
         DispatchQueue.global(qos: .userInitiated).async {
             let result: Result<Void, Error>
             switch row.kind {
             case .extension:
-                result = PickyExtensionInstaller.uninstall(named: row.name).mapError { $0 as Error }
+                result = PickyExtensionInstaller.uninstall(
+                    named: row.name, bundleResourceURL: bundleResourceURL, homeURL: homeURL
+                ).mapError { $0 as Error }
             case .skill:
-                result = PickySkillInstaller.uninstall(named: row.name).mapError { $0 as Error }
+                result = PickySkillInstaller.uninstall(
+                    named: row.name, bundleResourceURL: bundleResourceURL, homeURL: homeURL
+                ).mapError { $0 as Error }
             }
             DispatchQueue.main.async { [weak self] in
                 self?.applyMutationResult(rowID: row.id, result: result)
             }
         }
+        return true
     }
 
     private func applyMutationResult(rowID: String, result: Result<Void, Error>) {
@@ -144,16 +173,24 @@ private final class PickyExtensionsSectionViewModel: ObservableObject {
         }
         if let index = rows.firstIndex(where: { $0.id == rowID }) {
             rows[index].isBusy = false
-            rows[index].status = Self.status(for: rows[index])
+            rows[index].status = status(for: rows[index])
         }
+        mutationOutcome = .init(
+            pluginID: rows.first(where: { $0.id == rowID })?.name ?? rowID,
+            result: result.mapError { .failed($0.localizedDescription) }
+        )
     }
 
-    private static func status(for row: Row) -> PickyBundledPluginStatus {
+    private func status(for row: Row) -> PickyBundledPluginStatus {
         switch row.kind {
         case .extension:
-            return PickyBundledPluginStatus(PickyExtensionInstaller.status(named: row.name))
+            return PickyBundledPluginStatus(
+                PickyExtensionInstaller.status(named: row.name, bundleResourceURL: bundleResourceURL, homeURL: homeURL)
+            )
         case .skill:
-            return PickyBundledPluginStatus(PickySkillInstaller.status(named: row.name))
+            return PickyBundledPluginStatus(
+                PickySkillInstaller.status(named: row.name, bundleResourceURL: bundleResourceURL, homeURL: homeURL)
+            )
         }
     }
 

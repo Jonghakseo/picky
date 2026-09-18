@@ -39,10 +39,6 @@ struct PickyHubPluginsPage: View {
                 )
                 .padding(.bottom, dependencies.pluginReloadController.hasPendingChanges || dependencies.pluginReloadController.lastResult != nil ? PickyHubTheme.Spacing.field : 0)
 
-                CompanionPanelExtensionsSection()
-                    .environmentObject(dependencies.pluginReloadController)
-                    .padding(.bottom, PickyHubTheme.Layout.sectionSpacing)
-
                 searchAndFilters
 
                 Text(statusMessage)

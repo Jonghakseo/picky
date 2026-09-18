@@ -67,6 +67,48 @@ struct PickyHubRenderGalleryTests {
         let widthClass: String
     }
 
+    @Test func bundledPluginsRenderAlongsideCatalogCards() throws {
+        let fixture = try PickyHubRenderGalleryFixture(includeBundledPlugins: true)
+        defer { fixture.removeTemporaryState() }
+        fixture.navigator.select(.plugins)
+        let output = (try? String(contentsOf: Self.outputRequestFile, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            for (appearance, width, height, scale) in [
+                (Appearance.dark, 1020.0, 1200.0, 1.0),
+                (.light, 1020.0, 1200.0, 1.0),
+                (.dark, 760.0, 2200.0, 1.3),
+            ] {
+                fixture.fontScaleStore.setScale(scale)
+                let scene = Scene(
+                    page: .plugins,
+                    name: "plugins-bundled-\(Int(width))-\(appearance.rawValue)-\(Int(scale * 100)).png",
+                    appearance: appearance,
+                    logicalSize: CGSize(width: width, height: height),
+                    widthClass: "full-page"
+                )
+                let rendered = try render(scene, fixture: fixture)
+                try validate(rendered.bitmap, for: scene)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: #require(rendered.bitmap.cgImage)).perform([request])
+                let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+                for key in ["status.extensions.pickyHandoff.title", "status.extensions.pickyCLI.title"] {
+                    #expect(text.localizedCaseInsensitiveContains(L10n.t(key)), "Bundled plugin card must be visible: \(text)")
+                }
+                #expect(text.contains("Diff review"), "Bundled entries must share the page with catalog cards: \(text)")
+                #expect(text.contains("Update"), "Outdated bundled extension must offer an update: \(text)")
+                if let output, !output.isEmpty {
+                    let directory = URL(fileURLWithPath: output).appendingPathComponent("bundled-plugins")
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try rendered.png.write(to: directory.appendingPathComponent(scene.name), options: .atomic)
+                }
+            }
+        }
+    }
+
     @Test func restrainedMarkdownPreservesLinksAndStylesWithoutChangingDefaultCache() throws {
         let renderer = PickyReportMarkdownRenderer()
         let source = "plain **strong** ***both*** **[linked](https://example.com)** and `code`"
@@ -752,7 +794,7 @@ final class PickyHubRenderGalleryFixture {
     private let defaults: UserDefaults
     private let defaultsSuiteName: String
 
-    init(snapshot: PickyHubStatisticsSnapshot? = nil, packageSettings: Data? = nil) throws {
+    init(snapshot: PickyHubStatisticsSnapshot? = nil, packageSettings: Data? = nil, includeBundledPlugins: Bool = false) throws {
         temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("PickyHubRenderGallery-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
@@ -827,7 +869,28 @@ final class PickyHubRenderGalleryFixture {
             },
             installedVersionForSource: { _ in packageSettings == nil ? "1.2.3" : nil }
         )
-        let pluginCatalog = PickyHubPluginCatalogViewModel(curated: curated, pluginReloadController: pluginReloadController)
+        let bundledResourceURL = temporaryRoot.appendingPathComponent("bundle-resources", isDirectory: true)
+        let bundledHomeURL = temporaryRoot.appendingPathComponent("bundled-home", isDirectory: true)
+        if includeBundledPlugins {
+            let handoff = bundledResourceURL.appendingPathComponent("pi-extensions/picky-handoff", isDirectory: true)
+            let cli = bundledResourceURL.appendingPathComponent("pi-skills/picky-cli", isDirectory: true)
+            try FileManager.default.createDirectory(at: handoff, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: cli, withIntermediateDirectories: true)
+            let entry = handoff.appendingPathComponent("index.ts")
+            try "// handoff v1\n".write(to: entry, atomically: true, encoding: .utf8)
+            try "---\nname: picky-cli\ndescription: Picky CLI guidance\n---\n".write(
+                to: cli.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8
+            )
+            try PickyExtensionInstaller.install(
+                named: "picky-handoff", bundleResourceURL: bundledResourceURL, homeURL: bundledHomeURL, log: { _ in }
+            ).get()
+            try "// handoff v2\n".write(to: entry, atomically: true, encoding: .utf8)
+        }
+        let pluginCatalog = PickyHubPluginCatalogViewModel(
+            curated: curated,
+            pluginReloadController: pluginReloadController,
+            bundled: PickyExtensionsSectionViewModel(bundleResourceURL: bundledResourceURL, homeURL: bundledHomeURL)
+        )
         let quickStartLauncher = PickyHubQuickStartLauncher(
             sessions: sessionListViewModel,
             defaultCwd: { "/tmp/hub-gallery" },

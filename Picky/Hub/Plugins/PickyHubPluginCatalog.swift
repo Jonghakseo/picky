@@ -3,10 +3,9 @@
 //  Picky
 //
 //  Catalog metadata (category, provider, use cases) layered on top of the
-//  curated plugin list, plus the search/filter view model the Plugins page and
-//  the dashboard's recommended list share. Install/remove/update still go
-//  through `PickyCuratedPluginsViewModel` so the daemon-backed package flow
-//  stays in one place.
+//  curated and bundled plugin lists, plus the shared search/filter model.
+//  Bundled resources use the local installers; curated packages retain the
+//  daemon-backed package flow.
 //
 
 import Combine
@@ -47,6 +46,10 @@ struct PickyHubPluginMetadata: Equatable {
     let useCaseKeys: [String]
 
     static let byPluginID: [String: PickyHubPluginMetadata] = [
+        "picky-handoff": .init(
+            category: .taskManagement, provider: "Picky", systemImage: "arrow.up.forward.app", useCaseKeys: []
+        ),
+        "picky-cli": .init(category: .taskManagement, provider: "Picky", systemImage: "terminal", useCaseKeys: []),
         "diff-review": .init(category: .development, provider: "@ryan_nookpi", systemImage: "arrow.left.arrow.right.square", useCaseKeys: ["hub.plugins.useCase.diffReview.1", "hub.plugins.useCase.diffReview.2"]),
         "ask-user-question": .init(category: .taskManagement, provider: "@ryan_nookpi", systemImage: "questionmark.bubble", useCaseKeys: ["hub.plugins.useCase.askUserQuestion.1", "hub.plugins.useCase.askUserQuestion.2"]),
         "generative-ui": .init(category: .content, provider: "@ryan_nookpi", systemImage: "rectangle.3.group", useCaseKeys: ["hub.plugins.useCase.generativeUI.1", "hub.plugins.useCase.generativeUI.2"]),
@@ -80,6 +83,40 @@ struct PickyHubPluginItem: Identifiable, Equatable {
     let progressMessage: String?
     let hasUpdate: Bool
     let isBusy: Bool
+    var bundledStatus: PickyBundledPluginStatus?
+
+    var canInstall: Bool {
+        guard let bundledStatus else { return !isInstalled }
+        return bundledStatus == .notInstalled || bundledStatus == .legacySymlink
+    }
+    var canRemove: Bool {
+        guard let bundledStatus else { return isInstalled }
+        return bundledStatus == .installed || bundledStatus == .outdated
+    }
+    var statusLabel: String {
+        switch bundledStatus {
+        case .outdated: return L10n.t("status.extensions.state.outdated")
+        case .legacySymlink: return L10n.t("status.extensions.badge.legacySymlink")
+        case .developerOverride: return L10n.t("status.extensions.badge.developerOverride")
+        case .conflict: return L10n.t("status.extensions.badge.conflict")
+        default: return L10n.t(isInstalled ? "hub.plugins.detail.installed" : "hub.plugins.detail.notInstalled")
+        }
+    }
+    var statusTone: PickyHubInlineStatusTone {
+        switch bundledStatus {
+        case .conflict: return .error
+        case .legacySymlink, .outdated: return .warning
+        default: return .neutral
+        }
+    }
+    var statusExplanation: String? {
+        switch bundledStatus {
+        case .developerOverride(let target): return L10n.t("status.extensions.state.developerOverride", target)
+        case .conflict(let reason): return L10n.t("status.extensions.state.conflict", reason)
+        case .legacySymlink: return L10n.t("status.extensions.state.legacySymlink")
+        default: return nil
+        }
+    }
 
     var id: String { plugin.id }
     var title: String { L10n.t(plugin.titleKey) }
@@ -98,6 +135,7 @@ struct PickyHubPluginItem: Identifiable, Equatable {
             && lhs.progressMessage == rhs.progressMessage
             && lhs.hasUpdate == rhs.hasUpdate
             && lhs.isBusy == rhs.isBusy
+            && lhs.bundledStatus == rhs.bundledStatus
     }
 }
 
@@ -113,6 +151,7 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     @Published private(set) var lastError: String?
 
     let curated: PickyCuratedPluginsViewModel
+    let bundled: PickyExtensionsSectionViewModel?
     private let pluginReloadController: PickyPluginReloadController
     private var cancellables: Set<AnyCancellable> = []
     private var pendingFeedbackByPluginID: [String: PendingFeedback] = [:]
@@ -129,9 +168,22 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     /// Dashboard shows these four in mockup order.
     static let recommendedIDs = ["diff-review", "ask-user-question", "generative-ui", "auto-name"]
 
-    init(curated: PickyCuratedPluginsViewModel, pluginReloadController: PickyPluginReloadController) {
+    init(curated: PickyCuratedPluginsViewModel, pluginReloadController: PickyPluginReloadController,
+         bundled: PickyExtensionsSectionViewModel? = nil) {
+        self.bundled = bundled
         self.curated = curated
         self.pluginReloadController = pluginReloadController
+        bundled?.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        bundled?.$mutationOutcome
+            .compactMap { $0 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] outcome in self?.handleMutation(outcome) }
+            .store(in: &cancellables)
+        bundled?.onPluginStateChanged = { [pluginReloadController] in
+            pluginReloadController.notePluginsChanged()
+        }
         curated.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -146,7 +198,7 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     }
 
     var items: [PickyHubPluginItem] {
-        curated.rows.map { row in
+        bundledItems + curated.rows.map { row in
             PickyHubPluginItem(
                 plugin: row.plugin,
                 metadata: PickyHubPluginMetadata.metadata(for: row.plugin),
@@ -161,6 +213,26 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
         }
     }
 
+    private var bundledItems: [PickyHubPluginItem] {
+        (bundled?.rows ?? []).filter { $0.status != .bundleMissing }.map { row in
+            let key = row.kind == .extension ? "pickyHandoff" : "pickyCLI"
+            let plugin = PickyCuratedPlugin(
+                id: row.name, titleKey: "status.extensions.\(key).title",
+                descriptionKey: "status.extensions.\(key).description",
+                commandName: row.kind == .extension ? "/handoff-to-picky" : "/skill:picky-cli",
+                source: "bundled:\(row.id)"
+            )
+            let installed = row.status == .installed || row.status == .outdated
+            return PickyHubPluginItem(
+                plugin: plugin, metadata: .metadata(for: plugin),
+                status: installed ? .installed(isPinned: false) : .notInstalled,
+                installedVersion: nil, errorMessage: errorsByPluginID[row.name],
+                successMessage: successesByPluginID[row.name], progressMessage: nil,
+                hasUpdate: row.status == .outdated, isBusy: row.isBusy, bundledStatus: row.status
+            )
+        }
+    }
+
     var recommended: [PickyHubPluginItem] {
         let all = items
         return Self.recommendedIDs.compactMap { id in all.first { $0.id == id } }
@@ -171,7 +243,10 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
         return items.filter { item in
             if let category, item.metadata.category != category { return false }
             guard !needle.isEmpty else { return true }
-            let haystack = [item.title, item.summary, item.metadata.category.title, item.metadata.provider, item.plugin.commandName]
+            let haystack = [
+                item.id, item.title, item.summary, item.metadata.category.title,
+                item.metadata.provider, item.plugin.commandName
+            ]
                 .joined(separator: " ")
                 .lowercased()
             return haystack.contains(needle)
@@ -183,29 +258,61 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     }
 
     func refresh() {
+        bundled?.refresh()
         curated.refresh()
         curated.checkUpdatesIfNeeded(pluginReloadController: pluginReloadController)
     }
 
     func install(_ item: PickyHubPluginItem) {
+        if let row = bundled?.rows.first(where: { $0.name == item.id }) {
+            guard self.item(id: item.id)?.canInstall == true else { return }
+            beginMutation(
+                item, successKey: "hub.plugins.feedback.installed",
+                retry: { [weak self] in self?.install(item) },
+                start: { bundled?.install(row) ?? false }
+            )
+            return
+        }
+        guard item.bundledStatus == nil else { return }
         beginMutation(item, successKey: "hub.plugins.feedback.installed", retry: { [weak self] in self?.install(item) }) {
             curated.install(item.plugin, pluginReloadController: pluginReloadController)
         }
     }
 
     func remove(_ item: PickyHubPluginItem) {
+        if let row = bundled?.rows.first(where: { $0.name == item.id }) {
+            guard self.item(id: item.id)?.canRemove == true else { return }
+            beginMutation(
+                item, successKey: "hub.plugins.feedback.removed",
+                retry: { [weak self] in self?.remove(item) },
+                start: { bundled?.uninstall(row) ?? false }
+            )
+            return
+        }
+        guard item.bundledStatus == nil else { return }
         beginMutation(item, successKey: "hub.plugins.feedback.removed", retry: { [weak self] in self?.remove(item) }) {
             curated.remove(item.plugin, pluginReloadController: pluginReloadController)
         }
     }
 
     func update(_ item: PickyHubPluginItem) {
+        if let row = bundled?.rows.first(where: { $0.name == item.id }) {
+            guard self.item(id: item.id)?.hasUpdate == true else { return }
+            beginMutation(
+                item, successKey: "hub.plugins.feedback.updated",
+                retry: { [weak self] in self?.update(item) },
+                start: { bundled?.install(row) ?? false }
+            )
+            return
+        }
+        guard item.bundledStatus == nil else { return }
         beginMutation(item, successKey: "hub.plugins.feedback.updated", retry: { [weak self] in self?.update(item) }) {
             curated.update(item.plugin, pluginReloadController: pluginReloadController)
         }
     }
 
     func setup(_ item: PickyHubPluginItem) {
+        guard item.bundledStatus == nil else { return }
         beginMutation(
             item,
             successKey: "hub.plugins.feedback.setup",

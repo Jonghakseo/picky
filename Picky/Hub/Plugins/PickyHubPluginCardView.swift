@@ -36,8 +36,8 @@ struct PickyHubPluginCardView: View {
                     )
                     .accessibilityHidden(true)
                 Spacer(minLength: PickyHubTheme.Spacing.related)
-                if item.isInstalled {
-                    PickyHubBadgePill(text: L10n.t("hub.plugins.detail.installed"))
+                if item.isInstalled || item.statusExplanation != nil {
+                    PickyHubBadgePill(text: item.statusLabel)
                 }
             }
 
@@ -60,6 +60,11 @@ struct PickyHubPluginCardView: View {
                 .lineLimit(1)
                 .pickyHubSelectableText()
                 .padding(.top, PickyHubTheme.Spacing.related)
+
+            if let explanation = item.statusExplanation {
+                PickyHubInlineStatus(tone: item.statusTone, message: explanation)
+                    .padding(.top, PickyHubTheme.Spacing.field)
+            }
 
             if let progress = item.progressMessage {
                 PickyHubInlineStatus(tone: .neutral, message: progress)
@@ -113,12 +118,12 @@ struct PickyHubPluginCardView: View {
         if isVertical {
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 detailButton
-                if item.isInstalled {
+                if item.canRemove {
                     if item.hasUpdate {
                         PickyHubButton(title: "hub.plugins.card.update", role: .secondary, isBusy: item.isBusy, action: onUpdate)
                     }
                     installedAction
-                } else {
+                } else if item.canInstall {
                     PickyHubButton(title: "hub.plugins.card.install", role: .primary, isBusy: item.isBusy, action: onInstall)
                         .focused($focusedControl, equals: actionControlID)
                 }
@@ -126,12 +131,12 @@ struct PickyHubPluginCardView: View {
         } else {
             HStack(spacing: PickyHubTheme.Spacing.related) {
                 detailButton
-                if item.isInstalled {
+                if item.canRemove {
                     if item.hasUpdate {
                         PickyHubButton(title: "hub.plugins.card.update", role: .secondary, isBusy: item.isBusy, action: onUpdate)
                     }
                     installedAction
-                } else {
+                } else if item.canInstall {
                     PickyHubButton(title: "hub.plugins.card.install", role: .primary, isBusy: item.isBusy, action: onInstall)
                         .focused($focusedControl, equals: actionControlID)
                 }

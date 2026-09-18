@@ -94,6 +94,8 @@ struct PickyHubRootView: View {
             PickyHubGuidesPage(dependencies: dependencies)
         case .quickStart:
             PickyHubQuickStartPage(dependencies: dependencies)
+        case .calendar:
+            PickyHubCalendarPage(dependencies: dependencies)
         case .plugins:
             PickyHubPluginsPage(dependencies: dependencies)
         case .conversation:

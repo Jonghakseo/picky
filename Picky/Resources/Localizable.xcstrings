@@ -20754,6 +20754,534 @@
           }
         }
       }
+    },
+    "hub.calendar.apply": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply in Plugins"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플러그인에서 적용"
+          }
+        }
+      }
+    },
+    "hub.calendar.conversation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Talk to Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky와 대화하기"
+          }
+        }
+      }
+    },
+    "hub.calendar.empty.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create your first schedule by talking to Picky. For example: “Summarize my tasks every day at 9 AM.”"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky와 대화하며 첫 예약을 만들어 보세요. 예: “매일 오전 9시에 오늘 할 일을 정리해 줘.”"
+          }
+        }
+      }
+    },
+    "hub.calendar.empty.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No scheduled jobs yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 등록된 예약이 없어요"
+          }
+        }
+      }
+    },
+    "hub.calendar.history": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest runs"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 실행"
+          }
+        }
+      }
+    },
+    "hub.calendar.history.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Past events show only the latest recorded run, not full history. Dashed markers are estimates using this Mac’s timezone, as Cron does."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "과거는 최근 실행 기록만 표시합니다. 점선은 Cron과 동일하게 이 Mac의 시간대로 계산한 예상 시각입니다."
+          }
+        }
+      }
+    },
+    "hub.calendar.install.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Cron"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron 설치"
+          }
+        }
+      }
+    },
+    "hub.calendar.install.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See recurring jobs and one-time schedules registered with Cron here."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron으로 등록한 반복 작업과 일회성 예약을 이곳에서 캘린더로 확인할 수 있어요."
+          }
+        }
+      }
+    },
+    "hub.calendar.install.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You will be notified if changes need applying. Running work is not interrupted automatically."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 후 적용이 필요하면 안내합니다. 진행 중인 작업을 자동으로 중단하지 않습니다."
+          }
+        }
+      }
+    },
+    "hub.calendar.install.retry": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry installation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 다시 시도"
+          }
+        }
+      }
+    },
+    "hub.calendar.install.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Cron to use the calendar"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 캘린더를 사용하려면 Cron 플러그인이 필요해요"
+          }
+        }
+      }
+    },
+    "hub.calendar.month": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Month"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "월"
+          }
+        }
+      }
+    },
+    "hub.calendar.more": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show %lld more"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld개 더 보기"
+          }
+        }
+      }
+    },
+    "hub.calendar.next": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next period"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 기간"
+          }
+        }
+      }
+    },
+    "hub.calendar.noOccurrences": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No occurrences in this period."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기간에 표시할 예약이 없습니다."
+          }
+        }
+      }
+    },
+    "hub.calendar.once": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One-time"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 번만 실행"
+          }
+        }
+      }
+    },
+    "hub.calendar.otherJobs": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inactive or unscheduled jobs"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지되었거나 예약 시각이 없는 작업"
+          }
+        }
+      }
+    },
+    "hub.calendar.previous": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous period"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 기간"
+          }
+        }
+      }
+    },
+    "hub.calendar.projected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projected occurrence"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복 규칙으로 계산한 예정"
+          }
+        }
+      }
+    },
+    "hub.calendar.repeating": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recurring"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복 예약"
+          }
+        }
+      }
+    },
+    "hub.calendar.startsOnly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start times only · Read-only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시작 시각 기준 · 읽기 전용"
+          }
+        }
+      }
+    },
+    "hub.calendar.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View scheduled jobs and their latest execution results."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약된 작업과 최근 실행 결과를 한눈에 확인하세요."
+          }
+        }
+      }
+    },
+    "hub.calendar.today": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오늘"
+          }
+        }
+      }
+    },
+    "hub.calendar.truncated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only some occurrences are shown. Use week view or filters to narrow the range."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약이 많아 일부만 표시합니다. 주간 보기나 필터로 범위를 줄여 주세요."
+          }
+        }
+      }
+    },
+    "hub.calendar.unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron is unavailable"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron 정보를 불러올 수 없어요"
+          }
+        }
+      }
+    },
+    "hub.calendar.unavailable.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh or check Cron on the Plugins page."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로고침하거나 플러그인 페이지에서 Cron을 확인해 주세요."
+          }
+        }
+      }
+    },
+    "hub.calendar.unsupported": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsupported schedule format"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지원하지 않는 예약 파일 형식이에요"
+          }
+        }
+      }
+    },
+    "hub.calendar.unsupported.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check your plugin and Picky versions. The schedule file has not been changed."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플러그인과 Picky 버전을 확인해 주세요. 예약 파일은 변경하지 않았습니다."
+          }
+        }
+      }
+    },
+    "hub.calendar.unsupportedRules": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some recurrence rules cannot be previewed. Only recorded next runs and latest results are shown for those jobs."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일부 반복 규칙은 미리 계산할 수 없습니다. 해당 작업은 기록된 다음 실행과 최근 결과만 표시합니다."
+          }
+        }
+      }
+    },
+    "hub.calendar.view": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar view"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "캘린더 보기"
+          }
+        }
+      }
+    },
+    "hub.calendar.week": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Week"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주"
+          }
+        }
+      }
+    },
+    "hub.nav.calendar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scheduled jobs"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 캘린더"
+          }
+        }
+      }
+    },
+    "hub.calendar.scheduleTimezone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stored timezone (not used by Cron): %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 시간대 (Cron 계산에 미사용): %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -26,6 +26,8 @@ struct PickyCronJobPresentation: Equatable, Identifiable {
     let lastRunAt: Date?
     let completedAt: Date?
     let lastExitCode: Int?
+    var timezone: String? = nil
+    var once: Bool? = nil
 
     var scheduleText: String? {
         if let schedule, !schedule.isEmpty { return schedule }
@@ -54,6 +56,8 @@ struct PickyCronJobReader {
         let name: String
         let enabled: Bool
         let schedule: String?
+        let timezone: String?
+        let once: Bool?
         let runAt: String?
         let lastRunAt: String?
         let nextRunAt: String?
@@ -158,7 +162,9 @@ struct PickyCronJobReader {
             nextRunAt: parseDate(job.nextRunAt),
             lastRunAt: lastRunAt,
             completedAt: completedAt,
-            lastExitCode: job.lastExitCode
+            lastExitCode: job.lastExitCode,
+            timezone: job.timezone,
+            once: job.once
         )
     }
 

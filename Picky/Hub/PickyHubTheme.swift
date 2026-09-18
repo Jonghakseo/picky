@@ -65,7 +65,7 @@ enum PickyHubTheme {
         static let body: CGFloat = 14
         static let bodySmall: CGFloat = 13
         static let caption: CGFloat = 12
-        static let nav: CGFloat = 14
+        static let nav: CGFloat = 13
     }
 
     enum Spacing {

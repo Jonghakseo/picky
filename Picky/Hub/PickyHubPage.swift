@@ -2,7 +2,7 @@
 //  PickyHubPage.swift
 //  Picky
 //
-//  The seven top-level destinations of the Picky hub window. Raw values stay
+//  The top-level destinations of the Picky hub window. Raw values stay
 //  English so persisted selection and debug logs never depend on translation.
 //
 
@@ -14,6 +14,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
     case statistics
     case guides
     case quickStart
+    case calendar
     case plugins
     case conversation
     case settings
@@ -26,6 +27,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case .statistics: "hub.nav.statistics"
         case .guides: "hub.nav.guides"
         case .quickStart: "hub.nav.quickStart"
+        case .calendar: "hub.nav.calendar"
         case .plugins: "hub.nav.plugins"
         case .conversation: "hub.nav.conversation"
         case .settings: "hub.nav.settings"
@@ -38,6 +40,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case .statistics: L10n.t("hub.nav.statistics")
         case .guides: L10n.t("hub.nav.guides")
         case .quickStart: L10n.t("hub.nav.quickStart")
+        case .calendar: L10n.t("hub.nav.calendar")
         case .plugins: L10n.t("hub.nav.plugins")
         case .conversation: L10n.t("hub.nav.conversation")
         case .settings: L10n.t("hub.nav.settings")
@@ -51,6 +54,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case .statistics: "chart.line.uptrend.xyaxis"
         case .guides: "book"
         case .quickStart: "bolt"
+        case .calendar: "calendar"
         case .plugins: "powerplug"
         case .conversation: "bubble.left"
         case .settings: "slider.horizontal.3"
@@ -64,6 +68,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case "statistics", "stats": .statistics
         case "guides", "updates": .guides
         case "quickstart", "quick-start": .quickStart
+        case "calendar", "cron": .calendar
         case "plugins", "extensions": .plugins
         case "conversation", "messages": .conversation
         case "settings": .settings

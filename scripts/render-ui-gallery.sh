@@ -66,6 +66,9 @@ if [ "$TARGET" = "hub" ]; then
     hub-quickStart-wide-dark.png
     hub-quickStart-wide-light.png
     hub-quickStart-narrow-dark.png
+    hub-calendar-wide-dark.png
+    hub-calendar-wide-light.png
+    hub-calendar-narrow-dark.png
     hub-plugins-wide-dark.png
     hub-plugins-wide-light.png
     hub-plugins-narrow-dark.png

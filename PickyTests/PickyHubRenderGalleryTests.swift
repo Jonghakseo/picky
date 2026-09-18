@@ -2,7 +2,7 @@
 //  PickyHubRenderGalleryTests.swift
 //  PickyTests
 //
-//  Deterministic offscreen renders for all seven production Hub pages.
+//  Deterministic offscreen renders for all production Hub pages.
 //
 
 import AppKit
@@ -860,7 +860,7 @@ final class PickyHubRenderGalleryFixture {
             try packageSettings.write(to: directory.appendingPathComponent("settings.json"))
         }
         let curated = PickyCuratedPluginsViewModel(
-            plugins: packageSettings == nil ? [.diffReview, .askUserQuestion] : PickyCuratedPlugin.curatedDefaults,
+            plugins: packageSettings == nil ? [.diffReview, .askUserQuestion, .cron] : PickyCuratedPlugin.curatedDefaults,
             statusForSource: { source in
                 if packageSettings != nil {
                     return PickyCuratedPluginInstaller.status(source: source, homeURL: packageHome)

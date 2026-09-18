@@ -200,11 +200,7 @@ struct PickyHubPluginsPage: View {
     }
 
     private func presentCronJobs(for item: PickyHubPluginItem) {
-        modalHost.present(width: 620, accessibilityLabel: L10n.t("extensions.cron.jobs.title"), onDismiss: {
-            restoreFocus("\(item.id).detail")
-        }) {
-            PickyHubCronJobsDialog()
-        }
+        dependencies.navigator.select(.calendar)
     }
 
     private func remove(_ item: PickyHubPluginItem) {

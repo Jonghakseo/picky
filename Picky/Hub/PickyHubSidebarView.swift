@@ -2,7 +2,7 @@
 //  PickyHubSidebarView.swift
 //  Picky
 //
-//  Fixed 190pt navigation rail: wordmark, the seven page links, and the
+//  Fixed 190pt navigation rail: wordmark, the page links, and the
 //  app-level controls (quit/restart, Dock visibility, feedback, appearance)
 //  that the menu bar context menu also exposes.
 //
@@ -82,13 +82,15 @@ private struct PickyHubNavRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: DS.Spacing.space2) {
                 Image(systemName: page.systemImage)
                     .pickyFont(size: 14, weight: .medium)
                     .frame(width: 18, height: 18)
                 Text(page.titleKey)
                     .pickyFont(size: PickyHubTheme.Typography.nav, weight: isSelected ? .semibold : .regular)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .help(page.title)
                 Spacer(minLength: 0)
             }
             .foregroundColor(isSelected ? PickyHubTheme.Colors.textPrimary : PickyHubTheme.Colors.textSecondary)

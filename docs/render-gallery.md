@@ -83,7 +83,7 @@ This target writes four 2× Korean scenes under `build/render-gallery/conversati
 ./scripts/render-ui-gallery.sh hub
 ```
 
-This target writes twenty-seven 2× PNGs under `build/render-gallery/hub/`: every production Hub destination (Dashboard, Statistics, Guides, Quick Start, Plugins, Recent Conversation, and Settings) at the 1020×720 default window size in light and dark appearance, plus a 760×560 narrow dark scene for each page. The same three size/appearance variants also cover the production plugin-detail dialog and statistics-reset confirmation. `PickyHubRenderGalleryTests` mounts the actual `PickyHubRootView`, not a gallery-only duplicate, and writes `index.html` and `manifest.json` alongside the images.
+This target writes thirty 2× PNGs under `build/render-gallery/hub/`: every production Hub destination (Dashboard, Statistics, Guides, Quick Start, Scheduled Jobs, Plugins, Recent Conversation, and Settings) at the 1020×720 default window size in light and dark appearance, plus a 760×560 narrow dark scene for each page. The same three size/appearance variants also cover the production plugin-detail dialog and statistics-reset confirmation. `PickyHubRenderGalleryTests` mounts the actual `PickyHubRootView`, not a gallery-only duplicate, and writes `index.html` and `manifest.json` alongside the images.
 
 The Hub run also writes four full-height Korean settings captures in `build/render-gallery/hub/settings-full/`: 1020pt light/dark at 100%, 760pt dark at 130% font scale, and a 1020pt dark scene with Steer selected. The other scenes show Follow-up selected. These production-root renders expose the groups below General for visual audit. Main-agent settings render as five independent cards with explanatory Details collapsed. The full-height viewport does not test scroll behavior, expanded explanations, or expanded advanced tools; inspect those separately. PNG geometry and visible content are validated by the same rasterizer checks as the normal scenes.
 
@@ -148,10 +148,10 @@ ordinary deterministic `hub` gallery continues to use its synthetic fixtures.
 Settings disclosure review also exports `settings-full/disclosure-expanded-dark.png` and `disclosure-expanded-light.png`. These render the shared production disclosure style with multi-line explanation content expanded; unlike the full-page scenes, they are component renders and do not establish live pointer/keyboard activation.
 
 The Hub component-rule audit exports `component-audit/<page>-1020-100.png` and
-`<page>-760-130.png` for all seven pages. These use the production root with a
+`<page>-760-130.png` for all eight pages. These use the production root with a
 full-height viewport (3200pt wide-layout height; 2400pt narrow/enlarged height)
 to inspect content below the initial screen and 130% text reflow. The normal
-27-scene manifest remains unchanged. Tall viewports do not establish ordinary
+30-scene manifest remains unchanged. Tall viewports do not establish ordinary
 window scroll behavior; use the normal-size scenes alongside them.
 
 ### Hub typography refinement scenes
@@ -166,7 +166,7 @@ with Hub typography, including strong emphasis, italic text, a strong link,
 and code. A separate attributed-text contract verifies the emphasis font and
 that Hub styling does not alter the default Markdown cache.
 
-These four additional PNGs do not change the standard 27-scene manifest.
+These four additional PNGs do not change the standard 30-scene manifest.
 Compare the full-height `component-audit/dashboard-*.png` scenes as well as the
 normal window; the normal viewport alone cannot establish that lower cards and
 plugin rows remain readable. The font policy applies to Picky-owned Hub content,

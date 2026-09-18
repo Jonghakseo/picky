@@ -21,6 +21,15 @@ private struct PickySettingsRouteExpectation {
 }
 
 struct PickyDeepLinkTests {
+    @Test @MainActor func calendarDeepLinkSelectsItsOwnHubDestination() throws {
+        let navigator = PickyHubNavigator()
+        for path in ["calendar", "cron"] {
+            let link = try #require(PickyDeepLink(url: URL(string: "picky://hub/\(path)")!))
+            navigator.apply(deepLink: link)
+            #expect(navigator.selectedPage == .calendar)
+        }
+    }
+
     @Test func nonPickySchemeReturnsNilAndDispatcherIgnoresIt() async throws {
         #expect(PickyDeepLink(url: URL(string: "https://picky.app/panel/status")!) == nil)
         #expect(PickyDeepLink(url: URL(string: "picky-extra://panel/status")!) == nil)

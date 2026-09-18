@@ -76,6 +76,14 @@ SUT와 핵심 정책은 실제 구현으로 둔다. fake/mock은 다음 경계�
 - timeout은 실패 시 무한 대기를 막는 안전장치이지 race를 숨기는 수단이 아니다.
 - cancellation, stale callback, late completion이 관련된 변경은 해당 race를 직접 재현한다.
 
+### Swift actor 계약 변경
+
+Swift protocol 또는 공통 client의 global-actor 계약을 바꿀 때에는 첫 빌드 전에 영향받는 conformer와 생성·구독 호출자를 함께 확인한다. 운영 구현뿐 아니라 테스트 fake, factory, 기본 인자 initializer, timeout/Sendable closure를 포함한다. 기존 mutable state의 소유 actor를 유지하고, 비격리 호출자는 필요한 actor 전환을 명시한다. 컴파일을 통과시키려고 무관한 타입 전체에 actor를 붙이거나 `nonisolated`/`@unchecked Sendable`로 검사를 우회하지 않는다.
+
+실패 후에는 보존된 전체 로그에서 관련 오류를 파일별로 모으고, 같은 원인의 확인된 누락을 처리한 뒤 다시 실행한다. 테스트 선택은 실행 범위이지 다른 테스트 파일의 컴파일을 모두 생략한다는 뜻이 아니다. 기존 production 경로 회귀 테스트를 재사용하고, 빠진 계약이 있을 때만 보완한다.
+
+이 점검 때문에 전체 스위트 실행을 의무화하지 않는다. Swift 내부 actor 계약만 바뀐 경우에는 이를 daemon wire 변경으로 취급하지 않는다.
+
 ## Fixture와 임시 상태
 
 - 결과에 영향을 주는 값은 테스트 본문에서 드러낸다.

@@ -65,6 +65,8 @@ struct PickyHubCalendarRenderTests {
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let lines = try recognizedLines(bitmap)
                 #expect(lines.joined(separator: " ").contains("Afternoon briefing"), "Upcoming job must actually be visible, including a wrapped title: \(lines)")
+                #expect(!lines.joined(separator: " ").contains("Recurring"))
+                #expect(!lines.joined(separator: " ").contains("One-time"))
                 try save(bitmap, name: "calendar-initial-\(dark ? "dark" : "light")")
             }
         }
@@ -103,6 +105,7 @@ struct PickyHubCalendarRenderTests {
                 let image = try rasterize(PickyHubCronCalendarView(jobs: [job, history], now: now, showsMonth: month)
                     .environment(\.locale, Locale(identifier: "en_US")), name: "calendar-\(month ? "month" : "agenda")", width: width, height: height)
                 let text = try recognizedLines(image).joined(separator: " ")
+                #expect(!text.contains("Recurring") && !text.contains("One-time"))
                 #expect(text.contains("Backup documents"), "Name must remain readable: \(text)")
                 #expect(text.components(separatedBy: "Past backup").count >= 3,
                         "Both recorded execution days must be visible alongside the future job: \(text)")

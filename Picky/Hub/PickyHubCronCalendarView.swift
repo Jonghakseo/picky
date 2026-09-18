@@ -62,7 +62,6 @@ struct PickyHubCronCalendarView: View {
         let result = projection
         let events = result.occurrences.filter { showsHistory || $0.kind != .actual }
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
-            filters
             VStack(spacing: 0) {
                 toolbar(events)
                 GeometryReader { viewport in
@@ -133,18 +132,34 @@ struct PickyHubCronCalendarView: View {
         selection = event
     }
 
-    private var filters: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: PickyHubTheme.Spacing.field) { filterControls }
-            VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) { filterControls }
+    private var hasActiveFilters: Bool { !showsRepeating || !showsOnce || !showsHistory }
+
+    private var filterMenu: some View {
+        Menu {
+            Toggle("hub.calendar.repeating", isOn: $showsRepeating)
+            Toggle("hub.calendar.once", isOn: $showsOnce)
+            Toggle("hub.calendar.history", isOn: $showsHistory)
+            Divider()
+            Button("hub.calendar.showAll") {
+                showsRepeating = true
+                showsOnce = true
+                showsHistory = true
+            }
+            .disabled(!hasActiveFilters)
+        } label: {
+            Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .medium)
+                .foregroundStyle(hasActiveFilters ? PickyHubTheme.Colors.action : PickyHubTheme.Colors.textSecondary)
+                .frame(width: PickyHubTheme.Control.minimumHeight * fontScale,
+                       height: PickyHubTheme.Control.minimumHeight * fontScale)
+                .contentShape(Rectangle())
         }
-        .toggleStyle(.checkbox)
-        .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
-    }
-    @ViewBuilder private var filterControls: some View {
-        Toggle("hub.calendar.repeating", isOn: $showsRepeating)
-        Toggle("hub.calendar.once", isOn: $showsOnce)
-        Toggle("hub.calendar.history", isOn: $showsHistory)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(Text("hub.calendar.filters"))
+        .accessibilityLabel(Text("hub.calendar.filters"))
+        .accessibilityValue(Text(hasActiveFilters ? "hub.calendar.filtersActive" : "hub.calendar.showAll"))
     }
 
     private func toolbar(_ events: [PickyCronCalendarOccurrence]) -> some View {
@@ -153,11 +168,17 @@ struct PickyHubCronCalendarView: View {
                 periodTitle
                 periodControls(events)
                 Spacer(minLength: 0)
+                filterMenu
                 modePicker
             }
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 periodTitle
-                HStack { periodControls(events); Spacer(minLength: 0); modePicker }
+                HStack(spacing: PickyHubTheme.Spacing.related) {
+                    periodControls(events)
+                    Spacer(minLength: 0)
+                    filterMenu
+                    modePicker
+                }
             }
         }
         .padding(PickyHubTheme.Spacing.field)

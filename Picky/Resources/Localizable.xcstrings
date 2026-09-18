@@ -21698,6 +21698,54 @@
           }
         }
       }
+    },
+    "hub.calendar.filters": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar filters"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일정 필터"
+          }
+        }
+      }
+    },
+    "hub.calendar.filtersActive": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some events hidden"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일부 일정 숨김"
+          }
+        }
+      }
+    },
+    "hub.calendar.showAll": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show all"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 표시"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

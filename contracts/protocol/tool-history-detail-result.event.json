@@ -9,7 +9,8 @@
   "timestamp": "2026-08-02T00:00:00.000Z",
   "requestId": "cmd-tool-history-detail-001",
   "status": "ready",
-  "text": "{\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"Stored output\"}],\"isError\":false}",
+  "text": "User response:\n| Field | Answer |\n| --- | --- |\n| choices | first, second, third |\n| notes | line one line two \\| exact |",
   "nextCursor": "opaque-page-2",
-  "attachmentsOmitted": false
+  "attachmentsOmitted": false,
+  "structuredResult": "{\"value\":{\"choices\":[\"first, second\",\"third\"],\"notes\":\"line one\\nline two | exact\"},\"cancelled\":false}"
 }

@@ -1115,6 +1115,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     sessionId: z.string(), requestId: z.string(), toolCallId: z.string(), expectedSessionFile: z.string(),
     part: z.enum(["arguments", "result"]),
     status: z.enum(["ready", "pending", "unavailable", "sourceChanged", "unsupported"]),
+    structuredResult: z.string().max(16384).optional(),
     text: z.string().max(32768).optional(), nextCursor: z.string().optional(), reason: z.string().optional(), attachmentsOmitted: z.boolean().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("sessionRewound"), sessionId: z.string(), editorText: z.string().optional(), removedIds: z.array(z.string()) }),

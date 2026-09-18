@@ -12,6 +12,7 @@ export type ToolHistoryPart = "arguments" | "result";
 export interface ToolHistoryDetail {
   status: "ready" | "pending" | "unavailable" | "sourceChanged" | "unsupported";
   text?: string;
+  structuredResult?: string;
   nextCursor?: string;
   reason?: string;
   attachmentsOmitted?: boolean;
@@ -63,7 +64,12 @@ export class PiToolHistoryReader {
         this.indexes.delete(path);
         return unavailable("sourceReplaced");
       }
-      return this.page(text, attachmentsOmitted, path, index, tool, part, continuation);
+      const page = this.page(text, attachmentsOmitted, path, index, tool, part, continuation);
+      if (page.status === "ready" && part === "result" && !continuation) {
+        const structuredResult = questionResult(record);
+        if (structuredResult !== undefined) page.structuredResult = structuredResult;
+      }
+      return page;
     } catch (error) {
       return unavailable((error as NodeJS.ErrnoException).code === "ENOENT" ? "sourceMissing" : "unreadableSource");
     } finally { await file?.close(); }
@@ -206,4 +212,14 @@ function renderRecord(record: ObjectValue, location: Location, tool: string, par
     }, 2);
   }).join("\n\n");
   return { text, attachmentsOmitted };
+}
+
+/** Only the question tool's saved answer is safe to expose as structured history. */
+function questionResult(record: ObjectValue): string | undefined {
+  const message = object(record.message);
+  if (message?.toolName !== "ask_user_question") return undefined;
+  const details = object(message.details);
+  if (!details || (!("value" in details) && details.cancelled !== true)) return undefined;
+  const encoded = JSON.stringify({ value: details.value ?? null, cancelled: details.cancelled === true });
+  return encoded.length <= 16384 ? encoded : undefined;
 }

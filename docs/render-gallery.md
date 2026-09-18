@@ -175,3 +175,19 @@ The gallery awaits the modal host's queued render-phase dismissal before moving
 from the standard dialog scenes to full-height pages, then requires that no
 rendered presentation remains. A logically dismissed but still-rendered dialog
 is not valid full-page evidence.
+## Tool History Gallery
+
+```bash
+./scripts/render-ui-gallery.sh tool-history
+```
+
+The opt-in gallery writes four PNGs and a manifest under
+`build/render-gallery/tool-history/`. It renders the production compact history
+window and expanded `edit`, `write`, `todo`, `ask`, and failed-result rows in light
+and dark appearances. Fixture models load saved arguments and results through the
+same detail model as the app; no live sessions or filesystem actions are used.
+
+Inspect the PNGs for spacing, clipping, status visibility, and file links. The
+script rejects stale images. Hover-only menus, keyboard focus, Finder/open actions,
+and scrolling still require separate interaction verification. This target uses
+the shared agent DerivedData path; do not run it alongside another Xcode job.

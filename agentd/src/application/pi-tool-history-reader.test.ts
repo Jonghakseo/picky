@@ -18,6 +18,62 @@ describe("PiToolHistoryReader", () => {
     expect(JSON.parse((await reader.read(path, "call", "arguments")).text!)).toEqual({ path: "/tmp/file" });
     expect((await reader.read(path, "call", "result")).text).toContain("EXACT");
   });
+  it("preserves exact checkbox and free-text answers without changing flattened result text", async () => {
+    const value = { choices: ["one, two", "three|four", "🧪"], notes: "line one\nline two\t| exact", empty: "" };
+    const saved = result("User response: flattened, unchanged");
+    const record = { ...saved, message: { ...saved.message, toolName: "ask_user_question", details: { value, cancelled: false, diagnostic: "private", data: "private-binary" } } };
+    const questionCall = call(); questionCall.message.content[0].name = "ask_user_question";
+    const path = await fixture(line(questionCall) + line(record));
+    const reader = new PiToolHistoryReader();
+    const page = await reader.read(path, "call", "result");
+    expect(page.text).toBe("User response: flattened, unchanged");
+    expect(JSON.parse(page.structuredResult!)).toEqual({ value, cancelled: false });
+    expect(await reader.read(path, "call", "arguments")).toEqual({ status: "ready", text: JSON.stringify({ path: "/tmp/file" }, null, 2) });
+  });
+  it("reports cancellation without inventing an answer", async () => {
+    const saved = result("The question form was dismissed.");
+    const record = { ...saved, message: { ...saved.message, toolName: "ask_user_question", details: { cancelled: true } } };
+    const page = await new PiToolHistoryReader().read(await fixture(line(call()) + line(record)), "call", "result");
+    expect(page).toEqual({ status: "ready", text: "The question form was dismissed.", structuredResult: '{"value":null,"cancelled":true}' });
+  });
+  it("sends structured answers only on the first result page", async () => {
+    const text = "x".repeat(40000);
+    const saved = result(text);
+    const record = { ...saved, message: { ...saved.message, toolName: "ask_user_question", details: { value: ["a", "b"], cancelled: false } } };
+    const path = await fixture(line(call()) + line(record));
+    const reader = new PiToolHistoryReader();
+    const first = await reader.read(path, "call", "result");
+    expect(JSON.parse(first.structuredResult!)).toEqual({ value: ["a", "b"], cancelled: false });
+    expect(first.nextCursor).toBeTruthy();
+    const second = await reader.read(path, "call", "result", first.nextCursor);
+    expect(second.structuredResult).toBeUndefined();
+    expect(first.text! + second.text!).toBe(text);
+  });
+  it.each([16383, 16384, 16385])("bounds encoded answers at 16384 UTF-16 units (size %i)", async (size) => {
+    // The JSON wrapper occupies 30 units; emoji occupies two, and the escaped newline two.
+    const value = "🧪\n" + "x".repeat(size - 34);
+    const saved = result("unchanged");
+    const record = { ...saved, message: { ...saved.message, toolName: "ask_user_question", details: { value, cancelled: false } } };
+    const page = await new PiToolHistoryReader().read(await fixture(line(call()) + line(record)), "call", "result");
+    expect(page.text).toBe("unchanged");
+    if (size <= 16384) {
+      expect(page.structuredResult?.length).toBe(size);
+      expect(JSON.parse(page.structuredResult!).value).toBe(value);
+    } else {
+      expect(page.structuredResult).toBeUndefined();
+    }
+  });
+  it("omits unrelated tool details and question error metadata", async () => {
+    const saved = result("unchanged");
+    for (const message of [
+      { ...saved.message, details: { value: "private", cancelled: false } },
+      { ...saved.message, toolName: "ask_user_question", details: { error: "private" } },
+      { ...saved.message, toolName: "ask_user_question" },
+    ]) {
+      const page = await new PiToolHistoryReader().read(await fixture(line(call()) + line({ ...saved, message })), "call", "result");
+      expect(page).toEqual({ status: "ready", text: "unchanged" });
+    }
+  });
   it("retries an incomplete trailing line after append without caching absence", async () => {
     const saved = line(result("persisted later"));
     const path = await fixture(line(call()) + saved.slice(0, 20));

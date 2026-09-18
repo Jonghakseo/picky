@@ -1059,3 +1059,18 @@ describe("protocol contract fixtures", () => {
     expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listMainMessages" })).toThrow(/Invalid literal value/);
   });
 });
+
+describe("tool history structured result compatibility", () => {
+  const fixture = JSON.parse(readFileSync(join(contractsRoot, "tool-history-detail-result.event.json"), "utf8"));
+  it("preserves optional structured answers and accepts older payloads", () => {
+    expect(eventVariantSchema(fixture).parse(fixture)).toHaveProperty("structuredResult", fixture.structuredResult);
+    const legacy = { ...fixture }; delete legacy.structuredResult;
+    expect(eventVariantSchema(legacy).parse(legacy)).not.toHaveProperty("structuredResult");
+  });
+  it("rejects oversized or non-string structured answers", () => {
+    const schema = eventVariantSchema(fixture);
+    expect(schema.safeParse({ ...fixture, structuredResult: "x".repeat(16384) }).success).toBe(true);
+    expect(schema.safeParse({ ...fixture, structuredResult: "x".repeat(16385) }).success).toBe(false);
+    expect(schema.safeParse({ ...fixture, structuredResult: { value: "answer" } }).success).toBe(false);
+  });
+});

@@ -16,6 +16,7 @@ struct PickyToolHistoryDetailResult: Decodable, Equatable, Sendable {
     let part: PickyToolHistoryDetailPart
     let status: PickyToolHistoryDetailStatus
     var text: String? = nil
+    var structuredResult: String? = nil
     var nextCursor: String? = nil
     var reason: String? = nil
     var attachmentsOmitted: Bool? = nil

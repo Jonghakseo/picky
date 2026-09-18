@@ -12,6 +12,27 @@ struct ProtocolContractTests {
         #expect(pickyAgentProtocolVersion == "2026-08-25")
     }
 
+    @Test func decodesStructuredQuestionHistoryAndLegacyResults() throws {
+        let url = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "tool-history-detail-result.event.json"
+        })
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let result = try decoder.decode(PickyToolHistoryDetailResult.self, from: data)
+        let structured = try #require(result.structuredResult)
+        let answer = try #require(JSONSerialization.jsonObject(with: Data(structured.utf8)) as? [String: Any])
+        let value = try #require(answer["value"] as? [String: Any])
+        #expect(value["choices"] as? [String] == ["first, second", "third"])
+        #expect(value["notes"] as? String == "line one\nline two | exact")
+        #expect(answer["cancelled"] as? Bool == false)
+
+        var legacy = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "structuredResult")
+        let legacyResult = try decoder.decode(PickyToolHistoryDetailResult.self, from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(legacyResult.structuredResult == nil)
+        #expect(legacyResult.text == result.text)
+    }
+
     @Test func decodesSessionMetaUpdateWithoutConversationMessages() throws {
         let url = try #require(try fixtureURLs(in: "contracts/protocol").first { $0.lastPathComponent == "session-meta-updated.event.json" })
         let data = try Data(contentsOf: url)

@@ -11,6 +11,45 @@ DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
 # not contend with a developer's GUI build or leave another multi-GB cache.
 HUB_DERIVED_DATA_PATH="${PICKY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"
 
+if [ "$TARGET" = "tool-history" ]; then
+  OUTPUT="$ROOT/build/render-gallery/tool-history"
+  REQUEST_FILE="$ROOT/build/render-gallery/.tool-history-output-path"
+  mkdir -p "$OUTPUT"
+  printf '%s\n' "$OUTPUT" > "$REQUEST_FILE"
+  trap 'rm -f "$REQUEST_FILE"' EXIT
+
+  DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}" \
+    xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
+    -derivedDataPath "$HUB_DERIVED_DATA_PATH" -parallel-testing-enabled NO \
+    test -only-testing:PickyTests/PickyToolHistoryRenderGalleryTests
+
+  python3 - "$OUTPUT" "$REQUEST_FILE" <<'PY_VALIDATE'
+import json
+import struct
+import sys
+from pathlib import Path
+
+output, request = map(Path, sys.argv[1:])
+scenes = json.loads((output / "manifest.json").read_text())["scenes"]
+expected = {f"compact-tool-history-{kind}{appearance}.png"
+            for kind in ("", "window-") for appearance in ("dark", "light")}
+if {scene["file"] for scene in scenes} != expected:
+    raise SystemExit("Unexpected tool-history render matrix")
+for scene in scenes:
+    path = output / scene["file"]
+    data = path.read_bytes()
+    if path.stat().st_mtime < request.stat().st_mtime:
+        raise SystemExit(f"Stale render: {path}")
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise SystemExit(f"Invalid PNG: {path}")
+    if struct.unpack(">II", data[16:24]) != (scene["pixelWidth"], scene["pixelHeight"]):
+        raise SystemExit(f"Unexpected dimensions: {path}")
+print(f"Validated {len(scenes)} fresh production tool-history renders.")
+PY_VALIDATE
+  printf 'Render gallery: %s\n' "$OUTPUT"
+  exit 0
+fi
+
 if [ "$TARGET" = "hub" ]; then
   OUTPUT="$ROOT/build/render-gallery/hub"
   REQUEST_FILE="$ROOT/build/render-gallery/.hub-output-path"
@@ -277,7 +316,7 @@ PY
 fi
 
 if [ "$TARGET" != "dock-group" ]; then
-  echo "Usage: $0 {hub|dock-group|conversation-context|conversation-activity|conversation-composer}" >&2
+  echo "Usage: $0 {hub|dock-group|conversation-context|conversation-activity|conversation-composer|tool-history}" >&2
   exit 64
 fi
 

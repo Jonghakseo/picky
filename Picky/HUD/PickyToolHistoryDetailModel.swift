@@ -30,6 +30,7 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
     let toolName: String
     @Published private(set) var state: State = .idle
     @Published private(set) var text = ""
+    @Published private(set) var structuredResult: String?
     @Published private(set) var part: PickyToolHistoryDetailPart = .result
     @Published private(set) var pageNumber = 1
     @Published private(set) var attachmentsOmitted = false
@@ -108,6 +109,7 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
             var cursor = cursor
             var combined = ""
             var omitted = false
+            var structured: String?
             repeat {
                 var result: PickyToolHistoryDetailResult?
                 for attempt in 0..<3 {
@@ -124,12 +126,14 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
                 guard let result else { return }
                 if loadsAllPages && result.status == .ready {
                     combined += result.text ?? ""
+                    if cursor == nil { structured = result.structuredResult }
                     omitted = omitted || result.attachmentsOmitted == true
                     cursor = result.nextCursor
                     if cursor != nil { continue }
                     apply(result)
                     text = combined
                     attachmentsOmitted = omitted
+                    structuredResult = structured
                 } else {
                     apply(result)
                 }
@@ -147,6 +151,7 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
         switch result.status {
         case .ready:
             text = result.text ?? ""
+            structuredResult = result.structuredResult
             nextCursor = result.nextCursor
             canLoadNextPage = result.nextCursor != nil
             attachmentsOmitted = result.attachmentsOmitted == true
@@ -160,6 +165,7 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
 
     private func clearPage() {
         text = ""
+        structuredResult = nil
         nextCursor = nil
         canLoadNextPage = false
         attachmentsOmitted = false

@@ -53,6 +53,51 @@ struct PickyToolHistoryDetailModelTests {
         #expect(model.state == .ready)
     }
 
+    @Test func formattedWriteUsesFullInputWhileResultAndArgumentsRemainIndependent() async throws {
+        let content = String(repeating: "saved line\n", count: 4_000) + "TAIL"
+        let argsData = try JSONSerialization.data(withJSONObject: ["path": "docs/result.md", "content": content])
+        let args = String(decoding: argsData, as: UTF8.self)
+        let tool = PickyToolActivity(toolCallId: "write-1", name: "write", status: "succeeded", argsPreview: #"{"path":"docs/result.md","content":"cut"}"#)
+        let snapshot = PickyToolHistorySnapshot(tools: [tool], sessionFilePath: "/tmp/history.jsonl")
+        let history = PickyToolHistoryViewerModel(title: "History", snapshot: snapshot, scope: .session, refresh: { snapshot }) { _, _, part, cursor in
+            if part == .result { return Self.response(text: "Saved") }
+            return Self.response(part: .arguments,
+                text: cursor == nil ? String(args.prefix(32_768)) : String(args.dropFirst(32_768)),
+                nextCursor: cursor == nil ? "rest" : nil)
+        }
+        let result = try #require(history.inlineDetail(toolCallID: tool.id))
+        let arguments = try #require(history.inlineArguments(toolCallID: tool.id))
+        await result.load(part: .result).value
+        await arguments.load(part: .arguments).value
+        let entry = try #require(history.entries.first)
+        let presentation = PickyToolHistoryPresentation.detail(for: entry, arguments: arguments.text, structuredResult: result.structuredResult)
+        guard case let .write(path, savedContent) = presentation else {
+            Issue.record("Expected full saved file content")
+            return
+        }
+        #expect(path == "docs/result.md")
+        #expect(savedContent == content)
+        #expect(result.text == "Saved")
+        history.update(title: "Changed", snapshot: .init(tools: [], sessionFilePath: "/tmp/other.jsonl"))
+        #expect(result.state == .sourceChanged)
+        #expect(arguments.state == .sourceChanged)
+        #expect(result.text.isEmpty && arguments.text.isEmpty)
+    }
+
+    @Test func fullResultRetainsStructuredFirstPageUntilCancelled() async {
+        let saved = #"{"value":{"q1":["one,two","three"]},"cancelled":false}"#
+        let model = PickyToolHistoryDetailModel(toolName: "ask_user_question", loadsAllPages: true) { _, cursor in
+            var response = Self.response(text: cursor == nil ? "first" : "last", nextCursor: cursor == nil ? "next" : nil)
+            response.structuredResult = cursor == nil ? saved : nil
+            return response
+        }
+        await model.load(part: .result).value
+        #expect(model.text == "firstlast")
+        #expect(model.structuredResult == saved)
+        model.cancel()
+        #expect(model.structuredResult == nil)
+    }
+
     @Test func retriesPendingPersistenceAndThenShowsOriginal() async {
         var responses = [Self.response(status: .pending), Self.response(text: "persisted result")]
         let model = PickyToolHistoryDetailModel(toolName: "bash", retryDelay: {}) { _, _ in

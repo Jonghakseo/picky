@@ -5,6 +5,13 @@ import Foundation
 struct PickyToolHistorySnapshot: Equatable {
     let tools: [PickyToolActivity]
     let sessionFilePath: String?
+    let workingDirectory: String?
+
+    init(tools: [PickyToolActivity], sessionFilePath: String?, workingDirectory: String? = nil) {
+        self.tools = tools
+        self.sessionFilePath = sessionFilePath
+        self.workingDirectory = workingDirectory
+    }
 }
 
 typealias PickyToolHistoryDetailLoader = @MainActor (

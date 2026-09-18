@@ -36,6 +36,16 @@ struct PickyToolHistoryEntryTests {
         #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "") == nil)
     }
 
+    @Test func relativeFilePathsUseOnlyTheSessionWorkingDirectory() throws {
+        let url = try #require(PickyToolHistoryFilePathPolicy.urlToOpen(
+            for: "../shared/Tool History.swift", workingDirectory: "/tmp/project"
+        ))
+        #expect(url.path == "/tmp/shared/Tool History.swift")
+        #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "file.swift", workingDirectory: "relative") == nil)
+        #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "", workingDirectory: "/tmp/project") == nil)
+        #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "/tmp/file.swift", workingDirectory: "/other")?.path == "/tmp/file.swift")
+    }
+
     @Test func readEntryExtractsFileAndRange() {
         let tool = PickyToolActivity(
             toolCallId: "call-1",

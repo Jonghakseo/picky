@@ -11,12 +11,19 @@ import Combine
 import SwiftUI
 
 /// Resolves paths recorded by file tools without consulting the file system.
-/// Relative paths remain display-only because the tool history has no cwd context.
+/// Relative paths resolve only against an explicit session working directory.
 enum PickyToolHistoryFilePathPolicy {
-    static func urlToOpen(for path: String) -> URL? {
+    static func urlToOpen(for path: String, workingDirectory: String? = nil) -> URL? {
+        guard !path.isEmpty else { return nil }
         let expandedPath = (path as NSString).expandingTildeInPath
-        guard (expandedPath as NSString).isAbsolutePath else { return nil }
-        return URL(fileURLWithPath: expandedPath)
+        if (expandedPath as NSString).isAbsolutePath {
+            return URL(fileURLWithPath: expandedPath)
+        }
+        guard !expandedPath.hasPrefix("~"), let workingDirectory else { return nil }
+        let base = (workingDirectory as NSString).expandingTildeInPath
+        guard (base as NSString).isAbsolutePath else { return nil }
+        return URL(fileURLWithPath: base, isDirectory: true)
+            .appendingPathComponent(expandedPath).standardizedFileURL
     }
 }
 
@@ -148,6 +155,7 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
 final class PickyToolHistoryViewerModel: ObservableObject {
     @Published private(set) var title: String
     @Published private(set) var tools: [PickyToolActivity]
+    @Published private(set) var workingDirectory: String?
     @Published private(set) var scope: PickyToolHistoryScope
     @Published private(set) var entries: [PickyToolHistoryEntry]
     @Published private(set) var summary: PickyToolHistorySummary
@@ -162,6 +170,7 @@ final class PickyToolHistoryViewerModel: ObservableObject {
          refresh: @escaping () -> PickyToolHistorySnapshot, detailLoader: @escaping PickyToolHistoryDetailLoader) {
         self.title = title
         self.tools = snapshot.tools
+        self.workingDirectory = snapshot.workingDirectory
         self.sessionFilePath = snapshot.sessionFilePath
         self.scope = scope
         self.initialScope = scope
@@ -187,6 +196,7 @@ final class PickyToolHistoryViewerModel: ObservableObject {
         }
         self.title = title
         self.tools = snapshot.tools
+        self.workingDirectory = snapshot.workingDirectory
         self.sessionFilePath = snapshot.sessionFilePath
         if let scope { self.scope = scope }
         recompute()
@@ -270,7 +280,7 @@ struct PickyToolHistoryViewerWindowView: View {
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(result.entries) { entry in
-                            PickyToolHistoryEntryView(entry: entry, loadDetail: { model.inlineDetail(toolCallID: entry.id) })
+                            PickyToolHistoryEntryView(entry: entry, workingDirectory: model.workingDirectory, loadDetail: { model.inlineDetail(toolCallID: entry.id) })
                         }
                     }
                     .padding(.top, 16)
@@ -474,6 +484,7 @@ struct PickyToolHistoryViewerWindowView: View {
 
 struct PickyToolHistoryEntryView: View {
     let entry: PickyToolHistoryEntry
+    var workingDirectory: String? = nil
     var loadDetail: (() -> PickyToolHistoryDetailModel?)? = nil
     @State private var inlineDetail: PickyToolHistoryDetailModel?
     @State private var isResultExpanded = false
@@ -649,7 +660,7 @@ struct PickyToolHistoryEntryView: View {
 
     @ViewBuilder
     private func filePath(_ path: String) -> some View {
-        if let url = PickyToolHistoryFilePathPolicy.urlToOpen(for: path) {
+        if let url = PickyToolHistoryFilePathPolicy.urlToOpen(for: path, workingDirectory: workingDirectory) {
             Button {
                 openFile(at: url)
             } label: {
@@ -659,6 +670,13 @@ struct PickyToolHistoryEntryView: View {
             .help(L10n.t("hud.toolHistory.file.open.help"))
             .accessibilityLabel(L10n.t("hud.toolHistory.file.open.accessibilityLabel", path))
             .contextMenu {
+                Button(L10n.t("hud.artifacts.action.open")) {
+                    openFile(at: url)
+                }
+                Button(L10n.t("hud.artifacts.action.reveal")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                Divider()
                 Button(L10n.t("hud.toolHistory.file.copyPath")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(path, forType: .string)

@@ -27,6 +27,19 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(detail.text.isEmpty)
     }
 
+    @Test func toolHistoryReceivesWorkingDirectoryForRelativeFileActions() throws {
+        let presenter = ToolHistoryCapturePresenter()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage(), toolHistoryPresenter: presenter)
+        apply(snapshot(sessionID: "files", title: "Files", status: .running, revision: 1,
+                       extraProjectionFields: #","cwd":"/tmp/project""#), to: viewModel)
+        viewModel.openToolHistory(sessionID: "files")
+        let model = try #require(presenter.model)
+        #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "src/file.swift", workingDirectory: model.workingDirectory)?.path == "/tmp/project/src/file.swift")
+        apply(transaction(sessionID: "files", baseRevision: 1, revision: 2,
+                          mutations: #"[{"type":"metaPatch","patch":{"cwd":"/tmp/other"}}]"#), to: viewModel)
+        #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "src/file.swift", workingDirectory: model.workingDirectory)?.path == "/tmp/other/src/file.swift")
+    }
+
     @Test func metadataUpdatesReorderBothGroupSurfacesWithoutPersistingManualOrder() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let layoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [

@@ -51,6 +51,6 @@ final class PickyToolHistorySource {
     }
 
     private static func snapshot(from card: PickySessionListViewModel.SessionCard?) -> PickyToolHistorySnapshot {
-        PickyToolHistorySnapshot(tools: card?.tools ?? [], sessionFilePath: card?.piSessionFilePath)
+        PickyToolHistorySnapshot(tools: card?.tools ?? [], sessionFilePath: card?.piSessionFilePath, workingDirectory: card?.cwd)
     }
 }

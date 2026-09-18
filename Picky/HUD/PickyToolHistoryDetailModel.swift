@@ -58,7 +58,10 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
 
     @discardableResult
     func retry() -> Task<Void, Never> {
-        start(part: part, cursor: currentCursor, page: pageNumber)
+        // Index eviction or daemon restart can invalidate a continuation. Start fresh
+        // instead of trapping the user in a loop with the same rejected cursor.
+        if state == .unavailable { return load(part: part) }
+        return start(part: part, cursor: currentCursor, page: pageNumber)
     }
 
     func cancel() {

@@ -55,6 +55,21 @@ struct PickyToolHistoryDetailModelTests {
         #expect(model.state == .idle)
     }
 
+    @Test func retryAfterAnExpiredCursorRestartsAtFirstPage() async {
+        let model = PickyToolHistoryDetailModel(toolName: "read") { _, cursor in
+            cursor == nil
+                ? Self.response(text: "first page", nextCursor: "expired-cursor")
+                : Self.response(status: .unavailable)
+        }
+        await model.load(part: .result).value
+        await model.loadNextPage()?.value
+        #expect(model.state == .unavailable)
+        await model.retry().value
+        #expect(model.state == .ready)
+        #expect(model.pageNumber == 1)
+        #expect(model.text == "first page")
+    }
+
     @Test func sourceChangeClearsPreviouslyDisplayedPage() async {
         var responses = [Self.response(text: "old source", nextCursor: "next"), Self.response(status: .sourceChanged)]
         let model = PickyToolHistoryDetailModel(toolName: "read") { _, _ in responses.removeFirst() }

@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import Picky
 
+@MainActor
 struct PickyCuratedPluginInstallerTests {
     private let source = "npm:@ryan_nookpi/pi-extension-diff-review"
 

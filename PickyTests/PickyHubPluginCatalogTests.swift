@@ -487,10 +487,10 @@ struct PickyHubPluginCatalogTests {
 
     private func makeCatalog(
         plugins: [PickyCuratedPlugin],
-        client: HubPluginFanoutClient = HubPluginFanoutClient(),
+        client: HubPluginFanoutClient? = nil,
         status: PickyCuratedPluginInstaller.Status = .notInstalled
     ) -> PickyHubPluginCatalogViewModel {
-        let reloadController = PickyPluginReloadController(client: client)
+        let reloadController = PickyPluginReloadController(client: client ?? HubPluginFanoutClient())
         let curated = PickyCuratedPluginsViewModel(
             plugins: plugins,
             statusForSource: { _ in status }

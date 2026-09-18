@@ -169,7 +169,7 @@ enum PickyCuratedPluginInstaller {
         timeoutNanoseconds: UInt64 = 30_000_000_000
     ) async -> Result<Set<String>, CommandError> {
         let command = PickyCommandEnvelope(type: .checkPackageUpdates)
-        let stream = client.events
+        let stream = await client.events
 
         do {
             try await client.send(command)
@@ -229,7 +229,7 @@ enum PickyCuratedPluginInstaller {
         }
         let command = PickyCommandEnvelope(type: commandType, source: source)
         // Subscribe before sending so a fast daemon completion cannot be missed.
-        let stream = client.events
+        let stream = await client.events
 
         do {
             try await client.send(command)

@@ -1396,6 +1396,60 @@ struct PickyAgentClientRouterTests {
         #expect(primary.sentCommands.isEmpty)
     }
 
+    @Test func concurrentInlineHistoryLoadsThroughRouterKeepCompleteArgumentsAndResults() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: .init(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let client: any PickyAgentClient = router
+        defer { router.disconnect() }
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+
+        primary.onSendInject = { [weak primary] command in
+            guard command.type == .getToolHistoryDetail,
+                  let sessionID = command.sessionId, let toolID = command.toolCallId,
+                  let file = command.expectedSessionFile, let part = command.part else { return }
+            let result = PickyToolHistoryDetailResult(
+                sessionId: sessionID, requestId: command.id, toolCallId: toolID,
+                expectedSessionFile: file, part: part, status: .ready,
+                text: command.cursor == nil ? "\(toolID)-\(part.rawValue)-" : "tail",
+                nextCursor: command.cursor == nil ? "page-2" : nil
+            )
+            // Reply during send: subscriptions must exist before any request leaves.
+            primary?.emit(.protocolEvent(PickyEventEnvelope(
+                id: "reply-\(command.id)", protocolVersion: pickyAgentProtocolVersion,
+                timestamp: Date(), event: .toolHistoryDetailResult(result)
+            )))
+        }
+
+        let tools = (0..<8).map { PickyToolActivity(toolCallId: "tool-\($0)", name: "write", status: "succeeded") }
+        let snapshot = PickyToolHistorySnapshot(tools: tools, sessionFilePath: "/tmp/history.jsonl")
+        let history = PickyToolHistoryViewerModel(title: "History", snapshot: snapshot, scope: .session,
+            refresh: { snapshot }) { toolID, file, part, cursor in
+                try await client.getToolHistoryDetail(sessionId: "session", toolCallId: toolID,
+                    expectedSessionFile: file, part: part, cursor: cursor)
+            }
+        var loads: [Task<Void, Never>] = []
+        for tool in tools {
+            let arguments = try #require(history.inlineArguments(toolCallID: tool.id))
+            let result = try #require(history.inlineDetail(toolCallID: tool.id))
+            loads.append(arguments.load(part: .arguments))
+            loads.append(result.load(part: .result))
+        }
+        for load in loads { await load.value }
+        for tool in tools {
+            let arguments = try #require(history.inlineArguments(toolCallID: tool.id))
+            let result = try #require(history.inlineDetail(toolCallID: tool.id))
+            #expect(arguments.state == .ready)
+            #expect(result.state == .ready)
+            #expect(arguments.text == "\(tool.id)-arguments-tail")
+            #expect(result.text == "\(tool.id)-result-tail")
+        }
+    }
+
     @Test func toolDetailReadsRetiredChildViaPrimaryWithoutRespawn() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)

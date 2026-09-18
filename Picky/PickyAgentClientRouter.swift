@@ -11,7 +11,7 @@ import Foundation
 /// Factory abstraction so tests can substitute a stub client. In production the router uses
 /// `WebSocketPickyAgentClient`, which connects to the URL exposed by the daemon pool entry.
 protocol PickyAgentClientFactoryProtocol {
-    func makeClient(endpoint: URL, token: String) -> PickyAgentClient
+    @MainActor func makeClient(endpoint: URL, token: String) -> PickyAgentClient
 }
 
 struct DefaultPickyAgentClientFactory: PickyAgentClientFactoryProtocol {

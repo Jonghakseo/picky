@@ -12,6 +12,9 @@ struct PickyAgentSubmission: Equatable {
     let context: PickyContextPacket
 }
 
+// Event subscription mutates client/router state synchronously. Protocol callers
+// and default async helpers must share the router's actor, not the generic executor.
+@MainActor
 protocol PickyAgentClient: AnyObject {
     var events: AsyncStream<PickyClientEvent> { get }
     func connect() async
@@ -239,7 +242,7 @@ final class LocalStubPickyAgentClient: PickyAgentClient {
     private let continuation: AsyncStream<PickyClientEvent>.Continuation
     let events: AsyncStream<PickyClientEvent>
 
-    init() {
+    nonisolated init() {
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
         self.continuation = continuation

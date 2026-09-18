@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import Picky
 
+@MainActor
 struct OnboardingAgentClientTests {
     @Test func connectEmitsConnectedThenEmptySessionSnapshot() async throws {
         let client = OnboardingAgentClient(beatSleeper: { _ in })
@@ -120,7 +121,7 @@ struct OnboardingAgentClientTests {
         // .disconnected event \u2014 the second beat must not have made it through.
         let trailing = try await withPickyTestTimeout("onboarding disconnect") {
             var trailing: [PickyClientEvent] = []
-            for await event in client.events { trailing.append(event) }
+            for await event in await client.events { trailing.append(event) }
             return trailing
         }
 
@@ -136,7 +137,7 @@ struct OnboardingAgentClientTests {
     private func collectEvents(from client: OnboardingAgentClient, count: Int) async throws -> [PickyClientEvent] {
         try await withPickyTestTimeout("\(count) onboarding events") {
             var collected: [PickyClientEvent] = []
-            for await event in client.events {
+            for await event in await client.events {
                 collected.append(event)
                 if collected.count == count { return collected }
             }

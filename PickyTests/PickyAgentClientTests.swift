@@ -82,6 +82,7 @@ private func nextPickyAgentClientEvent(
     }
 }
 
+@MainActor
 struct PickyAgentClientTests {
     @Test func connectsToLocalhostWithTokenAndSendsListSessions() async throws {
         let task = FakeWebSocketTask()

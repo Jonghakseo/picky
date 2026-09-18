@@ -44,7 +44,7 @@ describe("PiToolHistoryReader", () => {
       if (!page.nextCursor) break;
       page = await reader.read(path, "call", "result", page.nextCursor);
     } while (true);
-    expect(JSON.parse(combined).content).toEqual([{ type: "text", text }]);
+    expect(combined).toBe(text);
   });
   it("invalidates cursors after replacement and truncation", async () => {
     const path = await fixture(line(call()) + line(result("x".repeat(40000))));
@@ -69,6 +69,40 @@ describe("PiToolHistoryReader", () => {
     const page = await new PiToolHistoryReader().read(await fixture(line(call("call", args))), "call", "arguments");
     expect(JSON.parse(page.text!)).toEqual(args);
     expect(page.attachmentsOmitted).toBeUndefined();
+  });
+  it("renders ordered text blocks verbatim without outer error metadata", async () => {
+    const saved = result('first\n"quoted"\tvalue');
+    saved.message.isError = true;
+    saved.message.content.push({ type: "text", text: "second\nline" });
+    const record = { ...saved, message: { ...saved.message, details: { diagnostic: "hidden metadata" } } };
+    const page = await new PiToolHistoryReader().read(await fixture(line(call()) + line(record)), "call", "result");
+    expect(page).toEqual({ status: "ready", text: 'first\n"quoted"\tvalue\n\nsecond\nline' });
+  });
+  it("preserves non-text content in order while omitting nested attachments", async () => {
+    const saved = result("before");
+    const content = [
+      ...saved.message.content,
+      { type: "resource", resource: { uri: "file:///report", text: "report body", blob: "secret-blob" } },
+      { type: "audio", mimeType: "audio/wav", data: "secret-audio" },
+      { type: "link", url: "data:image/png;base64,secret-inline" },
+      { type: "text", text: "after" },
+    ];
+    const record = { ...saved, message: { ...saved.message, content } };
+    const page = await new PiToolHistoryReader().read(await fixture(line(call()) + line(record)), "call", "result");
+    const blocks = page.text!.split("\n\n");
+    expect(blocks[0]).toBe("before");
+    expect(JSON.parse(blocks[1])).toEqual({ type: "resource", resource: { uri: "file:///report", text: "report body", blob: "[attachment omitted]" } });
+    expect(JSON.parse(blocks[2])).toEqual({ type: "audio", mimeType: "audio/wav", data: "[attachment omitted]" });
+    expect(JSON.parse(blocks[3])).toEqual({ type: "link", url: "[attachment omitted]" });
+    expect(blocks[4]).toBe("after");
+    expect(page.attachmentsOmitted).toBe(true);
+    expect(page.text).not.toContain("secret-");
+  });
+  it("returns empty content without exposing outer metadata", async () => {
+    const saved = result("");
+    saved.message.content = [];
+    expect(await new PiToolHistoryReader().read(await fixture(line(call()) + line(saved)), "call", "result"))
+      .toEqual({ status: "ready", text: "" });
   });
   it("omits embedded image data while preserving text and image metadata", async () => {
     const saved = result("kept"); saved.message.content.push({ type: "image", mimeType: "image/png", data: "secret-base64" } as never);

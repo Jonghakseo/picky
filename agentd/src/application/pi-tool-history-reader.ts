@@ -176,23 +176,34 @@ function fileRewritten(before: { size: number; mtimeMs: number }, after: Stats):
 function renderRecord(record: ObjectValue, location: Location, tool: string, part: ToolHistoryPart): ToolHistoryDetail | { text: string; attachmentsOmitted: boolean } {
   const message = object(record.message);
   if (!message) return unavailable("malformedRecord");
-  let value: unknown;
   if (part === "arguments") {
     const savedCall = Array.isArray(message.content) ? object(message.content[location.slot!]) : undefined;
     if (!savedCall || savedCall.id !== tool || !("arguments" in savedCall)) return unavailable("malformedRecord");
-    value = savedCall.arguments;
-  } else {
-    if (message.toolCallId !== tool || !Array.isArray(message.content)) return unavailable("malformedRecord");
-    value = { toolName: message.toolName, content: message.content, details: message.details, isError: message.isError };
+    const text = JSON.stringify(savedCall.arguments, null, 2);
+    return text === undefined ? unavailable("malformedRecord") : { text, attachmentsOmitted: false };
   }
+  if (message.toolCallId !== tool || !Array.isArray(message.content)) return unavailable("malformedRecord");
   let attachmentsOmitted = false;
-  const text = JSON.stringify(value, (_key, item: unknown) => {
-    const entry = object(item);
-    if (part === "result" && entry?.type === "image" && "data" in entry) {
-      attachmentsOmitted = true;
-      return { type: "image", mimeType: entry.mimeType, omitted: true };
-    }
-    return item;
-  }, 2);
-  return text === undefined ? unavailable("malformedRecord") : { text, attachmentsOmitted };
+  const text = message.content.map((block: unknown) => {
+    const content = object(block);
+    if (content?.type === "text" && typeof content.text === "string") return content.text;
+    return JSON.stringify(block, (key, item: unknown) => {
+      const entry = object(item);
+      if (entry?.type === "image") {
+        attachmentsOmitted = true;
+        return { type: "image", mimeType: entry.mimeType, omitted: true };
+      }
+      // Unknown attachment types may also carry embedded binary payloads.
+      if ((key === "data" || key === "blob") && typeof item === "string") {
+        attachmentsOmitted = true;
+        return "[attachment omitted]";
+      }
+      if (typeof item === "string" && /^data:[^,]*;base64,/i.test(item)) {
+        attachmentsOmitted = true;
+        return "[attachment omitted]";
+      }
+      return item;
+    }, 2);
+  }).join("\n\n");
+  return { text, attachmentsOmitted };
 }

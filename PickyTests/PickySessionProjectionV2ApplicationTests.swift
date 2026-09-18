@@ -19,8 +19,7 @@ struct PickySessionProjectionV2ApplicationTests {
         viewModel.openToolHistory(sessionID: "tools")
         let model = try #require(presenter.model)
         #expect(model.entries.map(\.id) == ["call-1"])
-        model.openDetail(toolCallID: "call-1")
-        let detail = try #require(model.detail)
+        let detail = try #require(model.inlineDetail(toolCallID: "call-1"))
         apply(transaction(sessionID: "tools", baseRevision: 1, revision: 2,
                           mutations: #"[{"type":"metaPatch","patch":{"piSessionFilePath":"/tmp/second.jsonl"}},{"type":"toolsSet","tools":[]}]"#), to: viewModel)
         #expect(model.entries.isEmpty)

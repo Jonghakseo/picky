@@ -12,7 +12,7 @@ typealias PickyToolHistoryDetailLoader = @MainActor (
     _ part: PickyToolHistoryDetailPart, _ cursor: String?
 ) async throws -> PickyToolHistoryDetailResult
 
-/// Owns only the currently displayed page. Full results never enter the session projection.
+/// Owns on-demand detail text. Full results never enter the session projection.
 @MainActor
 final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
     enum State: Equatable {
@@ -28,6 +28,7 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
     @Published private(set) var attachmentsOmitted = false
     @Published private(set) var canLoadNextPage = false
 
+    let loadsAllPages: Bool
     private var nextCursor: String?
     private var currentCursor: String?
     private var generation = 0
@@ -37,10 +38,12 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
 
     init(
         toolName: String,
+        loadsAllPages: Bool = false,
         retryDelay: @escaping @MainActor () async throws -> Void = { try await Task.sleep(nanoseconds: 250_000_000) },
         loader: @escaping @MainActor (PickyToolHistoryDetailPart, String?) async throws -> PickyToolHistoryDetailResult
     ) {
         self.toolName = toolName
+        self.loadsAllPages = loadsAllPages
         self.retryDelay = retryDelay
         self.loader = loader
     }
@@ -60,7 +63,7 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
     func retry() -> Task<Void, Never> {
         // Index eviction or daemon restart can invalidate a continuation. Start fresh
         // instead of trapping the user in a loop with the same rejected cursor.
-        if state == .unavailable { return load(part: part) }
+        if loadsAllPages || state == .unavailable { return load(part: part) }
         return start(part: part, cursor: currentCursor, page: pageNumber)
     }
 
@@ -95,18 +98,37 @@ final class PickyToolHistoryDetailModel: ObservableObject, Identifiable {
 
     private func fetch(part: PickyToolHistoryDetailPart, cursor: String?, generation: Int) async {
         do {
-            for attempt in 0..<3 {
-                try Task.checkCancellation()
-                let result = try await loader(part, cursor)
-                guard self.generation == generation, !Task.isCancelled else { return }
-                if result.status == .pending && attempt < 2 {
-                    try await retryDelay()
-                    continue
+            var cursor = cursor
+            var combined = ""
+            var omitted = false
+            repeat {
+                var result: PickyToolHistoryDetailResult?
+                for attempt in 0..<3 {
+                    try Task.checkCancellation()
+                    let response = try await loader(part, cursor)
+                    guard self.generation == generation, !Task.isCancelled else { return }
+                    result = response
+                    if response.status == .pending && attempt < 2 {
+                        try await retryDelay()
+                    } else {
+                        break
+                    }
                 }
-                apply(result)
+                guard let result else { return }
+                if loadsAllPages && result.status == .ready {
+                    combined += result.text ?? ""
+                    omitted = omitted || result.attachmentsOmitted == true
+                    cursor = result.nextCursor
+                    if cursor != nil { continue }
+                    apply(result)
+                    text = combined
+                    attachmentsOmitted = omitted
+                } else {
+                    apply(result)
+                }
                 request = nil
                 return
-            }
+            } while true
         } catch {
             guard self.generation == generation, !Task.isCancelled else { return }
             state = .failed

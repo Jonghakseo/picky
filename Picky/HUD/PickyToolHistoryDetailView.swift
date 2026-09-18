@@ -1,24 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// A bounded page of the original stored arguments or result, separate from the live history list.
+/// Full stored content, loaded only while the result disclosure is expanded.
 struct PickyToolHistoryDetailView: View {
     @ObservedObject var model: PickyToolHistoryDetailModel
-    @Environment(\.dismiss) private var dismiss
     @State private var structured = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
-            HStack {
-                Text(model.toolName)
-                    .pickyFont(size: 14, weight: .semibold, design: .monospaced)
-                Spacer()
-                Button(L10n.t("hud.toolHistory.detail.close")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-            }
-            Text(L10n.t("hud.toolHistory.detail.scope"))
-                .pickyFont(size: 11)
-                .foregroundStyle(DS.Colors.textSecondary)
             Picker(L10n.t("hud.toolHistory.detail.part"), selection: Binding(
                 get: { model.part },
                 set: { model.load(part: $0) }
@@ -30,7 +19,8 @@ struct PickyToolHistoryDetailView: View {
             .disabled(model.state == .sourceChanged)
 
             content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: model.state == .ready ? 320 : nil)
 
             if model.attachmentsOmitted {
                 Text(L10n.t("hud.toolHistory.detail.attachmentsOmitted"))
@@ -39,8 +29,7 @@ struct PickyToolHistoryDetailView: View {
             }
             footer
         }
-        .padding(DS.Spacing.lg)
-        .frame(minWidth: 560, idealWidth: 680, minHeight: 420, idealHeight: 540)
+        .padding(DS.Spacing.sm)
         .background(DS.Colors.surface1)
         .task { if model.state == .idle { await model.load(part: .result).value } }
         .onDisappear { model.cancel() }
@@ -56,7 +45,7 @@ struct PickyToolHistoryDetailView: View {
                case .json(let root, _) = PickyToolResultPresentation.make(from: PickyToolHistoryResult(
                 text: model.text, isTruncated: false, isRepaired: false
                )) {
-                PickyToolJSONResultView(root: root)
+                ScrollView { PickyToolJSONResultView(root: root) }
             } else {
                 ScrollView([.horizontal, .vertical]) {
                     Text(model.text.isEmpty ? L10n.t("hud.toolHistory.detail.empty") : model.text)
@@ -84,9 +73,7 @@ struct PickyToolHistoryDetailView: View {
     private var footer: some View {
         HStack(spacing: DS.Spacing.sm) {
             if model.state == .ready {
-                Text(L10n.t("hud.toolHistory.detail.page", Int64(model.pageNumber)))
-                    .font(PickyHUDTypography.metaMonospacedMedium)
-                Button(L10n.t("hud.toolHistory.detail.copyPage")) {
+                Button(L10n.t("hud.toolHistory.detail.copyAll")) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(model.text, forType: .string)
                 }
@@ -95,11 +82,6 @@ struct PickyToolHistoryDetailView: View {
                         .toggleStyle(.checkbox)
                 }
                 Spacer()
-                if model.pageNumber > 1 {
-                    Button(L10n.t("hud.toolHistory.detail.firstPage")) { model.load(part: model.part) }
-                }
-                Button(L10n.t("hud.toolHistory.detail.nextPage")) { model.loadNextPage() }
-                    .disabled(!model.canLoadNextPage)
             } else if model.state == .pending || model.state == .failed || model.state == .unavailable {
                 Button(L10n.t("hud.toolHistory.detail.retry")) { model.retry() }
             }

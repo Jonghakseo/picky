@@ -19,6 +19,40 @@ struct PickyToolHistoryDetailModelTests {
         #expect(!model.canLoadNextPage)
     }
 
+    @Test func inlineHistoryLoadsEveryPageWithoutReplacingEarlierContent() async throws {
+        let tool = PickyToolActivity(toolCallId: "tool", name: "read", status: "succeeded")
+        let snapshot = PickyToolHistorySnapshot(tools: [tool], sessionFilePath: "/tmp/session.jsonl")
+        let history = PickyToolHistoryViewerModel(title: "History", snapshot: snapshot, scope: .session,
+            refresh: { snapshot }) { id, file, part, cursor in
+                #expect(id == "tool")
+                #expect(file == "/tmp/session.jsonl")
+                return Self.response(part: part, text: cursor == nil ? String(repeating: "x", count: 32_768) : "TAIL",
+                                     nextCursor: cursor == nil ? "next" : nil)
+            }
+        let model = try #require(history.inlineDetail(toolCallID: "tool"))
+        await model.load(part: .result).value
+        #expect(model.state == .ready)
+        #expect(model.text == String(repeating: "x", count: 32_768) + "TAIL")
+        #expect(!model.canLoadNextPage)
+        model.cancel()
+        #expect(model.text.isEmpty)
+    }
+
+    @Test func inlineRetryDiscardsIncompleteContentAndRestartsFromFirstPage() async {
+        var expired = true
+        let model = PickyToolHistoryDetailModel(toolName: "read", loadsAllPages: true) { _, cursor in
+            if cursor == nil { return Self.response(text: "first", nextCursor: "next") }
+            return expired ? Self.response(status: .unavailable) : Self.response(text: "last")
+        }
+        await model.load(part: .result).value
+        #expect(model.state == .unavailable)
+        #expect(model.text.isEmpty)
+        expired = false
+        await model.retry().value
+        #expect(model.text == "firstlast")
+        #expect(model.state == .ready)
+    }
+
     @Test func retriesPendingPersistenceAndThenShowsOriginal() async {
         var responses = [Self.response(status: .pending), Self.response(text: "persisted result")]
         let model = PickyToolHistoryDetailModel(toolName: "bash", retryDelay: {}) { _, _ in

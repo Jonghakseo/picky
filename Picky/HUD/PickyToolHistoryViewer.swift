@@ -126,7 +126,7 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
     }
 
     private func remove(panel: NSPanel) {
-        records.values.first(where: { $0.panel === panel })?.model.closeDetail()
+        records.values.first(where: { $0.panel === panel })?.model.closeDetails()
         records = records.filter { $0.value.panel !== panel }
     }
 
@@ -152,10 +152,9 @@ final class PickyToolHistoryViewerModel: ObservableObject {
     @Published private(set) var entries: [PickyToolHistoryEntry]
     @Published private(set) var summary: PickyToolHistorySummary
     let initialScope: PickyToolHistoryScope
-    @Published var detail: PickyToolHistoryDetailModel?
     var refresh: () -> PickyToolHistorySnapshot
     private var sessionFilePath: String?
-    private var detailToolCallID: String?
+    private var inlineDetails: [String: PickyToolHistoryDetailModel] = [:]
     private let detailLoader: PickyToolHistoryDetailLoader
     private var updatesSubscription: AnyCancellable?
 
@@ -181,9 +180,10 @@ final class PickyToolHistoryViewerModel: ObservableObject {
     }
 
     func update(title: String, snapshot: PickyToolHistorySnapshot, scope: PickyToolHistoryScope? = nil) {
-        if sessionFilePath != snapshot.sessionFilePath
-            || detailToolCallID.map({ id in !snapshot.tools.contains(where: { $0.toolCallId == id }) }) == true {
-            detail?.invalidateSource()
+        for (id, detail) in inlineDetails where sessionFilePath != snapshot.sessionFilePath
+            || !snapshot.tools.contains(where: { $0.toolCallId == id }) {
+            detail.invalidateSource()
+            inlineDetails.removeValue(forKey: id)
         }
         self.title = title
         self.tools = snapshot.tools
@@ -192,14 +192,19 @@ final class PickyToolHistoryViewerModel: ObservableObject {
         recompute()
     }
 
-    func openDetail(toolCallID: String) {
-        reload()
-        guard let tool = tools.first(where: { $0.toolCallId == toolCallID }) else { return }
-        closeDetail()
+    func inlineDetail(toolCallID: String) -> PickyToolHistoryDetailModel? {
+        if let existing = inlineDetails[toolCallID] { return existing }
+        guard let tool = tools.first(where: { $0.toolCallId == toolCallID }) else { return nil }
+        let model = makeDetail(tool: tool, loadsAllPages: true)
+        inlineDetails[toolCallID] = model
+        return model
+    }
+
+    private func makeDetail(tool: PickyToolActivity, loadsAllPages: Bool) -> PickyToolHistoryDetailModel {
+        let toolCallID = tool.toolCallId
         let expectedFile = sessionFilePath
         let loader = detailLoader
-        detailToolCallID = toolCallID
-        detail = PickyToolHistoryDetailModel(toolName: tool.name) { part, cursor in
+        return PickyToolHistoryDetailModel(toolName: tool.name, loadsAllPages: loadsAllPages) { part, cursor in
             guard let expectedFile else {
                 return PickyToolHistoryDetailResult(
                     sessionId: "", requestId: "", toolCallId: toolCallID, expectedSessionFile: "",
@@ -211,10 +216,9 @@ final class PickyToolHistoryViewerModel: ObservableObject {
         }
     }
 
-    func closeDetail() {
-        detail?.cancel()
-        detail = nil
-        detailToolCallID = nil
+    func closeDetails() {
+        inlineDetails.values.forEach { $0.cancel() }
+        inlineDetails.removeAll()
     }
 
     func setScope(_ newScope: PickyToolHistoryScope) {
@@ -266,7 +270,7 @@ struct PickyToolHistoryViewerWindowView: View {
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(result.entries) { entry in
-                            PickyToolHistoryEntryView(entry: entry, openDetail: { model.openDetail(toolCallID: entry.id) })
+                            PickyToolHistoryEntryView(entry: entry, loadDetail: { model.inlineDetail(toolCallID: entry.id) })
                         }
                     }
                     .padding(.top, 16)
@@ -279,9 +283,6 @@ struct PickyToolHistoryViewerWindowView: View {
         }
         .background(PickyAppearancePanelChrome.overlayBackground)
         .background(keyboardShortcuts)
-        .sheet(item: $model.detail, onDismiss: { model.closeDetail() }) { detail in
-            PickyToolHistoryDetailView(model: detail)
-        }
     }
 
     private var header: some View {
@@ -473,7 +474,8 @@ struct PickyToolHistoryViewerWindowView: View {
 
 struct PickyToolHistoryEntryView: View {
     let entry: PickyToolHistoryEntry
-    var openDetail: (() -> Void)? = nil
+    var loadDetail: (() -> PickyToolHistoryDetailModel?)? = nil
+    @State private var inlineDetail: PickyToolHistoryDetailModel?
     @State private var isResultExpanded = false
 
     var body: some View {
@@ -483,14 +485,6 @@ struct PickyToolHistoryEntryView: View {
             body(for: entry)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-            if let openDetail {
-                Button(action: openDetail) {
-                    Label(L10n.t("hud.toolHistory.detail.open"), systemImage: "doc.text.magnifyingglass")
-                }
-                .buttonStyle(.bordered)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
-            }
         }
         .background(DS.Colors.surface1)
         .overlay(
@@ -499,8 +493,10 @@ struct PickyToolHistoryEntryView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.medium))
         .onAppear {
-            isResultExpanded = entry.category == .bash
-                || (entry.status == .failed && entry.category == .other)
+            if loadDetail == nil {
+                isResultExpanded = entry.category == .bash
+                    || (entry.status == .failed && entry.category == .other)
+            }
         }
     }
 
@@ -602,7 +598,10 @@ struct PickyToolHistoryEntryView: View {
 
     @ViewBuilder
     private func resultBody(for entry: PickyToolHistoryEntry) -> some View {
-        if let result = entry.result {
+        if loadDetail != nil {
+            let result = entry.result ?? PickyToolHistoryResult(text: "", isTruncated: false, isRepaired: false)
+            resultDisclosure(PickyToolResultPresentation.make(from: result), characterCount: result.text.count)
+        } else if let result = entry.result {
             let presentation = PickyToolResultPresentation.make(from: result)
             switch presentation {
             case .json:
@@ -784,13 +783,13 @@ struct PickyToolHistoryEntryView: View {
                         .pickyFont(size: 9, weight: .semibold)
                     Text(L10n.t("hud.toolHistory.result.label"))
                         .pickyFont(size: 11, weight: .medium)
-                    if case let .json(_, state) = presentation {
+                    if loadDetail == nil, case let .json(_, state) = presentation {
                         resultBadge(for: state)
                     }
                     Spacer()
                     Text(isResultExpanded
                         ? L10n.t("hud.toolHistory.result.expanded")
-                        : L10n.t("hud.toolHistory.result.collapsed", Int64(characterCount)))
+                        : collapsedResultLabel(characterCount: characterCount))
                         .pickyFont(size: 10.5, design: .monospaced)
                         .foregroundStyle(DS.Colors.textTertiary)
                 }
@@ -807,16 +806,34 @@ struct PickyToolHistoryEntryView: View {
             .accessibilityLabel(L10n.t("hud.toolHistory.result.label"))
             .accessibilityValue(isResultExpanded
                 ? L10n.t("hud.toolHistory.result.expanded")
-                : L10n.t("hud.toolHistory.result.collapsed", Int64(characterCount)))
+                : collapsedResultLabel(characterCount: characterCount))
             if isResultExpanded {
-                switch presentation {
-                case .json(let root, _):
-                    PickyToolJSONResultView(root: root)
-                case .text(let text, _):
-                    outputBlock(text)
+                if loadDetail != nil {
+                    Group {
+                        if let inlineDetail {
+                            PickyToolHistoryDetailView(model: inlineDetail)
+                                .id(inlineDetail.id)
+                        } else {
+                            ProgressView()
+                        }
+                    }
+                    .task { inlineDetail = loadDetail?() }
+                } else {
+                    switch presentation {
+                    case .json(let root, _):
+                        PickyToolJSONResultView(root: root)
+                    case .text(let text, _):
+                        outputBlock(text)
+                    }
                 }
             }
         }
+    }
+
+    private func collapsedResultLabel(characterCount: Int) -> String {
+        loadDetail != nil
+            ? L10n.t("hud.toolHistory.result.showAll")
+            : L10n.t("hud.toolHistory.result.collapsed", Int64(characterCount))
     }
 
     private func resultBadge(for state: PickyJSONResultState) -> some View {

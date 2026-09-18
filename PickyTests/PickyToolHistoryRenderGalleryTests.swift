@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import Vision
 @testable import Picky
 
 @MainActor
@@ -66,6 +67,71 @@ struct PickyToolHistoryRenderGalleryTests {
         try encoder.encode(Manifest(scenes: scenes)).write(
             to: output.appendingPathComponent("manifest.json"), options: .atomic
         )
+    }
+
+    @Test func storedPreviewsRemainVisibleWhenOriginalsCannotBeLoaded() async throws {
+        for unsupported in [true, false] {
+            for dark in [false, true] {
+                let id = unsupported ? "user-bash:preview" : "missing-original"
+                let text = unsupported ? "Saved shell output survives" : "Saved tool output survives"
+                let tool = PickyToolActivity(
+                    toolCallId: id, name: "bash", status: "succeeded",
+                    argsPreview: #"{"command":"echo saved"}"#, resultPreview: text,
+                    resultPreviewTruncated: unsupported
+                )
+                // Missing session files take the production viewer's unavailable path;
+                // user-bash calls receive the daemon's unsupported response.
+                let snapshot = PickyToolHistorySnapshot(
+                    tools: [tool], sessionFilePath: unsupported ? "/gallery/session.jsonl" : nil
+                )
+                let history = PickyToolHistoryViewerModel(
+                    title: "History", snapshot: snapshot, scope: .session, refresh: { snapshot },
+                    detailLoader: { id, file, part, _ in
+                        #expect(id.hasPrefix("user-bash:"))
+                        return PickyToolHistoryDetailResult(
+                            sessionId: "gallery", requestId: "preview", toolCallId: id,
+                            expectedSessionFile: file, part: part, status: .unsupported
+                        )
+                    }
+                )
+                let result = try #require(history.inlineDetail(toolCallID: id))
+                let arguments = try #require(history.inlineArguments(toolCallID: id))
+                await result.load(part: .result).value
+                await arguments.load(part: .arguments).value
+                #expect(result.state == (unsupported ? .unsupported : .unavailable))
+                let entry = PickyToolHistoryRenderer.entry(from: tool, index: 0)
+                try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+                    let view = PickyToolHistoryEntryView(
+                        entry: entry, initiallyExpanded: true, initialDetail: result, initialArguments: arguments
+                    )
+                    .padding(DS.Spacing.space3)
+                    .frame(width: Self.width, height: 260, alignment: .topLeading)
+                    .background(DS.Colors.surface1)
+                    .preferredColorScheme(dark ? .dark : .light)
+                    let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
+                        view, logicalSize: CGSize(width: Self.width, height: 260), scale: Self.scale,
+                        appearance: dark ? .darkAqua : .aqua
+                    ))
+                    let request = VNRecognizeTextRequest()
+                    request.recognitionLevel = .accurate
+                    request.recognitionLanguages = ["en-US"]
+                    try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([request])
+                    let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    #expect(lines.contains { $0.localizedCaseInsensitiveContains(text) },
+                            "Stored output must be rendered: \(lines)")
+                    #expect(lines.contains { $0.contains("Stored preview") }, "Preview must be labeled: \(lines)")
+                    #expect(lines.contains { $0.contains(unsupported ? "truncated" : "may not include") },
+                            "Preview completeness must be explicit: \(lines)")
+                    if let path = try? String(contentsOf: Self.outputRequestFile, encoding: .utf8)
+                        .trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
+                        let state = unsupported ? "unsupported" : "unavailable"
+                        let name = "stored-preview-\(state)-\(dark ? "dark" : "light").png"
+                        try #require(bitmap.representation(using: .png, properties: [:]))
+                            .write(to: URL(fileURLWithPath: path).appendingPathComponent(name))
+                    }
+                }
+            }
+        }
     }
 
     private func makeRows() async -> [Row] {

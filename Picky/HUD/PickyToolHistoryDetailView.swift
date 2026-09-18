@@ -140,11 +140,26 @@ struct PickyToolHistoryDetailView: View {
         case .unsupported: status("unsupported")
         case .failed: status("failed")
         }
+        if let preview = storedPreview {
+            Text(L10n.t(preview.isTruncated
+                        ? "hud.toolHistory.detail.storedPreviewTruncated"
+                        : "hud.toolHistory.detail.storedPreview"))
+                .font(PickyHUDTypography.status)
+                .foregroundStyle(DS.Colors.textSecondary)
+            PickyToolHistoryTextBlock(text: preview.text,
+                                      tint: entry.status == .failed ? DS.Colors.destructiveText : DS.Colors.textBody)
+        }
         if [.pending, .unavailable, .failed].contains(model.state) {
             Button(L10n.t("hud.toolHistory.detail.retry")) { model.retry() }
                 .buttonStyle(.plain).foregroundStyle(DS.Colors.accentText)
                 .font(PickyHUDTypography.status)
         }
+    }
+
+    private var storedPreview: PickyToolHistoryResult? {
+        guard [.unsupported, .unavailable, .failed].contains(model.state),
+              argumentsModel.state != .sourceChanged else { return nil }
+        return entry.result
     }
 
     private func status(_ key: String) -> some View {
@@ -155,10 +170,11 @@ struct PickyToolHistoryDetailView: View {
 
     private var actions: some View {
         Menu {
-            Button(L10n.t("hud.toolHistory.detail.copyAll")) {
+            Button(L10n.t(storedPreview == nil
+                          ? "hud.toolHistory.detail.copyAll" : "hud.toolHistory.detail.copyPreview")) {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(model.text, forType: .string)
-            }.disabled(model.state != .ready)
+                NSPasteboard.general.setString(storedPreview?.text ?? model.text, forType: .string)
+            }.disabled(model.state != .ready && storedPreview == nil)
             Divider()
             Button(L10n.t("hud.toolHistory.rawResponse")) { auxiliary = .response }
             Button(L10n.t("hud.toolHistory.detail.arguments")) { auxiliary = .arguments }

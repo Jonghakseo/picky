@@ -28,19 +28,22 @@ enum PickyCronCalendarProjection {
         schedulerTimeZone: TimeZone = .current
     ) -> PickyCronCalendarProjectionResult {
         let cap = max(0, min(limit, 10_000))
-        var entries: [PickyCronCalendarOccurrence] = []
+        var heads: [Head] = []
         var unsupported: Set<String> = []
         var truncated = false
+        var calendar = Calendar(identifier: .gregorian)
+        // Cron schedule.ts uses local getters/setters, not the stored timezone.
+        calendar.timeZone = schedulerTimeZone
         func visible(_ date: Date) -> Bool { date >= interval.start && date < interval.end }
 
         for job in jobs {
             if let actual = job.lastRunAt ?? job.completedAt, visible(actual) {
-                entries.append(.init(job: job, date: actual, kind: .actual))
+                heads.append(Head(occurrence: .init(job: job, date: actual, kind: .actual)))
             }
             guard job.enabled else { continue }
             let next = job.nextRunAt ?? (job.schedule == nil ? PickyCronJobReader.parseDate(job.runAtText) : nil)
             if let next, visible(next), next != job.lastRunAt {
-                entries.append(.init(job: job, date: next, kind: .next))
+                heads.append(Head(occurrence: .init(job: job, date: next, kind: .next)))
             }
             guard let schedule = job.schedule else { continue }
             guard let rule = Rule(schedule) else {
@@ -48,53 +51,89 @@ enum PickyCronCalendarProjection {
                 continue
             }
             guard job.once != true else { continue }
-            var calendar = Calendar(identifier: .gregorian)
-            // Cron schedule.ts uses Date local getters/setters, not the stored timezone.
-            calendar.timeZone = schedulerTimeZone
             let lowerBound = max(now, next ?? now)
-            var day = calendar.startOfDay(for: max(interval.start, lowerBound))
-            var count = 0
-            var days = 0
-            // The UI requests a week/month. Bound even accidental multi-century requests.
-            while day < interval.end && count <= cap && days < 3_660 {
-                days += 1
-                guard let followingDay = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            var cursor = Recurrence(
+                rule: rule, day: calendar.startOfDay(for: max(interval.start, lowerBound)),
+                lowerBound: lowerBound
+            )
+            if let date = cursor.advance(calendar: calendar, interval: interval) {
+                heads.append(Head(occurrence: .init(job: job, date: date, kind: .projected), cursor: cursor))
+            }
+            truncated = truncated || cursor.hitDayLimit
+        }
+
+        // One recurrence head per job, rather than cap + 1 occurrences per job.
+        // A linear head selection keeps storage O(jobs + cap) and generates only
+        // jobs + cap recurrence dates, including the lookahead for truncation.
+        var entries: [PickyCronCalendarOccurrence] = []
+        while entries.count < cap, let index = heads.indices.min(by: {
+            precedes(heads[$0].occurrence, heads[$1].occurrence)
+        }) {
+            let occurrence = heads[index].occurrence
+            entries.append(occurrence)
+            if var cursor = heads[index].cursor {
+                if let date = cursor.advance(calendar: calendar, interval: interval) {
+                    heads[index] = Head(
+                        occurrence: .init(job: occurrence.job, date: date, kind: .projected), cursor: cursor
+                    )
+                } else {
+                    heads.remove(at: index)
+                }
+                truncated = truncated || cursor.hitDayLimit
+            } else {
+                heads.remove(at: index)
+            }
+        }
+        return .init(occurrences: entries, truncated: truncated || !heads.isEmpty, unsupportedJobIDs: unsupported)
+    }
+
+    private static func precedes(_ lhs: PickyCronCalendarOccurrence, _ rhs: PickyCronCalendarOccurrence) -> Bool {
+        if lhs.date != rhs.date { return lhs.date < rhs.date }
+        if lhs.job.id != rhs.job.id { return lhs.job.id < rhs.job.id }
+        return lhs.kind.rawValue < rhs.kind.rawValue
+    }
+
+    private struct Head {
+        let occurrence: PickyCronCalendarOccurrence
+        var cursor: Recurrence?
+    }
+
+    private struct Recurrence {
+        let rule: Rule
+        var day: Date
+        let lowerBound: Date
+        var slot = 0
+        var days = 0
+        var hitDayLimit = false
+
+        mutating func advance(calendar: Calendar, interval: DateInterval) -> Date? {
+            while day < interval.end && days < 3_660 {
+                guard let followingDay = calendar.date(byAdding: .day, value: 1, to: day) else { return nil }
                 let parts = calendar.dateComponents([.day, .month, .weekday], from: day)
                 if rule.days.contains(parts.day ?? 0), rule.months.contains(parts.month ?? 0),
                    rule.weekdays.contains((parts.weekday ?? 0) - 1) {
-                    var candidates: Set<Date> = []
-                    for hour in rule.hours {
-                        for minute in rule.minutes {
-                            let components = DateComponents(hour: hour, minute: minute, second: 0)
-                            // JavaScript local setMinutes skips the repeated fall-back hour.
-                            if let date = calendar.nextDate(
-                                after: day.addingTimeInterval(-1), matching: components,
-                                matchingPolicy: .strict, repeatedTimePolicy: .first
-                            ), date < followingDay, date > lowerBound, visible(date) {
-                                candidates.insert(date)
-                            }
+                    while slot < rule.hours.count * rule.minutes.count {
+                        let hour = rule.hours[slot / rule.minutes.count]
+                        let minute = rule.minutes[slot % rule.minutes.count]
+                        slot += 1
+                        let components = DateComponents(hour: hour, minute: minute, second: 0)
+                        // Strict matching skips spring gaps; first skips the repeated fall hour.
+                        if let date = calendar.nextDate(
+                            after: day.addingTimeInterval(-1), matching: components,
+                            matchingPolicy: .strict, repeatedTimePolicy: .first
+                        ), date < followingDay, date > lowerBound,
+                           date >= interval.start, date < interval.end {
+                            return date
                         }
-                    }
-                    for date in candidates.sorted() {
-                        entries.append(.init(job: job, date: date, kind: .projected))
-                        count += 1
-                        if count > cap { break }
                     }
                 }
                 day = followingDay
+                days += 1
+                slot = 0
             }
-            if day < interval.end && days == 3_660 { truncated = true }
+            hitDayLimit = day < interval.end && days == 3_660
+            return nil
         }
-        entries.sort {
-            if $0.date != $1.date { return $0.date < $1.date }
-            if $0.job.id != $1.job.id { return $0.job.id < $1.job.id }
-            return $0.kind.rawValue < $1.kind.rawValue
-        }
-        return .init(
-            occurrences: Array(entries.prefix(cap)),
-            truncated: truncated || entries.count > cap,
-            unsupportedJobIDs: unsupported
-        )
     }
 
     /// Plugin syntax: five numeric fields, lists/ranges/steps; DOM and DOW are ANDed.

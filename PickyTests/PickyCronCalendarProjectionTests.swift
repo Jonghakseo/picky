@@ -107,6 +107,39 @@ struct PickyCronCalendarProjectionTests {
         #expect(result.occurrences.map(\.date) == [date("2026-09-18T09:00:00Z")])
     }
 
+    @Test func hundredsOfJobsShareOneChronologicalLimitIncludingTies() throws {
+        let jobs = try readJobs((0..<300).reversed().map {
+            ["id": String(format: "job-%03d", $0), "schedule": "* * * * *"]
+        } + [["id": "recorded", "enabled": false, "lastRunAt": "2026-09-18T00:00:30Z"],
+             ["id": "scheduled", "runAt": "2026-09-18T00:01:30Z"]])
+        let result = project(jobs, end: "2026-10-18T00:00:00Z", limit: 500)
+        #expect(result.truncated)
+        #expect(result.occurrences.count == 500)
+        #expect(result.occurrences.first?.kind == .actual)
+        #expect(result.occurrences[1...300].map(\.job.id) == (0..<300).map { String(format: "job-%03d", $0) })
+        #expect(result.occurrences[1...300].allSatisfy { $0.date == date("2026-09-18T00:01:00Z") })
+        #expect(result.occurrences[301].job.id == "scheduled")
+        #expect(result.occurrences[301].kind == .next)
+        #expect(result.occurrences.last?.job.id == "job-197")
+        #expect(result.occurrences.last?.date == date("2026-09-18T00:02:00Z"))
+        #expect(project(Array(jobs.reversed()), end: "2026-10-18T00:00:00Z", limit: 500) == result)
+    }
+
+    @Test func exactCapIsNotTruncatedAndAuthoritativeNextDoesNotRepeat() throws {
+        let jobs = try readJobs([
+            ["id": "b", "schedule": "* * * * *", "nextRunAt": "2026-09-18T00:01:00Z"],
+            ["id": "a", "schedule": "* * * * *", "nextRunAt": "2026-09-18T00:01:00Z"]
+        ])
+        let exact = project(jobs, end: "2026-09-18T00:03:00Z", limit: 4)
+        #expect(!exact.truncated)
+        #expect(exact.occurrences.map(\.job.id) == ["a", "b", "a", "b"])
+        #expect(exact.occurrences.map(\.kind) == [.next, .next, .projected, .projected])
+        let limited = project(jobs, end: "2026-09-18T00:03:00Z", limit: 3)
+        #expect(limited.truncated)
+        #expect(limited.occurrences == Array(exact.occurrences.prefix(3)))
+        #expect(!project([], limit: 0).truncated)
+    }
+
     private func date(_ text: String) -> Date {
         PickyCronJobReader.parseDate(text)!
     }

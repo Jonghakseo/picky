@@ -6448,6 +6448,54 @@
         }
       }
     },
+    "hud.toolHistory.detail.copyPreview": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy stored preview"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 미리보기 복사"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.storedPreview": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stored preview · may not include the full original"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 미리보기 · 원문 전체가 아닐 수 있습니다"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.storedPreviewTruncated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stored preview · truncated, not the full original"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 미리보기 · 일부가 잘려 원문 전체가 아닙니다"
+          }
+        }
+      }
+    },
     "hud.toolHistory.detail.copyAll": {
       "localizations": {
         "en": {

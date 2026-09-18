@@ -330,3 +330,19 @@ describe("SessionStore (child / scoped layout)", () => {
     expect(() => new SessionStore(tmpRoot(), { scopeSessionId: "" })).toThrow(/Invalid scopeSessionId/);
   });
 });
+
+describe("SessionStore read-only detail lookup", () => {
+  it("reads fresh scoped metadata without migration writes or orphan recovery", async () => {
+    const root = tmpRoot(); const store = new SessionStore(root);
+    const dir = join(root, "sessions", "child"); mkdirSync(dir, { recursive: true });
+    const path = join(dir, "child.json");
+    const { revision: _revision, ...legacy } = makeSession({ id: "child", status: "running", piSessionFilePath: "/old" });
+    const raw = JSON.stringify(legacy); writeFileSync(path, raw);
+    expect(await store.loadReadOnly("child")).toMatchObject({ id: "child", status: "running", revision: 0 });
+    expect(readFileSync(path, "utf8")).toBe(raw);
+    writeFileSync(path, JSON.stringify({ ...legacy, piSessionFilePath: "/new" }));
+    expect((await store.loadReadOnly("child"))?.piSessionFilePath).toBe("/new");
+    expect(await store.loadReadOnly("../child")).toBeUndefined();
+    expect(await new SessionStore(root, { scopeSessionId: "other" }).loadReadOnly("child")).toBeUndefined();
+  });
+});

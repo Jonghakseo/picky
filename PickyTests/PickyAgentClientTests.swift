@@ -510,3 +510,59 @@ struct PickyAgentClientTests {
         } else { Issue.record("Expected recoverable error") }
     }
 }
+
+@Suite(.timeLimit(.minutes(1)))
+@MainActor
+struct PickyToolHistoryDetailClientTests {
+    @Test func correlatesPendingToolDetailAndEncodesRequest() async throws {
+        let client = FakePickyAgentClient()
+        var requestedID: String?
+        client.beforeSend = { command in
+            requestedID = command.id
+            do {
+            #expect(command.type == .getToolHistoryDetail)
+            #expect(command.toolCallId == "tool")
+            #expect(command.expectedSessionFile == "/trusted/session.jsonl")
+            #expect(command.part == .result)
+            #expect(command.cursor == "page")
+            let encoded = try JSONEncoder().encode(command)
+            let fields = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+            #expect(fields["expectedSessionFile"] as? String == "/trusted/session.jsonl")
+            for requestID in ["unrelated", command.id] {
+                let json = """
+                {"id":"event","protocolVersion":"2026-08-25","timestamp":"2026-08-25T00:00:00Z","type":"toolHistoryDetailResult","sessionId":"session","requestId":"\(requestID)","toolCallId":"tool","expectedSessionFile":"/trusted/session.jsonl","part":"result","status":"pending"}
+                """
+                client.emit(.protocolEvent(try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))))
+            }
+            } catch { Issue.record(error) }
+        }
+        let result = try await client.getToolHistoryDetail(sessionId: "session", toolCallId: "tool", expectedSessionFile: "/trusted/session.jsonl", part: .result, cursor: "page")
+        #expect(result.status == .pending)
+        #expect(result.requestId == requestedID)
+    }
+
+    @Test func toolDetailDisconnectCompletesWithoutWaitingForStreamEnd() async {
+        let client = FakePickyAgentClient()
+        client.beforeSend = { _ in client.disconnect() }
+        await #expect(throws: PickyToolHistoryDetailRequestError.disconnected) {
+            try await client.getToolHistoryDetail(sessionId: "s", toolCallId: "t", expectedSessionFile: "f", part: .arguments)
+        }
+    }
+
+    @Test func toolDetailTimeoutAndCancellationCompleteWithoutResponse() async {
+        let client = FakePickyAgentClient()
+        await #expect(throws: PickyToolHistoryDetailRequestError.timedOut) {
+            try await client.getToolHistoryDetail(sessionId: "s", toolCallId: "t", expectedSessionFile: "f", part: .result, cursor: nil, timeout: 0.01)
+        }
+        let cancellingClient = FakePickyAgentClient()
+        let (started, didStart) = AsyncStream<Void>.makeStream()
+        cancellingClient.beforeSend = { _ in didStart.yield(()) }
+        let task = Task {
+            try await cancellingClient.getToolHistoryDetail(sessionId: "s", toolCallId: "t", expectedSessionFile: "f", part: .result)
+        }
+        for await _ in started { break }
+        task.cancel()
+        didStart.finish()
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+}

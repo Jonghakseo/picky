@@ -1,0 +1,15 @@
+{
+  "id": "event-tool-history-detail-001",
+  "protocolVersion": "2026-08-25",
+  "type": "toolHistoryDetailResult",
+  "sessionId": "session-001",
+  "toolCallId": "tool-call-001",
+  "expectedSessionFile": "/tmp/pi/session-001.jsonl",
+  "part": "result",
+  "timestamp": "2026-08-02T00:00:00.000Z",
+  "requestId": "cmd-tool-history-detail-001",
+  "status": "ready",
+  "text": "{\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"Stored output\"}],\"isError\":false}",
+  "nextCursor": "opaque-page-2",
+  "attachmentsOmitted": false
+}

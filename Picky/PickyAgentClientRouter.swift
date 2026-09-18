@@ -318,8 +318,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             }
             return
         }
-        if enqueueIfChildIsBooting(command) { return }
-        try await sendAfterCapabilityRegistration(command, on: connectedClient(for: command.sessionId))
+        if command.type != .getToolHistoryDetail && enqueueIfChildIsBooting(command) { return }
+        try await sendAfterCapabilityRegistration(command, on: connectedClient(for: command.sessionId, allowRespawn: command.type != .getToolHistoryDetail))
     }
 
     /// Completion envelopes are always consumed by the primary supervisor,
@@ -514,13 +514,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         return client
     }
 
-    /// Like `client(for:)`, but also connects and forwards events when the child endpoint already
-    /// exists but this router has no cached websocket (for example after HUD stop/start or a
-    /// transient reconnect). Without this, session commands would build a fresh child client and
-    /// immediately fail because the websocket task had never been resumed.
-    private func connectedClient(for sessionId: String?) async throws -> PickyAgentClient {
+    /// Connects existing endpoints; read-only history falls back to primary rather than respawning.
+    private func connectedClient(for sessionId: String?, allowRespawn: Bool = true) async throws -> PickyAgentClient {
         guard let sessionId else { return primaryClient }
         guard let endpoint = pool.endpoint(for: sessionId) else {
+            guard allowRespawn else { return primaryClient }
             if retiredChildSessionIds.contains(sessionId), let cwd = cachedCwdForRetiredChild(sessionId) {
                 return try await spawnChildClient(sessionId: sessionId, cwd: cwd)
             }

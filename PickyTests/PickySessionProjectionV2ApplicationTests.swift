@@ -11,6 +11,23 @@ import Testing
 
 @MainActor
 struct PickySessionProjectionV2ApplicationTests {
+    @Test func toolHistoryReceivesV2ToolsAndInvalidatesDetailsWhenSourceChanges() throws {
+        let presenter = ToolHistoryCapturePresenter()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage(), toolHistoryPresenter: presenter)
+        apply(snapshot(sessionID: "tools", title: "Tools", status: .running, revision: 1,
+                       extraProjectionFields: #","piSessionFilePath":"/tmp/first.jsonl","tools":[{"toolCallId":"call-1","name":"read","status":"succeeded","resultPreview":"preview"}]"#), to: viewModel)
+        viewModel.openToolHistory(sessionID: "tools")
+        let model = try #require(presenter.model)
+        #expect(model.entries.map(\.id) == ["call-1"])
+        model.openDetail(toolCallID: "call-1")
+        let detail = try #require(model.detail)
+        apply(transaction(sessionID: "tools", baseRevision: 1, revision: 2,
+                          mutations: #"[{"type":"metaPatch","patch":{"piSessionFilePath":"/tmp/second.jsonl"}},{"type":"toolsSet","tools":[]}]"#), to: viewModel)
+        #expect(model.entries.isEmpty)
+        #expect(detail.state == .sourceChanged)
+        #expect(detail.text.isEmpty)
+    }
+
     @Test func metadataUpdatesReorderBothGroupSurfacesWithoutPersistingManualOrder() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let layoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
@@ -1053,7 +1070,8 @@ struct PickySessionProjectionV2ApplicationTests {
         notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyStubNotificationPreferences(),
         selectionStore: PickySessionSelectionStoring = V2SelectionStore(),
         archiveStore: PickySessionArchiveStoring = V2ArchiveStore(),
-        dockLayoutStore: PickyDockLayoutStoring = PickyNoopDockLayoutStore()
+        dockLayoutStore: PickyDockLayoutStoring = PickyNoopDockLayoutStore(),
+        toolHistoryPresenter: PickyToolHistoryPresenting? = nil
     ) -> PickySessionListViewModel {
         PickySessionListViewModel(
             client: client,
@@ -1065,6 +1083,7 @@ struct PickySessionProjectionV2ApplicationTests {
             composerDraftStore: V2ComposerDraftStore(),
             composerAttachmentDraftStore: V2AttachmentDraftStore(),
             dockLayoutStore: dockLayoutStore,
+            toolHistoryPresenter: toolHistoryPresenter,
             sessionProjectionStorage: storage
         )
     }
@@ -1156,3 +1175,20 @@ private extension PickyProjectionSectionState {
     var loadedValue: Value? { if case .loaded(let value) = self { value } else { nil } }
 }
 
+
+@MainActor
+private final class ToolHistoryCapturePresenter: PickyToolHistoryPresenting {
+    var model: PickyToolHistoryViewerModel?
+
+    func openHistory(
+        sessionID: String, title: String, scope: PickyToolHistoryScope,
+        snapshotProvider: @escaping () -> PickyToolHistorySnapshot,
+        updates: AnyPublisher<PickyToolHistorySnapshot, Never>,
+        detailLoader: @escaping PickyToolHistoryDetailLoader
+    ) {
+        let model = PickyToolHistoryViewerModel(title: title, snapshot: snapshotProvider(), scope: scope,
+                                              refresh: snapshotProvider, detailLoader: detailLoader)
+        model.connect(updates: updates)
+        self.model = model
+    }
+}

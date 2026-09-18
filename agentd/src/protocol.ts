@@ -738,6 +738,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   }),
   CommandBaseSchema.extend({ type: z.literal("listRewindTargets"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("getSessionDiff"), sessionId: z.string(), view: PickySessionDiffViewSchema, requestId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("getToolHistoryDetail"), sessionId: z.string().min(1), toolCallId: z.string().min(1), expectedSessionFile: z.string().min(1), part: z.enum(["arguments", "result"]), cursor: z.string().min(1).max(128).optional() }),
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   // Recovery snapshots are unicast only and require a socket already locked to
   // the v2 projection dialect.
@@ -1108,6 +1109,13 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     filesTruncated: z.boolean(),
     errorMessage: z.string().optional(),
     requestId: z.string().min(1),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("toolHistoryDetailResult"),
+    sessionId: z.string(), requestId: z.string(), toolCallId: z.string(), expectedSessionFile: z.string(),
+    part: z.enum(["arguments", "result"]),
+    status: z.enum(["ready", "pending", "unavailable", "sourceChanged", "unsupported"]),
+    text: z.string().max(32768).optional(), nextCursor: z.string().optional(), reason: z.string().optional(), attachmentsOmitted: z.boolean().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("sessionRewound"), sessionId: z.string(), editorText: z.string().optional(), removedIds: z.array(z.string()) }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),

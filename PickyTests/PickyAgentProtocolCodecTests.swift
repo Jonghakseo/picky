@@ -55,3 +55,26 @@ struct PickyAgentProtocolCodecTests {
         }
     }
 }
+
+
+extension PickyAgentProtocolCodecTests {
+    @Test func decodesToolHistoryDetailPageWithoutTruncatingText() throws {
+        let text = String(repeating: "x", count: 600) + "saved-tail"
+        let data = try JSONSerialization.data(withJSONObject: [
+            "id": "event", "protocolVersion": pickyAgentProtocolVersion,
+            "timestamp": "2026-08-25T00:00:00Z", "type": "toolHistoryDetailResult",
+            "sessionId": "s", "requestId": "r", "toolCallId": "t",
+            "expectedSessionFile": "/tmp/session.jsonl", "part": "result", "status": "ready",
+            "text": text, "nextCursor": "opaque", "attachmentsOmitted": true
+        ])
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
+        guard case .toolHistoryDetailResult(let result) = envelope.event else {
+            Issue.record("Expected tool history detail event")
+            return
+        }
+        #expect(result.text == text)
+        #expect(result.nextCursor == "opaque")
+        #expect(result.attachmentsOmitted == true)
+        #expect(result.reason == nil)
+    }
+}

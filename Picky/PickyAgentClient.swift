@@ -18,6 +18,7 @@ protocol PickyAgentClient: AnyObject {
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt
     func send(_ command: PickyCommandEnvelope) async throws
     func listRewindTargets(sessionId: String) async throws -> [PickyRewindTarget]
+    func getToolHistoryDetail(sessionId: String, toolCallId: String, expectedSessionFile: String, part: PickyToolHistoryDetailPart, cursor: String?) async throws -> PickyToolHistoryDetailResult
     func listSessionRuntimeOptions(sessionId: String) async throws -> PickySessionRuntimeOptions
     func rewindSession(sessionId: String, entryId: String) async throws
     /// Number of daemons `broadcast(_:)` will attempt to deliver to. Read
@@ -619,6 +620,8 @@ private extension PickyEventEnvelope {
             return "type=autocompleteCompletionApplied id=\(id) session=\(completion.sessionId) request=\(completion.requestId) generation=\(completion.generation) revision=\(completion.draftRevision) lines=\(completion.lines.count)"
         case .rewindTargetsSnapshot(let sessionId, let requestId, let targets):
             return "type=rewindTargetsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") targets=\(targets.count)"
+        case .toolHistoryDetailResult(let result):
+            return "type=toolHistoryDetailResult id=\(id) session=\(result.sessionId) request=\(result.requestId) status=\(result.status.rawValue)"
         case .sessionDiffResult(let result):
             return "type=sessionDiffResult id=\(id) session=\(result.sessionId) view=\(result.view.rawValue) files=\(result.files.count) request=\(result.requestID ?? "none")"
         case .sessionRewound(let sessionId, let editorText, let removedIds):

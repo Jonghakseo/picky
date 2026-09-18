@@ -6048,6 +6048,294 @@
         }
       }
     },
+    "hud.toolHistory.detail.arguments": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.attachmentsOmitted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image data is omitted. Text and available metadata are shown."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 데이터는 제외했습니다. 텍스트와 저장된 메타데이터를 표시합니다."
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.close": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.copyPage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy this page"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 페이지 복사"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empty content"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빈 내용"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load the original. Check the daemon connection and retry."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원문을 불러오지 못했습니다. daemon 연결을 확인한 뒤 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.firstPage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First page"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처음으로"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.loading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading original…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원문 불러오는 중…"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.nextPage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next page"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 페이지"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View original"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원문 보기"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.page": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld페이지"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.part": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original content"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원문 내용"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.pending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The result has not been saved yet. Try again shortly."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과가 아직 저장되지 않았습니다. 잠시 후 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.retry": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.scope": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stored execution record. Pi may have truncated the original tool output."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 실행 기록입니다. Pi가 도구 출력 자체를 잘라 저장했을 수 있습니다."
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.sourceChanged": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The session changed. Close this detail and select a call from the refreshed history."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션이 변경됐습니다. 상세를 닫고 갱신된 이력에서 호출을 선택하세요."
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original record is missing, unreadable, ambiguous, or exceeds the reader limit. The preview is still available."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본이 없거나 읽을 수 없거나, 호출을 식별할 수 없거나 읽기 제한을 초과했습니다. 미리보기는 계속 볼 수 있습니다."
+          }
+        }
+      }
+    },
+    "hud.toolHistory.detail.unsupported": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original lookup for directly executed shell commands is not supported yet."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "직접 실행한 셸 명령의 원문 조회는 아직 지원하지 않습니다."
+          }
+        }
+      }
+    },
     "hud.toolHistory.result.label": {
       "localizations": {
         "en": {

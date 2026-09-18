@@ -90,6 +90,27 @@ export class SessionStore {
     }
   }
 
+  /** Fresh single-session lookup. Never migrates files or applies orphan recovery state. */
+  async loadReadOnly(sessionId: string): Promise<PickyAgentSession | undefined> {
+    const safe = safeName(sessionId);
+    if (!safe || safe === "." || safe === ".." || safe !== sessionId) return undefined;
+    if (this.scopeSessionId && sessionId !== this.scopeSessionId) return undefined;
+    const paths = this.scopeSessionId
+      ? [join(this.sessionsDir, `${safe}.json`)]
+      : [join(this.sessionsDir, safe, `${safe}.json`), join(this.sessionsDir, `${safe}.json`)];
+    // Scoped child metadata is authoritative even when an older flat copy remains.
+    for (const path of paths) {
+      try {
+        const raw = JSON.parse(await readFile(path, "utf8"));
+        const parsed = PickyAgentSessionSchema.safeParse(migrateLegacySession(raw).value);
+        return parsed.success && parsed.data.id === sessionId ? parsed.data : undefined;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+      }
+    }
+    return undefined;
+  }
+
   async loadAll(): Promise<PickyAgentSession[]> {
     let entries: Dirent[];
     try {

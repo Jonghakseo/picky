@@ -1153,9 +1153,11 @@ final class PickySessionListViewModel: ObservableObject {
     func openToolHistory(sessionID: String, scope: PickyToolHistoryScope = .session) {
         pickySessionLog("open tool history session=\(sessionID) scope=\(scope)")
         let title = sessionTitle(for: sessionID)
-        toolHistoryPresenter.openHistory(sessionID: sessionID, title: title, scope: scope) { [weak self] in
-            self?.toolsForSession(sessionID: sessionID) ?? []
-        }
+        let source = PickyToolHistorySource(sessionID: sessionID, storage: sessionProjectionStorage, client: client)
+        toolHistoryPresenter.openHistory(
+            sessionID: sessionID, title: title, scope: scope,
+            snapshotProvider: { source.snapshot }, updates: source.updates, detailLoader: source.load
+        )
     }
 
     func openToolHistoryForCurrentTurn(sessionID: String) {
@@ -1178,10 +1180,6 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func sessionTitle(for sessionID: String) -> String {
         card(sessionID: sessionID)?.title ?? "Session"
-    }
-
-    private func toolsForSession(sessionID: String) -> [PickyToolActivity]? {
-        (sessions + archivedSessions).first(where: { $0.id == sessionID })?.tools
     }
 
     private func currentTurnScope(for sessionID: String) -> PickyToolHistoryScope {
@@ -1988,7 +1986,7 @@ final class PickySessionListViewModel: ObservableObject {
             autocompleteEvents.send(.suggestions(snapshot))
         case .autocompleteCompletionApplied(let completion):
             autocompleteEvents.send(.completion(completion))
-        case .rewindTargetsSnapshot, .sessionRuntimeOptionsSnapshot: break
+        case .rewindTargetsSnapshot, .sessionRuntimeOptionsSnapshot, .toolHistoryDetailResult: break
         case .sessionDiffResult(let result):
             applySessionDiffResult(result)
         case .sessionRewound(let sessionId, let editorText, _): applySessionRewound(sessionID: sessionId, editorText: editorText)

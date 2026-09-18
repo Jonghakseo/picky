@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -625,6 +625,26 @@ describe("AgentdServer", () => {
     release();
     await expect(waitForMatchingEvent(ws, (event) => event.type === "sessionProjectionSnapshot" && event.requestId === "recovery-first")).resolves.toMatchObject({ requestId: "recovery-first" });
     ws.close();
+  });
+
+  it("returns persisted tool detail only to the requester without runtime or projection effects", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-server-detail-"));
+    const path = join(dir, "session.jsonl");
+    await writeFile(path, [
+      { type: "message", message: { role: "assistant", content: [{ type: "toolCall", id: "tool", name: "read", arguments: { path: "file" } }] } },
+      { type: "message", message: { role: "toolResult", toolCallId: "tool", toolName: "read", content: [{ type: "text", text: "x".repeat(600) + "PRIVATE-DETAIL" }], isError: false } },
+    ].map((entry) => JSON.stringify(entry) + "\n").join(""));
+    await store.save(PickyAgentSessionSchema.parse({ id: "detail", title: "Detail", status: "completed", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", piSessionFilePath: path, tools: [{ toolCallId: "tool", name: "read", status: "succeeded" }] }));
+    const requester = await connectWithHello(); const observer = await connectWithHello();
+    await registerV2(observer.ws, "observer-v2");
+    const create = vi.spyOn(runtime, "create"); const save = vi.spyOn(store, "save");
+    const before = await readFile(path, "utf8");
+    requester.ws.send(JSON.stringify({ id: "detail-request", protocolVersion: PROTOCOL_VERSION, type: "getToolHistoryDetail", sessionId: "detail", toolCallId: "tool", expectedSessionFile: path, part: "result" }));
+    await expect(nextEvent(requester.ws)).resolves.toMatchObject({ type: "toolHistoryDetailResult", requestId: "detail-request", sessionId: "detail", toolCallId: "tool", expectedSessionFile: path, part: "result", status: "ready", text: expect.stringContaining("PRIVATE-DETAIL") });
+    await expect(nextEventWithin(observer.ws, 50)).resolves.toBeUndefined();
+    expect(create).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled(); expect(await readFile(path, "utf8")).toBe(before);
+    requester.ws.close(); observer.ws.close();
+    await rm(dir, { recursive: true, force: true });
   });
 
   it("returns session diff responses only to the requesting client", async () => {

@@ -1396,6 +1396,46 @@ struct PickyAgentClientRouterTests {
         #expect(primary.sentCommands.isEmpty)
     }
 
+    @Test func toolDetailReadsRetiredChildViaPrimaryWithoutRespawn() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        await router.connect()
+
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-restored", cwd: "/tmp/ws")
+        let firstRunner = try await poolFactory.waitForRunner(sessionId: "pickle-restored")
+        poolFactory.emitReady(for: "pickle-restored")
+        _ = try await spawned
+        let liveCommand = PickyCommandEnvelope(toolHistorySessionID: "pickle-restored", toolCallId: "tool", expectedSessionFile: "/tmp/source.jsonl", part: .arguments)
+        try await router.send(liveCommand)
+        #expect(clientFactory.madeClients[0].client.sentCommands.contains(liveCommand))
+        #expect(!primary.sentCommands.contains(liveCommand))
+        router.releaseChild(sessionId: "pickle-restored")
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-restored", status: .completed)))
+        await Task.yield()
+
+        let command = PickyCommandEnvelope(toolHistorySessionID: "pickle-restored", toolCallId: "tool", expectedSessionFile: "/tmp/source.jsonl", part: .result)
+        try await router.send(command)
+        #expect(poolFactory.runners["pickle-restored"] === firstRunner)
+        #expect(clientFactory.madeClients.count == 1)
+        #expect(primary.sentCommands.contains(command))
+        #expect(!clientFactory.madeClients[0].client.sentCommands.contains(command))
+        router.disconnect()
+    }
+
     @Test func sendRespawnsRetiredChildSessionFromCacheBeforeForwardingInput() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)

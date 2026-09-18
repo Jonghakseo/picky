@@ -1,0 +1,9 @@
+{
+  "id": "cmd-tool-history-detail-001",
+  "protocolVersion": "2026-08-25",
+  "type": "getToolHistoryDetail",
+  "sessionId": "session-001",
+  "toolCallId": "tool-call-001",
+  "expectedSessionFile": "/tmp/pi/session-001.jsonl",
+  "part": "result"
+}

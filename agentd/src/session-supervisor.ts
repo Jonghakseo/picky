@@ -27,6 +27,7 @@ import { PickleSessionTitleRefresher } from "./application/pickle-session-title-
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, type SessionStore } from "./session-store.js";
 import { sessionWithAppendedLog } from "./session-log-append.js";
 import type { AgentRuntime, RuntimeCreateOptions, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
+import { ToolHistoryDetailService, type ToolHistoryDetailRequest } from "./application/tool-history-detail.js";
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
 import { KeyedSerialQueue } from "./domain/keyed-serial-queue.js";
 import { executeUserBash as runUserBash, type UserBashDeps } from "./application/user-bash-execution.js";
@@ -1033,15 +1034,14 @@ export class SessionSupervisor extends EventEmitter {
   private runRuntimeControlMutation<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
     return this.runtimeControlQueue.run(sessionId, work);
   }
-
   async listRewindTargets(sessionId: string): Promise<RewindTarget[]> {
     return rewindListTargets(this.rewindDeps(), sessionId);
   }
-
+  private readonly toolHistoryDetail = new ToolHistoryDetailService(async (id) => this.runtimeHandles.has(id) ? this.sessions.get(id) : this.store.loadReadOnly(id));
+  getToolHistoryDetail(request: ToolHistoryDetailRequest) { return this.toolHistoryDetail.read(request); }
   async getSessionDiff(sessionId: string, view: SessionDiffView): Promise<SessionDiffResult> {
     return readSessionDiff(this.mustGet(sessionId).cwd, view);
   }
-
   async rewindToEntry(sessionId: string, entryId: string): Promise<PickyAgentSession> {
     return runRewindToEntry(this.rewindDeps(), sessionId, entryId);
   }

@@ -481,6 +481,10 @@ export class AgentdServer {
         const targets = await this.options.supervisor.listRewindTargets(cmd.sessionId);
         this.send(ws, { type: "rewindTargetsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, targets });
       },
+      getToolHistoryDetail: async (cmd) => {
+        const result = await this.options.supervisor.getToolHistoryDetail(cmd);
+        this.send(ws, { type: "toolHistoryDetailResult", sessionId: cmd.sessionId, requestId: cmd.id, toolCallId: cmd.toolCallId, expectedSessionFile: cmd.expectedSessionFile, part: cmd.part, ...result });
+      },
       getSessionDiff: async (cmd) => {
         const result = await this.options.supervisor.getSessionDiff(cmd.sessionId, cmd.view);
         this.send(ws, { type: "sessionDiffResult", sessionId: cmd.sessionId, view: cmd.view, requestId: cmd.requestId, ...result });
@@ -1185,6 +1189,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "listSlashCommands":
     case "getAutocompleteCapabilities":
     case "listRewindTargets":
+    case "getToolHistoryDetail":
     case "getSessionDiff":
     case "duplicatePickleSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
@@ -1294,6 +1299,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, sourceChars: event.source.length, ok: event.ok ? 1 : 0, errorChars: event.errorMessage?.length };
     case "sessionLogAppended":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
+    case "toolHistoryDetailResult": return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, status: event.status, textChars: event.text?.length };
     case "toolActivityUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, tool: event.tool.name, status: event.tool.status };
     case "sessionTodoStateUpdated":

@@ -22,7 +22,12 @@ enum PickyToolHistoryFilePathPolicy {
 
 @MainActor
 protocol PickyToolHistoryPresenting: AnyObject {
-    func openHistory(sessionID: String, title: String, scope: PickyToolHistoryScope, toolsProvider: @escaping () -> [PickyToolActivity])
+    func openHistory(
+        sessionID: String, title: String, scope: PickyToolHistoryScope,
+        snapshotProvider: @escaping () -> PickyToolHistorySnapshot,
+        updates: AnyPublisher<PickyToolHistorySnapshot, Never>,
+        detailLoader: @escaping PickyToolHistoryDetailLoader
+    )
 }
 
 @MainActor
@@ -57,10 +62,16 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
         self.settingsStore = settingsStore
     }
 
-    func openHistory(sessionID: String, title: String, scope: PickyToolHistoryScope, toolsProvider: @escaping () -> [PickyToolActivity]) {
+    func openHistory(
+        sessionID: String, title: String, scope: PickyToolHistoryScope,
+        snapshotProvider: @escaping () -> PickyToolHistorySnapshot,
+        updates: AnyPublisher<PickyToolHistorySnapshot, Never>,
+        detailLoader: @escaping PickyToolHistoryDetailLoader
+    ) {
         if let existing = records[sessionID] {
-            existing.model.refresh = toolsProvider
-            existing.model.update(title: title, tools: toolsProvider(), scope: scope)
+            existing.model.refresh = snapshotProvider
+            existing.model.update(title: title, snapshot: snapshotProvider(), scope: scope)
+            existing.model.connect(updates: updates)
             existing.panel.title = "Tool history — \(title)"
             NSApp.activate(ignoringOtherApps: true)
             existing.panel.orderFrontRegardless()
@@ -68,7 +79,9 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
             return
         }
 
-        let model = PickyToolHistoryViewerModel(title: title, tools: toolsProvider(), scope: scope, refresh: toolsProvider)
+        let model = PickyToolHistoryViewerModel(title: title, snapshot: snapshotProvider(), scope: scope,
+                                              refresh: snapshotProvider, detailLoader: detailLoader)
+        model.connect(updates: updates)
         let panel = PickyReportPanel(
             contentRect: targetFrame(),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -113,6 +126,7 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
     }
 
     private func remove(panel: NSPanel) {
+        records.values.first(where: { $0.panel === panel })?.model.closeDetail()
         records = records.filter { $0.value.panel !== panel }
     }
 
@@ -138,24 +152,69 @@ final class PickyToolHistoryViewerModel: ObservableObject {
     @Published private(set) var entries: [PickyToolHistoryEntry]
     @Published private(set) var summary: PickyToolHistorySummary
     let initialScope: PickyToolHistoryScope
-    var refresh: () -> [PickyToolActivity]
+    @Published var detail: PickyToolHistoryDetailModel?
+    var refresh: () -> PickyToolHistorySnapshot
+    private var sessionFilePath: String?
+    private var detailToolCallID: String?
+    private let detailLoader: PickyToolHistoryDetailLoader
+    private var updatesSubscription: AnyCancellable?
 
-    init(title: String, tools: [PickyToolActivity], scope: PickyToolHistoryScope, refresh: @escaping () -> [PickyToolActivity]) {
+    init(title: String, snapshot: PickyToolHistorySnapshot, scope: PickyToolHistoryScope,
+         refresh: @escaping () -> PickyToolHistorySnapshot, detailLoader: @escaping PickyToolHistoryDetailLoader) {
         self.title = title
-        self.tools = tools
+        self.tools = snapshot.tools
+        self.sessionFilePath = snapshot.sessionFilePath
         self.scope = scope
         self.initialScope = scope
-        let entries = PickyToolHistoryRenderer.entries(from: tools, scope: scope)
+        let entries = PickyToolHistoryRenderer.entries(from: snapshot.tools, scope: scope)
         self.entries = entries
         self.summary = PickyToolHistorySummary(entries: entries)
         self.refresh = refresh
+        self.detailLoader = detailLoader
     }
 
-    func update(title: String, tools: [PickyToolActivity], scope: PickyToolHistoryScope? = nil) {
+    func connect(updates: AnyPublisher<PickyToolHistorySnapshot, Never>) {
+        updatesSubscription = updates.removeDuplicates().sink { [weak self] snapshot in
+            guard let self else { return }
+            self.update(title: self.title, snapshot: snapshot)
+        }
+    }
+
+    func update(title: String, snapshot: PickyToolHistorySnapshot, scope: PickyToolHistoryScope? = nil) {
+        if sessionFilePath != snapshot.sessionFilePath
+            || detailToolCallID.map({ id in !snapshot.tools.contains(where: { $0.toolCallId == id }) }) == true {
+            detail?.invalidateSource()
+        }
         self.title = title
-        self.tools = tools
+        self.tools = snapshot.tools
+        self.sessionFilePath = snapshot.sessionFilePath
         if let scope { self.scope = scope }
         recompute()
+    }
+
+    func openDetail(toolCallID: String) {
+        reload()
+        guard let tool = tools.first(where: { $0.toolCallId == toolCallID }) else { return }
+        closeDetail()
+        let expectedFile = sessionFilePath
+        let loader = detailLoader
+        detailToolCallID = toolCallID
+        detail = PickyToolHistoryDetailModel(toolName: tool.name) { part, cursor in
+            guard let expectedFile else {
+                return PickyToolHistoryDetailResult(
+                    sessionId: "", requestId: "", toolCallId: toolCallID, expectedSessionFile: "",
+                    part: part, status: .unavailable, text: nil, nextCursor: nil,
+                    reason: "missingSessionFile", attachmentsOmitted: nil
+                )
+            }
+            return try await loader(toolCallID, expectedFile, part, cursor)
+        }
+    }
+
+    func closeDetail() {
+        detail?.cancel()
+        detail = nil
+        detailToolCallID = nil
     }
 
     func setScope(_ newScope: PickyToolHistoryScope) {
@@ -164,7 +223,7 @@ final class PickyToolHistoryViewerModel: ObservableObject {
     }
 
     func reload() {
-        update(title: title, tools: refresh())
+        update(title: title, snapshot: refresh())
     }
 
     private func recompute() {
@@ -207,7 +266,7 @@ struct PickyToolHistoryViewerWindowView: View {
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(result.entries) { entry in
-                            PickyToolHistoryEntryView(entry: entry)
+                            PickyToolHistoryEntryView(entry: entry, openDetail: { model.openDetail(toolCallID: entry.id) })
                         }
                     }
                     .padding(.top, 16)
@@ -220,6 +279,9 @@ struct PickyToolHistoryViewerWindowView: View {
         }
         .background(PickyAppearancePanelChrome.overlayBackground)
         .background(keyboardShortcuts)
+        .sheet(item: $model.detail, onDismiss: { model.closeDetail() }) { detail in
+            PickyToolHistoryDetailView(model: detail)
+        }
     }
 
     private var header: some View {
@@ -411,6 +473,7 @@ struct PickyToolHistoryViewerWindowView: View {
 
 struct PickyToolHistoryEntryView: View {
     let entry: PickyToolHistoryEntry
+    var openDetail: (() -> Void)? = nil
     @State private var isResultExpanded = false
 
     var body: some View {
@@ -420,6 +483,14 @@ struct PickyToolHistoryEntryView: View {
             body(for: entry)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+            if let openDetail {
+                Button(action: openDetail) {
+                    Label(L10n.t("hud.toolHistory.detail.open"), systemImage: "doc.text.magnifyingglass")
+                }
+                .buttonStyle(.bordered)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
         }
         .background(DS.Colors.surface1)
         .overlay(

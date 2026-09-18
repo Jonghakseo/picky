@@ -43,6 +43,10 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var text: String?
     var source: String?
     var requestId: String?
+    var toolCallId: String?
+    var expectedSessionFile: String?
+    var part: PickyToolHistoryDetailPart?
+    var cursor: String?
     var view: PickySessionDiffView?
     var value: JSONValue?
     var providerId: PickyPiOAuthLoginProvider?
@@ -302,6 +306,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case autocompleteApply
     case listRewindTargets
     case getSessionDiff
+    case getToolHistoryDetail
     case rewindSession
     case getSessionProjectionSnapshot
     case answerExtensionUi
@@ -412,6 +417,7 @@ enum PickyEvent: Equatable {
     case autocompleteSuggestionsSnapshot(PickyAutocompleteSuggestionsSnapshot)
     case autocompleteCompletionApplied(PickyAutocompleteCompletionApplied)
     case rewindTargetsSnapshot(sessionId: String, requestId: String?, targets: [PickyRewindTarget])
+    case toolHistoryDetailResult(PickyToolHistoryDetailResult)
     case sessionDiffResult(PickySessionDiffResult)
     case sessionRewound(sessionId: String, editorText: String?, removedIds: [String])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
@@ -530,6 +536,8 @@ enum PickyEvent: Equatable {
         case "rewindTargetsSnapshot":
             let payload = try PickyRewindTargetsSnapshotPayload(from: decoder)
             return .rewindTargetsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, targets: payload.targets)
+        case "toolHistoryDetailResult":
+            return .toolHistoryDetailResult(try PickyToolHistoryDetailResult(from: decoder))
         case "sessionDiffResult":
             return .sessionDiffResult(try PickySessionDiffResult(from: decoder))
         case "sessionRewound":

@@ -848,6 +848,13 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return inputMessageEvent;
     }
 
+    // Async tool results can continue a completed response without another user/custom
+    // input or agent_start. A streaming assistant message is authoritative new work;
+    // the supervisor still protects cancelled/failed sessions from late events.
+    if (record.type === "message_start" && asRecord(record.message).role === "assistant" && this.runtime.session.isStreaming) {
+      return { type: "assistant_turn_start" };
+    }
+
     const recoveryEvent = this.runtimeEventFromRecoveryPiEvent(record);
     if (recoveryEvent) return recoveryEvent;
 

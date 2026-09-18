@@ -201,6 +201,7 @@ export class SessionSupervisor extends EventEmitter {
       isPickleSession: (sessionId) => this.pickleSessionIds.has(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
       onInputMessage: (sessionId, event) => this.handleRuntimeInputMessage(sessionId, event),
+      onAssistantTurnStart: (sessionId) => this.preparePickleSessionForUserInput(sessionId),
       transformAssistantDelta: (sessionId, delta) => this.pickleVisualDslCoordinator.consumeAssistantDelta(sessionId, delta),
       sanitizeAssistantText: (sessionId, text) => this.pickleVisualDslCoordinator.sanitizeCompleteText(sessionId, text),
       finishAssistantMessage: (sessionId) => this.pickleVisualDslCoordinator.finishAssistantMessage(sessionId),
@@ -1508,8 +1509,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async handleRuntimeInputMessage(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
     if (event.originatedBy !== "pi_extension") return;
-    // Idle custom extension messages are display-only context. They must not unpin a completed
-    // Pickle or clear its completion notification tracking; RuntimeEventHandler journals them.
+    // Idle custom messages are journaled without unpinning or clearing completion tracking.
     if (event.role === "custom" && event.turnActive !== true) return;
     await this.preparePickleSessionForUserInput(sessionId);
   }

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { SessionStore } from "../session-store.js";
+import { SessionSupervisor } from "../session-supervisor.js";
+import type { PickyAgentSession } from "../protocol.js";
 import { PickyAgentSessionSchema } from "../protocol.js";
 import { SubagentRunUpdater } from "../application/subagent-run-updater.js";
 import * as localLog from "../local-log.js";
@@ -78,6 +80,7 @@ class FakeSession extends EventEmitter {
     getSkills: () => ({ skills: this.skills }),
   };
   sessionManager = {
+    getBranch: (): unknown[] => [],
     getCwd: () => "/tmp/project",
     appendMessage: (message: Record<string, unknown>): string => {
       this.appendedMessages.push(message);
@@ -710,6 +713,69 @@ describe("PiSdkRuntime", () => {
       cursorLine: 0,
       cursorCol: 2,
     })).rejects.toThrow(/Stale autocomplete generation/);
+  });
+
+  it.each([false, true])("projects and persists a completed Pickle resuming after an asynchronous tool result (compacted=%s)", async (compacted) => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-async-turn-resume-"));
+    const fakeSession = new FakeSession();
+    const store = new SessionStore(dir);
+    const supervisor = new SessionSupervisor(makeRuntime(fakeSession), store);
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff({
+      id: "async-turn", source: "text", capturedAt: new Date().toISOString(),
+      cwd: dir, transcript: "Investigate", screenshots: [], inkMarks: [], warnings: [],
+    }, { title: "Async work", instructions: "Investigate" });
+    const projected: PickyAgentSession[] = [];
+    supervisor.on("sessionProjectionTransaction", (id, _before, after) => {
+      if (id === session.id) projected.push(after);
+    });
+    await vi.waitFor(() => expect(fakeSession.prompts.length).toBe(1));
+    const complete = (text: string) => fakeSession.emit("event", {
+      type: "agent_end", messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text }] }],
+    });
+    complete("Waiting for worker");
+    await vi.waitFor(async () => expect((await store.loadReadOnly(session.id))?.status).toBe("completed"));
+
+    if (compacted) {
+      fakeSession.emit("event", { type: "compaction_start", reason: "manual" });
+      fakeSession.emit("event", { type: "compaction_end", reason: "manual", willRetry: false, aborted: false, result: { summary: "Condensed context" } });
+      await vi.waitFor(async () => expect(await store.loadReadOnly(session.id)).toMatchObject({ status: "completed", lastSummary: "Session compacted" }));
+    }
+
+    // The worker's result is context, not a new user/custom message. Pi can continue
+    // inside its existing lifecycle, so no second agent_start is required here.
+    fakeSession.isStreaming = true;
+    fakeSession.emit("event", { type: "message_start", message: {
+      role: "toolResult", toolCallId: "worker", toolName: "subagent", content: [{ type: "text", text: "Worker finished" }],
+    } });
+    fakeSession.emit("event", { type: "message_start", message: { role: "assistant", content: [] } });
+    fakeSession.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Reviewing worker output" } });
+    fakeSession.emit("event", { type: "tool_execution_start", toolCallId: "review", toolName: "read", args: { path: "report.md" } });
+
+    await vi.waitFor(async () => {
+      const persisted = await store.loadReadOnly(session.id);
+      expect(persisted?.status).toBe("running");
+      expect(persisted?.finalAnswer).toBeUndefined();
+      expect(persisted?.tools).toContainEqual(expect.objectContaining({ toolCallId: "review", status: "running" }));
+      expect(persisted?.messages).toContainEqual(expect.objectContaining({ kind: "agent_text", text: "Reviewing worker output" }));
+    });
+    expect(projected.at(-1)).toMatchObject({ status: "running" });
+    expect(projected.at(-1)?.messages).toContainEqual(expect.objectContaining({ kind: "agent_text", text: "Reviewing worker output" }));
+    complete("Review complete");
+    await vi.waitFor(async () => expect(await store.loadReadOnly(session.id)).toMatchObject({ status: "completed", finalAnswer: "Review complete" }));
+  });
+
+  it("signals assistant turn start only for a streaming response, not idle replay or a tool result", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "assistant-start" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.emit("event", { type: "message_start", message: { role: "assistant", content: [] } });
+    fakeSession.isStreaming = true;
+    fakeSession.emit("event", { type: "message_start", message: { role: "toolResult", content: [] } });
+    expect(events).not.toContainEqual({ type: "assistant_turn_start" });
+    fakeSession.emit("event", { type: "message_start", message: { role: "assistant", content: [] } });
+    expect(events).toContainEqual({ type: "assistant_turn_start" });
   });
 
   it("mirrors Pi extension injected user and custom messages", async () => {

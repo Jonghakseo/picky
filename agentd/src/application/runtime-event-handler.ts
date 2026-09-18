@@ -51,6 +51,7 @@ interface RuntimeEventHandlerDependencies {
   isPickleSession(sessionId: string): boolean;
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
   onInputMessage?(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void>;
+  onAssistantTurnStart?(sessionId: string): Promise<void>;
   transformAssistantDelta?(sessionId: string, delta: string): string;
   sanitizeAssistantText?(sessionId: string, text: string): string;
   finishAssistantMessage?(sessionId: string): void;
@@ -152,6 +153,12 @@ export class RuntimeEventHandler {
     if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
     if (event.type === "subagent_invocation") return this.dependencies.messageBuilder.recordSubagentInvocation?.(sessionId, event.invocation);
     if (event.type === "subagent_run_update") return this.dependencies.updateSubagentRuns?.(sessionId, event.update);
+    if (event.type === "assistant_turn_start") {
+      if (this.dependencies.getSession(sessionId).status !== "completed") return;
+      await this.dependencies.onAssistantTurnStart?.(sessionId);
+      this.resetAssistantDraft(sessionId);
+      return this.dependencies.patchSession(sessionId, { status: "running", lastSummary: "Assistant turn started", finalAnswer: undefined, thinkingPreview: undefined });
+    }
     if (event.type === "input_message") {
       const currentStatus = this.dependencies.getSession(sessionId).status;
       if (isTerminalStatus(currentStatus) && currentStatus !== "completed") return;

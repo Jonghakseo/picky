@@ -6657,6 +6657,35 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "user_text" && message.text === "subagent begins active work")).toBe(false);
   });
 
+  it.each(["cancelled", "failed"] as const)("does not revive a %s Pickle on a late assistant turn start", async (status) => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-late-assistant-start-"));
+    const store = new SessionStore(dir);
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff(context("late assistant"), { title: "Pickle", instructions: "Investigate" });
+    runtime.handle!.emit({ type: "status", status, summary: status });
+    await waitUntilAsync(async () => (await store.loadReadOnly(session.id))?.status === status);
+    const before = await store.loadReadOnly(session.id);
+    const projected: PickyAgentSession[] = [];
+    supervisor.on("sessionProjectionTransaction", (id, _before, after) => {
+      if (id === session.id) projected.push(after);
+    });
+
+    runtime.handle!.emit({ type: "assistant_turn_start" });
+    runtime.handle!.emit({ type: "assistant_delta", delta: "late response" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "late", name: "read", status: "running" });
+    // A log is persisted even for terminal sessions and follows the same event chain.
+    runtime.handle!.emit({ type: "log", line: "Late events drained" });
+    await waitUntilAsync(async () => (await store.loadReadOnly(session.id))?.logs.at(-1) === "Late events drained");
+
+    const after = await store.loadReadOnly(session.id);
+    expect(after?.status).toBe(status);
+    expect(after?.messages).toEqual(before?.messages);
+    expect(after?.tools).toEqual(before?.tools);
+    expect(projected.some((item) => item.status === "running")).toBe(false);
+  });
+
   it("preserves completed Pickle state for an idle custom extension message", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pi-extension-custom-idle-"));

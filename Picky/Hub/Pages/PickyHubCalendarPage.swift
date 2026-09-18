@@ -8,6 +8,8 @@ struct PickyHubCalendarPage: View {
     @ObservedObject private var navigator: PickyHubNavigator
     @ObservedObject private var reloadController: PickyPluginReloadController
     @State private var result: PickyCronJobReadResult?
+    @State private var loadedHistoryInterval: DateInterval?
+    @State private var visibleInterval = Calendar.current.dateInterval(of: .weekOfYear, for: Date())!
 
     init(dependencies: PickyHubDependencies) {
         self.dependencies = dependencies
@@ -109,7 +111,19 @@ struct PickyHubCalendarPage: View {
                 action: { navigator.select(.conversation) }
             )
         case .jobs(let jobs):
-            PickyHubCronCalendarView(jobs: jobs)
+            PickyHubCronCalendarView(
+                jobs: jobs,
+                readPrompt: { occurrence in
+                    PickyCronJobContentReader(cronDirectory: reader.jobsURL.deletingLastPathComponent())
+                        .readInstructions(for: occurrence.job, executionDate: occurrence.kind == .actual ? occurrence.date : nil)
+                },
+                loadedHistoryInterval: loadedHistoryInterval,
+                onVisibleIntervalChange: { interval in
+                    guard interval != visibleInterval else { return }
+                    visibleInterval = interval
+                    refreshJobs()
+                }
+            )
         case .malformed:
             readError("extensions.cron.jobs.malformed.title", "extensions.cron.jobs.malformed.description")
         case .unsupportedVersion:
@@ -131,10 +145,13 @@ struct PickyHubCalendarPage: View {
         refreshJobs()
     }
 
+    private var reader: PickyCronJobReader {
+        PickyCronJobReader(preferences: PickyPiInstallation.preferences(from: dependencies.settingsStore.load()))
+    }
+
     private func refreshJobs() {
         guard plugin?.isInstalled == true else { result = nil; return }
-        result = PickyCronJobReader(
-            preferences: PickyPiInstallation.preferences(from: dependencies.settingsStore.load())
-        ).read()
+        result = reader.readCalendar(interval: visibleInterval)
+        loadedHistoryInterval = visibleInterval
     }
 }

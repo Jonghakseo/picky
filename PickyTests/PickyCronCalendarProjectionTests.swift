@@ -72,6 +72,20 @@ struct PickyCronCalendarProjectionTests {
         #expect(zero.truncated)
     }
 
+    @Test func estimatesCannotHideRecordedExecutionsOrLaterOneShot() throws {
+        var jobs = try readJobs([
+            ["id": "minute", "schedule": "* * * * *"],
+            ["id": "tomorrow", "runAt": "2026-09-19T12:00:00Z"],
+            ["id": "history", "enabled": false]
+        ])
+        let index = try #require(jobs.firstIndex { $0.id == "history" })
+        jobs[index].executions = [.init(date: date("2026-09-19T10:00:00Z"), exitCode: 2)]
+        let result = project(jobs, limit: 3)
+        #expect(result.occurrences.map(\.job.id) == ["minute", "history", "tomorrow"])
+        #expect(result.occurrences[1].execution?.exitCode == 2)
+        #expect(result.truncated)
+    }
+
     @Test func intervalEndIsExclusiveAndImpossibleDatesDoNotBecomeFakeRuns() throws {
         let jobs = try readJobs([
             ["id": "impossible", "schedule": "0 9 31 2 *"],
@@ -138,6 +152,17 @@ struct PickyCronCalendarProjectionTests {
         #expect(limited.truncated)
         #expect(limited.occurrences == Array(exact.occurrences.prefix(3)))
         #expect(!project([], limit: 0).truncated)
+    }
+
+    @Test func crowdedHistoryKeepsNextRunAndMostRecentExecutionVisible() throws {
+        var jobs = try readJobs([["id": "busy", "nextRunAt": "2026-09-19T09:00:00Z"]])
+        jobs[0].executions = (0..<10).map { index in
+            .init(date: date("2026-09-17T00:00:00Z").addingTimeInterval(Double(index) * 60), exitCode: 0)
+        }
+        let result = project(jobs, limit: 2)
+        #expect(result.truncated)
+        #expect(result.occurrences.map(\.kind) == [.actual, .next])
+        #expect(result.occurrences.first?.date == date("2026-09-17T00:09:00Z"))
     }
 
     private func date(_ text: String) -> Date {

@@ -8,6 +8,7 @@ struct PickyCronCalendarOccurrence: Identifiable, Equatable {
     let job: PickyCronJobPresentation
     let date: Date
     let kind: Kind
+    var execution: PickyCronExecution? = nil
 
     var id: String { "\(job.id):\(kind.rawValue):\(date.timeIntervalSince1970)" }
 }
@@ -37,8 +38,20 @@ enum PickyCronCalendarProjection {
         func visible(_ date: Date) -> Bool { date >= interval.start && date < interval.end }
 
         for job in jobs {
-            if let actual = job.lastRunAt ?? job.completedAt, visible(actual) {
-                heads.append(Head(occurrence: .init(job: job, date: actual, kind: .actual)))
+            var actuals = job.executions
+            let linkedStart = job.lastRunLog.flatMap { path -> Date? in
+                let url = URL(fileURLWithPath: path)
+                guard url.deletingLastPathComponent().lastPathComponent == job.id,
+                      url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == "runs" else { return nil }
+                return PickyCronJobReader.runDate(filename: url.lastPathComponent)
+            }
+            if let latest = linkedStart ?? job.lastRunAt ?? job.completedAt,
+               !actuals.contains(where: { $0.date == latest }) {
+                actuals.append(.init(date: latest, exitCode: job.lastExitCode, promptFile: job.lastRunPromptFile))
+            }
+            var seen: Set<Date> = []
+            for actual in actuals where visible(actual.date) && seen.insert(actual.date).inserted {
+                heads.append(Head(occurrence: .init(job: job, date: actual.date, kind: .actual, execution: actual)))
             }
             guard job.enabled else { continue }
             let next = job.nextRunAt ?? (job.schedule == nil ? PickyCronJobReader.parseDate(job.runAtText) : nil)
@@ -67,7 +80,15 @@ enum PickyCronCalendarProjection {
         // jobs + cap recurrence dates, including the lookahead for truncation.
         var entries: [PickyCronCalendarOccurrence] = []
         while entries.count < cap, let index = heads.indices.min(by: {
-            precedes(heads[$0].occurrence, heads[$1].occurrence)
+            let left = heads[$0].occurrence
+            let right = heads[$1].occurrence
+            if left.kind != right.kind {
+                if left.kind == .next { return true }
+                if right.kind == .next { return false }
+                return left.kind == .actual
+            }
+            if left.kind == .actual, left.date != right.date { return left.date > right.date }
+            return precedes(left, right)
         }) {
             let occurrence = heads[index].occurrence
             entries.append(occurrence)
@@ -84,7 +105,7 @@ enum PickyCronCalendarProjection {
                 heads.remove(at: index)
             }
         }
-        return .init(occurrences: entries, truncated: truncated || !heads.isEmpty, unsupportedJobIDs: unsupported)
+        return .init(occurrences: entries.sorted(by: precedes), truncated: truncated || !heads.isEmpty, unsupportedJobIDs: unsupported)
     }
 
     private static func precedes(_ lhs: PickyCronCalendarOccurrence, _ rhs: PickyCronCalendarOccurrence) -> Bool {

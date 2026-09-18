@@ -154,7 +154,7 @@ struct PickyCronJobReaderTests {
         ])
     }
 
-    @Test func presentationExposesNoPromptPathCwdOrRunLogFields() throws {
+    @Test func indexReadKeepsPromptOnDemandAndDoesNotReadExecutionLogs() throws {
         let scratch = try ScratchCronStore()
         try scratch.write(
             #"{"version":1,"jobs":[{"id":"private","name":"Private","enabled":true,"kind":"cron","once":false,"schedule":"0 9 * * *","timezone":"UTC","cwd":"/secret/cwd","promptFile":"/secret/prompt.md","createdAt":"2026-08-25T00:00:00Z","updatedAt":"2026-08-25T00:00:00Z","lastRunLog":"/secret/run.log"}]}"#
@@ -164,8 +164,8 @@ struct PickyCronJobReaderTests {
             Issue.record("Expected projected job")
             return
         }
-        let labels = Set(Mirror(reflecting: job).children.compactMap(\.label))
-        #expect(labels.isDisjoint(with: ["promptFile", "prompt", "cwd", "lastRunLog"]))
+        #expect(job.promptFile == "/secret/prompt.md")
+        #expect(job.executions.isEmpty)
     }
 }
 

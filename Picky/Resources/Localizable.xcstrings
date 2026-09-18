@@ -20869,16 +20869,16 @@
     },
     "hub.calendar.history": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Latest runs"
-          }
-        },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "최근 실행"
+            "value": "실행 기록"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Executed"
           }
         }
       }
@@ -21141,16 +21141,16 @@
     },
     "hub.calendar.subtitle": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "View scheduled jobs and their latest execution results."
-          }
-        },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "예약된 작업과 최근 실행 결과를 한눈에 확인하세요."
+            "value": "언제, 어떤 작업이 실행되는지 확인하세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See when your jobs run and what they do."
           }
         }
       }
@@ -21327,6 +21327,374 @@
           "stringUnit": {
             "state": "translated",
             "value": "저장된 시간대 (Cron 계산에 미사용): %@"
+          }
+        }
+      }
+    },
+    "hub.calendar.customSchedule": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 지정 반복"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom recurrence"
+          }
+        }
+      }
+    },
+    "hub.calendar.everyMinute": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매분 실행"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every minute"
+          }
+        }
+      }
+    },
+    "hub.calendar.everyMinutes": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld분마다 실행"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every %lld minutes"
+          }
+        }
+      }
+    },
+    "hub.calendar.hourlyAt": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매시간 %lld분"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hourly at minute %lld"
+          }
+        }
+      }
+    },
+    "hub.calendar.dailyAt": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매일 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every day at %@"
+          }
+        }
+      }
+    },
+    "hub.calendar.weekdaysAt": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "평일 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekdays at %@"
+          }
+        }
+      }
+    },
+    "hub.calendar.weekendsAt": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주말 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekends at %@"
+          }
+        }
+      }
+    },
+    "hub.calendar.scheduled": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scheduled"
+          }
+        }
+      }
+    },
+    "hub.calendar.estimated": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복 예정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projected"
+          }
+        }
+      }
+    },
+    "hub.calendar.executed": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행됨"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Executed"
+          }
+        }
+      }
+    },
+    "hub.calendar.succeeded": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed"
+          }
+        }
+      }
+    },
+    "hub.calendar.failed": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        }
+      }
+    },
+    "hub.calendar.compactAgenda": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일정 목록"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agenda"
+          }
+        }
+      }
+    },
+    "hub.calendar.estimatedLegend": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점선 · 반복 예정"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dashed · projected"
+          }
+        }
+      }
+    },
+    "hub.calendar.instructions": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 작업 지침"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current instructions"
+          }
+        }
+      }
+    },
+    "hub.calendar.copyInstructions": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지침 복사"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy instructions"
+          }
+        }
+      }
+    },
+    "hub.calendar.rawRule": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron 표현식"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron expression"
+          }
+        }
+      }
+    },
+    "hub.calendar.promptMissing": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "등록된 지침 파일을 찾을 수 없습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The registered instructions file could not be found."
+          }
+        }
+      }
+    },
+    "hub.calendar.promptTooLarge": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지침 파일이 너무 커서 표시할 수 없습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The instructions file is too large to display."
+          }
+        }
+      }
+    },
+    "hub.calendar.promptUnsafe": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron 폴더 밖의 파일이나 연결 파일은 열지 않습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files outside the Cron folder and symbolic links are not opened."
+          }
+        }
+      }
+    },
+    "hub.calendar.promptUnreadable": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지침 파일을 읽을 수 없습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The instructions file could not be read."
+          }
+        }
+      }
+    },
+    "hub.calendar.historicalInstructions": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 당시 지침"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instructions for this run"
+          }
+        }
+      }
+    },
+    "hub.calendar.historyTruncated": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 기록이 많아 일부만 읽었습니다. 주간 보기로 범위를 줄여 주세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only some execution records were read. Switch to week view to narrow the range."
           }
         }
       }

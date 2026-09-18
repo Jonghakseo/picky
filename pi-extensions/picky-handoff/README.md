@@ -19,7 +19,7 @@ Picky writes this file when `picky-agentd` starts. It contains the local WebSock
 
 ## Install
 
-Packed Picky builds include this extension but do not install it automatically on launch. Install it from Picky's Extensions/Status UI when you want the `/handoff-to-picky` command. The installer copies the bundled extension into `~/.pi/agent/extensions/picky-handoff` and writes `.picky-extension-install.json` metadata so Picky can detect managed installs, updates, and conflicts. If an unrelated file or symlink already lives at that path, Picky leaves it alone and reports a conflict instead of overwriting it.
+Packed Picky builds include this extension but do not install it automatically on launch. Open Picky's Hub → Plugins → Picky plugins to install or update the Handoff extension. The same section manages the bundled Picky CLI skill. After installing or updating, run `/reload` in the external Pi terminal where you use `/handoff-to-picky`; Picky's reload button only reloads sessions managed by Picky. The installer copies the bundled extension into `~/.pi/agent/extensions/picky-handoff` and writes `.picky-extension-install.json` metadata so Picky can detect managed installs, updates, and conflicts. If an unrelated file or symlink already lives at that path, Picky leaves it alone and reports a conflict instead of overwriting it.
 
 For local development against the source tree:
 

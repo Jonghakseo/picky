@@ -38,10 +38,6 @@ final class PickySessionListViewModel: ObservableObject {
     /// invalidate every conversation bubble observing this view model. The active composer
     /// filters this stream by session, generation, request id, draft revision, and cursor.
     let autocompleteEvents = PassthroughSubject<PickyAutocompleteClientEvent, Never>()
-    /// Published mirror of `PickySessionComposerDraftController` request state.
-    /// `PickyConversationComposerView` observes this dictionary with `.onChange`,
-    /// so every controller mutation path must call `syncComposerDraftRequests()`.
-    @Published private(set) var composerDraftRequestsBySessionID: [String: PickyComposerDraftRequest] = [:]
     @Published private(set) var thinkingBlocksHiddenBySessionID: [String: Bool] = [:]
     /// Per-session TODO expansion choice survives Conversation Card teardown while the HUD is closed.
     @Published private(set) var todoProgressExpandedBySessionID: [String: Bool] = [:]
@@ -824,16 +820,18 @@ final class PickySessionListViewModel: ObservableObject {
         composerDraftController.request(for: sessionID)
     }
 
+    /// The controller owns draft-request state and publishes changes directly,
+    /// so the ViewModel no longer mirrors a dictionary for composer reads.
+    var composerDraftRequestsBySessionID: [String: PickyComposerDraftRequest] {
+        composerDraftController.requestsBySessionID
+    }
+
     func composerDraftRequestPublisher(for sessionID: String) -> AnyPublisher<PickyComposerDraftRequest?, Never> {
-        $composerDraftRequestsBySessionID
-            .map { $0[sessionID] }
-            .removeDuplicates()
-            .eraseToAnyPublisher()
+        composerDraftController.requestPublisher(for: sessionID)
     }
 
     func consumeComposerDraftRequest(sessionID: String, requestID: String) {
         composerDraftController.consumeRequest(sessionID: sessionID, requestID: requestID)
-        syncComposerDraftRequests()
     }
 
     func persistedComposerDraft(for sessionID: String) -> String {
@@ -858,18 +856,15 @@ final class PickySessionListViewModel: ObservableObject {
 
     func clearComposerDraft(sessionID: String) {
         composerDraftController.clearDraft(sessionID: sessionID)
-        syncComposerDraftRequests()
     }
 
     func appendComposerDraftText(_ text: String, sessionID: String) {
         guard composerDraftController.appendText(text, sessionID: sessionID) else { return }
-        syncComposerDraftRequests()
         select(sessionID: sessionID)
     }
 
     func replaceComposerDraftText(_ text: String, sessionID: String) {
         guard composerDraftController.replaceText(text, sessionID: sessionID) else { return }
-        syncComposerDraftRequests()
         select(sessionID: sessionID)
     }
 
@@ -925,10 +920,6 @@ final class PickySessionListViewModel: ObservableObject {
         let commandsBySessionID = slashCommandController.commandsBySessionID
         guard slashCommandsBySessionID != commandsBySessionID else { return }
         slashCommandsBySessionID = commandsBySessionID
-    }
-
-    private func syncComposerDraftRequests() {
-        composerDraftRequestsBySessionID = composerDraftController.requestsBySessionID
     }
 
     func copyMessageText(_ text: String) {
@@ -2404,7 +2395,6 @@ final class PickySessionListViewModel: ObservableObject {
         case "set_editor_text":
             let text = request.text ?? request.prompt ?? ""
             composerDraftController.primeRequest(sessionID: request.sessionId, requestID: request.id, text: text)
-            syncComposerDraftRequests()
             return true
         case "notify", "setStatus", "setWidget", "setTitle":
             return true
@@ -2508,7 +2498,6 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandController.prune(knownSessionIDs: knownSessionIDs)
         syncSlashCommands()
         composerDraftController.prune(knownSessionIDs: knownSessionIDs)
-        syncComposerDraftRequests()
         thinkingBlocksHiddenBySessionID = thinkingBlocksHiddenBySessionID.filter { knownSessionIDs.contains($0.key) }
         todoProgressExpandedBySessionID = todoProgressExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
         subagentInvocationExpandedBySessionID = subagentInvocationExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }

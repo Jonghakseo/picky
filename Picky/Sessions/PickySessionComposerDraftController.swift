@@ -7,6 +7,7 @@
 //  ObservableObject and selection side-effect owner.
 //
 
+import Combine
 import Foundation
 
 struct PickyComposerDraftRequest: Equatable, Identifiable {
@@ -87,7 +88,7 @@ final class PickySessionComposerDraftController {
     private let fileExists: (String) -> Bool
     private let makeRequestID: (RequestKind) -> String
 
-    private(set) var requestsBySessionID: [String: PickyComposerDraftRequest] = [:]
+    @Published private(set) var requestsBySessionID: [String: PickyComposerDraftRequest] = [:]
 
     init(
         draftStore: PickyComposerDraftStoring,
@@ -103,6 +104,13 @@ final class PickySessionComposerDraftController {
 
     func request(for sessionID: String) -> PickyComposerDraftRequest? {
         requestsBySessionID[sessionID]
+    }
+
+    func requestPublisher(for sessionID: String) -> AnyPublisher<PickyComposerDraftRequest?, Never> {
+        $requestsBySessionID
+            .map { $0[sessionID] }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
     }
 
     func consumeRequest(sessionID: String, requestID: String) {

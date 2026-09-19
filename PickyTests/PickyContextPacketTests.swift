@@ -28,6 +28,10 @@ private struct FakeBrowserProvider: PickyBrowserContextProviding {
     }
 }
 
+/// Test-only stand-in for Picky-owned control chrome that stays marked for
+/// context-capture exclusion (cursor overlays, transient input panels).
+private final class TestMarkedControlChromeWindow: NSWindow, PickyScreenCaptureExcludedWindow {}
+
 private struct FakeScreenProvider: PickyScreenContextProviding {
     let annotationSceneFingerprint: PickyAnnotationSceneFingerprint?
 
@@ -161,13 +165,28 @@ struct PickyContextPacketTests {
         }
     }
 
-    @Test @MainActor func contextCaptureExcludesPickyChromeButKeepsArtifactViewers() {
+    @Test @MainActor func contextCaptureKeepsHudDockHubAndArtifactViewersVisible() {
         let hud = PickyHUDPanel(
             contentRect: .zero,
             styleMask: .borderless,
             backing: .buffered,
             defer: false
         )
+        let dockGroupList = PickyHUDDockGroupListPanel(
+            contentRect: .zero,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        let hub = PickyHubWindow(
+            contentRect: .zero,
+            styleMask: .titled,
+            backing: .buffered,
+            defer: false
+        )
+        // Plain NSWindow defaults to self-release on close; the deferred
+        // release otherwise corrupts the next async test's autorelease pool.
+        hub.isReleasedWhenClosed = false
         let terminal = PickyTerminalPanel(
             contentRect: .zero,
             styleMask: .titled,
@@ -180,15 +199,32 @@ struct PickyContextPacketTests {
             backing: .buffered,
             defer: false
         )
+        let markedChrome = TestMarkedControlChromeWindow(
+            contentRect: .zero,
+            styleMask: .titled,
+            backing: .buffered,
+            defer: false
+        )
+        markedChrome.isReleasedWhenClosed = false
         defer {
             hud.close()
+            dockGroupList.close()
+            hub.close()
             terminal.close()
             report.close()
+            markedChrome.close()
         }
 
-        #expect(CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(hud))
+        // The HUD body, dock group list, and Hub window are Picky's own
+        // response surfaces, so the model must see them in screenshots.
+        #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(hud))
+        #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(dockGroupList))
+        #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(hub))
+        // Artifact viewers stay visible so the model can inspect contents.
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(terminal))
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(report))
+        // Marked control chrome still stays out of screenshots.
+        #expect(CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(markedChrome))
     }
 
     @Test func assemblesNeutralVoiceContextPacketAndStoresScreenshots() async throws {

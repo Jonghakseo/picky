@@ -11,10 +11,11 @@ import AppKit
 import CoreGraphics
 import ScreenCaptureKit
 
-/// Marker for Picky-owned chrome that should stay visible to the user but be
-/// omitted from screenshots sent as model context. Artifact viewers such as the
-/// markdown report panel and Pi terminal deliberately do not conform so the
-/// model can still inspect them when the user asks about their contents.
+/// Marker for Picky-owned control chrome that should stay visible to the user but be
+/// omitted from screenshots sent as model context. The HUD body, dock group list,
+/// and Hub window deliberately do not conform so the model can see Picky's own
+/// surfaces, and artifact viewers such as the markdown report panel and Pi terminal
+/// do not conform so the model can inspect them when the user asks about their contents.
 protocol PickyScreenCaptureExcludedWindow: AnyObject {}
 
 struct CompanionScreenCapture {
@@ -198,9 +199,10 @@ enum CompanionScreenCaptureUtility {
 
         let mouseLocation = NSEvent.mouseLocation
 
-        // Exclude Picky-owned control chrome (cursor overlays, HUD/dock, and
-        // transient input panels) while leaving artifact viewers such as the
-        // markdown report panel and Pi terminal visible for model inspection.
+        // Exclude Picky-owned control chrome (cursor overlays and transient
+        // input panels) while leaving the HUD body, dock group list, Hub
+        // window, and artifact viewers such as the markdown report panel and
+        // Pi terminal visible for model inspection.
         let excludedContextWindowIDs = contextCaptureExcludedWindowIDs(in: NSApp.windows)
         let excludedContextWindows = content.windows.filter { window in
             excludedContextWindowIDs.contains(window.windowID)

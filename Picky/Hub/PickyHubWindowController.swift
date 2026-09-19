@@ -219,7 +219,7 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
 }
 
 /// Plain titled window that honours ⌘W and can host text input.
-final class PickyHubWindow: NSWindow, PickyScreenCaptureExcludedWindow {
+final class PickyHubWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 

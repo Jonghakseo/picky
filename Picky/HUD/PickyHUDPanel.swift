@@ -7,7 +7,7 @@
 
 import AppKit
 
-final class PickyHUDPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
+final class PickyHUDPanel: PickySecureSurfacePanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
@@ -162,7 +162,7 @@ enum PickyHUDDockGroupListPanelKeyPolicy {
     }
 }
 
-final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow, PickyHUDDockGroupListContentHost {
+final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyHUDDockGroupListContentHost {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 

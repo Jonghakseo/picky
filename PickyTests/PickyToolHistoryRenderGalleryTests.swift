@@ -134,20 +134,29 @@ struct PickyToolHistoryRenderGalleryTests {
         }
     }
 
+    private struct ToolHistoryFixture {
+        let name: String
+        let args: String
+        let result: String
+        let structured: String?
+        let expanded: Bool
+        let failed: Bool
+    }
+
     private func makeRows() async -> [Row] {
-        let fixtures: [(name: String, args: String, result: String, structured: String?, expanded: Bool, failed: Bool)] = [
-            ("read", #"{"path":"Picky/HUD/PickyToolHistoryViewer.swift"}"#,
-             "import SwiftUI", nil, false, false),
-            ("edit", #"{"path":"Picky/HUD/PickyToolHistoryViewer.swift","oldText":"let showsDetails = false","newText":"let showsDetails = true"}"#,
-             "Successfully replaced text in Picky/HUD/PickyToolHistoryViewer.swift.", nil, true, false),
-            ("write", #"{"path":"Picky/HUD/HistoryStyle.swift","content":"struct HistoryStyle {\n    let rowHeight = 34\n    let showsStatus = true\n}"}"#,
-             "Successfully wrote Picky/HUD/HistoryStyle.swift.", nil, true, false),
-            ("todo_write", #"{"todos":[{"id":"inspect","content":"기존 도구 기록 확인","status":"completed"},{"id":"render","content":"원본 인자와 결과 표시","status":"in_progress"},{"id":"verify","content":"라이트·다크 화면 검증","status":"pending"}]}"#,
-             "Updated 3 tasks.", nil, true, false),
-            ("ask_user_question", #"{"questions":[{"id":"q1","type":"radio","prompt":"도구 기록을 어떻게 표시할까요?","options":[{"value":"list","label":"간결한 목록"},{"value":"cards","label":"카드"}]},{"id":"q2","type":"checkbox","prompt":"함께 표시할 정보는 무엇인가요?","options":[{"value":"time","label":"실행 시간"},{"value":"status","label":"완료 상태"}]}]}"#,
-             "User submitted answers.", #"{"value":{"q1":"list","q2":["time","status"]},"cancelled":false}"#, true, false),
-            ("bash", #"{"command":"pnpm test","title":"테스트 실행"}"#,
-             "Error: test command exited with code 1.", nil, true, true),
+        let fixtures: [ToolHistoryFixture] = [
+            ToolHistoryFixture(name: "read", args: #"{"path":"Picky/HUD/PickyToolHistoryViewer.swift"}"#,
+             result: "import SwiftUI", structured: nil, expanded: false, failed: false),
+            ToolHistoryFixture(name: "edit", args: #"{"path":"Picky/HUD/PickyToolHistoryViewer.swift","oldText":"let showsDetails = false","newText":"let showsDetails = true"}"#,
+             result: "Successfully replaced text in Picky/HUD/PickyToolHistoryViewer.swift.", structured: nil, expanded: true, failed: false),
+            ToolHistoryFixture(name: "write", args: #"{"path":"Picky/HUD/HistoryStyle.swift","content":"struct HistoryStyle {\n    let rowHeight = 34\n    let showsStatus = true\n}"}"#,
+             result: "Successfully wrote Picky/HUD/HistoryStyle.swift.", structured: nil, expanded: true, failed: false),
+            ToolHistoryFixture(name: "todo_write", args: #"{"todos":[{"id":"inspect","content":"기존 도구 기록 확인","status":"completed"},{"id":"render","content":"원본 인자와 결과 표시","status":"in_progress"},{"id":"verify","content":"라이트·다크 화면 검증","status":"pending"}]}"#,
+             result: "Updated 3 tasks.", structured: nil, expanded: true, failed: false),
+            ToolHistoryFixture(name: "ask_user_question", args: #"{"questions":[{"id":"q1","type":"radio","prompt":"도구 기록을 어떻게 표시할까요?","options":[{"value":"list","label":"간결한 목록"},{"value":"cards","label":"카드"}]},{"id":"q2","type":"checkbox","prompt":"함께 표시할 정보는 무엇인가요?","options":[{"value":"time","label":"실행 시간"},{"value":"status","label":"완료 상태"}]}]}"#,
+             result: "User submitted answers.", structured: #"{"value":{"q1":"list","q2":["time","status"]},"cancelled":false}"#, expanded: true, failed: false),
+            ToolHistoryFixture(name: "bash", args: #"{"command":"pnpm test","title":"테스트 실행"}"#,
+             result: "Error: test command exited with code 1.", structured: nil, expanded: true, failed: true),
         ]
         var rows: [Row] = []
         for (index, fixture) in fixtures.enumerated() {

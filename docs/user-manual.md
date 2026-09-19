@@ -47,16 +47,17 @@ Hub behavior:
 - Summoning an already open or minimized Hub brings it forward without moving it, even when you click the menu-bar icon on another display. The selected page and each visited page's scroll state remain available while the window stays alive.
 - Close Hub with the title-bar close control or `Cmd + W`. This closes the window, not Picky or its Pickles.
 - Read-only descriptions, paths, errors, and statistics values can be selected and copied. Navigation labels, buttons, and clickable cards keep their normal interaction instead of starting text selection.
-- Hub is excluded from Picky's screen captures. When you begin a voice/context capture, Picky returns focus to the external app you were using.
+- Picky's own windows (Hub and the HUD dock) are captured along with the rest of the screen, so the model can see the Picky UI that is visible. When you begin a voice/context capture, Picky returns focus to the external app you were using.
 
 ### 2.1 Sidebar pages
 
-The sidebar contains these seven destinations:
+The sidebar contains these eight destinations:
 
 - **Dashboard**: setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
 - **Statistics**: local work and AI-usage summaries. Filter by period and project, then switch between Work and Usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
 - **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
 - **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.
+- **Scheduled jobs**: a read-only calendar of schedules registered with the Cron plugin. Week or month view shows recorded runs and dashed projections for recurring jobs, with an agenda list and filters; click a day entry to read or copy the instructions of that run. Create or manage schedules on the Plugins page by talking to Picky.
 - **Plugins**: search or filter the curated Pi plugin catalog by category, view details, then install, update, remove, or set up supported plugins. Changes that require Pi to reload are surfaced in Hub, with confirmation when work is active.
 - **Recent Conversation**: the Picky main-agent timeline and composer.
 - **Settings**: grouped controls for Picky's behavior, accounts, local data, and diagnostics.
@@ -548,18 +549,17 @@ Long extension output starts collapsed. The collapsed bubble keeps the first lin
 
 ### 8.13 Tool History viewer
 
-Click a tool/activity summary in a Pickle card to open **Tool History** in a separate window. Tool History helps inspect what the Pickle actually did.
+Click a tool/activity summary in a Pickle card to open **Tool History** in a separate window. Tool History helps inspect what the Pickle actually did. It loads the original history from the Pickle's Pi session file, so the record survives Picky restarts and the scope toggle can still switch between the current turn and the whole session.
 
 It can show:
 
 - Tool calls grouped by category, such as read, bash, edit, write, and other.
 - Tool status and duration.
-- Bash output or generic tool details where available.
+- Full tool results inline, without extra metadata wrapping.
 - Edit diffs for file changes where available.
 - Dedicated layouts for todo-list updates and subagent launches; batch and chain entries retain the complete launched-agent list even when their task text is long.
-- A scope toggle to switch between the current turn and the whole session.
 
-File paths shown for read/edit/write entries are clickable when they are absolute (including `~`-prefixed) paths: clicking opens the file with its default app, and a right-click menu offers **Copy path**.
+File paths shown for read/edit/write entries are clickable: absolute (including `~`-prefixed) paths open directly, and relative paths resolve against the session's working directory. Clicking opens the file with its default app; a right-click menu offers **Open**, **Reveal in Finder**, and **Copy path**.
 
 Tool History is a local inspection surface for the current user, so treat visible tool outputs and diffs as potentially sensitive project context.
 

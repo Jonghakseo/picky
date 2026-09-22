@@ -87,6 +87,13 @@ class FakeSession extends EventEmitter {
       return `entry-${this.appendedMessages.length}`;
     },
   };
+  projectedAppendedCount = 0;
+  // Mirrors the real Pi 0.87+ contract where SessionManager is canonical for provider context:
+  // refreshContext() projects sessionManager content into agent.state.messages.
+  refreshContext(): void {
+    this.state.messages = [...this.state.messages, ...this.appendedMessages.slice(this.projectedAppendedCount)];
+    this.projectedAppendedCount = this.appendedMessages.length;
+  }
 
   async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);

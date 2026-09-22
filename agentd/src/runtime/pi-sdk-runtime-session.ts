@@ -676,7 +676,11 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     try {
       session.sessionManager.appendMessage(userMessage);
       session.sessionManager.appendMessage(assistantMessage);
-      session.state.messages = [...existing, userMessage, assistantMessage];
+      // Pi 0.87+ treats SessionManager as the canonical source for provider context; the
+      // appendMessage calls above record raw history and refreshContext() rebuilds agent.state
+      // from the session projection. Manually assigning session.state.messages would be ignored
+      // for future provider requests on this version.
+      session.refreshContext();
       logAgentd("pi inject bootstrap", {
         sessionId: this.id,
         userChars: messages.user.length,

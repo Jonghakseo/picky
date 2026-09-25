@@ -2149,7 +2149,7 @@ describe("PiSdkRuntime", () => {
 
     await delay(5);
 
-    expect(statusEvents(events)).toContainEqual({ type: "status", status: "failed", summary: "Agent error", assistantRun: { model: "claude-fake" } });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "failed", summary: "fatal provider error", assistantRun: { model: "claude-fake" } });
   });
 
   it("reports final failure when overflow compaction cannot recover", async () => {

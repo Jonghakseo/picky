@@ -54,7 +54,7 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
       return { kind: "thinkingDelta", delta: assistantEvent.delta };
     }
     if (assistantEvent.type === "error") {
-      return { kind: "status", status: "failed", summary: stringValue(assistantEvent.error) ?? "Agent error" };
+      return { kind: "status", status: "failed", summary: stringValue(asRecord(assistantEvent.error).errorMessage) ?? stringValue(assistantEvent.error) ?? "Agent error" };
     }
     return { kind: "none" };
   }
@@ -149,7 +149,7 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   if (type === "agent_end") {
     const lastMessage = lastAssistantMessage(piEvent.messages);
     const assistantRun = lastMessage ? assistantRunMetadata(lastMessage, context) : assistantRunMetadata(undefined, context);
-    const stopReasonStatus = terminalStatusFromStopReason(lastMessage ? stringValue(lastMessage.stopReason) : undefined);
+    const stopReasonStatus = terminalStatusFromStopReason(lastMessage ? stringValue(lastMessage.stopReason) : undefined, lastMessage ? stringValue(lastMessage.errorMessage) : undefined);
     if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, lastMessage ? assistantTextFromMessage(lastMessage) : undefined, assistantRun);
     return withFinalAnswer(completionStatusFromContext(context), lastMessage ? assistantTextFromMessage(lastMessage) : undefined, assistantRun);
   }
@@ -212,9 +212,9 @@ function completionStatusFromContext(context: PiEventNormalizationContext): Norm
   return { kind: "status", status: "completed", summary: "Completed" };
 }
 
-function terminalStatusFromStopReason(stopReason: string | undefined): NormalizedPiEvent | undefined {
+function terminalStatusFromStopReason(stopReason: string | undefined, errorMessage?: string): NormalizedPiEvent | undefined {
   if (stopReason === "aborted") return { kind: "status", status: "cancelled", summary: "Cancelled" };
-  if (stopReason === "error") return { kind: "status", status: "failed", summary: "Agent error" };
+  if (stopReason === "error") return { kind: "status", status: "failed", summary: errorMessage?.trim() || "Agent error" };
   return undefined;
 }
 

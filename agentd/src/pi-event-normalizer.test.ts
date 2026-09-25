@@ -18,6 +18,18 @@ describe("normalizePiEvent", () => {
     expect(normalizePiEvent(await fixture("abort-error.json"))).toMatchObject({ kind: "status", status: "failed" });
   });
 
+  it("keeps provider error details from both SDK error event shapes", () => {
+    const error = { role: "assistant", stopReason: "error", errorMessage: "Azure OpenAI base URL is required.", content: [] };
+    for (const event of [
+      { type: "message_update", assistantMessageEvent: { type: "error", error } },
+      { type: "agent_end", messages: [error] },
+    ]) {
+      expect(normalizePiEvent(event)).toMatchObject({ kind: "status", status: "failed", summary: error.errorMessage });
+    }
+    expect(normalizePiEvent({ type: "agent_end", messages: [{ ...error, errorMessage: undefined }] }))
+      .toMatchObject({ kind: "status", status: "failed", summary: "Agent error" });
+  });
+
   it("maps final turn completion before agent_end so completed cards do not stay working", () => {
     expect(normalizePiEvent({
       type: "turn_end",

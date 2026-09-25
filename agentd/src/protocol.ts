@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AgentCycleSchema, AsyncWorkSummarySchema, AsyncTaskSchema, CompletionTicketSchema, AsyncTaskDetailSchema, AsyncControlStateSchema } from "./domain/async-task-contract.js";
 
 export const PROTOCOL_VERSION = "2026-08-25";
 
@@ -368,6 +369,11 @@ export const PickyAgentSessionSchema = z.object({
   tools: z.array(PickyToolActivitySchema).default([]),
   todoState: PickyTodoStateSchema.optional(),
   subagentRuns: z.array(PickySubagentRunSchema).default([]),
+  agentCycle: AgentCycleSchema.optional(),
+  asyncWorkSummary: AsyncWorkSummarySchema.optional(),
+  asyncTasks: z.array(AsyncTaskSchema).refine((tasks) => AsyncTaskDetailSchema.safeParse({ tasks, tickets: [] }).success, "Invalid task identities or roots").optional(),
+  completionTickets: z.array(CompletionTicketSchema).optional(),
+  asyncControl: AsyncControlStateSchema.optional(),
   artifacts: z.array(PickyArtifactSchema).default([]),
   changedFiles: z.array(PickyChangedFileSchema).default([]),
   messages: z.array(PickySessionMessageSchema).default([]),
@@ -409,6 +415,8 @@ export type PickyAgentSessionMeta = z.infer<typeof PickyAgentSessionMetaSchema>;
 // Projection v2 patches only scalar metadata. Collections and specialized state
 // have explicit mutations so a field's ownership cannot be hidden in metaPatch.
 export const PickySessionMetaPatchSchema = z.object({
+  agentCycle: AgentCycleSchema.nullable().optional(),
+  asyncWorkSummary: AsyncWorkSummarySchema.nullable().optional(),
   id: z.string().optional(),
   title: z.string().optional(),
   status: SessionStatusSchema.optional(),
@@ -446,6 +454,8 @@ export const PickySessionProjectionMutationVariantSchema = z.discriminatedUnion(
   z.object({ type: z.literal("toolsSet"), tools: z.array(PickyToolActivitySchema) }),
   z.object({ type: z.literal("todoSet"), todoState: PickyTodoStateSchema.nullable() }),
   z.object({ type: z.literal("subagentRunsSet"), runs: z.array(PickySubagentRunSchema) }),
+  z.object({ type: z.literal("asyncTaskDetailSet"), detail: AsyncTaskDetailSchema.nullable() }),
+  z.object({ type: z.literal("asyncControlSet"), control: AsyncControlStateSchema.nullable() }),
   z.object({ type: z.literal("artifactUpsert"), artifact: PickyArtifactSchema }),
   z.object({ type: z.literal("artifactsSet"), artifacts: z.array(PickyArtifactSchema) }),
   z.object({ type: z.literal("changedFilesSet"), changedFiles: z.array(PickyChangedFileSchema) }),
@@ -1144,6 +1154,25 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
 ]);
 
 export const EventEnvelopeSchema = EventEnvelopeVariantSchema.superRefine((event, context) => {
+  if (event.type === "sessionProjectionTransaction") {
+    for (const mutation of event.mutations) {
+      if (mutation.type === "asyncTaskDetailSet" && mutation.detail?.tasks.some((task) => task.sessionId !== event.sessionId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Async task session must match transaction" });
+      }
+    }
+  }
+  if (event.type === "sessionProjectionSnapshot") {
+    if (event.omittedFields.some((field) => field === "agentCycle" || field === "asyncWorkSummary")) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Safety metadata cannot be omitted" });
+    }
+    const projection = event.projection;
+    if (projection.asyncTasks !== undefined && projection.completionTickets !== undefined) {
+      const detail = AsyncTaskDetailSchema.safeParse({ tasks: projection.asyncTasks, tickets: projection.completionTickets });
+      if (!detail.success || projection.asyncTasks.some((task) => task.sessionId !== event.sessionId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid async task projection relationships" });
+      }
+    }
+  }
   if (event.type === "sessionProjectionTransaction") {
     if (event.revision <= event.baseRevision) {
       context.addIssue({

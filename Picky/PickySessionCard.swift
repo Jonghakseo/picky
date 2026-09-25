@@ -26,6 +26,11 @@ struct PickySessionCard: Equatable, Identifiable {
     var tools: [PickyToolActivity]
     var todoState: PickyTodoState? = nil
     var subagentRuns: [PickySubagentRun] = []
+    var agentCycle: PickyAgentCycle? = nil
+    var asyncWorkSummary: PickyAsyncWorkSummary? = nil
+    var asyncTasks: [PickyAsyncTask]? = nil
+    var completionTickets: [PickyCompletionTicket]? = nil
+    var asyncControl: PickyAsyncControlState? = nil
     var artifacts: [PickyArtifact]
     var changedFiles: [PickyChangedFile]
     var messages: [PickySessionMessage]
@@ -229,6 +234,11 @@ extension PickySessionCard {
         self.tools = session.tools
         self.todoState = session.todoState
         self.subagentRuns = session.subagentRuns
+        self.agentCycle = session.agentCycle
+        self.asyncWorkSummary = session.asyncWorkSummary
+        self.asyncTasks = session.asyncTasks
+        self.completionTickets = session.completionTickets
+        self.asyncControl = session.asyncControl
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
         self.messages = session.messages

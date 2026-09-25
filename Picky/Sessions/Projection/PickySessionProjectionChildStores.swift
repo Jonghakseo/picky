@@ -40,8 +40,12 @@ struct PickySessionMetadata: Equatable {
     var archivedAt: Date?
     var pinned: Bool?
     var lastRequest: PickySessionLastRequest?
+    var agentCycle: PickyAgentCycle?
+    var asyncWorkSummary: PickyAsyncWorkSummary?
 
     init(session: PickyAgentSession, revision: Int = 0, archivedAt: Date? = nil) {
+        agentCycle = session.agentCycle
+        asyncWorkSummary = session.asyncWorkSummary
         id = session.id
         self.revision = revision
         title = session.title
@@ -67,6 +71,8 @@ struct PickySessionMetadata: Equatable {
     /// is not represented by that legacy value model, so it remains dormant
     /// until the v2 mutation path writes metadata directly.
     init(card: PickySessionListViewModel.SessionCard, revision: Int = 0, archivedAt: Date? = nil) {
+        agentCycle = card.agentCycle
+        asyncWorkSummary = card.asyncWorkSummary
         id = card.id
         self.revision = revision
         title = card.title

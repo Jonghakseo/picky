@@ -132,6 +132,7 @@ export function buildSessionProjectionMutations(
 ): PickySessionProjectionMutation[] {
   return [
     ...metaMutations(before, after),
+    ...asyncTaskMutations(before, after),
     ...logMutations(before, after, options.forceCollectionReplacements),
     ...messageMutations(before, after),
     ...toolAndStateMutations(before, after, options.forceCollectionReplacements),
@@ -216,7 +217,7 @@ function artifactAndPresentationMutations(before: Readonly<PickyAgentSession>, a
 
 function changedMetaPatch(before: Readonly<PickyAgentSession>, after: PickyAgentSession): Extract<PickySessionProjectionMutation, { type: "metaPatch" }>['patch'] {
   const patch: Extract<PickySessionProjectionMutation, { type: "metaPatch" }>['patch'] = {};
-  const fields = ["id", "title", "status", "cwd", "piSessionFilePath", "createdAt", "updatedAt", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage", "currentAssistantRun", "notifyMainOnCompletion", "notifyMacOSOnCompletion", "archived", "archivedAt", "pinned", "lastRequest"] as const;
+  const fields = ["agentCycle", "asyncWorkSummary", "id", "title", "status", "cwd", "piSessionFilePath", "createdAt", "updatedAt", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage", "currentAssistantRun", "notifyMainOnCompletion", "notifyMacOSOnCompletion", "archived", "archivedAt", "pinned", "lastRequest"] as const;
   for (const field of fields) {
     if (same(before[field], after[field])) continue;
     const value = after[field];
@@ -254,4 +255,14 @@ function sameQueue(before: Readonly<PickyAgentSession>, after: PickyAgentSession
     && same(before.queuedFollowUps ?? [], after.queuedFollowUps ?? [])
     && (before.steeringMode ?? "one-at-a-time") === (after.steeringMode ?? "one-at-a-time")
     && (before.followUpMode ?? "one-at-a-time") === (after.followUpMode ?? "one-at-a-time");
+}
+
+function asyncTaskMutations(before: Readonly<PickyAgentSession>, after: PickyAgentSession): PickySessionProjectionMutation[] {
+  const mutations: PickySessionProjectionMutation[] = [];
+  if (!same(before.asyncTasks, after.asyncTasks) || !same(before.completionTickets, after.completionTickets)) {
+    mutations.push({ type: "asyncTaskDetailSet", detail: after.asyncTasks !== undefined && after.completionTickets !== undefined
+      ? { tasks: after.asyncTasks, tickets: after.completionTickets } : null });
+  }
+  if (!same(before.asyncControl, after.asyncControl)) mutations.push({ type: "asyncControlSet", control: after.asyncControl ?? null });
+  return mutations;
 }

@@ -1,0 +1,23 @@
+{
+  "sessionId": "session-async",
+  "piSessionId": "pi-async",
+  "runtimeInstanceId": "runtime-async",
+  "providerId": "subagent",
+  "providerInstanceId": "provider-async",
+  "contract": "pi.async-tasks.v1",
+  "requestId": "request-1",
+  "providerRevision": 3,
+  "controlGeneration": 1,
+  "type": "provider-ready",
+  "providerVersion": "1.0.0",
+  "contractVersion": 1,
+  "snapshotReady": true,
+  "capabilities": {
+    "registration": true,
+    "snapshot": true,
+    "cancel": true,
+    "detail": true,
+    "closeAdmission": true,
+    "suppressDelivery": true
+  }
+}

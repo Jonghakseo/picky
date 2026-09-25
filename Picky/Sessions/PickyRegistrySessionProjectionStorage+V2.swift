@@ -42,6 +42,26 @@ extension PickyRegistrySessionProjectionStorage {
         return card
     }
 
+    /// Progress-only commits update the leaf store and revision without publishing
+    /// a rebuilt conversation card. Safety/status changes use the ordinary path.
+    func applyAsyncTaskDetailTransaction(_ transaction: PickySessionProjectionTransaction) -> Bool {
+        guard !transaction.mutations.isEmpty,
+              transaction.mutations.allSatisfy({ mutation in
+                  switch mutation {
+                  case .asyncTaskDetailSet, .asyncControlSet: true
+                  default: false
+                  }
+              }),
+              let store = registry.existingSessionStore(sessionID: transaction.sessionId),
+              case .loaded(var metadata) = store.metaStore.metadataState else { return false }
+        for mutation in transaction.mutations {
+            apply(mutation, to: store, metadata: &metadata)
+        }
+        metadata.revision = transaction.revision
+        store.metaStore.replace(metadata)
+        return true
+    }
+
     @discardableResult
     func applyProjectionTransaction(
         _ transaction: PickySessionProjectionTransaction,
@@ -150,6 +170,11 @@ extension PickyRegistrySessionProjectionStorage {
         else { store.todoStore.replace(projection.todoState) }
         if omittedFields.contains("subagentRuns") { store.subagentStore.markUnavailable() }
         else { store.subagentStore.replace(projection.subagentRuns) }
+        store.asyncTaskStore.replace(
+            tasks: omittedFields.contains("asyncTasks") ? nil : projection.asyncTasks,
+            tickets: omittedFields.contains("completionTickets") ? nil : projection.completionTickets,
+            control: omittedFields.contains("asyncControl") ? nil : projection.asyncControl
+        )
         if omittedFields.contains("artifacts") || omittedFields.contains("changedFiles") { store.artifactStore.markUnavailable() }
         else { store.artifactStore.replace(artifacts: projection.artifacts, changedFiles: projection.changedFiles) }
         if omittedFields.contains("messages") { store.conversationStore.markMessagesUnavailable() }
@@ -217,6 +242,10 @@ extension PickyRegistrySessionProjectionStorage {
             store.todoStore.replace(todoState)
         case .subagentRunsSet(let runs):
             store.subagentStore.replace(runs)
+        case .asyncTaskDetailSet(let detail):
+            store.asyncTaskStore.replaceDetail(detail)
+        case .asyncControlSet(let control):
+            store.asyncTaskStore.replaceControl(control)
         case .artifactUpsert(let artifact):
             var artifacts = store.artifactStore.artifactsState.loadedValue ?? []
             if let index = artifacts.firstIndex(where: { $0.id == artifact.id }) { artifacts[index] = artifact }
@@ -271,6 +300,8 @@ extension PickyRegistrySessionProjectionStorage {
     ) {
         // Session identity is a transaction envelope invariant; a meta patch
         // may repeat it for validation but never rekeys an existing store.
+        apply(patch.agentCycle, to: &metadata.agentCycle)
+        apply(patch.asyncWorkSummary, to: &metadata.asyncWorkSummary)
         apply(patch.title, to: &metadata.title)
         apply(patch.status, to: &metadata.status)
         apply(patch.cwd, to: &metadata.cwd)

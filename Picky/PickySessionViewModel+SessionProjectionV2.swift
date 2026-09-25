@@ -125,12 +125,12 @@ extension PickySessionListViewModel {
         disarmInitialSnapshotWatchdog()
         isLoadingInitialSessionSnapshot = false
     }
-
     private func applySessionProjectionTransaction(_ transaction: PickySessionProjectionTransaction) {
         guard let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage else {
             lastError = L10n.t("hud.session.sync.storageUnavailable")
             return
         }
+        if storage.applyAsyncTaskDetailTransaction(transaction) { return }
         let previous = sessionProjectionStorage.session(id: transaction.sessionId)
         let invalidatesSlashCommandCache = transactionChangesSlashCommandMetadata(transaction, storage: storage)
         let wasActive = storage.registry.activeSessionIDs.contains(transaction.sessionId)

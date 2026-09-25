@@ -1,0 +1,17 @@
+{
+  "requestId": "request-1",
+  "sessionId": "session-async",
+  "daemonInstanceId": "daemon-1",
+  "runtimeInstanceId": "runtime-async",
+  "workRevision": 2,
+  "controlGeneration": 1,
+  "type": "cancelAsyncTask",
+  "owner": {
+    "sessionId": "session-async",
+    "piSessionId": "pi-async",
+    "runtimeInstanceId": "runtime-async",
+    "providerId": "subagent",
+    "providerInstanceId": "provider-async"
+  },
+  "taskId": "task-1"
+}

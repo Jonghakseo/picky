@@ -55,6 +55,8 @@ enum FieldUpdate<Value: Equatable>: Equatable {
 /// Dormant v2 scalar metadata patch. This mirrors
 /// `PickySessionMetaPatchSchema`; collection fields have their own mutations.
 struct PickySessionMetaPatch: Decodable, Equatable {
+    let agentCycle: FieldUpdate<PickyAgentCycle>
+    let asyncWorkSummary: FieldUpdate<PickyAsyncWorkSummary>
     let id: FieldUpdate<String>
     let title: FieldUpdate<String>
     let status: FieldUpdate<PickySessionStatus>
@@ -75,6 +77,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
     let lastRequest: FieldUpdate<PickySessionLastRequest>
 
     enum CodingKeys: String, CodingKey, CaseIterable {
+        case agentCycle, asyncWorkSummary
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary
         case thinkingPreview, messageJournalAvailable, contextUsage, currentAssistantRun
         case notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
@@ -92,6 +95,8 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         }
 
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        agentCycle = try FieldUpdate.decode(from: container, forKey: .agentCycle, allowsClear: true)
+        asyncWorkSummary = try FieldUpdate.decode(from: container, forKey: .asyncWorkSummary, allowsClear: true)
         id = try FieldUpdate.decode(from: container, forKey: .id, allowsClear: false)
         title = try FieldUpdate.decode(from: container, forKey: .title, allowsClear: false)
         status = try FieldUpdate.decode(from: container, forKey: .status, allowsClear: false)
@@ -127,6 +132,8 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
     case toolsSet([PickyToolActivity])
     case todoSet(PickyTodoState?)
     case subagentRunsSet([PickySubagentRun])
+    case asyncTaskDetailSet(PickyAsyncTaskDetail?)
+    case asyncControlSet(PickyAsyncControlState?)
     case artifactUpsert(PickyArtifact)
     case artifactsSet([PickyArtifact])
     case changedFilesSet([PickyChangedFile])
@@ -148,6 +155,8 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
         case .toolsSet: "toolsSet"
         case .todoSet: "todoSet"
         case .subagentRunsSet: "subagentRunsSet"
+        case .asyncTaskDetailSet: "asyncTaskDetailSet"
+        case .asyncControlSet: "asyncControlSet"
         case .artifactUpsert: "artifactUpsert"
         case .artifactsSet: "artifactsSet"
         case .changedFilesSet: "changedFilesSet"
@@ -161,7 +170,7 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case type, patch, message, messageId, messages, line, logs, tool, tools, todoState, runs, artifact, artifacts
         case changedFiles, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary
-        case finalAnswer, request
+        case finalAnswer, request, detail, control
     }
 
     init(from decoder: Decoder) throws {
@@ -189,6 +198,8 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
                 self = .todoSet(try container.decode(PickyTodoState.self, forKey: .todoState))
             }
         case "subagentRunsSet": self = .subagentRunsSet(try container.decode([PickySubagentRun].self, forKey: .runs))
+        case "asyncTaskDetailSet": self = .asyncTaskDetailSet(try container.decodeNil(forKey: .detail) ? nil : container.decode(PickyAsyncTaskDetail.self, forKey: .detail))
+        case "asyncControlSet": self = .asyncControlSet(try container.decodeNil(forKey: .control) ? nil : container.decode(PickyAsyncControlState.self, forKey: .control))
         case "artifactUpsert": self = .artifactUpsert(try container.decode(PickyArtifact.self, forKey: .artifact))
         case "artifactsSet": self = .artifactsSet(try container.decode([PickyArtifact].self, forKey: .artifacts))
         case "changedFilesSet": self = .changedFilesSet(try container.decode([PickyChangedFile].self, forKey: .changedFiles))
@@ -253,6 +264,10 @@ struct PickySessionProjectionTransaction: Decodable, Equatable {
             throw DecodingError.dataCorruptedError(forKey: .revision, in: container, debugDescription: "Transactions require non-empty mutations and revision > baseRevision")
         }
         for mutation in mutations {
+            if case .asyncTaskDetailSet(let detail?) = mutation,
+               !detail.tasks.allSatisfy({ $0.sessionId == sessionId }) {
+                throw DecodingError.dataCorruptedError(forKey: .mutations, in: container, debugDescription: "Async task session must match transaction")
+            }
             guard case .extensionUiRequestSet(let request?) = mutation, request.sessionId != sessionId else { continue }
             throw DecodingError.dataCorruptedError(forKey: .mutations, in: container, debugDescription: "extension UI request sessionId must match transaction sessionId")
         }
@@ -293,6 +308,7 @@ struct PickySessionProjectionSnapshot: Decodable, Equatable {
     // Mirrors the persisted PickyAgentSession schema, including `archivedAt`,
     // which remains a dormant v2 patch field until the storage cutover.
     private static let persistedSessionFields: Set<String> = [
+        "agentCycle", "asyncWorkSummary", "asyncTasks", "completionTickets", "asyncControl",
         "id", "title", "status", "cwd", "piSessionFilePath", "createdAt", "updatedAt",
         "lastSummary", "thinkingPreview", "finalAnswer", "logs", "tools", "todoState",
         "subagentRuns", "artifacts", "changedFiles", "messages", "messageJournalAvailable",
@@ -318,6 +334,7 @@ struct PickySessionProjectionSnapshot: Decodable, Equatable {
         guard revision >= 0,
               Set(omittedFields).count == omittedFields.count,
               omittedFields.allSatisfy({ Self.persistedSessionFields.contains($0) }),
+              !omittedFields.contains("agentCycle"), !omittedFields.contains("asyncWorkSummary"),
               !complete || omittedFields.isEmpty else {
             throw DecodingError.dataCorruptedError(forKey: .omittedFields, in: container, debugDescription: "Invalid projection snapshot omission metadata")
         }

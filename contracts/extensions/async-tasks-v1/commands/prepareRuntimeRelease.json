@@ -1,0 +1,11 @@
+{
+  "requestId": "request-1",
+  "sessionId": "session-async",
+  "daemonInstanceId": "daemon-1",
+  "runtimeInstanceId": "runtime-async",
+  "workRevision": 2,
+  "controlGeneration": 1,
+  "type": "prepareRuntimeRelease",
+  "archiveIntentId": "archive-1",
+  "childGeneration": 1
+}

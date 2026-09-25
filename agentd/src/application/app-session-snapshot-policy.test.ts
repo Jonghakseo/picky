@@ -112,7 +112,7 @@ describe("app session snapshot policy", () => {
     });
 
     expect(result.omittedFields).toEqual([
-      "logs", "tools", "todoState", "subagentRuns", "artifacts", "changedFiles", "messages",
+      "asyncTasks", "completionTickets", "asyncControl", "logs", "tools", "todoState", "subagentRuns", "artifacts", "changedFiles", "messages",
       "messageJournalAvailable", "queuedSteers", "queuedFollowUps", "steeringMode", "followUpMode",
       "currentAssistantRun", "pendingExtensionUiRequest",
     ]);

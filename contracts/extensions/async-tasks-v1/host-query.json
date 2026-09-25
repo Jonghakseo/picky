@@ -1,0 +1,12 @@
+{
+  "sessionId": null,
+  "piSessionId": "pi-async",
+  "runtimeInstanceId": null,
+  "providerId": "subagent",
+  "providerInstanceId": "provider-async",
+  "contract": "pi.async-tasks.v1",
+  "requestId": "request-1",
+  "providerRevision": 3,
+  "controlGeneration": 1,
+  "type": "host-query"
+}

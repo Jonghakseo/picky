@@ -3,7 +3,7 @@ import transientManifest from "../../../contracts/projection/session-transient-o
 import { z } from "zod";
 
 const snapshotSemanticsSchema = z.enum(["replace", "merge", "clear-if-omitted-explicit"]);
-const p0OmissionBehaviorSchema = z.enum(["never-omitted", "omitted-empty"]);
+const p0OmissionBehaviorSchema = z.enum(["never-omitted", "omitted-empty", "omitted-unavailable"]);
 const mutationSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
 
 const sessionFieldOwnershipSchema = z.object({

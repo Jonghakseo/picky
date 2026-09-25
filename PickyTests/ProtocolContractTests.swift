@@ -1214,6 +1214,8 @@ struct ProtocolContractTests {
             #"{"type":"toolsSet","tools":[]}"#,
             #"{"type":"todoSet","todoState":null}"#,
             #"{"type":"subagentRunsSet","runs":[]}"#,
+            #"{"type":"asyncTaskDetailSet","detail":null}"#,
+            #"{"type":"asyncControlSet","control":null}"#,
             #"{"type":"artifactUpsert","artifact":{"id":"artifact-001","kind":"report","title":"Report","updatedAt":"2026-08-24T00:00:00.000Z"}}"#,
             #"{"type":"artifactsSet","artifacts":[]}"#,
             #"{"type":"changedFilesSet","changedFiles":[]}"#,
@@ -1229,7 +1231,7 @@ struct ProtocolContractTests {
         #expect(decoded.map(\.type) == [
             "metaPatch", "messageAppend", "messageReplace", "messageRemove", "messagesImport",
             "logAppend", "logsSet", "toolUpsert", "toolsSet", "todoSet", "subagentRunsSet",
-            "artifactUpsert", "artifactsSet", "changedFilesSet", "queueSet", "activitySet",
+            "asyncTaskDetailSet", "asyncControlSet", "artifactUpsert", "artifactsSet", "changedFilesSet", "queueSet", "activitySet",
             "finalAnswerSet", "extensionUiRequestSet",
         ])
         #expect(throws: DecodingError.self) {
@@ -1275,7 +1277,7 @@ struct ProtocolContractTests {
         let ownership = try JSONDecoder().decode([PickySessionFieldOwnershipFixture].self, from: Data(contentsOf: manifestURL))
 
         #expect(Set(ownership.map(\.swiftStore)) == [
-            "PickySessionActivityStore", "PickySessionArtifactStore", "PickySessionExtensionUiStore",
+            "PickySessionActivityStore", "PickySessionArtifactStore", "PickySessionExtensionUiStore", "PickySessionAsyncTaskStore",
             "PickySessionLogStore", "PickySessionMessageStore", "PickySessionMetaStore", "PickySessionRevisionCursor",
             "PickySessionQueueStore", "PickySessionSubagentStore", "PickySessionTodoStore", "PickySessionToolStore",
         ])

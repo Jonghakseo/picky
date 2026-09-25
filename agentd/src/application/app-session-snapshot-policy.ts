@@ -33,6 +33,8 @@ export function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): 
     messages: [],
     messageJournalAvailable: false,
     activitySummary: session.activitySummary,
+    agentCycle: session.agentCycle,
+    asyncWorkSummary: session.asyncWorkSummary,
     contextUsage: session.contextUsage,
     notifyMainOnCompletion: session.notifyMainOnCompletion,
     notifyMacOSOnCompletion: session.notifyMacOSOnCompletion,
@@ -67,7 +69,7 @@ export function boundedSessionForProjectionSnapshot(
     // when every large child section is omitted.
     minimal: (candidate) => protocolSession({ ...minimalSessionForAppSnapshot(candidate), revision: candidate.revision }),
     minimalOmittedFields: [
-      "logs", "tools", "todoState", "subagentRuns", "artifacts", "changedFiles", "messages",
+      "asyncTasks", "completionTickets", "asyncControl", "logs", "tools", "todoState", "subagentRuns", "artifacts", "changedFiles", "messages",
       "messageJournalAvailable", "queuedSteers", "queuedFollowUps", "steeringMode", "followUpMode",
       "currentAssistantRun", "pendingExtensionUiRequest",
     ],
@@ -81,19 +83,24 @@ function boundedSessionForFrame(
 ): { session?: PickyAgentSessionParsed; omittedFields: string[] } {
   if (eventPayloadByteLength(payload(session, [])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) return { session, omittedFields: [] };
 
-  const withoutSubagentRuns = protocolSession({ ...session, subagentRuns: [] });
-  if (eventPayloadByteLength(payload(withoutSubagentRuns, ["subagentRuns"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
-    return { session: withoutSubagentRuns, omittedFields: ["subagentRuns"] };
+  const asyncOmissions = ["asyncTasks", "completionTickets", "asyncControl"].filter((field) => field in session);
+  const withoutAsync = protocolSession({ ...session, asyncTasks: undefined, completionTickets: undefined, asyncControl: undefined });
+  if (asyncOmissions.length && eventPayloadByteLength(payload(withoutAsync, asyncOmissions)) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
+    return { session: withoutAsync, omittedFields: asyncOmissions };
+  }
+  const withoutSubagentRuns = protocolSession({ ...withoutAsync, subagentRuns: [] });
+  if (eventPayloadByteLength(payload(withoutSubagentRuns, [...asyncOmissions, "subagentRuns"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
+    return { session: withoutSubagentRuns, omittedFields: [...asyncOmissions, "subagentRuns"] };
   }
 
   const withoutTools = protocolSession({ ...withoutSubagentRuns, tools: [] });
-  if (eventPayloadByteLength(payload(withoutTools, ["subagentRuns", "tools"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
-    return { session: withoutTools, omittedFields: ["subagentRuns", "tools"] };
+  if (eventPayloadByteLength(payload(withoutTools, [...asyncOmissions, "subagentRuns", "tools"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
+    return { session: withoutTools, omittedFields: [...asyncOmissions, "subagentRuns", "tools"] };
   }
 
   const withoutMessages = protocolSession({ ...withoutTools, messages: [], messageJournalAvailable: false });
-  if (eventPayloadByteLength(payload(withoutMessages, ["subagentRuns", "tools", "messages"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
-    return { session: withoutMessages, omittedFields: ["subagentRuns", "tools", "messages"] };
+  if (eventPayloadByteLength(payload(withoutMessages, [...asyncOmissions, "subagentRuns", "tools", "messages"])) <= APP_EVENT_SAFE_PAYLOAD_BYTE_LIMIT) {
+    return { session: withoutMessages, omittedFields: [...asyncOmissions, "subagentRuns", "tools", "messages"] };
   }
 
   const minimalSession = fallback.minimal(session);

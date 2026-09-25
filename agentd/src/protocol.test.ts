@@ -931,6 +931,8 @@ describe("protocol contract fixtures", () => {
       toolsSet: { type: "toolsSet", tools: [] },
       todoSet: { type: "todoSet", todoState: null },
       subagentRunsSet: { type: "subagentRunsSet", runs: [] },
+      asyncTaskDetailSet: { type: "asyncTaskDetailSet", detail: null },
+      asyncControlSet: { type: "asyncControlSet", control: null },
       artifactUpsert: { type: "artifactUpsert", artifact: { id: "artifact-001", kind: "report", title: "Report", updatedAt: "2026-08-24T00:00:00.000Z" } },
       artifactsSet: { type: "artifactsSet", artifacts: [] },
       changedFilesSet: { type: "changedFilesSet", changedFiles: [] },

@@ -18,6 +18,7 @@ final class PickySessionStore {
     let toolStore = PickySessionToolStore()
     let todoStore = PickySessionTodoStore()
     let subagentStore = PickySessionSubagentStore()
+    let asyncTaskStore = PickySessionAsyncTaskStore()
     let artifactStore = PickySessionArtifactStore()
     let conversationStore = PickyConversationStore()
     let queueStore = PickySessionQueueStore()
@@ -52,6 +53,7 @@ final class PickySessionStore {
         replaceTools(for: card)
         replaceTodo(for: card)
         replaceSubagentRuns(for: card)
+        asyncTaskStore.replace(tasks: card.asyncTasks, tickets: card.completionTickets, control: card.asyncControl)
         replaceArtifacts(for: card)
         replaceMessages(for: card)
         replaceQueue(for: card)
@@ -117,6 +119,11 @@ final class PickySessionStore {
             tools: tools,
             todoState: todoState,
             subagentRuns: subagentRuns,
+            agentCycle: metadata.agentCycle,
+            asyncWorkSummary: metadata.asyncWorkSummary,
+            asyncTasks: asyncTaskStore.detailState.loadedValue?.tasks,
+            completionTickets: asyncTaskStore.detailState.loadedValue?.tickets,
+            asyncControl: asyncTaskStore.controlState.loadedValue,
             artifacts: artifacts,
             changedFiles: changedFiles,
             messages: messages,
@@ -172,6 +179,11 @@ final class PickySessionStore {
             tools: toolStore.toolsState.loadedValue ?? [],
             todoState: todoState,
             subagentRuns: subagentStore.runsState.loadedValue ?? [],
+            agentCycle: metadata.agentCycle,
+            asyncWorkSummary: metadata.asyncWorkSummary,
+            asyncTasks: asyncTaskStore.detailState.loadedValue?.tasks,
+            completionTickets: asyncTaskStore.detailState.loadedValue?.tickets,
+            asyncControl: asyncTaskStore.controlState.loadedValue,
             artifacts: artifactStore.artifactsState.loadedValue ?? [],
             changedFiles: artifactStore.changedFilesProjectionState.loadedValue ?? [],
             messages: [],

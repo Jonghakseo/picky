@@ -1,0 +1,37 @@
+{
+  "sessionId": "session-async",
+  "piSessionId": "pi-async",
+  "runtimeInstanceId": "runtime-async",
+  "providerId": "subagent",
+  "providerInstanceId": "provider-async",
+  "contract": "pi.async-tasks.v1",
+  "requestId": "request-1",
+  "providerRevision": 3,
+  "controlGeneration": 1,
+  "type": "task-register",
+  "task": {
+    "sessionId": "session-async",
+    "piSessionId": "pi-async",
+    "runtimeInstanceId": "runtime-async",
+    "providerId": "subagent",
+    "providerInstanceId": "provider-async",
+    "taskId": "task-1",
+    "rootTaskId": "task-1",
+    "kind": "future-agent",
+    "title": "Review",
+    "execution": "queued",
+    "presence": "settled",
+    "registration": "reserved",
+    "grantId": "grant-1",
+    "providerRevision": 3,
+    "controlGeneration": 1,
+    "createdAt": "2026-09-25T00:00:00.000Z",
+    "updatedAt": "2026-09-25T00:00:01.000Z",
+    "details": {
+      "runId": 1,
+      "future": {
+        "preserved": true
+      }
+    }
+  }
+}

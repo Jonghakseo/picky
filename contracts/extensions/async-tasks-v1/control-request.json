@@ -1,0 +1,14 @@
+{
+  "sessionId": "session-async",
+  "piSessionId": "pi-async",
+  "runtimeInstanceId": "runtime-async",
+  "providerId": "subagent",
+  "providerInstanceId": "provider-async",
+  "contract": "pi.async-tasks.v1",
+  "requestId": "request-1",
+  "providerRevision": 3,
+  "controlGeneration": 1,
+  "type": "control-request",
+  "action": "closeAdmission",
+  "deliveryIds": []
+}

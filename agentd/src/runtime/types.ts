@@ -1,3 +1,5 @@
+import type { AsyncCompletionDelivery } from "../domain/async-task-contract.js";
+import type { RuntimeAsyncTaskControl, RuntimeAsyncTaskEvent, RuntimeAsyncTaskOwner } from "./async-task-types.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { PickyAutocompleteItem } from "../protocol.js";
 
@@ -132,6 +134,7 @@ export interface RuntimeGlobalModelScopeChange {
 }
 
 export type RuntimeEvent =
+  | RuntimeAsyncTaskEvent
   | { type: "log"; line: string }
   | { type: "assistant_delta"; delta: string; inputId?: string }
   | { type: "thinking_delta"; delta: string }
@@ -144,7 +147,7 @@ export type RuntimeEvent =
    * messages are displayable context by default; only a true value means the message arrived
    * while Pi was running a turn and may safely revive a completed Pickle.
    */
-  | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string; turnActive?: boolean }
+  | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string; turnActive?: boolean; asyncTasks?: AsyncCompletionDelivery }
   | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
   | { type: "status"; status: RuntimeSessionStatus; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
   /**
@@ -178,6 +181,7 @@ export interface AnswerExtensionUiOptions {
 }
 
 export interface RuntimeSessionHandle {
+  readonly asyncTasks?: RuntimeAsyncTaskControl;
   id: string;
   /** Resolves when the follow-up is accepted/queued, not when the agent finishes the turn. */
   followUp(prompt: BuiltPrompt): Promise<void>;
@@ -276,6 +280,8 @@ export interface RuntimeSessionHandle {
 }
 
 export interface RuntimeCreateOptions {
+  /** Explicit per-Pickle opt-in. Absent in production and main-agent creation. */
+  asyncTaskHost?: RuntimeAsyncTaskOwner;
   cwd?: string;
   sessionId?: string;
   /** Undefined preserves startup defaults; null explicitly uses Pi defaults. */
@@ -285,8 +291,8 @@ export interface RuntimeCreateOptions {
 
 export interface AgentRuntime {
   create(prompt: BuiltPrompt, options: RuntimeCreateOptions): Promise<RuntimeSessionHandle>;
-  prewarm?(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
-  resume?(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
+  prewarm?(options: RuntimeCreateOptions): Promise<RuntimeSessionHandle>;
+  resume?(sessionFilePath: string, options: RuntimeCreateOptions): Promise<RuntimeSessionHandle>;
   setThinkingLevel?(level: ThinkingLevel): void;
   setModelPattern?(pattern?: string): boolean;
   setCustomTools?(tools: RuntimeCustomTool[]): void;

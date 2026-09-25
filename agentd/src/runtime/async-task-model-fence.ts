@@ -1,0 +1,113 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
+import type { AgentSession, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { ASYNC_TASK_CONTRACT, AsyncCompletionDeliverySchema, type AgentCycle, type AsyncCompletionDelivery } from "../domain/async-task-contract.js";
+import { asyncIdentity, sameAsyncOwner } from "./async-task-state.js";
+import type { AsyncTaskHostBridge } from "./async-task-host-bridge.js";
+import type { RuntimeAsyncTaskEvent } from "./async-task-types.js";
+
+type RequestObservation = { generation: number; deliveries: AsyncCompletionDelivery[]; invalid: boolean };
+/** Uses only public context hooks and agent.streamFunction, before the provider is called. */
+export class AsyncTaskModelFence {
+  private authorization = new AsyncLocalStorage<number>();
+  private observation?: RequestObservation;
+  private session?: AgentSession;
+  private originalStream?: AgentSession["agent"]["streamFunction"];
+  private wrappedStream?: AgentSession["agent"]["streamFunction"];
+  private cycle?: AgentCycle;
+  private settlingCycleId?: string;
+  private deliveries: AsyncCompletionDelivery[] = [];
+  private settled: Promise<void> = Promise.resolve();
+  readonly inlineExtension: InlineExtension;
+  constructor(private readonly bridge: AsyncTaskHostBridge, private readonly emit: (event: RuntimeAsyncTaskEvent) => void, private readonly send: (data: unknown) => void) {
+    this.inlineExtension = { name: "picky-async-task-admission", hidden: true, factory: (api) => {
+      api.on("context_with_system", (event) => {
+        const generation = bridge.generation;
+        const authorized = this.authorization.getStore() === generation;
+        const deliveries: AsyncCompletionDelivery[] = [];
+        let invalid = this.authorization.getStore() !== undefined && !authorized;
+        const messages = event.messages.filter((message) => {
+          if (message.role !== "custom") return true;
+          const details = (message.details as Record<string, unknown> | undefined)?.asyncTasks;
+          const parsed = AsyncCompletionDeliverySchema.safeParse(details);
+          if (!parsed.success) { if (details !== undefined) invalid = true; return true; }
+          const delivery = parsed.data;
+          const current = delivery.sessionId === bridge.sessionId && delivery.runtimeInstanceId === bridge.runtimeInstanceId && delivery.controlGeneration === generation;
+          if (!current && authorized) return false;
+          const tickets = bridge.snapshot().tickets.filter((ticket) => sameAsyncOwner(ticket, delivery) && delivery.completionIds.includes(ticket.completionId));
+          if (tickets.length > 0 && tickets.every((ticket) => ticket.state === "handled")) return true;
+          if (!current || tickets.length !== new Set(delivery.completionIds).size || tickets.some((ticket) => ticket.state === "suppressed" || ticket.target !== "model" || ticket.deliveryId !== delivery.deliveryId || ticket.controlGeneration !== delivery.controlGeneration) || !delivery.taskIds.every((id) => bridge.snapshot().tasks.some((task) => sameAsyncOwner(task, delivery) && task.taskId === id))) invalid = true;
+          deliveries.push(delivery);
+          return true;
+        });
+        // A passive append never enters this hook. This still is only observation, not processing.
+        this.observation = { generation, deliveries, invalid };
+        return { messages };
+      });
+    } };
+  }
+  runAuthorized<T>(work: () => T): T { return this.authorization.run(this.bridge.generation, work); }
+  bind(session: AgentSession): void {
+    if (this.session === session && session.agent.streamFunction === this.wrappedStream) return;
+    if (this.session && this.originalStream && this.session.agent.streamFunction === this.wrappedStream) this.session.agent.streamFunction = this.originalStream;
+    this.session = session;
+    const original = session.agent.streamFunction;
+    this.originalStream = original;
+    session.agent.streamFunction = async (model, context, options) => {
+      await this.settled;
+      const observed = this.observation;
+      if (!observed || observed.invalid || observed.generation !== this.bridge.generation || !this.bridge.admissionOpen || session.isCompacting) throw new Error("Async model admission closed or stale");
+      const cycle: AgentCycle = this.cycle ?? { cycleId: randomUUID(), runtimeInstanceId: this.bridge.runtimeInstanceId, phase: "responding", controlGeneration: observed.generation };
+      const keys = new Set(observed.deliveries.flatMap((delivery) => delivery.completionIds.map((id) => asyncIdentity(delivery, id))));
+      const state = await this.bridge.owner.transact((current) => {
+        if (!this.bridge.admissionOpen || current.control?.controlGeneration !== observed.generation) throw new Error("Async model admission changed during persistence");
+        return { ...current, cycle, tickets: current.tickets.map((ticket) => keys.has(asyncIdentity(ticket, ticket.completionId)) && !["handled", "suppressed"].includes(ticket.state) ? { ...ticket, state: "processing", cycleId: cycle.cycleId } : ticket) };
+      });
+      this.observation = undefined;
+      this.cycle = cycle;
+      this.deliveries = [...new Map([...this.deliveries, ...observed.deliveries].map((delivery) => [delivery.deliveryId, delivery])).values()];
+      this.bridge.publish(state);
+      this.emit({ type: "async_task_cycle", cycle, deliveries: observed.deliveries });
+      // The durable processing intent is recoverable even if stop wins during save.
+      // SDK agent_end reports rejection and returns its tickets to pending, never handled.
+      if (!this.bridge.admissionOpen || observed.generation !== this.bridge.generation || session.isCompacting) throw new Error("Async model admission invalidated before dispatch");
+      return original(model, context, options);
+    };
+    this.wrappedStream = session.agent.streamFunction;
+  }
+  onEvent(event: { type: string; messages?: unknown[] }): void {
+    if (event.type === "compaction_start" || event.type === "compaction_end") { this.recordCompaction(event.type === "compaction_start"); return; }
+    if (event.type !== "agent_end" || !this.cycle || this.settlingCycleId === this.cycle.cycleId) return;
+    const cycle = this.cycle;
+    this.settlingCycleId = cycle.cycleId;
+    const deliveries = this.deliveries;
+    const last = event.messages?.slice().reverse().find((message) => typeof message === "object" && message !== null && "role" in message && message.role === "assistant") as { stopReason?: string } | undefined;
+    const outcome = last?.stopReason === "aborted" ? "cancelled" : last?.stopReason === "error" ? "failed" : "completed";
+    const settledCycle: AgentCycle = { ...cycle, phase: "settled", outcome };
+    this.settled = this.settled.then(() => this.bridge.owner.transact((current) => ({ ...current, cycle: settledCycle, tickets: current.tickets.map((ticket) => ticket.cycleId === cycle.cycleId && ticket.state === "processing" ? { ...ticket, state: outcome === "completed" ? "handled" : "pending" } : ticket) }))).then((state) => {
+      if (this.cycle === cycle) { this.cycle = undefined; this.deliveries = []; this.settlingCycleId = undefined; }
+      this.bridge.publish(state);
+      this.emit({ type: "async_task_cycle", cycle: settledCycle, deliveries });
+      if (outcome === "completed") for (const delivery of deliveries) {
+        const { taskIds: _taskIds, ...observed } = delivery;
+        this.send({ ...observed, contract: ASYNC_TASK_CONTRACT, type: "completion-observed", requestId: randomUUID(), providerRevision: 0 });
+      }
+    });
+    // Retain the rejection as an admission fence; SDK event dispatch is synchronous.
+    void this.settled.catch(() => undefined);
+  }
+  private recordCompaction(started: boolean): void {
+    this.settled = this.settled.then(() => this.bridge.owner.transact((current) => {
+      const cycle: AgentCycle = {
+        cycleId: current.cycle?.cycleId ?? randomUUID(), runtimeInstanceId: this.bridge.runtimeInstanceId,
+        controlGeneration: this.bridge.generation, phase: started ? "compacting" : this.cycle ? "responding" : "idle",
+      };
+      return { ...current, cycle };
+    })).then((state) => {
+      this.bridge.publish(state);
+      if (state.cycle) this.emit({ type: "async_task_cycle", cycle: state.cycle, deliveries: [] });
+    });
+    void this.settled.catch(() => undefined);
+  }
+  async drain(): Promise<void> { await this.settled; }
+}

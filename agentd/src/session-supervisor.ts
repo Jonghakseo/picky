@@ -1,4 +1,5 @@
 /* eslint-disable max-lines -- SessionSupervisor remains the single mutable session owner; scripts/check-architecture-rules.js enforces its no-growth ratchet. */
+import { asyncTaskRuntimeOptions } from "./application/async-task-coordinator.js";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { extractSessionLinkArtifacts } from "./artifact-store.js";
@@ -670,7 +671,7 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("pickle handoff resume queued", { sessionId: id, sourceSessionFilePath, sessionFilePath: newFilePath, cwd });
       const resume = this.runtime.resume?.bind(this.runtime);
       if (!resume) throw new Error("Runtime cannot resume handoff sessions");
-      const handle = await resume(newFilePath, { cwd, sessionId: id });
+      const handle = await resume(newFilePath, { cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
       if (this.mustGet(id).status === "cancelled") {
         await disposeRuntimeHandle(handle, "cancelled-handoff-resume");
         logAgentd("pickle handoff resume resolved after session was cancelled", { sessionId: id });
@@ -724,7 +725,7 @@ export class SessionSupervisor extends EventEmitter {
     try {
       await this.upsert(session);
       logAgentd("empty pickle session queued", { sessionId: id, cwd: pickleContext.cwd, contextId: context.id });
-      const handle = await this.runtime.prewarm({ cwd: pickleContext.cwd, sessionId: id });
+      const handle = await this.runtime.prewarm({ cwd: pickleContext.cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
       if (this.mustGet(id).status === "cancelled") {
         await disposeRuntimeHandle(handle, "cancelled-empty-pickle-prewarm");
         logAgentd("empty pickle prewarm resolved after session was cancelled", { sessionId: id });
@@ -805,7 +806,7 @@ export class SessionSupervisor extends EventEmitter {
         messages: session.messages?.length ?? 0,
         cwd,
       });
-      const handle = await this.runtime.resume(newFilePath, { cwd, sessionId: id });
+      const handle = await this.runtime.resume(newFilePath, { cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
       await this.attachRuntimeHandle(id, handle);
       pendingHandle.resolve(handle);
       logAgentd("pickle session duplicate ready", { sourceSessionId, newSessionId: id });
@@ -887,7 +888,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.upsert(session);
       logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
       this.runtimeEventHandler.resetAssistantDraft(id);
-      const handle = await this.runtime.create(prompt, { ...options.runtimeDefaults, cwd: context.cwd, sessionId: id });
+      const handle = await this.runtime.create(prompt, { ...options.runtimeDefaults, cwd: context.cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
       if (this.mustGet(id).status === "cancelled") {
         await disposeRuntimeHandle(handle, "cancelled-runtime-create");
         logAgentd("runtime create resolved after session was cancelled", { sessionId: id });
@@ -1587,7 +1588,7 @@ export class SessionSupervisor extends EventEmitter {
     try {
       await this.runtimeDisposalGate.wait(session.id);
       logAgentd("runtime resume requested", { sessionId: session.id, sessionFilePath });
-      const handle = await this.runtime.resume(sessionFilePath, { cwd: session.cwd, sessionId: session.id });
+      const handle = await this.runtime.resume(sessionFilePath, { cwd: session.cwd, sessionId: session.id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(session.id) === true, () => this.mustGet(session.id), (build) => this.commitSession(session.id, build)) });
       const currentBeforeAttach = this.mustGet(session.id);
       if (["failed", "cancelled"].includes(currentBeforeAttach.status) && currentBeforeAttach.status !== session.status) {
         await disposeRuntimeHandle(handle, "discarded-terminal-runtime-resume");
@@ -1788,7 +1789,6 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeHandles.delete(sessionId);
     await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
   }
-
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     await this.runtimeDisposalGate.waitOrDispose(sessionId, handle);
     this.runtimeHandles.set(sessionId, handle);

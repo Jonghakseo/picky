@@ -1,3 +1,7 @@
+import { AsyncCompletionDeliverySchema } from "../domain/async-task-contract.js";
+import type { AsyncTaskHostBridge } from "./async-task-host-bridge.js";
+import type { AsyncTaskModelFence } from "./async-task-model-fence.js";
+import type { RuntimeAsyncTaskEvent } from "./async-task-types.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
@@ -129,6 +133,8 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     private readonly bridgeOptions: { disableBlockingDialogs?: boolean; allowedBlockingDialogMethods?: readonly DialogMethod[] } = {},
     private readonly inputRewriteObserver: PiInputRewriteObserver = new PiInputRewriteObserver(() => {}),
     private readonly setExternalDeliveryPausedState: (paused: boolean) => void = () => {},
+    readonly asyncTasks?: AsyncTaskHostBridge,
+    private readonly asyncFence?: AsyncTaskModelFence,
   ) {
     this.promptQueue = new PiPromptQueue(id, SLASH_EXPANSION_MAP_CAP);
     this.uiBridge = this.createBridge();
@@ -154,10 +160,10 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const skillEchoSuppression = this.skillEchoSuppressions.register(prompt.text);
     try {
       const images = await imageOptions(prompt.imagePaths);
-      await this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(
+      await this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runAuthorizedPrompt(() => this.runtime.session.prompt(
         prompt.text,
         { images, source: "rpc" },
-      ));
+      )));
     } catch (error) {
       this.cancelExpectedInputDelivery(expected.id);
       this.skillEchoSuppressions.remove(skillEchoSuppression);
@@ -270,7 +276,11 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       this.unsubscribe?.();
       this.unsubscribe = undefined;
       this.listeners.clear();
-      await this.runtime.dispose();
+      try { await this.runtime.dispose(); }
+      finally {
+        try { await this.asyncFence?.drain(); }
+        finally { await this.asyncTasks?.dispose(); }
+      }
     }
   }
 
@@ -713,6 +723,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.uiBridge.cancelAll();
     this.uiBridge = this.createBridge();
     const session = this.runtime.session;
+    await this.bindAsyncTasks(session);
     await session.bindExtensions({ uiContext: this.uiBridge.createContext(), onError: (error) => this.emit({ type: "log", line: `extension error: ${messageOf(error)}` }) });
     if (this.unsubscribe) {
       // Another `bindCurrentSession()` won the race during the `await`. Yield ownership to it
@@ -722,6 +733,8 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return;
     }
     this.unsubscribe = session.subscribe((event: unknown) => {
+      const record = asRecord(event);
+      this.asyncFence?.onEvent({ type: String(record.type), ...(Array.isArray(record.messages) ? { messages: record.messages } : {}) });
       const runtimeEvent = this.runtimeEventFromPiEvent(event);
       if (runtimeEvent) this.emit(runtimeEvent);
       // General pi's footer recomputes context usage on every render. It therefore advances at
@@ -752,6 +765,20 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       usage: options.resetAfterCompaction ? { ...usage, tokens: null, percent: null } : usage,
     });
   }
+
+  private async bindAsyncTasks(session: AgentSession): Promise<void> {
+    if (this.asyncTasks) {
+      await this.asyncTasks.bind(session.sessionManager.getSessionId(), [...session.getAllTools().map((tool) => tool.name), ...session.extensionRunner.getRegisteredCommands().map((command) => command.invocationName)], session.resourceLoader.getExtensions());
+      this.asyncFence?.bind(session);
+      this.asyncTasks.onState = (state) => {
+        for (const invocation of this.subagentInvocationTracker.applyTrackedTasks(state.tasks)) this.emit({ type: "subagent_invocation", invocation });
+      };
+    }
+  }
+
+  private runAuthorizedPrompt<T>(work: () => T): T { return this.asyncFence ? this.asyncFence.runAuthorized(work) : work(); }
+
+  emitAsyncTaskEvent(event: RuntimeAsyncTaskEvent): void { this.emit(event); }
 
   reportDiagnostics(): void {
     if (this.transcriptRepairLogLine) this.emit({ type: "log", line: this.transcriptRepairLogLine });
@@ -837,7 +864,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const message = asRecord(record.message);
       const update = subagentRunUpdateFromCustomMessage(message.customType, message.details, message.content);
       if (update) {
-        this.emit({ type: "subagent_run_update", update: this.subagentInvocationTracker.attachRunUpdate(update) });
+        if (!this.subagentInvocationTracker.isTrackedRun(update.runId)) this.emit({ type: "subagent_run_update", update: this.subagentInvocationTracker.attachRunUpdate(update) });
       } else {
         for (const groupUpdate of subagentGroupRunUpdatesFromCustomMessage(
           message.customType,
@@ -845,6 +872,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
           message.content,
           this.subagentInvocationTracker.knownTasksByRunId(),
         )) {
+          if (this.subagentInvocationTracker.isTrackedRun(groupUpdate.runId)) continue;
           const run = this.subagentInvocationTracker.attachGroupRunUpdate(groupUpdate);
           if (run) this.emit({ type: "subagent_run_update", update: run });
         }
@@ -969,6 +997,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const suppressedAsSkillEcho = this.skillEchoSuppressions.consume(text);
     if (suppressedAsQueuedExpansion || suppressedAsSkillEcho) return undefined;
 
+    const asyncDelivery = AsyncCompletionDeliverySchema.safeParse(asRecord(message.details).asyncTasks);
     const display = message.display;
     return {
       type: "input_message",
@@ -981,6 +1010,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       // during a running turn. Preserve the authoritative session activity snapshot so the
       // supervisor never mistakes an idle status update for a new user turn.
       turnActive: this.runtime.session.isStreaming,
+      ...(asyncDelivery.success ? { asyncTasks: asyncDelivery.data } : {}),
     };
   }
 
@@ -1232,7 +1262,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       this.pendingExtensionUiRequestIds.clear();
       this.emit({ type: "status", status: "running", summary: "Reloading Pi resources…" });
       try {
-        const outcome = await piTryReload(this.runtime.session, this.id);
+        const outcome = await piTryReload(this.runtime.session, this.id, this.asyncTasks ? { beforeSessionStart: () => this.bindAsyncTasks(this.runtime.session) } : undefined);
         if (!outcome.supported) {
           this.emit({ type: "status", status: "failed", summary: "/reload is not supported by this Pi runtime", noTurnRan: true });
           return true;
@@ -1304,7 +1334,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.pendingPromptPreflightDeliveryIds.add(expected.id);
     const pendingSlashSubmission = this.promptQueue.beginSlashSubmission(text, this.piQueueSnapshot());
     const skillEchoSuppression = this.skillEchoSuppressions.register(text);
-    const promptPromise = this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runtime.session.prompt(text, {
+    const promptPromise = this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runAuthorizedPrompt(() => this.runtime.session.prompt(text, {
       ...options,
       preflightResult: (success: boolean) => {
         this.pendingPromptPreflightDeliveryIds.delete(expected.id);
@@ -1319,7 +1349,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         logLifecycleEvent("piPromptPreflightAccepted", { sessionId: this.id, ...this.lifecycleFields() });
         resolveOnce();
       },
-    }));
+    })));
 
     void promptPromise
       .then(() => {

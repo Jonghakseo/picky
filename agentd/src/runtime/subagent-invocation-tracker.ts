@@ -1,3 +1,4 @@
+import type { AsyncTask } from "../domain/async-task-contract.js";
 import {
   subagentLaunchIntentFromToolArgs,
   subagentRunActivityUpdateFromDiagnostic,
@@ -12,6 +13,8 @@ import { asRecord, stringValue } from "./pi-sdk-runtime-helpers.js";
 
 /** Owns the per-runtime correlation between Pi subagent events and HUD run state. */
 export class SubagentInvocationTracker {
+  private trackedInvocations = new Set<string>();
+  private trackedRunIds = new Set<number>();
   private pendingLaunches: Array<SubagentLaunchIntentEntry & { invocationId: string }> = [];
   private activeInvocationIDs: string[] = [];
   private invocationsByID = new Map<string, PickySubagentInvocation>();
@@ -37,7 +40,7 @@ export class SubagentInvocationTracker {
     if (event.type !== "tool_execution_end" || event.toolName !== "subagent") return undefined;
     const invocationId = stringValue(event.toolCallId);
     const invocation = invocationId ? this.invocationsByID.get(invocationId) : undefined;
-    if (!invocationId || !invocation) return undefined;
+    if (!invocationId || !invocation || this.trackedInvocations.has(invocationId)) return undefined;
     const index = this.activeInvocationIDs.lastIndexOf(invocationId);
     if (index >= 0) this.activeInvocationIDs.splice(index, 1);
     this.pendingLaunches = this.pendingLaunches.filter((launch) => launch.invocationId !== invocationId);
@@ -51,12 +54,13 @@ export class SubagentInvocationTracker {
     if (entry.type !== "custom") return undefined;
     if (entry.customType === "subagent-runner-diagnostic") {
       const diagnostic = subagentRunUpdateFromDiagnostic(entry.data);
+      if (diagnostic && this.isTrackedRun(diagnostic.runId)) return undefined;
       return diagnostic ? this.runFromDiagnostic(diagnostic) : undefined;
     }
     if (entry.customType !== "subagent-activity") return undefined;
     const activity = subagentRunActivityUpdateFromDiagnostic(entry.data);
     const existing = activity ? this.runsById.get(activity.runId) : undefined;
-    if (!activity || !existing) return undefined;
+    if (!activity || !existing || this.isTrackedRun(activity.runId)) return undefined;
     const update = { ...existing, lastActivity: activity.lastActivity };
     this.runsById.set(update.runId, update);
     return update;
@@ -87,6 +91,7 @@ export class SubagentInvocationTracker {
 
   toolResultRunUpdates(event: Record<string, unknown>): PickySubagentRun[] {
     if (event.type !== "tool_execution_end" || event.toolName !== "subagent") return [];
+    if (this.trackedInvocations.has(String(event.toolCallId))) return [];
     return subagentRunUpdatesFromToolResult(event.result, [...this.runsById.values()]).flatMap((update) => {
       const existing = this.runsById.get(update.runId);
       if (!existing || existing.agent !== update.agent) return [];
@@ -104,7 +109,28 @@ export class SubagentInvocationTracker {
     return new Map([...this.runsById].map(([runId, run]) => [runId, run.task]));
   }
 
+  isTrackedRun(runId: number): boolean { return this.trackedRunIds.has(runId); }
+
+  applyTrackedTasks(tasks: AsyncTask[]): PickySubagentInvocation[] {
+    const completed: PickySubagentInvocation[] = [];
+    for (const task of tasks) {
+      if (task.providerId !== "subagent" || !task.invocationId) continue;
+      this.trackedInvocations.add(task.invocationId);
+      if (typeof task.details?.runId === "number") this.trackedRunIds.add(task.details.runId);
+      if (task.taskId !== task.rootTaskId || task.presence !== "settled" || ["queued", "running", "cancelling"].includes(task.execution)) continue;
+      const invocation = this.invocationsByID.get(task.invocationId);
+      if (!invocation) continue;
+      this.invocationsByID.delete(task.invocationId);
+      this.activeInvocationIDs = this.activeInvocationIDs.filter((id) => id !== task.invocationId);
+      this.pendingLaunches = this.pendingLaunches.filter((launch) => launch.invocationId !== task.invocationId);
+      completed.push({ ...invocation, completed: true });
+    }
+    return completed;
+  }
+
   reset(): void {
+    this.trackedInvocations.clear();
+    this.trackedRunIds.clear();
     this.pendingLaunches = [];
     this.activeInvocationIDs = [];
     this.invocationsByID.clear();

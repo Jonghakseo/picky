@@ -68,6 +68,9 @@ export const requiredTransientOwnershipIds = [
   "SessionSupervisor.pickleCompletionNotified",
   "SessionSupervisor.pickleCompletionInFlight",
   "SessionSupervisor.pendingPickleCompletions",
+  "AsyncTaskHostBridge.providers",
+  "AsyncTaskModelFence.cycle",
+  "SubagentInvocationTracker.trackedInvocations",
 ] as const;
 
 export function mutationNames(entry: SessionFieldOwnership): readonly string[] {

@@ -149,6 +149,8 @@ export class RuntimeEventHandler {
 
   // eslint-disable-next-line complexity -- This is the exhaustive runtime-event router; splitting it would duplicate ordering and terminal-state guards.
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
+    // Async obligations are already committed by their durable owner, including after turn abort.
+    if (event.type === "async_task_state" || event.type === "async_task_coverage" || event.type === "async_task_cycle") return;
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
     if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
     if (event.type === "subagent_invocation") return this.dependencies.messageBuilder.recordSubagentInvocation?.(sessionId, event.invocation);

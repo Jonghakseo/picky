@@ -159,14 +159,14 @@ export async function tryCompact(session: AgentSession, sessionId: string, instr
   return { supported: true };
 }
 
-export async function tryReload(session: AgentSession, sessionId: string): Promise<{ supported: true } | { supported: false }> {
+export async function tryReload(session: AgentSession, sessionId: string, options?: Parameters<AgentSession["reload"]>[0]): Promise<{ supported: true } | { supported: false }> {
   const method = session.reload;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "reload");
     return { supported: false };
   }
   recordPresence(sessionId, "reload");
-  await method.call(session);
+  await method.call(session, options);
   return { supported: true };
 }
 

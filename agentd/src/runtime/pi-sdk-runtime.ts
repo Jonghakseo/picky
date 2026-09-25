@@ -1,3 +1,5 @@
+import { AsyncTaskHostBridge } from "./async-task-host-bridge.js";
+import { AsyncTaskModelFence } from "./async-task-model-fence.js";
 import {
 type AgentSessionServices,
 type CreateAgentSessionRuntimeFactory,
@@ -119,14 +121,14 @@ export class PiSdkRuntime implements AgentRuntime {
     return handle;
   }
 
-  async prewarm(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+  async prewarm(options: RuntimeCreateOptions): Promise<RuntimeSessionHandle> {
     logAgentd("pi runtime prewarm", { sessionId: options.sessionId, cwd: options.cwd });
     const handle = await this.createHandle(options);
     setTimeout(() => handle.reportDiagnostics(), 0);
     return handle;
   }
 
-  async resume(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+  async resume(sessionFilePath: string, options: RuntimeCreateOptions): Promise<RuntimeSessionHandle> {
     logAgentd("pi runtime resume", { sessionId: options.sessionId, cwd: options.cwd, sessionFilePath });
     const handle = await this.createHandle({ ...options, sessionFilePath });
     setTimeout(() => handle.reportDiagnostics(), 0);
@@ -140,6 +142,8 @@ export class PiSdkRuntime implements AgentRuntime {
     const sessionId = options.sessionId ?? "picky-pi-session";
     let sessionHandle: PiSdkRuntimeSession | undefined;
     const externalDeliveryEventBus = createEventBus();
+    const asyncTasks = options.asyncTaskHost ? new AsyncTaskHostBridge(externalDeliveryEventBus, sessionId, options.asyncTaskHost, (event) => sessionHandle?.emitAsyncTaskEvent(event)) : undefined;
+    const asyncFence = asyncTasks ? new AsyncTaskModelFence(asyncTasks, (event) => sessionHandle?.emitAsyncTaskEvent(event), (data) => externalDeliveryEventBus.emit("pi.async-tasks.v1", data)) : undefined;
     let externalDeliveryPaused = false;
     externalDeliveryEventBus.on(PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, () => {
       externalDeliveryEventBus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, { paused: externalDeliveryPaused });
@@ -170,6 +174,7 @@ export class PiSdkRuntime implements AgentRuntime {
           extensionFactories: [
             ...(resourceLoaderOptions?.extensionFactories ?? []),
             inputRewriteObserver.inlineExtension,
+            ...(asyncFence ? [asyncFence.inlineExtension] : []),
           ],
         },
       });
@@ -229,9 +234,11 @@ export class PiSdkRuntime implements AgentRuntime {
       },
       inputRewriteObserver,
       setExternalDeliveryPaused,
+      asyncTasks,
+      asyncFence,
     );
     sessionHandle = handle;
-    await handle.bindCurrentSession();
+    await handle.bindCurrentSession().catch(async (error) => { await handle.dispose(); throw error; });
     return handle;
   }
 }

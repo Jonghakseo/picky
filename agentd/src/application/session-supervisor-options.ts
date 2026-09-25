@@ -11,6 +11,8 @@ export interface ReloadPluginsSummary {
 
 /** Configuration seams for SessionSupervisor runtime orchestration. */
 export interface SessionSupervisorOptions {
+  /** Staged hosted-task integration only. Bootstrap intentionally never supplies it. */
+  enableAsyncTasksForSession?: (sessionId: string) => boolean;
   taskRouter?: TaskRouter;
   mainRuntime?: AgentRuntime;
   // Optional factory used to mint new session ids. Defaults to a random UUID generator. Child

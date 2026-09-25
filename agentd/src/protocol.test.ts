@@ -108,6 +108,19 @@ function contextFixture() {
 }
 
 describe("protocol contract fixtures", () => {
+  it.each(["prepare", "execute"])("decodes %s archive quiescence and legacy absence", (action) => {
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, `async-task-archive-${action}-quiescent.command.json`), "utf8"));
+    expect(CommandEnvelopeSchema.parse(fixture)).toMatchObject({ command: { requireQuiescence: true } });
+    const legacy = { ...fixture, command: { ...fixture.command } };
+    delete legacy.command.requireQuiescence;
+    const decoded = CommandEnvelopeSchema.parse(legacy);
+    expect(decoded.type).toBe("asyncTaskCommand");
+    if (decoded.type !== "asyncTaskCommand") throw new Error("Unexpected command type");
+    expect(decoded.command).not.toHaveProperty("requireQuiescence");
+    expect(CommandEnvelopeSchema.parse({ ...fixture, command: { ...fixture.command, requireQuiescence: false } })).toMatchObject({ command: { requireQuiescence: false } });
+    expect(() => CommandEnvelopeSchema.parse({ ...fixture, command: { ...fixture.command, requireQuiescence: "true" } })).toThrow();
+  });
+
   for (const name of readdirSync(contractsRoot).filter((file) => file.endsWith(".request.json"))) {
     it(`parses command fixture ${name}`, () => {
       const fixture = JSON.parse(readFileSync(join(contractsRoot, name), "utf8"));

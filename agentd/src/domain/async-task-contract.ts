@@ -132,8 +132,8 @@ const commandBase = z.object({ requestId: id, sessionId: id, daemonInstanceId: i
 export const AsyncTaskCommandSchema = z.discriminatedUnion("type", [
   commandBase.extend({ type: z.literal("asyncTaskDetail"), owner: AsyncTaskOwnerSchema, taskId: id, cursor: id.optional(), limit: z.number().int().min(1).max(100) }),
   commandBase.extend({ type: z.literal("cancelAsyncTask"), owner: AsyncTaskOwnerSchema, taskId: id }),
-  commandBase.extend({ type: z.literal("prepareSessionArchive"), archiveIntentId: id }),
-  commandBase.extend({ type: z.literal("executeSessionArchive"), archiveIntentId: id, mode: z.enum(["continue", "stopThenArchive"]), preparationId: id }),
+  commandBase.extend({ type: z.literal("prepareSessionArchive"), archiveIntentId: id, requireQuiescence: z.boolean().optional() }),
+  commandBase.extend({ type: z.literal("executeSessionArchive"), archiveIntentId: id, mode: z.enum(["continue", "stopThenArchive"]), preparationId: id, requireQuiescence: z.boolean().optional() }),
   commandBase.extend({ type: z.literal("prepareRuntimeRelease"), archiveIntentId: id, childGeneration: revision }),
   commandBase.extend({ type: z.literal("cancelRuntimeRelease"), releaseToken: id }),
 ]);

@@ -2886,6 +2886,8 @@ extension PickyAgentClientRouterTests {
         let archive = Task { try await viewModel.archiveSessionConfirmed(sessionID: "tracked", mode: .continue) }
         try await waitUntil { primary.sentCommands.contains { $0.command?.type == .executeSessionArchive } }
         let execute = try #require(primary.sentCommands.last { $0.command?.type == .executeSessionArchive }?.command)
+        #expect(execute.requireQuiescence == nil)
+        #expect(primary.sentCommands.last { $0.command?.type == .prepareSessionArchive }?.command?.requireQuiescence == nil)
         #expect(viewModel.sessions.map(\.id) == ["tracked"])
         #expect(viewModel.archivedSessions.isEmpty)
         primary.emit(.protocolEvent(makeAckEnvelope(commandId: execute.requestId)))
@@ -3165,6 +3167,8 @@ extension PickyAgentClientRouterTests {
             #expect(prepare.workRevision == 4)
             #expect(execute.workRevision == 5)
             #expect(execute.mode == .continue)
+            #expect(prepare.requireQuiescence == true)
+            #expect(execute.requireQuiescence == true)
             #expect(viewModel.sessions.map(\.id) == ["tracked"])
             #expect(viewModel.archivedSessions.isEmpty)
             #expect(!primary.sentCommands.contains { $0.type == .completePickleBridgeRequest })
@@ -3194,7 +3198,7 @@ extension PickyAgentClientRouterTests {
             #expect(!primary.sentCommands.contains { $0.command?.type == .executeSessionArchive })
             if scenario != "stale" { #expect(!primary.sentCommands.contains { $0.type == .asyncTaskCommand }) }
         }
-        #expect(primary.sentCommands.filter { $0.type == .getAsyncControlContext }.count == 1)
+        #expect(primary.sentCommands.filter { $0.type == .getAsyncControlContext }.count == (cli && scenario == "quiescent" ? 2 : 1))
     }
 
     @Test(arguments: [false, true])
@@ -3233,9 +3237,240 @@ extension PickyAgentClientRouterTests {
                 primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
             }
         }
-        try await control.archiveAsyncSession(sessionID: "tracked", mode: nil)
+        try await control.archiveAsyncSession(sessionID: "tracked", mode: .continue)
+        #expect(original.command?.requireQuiescence == true)
+        #expect(primary.sentCommands.last { $0.command?.type == .executeSessionArchive }?.command?.requireQuiescence == true)
         #expect(primary.sentCommands.filter { $0.id == original.id } == [original, original])
         #expect(primary.sentCommands.filter { $0.type == .getAsyncControlContext }.count == 1)
         #expect(primary.sentCommands.last { $0.command?.type == .executeSessionArchive }?.command?.mode == .continue)
+    }
+}
+
+extension PickyAgentClientRouterTests {
+    @Test(arguments: [false, true], [false, true])
+    func archiveBridgeWaitsForV2Membership(archived: Bool, resultFirst: Bool) async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true)
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000,
+            sessionProjectionStorage: storage)
+        router.pickleSessionSummariesProvider = { storage.sessionSummariesForCLI() }
+        viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
+        defer { viewModel.stop(); router.disconnect() }
+        let snapshots = try [!archived, archived].enumerated().map { revision, membership in
+            guard case .sessionUpdated(let session) = trackedSessionEvent(archived: membership).event else {
+                throw PickyAsyncControlError.invalidResponse
+            }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+            let data = try JSONSerialization.data(withJSONObject: ["sessionId": "tracked", "epoch": "epoch",
+                "revision": revision + 1, "complete": true, "omittedFields": [String](), "projection": projection])
+            return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionSnapshot.self, from: data)
+        }
+        let transactionData = try JSONSerialization.data(withJSONObject: ["sessionId": "tracked", "epoch": "epoch",
+            "baseRevision": 1, "revision": 2, "mutations": [["type": "metaPatch", "patch": ["archived": archived]]]])
+        let transaction = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionTransaction.self, from: transactionData)
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id)
+                context.requiresArchiveChoice = false
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command, command.type == .prepareSessionArchive {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+            }
+        }
+        viewModel.start()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionSnapshot(snapshots[0]))))
+        try await waitUntil { (viewModel.sessions + viewModel.archivedSessions).contains { $0.id == "tracked" } }
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "setArchived", sessionId: "tracked", archived: archived)))
+        try await waitUntil {
+            primary.sentCommands.contains { archived ? $0.command?.type == .executeSessionArchive : $0.type == .setSessionArchived }
+        }
+        let operation = try #require(primary.sentCommands.last {
+            archived ? $0.command?.type == .executeSessionArchive : $0.type == .setSessionArchived
+        })
+        if !resultFirst { primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionTransaction(transaction)))) }
+        if let command = operation.command {
+            primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+        } else { primary.emit(.protocolEvent(makeAckEnvelope(commandId: operation.id))) }
+        if resultFirst {
+            // A real external context round trip lets the owner result travel through
+            // the router while the source deliberately withholds its projection.
+            _ = try await router.asyncTaskControl?.asyncControlContext(sessionID: "tracked")
+            primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionTransaction(transaction))))
+        }
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completePickleBridgeRequest } }
+        let response = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(response.errorMessage == nil)
+        #expect(response.delivered == true)
+        #expect(response.session?.archived == archived)
+        try await waitUntil { storage.sessionSummariesForCLI().first?.archived == archived }
+        #expect(viewModel.archivedSessions.map(\.id) == (archived ? ["tracked"] : []))
+        #expect(viewModel.sessions.map(\.id) == (archived ? [] : ["tracked"]))
+    }
+
+    @Test(arguments: [false, true])
+    func stopRetryTargetsReplacementOwner(replaceClient: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-stop-owner-\(UUID().uuidString)")
+        try makeStubAgentdPackage(at: root)
+        let primary = StubAgentClient(id: "primary")
+        let factory = StubLauncherFactoryForRouter(agentdRoot: root)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: root,
+            environment: ["PICKY_AGENTD_ROOT": root.path, "PATH": "/usr/bin"], bundleResourceURL: nil), factory: factory)
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        await router.connect()
+        let control = try #require(router.asyncTaskControl)
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(asyncControlContext(requestID: envelope.id)))))
+            }
+        }
+        router.asyncControlTransport.timeoutNanoseconds = 20_000_000
+        do {
+            _ = try await control.stopAsyncWork(sessionID: "tracked")
+            Issue.record("The lost stop reply must remain unknown")
+        } catch {
+            guard case .pending = error as? PickyAsyncControlError else { throw error }
+        }
+        let old = try #require(primary.sentCommands.last { $0.type == .abort })
+        let oldResult = asyncControlResult(try asyncControlContext(requestID: "old").command(.cancelAsyncTask, requestId: old.id))
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(oldResult))))
+        let current: StubAgentClient
+        if replaceClient {
+            async let spawning = router.spawnChildClient(sessionId: "tracked", cwd: "/tmp/ws")
+            _ = try await factory.waitForRunner(sessionId: "tracked")
+            factory.emitReady(for: "tracked")
+            current = try #require(try await spawning as? StubAgentClient)
+        } else { current = primary }
+        current.onSendInject = { envelope in
+            var context = asyncControlContext(requestID: envelope.id)
+            context.runtimeInstanceId = "replacement-runtime"
+            if envelope.type == .getAsyncControlContext {
+                current.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if envelope.type == .abort {
+                let command = try? context.command(.cancelAsyncTask, requestId: envelope.id)
+                if let command { current.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command))))) }
+            }
+        }
+        router.asyncControlTransport.timeoutNanoseconds = 1_000_000_000
+        let result = try await control.stopAsyncWork(sessionID: "tracked")
+        #expect(result.outcome == .settled)
+        #expect(result.runtimeInstanceId == "replacement-runtime")
+        #expect(result.requestId != old.id)
+        #expect(current.sentCommands.last { $0.type == .abort }?.id == result.requestId)
+        let historical = try await router.asyncControlTransport.request(old, source: primary,
+            expectedOwner: asyncControlContext(requestID: try #require(primary.sentCommands.first { $0.type == .getAsyncControlContext }?.id))) {
+                Issue.record("A retained late result must not dispatch old work again")
+            }
+        #expect(historical == .result(oldResult))
+    }
+
+    @Test(arguments: [false, true])
+    func stopRetryKeepsSameOwnerIdentity(lateReply: Bool) async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        var contextRevision = 4
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id)
+                context.workRevision = contextRevision
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            }
+        }
+        await router.connect()
+        let control = try #require(router.asyncTaskControl)
+        router.asyncControlTransport.timeoutNanoseconds = 20_000_000
+        do {
+            _ = try await control.stopAsyncWork(sessionID: "tracked")
+            Issue.record("An ACK does not settle tracked stop")
+        } catch { guard case .pending = error as? PickyAsyncControlError else { throw error } }
+        let original = try #require(primary.sentCommands.last { $0.type == .abort })
+        let settled = asyncControlResult(try asyncControlContext(requestID: "context").command(.cancelAsyncTask, requestId: original.id))
+        contextRevision = 8
+        if lateReply { primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(settled)))) }
+        let contextHook = primary.onSendInject
+        primary.onSendInject = { envelope in
+            contextHook?(envelope)
+            if envelope.type == .abort {
+                primary.emit(.protocolEvent(makeAckEnvelope(commandId: envelope.id)))
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(settled))))
+            }
+        }
+        router.asyncControlTransport.timeoutNanoseconds = 1_000_000_000
+        #expect(try await control.stopAsyncWork(sessionID: "tracked") == settled)
+        let aborts = primary.sentCommands.filter { $0.type == .abort }
+        #expect(aborts == (lateReply ? [original] : [original, original]))
+    }
+}
+
+extension PickyAgentClientRouterTests {
+    @Test(arguments: [false, true])
+    func archiveBridgeReportsProjectionTimeoutOrOwnerChange(ownerChanged: Bool) async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true)
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000,
+            sessionProjectionStorage: storage)
+        router.pickleSessionSummariesProvider = { storage.sessionSummariesForCLI() }
+        viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
+        defer { viewModel.stop(); router.disconnect() }
+        var runtimeID = "runtime"
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id)
+                context.requiresArchiveChoice = false
+                context.runtimeInstanceId = runtimeID
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command, command.type == .prepareSessionArchive {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+            }
+        }
+        viewModel.start()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        guard case .sessionUpdated(let session) = trackedSessionEvent().event else {
+            throw PickyAsyncControlError.invalidResponse
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+        let data = try JSONSerialization.data(withJSONObject: ["sessionId": "tracked", "epoch": "epoch",
+            "revision": 1, "complete": true, "omittedFields": [String](), "projection": projection])
+        let snapshot = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionSnapshot.self, from: data)
+        primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionSnapshot(snapshot))))
+        try await waitUntil { viewModel.sessions.map(\.id) == ["tracked"] }
+        router.asyncControlTransport.timeoutNanoseconds = 50_000_000
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "setArchived", sessionId: "tracked", archived: true)))
+        try await waitUntil { primary.sentCommands.contains { $0.command?.type == .executeSessionArchive } }
+        let execute = try #require(primary.sentCommands.last { $0.command?.type == .executeSessionArchive }?.command)
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(execute)))))
+        if ownerChanged {
+            runtimeID = "replacement-runtime"
+            let transactionData = Data(#"{"sessionId":"tracked","epoch":"epoch","baseRevision":1,"revision":2,"mutations":[{"type":"metaPatch","patch":{"archived":true}}]}"#.utf8)
+            let transaction = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+                PickySessionProjectionTransaction.self, from: transactionData)
+            primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionTransaction(transaction))))
+        }
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completePickleBridgeRequest } }
+        let response = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(response.errorMessage == (ownerChanged ? "archive_projection_owner_changed"
+            : "async_control_pending requestId=\(execute.requestId)"))
+        #expect(response.delivered != true)
+        #expect(response.session == nil)
+        #expect(storage.sessionSummariesForCLI().first?.archived == ownerChanged)
+        #expect(viewModel.archivedSessions.map(\.id) == (ownerChanged ? ["tracked"] : []))
+        #expect(viewModel.sessions.map(\.id) == (ownerChanged ? [] : ["tracked"]))
     }
 }

@@ -880,7 +880,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
             }
     }
 
-    private func pickleSessionSummary(id: String) -> PickyAgentSession? {
+    func pickleSessionSummary(id: String) -> PickyAgentSession? {
         if let provider = pickleSessionSummariesProvider {
             return provider().first { $0.id == id }
         }
@@ -909,6 +909,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     private func resumeSessionProjectionWaiters() {
+        asyncOwnerControl.projectionDidChange()
         for sessionId in Array(sessionProjectionWaiters.keys) where pickleSessionSummary(id: sessionId) != nil {
             let waiters = sessionProjectionWaiters.removeValue(forKey: sessionId).map { Array($0.values) } ?? []
             for waiter in waiters { waiter.resume() }

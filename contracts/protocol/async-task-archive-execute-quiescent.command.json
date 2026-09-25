@@ -1,0 +1,18 @@
+{
+  "id": "quiescent-execute-envelope",
+  "protocolVersion": "2026-08-25",
+  "type": "asyncTaskCommand",
+  "command": {
+    "type": "executeSessionArchive",
+    "requestId": "quiescent-execute",
+    "sessionId": "pickle-1",
+    "daemonInstanceId": "daemon-1",
+    "runtimeInstanceId": "runtime-1",
+    "workRevision": 7,
+    "controlGeneration": 2,
+    "archiveIntentId": "archive-intent-1",
+    "requireQuiescence": true,
+    "preparationId": "preparation-1",
+    "mode": "continue"
+  }
+}

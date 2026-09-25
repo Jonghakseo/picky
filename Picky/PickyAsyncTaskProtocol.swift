@@ -207,6 +207,7 @@ struct PickyAsyncTaskCommand: Codable, Equatable {
     var limit: Int?
     var archiveIntentId: String?
     var mode: ArchiveMode?
+    var requireQuiescence: Bool?
     var preparationId: String?
     var childGeneration: Int?
     var releaseToken: String?

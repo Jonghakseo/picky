@@ -35,6 +35,25 @@ struct ProtocolContractTests {
         #expect(result.controlGeneration == result.releaseApproval?.controlGeneration)
     }
 
+    @Test(arguments: ["prepare", "execute"])
+    func quiescentArchiveCommandsRoundTrip(requirement: String) throws {
+        let urls = try fixtureURLs(in: "contracts/protocol")
+        let url = try #require(urls.first { $0.lastPathComponent == "async-task-archive-\(requirement)-quiescent.command.json" })
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let envelope = try decoder.decode(PickyCommandEnvelope.self, from: Data(contentsOf: url))
+        #expect(envelope.command?.requireQuiescence == true)
+        #expect(try decoder.decode(PickyCommandEnvelope.self, from: JSONEncoder().encode(envelope)) == envelope)
+        var legacy = envelope
+        legacy.command?.requireQuiescence = nil
+        let encoded = try JSONEncoder().encode(legacy)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect((object["command"] as? [String: Any])?["requireQuiescence"] == nil)
+        #expect(try decoder.decode(PickyCommandEnvelope.self, from: encoded).command?.requireQuiescence == nil)
+        var explicit = envelope
+        explicit.command?.requireQuiescence = false
+        #expect(try decoder.decode(PickyCommandEnvelope.self, from: JSONEncoder().encode(explicit)) == explicit)
+    }
+
     @Test func exposesCurrentProtocolVersion() {
         #expect(pickyAgentProtocolVersion == "2026-08-25")
     }

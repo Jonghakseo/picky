@@ -12,6 +12,7 @@ final class PickyAsyncSessionControlState {
     var restores: [String: PickyCommandEnvelope] = [:]
     var stopOwners: [String: PickyAsyncControlContext] = [:]
     var stops: [String: PickyCommandEnvelope] = [:]
+    var stopSources: [String: ObjectIdentifier] = [:]
     var releases: [String: Release] = [:]
     var intentGenerations: [String: Int] = [:]
     var archiveIntents: [String: String] = [:]
@@ -23,6 +24,11 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
     private weak var router: PickyAgentClientRouter?
     private let asyncControlTransport: PickyAsyncControlTransport
     private let asyncControlState = PickyAsyncSessionControlState()
+    private var projectionWaiters: [UUID: AsyncStream<Void>.Continuation] = [:]
+
+    func projectionDidChange() {
+        for waiter in projectionWaiters.values { waiter.yield(()) }
+    }
 
     init(router: PickyAgentClientRouter, transport: PickyAsyncControlTransport) {
         self.router = router
@@ -36,6 +42,11 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
     func asyncControlContext(sessionID: String) async throws -> PickyAsyncControlContext {
         guard let router else { throw PickyAgentClientRouterError.routerUnavailable }
         let target = try await router.connectedClient(for: sessionID)
+        return try await context(sessionID: sessionID, on: target)
+    }
+
+    private func context(sessionID: String, on target: any PickyAgentClient) async throws -> PickyAsyncControlContext {
+        guard let router else { throw PickyAgentClientRouterError.routerUnavailable }
         let envelope = PickyCommandEnvelope(type: .getAsyncControlContext, sessionId: sessionID)
         let reply = try await asyncControlTransport.request(envelope, source: target) {
             try await router.sendAfterCapabilityRegistration(envelope, on: target)
@@ -58,32 +69,48 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
 
     func stopAsyncWork(sessionID: String) async throws -> PickyAsyncTaskCommandResult {
         guard let router else { throw PickyAgentClientRouterError.routerUnavailable }
-        let owner: PickyAsyncControlContext
-        if let retained = asyncControlState.stopOwners[sessionID] { owner = retained }
-        else { owner = try await asyncControlContext(sessionID: sessionID); asyncControlState.stopOwners[sessionID] = owner }
         let target = try await router.connectedClient(for: sessionID)
-        let envelope = asyncControlState.stops[sessionID] ?? PickyCommandEnvelope(type: .abort, sessionId: sessionID)
+        let current = try await context(sessionID: sessionID, on: target)
+        guard router.client(for: sessionID) === target else { throw PickyAsyncControlError.requestConflict }
+        let retained = asyncControlState.stopOwners[sessionID]
+        let sameOwner = asyncControlState.stopSources[sessionID] == ObjectIdentifier(target)
+            && retained?.daemonInstanceId == current.daemonInstanceId
+            && retained?.runtimeInstanceId == current.runtimeInstanceId
+        // Only the current stop slot advances. The transport keeps the old
+        // envelope and any late settlement under its original source/owner.
+        let owner = sameOwner ? retained ?? current : current
+        let envelope = sameOwner ? asyncControlState.stops[sessionID] ?? PickyCommandEnvelope(type: .abort, sessionId: sessionID)
+            : PickyCommandEnvelope(type: .abort, sessionId: sessionID)
+        asyncControlState.stopOwners[sessionID] = owner
+        asyncControlState.stopSources[sessionID] = ObjectIdentifier(target)
         asyncControlState.stops[sessionID] = envelope
         let reply = try await asyncControlTransport.request(envelope, source: target, expectedOwner: owner) {
             try await router.sendAfterCapabilityRegistration(envelope, on: target)
         }
         guard case .result(let result) = reply else { throw PickyAsyncControlError.invalidResponse }
-        asyncControlState.stops[sessionID] = nil
-        asyncControlState.stopOwners[sessionID] = nil
+        if asyncControlState.stops[sessionID] == envelope {
+            asyncControlState.stops[sessionID] = nil
+            asyncControlState.stopOwners[sessionID] = nil
+            asyncControlState.stopSources[sessionID] = nil
+        }
         try requireAsyncSettlement(result)
         return result
     }
 
     func archiveAsyncSession(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws {
+        _ = try await archiveSession(sessionID: sessionID, mode: mode)
+    }
+
+    private func archiveSession(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws -> PickyAsyncTaskCommandResult {
         let generation = asyncControlState.intentGenerations[sessionID, default: 0]
         let intent = asyncControlState.archiveIntents[sessionID] ?? UUID().uuidString
         asyncControlState.archiveIntents[sessionID] = intent
         let executeKey = "archive-execute:\(sessionID)"
         if let pending = asyncControlState.commands[executeKey] {
             guard mode == nil || pending.mode == mode else { throw PickyAsyncControlError.requestConflict }
-            _ = try await performRetained(pending, key: executeKey)
+            let result = try await performRetained(pending, key: executeKey)
             asyncControlState.archiveModes[sessionID] = nil
-            return
+            return result
         }
         let prepareKey = "archive-prepare:\(sessionID)"
         defer {
@@ -91,7 +118,7 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
                 asyncControlState.archiveModes[sessionID] = nil
             }
         }
-        let prepare: PickyAsyncTaskCommand
+        var prepare: PickyAsyncTaskCommand
         let archiveMode: PickyAsyncTaskCommand.ArchiveMode
         if let pending = asyncControlState.commands[prepareKey] {
             guard let retainedMode = asyncControlState.archiveModes[sessionID],
@@ -109,6 +136,7 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
                 archiveMode = .continue
             }
             prepare = try context.command(.prepareSessionArchive)
+            prepare.requireQuiescence = mode == nil ? true : nil
             asyncControlState.archiveModes[sessionID] = archiveMode
         }
         var preparedCommand = prepare
@@ -123,7 +151,7 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
         execute.controlGeneration = prepared.controlGeneration
         execute.preparationId = preparationID
         execute.mode = archiveMode
-        _ = try await performRetained(execute, key: executeKey)
+        return try await performRetained(execute, key: executeKey)
     }
 
     /// Called synchronously at the user's undo action, before any suspended work.
@@ -134,6 +162,10 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
     }
 
     func restoreAsyncSession(sessionID: String) async throws {
+        _ = try await restoreSession(sessionID: sessionID)
+    }
+
+    private func restoreSession(sessionID: String) async throws -> (PickyAsyncControlContext, String) {
         guard let router else { throw PickyAgentClientRouterError.routerUnavailable }
         // A lost prepare reply may have committed. Resolve that exact operation
         // before querying/cancelling its token; never reopen on transport success.
@@ -162,6 +194,7 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
         }
         asyncControlState.restores[sessionID] = nil
         asyncControlState.restoring.remove(sessionID)
+        return (context, envelope.id)
     }
 
     func releaseArchivedAsyncSession(sessionID: String) async throws -> Bool {
@@ -213,10 +246,57 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
 
     func bridgeArchive(sessionID: String, archived: Bool, mode: PickyAsyncTaskCommand.ArchiveMode?, tracked: Bool) async throws {
         if tracked {
-            if archived { try await archiveAsyncSession(sessionID: sessionID, mode: mode) }
-            else { invalidateAsyncArchiveIntent(sessionID: sessionID); try await restoreAsyncSession(sessionID: sessionID) }
+            guard let router else { throw PickyAgentClientRouterError.routerUnavailable }
+            let source = try await router.connectedClient(for: sessionID)
+            let owner: (daemon: String, runtime: String?, request: String)
+            if archived {
+                let result = try await archiveSession(sessionID: sessionID, mode: mode)
+                owner = (result.daemonInstanceId, result.runtimeInstanceId, result.requestId)
+            } else {
+                invalidateAsyncArchiveIntent(sessionID: sessionID)
+                let (context, requestID) = try await restoreSession(sessionID: sessionID)
+                owner = (context.daemonInstanceId, context.runtimeInstanceId, requestID)
+            }
+            try await waitForArchiveProjection(sessionID: sessionID, archived: archived, source: source, requestID: owner.request)
+            let current = try await context(sessionID: sessionID, on: source)
+            guard router.client(for: sessionID) === source,
+                  current.daemonInstanceId == owner.daemon, current.runtimeInstanceId == owner.runtime else {
+                throw PickyAsyncControlError.outcome(.stale, reason: "archive_projection_owner_changed")
+            }
+            guard router.pickleSessionSummary(id: sessionID)?.archived == archived else {
+                throw PickyAsyncControlError.outcome(.stale, reason: "archive_projection_changed")
+            }
         } else {
             try await legacyCommand(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archiveMode: mode, archived: archived))
+        }
+    }
+
+    /// Owner settlement and registry publication have independent consumers.
+    /// Wait for the real publication; never manufacture an archived summary.
+    private func waitForArchiveProjection(sessionID: String, archived: Bool, source: any PickyAgentClient, requestID: String) async throws {
+        guard let router else { throw PickyAgentClientRouterError.routerUnavailable }
+        let waiterID = UUID()
+        let (updates, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        projectionWaiters[waiterID] = continuation
+        continuation.yield(())
+        defer { projectionWaiters.removeValue(forKey: waiterID)?.finish() }
+        let timeout = asyncControlTransport.timeoutNanoseconds
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                for await _ in updates {
+                    guard router.client(for: sessionID) === source else {
+                        throw PickyAsyncControlError.outcome(.stale, reason: "archive_projection_owner_changed")
+                    }
+                    if router.pickleSessionSummary(id: sessionID)?.archived == archived { return }
+                }
+                throw CancellationError()
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeout)
+                throw PickyAsyncControlError.pending(requestId: requestID)
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
         }
     }
 

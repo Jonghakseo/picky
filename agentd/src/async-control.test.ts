@@ -492,3 +492,100 @@ it("rejects an implicit archive's captured revision after new work changes the o
   await expect(f.supervisor.setSessionArchived("session-1", true)).rejects.toThrow("Archive choice required");
   expect((await f.store.loadReadOnly("session-1"))?.archived).not.toBe(true);
 });
+
+it("rejects implicit archive when an input lease arrives during the preparation write", async () => {
+  const f = await fixture();
+  let entered!: () => void; let resumeSave!: () => void; let resumeInput!: () => void;
+  const saving = new Promise<void>((resolve) => { entered = resolve; });
+  const saveGate = new Promise<void>((resolve) => { resumeSave = resolve; });
+  const inputGate = new Promise<void>((resolve) => { resumeInput = resolve; });
+  const save = f.store.save.bind(f.store);
+  vi.spyOn(f.store, "save").mockImplementation(async (session) => {
+    if (session.asyncControl?.operations.some((operation) => operation.requestId === "implicit-race:prepare" && operation.outcome === "accepted")) { entered(); await saveGate; }
+    await save(session);
+  });
+  expect(f.supervisor.asyncControls.context("session-1").requiresArchiveChoice).toBe(false);
+  const archive = f.supervisor.setSessionArchived("session-1", true, undefined, "implicit-race").then(() => "archived", (error: Error) => error.message);
+  await saving;
+  const revision = f.supervisor.asyncControls.context("session-1").workRevision;
+  const input = f.supervisor.asyncControls.input("session-1", () => inputGate);
+  try {
+    expect(f.supervisor.asyncControls.context("session-1").workRevision).toBe(revision);
+    resumeSave();
+    const outcome = await archive;
+    const disk = await f.store.loadReadOnly("session-1");
+    console.log("implicit archive lease race", { outcome, diskArchived: disk?.archived === true, projectedArchived: f.projected.at(-1)?.archived === true });
+    expect(disk?.archived).not.toBe(true);
+    expect(f.projected.at(-1)?.archived).not.toBe(true);
+    expect(outcome).toContain("Archive choice required");
+  } finally { resumeSave(); resumeInput(); await input; }
+});
+
+it.each([true, false, undefined])("checks final archive writer leases with requireQuiescence=%s and preserves exact retry", async (requireQuiescence) => {
+  const f = await fixture();
+  const fields = requireQuiescence === undefined ? {} : { requireQuiescence };
+  const prepareCommand = f.command("prepareSessionArchive", { archiveIntentId: "writer-race", ...fields });
+  const prepared = await f.supervisor.executeAsyncTaskCommand(prepareCommand);
+  expect(prepared.outcome).toBe("settled");
+  expect(await f.supervisor.executeAsyncTaskCommand(prepareCommand)).toEqual(prepared);
+  let entered!: () => void; let resumeSave!: () => void; let resumeInput!: () => void;
+  const saving = new Promise<void>((resolve) => { entered = resolve; });
+  const saveGate = new Promise<void>((resolve) => { resumeSave = resolve; });
+  const inputGate = new Promise<void>((resolve) => { resumeInput = resolve; });
+  const save = f.store.save.bind(f.store);
+  vi.spyOn(f.store, "save").mockImplementation(async (session) => {
+    if (session.asyncControl?.operations.some((operation) => operation.requestId === "writer-execute" && operation.outcome === "accepted")) { entered(); await saveGate; }
+    await save(session);
+  });
+  const command = f.command("executeSessionArchive", { archiveIntentId: "writer-race", preparationId: prepared.preparationId!, mode: "continue", ...fields }, "writer-execute");
+  const archive = f.supervisor.executeAsyncTaskCommand(command);
+  await saving;
+  const revision = f.supervisor.asyncControls.context("session-1").workRevision;
+  const input = f.supervisor.asyncControls.input("session-1", () => inputGate);
+  try {
+    expect(f.supervisor.asyncControls.context("session-1").workRevision).toBe(revision);
+    resumeSave();
+    const result = await archive;
+    const disk = await f.store.loadReadOnly("session-1");
+    console.log("final archive writer lease race", { requireQuiescence, outcome: result.outcome, diskArchived: disk?.archived === true, projectedArchived: f.projected.at(-1)?.archived === true });
+    expect(result.outcome).toBe(requireQuiescence ? "rejected" : "settled");
+    expect(disk?.archived === true).toBe(!requireQuiescence);
+    expect(f.projected.at(-1)?.archived === true).toBe(!requireQuiescence);
+    expect(disk?.asyncControlJournal?.find((entry) => entry.result.requestId === command.requestId)?.result).toEqual(result);
+    resumeInput(); await input;
+    expect(await f.supervisor.executeAsyncTaskCommand(command)).toEqual(result);
+    await expect(f.supervisor.executeAsyncTaskCommand({ ...command, requireQuiescence: !requireQuiescence })).rejects.toThrow("different input");
+  } finally { resumeSave(); resumeInput(); await input; }
+});
+
+it.each([false, undefined])("does not downgrade a quiescent preparation to requireQuiescence=%s", async (requireQuiescence) => {
+  const f = await fixture();
+  const command = f.command("prepareSessionArchive", { archiveIntentId: "implicit", requireQuiescence: true });
+  const preparation = await f.supervisor.executeAsyncTaskCommand(command);
+  expect(preparation.outcome).toBe("settled");
+  await expect(f.supervisor.executeAsyncTaskCommand({ ...command, requireQuiescence: false })).rejects.toThrow("different input");
+  const execute = f.command("executeSessionArchive", { archiveIntentId: "implicit", preparationId: preparation.preparationId!, mode: "continue", ...(requireQuiescence === undefined ? {} : { requireQuiescence }) });
+  const result = await f.supervisor.executeAsyncTaskCommand(execute);
+  expect(result.outcome).toBe("rejected");
+  expect(result.reason).toContain("requires quiescence");
+  expect(await f.supervisor.executeAsyncTaskCommand(execute)).toEqual(result);
+  expect((await f.store.loadReadOnly("session-1"))?.archived).not.toBe(true);
+  expect(f.projected.at(-1)?.archived).not.toBe(true);
+});
+
+it("retains implicit preparation intent when legacy archive resumes with explicit continue", async () => {
+  const f = await fixture();
+  const preparation = await f.supervisor.executeAsyncTaskCommand(f.command("prepareSessionArchive", { archiveIntentId: "legacy-resume", requireQuiescence: true }, "legacy-resume:prepare"));
+  expect(preparation.outcome).toBe("settled");
+  let resume!: () => void;
+  const gate = new Promise<void>((resolve) => { resume = resolve; });
+  const input = f.supervisor.asyncControls.input("session-1", () => gate);
+  try {
+    await expect(f.supervisor.setSessionArchived("session-1", true, "continue", "legacy-resume")).rejects.toThrow("Archive choice required");
+    const disk = await f.store.loadReadOnly("session-1");
+    expect(disk?.archived).not.toBe(true);
+    expect(f.projected.at(-1)?.archived).not.toBe(true);
+    const execute = disk?.asyncControlJournal?.find((entry) => entry.result.requestId === "legacy-resume:execute");
+    expect(JSON.parse(execute!.fingerprint)).toMatchObject({ requireQuiescence: true });
+  } finally { resume(); await input; }
+});

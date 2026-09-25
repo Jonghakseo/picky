@@ -6,7 +6,7 @@ import type { RuntimeSessionHandle } from "../runtime/types.js";
 import { sameAsyncOwner } from "../runtime/async-task-state.js";
 import { KeyedSerialQueue } from "../domain/keyed-serial-queue.js";
 
-type StopCommand = Omit<Extract<AsyncTaskCommand, { type: "prepareSessionArchive" }>, "type" | "archiveIntentId"> & { type: "stopAsyncTasks" };
+type StopCommand = Omit<Extract<AsyncTaskCommand, { type: "prepareSessionArchive" }>, "type" | "archiveIntentId" | "requireQuiescence"> & { type: "stopAsyncTasks" };
 type LifecycleCommand = Omit<StopCommand, "type"> & { type: "prepareAsyncReplacement" | "reconcileAsyncControl"; inputLease?: boolean };
 type Command = AsyncTaskCommand | StopCommand | LifecycleCommand;
 type Outcome = AsyncTaskCommandResult["outcome"];
@@ -117,10 +117,10 @@ export class AsyncControlCoordinator {
     if (prior) { const result = await this.execute(JSON.parse(prior.fingerprint) as AsyncTaskCommand); if (result.outcome !== "settled") throw new Error(result.reason ?? result.outcome); return this.deps.read(sessionId); }
     if (!mode && this.requiresArchiveChoice(sessionId)) throw new ControlFailure("rejected", "Archive choice required: set archiveMode to continue or stopThenArchive");
     const preparedRecord = session.asyncControlJournal?.find((entry) => entry.result.requestId === `${requestId}:prepare`);
-    const preparedCommand: AsyncTaskCommand = preparedRecord ? JSON.parse(preparedRecord.fingerprint) : { ...this.commandContext(sessionId, `${requestId}:prepare`), type: "prepareSessionArchive", archiveIntentId: requestId };
+    const preparedCommand: Extract<AsyncTaskCommand, { type: "prepareSessionArchive" }> = preparedRecord ? JSON.parse(preparedRecord.fingerprint) : { ...this.commandContext(sessionId, `${requestId}:prepare`), type: "prepareSessionArchive", archiveIntentId: requestId, requireQuiescence: !mode };
     const prepared = await this.execute(preparedCommand);
     if (prepared.outcome !== "settled") throw new Error(prepared.reason ?? prepared.outcome);
-    const result = await this.execute({ ...this.commandContext(sessionId, `${requestId}:execute`), workRevision: prepared.workRevision, controlGeneration: prepared.controlGeneration, type: "executeSessionArchive", archiveIntentId: requestId, preparationId: prepared.preparationId!, mode: mode ?? "continue" });
+    const result = await this.execute({ ...this.commandContext(sessionId, `${requestId}:execute`), workRevision: prepared.workRevision, controlGeneration: prepared.controlGeneration, type: "executeSessionArchive", archiveIntentId: requestId, preparationId: prepared.preparationId!, mode: mode ?? "continue", requireQuiescence: preparedCommand.requireQuiescence });
     if (result.outcome !== "settled") throw new Error(result.reason ?? result.outcome);
     return this.deps.read(sessionId);
   }
@@ -248,6 +248,7 @@ export class AsyncControlCoordinator {
     if (result.outcome === "accepted" && (session.asyncWorkSummary?.workRevision !== command.workRevision || session.asyncControl?.controlGeneration !== command.controlGeneration)) throw new ControlFailure("stale", "Async work changed before operation commit");
     if (result.outcome !== "settled") return;
     if (["stopAsyncTasks", "reconcileAsyncControl", "prepareAsyncReplacement"].includes(command.type)) this.assertQuiescent(command, handle);
+    this.assertArchiveQuiescence(command, handle, session);
     if (command.type === "executeSessionArchive") {
       if (command.mode === "continue") {
         const accepted = session.asyncControlJournal?.find((entry) => entry.result.requestId === command.requestId)?.result;
@@ -257,6 +258,13 @@ export class AsyncControlCoordinator {
     if (command.type === "prepareRuntimeRelease") {
       this.assertQuiescent(command, handle);
       if (!session.archived || session.asyncArchiveIntentId !== command.archiveIntentId) throw new ControlFailure("stale", "Archive intent was withdrawn");
+    }
+  }
+
+  private assertArchiveQuiescence(command: Command, handle: RuntimeSessionHandle, session: PickyAgentSession): void {
+    if ((command.type === "prepareSessionArchive" || command.type === "executeSessionArchive") && command.requireQuiescence) {
+      try { this.assertPhysicalQuiescence(command, handle, session); }
+      catch { throw new ControlFailure("rejected", "Archive choice required: async work is no longer quiescent"); }
     }
   }
 
@@ -302,6 +310,7 @@ export class AsyncControlCoordinator {
     if (!preparation || preparation.result.outcome !== "settled") throw new ControlFailure("stale", "Archive preparation missing");
     const prepared: Command = JSON.parse(preparation.fingerprint);
     if (prepared.type !== "prepareSessionArchive" || prepared.archiveIntentId !== command.archiveIntentId || preparation.result.workRevision !== command.workRevision) throw new ControlFailure("stale", "Archive intent or work revision changed");
+    if (prepared.requireQuiescence && !command.requireQuiescence) throw new ControlFailure("rejected", "Archive preparation requires quiescence; refresh archive choice");
     if (command.mode === "stopThenArchive") await this.stopWork(command);
     return {};
   }
@@ -398,9 +407,8 @@ export class AsyncControlCoordinator {
     this.assertPhysicalQuiescence(command, handle);
   }
 
-  private assertPhysicalQuiescence(command: Command, handle: RuntimeSessionHandle): void {
+  private assertPhysicalQuiescence(command: Command, handle: RuntimeSessionHandle, session = this.deps.read(command.sessionId)): void {
     this.owners(command, handle);
-    const session = this.deps.read(command.sessionId);
     const ownLease = command.type === "prepareAsyncReplacement" && command.inputLease ? 1 : 0;
     if (this.deps.runtimeBlocked(command.sessionId) || this.deps.handle(command.sessionId) !== handle || (this.inputLeases.get(command.sessionId) ?? 0) > ownLease || this.deps.pendingInput(command.sessionId) || runtimeBusy(handle, session) || outstandingState(session, command.requestId, provesRecovery(command))) {
       throw new ControlFailure("blocked_cleanup", "Async work still has execution, delivery or control obligations");

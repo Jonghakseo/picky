@@ -18,8 +18,11 @@ export class AsyncTaskModelFence {
   private settlingCycleId?: string;
   private deliveries: AsyncCompletionDelivery[] = [];
   private settled: Promise<void> = Promise.resolve();
+  private pendingPersistence: Array<() => Promise<void>> = [];
+  private recovery?: Promise<void>;
   readonly inlineExtension: InlineExtension;
-  constructor(private readonly bridge: AsyncTaskHostBridge, private readonly emit: (event: RuntimeAsyncTaskEvent) => void, private readonly send: (data: unknown) => void) {
+  constructor(private readonly bridge: AsyncTaskHostBridge, private readonly emit: (event: RuntimeAsyncTaskEvent | { type: "log"; line: string }) => void, private readonly send: (data: unknown) => void) {
+    bridge.retryPersistence = () => this.retryPersistence();
     this.inlineExtension = { name: "picky-async-task-admission", hidden: true, factory: (api) => {
       api.on("context_with_system", (event) => {
         const generation = bridge.generation;
@@ -84,7 +87,7 @@ export class AsyncTaskModelFence {
     const last = event.messages?.slice().reverse().find((message) => typeof message === "object" && message !== null && "role" in message && message.role === "assistant") as { stopReason?: string } | undefined;
     const outcome = last?.stopReason === "aborted" ? "cancelled" : last?.stopReason === "error" ? "failed" : "completed";
     const settledCycle: AgentCycle = { ...cycle, phase: "settled", outcome };
-    this.settled = this.settled.then(() => this.bridge.owner.transact((current) => ({ ...current, cycle: settledCycle, tickets: current.tickets.map((ticket) => ticket.cycleId === cycle.cycleId && ticket.state === "processing" ? { ...ticket, state: outcome === "completed" ? "handled" : "pending" } : ticket) }))).then((state) => {
+    this.enqueuePersistence(() => this.bridge.owner.transact((current) => ({ ...current, cycle: settledCycle, tickets: current.tickets.map((ticket) => ticket.cycleId === cycle.cycleId && ticket.state === "processing" ? { ...ticket, state: outcome === "completed" ? "handled" : "pending" } : ticket) })).then((state) => {
       if (this.cycle === cycle) { this.cycle = undefined; this.deliveries = []; this.settlingCycleId = undefined; }
       this.bridge.publish(state);
       this.emit({ type: "async_task_cycle", cycle: settledCycle, deliveries });
@@ -92,22 +95,41 @@ export class AsyncTaskModelFence {
         const { taskIds: _taskIds, ...observed } = delivery;
         this.send({ ...observed, contract: ASYNC_TASK_CONTRACT, type: "completion-observed", requestId: randomUUID(), providerRevision: 0 });
       }
-    });
-    // Retain the rejection as an admission fence; SDK event dispatch is synchronous.
-    void this.settled.catch(() => undefined);
+    }));
   }
   private recordCompaction(started: boolean): void {
-    this.settled = this.settled.then(() => this.bridge.owner.transact((current) => {
+    this.enqueuePersistence(() => this.bridge.owner.transact((current) => {
       const cycle: AgentCycle = {
         cycleId: current.cycle?.cycleId ?? randomUUID(), runtimeInstanceId: this.bridge.runtimeInstanceId,
         controlGeneration: this.bridge.generation, phase: started ? "compacting" : this.cycle ? "responding" : "idle",
       };
       return { ...current, cycle };
-    })).then((state) => {
+    }).then((state) => {
       this.bridge.publish(state);
       if (state.cycle) this.emit({ type: "async_task_cycle", cycle: state.cycle, deliveries: [] });
-    });
+    }));
+  }
+  private enqueuePersistence(work: () => Promise<void>): void {
+    this.pendingPersistence.push(work);
+    this.settled = this.settled.then(() => this.flushPersistence());
+    // Keep rejected admission until an explicit persistence-only retry succeeds.
     void this.settled.catch(() => undefined);
+  }
+  private async flushPersistence(): Promise<void> {
+    while (this.pendingPersistence.length) {
+      try { await this.pendingPersistence[0]!(); }
+      catch (error) {
+        this.emit({ type: "log", line: `Async task persistence blocked; retryPersistence required: ${error instanceof Error ? error.message : String(error)}` });
+        throw error;
+      }
+      this.pendingPersistence.shift();
+    }
+  }
+  private retryPersistence(): Promise<void> {
+    if (this.recovery) return this.recovery;
+    this.settled = this.settled.catch(() => undefined).then(() => this.flushPersistence());
+    this.recovery = this.settled.finally(() => { this.recovery = undefined; });
+    return this.recovery;
   }
   async drain(): Promise<void> { await this.settled; }
 }

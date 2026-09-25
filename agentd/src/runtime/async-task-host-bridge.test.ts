@@ -144,3 +144,43 @@ describe("durable async task host", () => {
     await rejection;
   });
 });
+
+
+it("never renews an old grant across admission generations or lost provider coverage", async () => {
+  const f = await fixture();
+  f.send({ type: "task-register", task: f.task(), providerRevision: 1 }); await f.bridge.drain();
+  const grant = f.bridge.snapshot().tasks[0]!.grantId;
+  const query = async (generation: number, register = false) => {
+    const count = f.frames.filter((frame) => frame.type === "task-register-result").length;
+    f.send(register ? { type: "task-register", task: f.task(), providerRevision: 1, controlGeneration: generation } : { type: "registration-query", taskId: "task-1", controlGeneration: generation });
+    await f.bridge.drain();
+    expect(f.frames.filter((frame) => frame.type === "task-register-result")).toHaveLength(count + 1);
+    return f.frames.filter((frame) => frame.type === "task-register-result").at(-1)!;
+  };
+  expect(await query(0)).toMatchObject({ outcome: "accepted", grantId: grant, controlGeneration: 0 });
+  await f.bridge.closeAdmission();
+  for (const register of [false, true]) expect(await query(0, register)).toMatchObject({ outcome: "stale", controlGeneration: 0 });
+  await f.bridge.reopenAdmission();
+  for (const generation of [0, 2]) for (const register of [false, true]) {
+    expect(await query(generation, register)).toMatchObject({ outcome: "stale", controlGeneration: 0 });
+  }
+  expect(f.bridge.snapshot().tasks[0]?.grantId).toBe(grant);
+});
+
+it("withholds execution permission until provider snapshot coverage is restored", async () => {
+  const f = await fixture();
+  f.send({ type: "task-register", task: f.task(), providerRevision: 1 }); await f.bridge.drain();
+  for (const snapshotReady of [false, true]) {
+    f.send({ type: "provider-ready", providerVersion: "1", contractVersion: 1, snapshotReady, capabilities });
+    f.send({ type: "registration-query", taskId: "task-1" }); await f.bridge.drain();
+    expect(f.frames.filter((frame) => frame.type === "task-register-result").at(-1)).toMatchObject({ outcome: "rejected" });
+  }
+  f.send({ type: "snapshot", watermark: 0, detail: { tasks: [], tickets: [] } });
+  f.send({ type: "registration-query", taskId: "task-1" }); await f.bridge.drain();
+  expect(f.frames.filter((frame) => frame.type === "task-register-result").at(-1)).toMatchObject({ outcome: "accepted", controlGeneration: 0 });
+  vi.spyOn(f.store, "save").mockRejectedValueOnce(new Error("disk unavailable"));
+  f.send({ type: "task-register", task: f.task("other-task"), providerRevision: 1 }); await f.bridge.drain();
+  expect(f.bridge.coverage().tracking).toBe("unsupported");
+  f.send({ type: "registration-query", taskId: "task-1" }); await f.bridge.drain();
+  expect(f.frames.filter((frame) => frame.type === "task-register-result").at(-1)).toMatchObject({ outcome: "rejected", controlGeneration: 0 });
+});

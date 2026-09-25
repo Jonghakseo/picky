@@ -6,6 +6,7 @@ import { createAgentSessionFromServices, createAgentSessionServices, SettingsMan
 import { Type } from "typebox";
 import { afterEach, expect, it, vi } from "vitest";
 import { ASYNC_TASK_CONTRACT, AsyncTaskHostMessageSchema, type AsyncTaskHostMessage, type AsyncCompletionDelivery } from "../domain/async-task-contract.js";
+import type { PickyAgentSession } from "../protocol.js";
 import { SessionStore } from "../session-store.js";
 import { SessionSupervisor } from "../session-supervisor.js";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
@@ -46,10 +47,14 @@ async function fixture() {
   vi.spyOn(runtime, "prewarm").mockImplementation(async (options) => { handle = await prewarm(options); return handle; });
   const store = new SessionStore(join(root, "store"));
   const supervisor = new SessionSupervisor(runtime, store, { sessionIdFactory: () => "session-sdk", enableAsyncTasksForSession: () => true });
+  const events: RuntimeEvent[] = [];
+  const projections: PickyAgentSession[] = [];
+  supervisor.on("sessionProjectionTransaction", (_id, _before, after) => projections.push(structuredClone(after)));
   const pending = new Set<Promise<void>>();
   const eventTarget = supervisor as unknown as { applyRuntimeEvent(id: string, event: RuntimeEvent): Promise<void> };
   const applyEvent = eventTarget.applyRuntimeEvent.bind(supervisor);
   vi.spyOn(eventTarget, "applyRuntimeEvent").mockImplementation((id, event) => {
+    events.push(event);
     const work = applyEvent(id, event); pending.add(work);
     void work.finally(() => pending.delete(work)).catch(() => undefined);
     return work;
@@ -77,7 +82,7 @@ async function fixture() {
     await vi.waitFor(() => expect(handle.asyncTasks!.snapshot().tickets.some((ticket) => ticket.completionId === `completion-${id}`)).toBe(true));
     return { role: "custom" as const, customType: "fixture-completion", content: `RESULT ${id}`, display: true, details: { asyncTasks: delivery }, timestamp: Date.now() };
   }
-  return { handle, session, supervisor, store, requests, completion, frames, api, send };
+  return { handle, session, supervisor, store, requests, completion, frames, api, send, events, projections };
 }
 
 it("correlates real PiSdkRuntime context with persisted model consumption, not passive append", async () => {
@@ -231,4 +236,76 @@ it("renegotiates a fresh runtime identity after a real SDK resource reload", asy
   await f.handle.followUp({ text: "Authorized work after reload", imagePaths: [] });
   await f.session.waitForIdle();
   await vi.waitFor(() => expect(f.requests).toHaveLength(1));
+}, 15_000);
+
+
+it("reports settlement save failure without acknowledging or replaying the model, then retries only persistence", async () => {
+  const f = await fixture();
+  const message = await f.completion("save-failure");
+  const save = f.store.save.bind(f.store);
+  let failures = 0;
+  const spy = vi.spyOn(f.store, "save").mockImplementation(async (state) => {
+    if (state.completionTickets?.some((ticket) => ticket.state === "handled") && failures++ < 2) throw new Error("settlement disk unavailable");
+    await save(state);
+  });
+  await f.session.sendCustomMessage(message, { triggerTurn: true });
+  await f.session.waitForIdle();
+  try {
+    await vi.waitFor(() => expect(f.events.some((event) => event.type === "log" && event.line.includes("Async task persistence blocked"))).toBe(true));
+    const assertBlocked = async () => {
+      expect(f.requests).toHaveLength(1);
+      expect(f.handle.asyncTasks!.snapshot().tickets[0]?.state).toBe("processing");
+      expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("processing");
+      expect(f.supervisor.get("session-sdk")?.completionTickets?.[0]?.state).toBe("processing");
+      expect(f.frames.filter((frame) => frame.type === "completion-observed")).toEqual([]);
+      expect(f.projections.some((state) => state.completionTickets?.some((ticket) => ticket.state === "handled"))).toBe(false);
+    };
+    await assertBlocked();
+    await expect(f.handle.asyncTasks!.retryPersistence()).rejects.toThrow("settlement disk unavailable");
+    await assertBlocked();
+    await f.handle.followUp({ text: "Still blocked", imagePaths: [] });
+    await f.session.waitForIdle();
+    await assertBlocked();
+    await f.handle.asyncTasks!.retryPersistence();
+    expect(f.requests).toHaveLength(1);
+    expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled");
+    expect(f.frames.filter((frame) => frame.type === "completion-observed")).toHaveLength(1);
+    await f.handle.asyncTasks!.retryPersistence();
+    expect(f.frames.filter((frame) => frame.type === "completion-observed")).toHaveLength(1);
+    await f.handle.followUp({ text: "Work after recovery", imagePaths: [] });
+    await f.session.waitForIdle();
+    expect(f.requests).toHaveLength(2);
+  } finally { spy.mockRestore(); }
+}, 15_000);
+
+
+it("retains failed compaction bookkeeping for persistence-only recovery before a later model request", async () => {
+  const f = await fixture();
+  await f.handle.followUp({ text: "Seed compaction", imagePaths: [] });
+  await f.session.waitForIdle();
+  await vi.waitFor(() => expect(f.handle.asyncTasks!.snapshot().cycle?.phase).toBe("settled"));
+  f.api.on("session_before_compact", async (event) => ({ compaction: { summary: "Offline summary", firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore } }));
+  const save = f.store.save.bind(f.store);
+  let failed = false;
+  const spy = vi.spyOn(f.store, "save").mockImplementation(async (state) => {
+    if (!failed && state.agentCycle?.phase === "compacting") { failed = true; throw new Error("compaction disk unavailable"); }
+    await save(state);
+  });
+  try {
+    await f.session.compact();
+    await vi.waitFor(() => expect(f.events.some((event) => event.type === "log" && event.line.includes("compaction disk unavailable"))).toBe(true));
+    expect(f.requests).toHaveLength(1);
+    expect((await f.store.loadReadOnly("session-sdk"))?.agentCycle?.phase).toBe("settled");
+    expect(f.handle.asyncTasks!.snapshot().cycle?.phase).toBe("settled");
+    expect(f.projections.some((state) => state.agentCycle?.phase === "compacting")).toBe(false);
+    await f.handle.followUp({ text: "Blocked by bookkeeping", imagePaths: [] });
+    await f.session.waitForIdle();
+    expect(f.requests).toHaveLength(1);
+    await f.handle.asyncTasks!.retryPersistence();
+    expect((await f.store.loadReadOnly("session-sdk"))?.agentCycle?.phase).toBe("idle");
+    expect(f.requests).toHaveLength(1);
+    await f.handle.followUp({ text: "Continue after bookkeeping", imagePaths: [] });
+    await f.session.waitForIdle();
+    expect(f.requests).toHaveLength(2);
+  } finally { spy.mockRestore(); }
 }, 15_000);

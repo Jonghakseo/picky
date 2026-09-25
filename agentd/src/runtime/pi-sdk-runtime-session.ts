@@ -778,7 +778,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   private runAuthorizedPrompt<T>(work: () => T): T { return this.asyncFence ? this.asyncFence.runAuthorized(work) : work(); }
 
-  emitAsyncTaskEvent(event: RuntimeAsyncTaskEvent): void { this.emit(event); }
+  emitAsyncTaskEvent(event: RuntimeAsyncTaskEvent | { type: "log"; line: string }): void { this.emit(event); }
 
   reportDiagnostics(): void {
     if (this.transcriptRepairLogLine) this.emit({ type: "log", line: this.transcriptRepairLogLine });

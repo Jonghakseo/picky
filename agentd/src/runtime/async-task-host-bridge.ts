@@ -22,6 +22,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   private failed = false;
   private unsubscribe: () => void;
   private pending = new Map<string, { owner: AsyncTaskOwner; resolve: (value: ControlResult) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  retryPersistence: () => Promise<void> = async () => {};
   onState?: (state: RuntimeAsyncTaskState) => void;
   constructor(private readonly bus: Bus, readonly sessionId: string, readonly owner: RuntimeAsyncTaskOwner, private readonly emit: (event: RuntimeAsyncTaskEvent) => void, private readonly timeoutMs = 5_000) {
     this.unsubscribe = bus.on(ASYNC_TASK_CONTRACT, (data) => {
@@ -165,11 +166,14 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     this.send({ ...this.envelope(owner, message.requestId, 0), type: "host-state", supported, admissionState: this.admissionOpen ? "open" : "closed", capabilities });
   }
   private async registration(message: RegistrationRequest, provider: Provider): Promise<void> {
-    const canRegister = provider.ready && this.admissionOpen && message.controlGeneration === this.generation;
-    const state = await this.owner.transact((current) => message.type === "task-register" && !canRegister ? current : registerAsyncTask(current, message));
+    const canRegister = () => provider.ready && provider.snapshot && this.coverage().tracking === "ready" && this.admissionOpen && message.controlGeneration === this.generation;
+    const state = await this.owner.transact((current) => message.type === "task-register" && !canRegister() ? current : registerAsyncTask(current, message));
     const result = registrationState(state, message);
+    const task = state.tasks.find((task) => sameAsyncOwner(task, message) && task.taskId === registrationTaskId(message));
+    const bindingGeneration = task?.controlGeneration ?? message.controlGeneration;
+    const stale = bindingGeneration !== this.generation || message.controlGeneration !== this.generation;
     this.publish(state);
-    this.send({ ...this.envelope(provider.owner, message.requestId, provider.revision), type: "task-register-result", taskId: registrationTaskId(message), ...result, outcome: result.registration === "abandoned" ? "settled" : result.grantId ? "accepted" : "rejected" });
+    this.send({ ...this.envelope(provider.owner, message.requestId, provider.revision), controlGeneration: bindingGeneration, type: "task-register-result", taskId: registrationTaskId(message), ...result, outcome: result.registration === "abandoned" ? "settled" : stale ? "stale" : result.grantId && canRegister() ? "accepted" : "rejected" });
   }
   private envelope(owner: AsyncTaskOwner, requestId: string, providerRevision: number) {
     return { ...owner, contract: ASYNC_TASK_CONTRACT as typeof ASYNC_TASK_CONTRACT, requestId, providerRevision, controlGeneration: this.generation };

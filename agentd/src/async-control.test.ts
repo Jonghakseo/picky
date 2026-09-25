@@ -454,6 +454,47 @@ it("permits plain archive of a completed Pickle while the live owner reports no 
   expect(f.projected.at(-1)?.archived).toBe(true);
 });
 
+it("commits quiescent archive membership with a new closed admission generation and reopens on fresh input", async () => {
+  const f = await fixture();
+  const before = f.supervisor.asyncControls.context("session-1");
+  await f.supervisor.setSessionArchived("session-1", true, undefined, "quiet-archive");
+  const disk = await f.store.loadReadOnly("session-1");
+  expect(disk).toMatchObject({ archived: true, asyncArchiveIntentId: "quiet-archive", asyncControl: { admissionState: "closed", controlGeneration: before.controlGeneration + 1 } });
+  expect(f.projected.at(-1)?.asyncControl).toEqual(disk?.asyncControl);
+  await f.register("late-task");
+  expect((await f.store.loadReadOnly("session-1"))?.asyncTasks ?? []).toEqual([]);
+  await f.supervisor.setSessionArchived("session-1", false);
+  expect((await f.store.loadReadOnly("session-1"))?.asyncControl?.admissionState).toBe("closed");
+  await f.supervisor.steer("session-1", "fresh explicit input");
+  await f.register("fresh-task");
+  expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.[0]?.registration).toBe("approved");
+  expect(f.supervisor.asyncControls.context("session-1").controlGeneration).toBeGreaterThan(before.controlGeneration + 1);
+});
+
+it("does not commit an archive admission cut when its final storage write fails and keeps exact retry", async () => {
+  const f = await fixture();
+  const before = f.supervisor.asyncControls.context("session-1");
+  const save = f.store.save.bind(f.store);
+  let failed = false;
+  vi.spyOn(f.store, "save").mockImplementation(async state => {
+    if (!failed && state.archived === true && state.asyncControlJournal?.some(entry => entry.result.requestId === "failed-archive:execute" && entry.result.outcome === "settled")) {
+      failed = true; throw new Error("final archive write unavailable");
+    }
+    await save(state);
+  });
+  await expect(f.supervisor.setSessionArchived("session-1", true, undefined, "failed-archive")).rejects.toThrow("final archive write unavailable");
+  const disk = await f.store.loadReadOnly("session-1");
+  expect(failed).toBe(true);
+  expect(disk?.archived).not.toBe(true);
+  expect(disk?.asyncControl).toMatchObject({ admissionState: "open", controlGeneration: before.controlGeneration });
+  const failedResult = disk?.asyncControlJournal?.find(entry => entry.result.requestId === "failed-archive:execute")?.result;
+  expect(failedResult?.outcome).toBe("blocked_cleanup");
+  await expect(f.supervisor.setSessionArchived("session-1", true, undefined, "failed-archive")).rejects.toThrow("final archive write unavailable");
+  expect((await f.store.loadReadOnly("session-1"))?.asyncControlJournal?.find(entry => entry.result.requestId === "failed-archive:execute")?.result).toEqual(failedResult);
+  await f.supervisor.setSessionArchived("session-1", true, "continue", "fresh-archive");
+  expect((await f.store.loadReadOnly("session-1"))?.archived).toBe(true);
+});
+
 it("requires archive choice for missing provider coverage and for a lost owner", async () => {
   const f = await fixture({ missing: true });
   expect(f.supervisor.asyncControls.context("session-1").requiresArchiveChoice).toBe(true);

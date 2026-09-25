@@ -1,14 +1,16 @@
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { once } from "node:events";
 import { createServer, type Socket } from "node:net";
+import WebSocket from "ws";
+import { AgentdServer } from "../server.js";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssistantMessageEventStream, type AssistantMessage, type ToolCall } from "@earendil-works/pi-ai";
-import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager, VERSION, type AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager, VERSION, type AgentSession, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vitest";
-import { ASYNC_TASK_CONTRACT, type AsyncTaskHostMessage } from "../domain/async-task-contract.js";
-import { type PickyAgentSession, type PickySessionProjectionMutation } from "../protocol.js";
+import { ASYNC_TASK_CONTRACT, type AsyncTaskCommand, type AsyncTaskHostMessage } from "../domain/async-task-contract.js";
+import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession, type PickySessionProjectionMutation } from "../protocol.js";
 import { SessionStore } from "../session-store.js";
 import { SessionSupervisor } from "../session-supervisor.js";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
@@ -521,3 +523,107 @@ it("W5 guards direct SDK new, reload and rewind while a real child remains alive
   expect(f.projections.at(-1)?.agentCycle).toEqual(disk?.agentCycle);
   console.log("W5C_REPLACEMENT_TRACE", JSON.stringify({ owner, freshOwner, request: f.requests.at(-1), disk, projection: f.projections.at(-1) }));
 }, 20000);
+
+
+async function verifyQueuedRegistration(mode: "continue" | undefined, f: Awaited<ReturnType<typeof fixture>>, direct: Promise<unknown>, requestId: string): Promise<Socket | undefined> {
+  if (mode === undefined) {
+    await expect(direct).rejects.toThrow("Async task registration was not approved");
+    // The genuine provider request reached the host and the SDK tool completed with a rejection.
+    await f.drainEvents();
+    expect(f.frames.filter(frame => frame.type === "task-register-result" && frame.outcome === "accepted")).toHaveLength(0);
+    expect(existsSync(join(f.root, "spawns"))).toBe(false);
+    const disk = await f.store.loadReadOnly("session-sdk");
+    expect(disk).toMatchObject({ archived: true, asyncArchiveIntentId: requestId, asyncControl: { admissionState: "closed" } });
+    expect(disk?.asyncTasks?.some(task => task.registration === "spawned")).not.toBe(true);
+    expect(disk?.asyncWorkSummary?.canReleaseRuntime).toBe(true);
+  } else {
+    await vi.waitFor(() => expect(existsSync(join(f.root, "spawns"))).toBe(true), { timeout: 7000 });
+    const ownedChild = await f.child;
+    const active = await f.store.loadReadOnly("session-sdk");
+    expect(active).toMatchObject({ archived: true, asyncArchiveIntentId: requestId, asyncControl: { admissionState: "open" } });
+    expect(active?.asyncTasks?.some(task => task.registration === "spawned" && task.presence === "active")).toBe(true);
+    expect(active?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+    const owner = f.supervisor.asyncControls.context("session-sdk");
+    const command: Extract<AsyncTaskCommand, { type: "prepareRuntimeRelease" }> = { type: "prepareRuntimeRelease", requestId: "w5-release", sessionId: "session-sdk", daemonInstanceId: owner.daemonInstanceId, runtimeInstanceId: owner.runtimeInstanceId!, workRevision: owner.workRevision, controlGeneration: owner.controlGeneration, archiveIntentId: requestId, childGeneration: 1 };
+    const releaseAttempt = await f.supervisor.executeAsyncTaskCommand(command);
+    expect(releaseAttempt.outcome).not.toBe("settled");
+    expect(f.supervisor.asyncControls.context("session-sdk").releasePrepared).toBeUndefined();
+    const closed = once(ownedChild, "close"); ownedChild.end("exit\n"); await closed;
+    await direct;
+    await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.every(task => task.presence === "settled")).toBe(true), { timeout: 8000 });
+    await f.drainEvents();
+    expect(await readFile(join(f.root, "spawns"), "utf8")).toContain("spawn");
+    return ownedChild;
+  }
+}
+
+it.each([undefined, "continue"] as const)("commits %s archive before queued actual provider registration resolves", async mode => {
+  const f = await fixture({ name: "bash_async", arguments: { action: "list" } });
+  let context: ExtensionContext | undefined;
+  const unsubscribe = f.api.on("context_with_system", (_event, ctx) => { context = ctx; });
+  cleanups.push(async () => { unsubscribe(); });
+  await f.supervisor.followUp("session-sdk", "Complete a list-only turn");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.status).toBe("completed"));
+  await f.session.waitForIdle(); await f.drainEvents();
+  expect(f.frames.filter(frame => frame.type === "task-register")).toHaveLength(0);
+  expect(context).toBeDefined();
+
+  const server = new AgentdServer({ port: 0, token: "w5-archive-test", supervisor: f.supervisor });
+  const port = await server.start();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=w5-archive-test`);
+  const wire: EventEnvelope[] = [];
+  ws.on("message", data => wire.push(JSON.parse(String(data)) as EventEnvelope));
+  cleanups.push(async () => { ws.close(); await server.stop(); });
+  await once(ws, "open");
+  ws.send(JSON.stringify({ id: "w5-v2", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["sessionProjectionV2"] }));
+  await vi.waitFor(() => expect(wire.some(event => event.type === "sessionProjectionBootstrapComplete")).toBe(true));
+
+  const requestId = `w5-${mode ?? "implicit"}`;
+  const entered = deferred<void>(), release = deferred<void>();
+  const save = f.store.save.bind(f.store);
+  let held = false;
+  vi.spyOn(f.store, "save").mockImplementation(async state => {
+    if (!held && state.archived === true && state.asyncControlJournal?.some(entry => entry.result.requestId === `${requestId}:execute` && entry.result.outcome === "settled")) {
+      held = true; entered.resolve(); await release.promise;
+    }
+    await save(state);
+  });
+  let archive: Promise<PickyAgentSession> | undefined;
+  let direct: Promise<unknown> | undefined;
+  let ownedChild: Socket | undefined;
+  const evidence: Record<string, unknown> = { path: "direct public SDK tool invocation, not supervisor input", mode };
+  try {
+    archive = f.supervisor.setSessionArchived("session-sdk", true, mode, requestId);
+    await vi.waitFor(() => expect(held).toBe(true), { timeout: 5000 });
+    await entered.promise;
+    const duringSave = await f.store.loadReadOnly("session-sdk");
+    expect(duringSave?.archived).not.toBe(true);
+    expect(duringSave?.asyncControlJournal?.find(entry => entry.result.requestId === `${requestId}:execute`)?.result.outcome).toBe("accepted");
+    await expect(f.supervisor.followUp("session-sdk", "Normal input during accepted archive")).rejects.toThrow(/fenced|archived/);
+    const definition = f.session.getToolDefinition("subagent");
+    expect(definition).toBeDefined();
+    direct = definition!.execute("w5-direct-subagent", { command: "subagent run finite --isolated -- finite" }, undefined, undefined, context!);
+    await vi.waitFor(() => expect(f.frames.some(frame => frame.type === "task-register")).toBe(true), { timeout: 5000 });
+    expect(f.frames.filter(frame => frame.type === "task-register-result" && frame.outcome === "accepted")).toHaveLength(0);
+    expect(existsSync(join(f.root, "spawns"))).toBe(false);
+    release.resolve();
+    await archive;
+    await vi.waitFor(() => expect(f.frames.some(frame => frame.type === "task-register-result")).toBe(true), { timeout: 7000 });
+    await expect(f.supervisor.followUp("session-sdk", "Normal input after archive")).rejects.toThrow("archived");
+
+    ownedChild = await verifyQueuedRegistration(mode, f, direct, requestId);
+    const final = await f.store.loadReadOnly("session-sdk");
+    await vi.waitFor(() => expect(wire.filter(event => event.type === "sessionProjectionTransaction").at(-1)).toMatchObject({ revision: final?.revision }));
+    const archiveTransaction = wire.filter(event => event.type === "sessionProjectionTransaction").find(event => event.mutations.some(mutation => mutation.type === "metaPatch" && mutation.patch.archived === true));
+    expect(archiveTransaction?.mutations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "asyncControlSet", control: expect.objectContaining({ admissionState: mode === undefined ? "closed" : "open", controlGeneration: final?.asyncControl?.controlGeneration }) }),
+    ]));
+    expect(wire.filter(event => event.type === "sessionProjectionTransaction").at(-1)?.revision).toBe(final?.revision);
+    evidence.final = { disk: final, frames: f.frames, wire, coverage: f.handle.asyncTasks?.coverage() };
+    if (process.env.W5_SETTLED_SAVE_REPAIR_EVIDENCE) await writeFile(`${process.env.W5_SETTLED_SAVE_REPAIR_EVIDENCE}-${mode ?? "implicit"}.json`, JSON.stringify(evidence, null, 2));
+  } finally {
+    release.resolve();
+    ownedChild?.end("exit\n");
+    await Promise.allSettled([archive, direct].filter((promise): promise is Promise<unknown> => promise !== undefined));
+  }
+}, 25000);

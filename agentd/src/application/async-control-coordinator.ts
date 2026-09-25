@@ -227,14 +227,18 @@ export class AsyncControlCoordinator {
       if (!control) throw new Error("Async control state unavailable");
       // Changing this projected operation advances the aggregate work revision once.
       const workRevision = (session.asyncWorkSummary?.workRevision ?? 0) + 1;
-      const releaseApproval = result.releaseApproval ? { ...result.releaseApproval, workRevision, controlGeneration: control.controlGeneration } : undefined;
-      const saved = { ...result, workRevision, controlGeneration: control.controlGeneration, ...(releaseApproval ? { releaseApproval } : {}) };
+      // Archive membership and its admission cut must become durable in one write.
+      // Registrations queued behind this writer must see the new generation before granting.
+      const quiescentArchive = archived && command.type === "executeSessionArchive" && command.requireQuiescence === true;
+      const controlGeneration = control.controlGeneration + (quiescentArchive ? 1 : 0);
+      const releaseApproval = result.releaseApproval ? { ...result.releaseApproval, workRevision, controlGeneration } : undefined;
+      const saved = { ...result, workRevision, controlGeneration, ...(releaseApproval ? { releaseApproval } : {}) };
       const operations = [...control.operations.filter((entry) => entry.requestId !== command.requestId).map((entry) =>
         result.outcome === "settled" && provesRecovery(command) && ["blocked_cleanup", "blocked_delivery"].includes(entry.outcome)
           ? { ...entry, outcome: "settled" as const, reason: `Reconciled by operation ${result.operationId}` } : entry),
-        { requestId: command.requestId, operationId: result.operationId, outcome: result.outcome, controlGeneration: control.controlGeneration, ...(result.reason ? { reason: result.reason } : {}) }];
+        { requestId: command.requestId, operationId: result.operationId, outcome: result.outcome, controlGeneration, ...(result.reason ? { reason: result.reason } : {}) }];
       return { ...session, ...(archived && command.type === "executeSessionArchive" ? { archived: true, archivedAt: new Date().toISOString(), asyncArchiveIntentId: command.archiveIntentId } : {}),
-        asyncControl: { ...control, operations, ...(releaseApproval ? { releasePrepared: releaseApproval } : {}),
+        asyncControl: { ...control, controlGeneration, ...(quiescentArchive ? { admissionState: "closed" as const } : {}), operations, ...(releaseApproval ? { releasePrepared: releaseApproval } : {}),
           ...(command.type === "cancelRuntimeRelease" && result.outcome === "settled" ? { releasePrepared: undefined } : {}) },
         asyncControlJournal: [...(session.asyncControlJournal ?? []).filter((entry) => entry.result.requestId !== command.requestId).map((entry) =>
           result.outcome === "settled" && provesRecovery(command) && ["blocked_cleanup", "blocked_delivery"].includes(entry.result.outcome)

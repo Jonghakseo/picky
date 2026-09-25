@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@earendil-works/pi-coding-agent@0.87.1':
+    hash: 389a0e3e2127e129bace9e8d65a8d2a1b441f87c80244ae83fbd86ada7789a29
+    path: patches/pi-coding-agent@0.87.1.patch
   msedge-tts@2.0.7:
     hash: 8da09d18bc1fe00d9317de8ef8dd9dc93e03db75be52ca683b5fa9aa1664615d
     path: patches/msedge-tts@2.0.7.patch
@@ -27,7 +30,7 @@ importers:
         version: 0.87.1(ws@8.20.0)(zod@3.25.76)
       '@earendil-works/pi-coding-agent':
         specifier: 0.87.1
-        version: 0.87.1(ws@8.20.0)(zod@3.25.76)
+        version: 0.87.1(patch_hash=389a0e3e2127e129bace9e8d65a8d2a1b441f87c80244ae83fbd86ada7789a29)(ws@8.20.0)(zod@3.25.76)
       '@earendil-works/pi-tui':
         specifier: 0.87.1
         version: 0.87.1
@@ -2515,7 +2518,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-coding-agent@0.87.1(ws@8.20.0)(zod@3.25.76)':
+  '@earendil-works/pi-coding-agent@0.87.1(patch_hash=389a0e3e2127e129bace9e8d65a8d2a1b441f87c80244ae83fbd86ada7789a29)(ws@8.20.0)(zod@3.25.76)':
     dependencies:
       '@earendil-works/chord': 0.87.1
       '@earendil-works/pi-agent-core': 0.87.1(ws@8.20.0)(zod@3.25.76)

@@ -45,7 +45,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
       for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Async runtime replaced")); }
       this.pending.clear();
     }
-    this.expected = toolNames ? [...new Set(toolNames.flatMap((name) => name === "bash_async" ? ["bash-async"] : name === "subagent" || name === "sub" ? ["subagent"] : []))] : undefined;
+    this.expected = toolNames ? [...new Set(toolNames.flatMap((name) => name === "bash_async" ? ["bash-async"] : name === "subagent" || name === "sub" || name === "sub:isolate" ? ["subagent"] : []))] : undefined;
     await this.owner.transact((state) => ({ ...state, control: state.control ? { ...state.control, controlGeneration: state.control.controlGeneration + (replacing ? 1 : 0) } : { controlGeneration: 0, admissionState: "open", operations: [] } }));
     this.piSessionId = piSessionId;
     this.bindingIdentity = bindingIdentity;

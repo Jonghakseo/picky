@@ -64,7 +64,8 @@ function rootCounts(session: PickyAgentSession): Pick<AsyncWorkSummary, "activeR
     const key = JSON.stringify([task.runtimeInstanceId, task.providerId, task.providerInstanceId, task.rootTaskId]);
     const root = roots.get(key) ?? { active: false, uncertain: false };
     root.active ||= task.presence === "active" || ["queued", "running", "cancelling"].includes(task.execution) && task.registration !== "abandoned"
-      || ["reserved", "approved", "starting"].includes(task.registration);
+      || ["reserved", "approved"].includes(task.registration)
+      || task.registration === "starting" && task.presence !== "settled";
     root.uncertain ||= task.presence === "unknown";
     roots.set(key, root);
   }

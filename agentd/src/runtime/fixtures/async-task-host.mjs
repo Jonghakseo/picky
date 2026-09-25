@@ -264,6 +264,8 @@ socket.on('data', data => {
   writeFileSync(join(agentsDir, 'finite.md'), '---\nname: finite\ndescription: Offline finite fixture\ntools: []\n---\nNo model is executed.\n');
   const f = await fixture({ providerPaths: [join(root, 'packages/subagent/index.ts')] });
   try {
+    // The real package registers its tool lazily from before_agent_start.
+    await f.session.prompt('LOAD FINITE SUBAGENT; no tools');
     const tool = f.session.getToolDefinition('subagent');
     const context = f.session.extensionRunner.createContext();
     assert.equal(context.hasUI, false);

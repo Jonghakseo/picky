@@ -24,7 +24,10 @@ export class AsyncTaskModelFence {
   constructor(private readonly bridge: AsyncTaskHostBridge, private readonly emit: (event: RuntimeAsyncTaskEvent | { type: "log"; line: string }) => void, private readonly send: (data: unknown) => void) {
     bridge.retryPersistence = () => this.retryPersistence();
     this.inlineExtension = { name: "picky-async-task-admission", hidden: true, factory: (api) => {
-      api.on("context_with_system", (event) => {
+      api.on("context_with_system", async (event) => {
+        // Providers publish ticket identity immediately before sendMessage. Its durable
+        // transaction must finish before this hook validates the delivered identity.
+        await bridge.drain();
         const generation = bridge.generation;
         const authorized = this.authorization.getStore() === generation;
         const deliveries: AsyncCompletionDelivery[] = [];

@@ -141,6 +141,15 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.uiBridge = this.createBridge();
     this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
     this.runtime.setRebindSession(async () => this.bindCurrentSession());
+    if (asyncTasks) {
+      const retry = asyncTasks.retryPersistence;
+      asyncTasks.retryPersistence = async () => {
+        await retry();
+        // A failed settled-hook save leaves the idle latch closed. Recovery must
+        // refresh it without waiting for another model turn to emit agent_settled.
+        if (!this.disposed) { this.asyncSettled = this.runtime.session.isIdle; this.emit({ type: "async_task_idle" }); }
+      };
+    }
   }
 
   scheduleInitialPrompt(prompt: BuiltPrompt): void {

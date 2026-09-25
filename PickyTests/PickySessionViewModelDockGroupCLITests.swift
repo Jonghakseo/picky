@@ -23,7 +23,14 @@ private final class CLIGroupFakePickyAgentClient: PickyAgentClient {
         PickyAgentSubmissionReceipt(sessionID: "session-1", message: "sent")
     }
 
+    var rejectedSessionID: String?
+    private(set) var archivedSessionIDs: [String] = []
     func send(_ command: PickyCommandEnvelope) async throws {}
+    func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval, requireAcknowledgement: Bool) async throws -> PickyErrorEvent? {
+        if command.sessionId == rejectedSessionID { throw PickyAsyncControlError.outcome(.blocked_cleanup, reason: "cleanup incomplete") }
+        if command.type == .setSessionArchived, command.archived == true, let id = command.sessionId { archivedSessionIDs.append(id) }
+        return nil
+    }
     func disconnect() { continuation.yield(.disconnected) }
 }
 
@@ -333,7 +340,7 @@ struct PickySessionViewModelDockGroupCLITests {
         #expect(dockLayoutStore.savedLayouts.map(\.cliGroupTestEntryDescriptions) == [["session:a"]])
     }
 
-    @MainActor @Test func groupArchiveSaveFailureLeavesMembersActiveAndGrouped() async {
+    @MainActor @Test func groupArchiveSaveFailurePreservesSettledOwnerChangesAndGroup() async {
         let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "g", name: "Research", color: .teal, memberSessionIDs: ["b", "c"]))
@@ -357,9 +364,31 @@ struct PickySessionViewModelDockGroupCLITests {
             ))
         }
 
-        #expect(viewModel.archivedSessions.isEmpty)
-        #expect(Set(viewModel.sessions.map(\.id)) == Set(["a", "b", "c"]))
+        #expect(Set(viewModel.archivedSessions.map(\.id)) == Set(["b", "c"]))
+        #expect(viewModel.sessions.map(\.id) == ["a"])
         #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["session:a", "group:g[b,c]"])
+    }
+
+    @MainActor @Test func groupArchivePartialOwnerFailureKeepsRemainingMembersAndGroup() async throws {
+        let client = CLIGroupFakePickyAgentClient()
+        client.rejectedSessionID = "c"
+        let store = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g", name: "Research", color: .teal, memberSessionIDs: ["b", "c"]))
+        ]))
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: CLIGroupArchiveStore(), dockLayoutStore: store, archiveCommitDelayNanoseconds: 60_000_000_000)
+        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b"])))
+        await #expect(throws: PickyAsyncControlError.self) {
+            try await viewModel.manageDockGroups(.init(action: .archiveGroup, groupId: "g", name: nil, sessionIds: []))
+        }
+        #expect(viewModel.archivedSessions.map(\.id) == ["b"])
+        #expect(viewModel.sessions.map(\.id) == ["c"])
+        #expect(viewModel.dockLayout.group(withID: "g")?.memberSessionIDs == ["b", "c"])
+        #expect(client.archivedSessionIDs == ["b"])
+        client.rejectedSessionID = nil
+        _ = try await viewModel.manageDockGroups(.init(action: .archiveGroup, groupId: "g", name: nil, sessionIds: []))
+        #expect(viewModel.dockLayout.group(withID: "g") == nil)
+        #expect(client.archivedSessionIDs == ["b", "c"])
     }
 
     @MainActor @Test func mainAgentRejectsUnknownSessionsBeforeMutatingLayout() async {

@@ -1,5 +1,8 @@
+import { isAsyncTracked } from "./domain/async-work-aggregate.js";
 /* eslint-disable max-lines -- SessionSupervisor remains the single mutable session owner; scripts/check-architecture-rules.js enforces its no-growth ratchet. */
 import { aggregateAsyncSession, finalizeAsyncCycle, publishAsyncWorkCompletion, retryAsyncWorkPersistence, asyncTaskRuntimeOptions } from "./application/async-task-coordinator.js";
+import { AsyncControlCoordinator } from "./application/async-control-coordinator.js";
+import type { AsyncTaskCommand } from "./domain/async-task-contract.js";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { extractSessionLinkArtifacts } from "./artifact-store.js";
@@ -48,7 +51,7 @@ import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { isSemanticNoOpPatch } from "./domain/session-patch-policy.js";
 import { nextRevision } from "./domain/session-revision-policy.js";
-import { ARCHIVED_SESSION_RETENTION_DAYS, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
+import { ARCHIVED_SESSION_RETENTION_DAYS, recoverAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext } from "./domain/session-title.js";
@@ -62,6 +65,12 @@ import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-message-builder.js";
 export class SessionSupervisor extends EventEmitter {
+  readonly asyncControls = new AsyncControlCoordinator({
+    read: (id) => this.mustGet(id), patch: (id, patch) => this.patch(id, patch), handle: (id) => this.runtimeHandles.get(id), runtimeBlocked: (id) => this.runtimeDisposalGate.isBlocked(id), pendingInput: (id) => (this.pendingQueueDeliveries.get(id)?.length ?? 0) > 0, commit: (id, build) => this.commitSession(id, build),
+    abortModel: async (id, handle) => { await this.clearQueue(id, "all"); await handle.abort(); await this.waitForRuntimeEvents(id); },
+    drain: (id) => this.waitForRuntimeEvents(id), archived: (id, archived) => this.emit("sessionArchivedAuthoritative", id, archived),
+  });
+  executeAsyncTaskCommand(command: AsyncTaskCommand) { return this.asyncControls.execute(command); }
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
   private runtimeHandleUnsubscribes = new Map<string, () => void>();
@@ -172,6 +181,7 @@ export class SessionSupervisor extends EventEmitter {
       hasRuntimeHandle: (sessionId) => this.runtimeHandles.has(sessionId),
       isRuntimeStreaming: (sessionId) => this.runtimeHandles.get(sessionId)?.isStreaming === true,
       detachRuntimeHandle: (sessionId) => this.detachRuntimeHandle(sessionId),
+      retainedAsyncWork: (sessionId) => this.asyncControls.retained(sessionId),
       patchSession: (sessionId, patch) => this.patch(sessionId, patch),
       updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
       messageRecorder: this.messageBuilder,
@@ -228,7 +238,7 @@ export class SessionSupervisor extends EventEmitter {
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
     for (const persistedSession of persisted) {
-      const migratedSession = withPiSessionFileFromLogs(persistedSession);
+      const migratedSession = recoverAsyncSession(withPiSessionFileFromLogs(persistedSession));
       const isPickleSession = hasPickleSessionMarkerLog(migratedSession);
       if (isPickleSession) this.pickleSessionIds.add(migratedSession.id);
       const session = isPickleSession
@@ -238,7 +248,7 @@ export class SessionSupervisor extends EventEmitter {
             notifyMacOSOnCompletion: migratedSession.notifyMacOSOnCompletion ?? false,
           }
         : migratedSession;
-      if (session.piSessionFilePath !== persistedSession.piSessionFilePath
+      if (isAsyncTracked(session) || session.piSessionFilePath !== persistedSession.piSessionFilePath
           || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion
           || session.notifyMacOSOnCompletion !== persistedSession.notifyMacOSOnCompletion) await this.commitSession(session);
       else this.sessions.set(session.id, session);
@@ -300,7 +310,7 @@ export class SessionSupervisor extends EventEmitter {
   private async purgeStaleArchivedSessions(now: number = Date.now()): Promise<void> {
     const removed: string[] = [];
     for (const session of [...this.sessions.values()]) {
-      if (!shouldPurgeArchivedSession(session, now, this.runtimeHandles.has(session.id))) continue;
+      if (this.asyncControls.retained(session.id) || !shouldPurgeArchivedSession(session, now, this.runtimeHandles.has(session.id))) continue;
       try {
         await this.store.deleteSession(session.id);
         this.sessions.delete(session.id);
@@ -512,6 +522,7 @@ export class SessionSupervisor extends EventEmitter {
     // Pickle sessions. Iterate a snapshot because abort() mutates session state.
     const pickles = this.listPickleSessions();
     for (const session of pickles) {
+      if (this.asyncControls.retained(session.id)) { pickleDeferredCount++; await this.appendLog(session.id, "plugins reload blocked by outstanding async work or coverage"); continue; }
       if (isTerminalStatus(session.status)) continue;
       const handle = this.runtimeHandles.get(session.id);
       if (!handle) continue;
@@ -947,12 +958,13 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("deleteSession skipped: unknown session", { sessionId });
       return;
     }
-    if (!isTerminalStatus(session.status)) {
+    if (!isTerminalStatus(session.status) && !isAsyncTracked(session)) {
       throw new Error(`Cannot delete a session that is not in a terminal state: ${sessionId} (${session.status})`);
     }
     if (session.archived !== true) {
       throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
     }
+    if (this.asyncControls.retained(sessionId)) throw new Error("Async work or provider coverage prevents deletion");
     await this.detachRuntimeHandle(sessionId, true);
     await this.setTerminalSessionTailEnabled(sessionId, false);
     await this.store.deleteSession(sessionId);
@@ -974,20 +986,8 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("session deleted", { sessionId });
   }
 
-  async setSessionArchived(sessionId: string, archived: boolean): Promise<PickyAgentSession> {
-    const patch: Partial<PickyAgentSession> = archived
-      ? { archived: true, archivedAt: new Date().toISOString() }
-      : { archived: false, archivedAt: undefined };
-    await this.patch(sessionId, patch);
-    // Emit a dedicated event in addition to the patch-driven sessionMetaUpdated
-    // so the client knows this archive-state change is authoritative (rather than
-    // a stale `archived` field on an unrelated update). Picky's view model
-    // mirrors this into its local manuallyArchivedSessionIDs UserDefaults so
-    // tool-initiated unarchive (picky_unarchive_pickle) actually pops the
-    // dock card back — the local intent set is the source of truth for dock
-    // placement and is otherwise never touched by remote sessionUpdated/sessionMetaUpdated.
-    this.emit("sessionArchivedAuthoritative", sessionId, archived);
-    return this.mustGet(sessionId);
+  async setSessionArchived(sessionId: string, archived: boolean, archiveMode?: "continue" | "stopThenArchive", requestId?: string): Promise<PickyAgentSession> {
+    return this.asyncControls.archive(sessionId, archived, archiveMode, requestId);
   }
 
   async listSessionRuntimeOptions(sessionId: string) {
@@ -1041,6 +1041,7 @@ export class SessionSupervisor extends EventEmitter {
     return readSessionDiff(this.mustGet(sessionId).cwd, view);
   }
   async rewindToEntry(sessionId: string, entryId: string): Promise<PickyAgentSession> {
+    await this.asyncControls.prepareReplacement(sessionId);
     return runRewindToEntry(this.rewindDeps(), sessionId, entryId);
   }
 
@@ -1109,11 +1110,13 @@ export class SessionSupervisor extends EventEmitter {
     if (this.isPickleSession(sessionId) && session.status === "cancelled" && context?.source === "voice-follow-up") {
       return this.steer(sessionId, text, context, visualDslEnabled);
     }
-    if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
+    if (["failed", "cancelled"].includes(session.status) && session.asyncControl?.admissionState !== "open") throw new Error(`Cannot follow up ${session.status} session`);
     return undefined;
   }
 
-  async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+  async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> { return this.asyncControls.input(sessionId, () => this.performFollowUp(sessionId, text, context, visualDslEnabled)); }
+  private async performFollowUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+    if (/^\/(?:new|reload)(?:\s|$)/.test(text.trim())) await this.asyncControls.prepareReplacement(sessionId, true);
     const terminalFollowUp = await this.routeTerminalFollowUp(sessionId, text, context, visualDslEnabled);
     if (terminalFollowUp) return terminalFollowUp;
     const session = this.mustGet(sessionId);
@@ -1614,8 +1617,10 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  async steer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> { return this.asyncControls.input(sessionId, () => this.performSteer(sessionId, text, context, visualDslEnabled)); }
   // eslint-disable-next-line complexity -- Steer owns one transactional flow across runtime attachment, rollback, queue journaling, and synchronous slash handling.
-  async steer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+  private async performSteer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+    if (/^\/(?:new|reload)(?:\s|$)/.test(text.trim())) await this.asyncControls.prepareReplacement(sessionId, true);
     const pendingAbort = this.pendingAbortOperations.get(sessionId);
     if (pendingAbort) {
       logAgentd("steer waiting for abort", { sessionId, textChars: text.length });
@@ -1701,16 +1706,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async abort(sessionId: string): Promise<PickyAgentSession> {
-    const existing = this.pendingAbortOperations.get(sessionId);
-    if (existing) return existing;
-
-    const operation = this.performAbort(sessionId);
-    this.pendingAbortOperations.set(sessionId, operation);
-    try {
-      return await operation;
-    } finally {
-      if (this.pendingAbortOperations.get(sessionId) === operation) this.pendingAbortOperations.delete(sessionId);
-    }
+    return this.asyncControls.abort(sessionId, this.pendingAbortOperations, () => this.performAbort(sessionId));
   }
 
   private async performAbort(sessionId: string): Promise<PickyAgentSession> {
@@ -1745,7 +1741,8 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
-  async answerExtensionUi(sessionId: string, requestId: string, value: unknown): Promise<PickyAgentSession> {
+  async answerExtensionUi(sessionId: string, requestId: string, value: unknown): Promise<PickyAgentSession> { return this.asyncControls.input(sessionId, () => this.performAnswerExtensionUi(sessionId, requestId, value)); }
+  private async performAnswerExtensionUi(sessionId: string, requestId: string, value: unknown): Promise<PickyAgentSession> {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle?.answerExtensionUi) throw new Error("Runtime session cannot answer extension UI requests");
     const pendingBeforeAnswer = this.mustGet(sessionId).pendingExtensionUiRequest;
@@ -1777,13 +1774,16 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async detachRuntimeHandle(sessionId: string, abort = false): Promise<void> {
+    await this.asyncControls.prepareReplacement(sessionId);
     const handle = this.runtimeHandles.get(sessionId);
     this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
-    // Detach before teardown so terminal events cannot mutate an externally synced session.
+    // Tracked observers remain attached until the fenced runtime actually disposes.
+    const tracked = isAsyncTracked(this.mustGet(sessionId));
+    if (tracked) await this.asyncControls.dispose(sessionId, () => this.runtimeDisposalGate.dispose(sessionId, handle, "tracked-runtime"));
     this.runtimeHandleUnsubscribes.get(sessionId)?.();
     this.runtimeHandleUnsubscribes.delete(sessionId);
     this.runtimeHandles.delete(sessionId);
-    await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
+    if (!tracked) await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
   }
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     await this.runtimeDisposalGate.waitOrDispose(sessionId, handle);

@@ -2135,7 +2135,7 @@ describe("AgentdServer", () => {
     expect(archiveRequest).toMatchObject({ operation: "setArchived", sessionId: "pickle-cli", archived: true });
     if (archiveRequest.type !== "pickleBridgeRequested") throw new Error("expected archive bridge request");
     const archiveAck = waitForEvent(cli.ws, "pickleSessionUpdated");
-    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-archive", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: archiveRequest.requestId, session, delivered: true }));
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-archive", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: archiveRequest.requestId, session: { ...session, archived: true }, delivered: true }));
     await expect(archiveAck).resolves.toMatchObject({ commandId: "cmd-cli-archive", session: { id: "pickle-cli", archived: true } });
 
     cli.ws.send(JSON.stringify({ id: "cmd-cli-delete", protocolVersion: PROTOCOL_VERSION, type: "deletePickle", caller: "mainAgent", sessionId: "pickle-cli" }));
@@ -2918,3 +2918,19 @@ function context(text: string): PickyContextPacket {
   warnings: [],
   };
 }
+
+it.each(["delivery-only", "unconfirmed-state", "wrong-owner"])("rejects %s as an owner archive result instead of manufacturing archived state", async (caseName) => {
+  const app = await connectWithHello();
+  app.ws.send(JSON.stringify({ id: "register-w5-bridge", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+  await waitForRegisteredCapability("pickleBridge");
+  const cli = await connectWithHello();
+  cli.ws.send(JSON.stringify({ id: "w5-archive", protocolVersion: PROTOCOL_VERSION, type: "setPickleArchived", sessionId: "child", archived: true, archiveMode: "stopThenArchive" }));
+  const request = await waitForEvent(app.ws, "pickleBridgeRequested");
+  expect(request).toMatchObject({ operation: "setArchived", archiveMode: "stopThenArchive" });
+  if (request.type !== "pickleBridgeRequested") throw new Error("expected bridge request");
+  const rejected = waitForEvent(cli.ws, "error");
+  app.ws.send(JSON.stringify({ id: "complete-w5-bridge", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: request.requestId, delivered: true,
+    ...(caseName === "delivery-only" ? {} : { session: makeSession({ id: caseName === "wrong-owner" ? "another-child" : "child", archived: caseName === "wrong-owner" }) }) }));
+  await expect(rejected).resolves.toMatchObject({ commandId: "w5-archive" });
+  app.ws.close(); cli.ws.close();
+});

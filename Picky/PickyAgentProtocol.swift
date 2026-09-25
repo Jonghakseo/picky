@@ -69,6 +69,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     /// Optional for compatibility with app/daemon versions predating new-Pickle defaults.
     var notifyMainOnCompletion: Bool?
     var notifyMacOSOnCompletion: Bool?
+    var command: PickyAsyncTaskCommand?
+    var archiveMode: PickyAsyncTaskCommand.ArchiveMode?
     var archived: Bool?
     var defaultCwd: String?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
@@ -141,6 +143,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         enabled: Bool? = nil,
         notifyMainOnCompletion: Bool? = nil,
         notifyMacOSOnCompletion: Bool? = nil,
+        command: PickyAsyncTaskCommand? = nil,
+        archiveMode: PickyAsyncTaskCommand.ArchiveMode? = nil,
         archived: Bool? = nil,
         defaultCwd: String? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
@@ -207,6 +211,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.enabled = enabled
         self.notifyMainOnCompletion = notifyMainOnCompletion
         self.notifyMacOSOnCompletion = notifyMacOSOnCompletion
+        self.command = command
+        self.archiveMode = archiveMode
         self.archived = archived
         self.defaultCwd = defaultCwd
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
@@ -254,6 +260,8 @@ enum PickyModelCycleDirection: String, Codable, Equatable {
 }
 
 enum PickyCommandType: String, Codable, Equatable {
+    case getAsyncControlContext
+    case asyncTaskCommand
     case routeTask
     case createTask
     case createEmptyPickleSession
@@ -355,6 +363,8 @@ struct PickyEventEnvelope: Decodable, Equatable {
 }
 
 enum PickyEvent: Equatable {
+    case asyncControlContext(PickyAsyncControlContext)
+    case asyncTaskCommandResult(PickyAsyncTaskCommandResult)
     case hello(PickyHelloEvent)
     case quickReply(PickyQuickReplyEvent)
     /// Main-agent turn finished without user-visible reply text (for example, DSL-only screen guidance).
@@ -448,6 +458,8 @@ enum PickyEvent: Equatable {
     /// Main companion conversation events (hello, quick replies, transcript, models, errors).
     private static func decodeMainAgentEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
         switch type {
+        case "asyncControlContext": return .asyncControlContext(try PickyAsyncControlContext(from: decoder))
+        case "asyncTaskCommandResult": return .asyncTaskCommandResult(try PickyAsyncTaskResultEvent(from: decoder).result)
         case "hello": return .hello(try PickyHelloEvent(from: decoder))
         case "quickReply":
             return .quickReply(try PickyQuickReplyEvent(from: decoder))

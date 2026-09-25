@@ -1,6 +1,6 @@
 import { summaryFromFinalAnswer } from "./session-summary.js";
 import type { PickyAgentSession } from "../protocol.js";
-import type { AsyncWorkSummary } from "./async-task-contract.js";
+import type { AsyncTask, AsyncWorkSummary } from "./async-task-contract.js";
 
 type Episode = NonNullable<AsyncWorkSummary["episode"]>;
 export interface AsyncWorkObservation {
@@ -63,9 +63,7 @@ function rootCounts(session: PickyAgentSession): Pick<AsyncWorkSummary, "activeR
   for (const task of session.asyncTasks ?? []) {
     const key = JSON.stringify([task.runtimeInstanceId, task.providerId, task.providerInstanceId, task.rootTaskId]);
     const root = roots.get(key) ?? { active: false, uncertain: false };
-    root.active ||= task.presence === "active" || ["queued", "running", "cancelling"].includes(task.execution) && task.registration !== "abandoned"
-      || ["reserved", "approved"].includes(task.registration)
-      || task.registration === "starting" && task.presence !== "settled";
+    root.active ||= asyncExecutionIsActive(task);
     root.uncertain ||= task.presence === "unknown";
     roots.set(key, root);
   }
@@ -75,8 +73,8 @@ function rootCounts(session: PickyAgentSession): Pick<AsyncWorkSummary, "activeR
 
 function controlObligations(session: PickyAgentSession): { pending: boolean; failures: number } {
   const control = session.asyncControl;
-  return { pending: control?.admissionState === "closing" || control?.operations.some((operation) => operation.outcome === "accepted") === true,
-    failures: control?.operations.filter((operation) => ["blocked_delivery", "blocked_cleanup"].includes(operation.outcome)).length ?? 0 };
+  return { pending: control?.admissionState === "closing" || control?.operations.some((operation) => operation.outcome === "accepted" && !asyncOperationResolved(session, operation.operationId)) === true,
+    failures: control?.operations.filter((operation) => ["blocked_delivery", "blocked_cleanup"].includes(operation.outcome) && !asyncOperationResolved(session, operation.operationId)).length ?? 0 };
 }
 
 function attentionReason(uncertain: number, failedDelivery: number, failedControl: number, outcome: Episode["outcome"], unfinished: boolean, tracking: AsyncWorkSummary["tracking"]): { text?: string; extraCount: number } {
@@ -100,7 +98,8 @@ function aggregateStatus(session: PickyAgentSession, attentionCount: number, qui
   if (attentionCount) return "blocked";
   if (session.pendingExtensionUiRequest) return "waiting_for_input";
   if (!quiescent) return "running";
-  return episode?.outcome ?? session.status;
+  // A control-only operation on an empty Pickle is not a new model turn.
+  return episode?.outcome ?? (!session.agentCycle && session.status === "running" ? "waiting_for_input" : session.status);
 }
 
 /** Progress, output, timestamps and provider sequence numbers are not archive/release permissions. */
@@ -116,4 +115,19 @@ function safetySignature(session: PickyAgentSession): string {
     tasks: session.asyncTasks?.map((task) => [task.runtimeInstanceId, task.providerId, task.providerInstanceId, task.taskId, task.rootTaskId, task.registration, task.execution, task.presence, task.controlGeneration]),
     tickets: session.completionTickets?.map((ticket) => [ticket.runtimeInstanceId, ticket.providerId, ticket.providerInstanceId, ticket.completionId, ticket.state, ticket.controlGeneration, ticket.cycleId]),
   });
+}
+
+export function asyncExecutionIsActive(task: AsyncTask): boolean {
+  return task.presence === "active" || ["queued", "running", "cancelling"].includes(task.execution) && task.registration !== "abandoned"
+    || ["reserved", "approved"].includes(task.registration) || task.registration === "starting" && task.presence !== "settled";
+}
+export function hasAsyncExecutionObligations(tasks: readonly AsyncTask[]): boolean {
+  return tasks.some((task) => asyncExecutionIsActive(task) || task.presence === "unknown");
+}
+export function asyncOperationResolved(session: PickyAgentSession, operationId: string): boolean {
+  const record = session.asyncControlJournal?.find((entry) => entry.result.operationId === operationId);
+  return !!record?.resolvedBy && session.asyncControlJournal?.some((entry) => entry.result.operationId === record.resolvedBy && entry.result.outcome === "settled") === true;
+}
+export function isAsyncTracked(session: PickyAgentSession): boolean {
+  return [session.asyncControl, session.asyncTasks, session.completionTickets, session.asyncWorkSummary, session.agentCycle, session.asyncControlJournal].some((value) => value !== undefined);
 }

@@ -19,9 +19,9 @@ export type AppPickleBridgeRequest =
   | { operation: "listSessions" }
   | { operation: "steer" | "followUp"; sessionId: string; text: string }
   | { operation: "abort"; sessionId: string }
-  | { operation: "setArchived"; sessionId: string; archived: boolean }
+  | { operation: "setArchived"; sessionId: string; archived: boolean; archiveMode?: "continue" | "stopThenArchive" }
   | { operation: "delete"; sessionId: string }
-  | { operation: "manageGroups"; groupAction: "list" | "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup"; groupId?: string; name?: string; sessionIds?: string[] }
+  | { operation: "manageGroups"; groupAction: "list" | "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup"; groupId?: string; name?: string; sessionIds?: string[]; archiveMode?: "continue" | "stopThenArchive" }
   | ({
     operation: "notifyMainOfPickleCompletion";
     status?: "completed" | "failed" | "cancelled" | "queued" | "running" | "waiting_for_input" | "blocked";
@@ -43,6 +43,7 @@ type PendingPickleBridgeRequest<App> = {
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
   app: App;
+  request: AppPickleBridgeRequest;
 };
 
 export interface PickleBridgeRequestCoordinatorDeps<App> {
@@ -65,7 +66,7 @@ export class PickleBridgeRequestCoordinator<App> {
         this.pending.delete(requestId);
         reject(new Error(timeoutMessage));
       }, timeoutMs);
-      this.pending.set(requestId, { resolve, reject, timer, app });
+      this.pending.set(requestId, { resolve, reject, timer, app, request });
       this.deps.send(app, requestId, request);
     });
   }
@@ -78,6 +79,15 @@ export class PickleBridgeRequestCoordinator<App> {
     if (result.errorMessage) {
       pending.reject(new Error(result.errorMessage));
       return;
+    }
+    if (["abort", "setArchived"].includes(pending.request.operation) && !result.session) {
+      pending.reject(new Error("Owner operation result missing; delivery acknowledgement is not settlement")); return;
+    }
+    if ((pending.request.operation === "abort" || pending.request.operation === "setArchived") && result.session?.id !== pending.request.sessionId) {
+      pending.reject(new Error("Owner operation returned a different session")); return;
+    }
+    if (pending.request.operation === "setArchived" && result.session?.archived !== pending.request.archived) {
+      pending.reject(new Error("Owner archive state does not match the completed request")); return;
     }
     pending.resolve({ sessions: result.sessions, groups: result.groups, session: result.session, delivered: result.delivered });
   }

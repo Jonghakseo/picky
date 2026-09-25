@@ -1,0 +1,28 @@
+{
+  "id": "event-1",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-09-25T12:00:00Z",
+  "type": "asyncTaskCommandResult",
+  "result": {
+    "type": "asyncTaskCommandResult",
+    "requestId": "client-operation-1",
+    "sessionId": "pickle-1",
+    "daemonInstanceId": "daemon-1",
+    "runtimeInstanceId": "runtime-1",
+    "workRevision": 9,
+    "controlGeneration": 3,
+    "operationId": "server-operation-1",
+    "outcome": "settled",
+    "releaseApproval": {
+      "operationId": "server-operation-1",
+      "releaseToken": "release-token-1",
+      "sessionId": "pickle-1",
+      "daemonInstanceId": "daemon-1",
+      "runtimeInstanceId": "runtime-1",
+      "workRevision": 9,
+      "controlGeneration": 3,
+      "childGeneration": 7,
+      "archiveIntentId": "archive-intent-1"
+    }
+  }
+}

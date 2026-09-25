@@ -127,8 +127,7 @@ export const AsyncCompletionDeliverySchema = AsyncTaskOwnerSchema.extend({
   deliveryId: id, completionIds: z.array(id).min(1), taskIds: z.array(id).min(1), controlGeneration: revision,
 }).strict();
 
-// W5 adds these to the production command dispatcher. Until then parseCommand rejects
-// them as unsupported instead of acknowledging an operation that never ran.
+// The app transport wraps this fixed payload in asyncTaskCommand; provider wire is independent.
 const commandBase = z.object({ requestId: id, sessionId: id, daemonInstanceId: id, runtimeInstanceId: id, workRevision: revision, controlGeneration: revision }).strict();
 export const AsyncTaskCommandSchema = z.discriminatedUnion("type", [
   commandBase.extend({ type: z.literal("asyncTaskDetail"), owner: AsyncTaskOwnerSchema, taskId: id, cursor: id.optional(), limit: z.number().int().min(1).max(100) }),

@@ -9,6 +9,7 @@ const VERSION = "0.1.0";
 
 interface SharedOptions {
   json?: boolean;
+  archiveMode?: "continue" | "stopThenArchive";
 }
 
 interface PickleGroupListOptions extends SharedOptions {
@@ -312,6 +313,7 @@ Examples:
 
 program
   .command("pickle-archive <session-id>")
+  .addOption(new Option("--archive-mode <mode>", "Required while work remains: continue running, or stop before archiving").choices(["continue", "stopThenArchive"]))
   .description("Archive a Pickle session so it is hidden from the Picky dock. Archived terminal Pickles follow Picky's 7-day retention window.")
   .option("--json", "Emit the archive-state event JSON to stdout")
   .addHelpText("after", `
@@ -326,7 +328,7 @@ Examples:
         printArchiveNoop(sessionId, true, options.json, session);
         return;
       }
-      const event = await setPickleArchiveState(connection, sessionId, true);
+      const event = await setPickleArchiveState(connection, sessionId, true, options.archiveMode);
       printArchiveStateResult(event, options.json, `Archived Pickle ${sessionId}`);
     });
   });
@@ -431,15 +433,16 @@ program
 
 program
   .command("pickle-group-delete <group-id>")
+  .addOption(new Option("--archive-mode <mode>", "Choose how to archive members that still have work").choices(["continue", "stopThenArchive"]))
   .description("Remove a dock group and archive every Pickle in it. Requires explicit confirmation flags.")
   .option("--archive-members", "Archive every group member")
   .option("--confirm", "Confirm the destructive group operation")
-  .action(async (groupId: string, options: { archiveMembers?: boolean; confirm?: boolean }) => {
+  .action(async (groupId: string, options: { archiveMembers?: boolean; confirm?: boolean; archiveMode?: "continue" | "stopThenArchive" }) => {
     await runWithErrorHandling(async () => {
       if (!options.archiveMembers || !options.confirm) {
         fail("pickle-group-delete requires --archive-members --confirm", 64);
       }
-      await runDockGroupMutation({ groupAction: "archiveGroup", groupId });
+      await runDockGroupMutation({ groupAction: "archiveGroup", groupId, archiveMode: options.archiveMode });
     });
   });
 
@@ -610,6 +613,7 @@ async function sendPickleInput(
 async function runDockGroupMutation(input: {
   groupAction: "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup";
   groupId?: string;
+  archiveMode?: "continue" | "stopThenArchive";
   name?: string;
   sessionIds?: string[];
 }): Promise<void> {
@@ -657,20 +661,11 @@ function rejectForMainAgent(command: string): void {
   if (isMainAgentCaller) fail(`${command} cannot be called from the Picky main agent`, 64);
 }
 
-/**
- * Sanity-check that the target Pickle exists and is not archived before we
- * fire `followUp` / `abort` at the daemon. Archived Pickles are hidden from
- * the Picky dock and the user has already opted out of touching them, so
- * steering or aborting them from the CLI is almost always a mistake (e.g. a
- * stale session id copy-pasted from an old `pickle-list --include-archived`
- * dump). The daemon enforces the same rule, but doing it here gives the user
- * a clear, non-generic error message and avoids issuing the side-effectful
- * command at all.
- */
+/** Archived work may be stopped, but ordinary follow-up must explicitly restore visibility. */
 async function ensureSessionIsSteerable(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, action: "follow-up" | "abort"): Promise<void> {
   const target = await fetchSessionByID(connection, sessionId);
   if (!target) fail(`Pickle session not found: ${sessionId}`, 1);
-  if (target.archived === true) {
+  if (target.archived === true && action !== "abort") {
     fail(`Pickle session ${sessionId} is archived; un-archive it from the Picky dock before sending a ${action}.`, 1);
   }
 }
@@ -818,8 +813,8 @@ function truncateCliText(value: string, maxChars: number): string {
   return value.length <= maxChars ? value : `${sliceUtf16Safe(value, maxChars - 1)}…`;
 }
 
-async function setPickleArchiveState(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, archived: boolean): Promise<PickleSessionUpdatedEvent> {
-  return await sendCommand(connection, { type: "setPickleArchived", sessionId, archived, ...callerFields }, { matchEvent: matchPickleSessionUpdated });
+async function setPickleArchiveState(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, archived: boolean, archiveMode?: "continue" | "stopThenArchive"): Promise<PickleSessionUpdatedEvent> {
+  return await sendCommand(connection, { type: "setPickleArchived", sessionId, archived, archiveMode, ...callerFields }, { matchEvent: matchPickleSessionUpdated });
 }
 
 function printArchiveStateResult(event: PickleSessionUpdatedEvent, asJson: boolean | undefined, message: string): void {

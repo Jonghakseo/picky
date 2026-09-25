@@ -1,3 +1,4 @@
+import { hasAsyncExecutionObligations, isAsyncTracked } from "./async-work-aggregate.js";
 import type { PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState } from "../protocol.js";
 import { zeroActivitySummary } from "./activity-summary.js";
 import type { MainRolloverPickleSession } from "./main-agent-policy.js";
@@ -203,7 +204,7 @@ export function buildArchivedSessionRestartCancellation(
   return {
     ...session,
     ...interruptedPatch,
-    status: "cancelled",
+    status: isAsyncTracked(session) ? "blocked" : "cancelled",
     lastSummary: "Archived session was not resumed after daemon restart",
     updatedAt: now,
   };
@@ -337,9 +338,21 @@ export function shouldPurgeArchivedSession(
   now: number,
   hasRuntimeHandle: boolean,
 ): boolean {
+  if (isAsyncTracked(session)) return false;
   if (session.archived !== true) return false;
   if (!isTerminalStatus(session.status)) return false;
   if (hasRuntimeHandle) return false;
   const ageSource = session.archivedAt ?? session.updatedAt;
   return now - new Date(ageSource).getTime() >= ARCHIVED_SESSION_RETENTION_MS;
+}
+
+/** An absent runtime cannot turn old-owner resources or delivery obligations into empty work. */
+export function recoverAsyncSession(session: PickyAgentSession): PickyAgentSession {
+  if (!isAsyncTracked(session)) return session;
+  return { ...session, status: "blocked", lastSummary: "Async owner restarted; resource and delivery reconciliation required",
+    asyncTasks: session.asyncTasks?.map((task) => hasAsyncExecutionObligations([task]) && task.presence !== "unknown" ? { ...task, presence: "unknown", execution: "interrupted" } : task),
+    completionTickets: session.completionTickets?.map((ticket) => ["handled", "suppressed"].includes(ticket.state) ? ticket : { ...ticket, state: "unknown" }),
+    asyncControl: session.asyncControl ? { ...session.asyncControl, admissionState: "closed", releasePrepared: undefined,
+      operations: session.asyncControl.operations.map((operation) => operation.outcome === "accepted" ? { ...operation, outcome: "blocked_cleanup", reason: "Owner restarted before operation settlement" } : operation) } : undefined,
+    asyncWorkSummary: session.asyncWorkSummary ? { ...session.asyncWorkSummary, tracking: "reconciling", canReleaseRuntime: false } : undefined };
 }

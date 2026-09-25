@@ -168,11 +168,8 @@ final class PickySessionListViewModel: ObservableObject {
     private let childSessionReleaser: (any PickyChildSessionReleasing)?
     let projectionOwnerReconnector: (any PickyProjectionOwnerReconnecting)?
     private let archiveCommitDelayNanoseconds: UInt64
-    private var archiveCommitTasks: [String: Task<Void, Never>] = [:]
-    /// User archive actions are optimistic. Preserve their intent until a
-    /// matching v2 projection mutation or recovery snapshot confirms it.
-    var pendingArchiveIntentBySessionID: [String: Bool] = [:]
-    private var pendingArchiveIntentByCommandID: [String: (sessionID: String, archived: Bool)] = [:]
+    let archiveCoordinator = PickySessionArchiveCoordinator()
+    var pendingArchiveIntentBySessionID: [String: Bool] { archiveCoordinator.intents }
     var releasedArchivedChildSessionIDs = Set<String>()
     private let manualPickleSessionIdFactory: () -> String
     private var terminalSessionCommandChains: [String: Task<Void, Never>] = [:]
@@ -1114,6 +1111,11 @@ final class PickySessionListViewModel: ObservableObject {
 
     func abort(sessionID: String) async throws {
         pickySessionLog("abort session=\(sessionID)")
+        if (sessions + archivedSessions).first(where: { $0.id == sessionID })?.hasAsyncTracking == true {
+            guard let control = client.asyncTaskControl else { throw PickyAsyncControlError.unsupported }
+            _ = try await control.stopAsyncWork(sessionID: sessionID)
+            return
+        }
         try await client.send(PickyCommandEnvelope(type: .abort, sessionId: sessionID))
         mutateSession(sessionID: sessionID) { card in
             if !card.status.isTerminal { card.status = .cancelled }
@@ -1575,6 +1577,27 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func archive(sessionID: String) {
+        guard (sessions + archivedSessions).first(where: { $0.id == sessionID })?.hasAsyncTracking == true else {
+            commitArchive(sessionID: sessionID, sendIntent: true)
+            return
+        }
+        Task { @MainActor in
+            do { try await self.archiveSessionConfirmed(sessionID: sessionID, mode: nil) }
+            catch { self.archiveCoordinator.record(error, sessionID: sessionID) }
+        }
+    }
+
+    func archiveSessionConfirmed(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }) else { throw PickyDockGroupManagementError.sessionNotFound(sessionID) }
+        if session.hasAsyncTracking { try await archiveCoordinator.archive(sessionID: sessionID, mode: mode, client: client) }
+        else if let error = try await client.sendAwaitingError(PickyCommandEnvelope(type: .setSessionArchived,
+            sessionId: sessionID, archived: true), timeout: 5, requireAcknowledgement: true) {
+            throw PickyAgentClientRouterError.bridgeCommandRejected(error.message)
+        }
+        commitArchive(sessionID: sessionID, sendIntent: false)
+    }
+
+    private func commitArchive(sessionID: String, sendIntent: Bool) {
         beginDockStateMutation()
         defer { endDockStateMutation() }
 
@@ -1584,15 +1607,9 @@ final class PickySessionListViewModel: ObservableObject {
         }
         closeShellTerminalSession(sessionID: sessionID)
         releasedArchivedChildSessionIDs.remove(sessionID)
-        var archivedIDs = archiveStore.archivedSessionIDs
-        archivedIDs.insert(sessionID)
-        archiveStore.archivedSessionIDs = archivedIDs
+        archiveCoordinator.setMembership(sessionID, archived: true, store: archiveStore)
 
-        var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
-        manuallyArchivedIDs.insert(sessionID)
-        archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
-
-        sendArchiveIntent(sessionID: sessionID, archived: true)
+        if sendIntent { sendArchiveIntent(sessionID: sessionID, archived: true) }
 
         scheduleArchiveCommit(sessionID: sessionID)
 
@@ -1619,17 +1636,8 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func sendArchiveIntent(sessionID: String, archived: Bool) {
-        let command = PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archived: archived)
-        pendingArchiveIntentBySessionID[sessionID] = archived
-        pendingArchiveIntentByCommandID[command.id] = (sessionID, archived)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await client.send(command)
-            } catch {
-                handleArchiveIntentFailure(commandID: command.id)
-                pickySessionLog("set archive intent failed session=\(sessionID) archived=\(archived) error=\(error.localizedDescription)")
-            }
+        archiveCoordinator.sendLegacyIntent(sessionID: sessionID, archived: archived, client: client) { [weak self] in
+            self?.handleArchiveIntentFailure(commandID: $0)
         }
     }
 
@@ -1637,31 +1645,25 @@ final class PickySessionListViewModel: ObservableObject {
     /// current archive intent. A stale command ID can then never undo a newer
     /// user action for the same session.
     func clearPendingArchiveIntent(sessionID: String) {
-        pendingArchiveIntentBySessionID.removeValue(forKey: sessionID)
-        pendingArchiveIntentByCommandID = pendingArchiveIntentByCommandID.filter { $0.value.sessionID != sessionID }
+        archiveCoordinator.clearIntent(sessionID: sessionID)
     }
 
     /// Reverses only the current optimistic action when its command was
     /// rejected. This makes the generic command-correlated `error` frame a
     /// liveness signal rather than leaving local archive intent permanent.
     func handleArchiveIntentFailure(commandID: String?) {
-        guard let commandID,
-              let pending = pendingArchiveIntentByCommandID.removeValue(forKey: commandID),
-              pendingArchiveIntentBySessionID[pending.sessionID] == pending.archived
-        else { return }
+        guard let pending = archiveCoordinator.failedIntent(commandID: commandID) else { return }
 
         beginDockStateMutation()
         defer { endDockStateMutation() }
         clearPendingArchiveIntent(sessionID: pending.sessionID)
         if pending.archived {
-            archiveStore.archivedSessionIDs.remove(pending.sessionID)
-            archiveStore.manuallyArchivedSessionIDs.remove(pending.sessionID)
-            archiveCommitTasks.removeValue(forKey: pending.sessionID)?.cancel()
+            archiveCoordinator.setMembership(pending.sessionID, archived: false, store: archiveStore)
+            archiveCoordinator.cancelCommit(sessionID: pending.sessionID)
             releasedArchivedChildSessionIDs.remove(pending.sessionID)
             _ = moveSessionProjectionMembership(id: pending.sessionID, archived: false)
         } else {
-            archiveStore.archivedSessionIDs.insert(pending.sessionID)
-            archiveStore.manuallyArchivedSessionIDs.insert(pending.sessionID)
+            archiveCoordinator.setMembership(pending.sessionID, archived: true, store: archiveStore)
             _ = moveSessionProjectionMembership(id: pending.sessionID, archived: true)
             scheduleArchiveCommit(sessionID: pending.sessionID)
         }
@@ -1676,49 +1678,52 @@ final class PickySessionListViewModel: ObservableObject {
     /// `archive(sessionID:)` and cancelled by `unarchive(sessionID:)` so users who tap Undo
     /// keep their child agentd alive.
     private func scheduleArchiveCommit(sessionID: String) {
-        archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
-        let delay = archiveCommitDelayNanoseconds
-        let task = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: delay)
-            guard !Task.isCancelled, let self else { return }
-            guard self.archiveCommitTasks[sessionID] != nil else { return }
-            self.archiveCommitTasks.removeValue(forKey: sessionID)
-            guard let archivedSession = self.archivedSessions.first(where: { $0.id == sessionID }),
-                  archivedSession.status.isTerminal
-            else {
-                pickySessionLog("archive-commit session=\(sessionID) keeping child for non-terminal Pickle")
-                return
-            }
-            self.releaseArchivedTerminalChildIfCommitted(archivedSession)
+        archiveCoordinator.scheduleCommit(sessionID: sessionID, delay: archiveCommitDelayNanoseconds) { [weak self] in
+            guard let self, let session = self.archivedSessions.first(where: { $0.id == sessionID }) else { return }
+            self.releaseArchivedTerminalChildIfCommitted(session)
         }
-        archiveCommitTasks[sessionID] = task
     }
 
     func releaseArchivedTerminalChildIfCommitted(_ session: SessionCard) {
         guard session.status.isTerminal else { return }
-        guard archiveCommitTasks[session.id] == nil else { return }
+        guard !archiveCoordinator.hasCommit(sessionID: session.id) else { return }
         guard !releasedArchivedChildSessionIDs.contains(session.id) else { return }
+        if session.hasAsyncTracking {
+            archiveCoordinator.release(sessionID: session.id, client: client) { [weak self] in
+                self?.releasedArchivedChildSessionIDs.insert(session.id)
+            }
+            return
+        }
         releasedArchivedChildSessionIDs.insert(session.id)
         pickySessionLog("archive-commit session=\(session.id) releasing terminal child")
         childSessionReleaser?.releaseChild(sessionId: session.id)
     }
 
     func unarchive(sessionID: String) {
+        let tracked = (sessions + archivedSessions).first(where: { $0.id == sessionID })?.hasAsyncTracking == true
+        archiveCoordinator.invalidateIntent(sessionID: sessionID, client: client, tracked: tracked)
+        guard tracked else {
+            commitUnarchive(sessionID: sessionID, sendIntent: true)
+            return
+        }
+        Task { @MainActor in
+            do {
+                try await self.archiveCoordinator.restore(sessionID: sessionID, client: self.client)
+                self.commitUnarchive(sessionID: sessionID, sendIntent: false)
+            } catch { self.archiveCoordinator.record(error, sessionID: sessionID) }
+        }
+    }
+
+    private func commitUnarchive(sessionID: String, sendIntent: Bool) {
         beginDockStateMutation()
         defer { endDockStateMutation() }
 
         pickySessionLog("unarchive session=\(sessionID)")
-        archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
+        archiveCoordinator.cancelCommit(sessionID: sessionID)
         releasedArchivedChildSessionIDs.remove(sessionID)
-        var archivedIDs = archiveStore.archivedSessionIDs
-        archivedIDs.remove(sessionID)
-        archiveStore.archivedSessionIDs = archivedIDs
+        archiveCoordinator.setMembership(sessionID, archived: false, store: archiveStore)
 
-        var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
-        manuallyArchivedIDs.remove(sessionID)
-        archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
-
-        sendArchiveIntent(sessionID: sessionID, archived: false)
+        if sendIntent { sendArchiveIntent(sessionID: sessionID, archived: false) }
 
         guard moveSessionProjectionMembership(id: sessionID, archived: false) != nil else { return }
         // Only touch manualOrder if the user has already opted into manual
@@ -1759,7 +1764,7 @@ final class PickySessionListViewModel: ObservableObject {
                   [.completed, .failed, .cancelled, .blocked].contains(session.status)
             else { return }
             do {
-                try await self.client.send(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID))
+                try await self.archiveCoordinator.delete(sessionID: sessionID, client: self.client)
                 guard let current = self.archivedSessions.first(where: { $0.id == sessionID }),
                       [.completed, .failed, .cancelled, .blocked].contains(current.status)
                 else { return }
@@ -1778,16 +1783,10 @@ final class PickySessionListViewModel: ObservableObject {
         defer { endDockStateMutation() }
 
         pickySessionLog("finalize deleted archived session=\(sessionID)")
-        archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
+        archiveCoordinator.cancelCommit(sessionID: sessionID)
         releasedArchivedChildSessionIDs.remove(sessionID)
 
-        var archivedIDs = archiveStore.archivedSessionIDs
-        archivedIDs.remove(sessionID)
-        archiveStore.archivedSessionIDs = archivedIDs
-
-        var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
-        manuallyArchivedIDs.remove(sessionID)
-        archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
+        archiveCoordinator.setMembership(sessionID, archived: false, store: archiveStore)
 
         // Mirror removeOnboardingDemoSession's cleanup: prune every per-session
         // map so a future incoming sessionUpdated for an unrelated session id
@@ -1859,7 +1858,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func clearAuthoritativelyRemovedSessionState(sessionID: String) {
-        archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
+        archiveCoordinator.cancelCommit(sessionID: sessionID)
         clearPendingArchiveIntent(sessionID: sessionID)
         sessionProjectionRecoveryCoordinator?.remove(sessionID: sessionID)
         archiveStore.archivedSessionIDs.remove(sessionID)
@@ -2020,7 +2019,8 @@ final class PickySessionListViewModel: ObservableObject {
             if let sessionID = accepted.sessionId, let groupName = accepted.group {
                 assignSessionToDockGroup(sessionID: sessionID, groupName: groupName)
             }
-        case .quickReply, .mainTurnSettled, .mainNarrationChunk,
+        case .asyncControlContext, .asyncTaskCommandResult,
+             .quickReply, .mainTurnSettled, .mainNarrationChunk,
              .mainVisualNarrationSegmentPrepared, .mainVisualNarrationSegmentSentence, .mainVisualNarrationSegmentCommitted,
              .mainMessagesSnapshot, .mainMessageAppended, .mainActivityUpdated, .mainExtensionUiRequested, .mainExtensionUiCancelled,
              .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
@@ -2195,15 +2195,7 @@ final class PickySessionListViewModel: ObservableObject {
         if pendingArchiveIntentBySessionID[sessionId] == archived {
             clearPendingArchiveIntent(sessionID: sessionId)
         }
-        var archivedIDs = archiveStore.archivedSessionIDs
-        var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
-        if archived {
-            if archivedIDs.insert(sessionId).inserted { archiveStore.archivedSessionIDs = archivedIDs }
-            if manuallyArchivedIDs.insert(sessionId).inserted { archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs }
-        } else {
-            if archivedIDs.remove(sessionId) != nil { archiveStore.archivedSessionIDs = archivedIDs }
-            if manuallyArchivedIDs.remove(sessionId) != nil { archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs }
-        }
+        archiveCoordinator.setMembership(sessionId, archived: archived, store: archiveStore)
         // Re-place the card by feeding the cached snapshot back through
         // upsert with its archived field updated to match. If we have no
         // record of the session yet, drop the signal — the next regular

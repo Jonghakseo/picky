@@ -16,7 +16,7 @@ import type { RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.unstubAllEnvs(); });
-async function fixture(options: { onTool?: () => Promise<void>; failModel?: boolean } = {}) {
+async function fixture(options: { onTool?: () => Promise<void>; failModel?: boolean; readyOnDiscovery?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "picky-w3-sdk-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "home/.pi/agent"); await mkdir(agentDir, { recursive: true });
@@ -34,7 +34,17 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
       api = pi;
       pi.registerCommand("fixture-no-turn", { description: "Offline command", handler: async () => {} });
       pi.registerTool({ name: "bash_async", label: "Finite fixture", description: "Finite fixture", parameters: Type.Object({}), async execute() { await options.onTool?.(); return { content: [{ type: "text", text: "fixture" }], details: {} }; } });
-      pi.events.on(ASYNC_TASK_CONTRACT, (data) => { const frame = AsyncTaskHostMessageSchema.parse(data); frames.push(frame); if (frame.type === "host-state") host = frame; });
+      pi.events.on(ASYNC_TASK_CONTRACT, (data) => {
+        const frame = AsyncTaskHostMessageSchema.parse(data);
+        frames.push(frame);
+        const envelope = { contract: frame.contract, sessionId: frame.sessionId, piSessionId: frame.piSessionId, runtimeInstanceId: frame.runtimeInstanceId, providerId: frame.providerId, providerInstanceId: frame.providerInstanceId, requestId: frame.requestId, providerRevision: frame.providerRevision, controlGeneration: frame.controlGeneration };
+        if (frame.type === "host-state") {
+          host = frame;
+          if (options.readyOnDiscovery && frame.supported) pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "provider-ready", providerVersion: "fixture", contractVersion: 1, snapshotReady: true, capabilities: { registration: true, snapshot: true, cancel: true, detail: true, closeAdmission: true, suppressDelivery: true } });
+        }
+        if (options.readyOnDiscovery && frame.type === "snapshot-request") pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "snapshot", watermark: frame.providerRevision, detail: { tasks: [], tickets: [] } });
+        if (options.readyOnDiscovery && frame.type === "control-request" && frame.action === "closeAdmission") pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "control-result", outcome: "settled", admissionClosed: true, submittedDeliveryIds: [] });
+      });
       pi.on("session_start", (_event, context) => {
         pi.events.emit(ASYNC_TASK_CONTRACT, { contract: ASYNC_TASK_CONTRACT, type: "host-query", requestId: "discover", sessionId: null, runtimeInstanceId: null, piSessionId: context.sessionManager.getSessionId(), providerId: "bash-async", providerInstanceId: "fixture-instance", providerRevision: 0, controlGeneration: 0 });
       });
@@ -87,8 +97,10 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
   const fixtureHandle = handle;
   const owner = { sessionId: host.sessionId, piSessionId: host.piSessionId, runtimeInstanceId: host.runtimeInstanceId, providerId: host.providerId, providerInstanceId: host.providerInstanceId };
   const send = (data: object) => fixtureApi.events.emit(ASYNC_TASK_CONTRACT, { ...owner, contract: ASYNC_TASK_CONTRACT, requestId: "fixture-request", providerRevision: 0, controlGeneration: 0, ...data });
-  send({ type: "provider-ready", providerVersion: "fixture", contractVersion: 1, snapshotReady: true, capabilities: { registration: true, snapshot: true, cancel: true, detail: true, closeAdmission: true, suppressDelivery: true } });
-  send({ type: "snapshot", watermark: 0, detail: { tasks: [], tickets: [] } });
+  if (!options.readyOnDiscovery) {
+    send({ type: "provider-ready", providerVersion: "fixture", contractVersion: 1, snapshotReady: true, capabilities: { registration: true, snapshot: true, cancel: true, detail: true, closeAdmission: true, suppressDelivery: true } });
+    send({ type: "snapshot", watermark: 0, detail: { tasks: [], tickets: [] } });
+  }
   await vi.waitFor(() => expect(handle.asyncTasks?.coverage().tracking).toBe("ready"));
   async function completion(id: string, outcome: { execution: "succeeded" | "failed"; presence: "settled" | "active" | "unknown" } = { execution: "succeeded", presence: "settled" }) {
     const task = { ...owner, taskId: id, rootTaskId: id, kind: "bash", title: "Finite", execution: "queued", presence: "settled", registration: "reserved", providerRevision: 1, controlGeneration: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -300,16 +312,21 @@ it("rejects SDK deferred agent_settled delivery even when clearQueue and abort d
 
 
 it("renegotiates a fresh runtime identity after a real SDK resource reload", async () => {
-  const f = await fixture();
+  const f = await fixture({ readyOnDiscovery: true });
   const previous = f.handle.asyncTasks!.coverage().runtimeInstanceId;
   await f.handle.followUp({ text: "/reload", imagePaths: [] });
-  await vi.waitFor(() => expect(f.handle.asyncTasks!.coverage().runtimeInstanceId).not.toBe(previous));
+  expect(f.handle.asyncTasks!.coverage().runtimeInstanceId).not.toBe(previous);
   const current = f.handle.asyncTasks!.coverage().runtimeInstanceId;
-  await vi.waitFor(() => expect(f.frames.some((frame) => frame.type === "host-state" && frame.runtimeInstanceId === current && frame.supported)).toBe(true));
-  expect(f.handle.asyncTasks!.coverage().tracking).toBe("reconciling");
-  await f.handle.followUp({ text: "Authorized work after reload", imagePaths: [] });
+  expect(f.frames.some((frame) => frame.type === "host-state" && frame.runtimeInstanceId === current && frame.supported)).toBe(true);
+  expect(f.handle.asyncTasks!.coverage().tracking).toBe("ready");
+  await f.supervisor.followUp("session-sdk", "Authorized work after reload");
   await f.session.waitForIdle();
   await vi.waitFor(() => expect(f.requests).toHaveLength(1));
+  expect(JSON.stringify(f.requests[0])).toContain("Authorized work after reload");
+  await f.drainEvents();
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.agentCycle).toMatchObject({ runtimeInstanceId: current, phase: "settled", outcome: "completed" });
+  expect(f.projections.at(-1)?.agentCycle).toEqual(disk?.agentCycle);
 }, 15_000);
 
 

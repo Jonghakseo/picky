@@ -187,7 +187,7 @@ struct PickyAsyncControlState: Codable, Equatable {
     var releasePrepared: PickyReleaseApproval?
 }
 
-/// W5 connects these DTOs to the command encoder/router. No command is advertised yet.
+/// Owner-scoped commands retain their original request identity across retries.
 struct PickyAsyncTaskCommand: Codable, Equatable {
     enum Kind: String, Codable {
         case asyncTaskDetail, cancelAsyncTask, prepareSessionArchive, executeSessionArchive
@@ -227,4 +227,37 @@ struct PickyAsyncTaskCommandResult: Codable, Equatable {
     var releaseApproval: PickyReleaseApproval?
     var detail: PickyAsyncTaskDetail?
     var nextCursor: String?
+}
+
+struct PickyAsyncTaskResultEvent: Decodable {
+    let result: PickyAsyncTaskCommandResult
+}
+
+struct PickyAsyncControlContext: Codable, Equatable {
+    var requestId: String
+    var sessionId: String
+    var daemonInstanceId: String
+    var runtimeInstanceId: String?
+    var workRevision: Int
+    var controlGeneration: Int
+    var admissionState: PickyAdmissionState
+    var tracking: PickyAsyncWorkSummary.Tracking
+    var expectedProviders: [String]
+    var readyProviders: [String]
+    var requiresArchiveChoice: Bool?
+    var archiveIntentId: String? = nil
+    var releasePrepared: PickyReleaseApproval? = nil
+
+    var hasCompleteCoverage: Bool {
+        tracking == .ready && Set(expectedProviders).isSubset(of: Set(readyProviders))
+    }
+
+    func command(_ kind: PickyAsyncTaskCommand.Kind, requestId: String = UUID().uuidString) throws -> PickyAsyncTaskCommand {
+        guard let runtimeInstanceId, !runtimeInstanceId.isEmpty else {
+            throw PickyAsyncControlError.missingRuntime
+        }
+        return PickyAsyncTaskCommand(type: kind, requestId: requestId, sessionId: sessionId,
+            daemonInstanceId: daemonInstanceId, runtimeInstanceId: runtimeInstanceId,
+            workRevision: workRevision, controlGeneration: controlGeneration)
+    }
 }

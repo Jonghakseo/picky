@@ -1,0 +1,16 @@
+{
+  "id": "client-envelope-1",
+  "protocolVersion": "2026-08-25",
+  "type": "asyncTaskCommand",
+  "command": {
+    "type": "prepareRuntimeRelease",
+    "requestId": "client-operation-1",
+    "sessionId": "pickle-1",
+    "daemonInstanceId": "daemon-1",
+    "runtimeInstanceId": "runtime-1",
+    "workRevision": 7,
+    "controlGeneration": 2,
+    "archiveIntentId": "archive-intent-1",
+    "childGeneration": 7
+  }
+}

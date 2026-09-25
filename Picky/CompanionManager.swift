@@ -2362,7 +2362,7 @@ final class CompanionManager: ObservableObject {
             }
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
             clearInteractionStateForConnectionLoss()
-        case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,
+        case .asyncControlContext, .asyncTaskCommandResult, .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .autocompleteCapabilitiesSnapshot, .autocompleteSuggestionsSnapshot, .autocompleteCompletionApplied,
              .rewindTargetsSnapshot, .sessionRuntimeOptionsSnapshot, .toolHistoryDetailResult, .sessionDiffResult, .sessionRewound, .ack, .unknown,

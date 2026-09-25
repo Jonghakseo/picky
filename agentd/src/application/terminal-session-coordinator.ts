@@ -21,6 +21,7 @@ interface TerminalSessionCoordinatorDeps {
   getSession(sessionId: string): PickyAgentSession | undefined;
   getSessionOrThrow(sessionId: string): PickyAgentSession;
   hasRuntimeHandle(sessionId: string): boolean;
+  retainedAsyncWork?(sessionId: string): boolean;
   isRuntimeStreaming(sessionId: string): boolean;
   detachRuntimeHandle(sessionId: string): Promise<void>;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
@@ -104,7 +105,8 @@ export class TerminalSessionCoordinator {
       });
       return;
     }
-    void this.deps.detachRuntimeHandle(sessionId);
+    if (this.deps.retainedAsyncWork?.(sessionId)) { void this.conflict(sessionId); return; }
+    void this.deps.detachRuntimeHandle(sessionId).catch(() => this.conflict(sessionId));
     logAgentd("terminal session sync invalidated runtime handle after pi session advanced", {
       sessionId,
       activeLastMessageId,
@@ -115,6 +117,7 @@ export class TerminalSessionCoordinator {
 
   async sync(sessionId: string, baselinePiMessageId?: string): Promise<PickyAgentSession> {
     const session = this.deps.getSessionOrThrow(sessionId);
+    if (this.deps.retainedAsyncWork?.(sessionId)) { await this.conflict(sessionId); throw new Error("Terminal sync blocked by outstanding async work or coverage"); }
     const sessionFilePath = piSessionFilePathForSession(session);
     if (!sessionFilePath) throw new Error(`Session has no Pi session file to sync: ${sessionId}`);
     logAgentd("terminal session sync requested", { sessionId, sessionFilePath, baselinePiMessageId });
@@ -191,11 +194,17 @@ export class TerminalSessionCoordinator {
 
   private handleTailTruncation(sessionId: string, sessionFilePath: string): void {
     if (!this.deps.hasRuntimeHandle(sessionId)) return;
-    void this.deps.detachRuntimeHandle(sessionId);
+    if (this.deps.retainedAsyncWork?.(sessionId)) { void this.conflict(sessionId); return; }
+    void this.deps.detachRuntimeHandle(sessionId).catch(() => this.conflict(sessionId));
     logAgentd("terminal tail invalidated runtime handle after pi session rewrite", { sessionId, sessionFilePath });
   }
 
   private async handleTailEntries(sessionId: string, entries: PiSessionTailEntry[]): Promise<void> {
+    if (await this.deferForAsyncWork(sessionId)) return;
+    await this.importTailEntries(sessionId, entries);
+  }
+
+  private async importTailEntries(sessionId: string, entries: PiSessionTailEntry[]): Promise<void> {
     const session = this.deps.getSession(sessionId);
     if (!session) return;
 
@@ -239,6 +248,17 @@ export class TerminalSessionCoordinator {
       logAgentd("terminal tail status patch", { sessionId, from: current.status, to: inferred });
     }
     if (Object.keys(patch).length > 0) await this.deps.patchSession(sessionId, patch);
+  }
+
+  private async deferForAsyncWork(sessionId: string): Promise<boolean> {
+    if (!this.deps.retainedAsyncWork?.(sessionId)) return false;
+    await this.conflict(sessionId); return true;
+  }
+
+  private async conflict(sessionId: string): Promise<void> {
+    logAgentd("terminal transcript conflict retained async runtime", { sessionId });
+    try { await this.deps.patchSession(sessionId, { status: "blocked", lastSummary: "Terminal transcript changed while async work or coverage remains unresolved; sync deferred" }); }
+    catch (error) { logAgentd("terminal conflict persistence failed", { sessionId, error: String(error) }); }
   }
 
   private emitSyncOutcome(

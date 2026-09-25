@@ -51,19 +51,18 @@ extension PickySessionListViewModel {
             let group = try PickyDockGroupCLIPolicy.validatedGroup(id: request.groupId, in: dockLayout)
             beginDockStateMutation()
             defer { endDockStateMutation() }
-            // Persist the final group-free layout before mutating archive state. Then
-            // suspend per-member reconciliation so the batch cannot write transient
-            // top-level layouts between archives.
-            _ = try await dockLayoutController.removeGroupPersisting(id: group.id, keepMembers: false)
-            dockLayout = dockLayoutController.layout
             dockLayoutReconciliationSuspensionDepth += 1
             defer {
                 dockLayoutReconciliationSuspensionDepth -= 1
                 reconcileDockLayout()
             }
-            for sessionID in group.memberSessionIDs {
-                archive(sessionID: sessionID)
+            // Owner changes are not reversible by a failed local save. Keep the
+            // group until every member has settled and the layout save succeeds.
+            for sessionID in group.memberSessionIDs where !archivedSessions.contains(where: { $0.id == sessionID }) {
+                try await archiveSessionConfirmed(sessionID: sessionID, mode: request.archiveMode)
             }
+            _ = try await dockLayoutController.removeGroupPersisting(id: group.id, keepMembers: false)
+            dockLayout = dockLayoutController.layout
         }
         return dockGroupsSnapshotForCLI()
     }

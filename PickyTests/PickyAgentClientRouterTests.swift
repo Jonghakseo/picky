@@ -8,6 +8,12 @@ import Testing
 @testable import Picky
 
 @MainActor
+private final class RouterArchiveStore: PickySessionArchiveStoring {
+    var archivedSessionIDs = Set<String>()
+    var manuallyArchivedSessionIDs = Set<String>()
+}
+
+@MainActor
 private final class StubAgentClient: PickyAgentClient {
     let id: String
     let events: AsyncStream<PickyClientEvent>
@@ -167,7 +173,8 @@ final class RouterPoolStubRunner: PickyProcessRunning {
         self.stdout = stdout
         launchCount += 1
     }
-    func terminate() {}
+    private(set) var terminationCount = 0
+    func terminate() { terminationCount += 1 }
     func emitReady(port: Int) { stdout?(Data("picky-agentd listening on 127.0.0.1:\(port)\n".utf8)) }
     func emitTermination(exitCode: Int32) { terminationHandler?(exitCode) }
 }
@@ -1737,6 +1744,11 @@ struct PickyAgentClientRouterTests {
         router.pickleSessionSummariesProvider = { [session] }
         await router.connect()
 
+        primary.onSendInject = { command in
+            if command.type == .abort || command.type == .setSessionArchived {
+                primary.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+            }
+        }
         for (operation, commandType) in [("steer", PickyCommandType.steer), ("followUp", .followUp), ("abort", .abort)] {
             primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
                 operation: operation,
@@ -1870,7 +1882,7 @@ struct PickyAgentClientRouterTests {
         var deletedSessionIDs: [String] = []
         router.pickleDeletionCleanupHandler = { deletedSessionIDs.append($0) }
         primary.onSendInject = { command in
-            if command.type == .deleteSession {
+            if command.type == .deleteSession || command.type == .setSessionArchived {
                 primary.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
             }
         }
@@ -2751,4 +2763,479 @@ private func makeAckEnvelope(commandId: String) -> PickyEventEnvelope {
         timestamp: Date(),
         event: .ack(PickyAckEvent(commandId: commandId))
     )
+}
+
+private func asyncControlEnvelope(_ event: PickyEvent) -> PickyEventEnvelope {
+    .init(id: UUID().uuidString, protocolVersion: pickyAgentProtocolVersion, timestamp: Date(), event: event)
+}
+
+private func asyncControlContext(requestID: String, sessionID: String = "tracked", ready: Bool = true) -> PickyAsyncControlContext {
+    .init(requestId: requestID, sessionId: sessionID, daemonInstanceId: "daemon", runtimeInstanceId: "runtime",
+          workRevision: 4, controlGeneration: 1, admissionState: .open, tracking: ready ? .ready : .reconciling,
+          expectedProviders: ["subagent", "bash-async"], readyProviders: ready ? ["subagent", "bash-async"] : [],
+          archiveIntentId: "archive")
+}
+
+private func asyncControlResult(_ command: PickyAsyncTaskCommand, outcome: PickyAsyncOperationOutcome = .settled) -> PickyAsyncTaskCommandResult {
+    .init(type: "asyncTaskCommandResult", requestId: command.requestId, sessionId: command.sessionId,
+          daemonInstanceId: command.daemonInstanceId, runtimeInstanceId: command.runtimeInstanceId,
+          workRevision: command.workRevision + 1, controlGeneration: command.controlGeneration,
+          operationId: "owner-operation-\(command.requestId)", outcome: outcome,
+          preparationId: command.type == .prepareSessionArchive ? "preparation" : nil)
+}
+
+private func trackedSessionEvent(id: String = "tracked", archived: Bool = false) -> PickyEventEnvelope {
+    var session = PickyAgentSession(id: id, title: "Tracked", status: .completed, cwd: "/tmp/ws",
+        createdAt: Date(), updatedAt: Date(), logs: [], tools: [], artifacts: [], changedFiles: [])
+    session.archived = archived
+    session.asyncControl = .init(controlGeneration: 1, admissionState: .open, operations: [])
+    session.asyncWorkSummary = .init(tracking: .ready, activeRootCount: 0, pendingCompletionCount: 0,
+        uncertainExecutionCount: 0, attentionCount: 0, workRevision: 4, canReleaseRuntime: true)
+    return asyncControlEnvelope(.sessionUpdated(session))
+}
+
+extension PickyAgentClientRouterTests {
+    @Test func asyncControlIgnoresAckAcceptedAndWrongOwnerUntilSettlement() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        await router.connect()
+        let control = try #require(router.asyncTaskControl)
+        let command = try asyncControlContext(requestID: "context").command(.prepareSessionArchive)
+        var completed = false
+        let operation = Task {
+            let result = try await control.executeAsyncControl(command)
+            completed = true
+            return result
+        }
+        try await waitUntil { primary.sentCommands.contains { $0.command == command } }
+        primary.emit(.protocolEvent(makeAckEnvelope(commandId: command.requestId)))
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command, outcome: .accepted)))))
+        var wrongOwner = asyncControlResult(command)
+        wrongOwner.runtimeInstanceId = "replacement"
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(wrongOwner))))
+        // Await a later event on the same production stream, not a wall-clock sleep.
+        let barrier = Task { try await control.asyncControlContext(sessionID: "tracked") }
+        try await waitUntil { primary.sentCommands.contains { $0.type == .getAsyncControlContext } }
+        let contextRequest = try #require(primary.sentCommands.last { $0.type == .getAsyncControlContext })
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(asyncControlContext(requestID: contextRequest.id)))))
+        _ = try await barrier.value
+        #expect(!completed)
+        let settled = asyncControlResult(command)
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(settled))))
+        #expect(try await operation.value == settled)
+    }
+
+    @Test func lostAsyncReplyRetriesIdenticalEnvelopeAndDoesNotClaimSuccess() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        router.asyncControlTransport.timeoutNanoseconds = 1_000_000
+        await router.connect()
+        let control = try #require(router.asyncTaskControl)
+        let command = try asyncControlContext(requestID: "context").command(.cancelRuntimeRelease)
+        await #expect(throws: PickyAsyncControlError.pending(requestId: command.requestId)) {
+            try await control.executeAsyncControl(command)
+        }
+        let first = try #require(primary.sentCommands.last { $0.type == .asyncTaskCommand })
+        router.asyncControlTransport.timeoutNanoseconds = 1_000_000_000
+        primary.onSendInject = { envelope in
+            guard let command = envelope.command else { return }
+            primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+        }
+        #expect(try await control.executeAsyncControl(command).outcome == .settled)
+        let retries = primary.sentCommands.filter { $0.type == .asyncTaskCommand }
+        #expect(retries.count == 2)
+        #expect(retries.allSatisfy { $0 == first })
+    }
+
+    @Test(arguments: [false, true]) func trackedArchiveMovesMembershipOnlyAfterOwnerSettlement(projectionV2: Bool) async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000,
+            sessionProjectionStorage: storage)
+        if projectionV2 {
+            guard case .sessionUpdated(let session) = trackedSessionEvent().event else { return }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+            let data = try JSONSerialization.data(withJSONObject: ["sessionId": "tracked", "epoch": "epoch", "revision": 1,
+                "complete": true, "omittedFields": [String](), "projection": projection])
+            let snapshot = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionSnapshot.self, from: data)
+            viewModel.apply(.protocolEvent(asyncControlEnvelope(.sessionProjectionSnapshot(snapshot))))
+        } else { viewModel.apply(.protocolEvent(trackedSessionEvent())) }
+        let originalStore = storage.registry.existingSessionStore(sessionID: "tracked")
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(asyncControlContext(requestID: envelope.id)))))
+            } else if let command = envelope.command, command.type == .prepareSessionArchive {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+            }
+        }
+        await router.connect()
+        viewModel.archive(sessionID: "tracked")
+        try await waitUntil { viewModel.archiveCoordinator.states["tracked"] == .choosingMode }
+        #expect(viewModel.sessions.map(\.id) == ["tracked"])
+        #expect(!primary.sentCommands.contains { $0.type == .setSessionArchived || $0.type == .asyncTaskCommand })
+        let archive = Task { try await viewModel.archiveSessionConfirmed(sessionID: "tracked", mode: .continue) }
+        try await waitUntil { primary.sentCommands.contains { $0.command?.type == .executeSessionArchive } }
+        let execute = try #require(primary.sentCommands.last { $0.command?.type == .executeSessionArchive }?.command)
+        #expect(viewModel.sessions.map(\.id) == ["tracked"])
+        #expect(viewModel.archivedSessions.isEmpty)
+        primary.emit(.protocolEvent(makeAckEnvelope(commandId: execute.requestId)))
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(execute, outcome: .accepted)))))
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(execute)))))
+        try await archive.value
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.archivedSessions.map(\.id) == ["tracked"])
+        #expect(storage.registry.existingSessionStore(sessionID: "tracked") === originalStore)
+    }
+
+    @Test func trackedCLIBridgeDoesNotFinishOnDispatchOrAcceptedResult() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(asyncControlContext(requestID: envelope.id)))))
+            }
+        }
+        await router.connect()
+        primary.emit(.protocolEvent(trackedSessionEvent()))
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "abort", sessionId: "tracked")))
+        try await waitUntil { primary.sentCommands.contains { $0.type == .abort } }
+        let abort = try #require(primary.sentCommands.last { $0.type == .abort })
+        var result = asyncControlResult(try asyncControlContext(requestID: "context").command(.cancelAsyncTask, requestId: abort.id), outcome: .accepted)
+        primary.emit(.protocolEvent(makeAckEnvelope(commandId: abort.id)))
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(result))))
+        #expect(!primary.sentCommands.contains { $0.type == .completePickleBridgeRequest })
+        result.outcome = .settled
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(result))))
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completePickleBridgeRequest } }
+        #expect(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.errorMessage == nil)
+    }
+
+    @Test func incompleteCoverageWithZeroTasksCannotPrepareChildRelease() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(asyncControlContext(requestID: envelope.id, ready: false)))))
+            }
+        }
+        await router.connect()
+        let control = try #require(router.asyncTaskControl)
+        await #expect(throws: PickyAsyncControlError.unsupported) { try await control.releaseArchivedAsyncSession(sessionID: "tracked") }
+        #expect(!primary.sentCommands.contains { $0.command?.type == .prepareRuntimeRelease })
+    }
+}
+
+extension PickyAgentClientRouterTests {
+    @Test(arguments: [false, true]) func capturedAsyncReleaseHonorsUndoAndCancelAcknowledgement(undo: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-async-release-\(UUID().uuidString)")
+        try makeStubAgentdPackage(at: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = StubAgentClient(id: "primary")
+        let factory = StubClientFactory()
+        let launcherFactory = StubLauncherFactoryForRouter(agentdRoot: root)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: root), factory: launcherFactory)
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: factory)
+        defer { router.disconnect(); pool.terminateAllChildren() }
+        await router.connect()
+        let spawning = Task { try await router.spawnChildClient(sessionId: "tracked", cwd: root.path) }
+        let runner = try await launcherFactory.waitForRunner(sessionId: "tracked")
+        launcherFactory.emitReady(for: "tracked")
+        let child = try #require(try await spawning.value as? StubAgentClient)
+        child.emit(.protocolEvent(trackedSessionEvent(archived: true)))
+        let control = try #require(router.asyncTaskControl)
+        var approval: PickyReleaseApproval?
+        child.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id)
+                if let approval {
+                    context.workRevision = approval.workRevision
+                    context.controlGeneration = approval.controlGeneration
+                    context.admissionState = .closed
+                    context.releasePrepared = approval
+                }
+                child.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            }
+        }
+        let releasing = Task { try await control.releaseArchivedAsyncSession(sessionID: "tracked") }
+        try await waitUntil { child.sentCommands.contains { $0.command?.type == .prepareRuntimeRelease } }
+        let prepare = try #require(child.sentCommands.last { $0.command?.type == .prepareRuntimeRelease }?.command)
+        #expect(prepare.childGeneration != nil)
+        var result = asyncControlResult(prepare)
+        result.controlGeneration += 1
+        approval = .init(operationId: result.operationId, releaseToken: "token", sessionId: "tracked",
+            daemonInstanceId: "daemon", runtimeInstanceId: "runtime", childGeneration: try #require(prepare.childGeneration),
+            archiveIntentId: "archive", workRevision: result.workRevision, controlGeneration: result.controlGeneration)
+        result.releaseApproval = approval
+        if undo {
+            control.invalidateAsyncArchiveIntent(sessionID: "tracked")
+            let restoring = Task { try await control.restoreAsyncSession(sessionID: "tracked") }
+            child.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(result))))
+            #expect(try await releasing.value == false)
+            try await waitUntil { child.sentCommands.contains { $0.command?.type == .cancelRuntimeRelease } }
+            let cancel = try #require(child.sentCommands.last { $0.command?.type == .cancelRuntimeRelease }?.command)
+            await #expect(throws: PickyAsyncControlError.self) {
+                try await router.send(PickyCommandEnvelope(type: .followUp, sessionId: "tracked", text: "new input"))
+            }
+            #expect(runner.terminationCount == 0)
+            child.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(cancel)))))
+            try await waitUntil { child.sentCommands.contains { $0.type == .setSessionArchived } }
+            let unarchive = try #require(child.sentCommands.last { $0.type == .setSessionArchived })
+            await #expect(throws: PickyAsyncControlError.self) {
+                try await router.send(PickyCommandEnvelope(type: .followUp, sessionId: "tracked", text: "still waiting"))
+            }
+            child.emit(.protocolEvent(makeAckEnvelope(commandId: unarchive.id)))
+            try await restoring.value
+            try await router.send(PickyCommandEnvelope(type: .followUp, sessionId: "tracked", text: "new input"))
+            #expect(child.sentCommands.contains { $0.type == .followUp })
+            #expect(runner.terminationCount == 0)
+            #expect(pool.endpoint(for: "tracked") != nil)
+        } else {
+            child.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(result))))
+            #expect(try await releasing.value)
+            #expect(runner.terminationCount == 1)
+            #expect(pool.endpoint(for: "tracked") == nil)
+            #expect(child.disconnectCalls == 1)
+        }
+    }
+}
+
+extension PickyAgentClientRouterTests {
+    @Test func trackedArchivedStopPreservesMembershipAndWaitsForOwnerProjection() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true)
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), sessionProjectionStorage: storage)
+        router.pickleSessionSummariesProvider = { storage.sessionSummariesForCLI() }
+        viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
+        defer { viewModel.stop(); router.disconnect() }
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(asyncControlContext(requestID: envelope.id)))))
+            }
+        }
+        viewModel.start()
+        try await waitUntil {
+            primary.sentCommands.contains {
+                $0.type == .registerAppCapabilities && $0.capabilities?.contains("sessionProjectionV2") == true
+            }
+        }
+        guard case .sessionUpdated(var session) = trackedSessionEvent(archived: true).event else { return }
+        session.status = .running
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+        let snapshotData = try JSONSerialization.data(withJSONObject: ["sessionId": "tracked", "epoch": "epoch",
+            "revision": 1, "complete": true, "omittedFields": [String](), "projection": projection])
+        let snapshot = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionSnapshot.self, from: snapshotData)
+        primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionSnapshot(snapshot))))
+        try await waitUntil { viewModel.archivedSessions.first?.status == .running }
+        let stopping = Task { try await viewModel.abort(sessionID: "tracked") }
+        try await waitUntil { primary.sentCommands.contains { $0.type == .abort } }
+        let abort = try #require(primary.sentCommands.last { $0.type == .abort })
+        primary.emit(.protocolEvent(makeAckEnvelope(commandId: abort.id)))
+        #expect(viewModel.archivedSessions.first?.status == .running)
+        #expect(viewModel.sessions.isEmpty)
+        await #expect(throws: PickySessionListViewModelError.archivedSession) {
+            try await viewModel.followUp(text: "do not send", sessionID: "tracked")
+        }
+        let transactionData = Data(#"{"sessionId":"tracked","epoch":"epoch","baseRevision":1,"revision":2,"mutations":[{"type":"metaPatch","patch":{"status":"cancelled"}}]}"#.utf8)
+        let transaction = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionTransaction.self, from: transactionData)
+        primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionTransaction(transaction))))
+        let result = asyncControlResult(try asyncControlContext(requestID: "context").command(.cancelAsyncTask, requestId: abort.id))
+        primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(result))))
+        try await stopping.value
+        try await waitUntil { viewModel.archivedSessions.first?.status == .cancelled }
+        #expect(viewModel.sessions.isEmpty)
+        #expect(!primary.sentCommands.contains { $0.type == .followUp })
+    }
+}
+
+extension PickyAgentClientRouterTests {
+    @Test func taskDetailAndRootCancellationRouteUnchangedOwnerToChild() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-async-owner-\(UUID().uuidString)")
+        try makeStubAgentdPackage(at: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = StubAgentClient(id: "primary")
+        let factory = StubClientFactory()
+        let launchers = StubLauncherFactoryForRouter(agentdRoot: root)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: root), factory: launchers)
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: factory)
+        defer { router.disconnect(); pool.terminateAllChildren() }
+        let spawning = Task { try await router.spawnChildClient(sessionId: "tracked", cwd: root.path) }
+        _ = try await launchers.waitForRunner(sessionId: "tracked")
+        launchers.emitReady(for: "tracked")
+        let child = try #require(try await spawning.value as? StubAgentClient)
+        child.onSendInject = { envelope in
+            guard let command = envelope.command else { return }
+            child.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+        }
+        let control = try #require(router.asyncTaskControl)
+        let owner = PickyAsyncTaskOwner(sessionId: "tracked", piSessionId: "pi-session", runtimeInstanceId: "runtime",
+            providerId: "subagent", providerInstanceId: "provider")
+        for kind in [PickyAsyncTaskCommand.Kind.asyncTaskDetail, .cancelAsyncTask] {
+            var command = try asyncControlContext(requestID: "context").command(kind)
+            command.owner = owner
+            command.taskId = "root-task"
+            command.limit = kind == .asyncTaskDetail ? 100 : nil
+            #expect(try await control.executeAsyncControl(command).outcome == .settled)
+            #expect(child.sentCommands.last { $0.type == .asyncTaskCommand }?.command == command)
+        }
+        #expect(!primary.sentCommands.contains { $0.type == .asyncTaskCommand })
+    }
+}
+
+extension PickyAgentClientRouterTests {
+    @Test(arguments: [false, true], ["quiescent", "outstanding", "unknown", "incomplete", "stale"])
+    func implicitTrackedArchiveUsesOwnerDecisionAndConfirmedMembership(cli: Bool, scenario: String) async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(
+            token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(),
+            supportsSessionProjectionV2: true)
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000,
+            sessionProjectionStorage: storage)
+        router.pickleSessionSummariesProvider = { storage.sessionSummariesForCLI() }
+        viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
+        let snapshots = try [false, true].enumerated().map { revision, archived in
+            let event = trackedSessionEvent(archived: archived).event
+            let session = try #require({ () -> PickyAgentSession? in
+                if case .sessionUpdated(let session) = event { return session }
+                return nil
+            }())
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+            let data = try JSONSerialization.data(withJSONObject: ["sessionId": "tracked", "epoch": "epoch",
+                "revision": revision + 1, "complete": true, "omittedFields": [String](), "projection": projection])
+            return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionSnapshot.self, from: data)
+        }
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id, ready: scenario != "incomplete")
+                context.requiresArchiveChoice = scenario == "unknown" ? nil : scenario == "outstanding"
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command, command.type == .prepareSessionArchive {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(
+                    asyncControlResult(command, outcome: scenario == "stale" ? .stale : .settled)))))
+            }
+        }
+        viewModel.start()
+        defer { viewModel.stop() }
+        try await waitUntil {
+            primary.sentCommands.contains {
+                $0.type == .registerAppCapabilities && $0.capabilities?.contains("sessionProjectionV2") == true
+            }
+        }
+        primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionSnapshot(snapshots[0]))))
+        try await waitUntil { viewModel.sessions.contains { $0.id == "tracked" } }
+        if cli {
+            primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+                operation: "setArchived", sessionId: "tracked", archived: true)))
+        } else {
+            let commands: any PickySessionCommands = viewModel
+            commands.archive(sessionID: "tracked")
+        }
+        if scenario == "quiescent" {
+            try await waitUntil { primary.sentCommands.contains { $0.command?.type == .executeSessionArchive } }
+            let prepare = try #require(primary.sentCommands.first {
+                $0.command?.type == .prepareSessionArchive
+            }?.command)
+            let execute = try #require(primary.sentCommands.first {
+                $0.command?.type == .executeSessionArchive
+            }?.command)
+            #expect(prepare.workRevision == 4)
+            #expect(execute.workRevision == 5)
+            #expect(execute.mode == .continue)
+            #expect(viewModel.sessions.map(\.id) == ["tracked"])
+            #expect(viewModel.archivedSessions.isEmpty)
+            #expect(!primary.sentCommands.contains { $0.type == .completePickleBridgeRequest })
+            primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionSnapshot(snapshots[1]))))
+            primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(execute)))))
+            try await waitUntil { viewModel.archivedSessions.map(\.id) == ["tracked"] }
+            if cli {
+                try await waitUntil { primary.sentCommands.contains { $0.type == .completePickleBridgeRequest } }
+                #expect(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.delivered == true)
+            } else { try await waitUntil { viewModel.archiveCoordinator.states["tracked"] == nil } }
+            #expect(viewModel.sessions.isEmpty)
+        } else {
+            if cli {
+                try await waitUntil { primary.sentCommands.contains { $0.type == .completePickleBridgeRequest } }
+                #expect(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.errorMessage != nil)
+            } else {
+                try await waitUntil {
+                    guard let state = viewModel.archiveCoordinator.states["tracked"] else { return false }
+                    return state != .pending
+                }
+                if scenario == "unknown" || scenario == "outstanding" {
+                    #expect(viewModel.archiveCoordinator.states["tracked"] == .choosingMode)
+                }
+            }
+            #expect(viewModel.sessions.map(\.id) == ["tracked"])
+            #expect(viewModel.archivedSessions.isEmpty)
+            #expect(!primary.sentCommands.contains { $0.command?.type == .executeSessionArchive })
+            if scenario != "stale" { #expect(!primary.sentCommands.contains { $0.type == .asyncTaskCommand }) }
+        }
+        #expect(primary.sentCommands.filter { $0.type == .getAsyncControlContext }.count == 1)
+    }
+
+    @Test(arguments: [false, true])
+    func implicitArchiveLostReplyRetainsOriginalDecisionAndPayload(loseExecute: Bool) async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(
+            token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        router.asyncControlTransport.timeoutNanoseconds = 1_000_000
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id)
+                context.requiresArchiveChoice = false
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if loseExecute, let command = envelope.command, command.type == .prepareSessionArchive {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+            }
+        }
+        await router.connect()
+        let control = try #require(router.asyncTaskControl)
+        do {
+            try await control.archiveAsyncSession(sessionID: "tracked", mode: nil)
+            Issue.record("Lost owner reply must remain pending")
+        } catch {
+            guard case .pending = error as? PickyAsyncControlError else { throw error }
+        }
+        let original = try #require(primary.sentCommands.last { $0.type == .asyncTaskCommand })
+        router.asyncControlTransport.timeoutNanoseconds = 1_000_000_000
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id)
+                context.requiresArchiveChoice = true
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+            }
+        }
+        try await control.archiveAsyncSession(sessionID: "tracked", mode: nil)
+        #expect(primary.sentCommands.filter { $0.id == original.id } == [original, original])
+        #expect(primary.sentCommands.filter { $0.type == .getAsyncControlContext }.count == 1)
+        #expect(primary.sentCommands.last { $0.command?.type == .executeSessionArchive }?.command?.mode == .continue)
+    }
 }

@@ -16,6 +16,7 @@ struct PickyAgentSubmission: Equatable {
 // and default async helpers must share the router's actor, not the generic executor.
 @MainActor
 protocol PickyAgentClient: AnyObject {
+    var asyncTaskControl: (any PickyAsyncTaskControlling)? { get }
     var events: AsyncStream<PickyClientEvent> { get }
     func connect() async
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt
@@ -99,6 +100,7 @@ enum PickyRewindTargetRequestError: LocalizedError, Equatable {
 }
 
 extension PickyAgentClient {
+    var asyncTaskControl: (any PickyAsyncTaskControlling)? { self as? any PickyAsyncTaskControlling }
     func listRewindTargets(sessionId: String) async throws -> [PickyRewindTarget] {
         let command = PickyCommandEnvelope(type: .listRewindTargets, sessionId: sessionId)
         // Subscribe synchronously BEFORE sending. Accessing `events` registers the subscriber
@@ -519,6 +521,10 @@ private extension PickyCommandEnvelope {
 private extension PickyEventEnvelope {
     var logSummary: String {
         switch event {
+        case .asyncControlContext(let context):
+            return "type=asyncControlContext id=\(id) session=\(context.sessionId) request=\(context.requestId)"
+        case .asyncTaskCommandResult(let result):
+            return "type=asyncTaskCommandResult id=\(id) request=\(result.requestId) outcome=\(result.outcome.rawValue)"
         case .hello:
             return "type=hello id=\(id)"
         case .quickReply(let reply):

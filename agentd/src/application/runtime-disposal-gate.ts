@@ -6,6 +6,8 @@ export class RuntimeDisposalGate {
   private pending = new Map<string, Promise<boolean>>();
   private failed = new Set<string>();
 
+  isBlocked(sessionId: string): boolean { return this.failed.has(sessionId); }
+
   async wait(sessionId: string): Promise<void> {
     const disposal = this.pending.get(sessionId);
     if (disposal) await disposal;
@@ -25,12 +27,12 @@ export class RuntimeDisposalGate {
 
   async dispose(sessionId: string, handle: RuntimeSessionHandle | undefined, label: string): Promise<void> {
     const active = this.pending.get(sessionId);
-    if (active) return await active.then(() => undefined);
+    if (active) return await active.then((settled) => { if (!settled) throw new Error(`Runtime teardown did not complete for session ${sessionId}`); });
     if (!handle) return;
     const disposal = disposeRuntimeHandle(handle, label);
     this.pending.set(sessionId, disposal);
     try {
-      if (!await disposal) this.failed.add(sessionId);
+      if (!await disposal) { this.failed.add(sessionId); throw new Error(`Runtime teardown did not complete for session ${sessionId}`); }
     } finally {
       if (this.pending.get(sessionId) === disposal) this.pending.delete(sessionId);
     }

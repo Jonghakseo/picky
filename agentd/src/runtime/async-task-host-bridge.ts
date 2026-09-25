@@ -1,3 +1,4 @@
+import { hasAsyncExecutionObligations } from "../domain/async-work-aggregate.js";
 import { randomUUID } from "node:crypto";
 import { ASYNC_TASK_CONTRACT, AsyncTaskHostMessageSchema, type AsyncTaskHostMessage, type AsyncTaskOwner } from "../domain/async-task-contract.js";
 import type { RuntimeAsyncTaskControl, RuntimeAsyncTaskCoverage, RuntimeAsyncTaskEvent, RuntimeAsyncTaskOwner, RuntimeAsyncTaskState } from "./async-task-types.js";
@@ -63,6 +64,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     for (const message of this.early.splice(0)) this.enqueue(message);
     this.emitCoverage();
   }
+  owners(): AsyncTaskOwner[] { return [...this.providers.values()].map((provider) => ({ ...provider.owner })); }
   snapshot(): RuntimeAsyncTaskState { return this.owner.read(); }
   coverage(): RuntimeAsyncTaskCoverage {
     const readyProviders = [...this.providers.values()].filter((provider) => provider.ready && provider.snapshot).map((provider) => provider.owner.providerId);
@@ -80,8 +82,26 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     if (this.failed) throw new Error("Async host requires reconciliation");
     const state = await this.owner.transact((current) => ({ ...current, control: { ...current.control, operations: current.control?.operations ?? [], admissionState: "open", controlGeneration: (current.control?.controlGeneration ?? 0) + 1 } }));
     this.openAdmissionLifetime();
+    for (const provider of this.providers.values()) this.send({ ...this.envelope(provider.owner, randomUUID(), provider.revision), type: "host-state", supported: provider.ready && provider.snapshot, admissionState: "open", capabilities });
     this.publish(state);
     return state;
+  }
+  /** Public SDK replacement entrypoints must not rely on Pi's model-idle flag alone. */
+  async prepareReplacement(): Promise<void> {
+    const check = () => {
+      const state = this.snapshot();
+      if (this.coverage().tracking !== "ready" || hasAsyncExecutionObligations(state.tasks)
+        || state.tickets.some((ticket) => !["handled", "suppressed"].includes(ticket.state))
+        || state.control?.releasePrepared || state.control?.operations.some((operation) => ["accepted", "blocked_cleanup", "blocked_delivery"].includes(operation.outcome))
+        || state.cycle?.phase === "responding" || state.cycle?.phase === "compacting") throw new Error("Async work or coverage prevents runtime replacement");
+    };
+    check();
+    await this.closeAdmission();
+    await Promise.all(this.owners().map(async (owner) => {
+      const result = await this.control(owner, "closeAdmission");
+      if (result.outcome !== "settled" || !result.admissionClosed) throw new Error("Provider replacement fence unconfirmed");
+    }));
+    await this.drain(); check();
   }
   async control(owner: AsyncTaskOwner, action: Extract<AsyncTaskHostMessage, { type: "control-request" }>["action"], options: { taskId?: string; deliveryIds?: string[] } = {}): Promise<ControlResult> {
     const provider = this.providers.get(owner.providerId);

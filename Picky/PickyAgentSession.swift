@@ -171,3 +171,9 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         }
     }
 }
+
+extension PickyAgentSession {
+    var hasAsyncTracking: Bool {
+        asyncWorkSummary != nil || asyncControl != nil || asyncTasks != nil || completionTickets != nil || agentCycle != nil
+    }
+}

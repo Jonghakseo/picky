@@ -22,6 +22,11 @@ function deferred<T>() {
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.unstubAllEnvs(); });
+function userTexts(request: unknown): string[] {
+  const context = request as { messages: Array<{ role: string; content: unknown }> };
+  return context.messages.filter(message => message.role === "user").map(message =>
+    typeof message.content === "string" ? message.content : (message.content as Array<{ type: string; text?: string }>).filter(part => part.type === "text").map(part => part.text).join("\n"));
+}
 function completionText(request: unknown, taskId: string): string {
   const context = request as { messages: Array<{ role: string; content: unknown }> };
   const texts = context.messages.filter(message => message.role === "user").map(message =>
@@ -313,21 +318,43 @@ it("keeps the real 500ms zero-execution gap retained and merges two completion I
   console.log("W0B_BATCH_TRACE", JSON.stringify({ gap, disk }));
 }, 15000);
 
-it("does not revive actual provider completion payloads when admission closes and reopens", async () => {
+it.each(["before", "after"] as const)("does not revive actual provider completion payloads when admission closes and reopens (%s old continuation)", async ordering => {
   const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_OLD_GENERATION", timeout: 5 } });
+  const entered = deferred<void>(), release = deferred<void>();
+  let contexts = 0;
+  f.api.on("context_with_system", async () => {
+    if (++contexts === 2 && ordering === "before") { entered.resolve(); await release.promise; }
+  });
+  const sdkEvents: unknown[] = [];
+  const unsubscribe = f.session.subscribe(event => { sdkEvents.push(structuredClone(event)); });
+  cleanups.push(async () => { release.resolve(); unsubscribe(); });
   await f.supervisor.followUp("session-sdk", "Run the old generation");
+  if (ordering === "before") await entered.promise;
+  else await f.session.waitForIdle();
   await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("pending"), { interval: 5 });
   await f.handle.asyncTasks!.closeAdmission();
   await f.handle.asyncTasks!.control(f.handle.asyncTasks!.snapshot().tasks[0]!, "closeAdmission");
+  release.resolve();
+  await f.session.waitForIdle();
+  const oldRequests = f.requests.length;
   await f.handle.asyncTasks!.reopenAdmission();
   await f.supervisor.followUp("session-sdk", "New authorized generation");
-  await vi.waitFor(() => expect(f.requests.length).toBeGreaterThanOrEqual(3));
   await f.session.waitForIdle(); await f.drainEvents();
-  expect(JSON.stringify(f.requests.at(-1))).not.toContain("bash-async-completion");
+  await vi.waitFor(() => expect(f.requests.some(request => userTexts(request).includes("New authorized generation"))).toBe(true));
+  await f.session.waitForIdle(); await f.drainEvents();
+  console.log("W5C_RACE_TRACE", JSON.stringify({ ordering, oldRequests, requests: f.requests, sdkEvents, frames: f.frames, disk: await f.store.loadReadOnly("session-sdk"), projection: f.projections.at(-1) }));
+  // Closing before the post-tool context reaches the model legitimately removes
+  // that old request. Fresh input must still reach the model exactly once.
+  const freshRequests = f.requests.filter(request => userTexts(request).includes("New authorized generation"));
+  expect(freshRequests).toHaveLength(1);
+  expect(f.requests).toHaveLength(oldRequests + 1);
+  expect(userTexts(freshRequests[0]).join("\n")).not.toContain("W0B_OLD_GENERATION");
   expect(f.frames.filter(frame => frame.type === "completion-observed")).toEqual([]);
   const disk = await f.store.loadReadOnly("session-sdk");
   expect(disk?.completionTickets?.[0]?.state).toBe("suppressed");
   expect(disk?.asyncControl?.controlGeneration).toBe(2);
+  expect(f.projections.at(-1)?.completionTickets).toEqual(disk?.completionTickets);
+  expect(f.projections.at(-1)?.asyncControl?.controlGeneration).toBe(2);
 }, 15000);
 
 it.each([0, 31_000])("automatically consumes an actual result after held compaction without new input (hold %ims)", async holdMs => {
@@ -434,3 +461,63 @@ it("keeps a durably approved unknown registration non-releasable after owner los
   expect(restarted.get("session-sdk")?.asyncWorkSummary).toMatchObject({ canReleaseRuntime: false, uncertainExecutionCount: 1 });
   console.log("W0B_OWNER_LOSS_TRACE", JSON.stringify({ persisted, reloaded: restarted.get("session-sdk") }));
 }, 15000);
+
+it("W5 explicitly reopens actual providers after settled stop and executes a new-generation bash task", async () => {
+  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W5_REOPEN_RESULT", timeout: 5 } });
+  const stopped = await f.supervisor.asyncControls.stop("session-sdk", "w5-stop-empty");
+  expect(stopped.outcome).toBe("settled");
+  const closedGeneration = stopped.controlGeneration;
+  await f.supervisor.followUp("session-sdk", "Run a fresh authorized task");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled"), { timeout: 10000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.asyncTasks?.[0]).toMatchObject({ execution: "succeeded", presence: "settled" });
+  expect(disk!.asyncTasks![0]!.controlGeneration).toBeGreaterThan(closedGeneration);
+  expect(completionText(f.requests.at(-1), disk!.asyncTasks![0]!.taskId)).toContain("W5_REOPEN_RESULT");
+  expect(f.frames.filter((frame) => frame.type === "host-state" && frame.admissionState === "open" && frame.controlGeneration > closedGeneration).map((frame) => frame.providerId)).toEqual(expect.arrayContaining(["bash-async", "subagent"]));
+  expect(f.projections.at(-1)?.asyncWorkSummary?.canReleaseRuntime).toBe(true);
+}, 15000);
+
+it("W5 guards direct SDK new, reload and rewind while a real child remains alive after model idle", async () => {
+  const f = await fixture({ name: "subagent", arguments: { command: "subagent run finite --isolated -- finite" } });
+  await f.supervisor.followUp("session-sdk", "Keep the child until its actual exit");
+  const child = await f.child;
+  child.write("result\n");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled"), { timeout: 10000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  const owner = f.handle.asyncTasks!.coverage().runtimeInstanceId;
+  await expect(f.handle.newSession!()).rejects.toThrow("Async work");
+  await expect(f.handle.rewindToEntry!("unused-entry")).rejects.toThrow("Async work");
+  await expect(f.handle.followUp({ text: "/reload", imagePaths: [] })).rejects.toThrow("Async work");
+  expect(f.handle.asyncTasks!.coverage().runtimeInstanceId).toBe(owner);
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.[0]?.presence).toBe("active");
+  const closed = once(child, "close"); child.end("exit\n"); await closed;
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.[0]?.presence).toBe("settled"));
+  await f.drainEvents();
+  const requestsBeforeReload = f.requests.length;
+  await f.handle.followUp({ text: "/reload", imagePaths: [] });
+  const reloadOwner = f.handle.asyncTasks!.coverage().runtimeInstanceId;
+  expect(reloadOwner).not.toBe(owner);
+  await f.supervisor.followUp("session-sdk", "Fresh input after allowed reload");
+  await vi.waitFor(() => expect(f.requests.some(request => userTexts(request).includes("Fresh input after allowed reload"))).toBe(true));
+  await f.session.waitForIdle(); await f.drainEvents();
+  expect(f.requests).toHaveLength(requestsBeforeReload + 1);
+  expect(userTexts(f.requests.at(-1))).toEqual(["Keep the child until its actual exit", "Fresh input after allowed reload"]);
+  const reloadDisk = await f.store.loadReadOnly("session-sdk");
+  expect(reloadDisk?.agentCycle).toMatchObject({ runtimeInstanceId: reloadOwner, phase: "settled", outcome: "completed" });
+  expect(f.projections.at(-1)?.agentCycle).toEqual(reloadDisk?.agentCycle);
+  console.log("W5C_RELOAD_TRACE", JSON.stringify({ owner, reloadOwner, request: f.requests.at(-1), disk: reloadDisk, projection: f.projections.at(-1) }));
+  await expect(f.handle.newSession!()).resolves.toMatchObject({ cancelled: false });
+  const freshOwner = f.handle.asyncTasks!.coverage().runtimeInstanceId;
+  expect(freshOwner).not.toBe(owner);
+  const requestsBeforeFreshInput = f.requests.length;
+  await f.supervisor.followUp("session-sdk", "Fresh input after allowed replacement");
+  await vi.waitFor(() => expect(f.requests.some(request => userTexts(request).includes("Fresh input after allowed replacement"))).toBe(true));
+  await f.session.waitForIdle(); await f.drainEvents();
+  expect(f.requests).toHaveLength(requestsBeforeFreshInput + 1);
+  expect(userTexts(f.requests.at(-1))).toEqual(["Fresh input after allowed replacement"]);
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.agentCycle).toMatchObject({ runtimeInstanceId: freshOwner, phase: "settled", outcome: "completed" });
+  expect(f.projections.at(-1)?.agentCycle).toEqual(disk?.agentCycle);
+  console.log("W5C_REPLACEMENT_TRACE", JSON.stringify({ owner, freshOwner, request: f.requests.at(-1), disk, projection: f.projections.at(-1) }));
+}, 20000);

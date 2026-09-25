@@ -1,0 +1,6 @@
+{
+  "id": "client-context-1",
+  "protocolVersion": "2026-08-25",
+  "type": "getAsyncControlContext",
+  "sessionId": "pickle-1"
+}

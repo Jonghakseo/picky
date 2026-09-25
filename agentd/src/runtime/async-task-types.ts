@@ -28,6 +28,8 @@ export interface RuntimeAsyncTaskControl {
   retryPersistence(): Promise<void>;
   coverage(): RuntimeAsyncTaskCoverage;
   snapshot(): RuntimeAsyncTaskState;
+  /** Discovered authoritative owners, including providers with zero observed tasks. */
+  owners?(): AsyncTaskOwner[];
   control(owner: AsyncTaskOwner, action: Extract<AsyncTaskHostMessage, { type: "control-request" }>["action"], options?: { taskId?: string; deliveryIds?: string[] }): Promise<Extract<AsyncTaskHostMessage, { type: "control-result" }>>;
   /** Closes the local model fence synchronously, then persists the new generation. */
   closeAdmission(): Promise<RuntimeAsyncTaskState>;

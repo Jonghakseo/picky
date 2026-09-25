@@ -139,11 +139,14 @@ extension PickySessionListViewModel {
         beginDockStateMutation()
         defer { endDockStateMutation() }
 
-        let removedMemberIDs = dockLayoutController.removeGroup(id: id, keepMembers: keepMembers)
-        dockLayout = dockLayoutController.layout
-        if !keepMembers {
-            for memberID in removedMemberIDs {
-                archive(sessionID: memberID)
+        if keepMembers {
+            _ = dockLayoutController.removeGroup(id: id, keepMembers: true)
+            dockLayout = dockLayoutController.layout
+        } else {
+            Task { @MainActor in
+                do {
+                    _ = try await self.manageDockGroups(.init(action: .archiveGroup, groupId: id, name: nil, sessionIds: []))
+                } catch { self.lastError = error.localizedDescription }
             }
         }
     }

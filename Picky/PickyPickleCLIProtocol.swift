@@ -47,6 +47,7 @@ struct PickyDockGroupManagementRequest: Equatable {
     let groupId: String?
     let name: String?
     let sessionIds: [String]
+    var archiveMode: PickyAsyncTaskCommand.ArchiveMode? = nil
 }
 
 struct PickyPickleBridgeRequest: Decodable, Equatable {
@@ -69,6 +70,7 @@ struct PickyPickleBridgeRequest: Decodable, Equatable {
     let name: String?
     let sessionIds: [String]?
     let archived: Bool?
+    var archiveMode: PickyAsyncTaskCommand.ArchiveMode? = nil
 
     /// Builds one app-owned envelope for both durable and legacy bridges.
     /// A legacy bridge receipt is itself proof that its child had completion

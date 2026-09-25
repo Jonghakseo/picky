@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentCycleSchema, AsyncWorkSummarySchema, AsyncTaskSchema, CompletionTicketSchema, AsyncTaskDetailSchema, AsyncControlStateSchema } from "./domain/async-task-contract.js";
+import { AgentCycleSchema, AsyncWorkSummarySchema, AsyncTaskSchema, CompletionTicketSchema, AsyncTaskDetailSchema, AsyncControlStateSchema, AsyncTaskCommandSchema, AsyncTaskCommandResultSchema, ReleaseApprovalSchema } from "./domain/async-task-contract.js";
 
 export const PROTOCOL_VERSION = "2026-08-25";
 
@@ -374,6 +374,8 @@ export const PickyAgentSessionSchema = z.object({
   asyncTasks: z.array(AsyncTaskSchema).refine((tasks) => AsyncTaskDetailSchema.safeParse({ tasks, tickets: [] }).success, "Invalid task identities or roots").optional(),
   completionTickets: z.array(CompletionTicketSchema).optional(),
   asyncControl: AsyncControlStateSchema.optional(),
+  asyncArchiveIntentId: z.string().min(1).max(256).optional(),
+  asyncControlJournal: z.array(z.object({ fingerprint: z.string(), result: AsyncTaskCommandResultSchema, resolvedBy: z.string().optional() })).optional(),
   artifacts: z.array(PickyArtifactSchema).default([]),
   changedFiles: z.array(PickyChangedFileSchema).default([]),
   messages: z.array(PickySessionMessageSchema).default([]),
@@ -609,6 +611,8 @@ const CommandBaseSchema = z.object({
   caller: z.literal("mainAgent").optional(),
 });
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
+  CommandBaseSchema.extend({ type: z.literal("getAsyncControlContext"), sessionId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("asyncTaskCommand"), command: AsyncTaskCommandSchema }),
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createEmptyPickleSession"), context: PickyContextPacketSchema, notifyMainOnCompletion: z.boolean().optional(), notifyMacOSOnCompletion: z.boolean().optional() }),
@@ -640,7 +644,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listPickles") }),
   CommandBaseSchema.extend({ type: z.literal("getPickle"), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("controlPickle"), pickleAction: z.enum(["steer", "followUp", "abort"]), sessionId: z.string().min(1), text: z.string().min(1).optional() }),
-  CommandBaseSchema.extend({ type: z.literal("setPickleArchived"), sessionId: z.string().min(1), archived: z.boolean() }),
+  CommandBaseSchema.extend({ type: z.literal("setPickleArchived"), archiveMode: z.enum(["continue", "stopThenArchive"]).optional(), sessionId: z.string().min(1), archived: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("deletePickle"), sessionId: z.string().min(1) }),
   // Replies with `pickleSessionUpdated` once the primary-hosted session reaches a terminal status.
   CommandBaseSchema.extend({ type: z.literal("awaitPickleSessionTerminal"), sessionId: z.string().min(1) }),
@@ -648,6 +652,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({
     type: z.literal("manageDockGroups"),
     groupAction: z.enum(["create", "addMembers", "removeMembers", "removeGroup", "archiveGroup"]),
+    archiveMode: z.enum(["continue", "stopThenArchive"]).optional(),
     groupId: z.string().min(1).optional(),
     name: z.string().min(1).optional(),
     sessionIds: z.array(z.string().min(1)).max(50).optional(),
@@ -680,7 +685,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("pinPickleSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMainOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMacOSOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
-  CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), sessionId: z.string(), archived: z.boolean() }),
+  CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), archiveMode: z.enum(["continue", "stopThenArchive"]).optional(), sessionId: z.string(), archived: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("deleteSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionThinkingLevel"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("listSessionRuntimeOptions"), sessionId: z.string() }),
@@ -832,6 +837,8 @@ export const PickySessionProjectionBootstrapCompleteEventSchema = EventBaseSchem
 });
 
 export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
+  EventBaseSchema.extend({ type: z.literal("asyncTaskCommandResult"), result: AsyncTaskCommandResultSchema }),
+  EventBaseSchema.extend({ type: z.literal("asyncControlContext"), requiresArchiveChoice: z.boolean().optional(), archiveIntentId: z.string().optional(), releasePrepared: ReleaseApprovalSchema.optional(), requestId: z.string(), sessionId: z.string(), daemonInstanceId: z.string(), runtimeInstanceId: z.string().optional(), workRevision: z.number().int().nonnegative(), controlGeneration: z.number().int().nonnegative(), admissionState: z.enum(["open", "closing", "closed"]), tracking: z.enum(["ready", "reconciling", "unsupported"]), expectedProviders: z.array(z.string()), readyProviders: z.array(z.string()) }),
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),
   EventBaseSchema.extend({
     type: z.literal("quickReply"),
@@ -1021,6 +1028,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     name: z.string().optional(),
     sessionIds: z.array(z.string()).optional(),
     archived: z.boolean().optional(),
+    archiveMode: z.enum(["continue", "stopThenArchive"]).optional(),
   }),
   EventBaseSchema.extend({
     type: z.literal("externalEntryRequested"),

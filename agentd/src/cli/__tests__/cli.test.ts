@@ -814,14 +814,28 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("Abort requested for p-1");
   });
 
-  it("pickle-abort refuses to abort an archived Pickle and never sends abort", async () => {
+  it("pickle-abort allows archived work and waits for the returned owner state", async () => {
     server.onCommand("listPickles", (command, send) => {
       send({ type: "pickleSessionsSnapshot", commandId: (command as { id: string }).id, sessions: [sessionFixture({ id: "p-archived", title: "A", status: "running", archived: true })] });
     });
+    server.onCommand("controlPickle", (command, send) => {
+      send({ type: "pickleSessionUpdated", commandId: (command as { id: string }).id, session: sessionFixture({ id: "p-archived", status: "cancelled", archived: true }) });
+    });
     const result = await runCli(["pickle-abort", "p-archived"]);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("is archived");
-    expect(server.received.some((command) => (command as { type?: string }).type === "controlPickle")).toBe(false);
+    expect(result.code).toBe(0);
+    expect(server.received.find((command) => (command as { type?: string }).type === "controlPickle")).toMatchObject({ pickleAction: "abort", sessionId: "p-archived" });
+  });
+
+  it.each(["continue", "stopThenArchive"])("pickle-archive forwards the explicit %s choice", async (archiveMode) => {
+    server.onCommand("getPickle", (command, send) => {
+      send({ type: "pickleSessionUpdated", commandId: (command as { id: string }).id, session: sessionFixture({ id: "p-1", status: "running" }) });
+    });
+    server.onCommand("setPickleArchived", (command, send) => {
+      send({ type: "pickleSessionUpdated", commandId: (command as { id: string }).id, session: sessionFixture({ id: "p-1", archived: true }) });
+    });
+    const result = await runCli(["pickle-archive", "p-1", "--archive-mode", archiveMode, "--from-main"]);
+    expect(result.code).toBe(0);
+    expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ archiveMode });
   });
 
   it("ptt press and release send push-to-talk control commands", async () => {

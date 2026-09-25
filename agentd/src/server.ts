@@ -1,3 +1,4 @@
+import { ControlFailure } from "./application/async-control-coordinator.js";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { WebSocketServer } from "ws";
@@ -339,7 +340,7 @@ export class AgentdServer {
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
       this.send(ws, {
         type: "error",
-        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError ? error.code : "bad_message",
+        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError || error instanceof ControlFailure ? error.code : "bad_message",
         message: error instanceof Error ? error.message : String(error),
         commandId,
       });
@@ -349,6 +350,8 @@ export class AgentdServer {
   // eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior.
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
     const handlers: CommandHandlerMap = {
+      getAsyncControlContext: (cmd) => this.send(ws, { type: "asyncControlContext", requestId: cmd.id, ...this.options.supervisor.asyncControls.context(cmd.sessionId) }),
+      asyncTaskCommand: async (cmd) => this.send(ws, { type: "asyncTaskCommandResult", result: await this.options.supervisor.executeAsyncTaskCommand(cmd.command) }),
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),
       getPiOAuthStatus: async (cmd) => {
@@ -560,9 +563,9 @@ export class AgentdServer {
         this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(result.session) });
       },
       setPickleArchived: async (cmd) => {
-        const result = await this.requestPickleBridgeFromApp({ operation: "setArchived", sessionId: cmd.sessionId, archived: cmd.archived });
+        const result = await this.requestPickleBridgeFromApp({ operation: "setArchived", sessionId: cmd.sessionId, archived: cmd.archived, archiveMode: cmd.archiveMode });
         if (!result.session) throw new Error(`No Pickle session returned for setArchived: ${cmd.sessionId}`);
-        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: { ...protocolSession(result.session), archived: cmd.archived } });
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(result.session) });
       },
       deletePickle: async (cmd) => {
         const result = await this.requestPickleBridgeFromApp({ operation: "delete", sessionId: cmd.sessionId });
@@ -577,6 +580,7 @@ export class AgentdServer {
         const result = await this.requestPickleBridgeFromApp({
           operation: "manageGroups",
           groupAction: cmd.groupAction,
+          archiveMode: cmd.archiveMode,
           ...(cmd.groupId ? { groupId: cmd.groupId } : {}),
           ...(cmd.name ? { name: cmd.name } : {}),
           ...(cmd.sessionIds ? { sessionIds: cmd.sessionIds } : {}),
@@ -598,7 +602,7 @@ export class AgentdServer {
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
       setNotifyMacOSOnCompletion: (cmd) => this.options.supervisor.setNotifyMacOSOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => deliverPickleCompletion(this.options.supervisor, cmd),
-      setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
+      setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived, cmd.archiveMode, cmd.id),
       deleteSession: (cmd) => this.options.supervisor.deleteSession(cmd.sessionId),
       cycleSessionThinkingLevel: (cmd) => this.options.supervisor.cycleSessionThinkingLevel(cmd.sessionId),
       listSessionRuntimeOptions: async (cmd) => {
@@ -618,8 +622,10 @@ export class AgentdServer {
       steer: (cmd) => {
         return this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true);
       },
-      abort: (cmd) => {
-        return this.options.supervisor.abort(cmd.sessionId);
+      abort: async (cmd) => {
+        if (this.options.supervisor.get(cmd.sessionId)?.asyncControl) {
+          this.send(ws, { type: "asyncTaskCommandResult", result: await this.options.supervisor.asyncControls.stop(cmd.sessionId, cmd.id) });
+        } else await this.options.supervisor.abort(cmd.sessionId);
       },
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
       answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
@@ -1122,6 +1128,8 @@ function buildNeutralCliContext(payload: { cwd?: string; transcript?: string }):
 // eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every command variant without executing behavior.
 export function commandLogFields(command: ReturnType<typeof parseCommand>): Record<string, string | number | undefined> {
   switch (command.type) {
+    case "getAsyncControlContext": return { commandId: command.id, type: command.type, sessionId: command.sessionId };
+    case "asyncTaskCommand": return { commandId: command.id, type: command.type, sessionId: command.command.sessionId, requestId: command.command.requestId };
     case "routeTask":
     case "createTask":
     case "createEmptyPickleSession":
@@ -1131,10 +1139,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, contextId: command.context.id, source: command.context.source, titleChars: command.title.length, instructionChars: command.instructions.length, cwd: command.cwd };
     case "completePickleHandoff":
       return { commandId: command.id, type: command.type, requestId: command.requestId, sessionId: command.sessionId, errorChars: command.errorMessage?.length };
-    case "registerAppCapabilities":
-      return { commandId: command.id, type: command.type, capabilities: command.capabilities.join(",") };
-    case "listPickySettings":
-      return { commandId: command.id, type: command.type, caller: command.caller };
+    case "registerAppCapabilities": return { commandId: command.id, type: command.type, capabilities: command.capabilities.join(",") };
+    case "listPickySettings": return { commandId: command.id, type: command.type, caller: command.caller };
     case "getPickySettings":
       return { commandId: command.id, type: command.type, key: command.key, caller: command.caller };
     case "setPickySettings":
@@ -1244,12 +1250,12 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
 // eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior.
 function eventLogFields(event: EventEnvelope): Record<string, string | number | undefined> {
   switch (event.type) {
+    case "asyncControlContext": return { eventId: event.id, type: event.type, requestId: event.requestId, sessionId: event.sessionId };
+    case "asyncTaskCommandResult": return { eventId: event.id, type: event.type, requestId: event.result.requestId, sessionId: event.result.sessionId };
     case "hello": return { eventId: event.id, type: event.type };
-    case "quickReply":
-      return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
+    case "quickReply": return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
     case "mainTurnSettled": return { eventId: event.id, type: event.type, contextId: event.contextId };
-    case "mainNarrationChunk":
-      return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
+    case "mainNarrationChunk": return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
     case "mainVisualNarrationSegmentPrepared":
       return { eventId: event.id, type: event.type, contextId: event.identity.contextId, turnToken: event.identity.turnToken, ordinal: event.identity.ordinal, visualKind: event.visual.kind };
     case "mainVisualNarrationSegmentSentence":

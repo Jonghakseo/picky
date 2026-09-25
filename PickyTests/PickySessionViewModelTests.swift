@@ -3754,9 +3754,15 @@ struct PickySessionViewModelTests {
             dockLayoutStore: dockLayoutStore
         )
 
+        let sessions = ["a", "b", "c"].map { id in
+            PickyAgentSession(id: id, title: id, status: .running, createdAt: Date(), updatedAt: Date(),
+                logs: [], tools: [], artifacts: [], changedFiles: [])
+        }
+        viewModel.apply(.protocolEvent(PickyEventEnvelope(id: "group-members", protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(), event: .sessionSnapshot(PickySessionSnapshot(sessions: sessions)))))
         viewModel.removeDockGroup(id: "g", keepMembers: false)
 
-        try await wait { client.sentCommands.filter { $0.type == .setSessionArchived }.count == 2 }
+        try await wait { viewModel.dockLayout.group(withID: "g") == nil }
         #expect(viewModel.dockLayout.testSessionIDs == ["a"])
         #expect(dockLayoutStore.savedLayouts.map(\.testSessionIDs) == [["a"]])
         #expect(archiveStore.manuallyArchivedSessionIDs == ["b", "c"])

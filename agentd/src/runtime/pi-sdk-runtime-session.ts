@@ -342,14 +342,20 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async newSession(): Promise<{ cancelled: boolean }> {
+    if (this.asyncTasks && (this.isStreaming || this.isCompacting)) throw new Error("Cannot replace a busy async runtime");
+    await this.asyncTasks?.prepareReplacement();
     logAgentd("pi new session", { sessionId: this.id, cwd: this.runtime.cwd });
     const result = await this.runtime.newSession();
     if (result.cancelled) return result;
     this.subagentInvocationTracker.reset();
     await this.bindCurrentSession();
+    // session_start enqueues provider discovery and snapshots. Finish that durable
+    // handshake before callers can reconcile admission for the first new input.
+    await this.asyncTasks?.drain();
     this.emit({ type: "session_replaced", reason: "new", cwd: this.runtime.cwd, sessionFilePath: this.getSessionFilePath() });
     this.reportDiagnostics();
     this.emit({ type: "status", status: "completed", summary: "New session started", noTurnRan: true, preserveSessionState: true });
+    await this.asyncTasks?.owner.beforeModelRequest?.();
     return result;
   }
 
@@ -602,6 +608,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async rewindToEntry(entryId: string): Promise<RewindResult> {
+    await this.asyncTasks?.prepareReplacement();
     if (this.runtime.session.isStreaming) throw new Error("Cannot rewind while Pi session is streaming");
     const result = await this.runtime.session.navigateTree(entryId);
     return {
@@ -1282,6 +1289,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         this.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the session is compacting", noTurnRan: true, preserveSessionState: true });
         return true;
       }
+      await this.asyncTasks?.prepareReplacement();
       this.pendingExtensionUiRequestIds.clear();
       this.emit({ type: "status", status: "running", summary: "Reloading Pi resources…" });
       try {
@@ -1292,6 +1300,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         }
         this.emit({ type: "log", line: "pi resources reloaded" });
         this.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true });
+        await this.waitForAsyncReloadReadiness();
       } catch (error) {
         const message = messageOf(error);
         logAgentd("slash /reload failed", { sessionId: this.id, error: message });
@@ -1300,6 +1309,12 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return true;
     }
     return false;
+  }
+
+  private async waitForAsyncReloadReadiness(): Promise<void> {
+    // Finish provider snapshots and their projection before immediate input can reopen admission.
+    await this.asyncTasks?.drain();
+    await this.asyncTasks?.owner.beforeModelRequest?.();
   }
 
   private async runCompact(instructions?: string): Promise<void> {

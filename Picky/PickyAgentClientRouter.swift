@@ -53,7 +53,7 @@ protocol PickyProjectionOwnerReconnecting: AnyObject {
 @MainActor
 final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpawning, PickyChildSessionReleasing, PickyProjectionOwnerReconnecting {
     private let primaryClient: PickyAgentClient
-    private let pool: PickyAgentDaemonPool
+    let pool: PickyAgentDaemonPool
     private let clientFactory: PickyAgentClientFactoryProtocol
     private let handoffPickleSessionIdFactory: () -> String
     private let permanentDeletionAcknowledgementTimeout: TimeInterval
@@ -105,6 +105,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// pending registration. Cleared by the timeout race in
     /// `sendAwaitingError` if neither arrives, so this never grows
     /// unboundedly.
+    let asyncControlTransport = PickyAsyncControlTransport()
+    private lazy var asyncOwnerControl = PickyAsyncOwnerControlCoordinator(router: self, transport: asyncControlTransport)
     private var pendingErrorHandlers: [String: (PickyErrorEvent?) -> Void] = [:]
     /// Active `events` subscribers, keyed by a per-call UUID. The HUD view
     /// model and `CompanionManager` both subscribe to the same router so
@@ -291,7 +293,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         try await primaryClient.submit(submission)
     }
 
-    private func sendAfterCapabilityRegistration(
+    func sendAfterCapabilityRegistration(
         _ command: PickyCommandEnvelope,
         on client: PickyAgentClient
     ) async throws {
@@ -301,7 +303,13 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         try await client.send(command)
     }
 
+    var asyncTaskControl: (any PickyAsyncTaskControlling)? { asyncOwnerControl }
+
     func send(_ command: PickyCommandEnvelope) async throws {
+        if (command.type == .followUp || command.type == .steer), let sessionID = command.sessionId,
+           asyncOwnerControl.blocksInput(sessionID: sessionID) {
+            throw PickyAsyncControlError.pending(requestId: sessionID)
+        }
         // Completion preferences belong to the authoritative session owner.
         // Await persistence for live, retired, and primary-hosted Pickles.
         if command.type == .setNotifyMainOnCompletion || command.type == .setNotifyMacOSOnCompletion {
@@ -515,7 +523,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     /// Connects existing endpoints; read-only history falls back to primary rather than respawning.
-    private func connectedClient(for sessionId: String?, allowRespawn: Bool = true) async throws -> PickyAgentClient {
+    func connectedClient(for sessionId: String?, allowRespawn: Bool = true) async throws -> PickyAgentClient {
         guard let sessionId else { return primaryClient }
         guard let endpoint = pool.endpoint(for: sessionId) else {
             guard allowRespawn else { return primaryClient }
@@ -794,33 +802,24 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessionSummaries(), groups: groups)
             case .steer, .followUp:
                 guard let sessionId = request.sessionId, let text = request.text else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                let client = try await connectedClient(for: sessionId)
                 let commandType: PickyCommandType = request.operation == .steer ? .steer : .followUp
-                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(type: commandType, sessionId: sessionId, text: text), on: client)
+                try await send(PickyCommandEnvelope(type: commandType, sessionId: sessionId, text: text))
                 await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId))
             case .abort:
                 guard let sessionId = request.sessionId else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                let client = try await connectedClient(for: sessionId)
-                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(type: .abort, sessionId: sessionId), on: client)
+                try await asyncOwnerControl.bridgeAbort(sessionID: sessionId, tracked: pickleSessionSummary(id: sessionId)?.hasAsyncTracking == true)
                 await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId))
             case .setArchived:
                 guard let sessionId = request.sessionId, let archived = request.archived else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                let client = try await connectedClient(for: sessionId)
-                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionId, archived: archived), on: client)
+                try await asyncOwnerControl.bridgeArchive(sessionID: sessionId, archived: archived, mode: request.archiveMode,
+                    tracked: pickleSessionSummary(id: sessionId)?.hasAsyncTracking == true)
                 await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId), delivered: true)
             case .delete:
                 guard let sessionId = request.sessionId,
                       let finalizeDeletion = pickleDeletionCleanupHandler else {
                     throw PickyAgentClientRouterError.invalidBridgeRequest
                 }
-                let rejection = try await sendAwaitingError(
-                    PickyCommandEnvelope(type: .deleteSession, sessionId: sessionId),
-                    timeout: permanentDeletionAcknowledgementTimeout,
-                    requireAcknowledgement: true
-                )
-                if let rejection {
-                    throw PickyAgentClientRouterError.bridgeCommandRejected(rejection.message)
-                }
+                try await asyncOwnerControl.deleteSession(sessionID: sessionId, timeout: permanentDeletionAcknowledgementTimeout)
                 try await finalizeDeletion(sessionId)
                 sessionCache[sessionId] = nil
                 sessionOwnerKeys[sessionId] = nil
@@ -835,7 +834,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     action: action,
                     groupId: request.groupId,
                     name: request.name,
-                    sessionIds: request.sessionIds ?? []
+                    sessionIds: request.sessionIds ?? [],
+                    archiveMode: request.archiveMode
                 ))
                 await completePickleBridge(request, on: responseClient, groups: groups)
             case .notifyMainOfPickleCompletion:
@@ -1014,6 +1014,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     case .forwardOriginal:
                         break
                     }
+                    self.asyncControlTransport.receive(envelope.event, source: client)
                     self.rememberSessionEvent(envelope.event, ownerKey: key)
                     // Dispatch `type="error"` rejections and `type="ack"`
                     // confirmations to any `sendAwaitingError` caller blocked on

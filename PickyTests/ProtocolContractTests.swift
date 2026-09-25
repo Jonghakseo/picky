@@ -8,6 +8,33 @@ import Testing
 @testable import Picky
 
 struct ProtocolContractTests {
+    @Test func asyncControlWirePreservesRequestAndOwnerApprovalIdentity() throws {
+        let urls = try fixtureURLs(in: "contracts/protocol")
+        func data(_ name: String) throws -> Data {
+            try Data(contentsOf: #require(urls.first { $0.lastPathComponent == name }))
+        }
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let contextCommand = try decoder.decode(PickyCommandEnvelope.self, from: data("get-async-control-context.command.json"))
+        let envelope = try decoder.decode(PickyCommandEnvelope.self, from: data("async-task-command.command.json"))
+        let nested = try #require(envelope.command)
+        #expect(envelope.type == .asyncTaskCommand)
+        #expect(envelope.id != nested.requestId)
+        #expect(try decoder.decode(PickyCommandEnvelope.self, from: JSONEncoder().encode(envelope)) == envelope)
+        let contextEvent = try decoder.decode(PickyEventEnvelope.self, from: data("async-control-context.event.json"))
+        guard case .asyncControlContext(let context) = contextEvent.event else { Issue.record("Missing context decoder"); return }
+        #expect(context.requestId == contextCommand.id)
+        #expect(context.hasCompleteCoverage)
+        #expect(context.requiresArchiveChoice == false)
+        let resultEvent = try decoder.decode(PickyEventEnvelope.self, from: data("async-task-command-result.event.json"))
+        guard case .asyncTaskCommandResult(let result) = resultEvent.event else { Issue.record("Missing nested result decoder"); return }
+        #expect(result.requestId == nested.requestId)
+        #expect(result.operationId != result.requestId)
+        #expect(result.releaseApproval == context.releasePrepared)
+        #expect(result.workRevision == result.releaseApproval?.workRevision)
+        #expect(result.workRevision > nested.workRevision)
+        #expect(result.controlGeneration == result.releaseApproval?.controlGeneration)
+    }
+
     @Test func exposesCurrentProtocolVersion() {
         #expect(pickyAgentProtocolVersion == "2026-08-25")
     }

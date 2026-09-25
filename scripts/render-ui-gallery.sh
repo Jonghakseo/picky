@@ -11,6 +11,51 @@ DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
 # not contend with a developer's GUI build or leave another multi-GB cache.
 HUB_DERIVED_DATA_PATH="${PICKY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"
 
+if [ "$TARGET" = "async-tasks" ]; then
+  if pgrep -x xcodebuild >/dev/null; then
+    echo "Another xcodebuild is running; wait before rendering async tasks." >&2
+    exit 75
+  fi
+  export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+  if [[ "$(xcodebuild -version | head -n 1)" != "Xcode 16.3" ]]; then
+    echo "The async-task gallery requires Xcode 16.3." >&2
+    exit 1
+  fi
+  OUTPUT="$ROOT/build/render-gallery/async-tasks"
+  REQUEST_FILE="$ROOT/build/render-gallery/.async-tasks-output-path"
+  mkdir -p "$OUTPUT"
+  printf '%s\n' "$OUTPUT" > "$REQUEST_FILE"
+  trap 'rm -f "$REQUEST_FILE"' EXIT
+  xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
+    -derivedDataPath "$HUB_DERIVED_DATA_PATH" -parallel-testing-enabled NO test \
+    -only-testing:PickyTests/PickyAsyncTaskShelfTests \
+    -only-testing:PickyTests/PickyAsyncTaskShelfRenderGalleryTests
+  python3 - "$OUTPUT" "$REQUEST_FILE" <<'PY_VALIDATE'
+import json, struct, sys
+from pathlib import Path
+root, request = map(Path, sys.argv[1:])
+manifest = root / 'manifest.json'
+if manifest.stat().st_mtime < request.stat().st_mtime:
+    raise SystemExit('Stale async-task manifest')
+scenes = json.loads(manifest.read_text())['scenes']
+expected = {f'{state}-{appearance}-{scale}.png'
+            for state in ('single', 'multiple', 'group', 'processing', 'failure', 'reconciling', 'unsupported', 'unknown')
+            for appearance in ('light', 'dark') for scale in (100, 130)}
+if len(scenes) != len(expected) or {scene['file'] for scene in scenes} != expected:
+    raise SystemExit('Unexpected async-task scene matrix')
+for scene in scenes:
+    path = root / scene['file']
+    data = path.read_bytes()
+    if path.stat().st_mtime < request.stat().st_mtime or data[:8] != b'\x89PNG\r\n\x1a\n':
+        raise SystemExit(f'Stale or invalid render: {path}')
+    dimensions = struct.unpack('>II', data[16:24])
+    if dimensions != (scene['pixelWidth'], scene['pixelHeight']) or min(dimensions) <= 0:
+        raise SystemExit(f'Unexpected dimensions: {path}')
+print(f'Validated {len(scenes)} fresh production async-task renders.')
+PY_VALIDATE
+  exit 0
+fi
+
 if [ "$TARGET" = "tool-history" ]; then
   OUTPUT="$ROOT/build/render-gallery/tool-history"
   REQUEST_FILE="$ROOT/build/render-gallery/.tool-history-output-path"
@@ -319,7 +364,7 @@ PY
 fi
 
 if [ "$TARGET" != "dock-group" ]; then
-  echo "Usage: $0 {hub|dock-group|conversation-context|conversation-activity|conversation-composer|tool-history}" >&2
+  echo "Usage: $0 {hub|dock-group|conversation-context|conversation-activity|conversation-composer|tool-history|async-tasks}" >&2
   exit 64
 fi
 

@@ -193,3 +193,28 @@ Inspect the PNGs for spacing, clipping, status visibility, and file links. The
 script rejects stale images. Hover-only menus, keyboard focus, Finder/open actions,
 and scrolling still require separate interaction verification. This target uses
 the shared agent DerivedData path; do not run it alongside another Xcode job.
+
+## Async task shelf (inactive presentation unit)
+
+```bash
+./scripts/render-ui-gallery.sh async-tasks
+```
+
+This target uses Xcode 16.3 and shared `/private/tmp/PickyAgentDD`, refuses a
+competing Xcode job, and runs `PickyAsyncTaskShelfTests` plus
+`PickyAsyncTaskShelfRenderGalleryTests` in the ordinary desktop-isolated host.
+It does not mount the component in the live app or enable UI-effect tests.
+
+The 32 production-component PNGs and `manifest.json` are written to
+`build/render-gallery/async-tasks/`. The matrix covers single work, multiple
+roots (collapsed at 100%, expanded at 130%), expanded subagent-group details,
+result processing, failed execution/control, reconciling unavailable detail,
+unsupported tracking, and unknown execution/provider kind. Each state is
+rendered light/dark at 100% English and 130% long CJK Korean. OS accessibility
+settings are not toggled; the component uses opaque surfaces and no animation.
+Group scenes render the production row;
+other scenes render the production shelf. Inspect the PNGs directly.
+
+These renders prove static presentation only, not keyboard interaction,
+VoiceOver navigation, focus/IME, transcript anchoring, native material, or
+successful command dispatch. W6b owns mounting and interaction validation.

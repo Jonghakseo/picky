@@ -310,7 +310,7 @@ private struct PickySubagentContextUsageView: View {
         }
         .help(display.tooltip)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Context usage")
+        .accessibilityLabel(L10n.t("hud.context.usage"))
         .accessibilityValue(display.label)
     }
 }

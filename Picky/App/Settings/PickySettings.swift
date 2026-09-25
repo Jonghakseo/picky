@@ -1324,11 +1324,11 @@ enum PickySettingsValidationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidDefaultCwd(let path): "Pickle default cwd does not exist or is not a directory: \(path)"
-        case .invalidMainAgentCwd(let path): "Picky cwd does not exist or is not a directory: \(path)"
-        case .invalidWorktreeParent(let path): "Worktree parent does not exist or is not a directory: \(path)"
-        case .invalidPiCodingAgentDir(let path): "PI_CODING_AGENT_DIR does not exist or is not a directory: \(path)"
-        case .invalidPiBinaryPath(let path): "Pi binary path is not executable: \(path)"
+        case .invalidDefaultCwd(let path): L10n.t("settings.validation.pickleFolder", path)
+        case .invalidMainAgentCwd(let path): L10n.t("settings.validation.mainFolder", path)
+        case .invalidWorktreeParent(let path): L10n.t("settings.validation.worktreeFolder", path)
+        case .invalidPiCodingAgentDir(let path): L10n.t("settings.validation.piFolder", path)
+        case .invalidPiBinaryPath(let path): L10n.t("settings.validation.piExecutable", path)
         }
     }
 }

@@ -146,7 +146,7 @@ struct PickyMainActivityChipPolicyTests {
         let model = PickyMainActivityChipModel.chipModel(for: activity)
 
         #expect(model?.category == .thinking)
-        #expect(model?.label == "생각 중")
+        #expect(model?.label == L10n.t("overlay.activity.thinking"))
         #expect(model?.detail == String(plain.prefix(60)) + "…")
         #expect(model?.isRunning == true)
     }

@@ -1008,19 +1008,19 @@ final class PickySessionListViewModel: ObservableObject {
     func followUp(text: String, sessionID: String?, requireAcknowledgement: Bool) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            lastError = "Follow-up message cannot be empty"
+            lastError = L10n.t("hud.session.error.emptyMessage")
             throw PickySessionListViewModelError.emptyFollowUp
         }
         guard let target = sessionID ?? selectedSession?.id else {
-            lastError = "No session selected for follow-up"
+            lastError = L10n.t("hud.session.error.noSelection")
             throw PickySessionListViewModelError.noSessionSelected
         }
         guard sessions.contains(where: { $0.id == target }) else {
             if archivedSessions.contains(where: { $0.id == target }) {
-                lastError = "Cannot follow up an archived Pickle session"
+                lastError = L10n.t("hud.session.error.archived")
                 throw PickySessionListViewModelError.archivedSession
             }
-            lastError = "No session selected for follow-up"
+            lastError = L10n.t("hud.session.error.noSelection")
             throw PickySessionListViewModelError.noSessionSelected
         }
         pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
@@ -1050,19 +1050,19 @@ final class PickySessionListViewModel: ObservableObject {
     func steer(text: String, sessionID: String? = nil) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            lastError = "Steer message cannot be empty"
+            lastError = L10n.t("hud.session.error.emptyMessage")
             throw PickySessionListViewModelError.emptyFollowUp
         }
         guard let target = sessionID ?? selectedSession?.id else {
-            lastError = "No session selected for steering"
+            lastError = L10n.t("hud.session.error.noSelection")
             throw PickySessionListViewModelError.noSessionSelected
         }
         guard sessions.contains(where: { $0.id == target }) else {
             if archivedSessions.contains(where: { $0.id == target }) {
-                lastError = "Cannot steer an archived Pickle session"
+                lastError = L10n.t("hud.session.error.archived")
                 throw PickySessionListViewModelError.archivedSession
             }
-            lastError = "No session selected for steering"
+            lastError = L10n.t("hud.session.error.noSelection")
             throw PickySessionListViewModelError.noSessionSelected
         }
         pickySessionLog("steer session=\(target) textChars=\(trimmed.count)")
@@ -1101,11 +1101,11 @@ final class PickySessionListViewModel: ObservableObject {
     /// the target session is known and the text is non-empty here.
     func retryAfterRuntimeRace(sessionID: String) async throws {
         guard let card = sessions.first(where: { $0.id == sessionID }) ?? archivedSessions.first(where: { $0.id == sessionID }) else {
-            lastError = "No session for retry"
+            lastError = L10n.t("hud.session.error.noRetrySession")
             throw PickySessionListViewModelError.noSessionSelected
         }
         guard let text = card.lastRequestText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-            lastError = "No previous request text to retry"
+            lastError = L10n.t("hud.session.error.noRetryText")
             throw PickySessionListViewModelError.emptyFollowUp
         }
         pickySessionLog("retry-after-race session=\(sessionID) textChars=\(text.count)")
@@ -1202,7 +1202,7 @@ final class PickySessionListViewModel: ObservableObject {
     func openLatestAgentResponseReport(sessionID: String) async throws {
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
               let messageID = session.latestAgentResponseReportMessageID else {
-            lastError = "Latest response is not available as a report"
+            lastError = L10n.t("hud.session.error.latestReportUnavailable")
             throw PickySessionListViewModelError.missingReport
         }
         try await openReport(sessionID: sessionID, messageID: messageID)
@@ -1216,7 +1216,7 @@ final class PickySessionListViewModel: ObservableObject {
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
               let message = session.messages.first(where: { $0.id == messageID }),
               let markdown = message.openAsReportMarkdown else {
-            lastError = "Message is not available as a report"
+            lastError = L10n.t("hud.session.error.messageReportUnavailable")
             throw PickySessionListViewModelError.missingReport
         }
         let titleSuffix: String
@@ -1259,7 +1259,7 @@ final class PickySessionListViewModel: ObservableObject {
               let run = session.subagentRuns.first(where: { $0.runId == runId && $0.invocationId == invocationID }),
               let markdown = run.resultText ?? run.resultPreview,
               !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            lastError = "Subagent response is not available as a report"
+            lastError = L10n.t("hud.session.error.subagentReportUnavailable")
             throw PickySessionListViewModelError.missingReport
         }
         do {
@@ -1735,16 +1735,11 @@ final class PickySessionListViewModel: ObservableObject {
         syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
-    /// Permanently delete every archived Pickle in one shot from the
-    /// Settings → Pickle list header. Snapshots the current archived IDs
-    /// up-front so concurrent restores/incoming events do not slip a row out
-    /// from under the iteration, then funnels each ID through the existing
-    /// single-row delete path so daemon validation, archive-store cleanup,
-    /// and per-session map pruning all stay consistent. No-op when the
-    /// archive is empty so a misrouted call (deep link, test, programmatic)
-    /// never sends spurious deleteSession envelopes.
+    /// Delete only archived sessions accepted by the daemon's terminal-state rule.
     func deleteAllArchivedSessions() {
-        let ids = archivedSessions.map(\.id)
+        let ids = archivedSessions.filter {
+            [.completed, .failed, .cancelled, .blocked].contains($0.status)
+        }.map(\.id)
         guard !ids.isEmpty else { return }
         pickySessionLog("delete all archived sessions count=\(ids.count)")
         for sessionID in ids {
@@ -1752,18 +1747,32 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    /// Permanently delete an archived Pickle from both the local view model and the
-    /// daemon's persisted session store. Triggered from Settings → Pickle. The
-    /// daemon validates that the session is archived AND terminal AND has no live
-    /// runtime handle; the UI only exposes the affordance for archived rows so a
-    /// successful path is the only path the user ever sees.
+    /// Match the daemon's deletion rule, which also treats blocked as terminal.
+    /// Keep local state when transport fails; send success is not a daemon ack.
     func deleteArchivedSession(sessionID: String) {
-        Task { try? await client.send(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID)) }
-        finalizeDeletedArchivedSession(sessionID: sessionID)
+        guard let session = archivedSessions.first(where: { $0.id == sessionID }),
+              [.completed, .failed, .cancelled, .blocked].contains(session.status)
+        else { return }
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let session = self.archivedSessions.first(where: { $0.id == sessionID }),
+                  [.completed, .failed, .cancelled, .blocked].contains(session.status)
+            else { return }
+            do {
+                try await self.client.send(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID))
+                guard let current = self.archivedSessions.first(where: { $0.id == sessionID }),
+                      [.completed, .failed, .cancelled, .blocked].contains(current.status)
+                else { return }
+                self.finalizeDeletedArchivedSession(sessionID: sessionID)
+            } catch {
+                self.lastError = L10n.t("hud.archivedList.deleteFailed", error.localizedDescription)
+                pickySessionLog("delete archived session failed session=\(sessionID) error=\(error)")
+            }
+        }
     }
 
-    /// Local half of permanent deletion, called directly by Settings or only after
-    /// the CLI bridge receives an authoritative child-daemon ack.
+    /// Local half of permanent deletion, called after the Settings command is sent
+    /// or after the CLI bridge receives an authoritative child-daemon ack.
     func finalizeDeletedArchivedSession(sessionID: String) {
         beginDockStateMutation()
         defer { endDockStateMutation() }
@@ -1924,7 +1933,7 @@ final class PickySessionListViewModel: ObservableObject {
             autocompleteEvents.send(.reconnected)
         case .disconnected:
             pickySessionLog("client disconnected")
-            lastError = "Disconnected from picky-agentd"
+            lastError = L10n.t("hud.session.error.disconnected")
         case .recoverableError(let message):
             pickySessionLog("client recoverable error=\(message)")
             lastError = message

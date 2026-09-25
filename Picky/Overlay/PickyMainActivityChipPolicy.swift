@@ -24,7 +24,7 @@ struct PickyMainActivityChipModel: Equatable {
         case .thinking:
             return PickyMainActivityChipModel(
                 category: .thinking,
-                label: "생각 중",
+                label: L10n.t("overlay.activity.thinking"),
                 detail: activity.thinkingPreview.map { truncate(oneLine(PickyBubbleMarkdown.displayString(for: $0)), limit: thinkingDetailLength) },
                 isRunning: true
             )

@@ -114,7 +114,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         hoverButton.isBordered = false
         hoverButton.bezelStyle = .regularSquare
         let symbolConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-        hoverButton.image = NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Open this message as report")?
+        hoverButton.image = NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: L10n.t("hud.message.openReport.help"))?
             .withSymbolConfiguration(symbolConfig)
         hoverButton.imagePosition = .imageOnly
         hoverButton.contentTintColor = NSColor(DS.Colors.textSecondary)
@@ -206,7 +206,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         self.onCopyText = onCopyText
         self.onOpenAsReport = onOpenAsReport
 
-        hoverButton.toolTip = "Open this message as report"
+        hoverButton.toolTip = L10n.t("hud.message.openReport.help")
         configureExpansionButton(title: expansionTitle, systemImageName: expansionSystemImageName)
 
         needsLayout = true
@@ -299,12 +299,12 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         if actionText != nil, onCopyText != nil {
-            let item = NSMenuItem(title: "Copy Text", action: #selector(copyTextClicked), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.t("hud.extensionMessage.copy"), action: #selector(copyTextClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }
         if onOpenAsReport != nil {
-            let item = NSMenuItem(title: "Open as Report", action: #selector(openAsReportClicked), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.t("hud.extensionMessage.openAsReport"), action: #selector(openAsReportClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }

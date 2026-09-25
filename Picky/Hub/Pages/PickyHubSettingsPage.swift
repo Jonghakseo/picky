@@ -346,7 +346,7 @@ struct PickyHubSettingsPage: View {
                 transaction.restoreAfterFailedSave(in: &self.settingsViewModel.settings)
                 self.onboardingReplayTransaction = nil
                 self.onboardingReplayState = .failed(
-                    self.settingsViewModel.validationError ?? "Unable to save the onboarding preference."
+                    self.settingsViewModel.validationError ?? L10n.t("settings.onboarding.saveFailed")
                 )
             }
         }
@@ -885,9 +885,9 @@ private struct PickyHubPermissionRows: View {
         isBusy: Bool = false
     ) -> some View {
         let action = PickyHubPermissionAction.resolve(target: target, isGranted: granted)
-        return PickyHubSettingsRow(title: title, detail: "hub.settings.permission.detail") {
+        return PickyHubSettingsRow(title: title, detail: LocalizedStringKey(action.detailKey)) {
             PickyHubButton(
-                title: granted ? "hub.settings.permission.granted" : "hub.settings.permission.required",
+                title: granted ? "hub.settings.permission.granted" : LocalizedStringKey(action.buttonTitleKey),
                 role: .secondary,
                 systemImage: granted ? "checkmark.circle" : action.systemImage,
                 isBusy: isBusy,

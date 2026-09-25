@@ -20,8 +20,10 @@ enum PickyComposerLabelPolicy {
         if isCompacting { return localizer("hud.composer.placeholder.compacting") }
         if isFileDropTargeted { return localizer("hud.composer.placeholder.drop") }
         switch status {
-        case .running, .queued, .waiting_for_input:
+        case .running, .queued:
             return localizer("hud.composer.placeholder.steer")
+        case .waiting_for_input:
+            return localizer("hud.composer.placeholder.question")
         case .completed, .blocked:
             return localizer("hud.composer.placeholder.followUp")
         case .cancelled:

@@ -47,8 +47,8 @@ struct PickyToolCallInlineRow: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
-        .accessibilityLabel([displayedToolName, displayedDetail, "tool call"].compactMap { $0 }.joined(separator: " "))
-        .accessibilityHint("Open tool history")
+        .accessibilityLabel([displayedToolName, displayedDetail, L10n.t("hud.toolCall.accessibility")].compactMap { $0 }.joined(separator: " "))
+        .accessibilityHint(L10n.t("hud.toolHistory.open"))
         .hoverAffordance()
     }
 
@@ -58,10 +58,10 @@ struct PickyToolCallInlineRow: View {
             Circle()
                 .fill(DS.Colors.destructive)
                 .frame(width: 5, height: 5)
-                .accessibilityLabel("Failed")
+                .accessibilityLabel(L10n.t("hud.conversation.status.failed"))
         } else if tool.isActive {
             PickyToolCallPulsingDot(color: DS.Colors.info)
-                .accessibilityLabel("Running")
+                .accessibilityLabel(L10n.t("hud.conversation.status.running"))
         } else {
             // succeeded: render a small checkmark so the user can tell the
             // call settled even while the same row keeps occupying the live
@@ -69,7 +69,7 @@ struct PickyToolCallInlineRow: View {
             Image(systemName: "checkmark")
                 .pickyFont(size: 9, weight: .bold)
                 .foregroundColor(DS.Colors.successText)
-                .accessibilityLabel("Completed")
+                .accessibilityLabel(L10n.t("hud.activity.summary.completed"))
         }
     }
 
@@ -170,9 +170,9 @@ struct PickyToolCallInlineRow: View {
     }
 
     private var helpText: String {
-        if tool.didFail { return "Tool failed — open tool history" }
-        if tool.isActive { return "Tool running — open tool history" }
-        return "Open tool history"
+        if tool.didFail { return L10n.t("hud.toolHistory.failed.help") }
+        if tool.isActive { return L10n.t("hud.toolHistory.running.help") }
+        return L10n.t("hud.toolHistory.open")
     }
 
     /// Compact path display: keeps the *first* segment as a project anchor

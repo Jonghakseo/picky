@@ -70,9 +70,9 @@ private final class PickyHUDWorkingFolderOpenPanelPresenter: PickyHUDWorkingFold
 
     func begin(completion: @escaping (NSApplication.ModalResponse, URL?) -> Void) {
         let panel = NSOpenPanel()
-        panel.title = "Choose a working folder"
-        panel.prompt = "Start"
-        panel.message = "Choose the folder where the new Pickle should run."
+        panel.title = L10n.t("hud.folderPicker.title")
+        panel.prompt = L10n.t("hud.folderPicker.start")
+        panel.message = L10n.t("hud.folderPicker.message")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false

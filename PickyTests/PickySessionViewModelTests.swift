@@ -1845,14 +1845,14 @@ struct PickySessionViewModelTests {
     }
 
     @Test func hudSummaryEventLabelReflectsStatusAndReportArtifact() throws {
-        #expect(PickyHUDSummaryEventPolicy.label(for: .completed, hasReportArtifact: true) == "Report ready")
-        #expect(PickyHUDSummaryEventPolicy.label(for: .completed, hasReportArtifact: false) == "Result")
-        #expect(PickyHUDSummaryEventPolicy.label(for: .failed, hasReportArtifact: false) == "Failed")
-        #expect(PickyHUDSummaryEventPolicy.label(for: .cancelled, hasReportArtifact: false) == "Cancelled")
-        #expect(PickyHUDSummaryEventPolicy.label(for: .blocked, hasReportArtifact: false) == "Blocked")
-        #expect(PickyHUDSummaryEventPolicy.label(for: .waiting_for_input, hasReportArtifact: false) == "Awaiting input")
-        #expect(PickyHUDSummaryEventPolicy.label(for: .running, hasReportArtifact: false) == "Update")
-        #expect(PickyHUDSummaryEventPolicy.label(for: .queued, hasReportArtifact: false) == "Update")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .completed, hasReportArtifact: true) == L10n.t("hud.event.reportReady"))
+        #expect(PickyHUDSummaryEventPolicy.label(for: .completed, hasReportArtifact: false) == L10n.t("hud.event.result"))
+        #expect(PickyHUDSummaryEventPolicy.label(for: .failed, hasReportArtifact: false) == L10n.t("hud.conversation.status.failed"))
+        #expect(PickyHUDSummaryEventPolicy.label(for: .cancelled, hasReportArtifact: false) == L10n.t("hud.state.cancelled"))
+        #expect(PickyHUDSummaryEventPolicy.label(for: .blocked, hasReportArtifact: false) == L10n.t("hud.state.blocked"))
+        #expect(PickyHUDSummaryEventPolicy.label(for: .waiting_for_input, hasReportArtifact: false) == L10n.t("hud.event.awaitingInput"))
+        #expect(PickyHUDSummaryEventPolicy.label(for: .running, hasReportArtifact: false) == L10n.t("hud.event.update"))
+        #expect(PickyHUDSummaryEventPolicy.label(for: .queued, hasReportArtifact: false) == L10n.t("hud.event.update"))
     }
 
     @Test func hudSummaryEventTimeReportsNowWhileActive() throws {
@@ -3443,7 +3443,7 @@ struct PickySessionViewModelTests {
         #expect(deleteCommand.sessionId == "pickle-1")
     }
 
-    @Test func deleteAllArchivedSessionsPurgesEveryArchivedRowAndSendsDaemonCommands() async throws {
+    @Test func deleteAllArchivedSessionsDeletesOnlyTerminalArchivedRows() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
         let viewModel = PickySessionListViewModel(
@@ -3452,23 +3452,92 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        for id in ["pickle-1", "pickle-2", "pickle-3"] {
-            client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: id, title: id, status: "completed"))))
+        let terminalIDs: Set<String> = ["completed", "failed", "cancelled", "blocked"]
+        let activeIDs: Set<String> = ["queued", "running", "waiting_for_input"]
+        for status in terminalIDs.union(activeIDs).sorted() {
+            client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: status, title: status, status: status))))
             try await settle()
-            viewModel.archive(sessionID: id)
+            viewModel.archive(sessionID: status)
             try await settle()
         }
-        #expect(Set(viewModel.archivedSessions.map(\.id)) == ["pickle-1", "pickle-2", "pickle-3"])
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "unarchived", title: "Unarchived", status: "completed"))))
+        try await settle()
 
         viewModel.deleteAllArchivedSessions()
         try await settle()
 
-        #expect(viewModel.archivedSessions.isEmpty)
-        #expect(viewModel.sessions.isEmpty)
-        #expect(archiveStore.archivedSessionIDs.isEmpty)
-        #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
+        #expect(Set(viewModel.archivedSessions.map(\.id)) == activeIDs)
+        #expect(viewModel.sessions.map(\.id) == ["unarchived"])
+        #expect(archiveStore.archivedSessionIDs == activeIDs)
+        #expect(archiveStore.manuallyArchivedSessionIDs == activeIDs)
         let deleteCommandIDs = Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId))
-        #expect(deleteCommandIDs == ["pickle-1", "pickle-2", "pickle-3"])
+        #expect(deleteCommandIDs == terminalIDs)
+    }
+
+    @Test(arguments: ["queued", "running", "waiting_for_input"])
+    func deleteArchivedSessionRetainsActiveArchivedRow(status: String) async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: status))))
+        try await settle()
+        viewModel.archive(sessionID: "pickle-1")
+        try await settle()
+
+        viewModel.deleteArchivedSession(sessionID: "pickle-1")
+        try await settle()
+
+        #expect(viewModel.archivedSessions.map(\.id) == ["pickle-1"])
+        #expect(archiveStore.archivedSessionIDs == ["pickle-1"])
+        #expect(archiveStore.manuallyArchivedSessionIDs == ["pickle-1"])
+        #expect(!client.sentCommands.contains { $0.type == .deleteSession })
+    }
+
+    @Test func deleteArchivedSessionRetainsRowWhenTransportFails() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        try await settle()
+        viewModel.archive(sessionID: "pickle-1")
+        try await settle()
+        client.shouldThrowOnSend = true
+
+        viewModel.deleteArchivedSession(sessionID: "pickle-1")
+        try await settle()
+
+        #expect(viewModel.archivedSessions.map(\.id) == ["pickle-1"])
+        #expect(archiveStore.archivedSessionIDs == ["pickle-1"])
+        #expect(archiveStore.manuallyArchivedSessionIDs == ["pickle-1"])
+        #expect(viewModel.lastError != nil)
+    }
+
+    @Test func deleteArchivedSessionIgnoresUnarchivedTerminalRow() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: FakeArchiveStore()
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        try await settle()
+
+        viewModel.deleteArchivedSession(sessionID: "pickle-1")
+        try await settle()
+
+        #expect(viewModel.sessions.map(\.id) == ["pickle-1"])
+        #expect(!client.sentCommands.contains { $0.type == .deleteSession })
     }
 
     @Test func deleteAllArchivedSessionsIsSafeNoOpWhenArchiveIsEmpty() async throws {
@@ -4571,7 +4640,7 @@ struct PickySessionViewModelTests {
         await #expect(throws: PickySessionListViewModelError.archivedSession) {
             try await viewModel.steer(text: "  stale steer  ", sessionID: "archived-pickle")
         }
-        #expect(viewModel.lastError == "Cannot steer an archived Pickle session")
+        #expect(viewModel.lastError == L10n.t("hud.session.error.archived"))
         #expect(client.sentCommands.count == commandCountAfterArchive)
         #expect(client.sentCommands.last?.type == .setSessionArchived)
     }
@@ -4595,7 +4664,7 @@ struct PickySessionViewModelTests {
         await #expect(throws: PickySessionListViewModelError.archivedSession) {
             try await viewModel.followUp(text: "  stale follow-up  ", sessionID: "archived-pickle")
         }
-        #expect(viewModel.lastError == "Cannot follow up an archived Pickle session")
+        #expect(viewModel.lastError == L10n.t("hud.session.error.archived"))
         #expect(client.sentCommands.count == commandCountAfterArchive)
         #expect(client.sentCommands.last?.type == .setSessionArchived)
     }

@@ -33,6 +33,15 @@ struct PickyHUDArchivedSessionsListView: View {
         archiveMembership.archivedSessionIDs
     }
 
+    private var deletableSessionCount: Int {
+        archivedSessionIDs.filter { sessionID in
+            guard let store = archiveMembership.existingSessionStore(sessionID: sessionID),
+                  case .loaded(let metadata) = store.metaStore.metadataState
+            else { return false }
+            return [.completed, .failed, .cancelled, .blocked].contains(metadata.status)
+        }.count
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if showsHeader {
@@ -119,16 +128,17 @@ struct PickyHUDArchivedSessionsListView: View {
                 )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Delete all archived Pickles")
+        .disabled(deletableSessionCount == 0)
+        .accessibilityLabel(L10n.t("hud.archive.deleteAll.accessibility"))
     }
 
-    /// Localized alert title pre-formatted with the current archived count so
+    /// Localized alert title pre-formatted with the current deletable count so
     /// the SwiftUI alert can be rendered with a plain `Text` (`.alert` does
     /// not interpolate LocalizedStringKey arguments on macOS the way Text
     /// initializers do).
     private var deleteAllConfirmationTitle: String {
         let format = L10n.t("hud.archivedList.confirmDeleteAllTitle")
-        return String.localizedStringWithFormat(format, archivedSessionIDs.count)
+        return String.localizedStringWithFormat(format, deletableSessionCount)
     }
 
     private var emptyState: some View {
@@ -192,6 +202,7 @@ private struct PickyHUDArchivedSessionRow: View {
 
     var body: some View {
         if case .loaded(let metadata) = store.metaStore.metadataState {
+            let canDelete = [PickySessionStatus.completed, .failed, .cancelled, .blocked].contains(metadata.status)
             HStack(alignment: .center, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(metadata.title)
@@ -221,7 +232,7 @@ private struct PickyHUDArchivedSessionRow: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Restore Pickle")
+                .accessibilityLabel(L10n.t("hud.archive.restore.accessibility"))
 
                 Button(action: onDelete) {
                     Text(isDeleteArmed ? "hud.archivedList.confirmDelete" : "hud.archivedList.delete")
@@ -236,7 +247,12 @@ private struct PickyHUDArchivedSessionRow: View {
                         .animation(.easeOut(duration: 0.12), value: isDeleteArmed)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isDeleteArmed ? "Confirm delete Pickle" : "Delete Pickle")
+                .disabled(!canDelete)
+                .help(L10n.t(canDelete
+                    ? "hud.archive.delete.accessibility" : "hud.archivedList.deleteUnavailableActive"))
+                .accessibilityHint(L10n.t(canDelete
+                    ? "hud.archive.delete.accessibility" : "hud.archivedList.deleteUnavailableActive"))
+                .accessibilityLabel(isDeleteArmed ? L10n.t("hud.archive.confirmDelete.accessibility") : L10n.t("hud.archive.delete.accessibility"))
             }
             .padding(.vertical, 4)
             .contentShape(Rectangle())

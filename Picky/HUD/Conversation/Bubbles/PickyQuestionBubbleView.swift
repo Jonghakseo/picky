@@ -30,9 +30,9 @@ struct PickyQuestionBubbleView: View {
     private var isCollapsedDisplay: Bool { isClosed && isCollapsed }
 
     private var statusLabel: String {
-        if isCancelled { return "INPUT CANCELLED" }
-        if !isActiveRequest { return "INPUT ANSWERED" }
-        return "INPUT NEEDED"
+        if isCancelled { return L10n.t("hud.question.cancelled") }
+        if !isActiveRequest { return L10n.t("hud.question.answered") }
+        return L10n.t("hud.question.needed")
     }
 
     var body: some View {
@@ -138,9 +138,9 @@ struct PickyQuestionBubbleView: View {
                 label.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(isCollapsed ? "Expand question details" : "Collapse question details")
-            .accessibilityLabel("Question \(statusLabel)")
-            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+            .help(isCollapsed ? L10n.t("hud.question.expand") : L10n.t("hud.question.collapse"))
+            .accessibilityLabel(L10n.t("hud.question.status.accessibility", statusLabel))
+            .accessibilityValue(isCollapsed ? L10n.t("common.collapsed") : L10n.t("common.expanded"))
             .hoverAffordance()
         } else {
             label
@@ -166,14 +166,14 @@ struct PickyQuestionBubbleView: View {
         switch request.method {
         case "confirm":
             HStack(spacing: 6) {
-                Button("Allow") { answer(.bool(true)) }
-                Button("Cancel") { cancel() }
+                Button(L10n.t("hud.question.allow")) { answer(.bool(true)) }
+                Button(L10n.t("common.cancel")) { cancel() }
             }
             .font(PickyHUDTypography.supportingMedium)
         case "select":
             let options = request.options ?? []
             if options.isEmpty {
-                Button("Cancel") { cancel() }
+                Button(L10n.t("common.cancel")) { cancel() }
                     .font(PickyHUDTypography.supportingMedium)
             } else {
                 switch PickyQuestionOptionsLayoutPolicy.layout(for: options) {
@@ -182,7 +182,7 @@ struct PickyQuestionBubbleView: View {
                         ForEach(options, id: \.self) { option in
                             Button(option) { answer(.string(option)) }
                         }
-                        Button("Cancel") { cancel() }
+                        Button(L10n.t("common.cancel")) { cancel() }
                     }
                     .font(PickyHUDTypography.supportingMedium)
                 case .stacked:
@@ -190,7 +190,7 @@ struct PickyQuestionBubbleView: View {
                         ForEach(options, id: \.self) { option in
                             stackedSelectOptionButton(option)
                         }
-                        Button("Cancel") { cancel() }
+                        Button(L10n.t("common.cancel")) { cancel() }
                             .buttonStyle(.plain)
                             .foregroundColor(DS.Colors.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -201,19 +201,19 @@ struct PickyQuestionBubbleView: View {
             }
         case "input", "editor":
             HStack(spacing: 6) {
-                TextField("Response…", text: $textValue)
+                TextField(L10n.t("hud.question.responsePlaceholder"), text: $textValue)
                     .textFieldStyle(.roundedBorder)
                     .font(PickyHUDTypography.supporting)
                     .onSubmit { submitText() }
-                Button("Submit") { submitText() }
+                Button(L10n.t("hud.question.submit")) { submitText() }
                     .disabled(textValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("Cancel") { cancel() }
+                Button(L10n.t("common.cancel")) { cancel() }
             }
             .font(PickyHUDTypography.supportingMedium)
         case "askUserQuestion":
             askUserQuestionForm
         default:
-            Button("Dismiss") { cancel() }
+            Button(L10n.t("common.dismiss")) { cancel() }
                 .font(PickyHUDTypography.supportingMedium)
         }
     }
@@ -231,9 +231,9 @@ struct PickyQuestionBubbleView: View {
                 }
             }
             HStack(spacing: 6) {
-                Button("Submit") { submitAskUserQuestion() }
+                Button(L10n.t("hud.question.submit")) { submitAskUserQuestion() }
                     .disabled(!formState.isSubmittable(questions: questions))
-                Button("Cancel") { cancel() }
+                Button(L10n.t("common.cancel")) { cancel() }
             }
             .font(PickyHUDTypography.supportingMedium)
         }
@@ -257,10 +257,10 @@ struct PickyQuestionBubbleView: View {
                         }
                     }
                     if question.allowsOther {
-                        optionButton(label: "Other…", description: nil, selected: formState.radioValues[key] == PickyAskUserQuestionFormState.otherSentinel) {
+                        optionButton(label: L10n.t("hud.question.other"), description: nil, selected: formState.radioValues[key] == PickyAskUserQuestionFormState.otherSentinel) {
                             formState.selectRadio(question: question, index: index, value: PickyAskUserQuestionFormState.otherSentinel)
                         }
-                        TextField("Other…", text: binding($formState.otherValues, key: key))
+                        TextField(L10n.t("hud.question.other"), text: binding($formState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
                             .font(PickyHUDTypography.supporting)
                             .disabled(formState.radioValues[key] != PickyAskUserQuestionFormState.otherSentinel)
@@ -275,14 +275,14 @@ struct PickyQuestionBubbleView: View {
                         }
                     }
                     if question.allowsOther {
-                        TextField("Other…", text: binding($formState.otherValues, key: key))
+                        TextField(L10n.t("hud.question.other"), text: binding($formState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
                             .font(PickyHUDTypography.supporting)
                             .onSubmit { submitAskUserQuestion() }
                     }
                 }
             case .text:
-                TextField(question.placeholder ?? "Response…", text: binding($formState.textValues, key: key))
+                TextField(question.placeholder ?? L10n.t("hud.question.responsePlaceholder"), text: binding($formState.textValues, key: key))
                     .textFieldStyle(.roundedBorder)
                     .font(PickyHUDTypography.supporting)
                     .onSubmit { submitAskUserQuestion() }

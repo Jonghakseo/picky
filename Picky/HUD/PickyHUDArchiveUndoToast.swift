@@ -100,6 +100,6 @@ struct PickyHUDArchiveUndoToastView: View {
         )
         .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Session archived. Undo available.")
+        .accessibilityLabel(L10n.t("dock.archive.undo.accessibility"))
     }
 }

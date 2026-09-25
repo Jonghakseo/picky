@@ -48,7 +48,7 @@ struct PickyTerminalSyncBanner: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Dismiss")
+            .help(L10n.t("common.dismiss"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -69,11 +69,11 @@ struct PickyTerminalSyncBanner: View {
     private var detail: String {
         switch severity {
         case .baselineMissing:
-            return "Pi may have compacted or branched the transcript while the terminal was open. The card was not updated. Open the terminal again or copy the resume command if you need the latest answer."
+            return L10n.t("hud.terminalSync.baselineMissing.body")
         case .imported(let count):
             return count == 1
-                ? "1 new message was imported from the terminal session."
-                : "\(count) new messages were imported from the terminal session."
+                ? L10n.t("hud.terminalSync.imported.one")
+                : L10n.t("hud.terminalSync.imported.many", count)
         }
     }
 
@@ -83,8 +83,8 @@ struct PickyTerminalSyncBanner: View {
 
         var title: String {
             switch self {
-            case .baselineMissing: return "Terminal sync skipped"
-            case .imported: return "Terminal sync"
+            case .baselineMissing: return L10n.t("hud.terminalSync.baselineMissing.title")
+            case .imported: return L10n.t("hud.terminalSync.imported.title")
             }
         }
 

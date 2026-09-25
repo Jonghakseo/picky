@@ -813,7 +813,7 @@ struct PickyConversationCardViewTests {
 
         #expect(snapshot.questionBubbleCount == 1)
         #expect(header.statusTone == .warning)
-        #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.steer"))
+        #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.question"))
     }
 
     @Test func composerShowsIndependentCompletionDestinationStates() {
@@ -1250,7 +1250,7 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "New Title", current: "Old") == "/name New Title")
     }
 
-    @Test func failedPhaseRendersLocalizedRetryWithoutTerminalChip() {
+    @Test func failedPhaseRendersLocalizedContinueWithoutTerminalChip() {
         let errorMessage = message(
             "m-error",
             kind: .agentError,
@@ -1265,10 +1265,21 @@ struct PickyConversationCardViewTests {
         let errorBubble = PickyErrorBubbleView(message: errorMessage, onRetry: {})
 
         #expect(snapshot.errorBubbleCount == 1)
-        #expect(errorBubble.recoveryChipLabels == [L10n.t("hud.error.retry")])
+        #expect(errorBubble.recoveryChipLabels == [L10n.t("hud.error.continue")])
         #expect(!errorBubble.recoveryChipLabels.contains("⌨ Open Terminal"))
         #expect(errorBubble.titleText == "Command failed")
         #expect(header.statusTone == .destructiveText)
+    }
+
+    @Test func undeliveredRuntimeRaceOffersRetryInsteadOfContinue() {
+        let error = message(
+            "m-race",
+            kind: .agentError,
+            errorMessage: "Agent is already processing a prompt."
+        )
+        let bubble = PickyErrorBubbleView(message: error, onRetry: {})
+        #expect(bubble.recoveryChipLabels == [L10n.t("hud.error.retry")])
+        #expect(PickyErrorBubbleView(message: error).recoveryChipLabels.isEmpty)
     }
 
     @Test func errorBubbleHidesRedundantRuntimeErrorTitle() {
@@ -1512,7 +1523,9 @@ struct PickyConversationCardViewTests {
             let composer = PickyConversationComposerView(session: makeConversationSession(status: status), viewModel: viewModel)
             #expect(composer.defaultSubmitKind == .steer)
             #expect(composer.optionReturnSubmitKind == .followUp)
-            #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.steer"))
+            let placeholderKey = status == .waiting_for_input
+                ? "hud.composer.placeholder.question" : "hud.composer.placeholder.steer"
+            #expect(composer.placeholderText == L10n.t(placeholderKey))
         }
 
         for status in [PickySessionStatus.completed, .blocked] {

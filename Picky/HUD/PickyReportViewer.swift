@@ -800,7 +800,7 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
     func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws {
         if let existing = records[sessionID] {
             existing.model.update(title: title, fileURL: fileURL, markdown: markdown)
-            existing.panel.title = "Picky Report — \(title)"
+            existing.panel.title = L10n.t("hud.report.windowTitle", title)
             NSApp.activate(ignoringOtherApps: true)
             existing.panel.orderFrontRegardless()
             existing.panel.makeKey()
@@ -820,7 +820,7 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Picky Report — \(title)"
+        panel.title = L10n.t("hud.report.windowTitle", title)
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
@@ -1029,11 +1029,11 @@ struct PickyReportViewerWindowView: View {
     /// chain without reserving toolbar space.
     private var keyboardShortcuts: some View {
         ZStack {
-            Button("Zoom In") { model.zoomIn() }
+            Button(L10n.t("common.zoomIn")) { model.zoomIn() }
                 .keyboardShortcut("=", modifiers: .command)
-            Button("Zoom Out") { model.zoomOut() }
+            Button(L10n.t("common.zoomOut")) { model.zoomOut() }
                 .keyboardShortcut("-", modifiers: .command)
-            Button("Reset Zoom") { model.resetZoom() }
+            Button(L10n.t("common.resetZoom")) { model.resetZoom() }
                 .keyboardShortcut("0", modifiers: .command)
             Button(L10n.t("hud.report.search"), action: openSearch)
                 .keyboardShortcut("f", modifiers: .command)
@@ -1052,7 +1052,7 @@ struct PickyReportViewerWindowView: View {
     @ViewBuilder
     private func reportContent(blocks: [PickyReportBlockPresentation]) -> some View {
         if model.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            emptyState("No content captured for this report.")
+            emptyState(L10n.t("hud.report.empty"))
         } else {
             PickyMarkdownReportView(
                 blocks: blocks,
@@ -1151,7 +1151,7 @@ struct PickyReportViewerWindowView: View {
                         .truncationMode(.middle)
                 }
                 .buttonStyle(.plain)
-                .help("Open \(model.fileURL.path) in Finder")
+                .help(L10n.t("hud.report.reveal.help", model.fileURL.path))
             }
             Spacer()
             if outline.count >= 2 {
@@ -1180,7 +1180,7 @@ struct PickyReportViewerWindowView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(model.markdown.isEmpty)
-            .help("Copy this report's markdown to the clipboard")
+            .help(L10n.t("hud.report.copyMarkdown.help"))
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)

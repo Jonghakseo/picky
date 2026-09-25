@@ -58,7 +58,7 @@ struct PickyDockGroupCreatorView: View {
             Circle()
                 .fill(suggestedColor.accent)
                 .frame(width: 10, height: 10)
-            Text("New group")
+            Text(L10n.t("dock.group.create.title"))
                 .pickyFont(size: 14, weight: .medium)
                 .foregroundStyle(DS.Colors.textPrimary)
             Spacer()
@@ -67,10 +67,10 @@ struct PickyDockGroupCreatorView: View {
 
     private var nameField: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Name")
+            Text(L10n.t("dock.group.create.name"))
                 .pickyFont(size: 11, weight: .medium)
                 .foregroundStyle(DS.Colors.textSecondary)
-            TextField("e.g. creatrip-web", text: $name)
+            TextField(L10n.t("dock.group.create.placeholder"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($isNameFieldFocused)
                 .onSubmit {
@@ -85,18 +85,18 @@ struct PickyDockGroupCreatorView: View {
     private var membersSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Include Pickles")
+                Text(L10n.t("dock.group.create.members"))
                     .pickyFont(size: 11, weight: .medium)
                     .foregroundStyle(DS.Colors.textSecondary)
                 Spacer()
                 if !selectedMemberIDs.isEmpty {
-                    Text("\(selectedMemberIDs.count) selected")
+                    Text(L10n.t("dock.group.create.selected", selectedMemberIDs.count))
                         .pickyFont(size: 11)
                         .foregroundStyle(DS.Colors.textTertiary)
                 }
             }
             if availableSessions.isEmpty {
-                Text("No Pickles to include yet. You can create the group now and drag Pickles in later.")
+                Text(L10n.t("dock.group.create.empty"))
                     .pickyFont(size: 12)
                     .foregroundStyle(DS.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -129,7 +129,7 @@ struct PickyDockGroupCreatorView: View {
                     .foregroundStyle(isSelected ? DS.Colors.accentText : DS.Colors.textTertiary)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(session.title.isEmpty ? "Untitled Pickle" : session.title)
+                    Text(session.title.isEmpty ? L10n.t("dock.pickle.untitled") : session.title)
                         .pickyFont(size: 12, weight: .medium)
                         .foregroundStyle(DS.Colors.textPrimary)
                         .lineLimit(1)
@@ -151,15 +151,15 @@ struct PickyDockGroupCreatorView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(isSelected ? "Remove" : "Add") \(session.title) \(isSelected ? "from" : "to") group")
+        .accessibilityLabel(L10n.t(isSelected ? "dock.group.removeMember.accessibility" : "dock.group.addMember.accessibility", session.title))
     }
 
     private var footer: some View {
         HStack(spacing: 8) {
             Spacer()
-            Button("Cancel", role: .cancel, action: onCancel)
+            Button(L10n.t("common.cancel"), role: .cancel, action: onCancel)
                 .keyboardShortcut(.cancelAction)
-            Button("Create") {
+            Button(L10n.t("dock.group.create.submit")) {
                 onCreate(name, Array(selectedMembersInRenderOrder))
             }
             .buttonStyle(.borderedProminent)

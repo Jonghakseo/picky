@@ -60,7 +60,7 @@ struct PickyUserBubbleView: View {
 
     private var expansionTitle: String? {
         guard shouldOfferExpansion else { return nil }
-        return isExpanded ? "접기" : "더 보기"
+        return isExpanded ? L10n.t("common.collapse") : L10n.t("common.showMore")
     }
 
     private var expansionSystemImageName: String? {

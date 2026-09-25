@@ -1075,6 +1075,23 @@ struct PickySessionProjectionV2ApplicationTests {
         withExtendedLifetime(cancellable) {}
     }
 
+    @Test func bulkArchiveDeletionPreservesActiveV2SessionsAndTheirPersistedMembership() async {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let archive = V2ArchiveStore()
+        let viewModel = makeViewModel(client: client, storage: storage, archiveStore: archive)
+        apply(snapshot(sessionID: "active", title: "Active", status: .running, revision: 1, archived: true), to: viewModel)
+        apply(snapshot(sessionID: "finished", title: "Finished", status: .completed, revision: 1, archived: true), to: viewModel)
+
+        viewModel.deleteAllArchivedSessions()
+        await waitUntil { viewModel.archivedSessions.map(\.id) == ["active"] }
+
+        #expect(viewModel.archivedSessions.map(\.id) == ["active"])
+        #expect(storage.registry.archivedSessionIDs == ["active"])
+        #expect(archive.archivedSessionIDs == ["active"])
+        #expect(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId) == ["finished"])
+    }
+
     private func makeViewModel(
         client: FakePickyAgentClient,
         storage: PickyRegistrySessionProjectionStorage,

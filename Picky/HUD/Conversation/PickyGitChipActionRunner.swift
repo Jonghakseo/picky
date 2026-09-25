@@ -107,8 +107,8 @@ enum PickyGitChipActionRunner {
             // anyway, surface the misconfiguration rather than silently
             // doing nothing.
             environment.deliverFailureNotification(
-                "Git chip action is empty",
-                "Open Settings → Pickle to configure the command."
+                L10n.t("hud.gitAction.empty"),
+                L10n.t("hud.gitAction.configure")
             )
             return
         }
@@ -137,7 +137,7 @@ enum PickyGitChipActionRunner {
             }
         } catch {
             environment.deliverFailureNotification(
-                "Git chip action failed",
+                L10n.t("hud.gitAction.failed"),
                 error.localizedDescription
             )
         }
@@ -151,8 +151,8 @@ enum PickyGitChipActionRunner {
         let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmedCwd.isEmpty else {
             environment.deliverFailureNotification(
-                "Git chip action failed",
-                "This Pickle has no working directory, so the shell command cannot run."
+                L10n.t("hud.gitAction.failed"),
+                L10n.t("hud.gitAction.noFolder")
             )
             return
         }
@@ -160,7 +160,7 @@ enum PickyGitChipActionRunner {
             try environment.runShell(command, trimmedCwd)
         } catch {
             environment.deliverFailureNotification(
-                "Git chip action failed",
+                L10n.t("hud.gitAction.failed"),
                 error.localizedDescription
             )
         }

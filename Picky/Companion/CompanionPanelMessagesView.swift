@@ -182,7 +182,7 @@ struct CompanionPanelMessagesView: View {
     private var directMessageComposer: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .bottom, spacing: 8) {
-                TextField("Message Picky…", text: $draftMessage, axis: .vertical)
+                TextField(L10n.t("quickInput.placeholder.main"), text: $draftMessage, axis: .vertical)
                     .textFieldStyle(.plain)
                     .pickyFont(size: 11.5, weight: .medium)
                     .foregroundColor(DS.Colors.textPrimary)

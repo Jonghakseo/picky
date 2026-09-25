@@ -129,7 +129,7 @@ struct PickyGitChipActionRunnerTests {
         )
         #expect(viewModel.steerCalls.isEmpty)
         #expect(viewModel.followUpCalls.isEmpty)
-        #expect(env.failureNotifications.first?.title == "Git chip action is empty")
+        #expect(env.failureNotifications.first?.title == L10n.t("hud.gitAction.empty"))
     }
 }
 

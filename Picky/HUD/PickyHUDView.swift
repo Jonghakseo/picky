@@ -478,7 +478,7 @@ struct PickyHUDView: View {
                     .animation(.easeOut(duration: 0.12), value: isCardResizeHandleVisible)
                     .offset(resizeHandleOffset)
                 }
-                .accessibilityHint("Drag the corner to resize this Pickle card. Double-click to reset the size.")
+                .accessibilityHint(L10n.t("hud.card.resize.help"))
 
                 if utilityPanelIsOpen {
                     PickyHUDUtilityPanelResizeGrip(

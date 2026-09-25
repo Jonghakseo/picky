@@ -256,17 +256,17 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         if onCopyText != nil {
-            let item = NSMenuItem(title: "Copy Text", action: #selector(copyTextClicked), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.t("hud.extensionMessage.copy"), action: #selector(copyTextClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }
         if onEditText != nil {
-            let item = NSMenuItem(title: "Edit in Composer", action: #selector(editTextClicked), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.t("hud.message.editInComposer"), action: #selector(editTextClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }
         if onOpenAsReport != nil {
-            let item = NSMenuItem(title: "Open as Report", action: #selector(openAsReportClicked), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.t("hud.extensionMessage.openAsReport"), action: #selector(openAsReportClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }

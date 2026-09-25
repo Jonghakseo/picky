@@ -191,7 +191,7 @@ struct PickyConversationMarkdownText: View {
                 HStack(spacing: 4) {
                     Image(systemName: "ellipsis")
                         .pickyFont(size: 8, weight: .bold)
-                    Text("+\(omittedCount) more line\(omittedCount == 1 ? "" : "s")")
+                    Text(L10n.t("hud.markdown.omittedLines", omittedCount))
                         .font(PickyHUDTypography.metaMedium)
                 }
                 .foregroundColor(DS.Colors.textTertiary)

@@ -1394,8 +1394,8 @@ struct PickyHUDDockRailView: View {
                 onDockHandleDragEnded()
             }
         }
-        .accessibilityLabel("HUD dock handle")
-        .accessibilityHint("Drag to move the Pickle dock. Crossing the middle of the screen switches the dock edge. Double-click to toggle between vertical and horizontal layouts.")
+        .accessibilityLabel(L10n.t("dock.handle.accessibility"))
+        .accessibilityHint(L10n.t("dock.handle.help"))
     }
 
     /// Frosted-glass panel that hosts the dock icons. Uses .ultraThinMaterial

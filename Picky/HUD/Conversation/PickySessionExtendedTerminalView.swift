@@ -129,7 +129,7 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
         self.cwd = cwd
         self.fontScalePersister = fontScalePersister
         self.fontScale = PickyFontScales.clamped(fontScalePersister?.load() ?? PickyFontScales.defaults.terminal)
-        self.statusText = "Ready in \(Self.compactPath(PickyShellTerminalCommand.workingDirectory(from: cwd)))"
+        self.statusText = L10n.t("hud.localTerminal.ready", Self.compactPath(PickyShellTerminalCommand.workingDirectory(from: cwd)))
     }
 
     /// The process host is an adapter boundary so lifecycle behavior can be
@@ -149,13 +149,13 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
         isClosed = true
         guard didStartProcess, let terminalView else {
             self.terminalView = nil
-            statusText = "Shell closed"
+            statusText = L10n.t("hud.localTerminal.closed")
             return
         }
         terminalView.processDelegate = nil
         terminalView.terminatePickyProcess()
         self.terminalView = nil
-        statusText = "Shell closed"
+        statusText = L10n.t("hud.localTerminal.closed")
     }
 
     func processExited(exitCode: Int32?) {
@@ -163,15 +163,15 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
         terminalView = nil
         didStartProcess = false
         if let exitCode {
-            statusText = "Shell exited with code \(exitCode)"
+            statusText = L10n.t("hud.localTerminal.exitCode", exitCode)
         } else {
-            statusText = "Shell exited"
+            statusText = L10n.t("hud.localTerminal.exited")
         }
     }
 
     func updateTerminalTitle(_ terminalTitle: String) {
         guard !terminalTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        statusText = "Shell in \(Self.compactPath(PickyShellTerminalCommand.workingDirectory(from: cwd)))"
+        statusText = L10n.t("hud.localTerminal.running", Self.compactPath(PickyShellTerminalCommand.workingDirectory(from: cwd)))
     }
 
     private func startProcessIfNeeded(in terminalView: any PickyTerminalProcessHosting) {
@@ -276,7 +276,7 @@ private struct PickySessionExtendedTerminalContentView: View {
             Image(systemName: "terminal.fill")
                 .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.successText)
-            Text(verbatim: "Local Terminal")
+            Text(verbatim: L10n.t("hud.localTerminal.title"))
                 .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
             Text(terminalSession.model.statusText)
@@ -311,11 +311,11 @@ private struct PickySessionExtendedTerminalContentView: View {
             Image(systemName: "rectangle.on.rectangle.slash")
                 .pickyFont(size: 19, weight: .semibold)
                 .foregroundColor(DS.Colors.textTertiary)
-            Text(verbatim: "Terminal is already visible in another HUD panel")
+            Text(verbatim: L10n.t("hud.localTerminal.visibleElsewhere"))
                 .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
                 .multilineTextAlignment(.center)
-            Button("Show This Terminal") {
+            Button(L10n.t("hud.localTerminal.show")) {
                 commands.activateShellTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
             }
             .pickyFont(size: 11, weight: .semibold)

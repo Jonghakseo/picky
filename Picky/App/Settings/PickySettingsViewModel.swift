@@ -119,7 +119,7 @@ final class PickySettingsViewModel: ObservableObject {
         role: PickyShortcutRole
     ) -> Bool {
         guard newSpec.isValid else {
-            validationError = "That shortcut combination isn’t valid."
+            validationError = L10n.t("settings.shortcut.invalid")
             return false
         }
         let shortcuts: [PickyShortcutRole: PickyShortcutSpec] = [
@@ -132,7 +132,7 @@ final class PickySettingsViewModel: ObservableObject {
             role: role,
             shortcuts: shortcuts
         ) != nil {
-            validationError = "That shortcut conflicts with another action."
+            validationError = L10n.t("settings.shortcut.conflict")
             return false
         }
         validationError = nil

@@ -79,7 +79,7 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
             existing.model.refresh = snapshotProvider
             existing.model.update(title: title, snapshot: snapshotProvider(), scope: scope)
             existing.model.connect(updates: updates)
-            existing.panel.title = "Tool history — \(title)"
+            existing.panel.title = L10n.t("hud.toolHistory.windowTitle", title)
             NSApp.activate(ignoringOtherApps: true)
             existing.panel.orderFrontRegardless()
             existing.panel.makeKey()
@@ -95,7 +95,7 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Tool history — \(title)"
+        panel.title = L10n.t("hud.toolHistory.windowTitle", title)
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false

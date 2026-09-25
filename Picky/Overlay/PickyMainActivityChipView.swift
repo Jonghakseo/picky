@@ -104,7 +104,7 @@ private struct PickyMainActivityChipView: View {
                 .stroke(colors.border, lineWidth: 0.8)
         )
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(model.isRunning ? "Running" : "Completed")
+        .accessibilityValue(model.isRunning ? L10n.t("hud.conversation.status.running") : L10n.t("hud.activity.summary.completed"))
     }
 
     @ViewBuilder
@@ -136,7 +136,7 @@ private struct PickyMainActivityWaitingChipView: View {
         HStack(spacing: 6) {
             Image(systemName: "questionmark.circle.fill")
                 .pickyFont(size: 11, weight: .semibold)
-            Text("질문 대기 중")
+            Text(L10n.t("overlay.question.waiting"))
                 .pickyFont(size: 11, weight: .medium)
         }
         .foregroundStyle(PickyMainActivityChipColors.waiting.label)
@@ -150,7 +150,7 @@ private struct PickyMainActivityWaitingChipView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(PickyMainActivityChipColors.waiting.border, lineWidth: 0.8)
         )
-        .accessibilityLabel("Question waiting for an answer")
+        .accessibilityLabel(L10n.t("overlay.question.waiting.accessibility"))
     }
 }
 

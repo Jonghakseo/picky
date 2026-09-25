@@ -120,13 +120,13 @@ struct CompanionPanelFeedbackView: View {
         var errorDescription: String? {
             switch self {
             case .notRegularFile(let filename):
-                return "Cannot attach \(filename). Choose a regular file."
+                return L10n.t("feedback.attachment.notRegular", filename)
             case .fileTooLarge(let filename, let byteCount):
-                return "\(filename) is \(Self.format(byteCount)); max is \(Self.format(MediaAttachmentPolicy.maxFileBytes))."
+                return L10n.t("feedback.attachment.tooLarge", filename, Self.format(byteCount), Self.format(MediaAttachmentPolicy.maxFileBytes))
             case .totalTooLarge(let byteCount):
-                return "Selected files are \(Self.format(byteCount)); total max is \(Self.format(MediaAttachmentPolicy.maxTotalBytes))."
+                return L10n.t("feedback.attachment.totalTooLarge", Self.format(byteCount), Self.format(MediaAttachmentPolicy.maxTotalBytes))
             case .tooMany:
-                return "Attach up to \(MediaAttachmentPolicy.maxCount) files."
+                return L10n.t("feedback.attachment.tooMany", Int64(MediaAttachmentPolicy.maxCount))
             }
         }
 
@@ -143,9 +143,9 @@ struct CompanionPanelFeedbackView: View {
         var id: String { rawValue }
         var displayName: String {
             switch self {
-            case .off: "Off"
-            case .logsOnly: "Logs only"
-            case .full: "Full bundle"
+            case .off: L10n.t("feedback.diagnostics.off")
+            case .logsOnly: L10n.t("feedback.diagnostics.logs")
+            case .full: L10n.t("feedback.diagnostics.full")
             }
         }
 
@@ -189,7 +189,7 @@ struct CompanionPanelFeedbackView: View {
             fieldLabel("feedback.field.category")
             Picker("feedback.field.category", selection: $category) {
                 ForEach(PickyFeedbackCategory.allCases) { value in
-                    Text("\(value.emoji) \(value.displayName)").tag(value)
+                    Text("\(value.emoji) \(L10n.t("feedback.category.\(value.rawValue)"))").tag(value)
                 }
             }
             .labelsHidden()
@@ -300,6 +300,8 @@ struct CompanionPanelFeedbackView: View {
                     .background(Circle().fill(DS.Colors.surface2.opacity(0.75)))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(L10n.t("feedback.attachment.remove", attachment.filename))
+            .help(L10n.t("feedback.attachment.remove", attachment.filename))
             .disabled(status == .sending)
             .hoverAffordance()
         }
@@ -317,8 +319,8 @@ struct CompanionPanelFeedbackView: View {
 
     private var attachmentPicker: some View {
         VStack(alignment: .leading, spacing: 5) {
-            fieldLabel("Attach diagnostics")
-            Picker("Attach diagnostics", selection: $attachmentScope) {
+            fieldLabel("feedback.diagnostics.title")
+            Picker("feedback.diagnostics.title", selection: $attachmentScope) {
                 ForEach(AttachmentScope.allCases) { value in
                     Text(value.displayName).tag(value)
                 }
@@ -337,11 +339,11 @@ struct CompanionPanelFeedbackView: View {
     private var attachmentScopeHint: String {
         switch attachmentScope {
         case .off:
-            return "No file attached. Useful for ideas or quick notes."
+            return L10n.t("feedback.diagnostics.offHint")
         case .logsOnly:
-            return "Attaches stderr, OSLog, metadata, and tool-name-only activity. User chat, tool arguments, and tool results are never included."
+            return L10n.t("feedback.diagnostics.logsHint")
         case .full:
-            return "Logs only + sanitized settings.json (API keys masked). Chat/tool arguments/results are still excluded."
+            return L10n.t("feedback.diagnostics.fullHint")
         }
     }
 
@@ -453,9 +455,9 @@ struct CompanionPanelFeedbackView: View {
         NSApp.activate(ignoringOtherApps: true)
 
         let panel = NSOpenPanel()
-        panel.title = "Attach files"
-        panel.message = "Choose up to \(MediaAttachmentPolicy.maxCount) files."
-        panel.prompt = "Attach"
+        panel.title = L10n.t("feedback.attachment.panelTitle")
+        panel.message = L10n.t("feedback.attachment.choose", Int64(MediaAttachmentPolicy.maxCount))
+        panel.prompt = L10n.t("feedback.attachment.attach")
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
@@ -540,7 +542,7 @@ struct CompanionPanelFeedbackView: View {
         if unique.count <= 2 {
             return unique.joined(separator: " ")
         }
-        return unique.prefix(2).joined(separator: " ") + " +\(unique.count - 2) more."
+        return unique.prefix(2).joined(separator: " ") + " " + L10n.t("feedback.attachment.moreNotices", Int64(unique.count - 2))
     }
 
     private static func formatBytes(_ byteCount: Int) -> String {

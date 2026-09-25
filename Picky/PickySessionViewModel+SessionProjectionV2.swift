@@ -28,7 +28,7 @@ extension PickySessionListViewModel {
     /// fixed by asking the daemon again.
     func reconnectStalledProjectionOwner(sessionID: String) {
         pickySessionLog("projection stalled, reconnecting owner session=\(sessionID)")
-        lastError = "Picky lost sync with this Pickle and is reconnecting."
+        lastError = L10n.t("hud.session.sync.reconnecting")
         projectionOwnerReconnector?.reconnectProjectionOwner(sessionID: sessionID)
     }
 
@@ -45,7 +45,7 @@ extension PickySessionListViewModel {
                             requestId: requestID
                         ))
                     } catch {
-                        viewModel.lastError = "Session projection recovery failed: \(error.localizedDescription)"
+                        viewModel.lastError = L10n.t("hud.session.sync.recoveryFailed", error.localizedDescription)
                         viewModel.handleSessionProjectionRecoveryFailure(commandID: requestID)
                         return
                     }
@@ -68,7 +68,7 @@ extension PickySessionListViewModel {
         origin: PickySessionRecoveryCoordinator.SnapshotOrigin
     ) {
         guard let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage else {
-            lastError = "Session projection v2 requires registry storage"
+            lastError = L10n.t("hud.session.sync.storageUnavailable")
             return
         }
         let previous = sessionProjectionStorage.session(id: snapshot.sessionId)
@@ -83,7 +83,7 @@ extension PickySessionListViewModel {
         )
         let shouldArchive = archiveStore.manuallyArchivedSessionIDs.contains(snapshot.sessionId)
         guard let card = storage.applyProjectionSnapshot(snapshot, archived: shouldArchive) else {
-            lastError = "Discarded invalid session projection snapshot"
+            lastError = L10n.t("hud.session.sync.invalidSnapshot")
             return
         }
         let isActive = storage.registry.activeSessionIDs.contains(snapshot.sessionId)
@@ -128,7 +128,7 @@ extension PickySessionListViewModel {
 
     private func applySessionProjectionTransaction(_ transaction: PickySessionProjectionTransaction) {
         guard let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage else {
-            lastError = "Session projection v2 requires registry storage"
+            lastError = L10n.t("hud.session.sync.storageUnavailable")
             return
         }
         let previous = sessionProjectionStorage.session(id: transaction.sessionId)
@@ -137,7 +137,7 @@ extension PickySessionListViewModel {
         synchronizeArchiveIntent(for: transaction)
         let shouldArchive = archiveStore.manuallyArchivedSessionIDs.contains(transaction.sessionId)
         guard let card = storage.applyProjectionTransaction(transaction, archived: shouldArchive) else {
-            lastError = "Discarded session projection transaction without bootstrap"
+            lastError = L10n.t("hud.session.sync.missingInitialState")
             return
         }
         let isActive = storage.registry.activeSessionIDs.contains(transaction.sessionId)

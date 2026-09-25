@@ -63,11 +63,11 @@ enum ShellCommandInstaller {
 
         var errorDescription: String? {
             switch self {
-            case .missingCliEntry(let url): return "Picky CLI is missing inside the app bundle at \(url.path). Reinstall Picky.app or rebuild it with the bundled agentd."
-            case .writeFailed(let message): return "Failed to write the picky CLI wrapper: \(message)"
-            case .osascriptFailed(let message): return "Failed to install with administrator privileges: \(message)"
-            case .removeFailed(let message): return "Failed to uninstall the picky CLI wrapper: \(message)"
-            case .unsupportedFileURL(let url): return "Unsupported install path: \(url.path)"
+            case .missingCliEntry(let url): return L10n.t("shellCommand.error.missing", url.path)
+            case .writeFailed(let message): return L10n.t("shellCommand.error.write", message)
+            case .osascriptFailed(let message): return L10n.t("shellCommand.error.admin", message)
+            case .removeFailed(let message): return L10n.t("shellCommand.error.remove", message)
+            case .unsupportedFileURL(let url): return L10n.t("shellCommand.error.path", url.path)
             }
         }
     }

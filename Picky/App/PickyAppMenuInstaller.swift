@@ -28,9 +28,9 @@ enum PickyAppMenuInstaller {
         // Keep the app menu key-equivalent-free; quitting stays behind the explicit
         // companion footer confirmation instead of becoming an accidental global shortcut.
         mainMenu.addTopLevelMenu(title: appName, submenu: makeAppMenu(updaterController: updaterController))
-        mainMenu.addTopLevelMenu(title: "Edit", submenu: makeEditMenu())
-        mainMenu.addTopLevelMenu(title: "View", submenu: makeViewMenu())
-        mainMenu.addTopLevelMenu(title: "Window", submenu: makeWindowMenu())
+        mainMenu.addTopLevelMenu(title: L10n.t("menu.edit"), submenu: makeEditMenu())
+        mainMenu.addTopLevelMenu(title: L10n.t("menu.view"), submenu: makeViewMenu())
+        mainMenu.addTopLevelMenu(title: L10n.t("menu.window"), submenu: makeWindowMenu())
         return mainMenu
     }
 
@@ -41,12 +41,12 @@ enum PickyAppMenuInstaller {
     /// within their SwiftUI view tree so detached panels keep their per-panel
     /// zoom — the responder chain only reaches here when no panel handles it.
     private static func makeViewMenu() -> NSMenu {
-        let menu = NSMenu(title: "View")
-        let fontSizeItem = NSMenuItem(title: "Font Size", action: nil, keyEquivalent: "")
-        let fontSizeMenu = NSMenu(title: "Font Size")
+        let menu = NSMenu(title: L10n.t("menu.view"))
+        let fontSizeItem = NSMenuItem(title: L10n.t("menu.fontSize"), action: nil, keyEquivalent: "")
+        let fontSizeMenu = NSMenu(title: L10n.t("menu.fontSize"))
         fontSizeMenu.addItem(
             menuItem(
-                title: "Increase",
+                title: L10n.t("menu.fontSize.increase"),
                 action: Selector(("pickyIncreaseAppFontScale:")),
                 keyEquivalent: "=",
                 modifiers: .command
@@ -54,7 +54,7 @@ enum PickyAppMenuInstaller {
         )
         fontSizeMenu.addItem(
             menuItem(
-                title: "Decrease",
+                title: L10n.t("menu.fontSize.decrease"),
                 action: Selector(("pickyDecreaseAppFontScale:")),
                 keyEquivalent: "-",
                 modifiers: .command
@@ -62,7 +62,7 @@ enum PickyAppMenuInstaller {
         )
         fontSizeMenu.addItem(
             menuItem(
-                title: "Actual Size",
+                title: L10n.t("menu.fontSize.reset"),
                 action: Selector(("pickyResetAppFontScale:")),
                 keyEquivalent: "0",
                 modifiers: .command
@@ -80,7 +80,7 @@ enum PickyAppMenuInstaller {
         // (disabling the item while a check is in progress) automatically.
         if let controller = updaterController {
             let item = NSMenuItem(
-                title: "Check for Updates…",
+                title: L10n.t("menu.checkUpdates"),
                 action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
                 keyEquivalent: ""
             )
@@ -91,10 +91,10 @@ enum PickyAppMenuInstaller {
     }
 
     private static func makeEditMenu() -> NSMenu {
-        let menu = NSMenu(title: "Edit")
+        let menu = NSMenu(title: L10n.t("menu.edit"))
         menu.addItem(
             menuItem(
-                title: "Undo",
+                title: L10n.t("menu.undo"),
                 action: Selector(("undo:")),
                 keyEquivalent: "z",
                 modifiers: .command
@@ -102,7 +102,7 @@ enum PickyAppMenuInstaller {
         )
         menu.addItem(
             menuItem(
-                title: "Redo",
+                title: L10n.t("menu.redo"),
                 action: Selector(("redo:")),
                 keyEquivalent: "z",
                 modifiers: [.command, .shift]
@@ -110,7 +110,7 @@ enum PickyAppMenuInstaller {
         )
         menu.addItem(
             menuItem(
-                title: "Redo",
+                title: L10n.t("menu.redo"),
                 action: Selector(("redo:")),
                 keyEquivalent: "y",
                 modifiers: .command
@@ -119,7 +119,7 @@ enum PickyAppMenuInstaller {
         menu.addItem(.separator())
         menu.addItem(
             menuItem(
-                title: "Cut",
+                title: L10n.t("menu.cut"),
                 action: #selector(NSText.cut(_:)),
                 keyEquivalent: "x",
                 modifiers: .command
@@ -127,7 +127,7 @@ enum PickyAppMenuInstaller {
         )
         menu.addItem(
             menuItem(
-                title: "Copy",
+                title: L10n.t("menu.copy"),
                 action: #selector(NSText.copy(_:)),
                 keyEquivalent: "c",
                 modifiers: .command
@@ -135,7 +135,7 @@ enum PickyAppMenuInstaller {
         )
         menu.addItem(
             menuItem(
-                title: "Paste",
+                title: L10n.t("menu.paste"),
                 action: #selector(NSText.paste(_:)),
                 keyEquivalent: "v",
                 modifiers: .command
@@ -144,7 +144,7 @@ enum PickyAppMenuInstaller {
         menu.addItem(.separator())
         menu.addItem(
             menuItem(
-                title: "Select All",
+                title: L10n.t("menu.selectAll"),
                 action: #selector(NSStandardKeyBindingResponding.selectAll(_:)),
                 keyEquivalent: "a",
                 modifiers: .command
@@ -154,10 +154,10 @@ enum PickyAppMenuInstaller {
     }
 
     private static func makeWindowMenu() -> NSMenu {
-        let menu = NSMenu(title: "Window")
+        let menu = NSMenu(title: L10n.t("menu.window"))
         menu.addItem(
             menuItem(
-                title: "Close Window",
+                title: L10n.t("menu.closeWindow"),
                 action: #selector(NSWindow.performClose(_:)),
                 keyEquivalent: "w",
                 modifiers: .command

@@ -197,9 +197,9 @@ struct ContextUsageBatteryDisplay {
             self.textColor = DS.Colors.successText
         }
         if let tokens = usage.tokens {
-            self.tooltip = "Context usage: \(tokens.formatted())/\(usage.contextWindow.formatted()) tokens (\(Int(clamped.rounded()))%)"
+            self.tooltip = L10n.t("hud.context.tokensAndPercent", tokens.formatted(), usage.contextWindow.formatted(), Int(clamped.rounded()))
         } else {
-            self.tooltip = "Context usage: \(Int(clamped.rounded()))% of \(usage.contextWindow.formatted()) tokens"
+            self.tooltip = L10n.t("hud.context.percent", Int(clamped.rounded()), usage.contextWindow.formatted())
         }
     }
 }

@@ -147,9 +147,9 @@ struct PickyHUDDockIconView: View {
             // must keep going until the user releases.
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: archiveFeedback.isPressing)
-        .accessibilityLabel("Preview \(session.title)")
+        .accessibilityLabel(L10n.t("dock.pickle.open.accessibility", session.title))
         .accessibilityValue(accessibilityStatusLabel)
-        .accessibilityHint("Click to open or close. Press and hold for 1.5 seconds to archive this Pickle.")
+        .accessibilityHint(L10n.t("dock.pickle.interaction.help"))
         .accessibilityAddTraits(.isButton)
     }
 
@@ -162,13 +162,13 @@ struct PickyHUDDockIconView: View {
 
     private var accessibilityStatusLabel: String {
         switch session.status {
-        case .queued: "Queued"
-        case .running: "Running"
-        case .waiting_for_input: "Waiting for input"
-        case .blocked: "Blocked"
-        case .completed: "Completed"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
+        case .queued: L10n.t("hud.state.queued")
+        case .running: L10n.t("hud.conversation.status.running")
+        case .waiting_for_input: L10n.t("hud.event.awaitingInput")
+        case .blocked: L10n.t("hud.state.blocked")
+        case .completed: L10n.t("hud.activity.summary.completed")
+        case .failed: L10n.t("hud.conversation.status.failed")
+        case .cancelled: L10n.t("hud.state.cancelled")
         }
     }
 
@@ -199,8 +199,8 @@ struct PickyHUDDockIconView: View {
                     .stroke(DS.Colors.background, lineWidth: 1.2)
             )
             .shadow(color: DS.Colors.notification.opacity(0.45), radius: 2.5, x: 0, y: 0)
-            .accessibilityLabel("Unread")
-            .accessibilityHint("This Pickle has updates you haven't seen yet.")
+            .accessibilityLabel(L10n.t("dock.unread"))
+            .accessibilityHint(L10n.t("dock.pickle.unread.help"))
     }
 
     private func commandShortcutBadge(label: String) -> some View {

@@ -55,11 +55,11 @@ final class ShortcutCaptureRecorder: ObservableObject {
         var hint: String {
             switch self {
             case .pushToTalk:
-                return "Press a shortcut. e.g. ⌃⌥, or ⌃⌥+space."
+                return L10n.t("shortcut.capture.pttHint")
             case .quickInput:
-                return "Press a shortcut. Tap the same modifier twice for a double-tap, or hold modifiers + key for a combo."
+                return L10n.t("shortcut.capture.quickInputHint")
             case .focusPickle:
-                return "Press left and right Command together, double-tap a modifier, or hold modifiers + key."
+                return L10n.t("shortcut.capture.focusHint")
             }
         }
     }
@@ -260,7 +260,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
            let previous = lastModifierPressAt,
            now.timeIntervalSince(previous) <= Self.doubleTapWindow {
             draftSpec = .doubleTapModifier(newlyPressed)
-            statusMessage = "Captured as a double-tap."
+            statusMessage = L10n.t("shortcut.capture.doubleTap")
             lastModifierPressKey = []
             lastModifierPressAt = nil
             return
@@ -279,8 +279,8 @@ final class ShortcutCaptureRecorder: ObservableObject {
             // Pickle additionally accepts the left/right Command chord.
             draftSpec = nil
             statusMessage = allowance == .focusPickle
-                ? "Add a key, tap the modifier again, or press the other Command."
-                : "Add a key, or tap the same modifier once more."
+                ? L10n.t("shortcut.capture.pendingCommand")
+                : L10n.t("shortcut.capture.pendingModifier")
         }
     }
 
@@ -297,7 +297,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
         let normalized = modifierFlags.intersection([.shift, .control, .option, .command, .function])
 
         guard PickyShortcutKeyCodeMap.label(for: keyCode) != nil else {
-            statusMessage = "This key can’t be used as a shortcut. Try another one."
+            statusMessage = L10n.t("shortcut.capture.unsupported")
             return
         }
 

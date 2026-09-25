@@ -122,7 +122,7 @@ struct PickyAgentBubbleView: View {
     private var displayText: String {
         if let text = message.text, !text.isEmpty { return text }
         if let errorMessage = message.errorMessage, !errorMessage.isEmpty { return errorMessage }
-        if let question = message.question { return question.prompt ?? question.title ?? "Input requested" }
+        if let question = message.question { return question.prompt ?? question.title ?? L10n.t("hud.question.requested") }
         return ""
     }
 }
@@ -141,7 +141,7 @@ struct PickyNotifyBubbleView: View {
                     Image(systemName: notifyType.iconName)
                         .pickyFont(size: 10.5, weight: .semibold)
                         .foregroundColor(notifyType.tintColor)
-                    Text("Pi extension")
+                    Text(L10n.t("hud.extension.label"))
                         .font(PickyHUDTypography.minimumSemibold)
                         .foregroundColor(DS.Colors.textSecondary)
                     Text(notifyType.label)
@@ -211,9 +211,9 @@ struct PickyNotifyBubbleView: View {
 private extension PickyExtensionNotifyType {
     var label: String {
         switch self {
-        case .info: return "Info"
-        case .warning: return "Warning"
-        case .error: return "Error"
+        case .info: return L10n.t("hud.extension.info")
+        case .warning: return L10n.t("hud.extension.warning")
+        case .error: return L10n.t("hud.extension.error")
         }
     }
 

@@ -1572,7 +1572,7 @@ struct CompanionPanelSettingsView: View {
     private var dockSizePresetPicker: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
             fieldLabel("settings.field.dockSize")
-            Picker("Dock size", selection: $viewModel.settings.hudDockSizePreset) {
+            Picker(L10n.t("settings.field.dockSize"), selection: $viewModel.settings.hudDockSizePreset) {
                 ForEach(PickyHUDDockSizePreset.allCases) { preset in
                     Text(preset.displayName).tag(preset)
                 }

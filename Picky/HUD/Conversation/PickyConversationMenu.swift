@@ -31,7 +31,7 @@ struct PickyConversationMenu: View {
     var canCompact: Bool { session.canRequestDockCompaction }
 
     var body: some View {
-        Section("QUICK") {
+        Section("hud.menu.section.quick") {
             Button("hud.menu.openTerminal") {
                 viewModel.openTerminalOverlay(sessionID: session.id)
             }
@@ -59,12 +59,12 @@ struct PickyConversationMenu: View {
             .disabled(!canSyncFromPiSession)
         }
 
-        Section("SETTINGS") {
+        Section("hud.menu.section.settings") {
             Toggle("hud.menu.notifyMainOnCompletion", isOn: notifyMainOnCompletionBinding)
             Toggle("hud.menu.notifyMacOSOnCompletion", isOn: notifyMacOSOnCompletionBinding)
         }
 
-        Section("SESSION") {
+        Section("hud.menu.section.session") {
             Button("hud.menu.duplicate") {
                 Task { try? await viewModel.duplicate(sessionID: session.id) }
             }
@@ -84,6 +84,7 @@ struct PickyConversationMenu: View {
                 Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: session.id) }
             }
             .disabled(!canStop)
+            .help(L10n.t("hud.menu.stopSession.help"))
 
             Button("hud.menu.archive") {
                 if let onArchive {

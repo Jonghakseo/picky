@@ -40,9 +40,9 @@ enum PickyTerminalOverlayError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .alreadyRunning:
-            return "Pi terminal is already open for this session."
+            return L10n.t("terminal.alreadyOpen")
         case .failedToStart(let message):
-            return "Failed to open Pi terminal: \(message)"
+            return L10n.t("terminal.openFailed", message)
         }
     }
 }
@@ -616,7 +616,7 @@ final class PickyTerminalProcessDelegate: NSObject, LocalProcessTerminalViewDele
 
 @MainActor
 final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandling {
-    @Published private(set) var statusText = "Starting pi --session…"
+    @Published private(set) var statusText = L10n.t("terminal.starting")
     /// Live zoom multiplier for the SwiftTerm grid font. Bound to
     /// `PickyFontScales.minimum/maximum` and rounded to one decimal so ⌘+ taps
     /// don't drift. Persisted via `fontScalePersister` whenever the user changes it.
@@ -673,9 +673,9 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
 
     func prepare() throws {
         guard FileManager.default.fileExists(atPath: sessionFilePath) else {
-            throw PickyTerminalOverlayError.failedToStart("Session file does not exist: \(sessionFilePath)")
+            throw PickyTerminalOverlayError.failedToStart(L10n.t("terminal.sessionFileMissing", sessionFilePath))
         }
-        statusText = "Attached to \(compactPath(sessionFilePath))"
+        statusText = L10n.t("terminal.attached", compactPath(sessionFilePath))
     }
 
     func attach(_ terminalView: LocalProcessTerminalView) {
@@ -718,9 +718,9 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
         startedProcessID = nil
         startedProcessIdentity = nil
         if let exitCode {
-            statusText = "Pi terminal exited with code \(exitCode). Close to sync the session card."
+            statusText = L10n.t("terminal.exitedWithCode", Int64(exitCode))
         } else {
-            statusText = "Pi terminal closed. Close to sync the session card."
+            statusText = L10n.t("terminal.exited")
         }
         let callbacks = actualProcessExitCallbacks
         actualProcessExitCallbacks.removeAll()
@@ -744,13 +744,13 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
 
     func updateTerminalTitle(_ terminalTitle: String) {
         guard !terminalTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        statusText = "Attached to \(compactPath(sessionFilePath))"
+        statusText = L10n.t("terminal.attached", compactPath(sessionFilePath))
     }
 
     private func startProcessIfNeeded(in terminalView: any PickyTerminalProcessHosting) {
         guard !didStartProcess else { return }
         if !processStartGate.isOpen {
-            statusText = "Waiting for the previous Pi terminal to close…"
+            statusText = L10n.t("terminal.waitingForPrevious")
         }
         processStartGate.runWhenOpen { [weak self, weak terminalView] in
             guard let self,
@@ -758,7 +758,7 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
                   !self.isClosed,
                   self.terminalView === terminalView,
                   !self.didStartProcess else { return }
-            self.statusText = "Attached to \(self.compactPath(self.sessionFilePath))"
+            self.statusText = L10n.t("terminal.attached", self.compactPath(self.sessionFilePath))
             let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: self.sessionFilePath, cwd: self.cwd)
             terminalView.startPickyProcess(
                 executable: "/bin/zsh",
@@ -768,7 +768,7 @@ final class PickyTerminalModel: ObservableObject, PickyTerminalProcessEventHandl
             )
             let processID = terminalView.processID
             guard processID > 0 else {
-                self.statusText = "Pi terminal failed to start. Close and try again."
+                self.statusText = L10n.t("terminal.startFailed")
                 self.exitSync.markExited()
                 return
             }
@@ -810,7 +810,7 @@ struct PickyTerminalOverlayView: View {
                         .truncationMode(.middle)
                 }
                 Spacer()
-                Text("⌘W / close syncs once")
+                Text("terminal.closeHint")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundColor(DS.Colors.textTertiary)
             }
@@ -835,11 +835,11 @@ struct PickyTerminalOverlayView: View {
     /// without taking layout space or showing focus rings.
     private var zoomKeyboardShortcuts: some View {
         ZStack {
-            Button("Zoom In") { model.zoomIn() }
+            Button("terminal.zoomIn") { model.zoomIn() }
                 .keyboardShortcut("=", modifiers: .command)
-            Button("Zoom Out") { model.zoomOut() }
+            Button("terminal.zoomOut") { model.zoomOut() }
                 .keyboardShortcut("-", modifiers: .command)
-            Button("Reset Zoom") { model.resetZoom() }
+            Button("terminal.resetZoom") { model.resetZoom() }
                 .keyboardShortcut("0", modifiers: .command)
         }
         .opacity(0)

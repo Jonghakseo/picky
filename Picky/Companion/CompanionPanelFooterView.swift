@@ -189,8 +189,8 @@ struct CompanionPanelAppearancePicker: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            iconButton(systemName: "sun.max.fill", target: .light, accessibilityLabel: "Use light appearance")
-            iconButton(systemName: "moon.fill", target: .dark, accessibilityLabel: "Use dark appearance")
+            iconButton(systemName: "sun.max.fill", target: .light, accessibilityLabel: L10n.t("appearance.light.accessibility"))
+            iconButton(systemName: "moon.fill", target: .dark, accessibilityLabel: L10n.t("appearance.dark.accessibility"))
         }
     }
 

@@ -426,11 +426,11 @@ enum PickyPiOAuthLoginError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .daemon(let message): message
-        case .disconnected: "picky-agentd disconnected during Pi OAuth."
-        case .timedOut: "Timed out waiting for picky-agentd OAuth response."
-        case .invalidURL(let value): "Pi OAuth returned an invalid URL: \(value)"
-        case .browserOpenFailed(let value): "Could not open the Pi OAuth URL: \(value)"
-        case .browserLoginUnavailable: "This Pi provider does not offer browser-based OAuth login."
+        case .disconnected: L10n.t("settings.oauth.disconnected")
+        case .timedOut: L10n.t("settings.oauth.timedOut")
+        case .invalidURL(let value): L10n.t("settings.oauth.invalidURL", value)
+        case .browserOpenFailed(let value): L10n.t("settings.oauth.browserOpenFailed", value)
+        case .browserLoginUnavailable: L10n.t("settings.oauth.browserUnavailable")
         }
     }
 }

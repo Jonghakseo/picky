@@ -539,7 +539,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                     )
                     .opacity(isCommandShortcutHintVisible ? 0 : 1)
                     .allowsHitTesting(false)
-                    .accessibilityLabel("\(unreadCount) unread")
+                    .accessibilityLabel(L10n.t("dock.group.unreadCount", unreadCount))
             }
         }
         .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)

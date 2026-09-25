@@ -18,9 +18,9 @@ enum QuickInputRecipientProjection: Equatable {
     var prompt: String {
         switch self {
         case .main:
-            "Message Picky…"
+            L10n.t("quickInput.placeholder.main")
         case .pickle(_, let label):
-            "Message \(label)…"
+            L10n.t("quickInput.placeholder.pickle", label)
         }
     }
 
@@ -236,8 +236,8 @@ struct QuickInputPanelView: View {
         }
         .buttonStyle(.plain)
         .disabled(isSendDisabled)
-        .accessibilityLabel("Send")
-        .accessibilityValue(viewModel.isSending ? "Sending" : "")
+        .accessibilityLabel(L10n.t("hud.composer.submit.send"))
+        .accessibilityValue(viewModel.isSending ? L10n.t("common.sending") : "")
     }
 
     private var closeButton: some View {
@@ -250,7 +250,7 @@ struct QuickInputPanelView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.escape, modifiers: [])
-        .accessibilityLabel("Close")
+        .accessibilityLabel(L10n.t("common.close"))
     }
 
     private var isSendDisabled: Bool {
@@ -521,7 +521,7 @@ private struct QuickInputHistoryCard: View {
                     .allowsHitTesting(false)
                 }
             }
-            .accessibilityLabel("Recent conversation")
+            .accessibilityLabel(L10n.t("quickInput.recentConversation"))
             .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous))
             .background(QuickInputHistoryCardBackground(mode: effectiveBackgroundMode))
             // Negative padding lets the mask cover the solid card's shadow

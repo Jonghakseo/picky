@@ -75,8 +75,8 @@ struct PickyComposerAttachmentChipView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Remove attachment")
-            .accessibilityLabel("Remove attachment \(attachment.displayName)")
+            .help(L10n.t("hud.attachment.remove"))
+            .accessibilityLabel(L10n.t("hud.attachment.removeNamed", attachment.displayName))
             .hoverAffordance()
         }
         .padding(.leading, 4)

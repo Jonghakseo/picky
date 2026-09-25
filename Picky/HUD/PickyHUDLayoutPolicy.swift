@@ -995,12 +995,12 @@ enum PickyHUDExpandedContentPolicy {
 enum PickyHUDSummaryEventPolicy {
     static func label(for status: PickySessionStatus, hasReportArtifact: Bool) -> String {
         switch status {
-        case .completed: return hasReportArtifact ? "Report ready" : "Result"
-        case .failed: return "Failed"
-        case .cancelled: return "Cancelled"
-        case .blocked: return "Blocked"
-        case .waiting_for_input: return "Awaiting input"
-        case .running, .queued: return "Update"
+        case .completed: return hasReportArtifact ? L10n.t("hud.event.reportReady") : L10n.t("hud.event.result")
+        case .failed: return L10n.t("hud.conversation.status.failed")
+        case .cancelled: return L10n.t("hud.state.cancelled")
+        case .blocked: return L10n.t("hud.state.blocked")
+        case .waiting_for_input: return L10n.t("hud.event.awaitingInput")
+        case .running, .queued: return L10n.t("hud.event.update")
         }
     }
 

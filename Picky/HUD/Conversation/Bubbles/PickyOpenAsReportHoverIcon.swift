@@ -36,7 +36,7 @@ struct PickyOpenAsReportHoverIcon: View {
                 )
         }
         .buttonStyle(.plain)
-        .help("Open this message as report")
+        .help(L10n.t("hud.message.openReport.help"))
     }
 }
 

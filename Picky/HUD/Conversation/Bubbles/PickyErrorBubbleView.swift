@@ -50,9 +50,9 @@ struct PickyErrorBubbleView: View {
                 }
                 if let onRetry {
                     recoveryChip(
-                        "hud.error.retry",
+                        LocalizedStringKey(recoveryLabelKey),
                         systemImage: "arrow.clockwise",
-                        accessibilityLabelKey: "hud.error.retry.accessibilityLabel",
+                        accessibilityLabelKey: LocalizedStringKey(recoveryLabelKey + ".accessibilityLabel"),
                         color: DS.Colors.accentText,
                         action: onRetry
                     )
@@ -81,10 +81,13 @@ struct PickyErrorBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    static var retryLabel: String { L10n.t("hud.error.retry") }
+    private var recoveryLabelKey: String {
+        Self.isRecoverableRuntimeRace(errorMessage: message.errorMessage)
+            ? "hud.error.retry" : "hud.error.continue"
+    }
 
     var recoveryChipLabels: [String] {
-        onRetry == nil ? [] : [Self.retryLabel]
+        onRetry == nil ? [] : [L10n.t(recoveryLabelKey)]
     }
 
     // Pi SDK `Session.prompt()` re-checks `isStreaming` only before its first

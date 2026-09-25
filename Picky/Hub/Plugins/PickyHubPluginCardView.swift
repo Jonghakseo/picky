@@ -14,7 +14,6 @@ struct PickyHubPluginCardView: View {
     let onViewCronJobs: () -> Void
     let onSetupCronDaemon: () -> Void
     @FocusState.Binding var focusedControl: String?
-    @State private var isHoveringInstalledAction = false
 
     private var detailControlID: String { "\(item.id).detail" }
     private var actionControlID: String { "\(item.id).action" }
@@ -151,13 +150,12 @@ struct PickyHubPluginCardView: View {
 
     private var installedAction: some View {
         PickyHubButton(
-            title: isHoveringInstalledAction ? "hub.plugins.card.remove" : "hub.plugins.detail.installed",
+            title: "hub.plugins.card.remove",
             role: .danger,
             isBusy: item.isBusy,
             action: onRemove
         )
         .focused($focusedControl, equals: actionControlID)
-        .onHover { isHoveringInstalledAction = $0 }
         .accessibilityLabel(Text(L10n.t("hub.plugins.card.remove", item.title)))
     }
 

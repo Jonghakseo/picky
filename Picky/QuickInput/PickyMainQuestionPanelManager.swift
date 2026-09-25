@@ -150,7 +150,7 @@ final class PickyMainQuestionPanelManager {
                 return
             }
 
-            let message = error?.localizedDescription ?? "Failed to answer question"
+            let message = error?.localizedDescription ?? L10n.t("hud.question.sendFailed")
             print("⚠️ Failed to answer main extension UI request \(requestID): \(message)")
             self.viewModel.isSending = false
             self.viewModel.errorMessage = message

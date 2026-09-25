@@ -384,9 +384,9 @@ struct PickyConversationComposerView: View {
                 .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
         )
         .help(effectiveBashMode == .private
-            ? "Bash execution · output hidden from Pi context"
-            : "Bash execution · output added to Pi context")
-        .accessibilityLabel(effectiveBashMode == .private ? "Bash private mode" : "Bash mode")
+            ? L10n.t("hud.composer.bash.private.help")
+            : L10n.t("hud.composer.bash.shared.help"))
+        .accessibilityLabel(effectiveBashMode == .private ? L10n.t("hud.composer.bash.private.accessibility") : L10n.t("hud.composer.bash.accessibility"))
     }
 
     @ViewBuilder

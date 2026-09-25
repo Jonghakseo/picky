@@ -35,8 +35,8 @@ struct PickyAgentAnnotationOverlayView: View {
 
     private var accessibilitySummary: String {
         let labelTexts = annotationsForScreen.compactMap(\.label)
-        guard !labelTexts.isEmpty else { return "Screen guidance is visible." }
-        return "Screen guidance: \(labelTexts.joined(separator: ", "))."
+        guard !labelTexts.isEmpty else { return L10n.t("overlay.annotation.visible") }
+        return L10n.t("overlay.annotation.summary", labelTexts.joined(separator: ", "))
     }
 
     var body: some View {

@@ -151,13 +151,13 @@ struct PickyMainQuestionPanelView: View {
         Text("\(viewModel.currentStepIndex + 1) / \(questions.count)")
             .pickyFont(size: 10, weight: .medium)
             .foregroundStyle(DS.Colors.textSecondary)
-            .accessibilityLabel("Question \(viewModel.currentStepIndex + 1) of \(questions.count)")
+            .accessibilityLabel(L10n.t("hud.question.step", viewModel.currentStepIndex + 1, questions.count))
     }
 
     @ViewBuilder
     private var questionControls: some View {
         if questions.isEmpty {
-            Text("질문 내용이 없습니다.")
+            Text(L10n.t("hud.question.empty"))
                 .pickyFont(size: 11)
                 .foregroundStyle(DS.Colors.textSecondary)
         } else if let currentQuestion = viewModel.currentQuestion {
@@ -172,35 +172,35 @@ struct PickyMainQuestionPanelView: View {
                     .pickyFont(size: 10)
                     .foregroundStyle(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Answer delivery failed: \(errorMessage)")
+                    .accessibilityLabel(L10n.t("hud.question.deliveryFailed", errorMessage))
             } else if showsRequiredHint {
-                Text("필수 항목을 입력하세요")
+                Text(L10n.t("hud.question.required"))
                     .pickyFont(size: 10)
                     .foregroundStyle(DS.Colors.warningText)
             }
 
             HStack(spacing: DS.Spacing.sm) {
-                Text("esc 취소")
+                Text(L10n.t("hud.question.escape"))
                     .pickyFont(size: 10)
                     .foregroundStyle(DS.Colors.textPrimary.opacity(0.35))
                 Spacer(minLength: DS.Spacing.sm)
 
                 if viewModel.usesSteps, !viewModel.isFirstStep {
-                    Button("이전") { viewModel.goBack() }
+                    Button(L10n.t("hud.question.previous")) { viewModel.goBack() }
                         .controlSize(.small)
                 }
 
                 if viewModel.usesSteps, !viewModel.isLastStep {
-                    Button("다음") { viewModel.goNext() }
+                    Button(L10n.t("hud.question.next")) { viewModel.goNext() }
                         .buttonStyle(PickyMainQuestionSubmitButtonStyle())
                         .disabled(viewModel.isSending || !viewModel.isActionSubmittable)
-                        .accessibilityLabel("Next question")
+                        .accessibilityLabel(L10n.t("hud.question.next.accessibility"))
                 } else {
-                    Button("제출") { viewModel.submit() }
+                    Button(L10n.t("hud.question.submit")) { viewModel.submit() }
                         .buttonStyle(PickyMainQuestionSubmitButtonStyle())
                         .disabled(viewModel.isSending || !viewModel.isActionSubmittable)
-                        .accessibilityLabel("Submit answer")
-                        .accessibilityValue(viewModel.isSending ? "Sending" : "")
+                        .accessibilityLabel(L10n.t("hud.question.submit.accessibility"))
+                        .accessibilityValue(viewModel.isSending ? L10n.t("common.sending") : "")
                 }
             }
         }
@@ -236,14 +236,14 @@ struct PickyMainQuestionPanelView: View {
                     }
                     if question.allowsOther {
                         optionButton(
-                            label: "Other…",
+                            label: L10n.t("hud.question.other"),
                             description: nil,
                             selected: viewModel.formState.radioValues[key] == PickyAskUserQuestionFormState.otherSentinel,
                             selectionKind: .radio
                         ) {
                             viewModel.formState.selectRadio(question: question, index: index, value: PickyAskUserQuestionFormState.otherSentinel)
                         }
-                        TextField("Other…", text: binding(\PickyAskUserQuestionFormState.otherValues, key: key))
+                        TextField(L10n.t("hud.question.other"), text: binding(\PickyAskUserQuestionFormState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
                             .pickyFont(size: 11)
                             .disabled(viewModel.formState.radioValues[key] != PickyAskUserQuestionFormState.otherSentinel)
@@ -262,13 +262,13 @@ struct PickyMainQuestionPanelView: View {
                         }
                     }
                     if question.allowsOther {
-                        TextField("Other…", text: binding(\PickyAskUserQuestionFormState.otherValues, key: key))
+                        TextField(L10n.t("hud.question.other"), text: binding(\PickyAskUserQuestionFormState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
                             .pickyFont(size: 11)
                     }
                 }
             case .text:
-                TextField(question.placeholder ?? "Response…", text: binding(\PickyAskUserQuestionFormState.textValues, key: key))
+                TextField(question.placeholder ?? L10n.t("hud.question.responsePlaceholder"), text: binding(\PickyAskUserQuestionFormState.textValues, key: key))
                     .textFieldStyle(.roundedBorder)
                     .pickyFont(size: 11)
             }
@@ -319,7 +319,7 @@ struct PickyMainQuestionPanelView: View {
         .buttonStyle(.plain)
         .hoverAffordance()
         .accessibilityLabel(PickyBubbleMarkdown.displayString(for: label))
-        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityValue(selected ? L10n.t("common.selected") : L10n.t("common.notSelected"))
     }
 
     private func selectionSymbol(for kind: SelectionKind, selected: Bool) -> String {

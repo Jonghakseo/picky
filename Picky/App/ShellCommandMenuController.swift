@@ -52,23 +52,23 @@ final class ShellCommandMenuController: NSObject {
     ) {
         let status = ShellCommandInstaller.currentStatus(installPath: installPath, bundleURL: bundleURL)
         let alert = NSAlert()
-        alert.messageText = "Install \(installPath.lastPathComponent) shell command"
+        alert.messageText = L10n.t("shellCommand.install.title", installPath.lastPathComponent)
 
         switch status {
         case .notInstalled:
-            alert.informativeText = "Install a `\(installPath.lastPathComponent)` shell command at \(installPath.path) so terminals, Raycast, Hammerspoon, and cron can talk to Picky."
-            alert.addButton(withTitle: "Install")
-            alert.addButton(withTitle: "Cancel")
+            alert.informativeText = L10n.t("shellCommand.install.body", installPath.lastPathComponent, installPath.path)
+            alert.addButton(withTitle: L10n.t("shellCommand.install"))
+            alert.addButton(withTitle: L10n.t("common.cancel"))
             switch alert.runModal() {
             case .alertFirstButtonReturn:
                 runInstall(bundleURL: bundleURL, installPath: installPath)
             default: return
             }
         case .installedCurrent(let path):
-            alert.informativeText = "`\(installPath.lastPathComponent)` is already installed at \(path.path) and points at this Picky.app."
-            alert.addButton(withTitle: "Reinstall")
-            alert.addButton(withTitle: "Uninstall")
-            alert.addButton(withTitle: "Done")
+            alert.informativeText = L10n.t("shellCommand.current.body", installPath.lastPathComponent, path.path)
+            alert.addButton(withTitle: L10n.t("shellCommand.reinstall"))
+            alert.addButton(withTitle: L10n.t("shellCommand.uninstall"))
+            alert.addButton(withTitle: L10n.t("shellCommand.done"))
             switch alert.runModal() {
             case .alertFirstButtonReturn:
                 runInstall(bundleURL: bundleURL, installPath: installPath)
@@ -77,10 +77,10 @@ final class ShellCommandMenuController: NSObject {
             default: return
             }
         case .installedStale(let path, let pinned):
-            alert.informativeText = "`\(installPath.lastPathComponent)` is installed at \(path.path) but points at a different Picky.app:\n\(pinned)\n\nReinstall to point it at the running Picky.app, or uninstall."
-            alert.addButton(withTitle: "Reinstall")
-            alert.addButton(withTitle: "Uninstall")
-            alert.addButton(withTitle: "Cancel")
+            alert.informativeText = L10n.t("shellCommand.stale.body", installPath.lastPathComponent, path.path, pinned)
+            alert.addButton(withTitle: L10n.t("shellCommand.reinstall"))
+            alert.addButton(withTitle: L10n.t("shellCommand.uninstall"))
+            alert.addButton(withTitle: L10n.t("common.cancel"))
             switch alert.runModal() {
             case .alertFirstButtonReturn:
                 runInstall(bundleURL: bundleURL, installPath: installPath)
@@ -89,8 +89,8 @@ final class ShellCommandMenuController: NSObject {
             default: return
             }
         case .foreign(let path):
-            alert.informativeText = "A non-Picky file already exists at \(path.path). Picky will not overwrite it; please remove or rename it manually if you want to install the picky CLI here."
-            alert.addButton(withTitle: "OK")
+            alert.informativeText = L10n.t("shellCommand.conflict.body", path.path)
+            alert.addButton(withTitle: L10n.t("shellCommand.ok"))
             alert.runModal()
         }
     }
@@ -103,9 +103,9 @@ final class ShellCommandMenuController: NSObject {
             // handled silently on launch.
             setAutoInstallOptedOut(false)
             NotificationCenter.default.post(name: .pickyShellCommandStatusDidChange, object: nil)
-            showInfo("Installed `\(installPath.lastPathComponent)` at \(installed.path).\n\nIf this is the first install, restart your terminal so the new command is on PATH.")
+            showInfo(L10n.t("shellCommand.installed.body", installPath.lastPathComponent, installed.path))
         } catch {
-            showError("Install failed", error: error)
+            showError(L10n.t("shellCommand.installFailed"), error: error)
         }
     }
 
@@ -116,9 +116,9 @@ final class ShellCommandMenuController: NSObject {
             // launch-time auto-installer does not silently re-add it.
             setAutoInstallOptedOut(true)
             NotificationCenter.default.post(name: .pickyShellCommandStatusDidChange, object: nil)
-            showInfo("Removed `\(installPath.lastPathComponent)` from \(installPath.path).")
+            showInfo(L10n.t("shellCommand.removed.body", installPath.lastPathComponent, installPath.path))
         } catch {
-            showError("Uninstall failed", error: error)
+            showError(L10n.t("shellCommand.uninstallFailed"), error: error)
         }
     }
 
@@ -134,7 +134,7 @@ final class ShellCommandMenuController: NSObject {
         let alert = NSAlert()
         alert.messageText = "Picky CLI"
         alert.informativeText = message
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.t("shellCommand.ok"))
         alert.runModal()
     }
 
@@ -143,7 +143,7 @@ final class ShellCommandMenuController: NSObject {
         alert.messageText = title
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L10n.t("shellCommand.ok"))
         alert.runModal()
     }
 }

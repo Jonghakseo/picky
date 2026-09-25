@@ -100,6 +100,8 @@ struct PickyHubSettingsGroupingTests {
     @Test func ungrantedBrowserPermissionDispatchesToTheScreenContentOwner() throws {
         let action = PickyHubPermissionAction.resolve(target: .browserContent, isGranted: false)
         #expect(action == .requestScreenContent)
+        #expect(action.buttonTitleKey == "hub.settings.permission.request")
+        #expect(action.detailKey == "hub.settings.permission.request.detail")
 
         var openedSettingsURLs: [URL] = []
         var screenContentRequests = 0
@@ -114,6 +116,8 @@ struct PickyHubSettingsGroupingTests {
             target: .microphone,
             isGranted: false
         )
+        #expect(microphoneAction.buttonTitleKey == "hub.settings.permission.required")
+        #expect(microphoneAction.detailKey == "hub.settings.permission.detail")
         microphoneAction.perform(
             openSystemSettings: { openedSettingsURLs.append($0) },
             requestScreenContent: { screenContentRequests += 1 }

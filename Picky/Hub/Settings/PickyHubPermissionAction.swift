@@ -44,6 +44,20 @@ enum PickyHubPermissionAction: Equatable {
         }
     }
 
+    var buttonTitleKey: String {
+        switch self {
+        case .requestScreenContent: "hub.settings.permission.request"
+        case .openSystemSettings: "hub.settings.permission.required"
+        }
+    }
+
+    var detailKey: String {
+        switch self {
+        case .requestScreenContent: "hub.settings.permission.request.detail"
+        case .openSystemSettings: "hub.settings.permission.detail"
+        }
+    }
+
     func perform(
         openSystemSettings: (URL) -> Void,
         requestScreenContent: () -> Void

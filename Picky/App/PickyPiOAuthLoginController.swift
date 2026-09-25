@@ -103,8 +103,10 @@ final class PickyPiOAuthLoginController: ObservableObject {
             guard let self else { return }
             do {
                 let authStatus = try await runner.authStatus(for: provider)
+                guard !Task.isCancelled else { return }
                 statuses[provider] = Self.loginStatus(from: authStatus)
             } catch {
+                guard !Task.isCancelled else { return }
                 statuses[provider] = .failed(Self.presentableError(error))
             }
             tasks[provider] = nil
@@ -119,10 +121,13 @@ final class PickyPiOAuthLoginController: ObservableObject {
             guard let self else { return }
             do {
                 let authStatus = try await runner.signIn(provider: provider)
+                guard !Task.isCancelled else { return }
                 statuses[provider] = Self.loginStatus(from: authStatus)
             } catch is CancellationError {
+                guard !Task.isCancelled else { return }
                 statuses[provider] = .notConfigured
             } catch {
+                guard !Task.isCancelled else { return }
                 statuses[provider] = .failed(Self.presentableError(error))
             }
             tasks[provider] = nil
@@ -147,10 +152,13 @@ final class PickyPiOAuthLoginController: ObservableObject {
             guard let self else { return }
             do {
                 let authStatus = try await runner.signOut(provider: provider)
+                guard !Task.isCancelled else { return }
                 statuses[provider] = Self.loginStatus(from: authStatus)
             } catch is CancellationError {
+                guard !Task.isCancelled else { return }
                 statuses[provider] = .notConfigured
             } catch {
+                guard !Task.isCancelled else { return }
                 statuses[provider] = .failed(Self.presentableError(error))
             }
             tasks[provider] = nil
@@ -162,6 +170,7 @@ final class PickyPiOAuthLoginController: ObservableObject {
         tasks[provider]?.cancel()
         tasks[provider] = nil
         statuses[provider] = .notConfigured
+        refresh(provider: provider)
     }
 
     private func isBusy(_ provider: PickyPiOAuthLoginProvider) -> Bool {

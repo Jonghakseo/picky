@@ -40,7 +40,7 @@ UI chrome은 이 정보와 행동보다 앞에 나서지 않는다.
 1. 사용자 안전, 접근성, Picky의 제품 불변 조건
 2. Apple macOS Human Interface Guidelines와 시스템 동작
 3. 이 문서와 [PRINCIPLES.md](./PRINCIPLES.md)
-4. [TOKENS.md](./TOKENS.md)와 [COMPONENTS.md](./COMPONENTS.md)
+4. [TOKENS.md](./TOKENS.md), [COMPONENTS.md](./COMPONENTS.md), 제품 문구의 [UX_WRITING.md](./UX_WRITING.md)
 5. 외부 시각 레퍼런스
 
 `references/`의 문서는 영감과 비교 자료이며 Picky의 규범이 아니다.

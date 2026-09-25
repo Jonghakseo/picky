@@ -88,6 +88,7 @@ If Pi is mid-turn, the command first aborts the current turn and waits for it to
 
 When the user asks about a feature, start here before broad searching:
 
+- UX writing / labels / errors / localization: `design/UX_WRITING.md`, `.agents/skills/picky-ux-writing/SKILL.md`, `docs/i18n.md`, `Picky/Resources/Localizable.xcstrings`. Use the local `picky-ux-writing` skill when adding, changing, or auditing user-facing copy, including copy in new UI.
 - App lifecycle / menu bar / permissions: `Picky/PickyApp.swift`, `Picky/App/`, `Picky/Companion/CompanionPanel*.swift`
 - Settings / default cwd / local paths: `Picky/App/Settings/`, `Picky/App/Settings/PickySettingsStore.swift`
 - Voice / push-to-talk / dictation: `Picky/CompanionManager.swift`, `Picky/BuddyDictationManager.swift`, `Picky/Companion/Dictation/`

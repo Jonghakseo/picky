@@ -23,6 +23,7 @@ git rev-parse --show-toplevel
 | `<repo-root>/design/TOKENS.md` | color, typography, spacing, radius, material, shadow, motion, appearance |
 | `<repo-root>/design/COMPONENTS.md` | button, chip, card, Dock, Composer, bubble, panel, overlay 생성·변경 |
 | `<repo-root>/design/AUDIT.md` | 디자인 리뷰, 전체 검수, 일관성 점검, 우선순위 산정 |
+| `<repo-root>/design/UX_WRITING.md` | 라벨, 설명, 상태, 오류, 빈 화면, 접근성 문구 작성·검수. 로컬 `picky-ux-writing` 스킬을 함께 사용 |
 | `<repo-root>/design/references/APPLE-HIG.md` | macOS platform behavior, accessibility, material, control 가정 확인 |
 | `<repo-root>/design/references/DESIGN-apple.md` | Apple 웹 시각 언어와 비교할 때만. 규범이 아니라 참고 자료 |
 

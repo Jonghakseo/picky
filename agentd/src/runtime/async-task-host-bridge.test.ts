@@ -49,6 +49,29 @@ async function fixture(options: { early?: boolean; missing?: boolean } = {}) {
 const base = { contract: ASYNC_TASK_CONTRACT, requestId: "request-1", sessionId: "session-1", piSessionId: "pi-1", runtimeInstanceId: "runtime-1", providerId: "bash-async", providerInstanceId: "provider-1", providerRevision: 0, controlGeneration: 0 };
 
 describe("durable async task host", () => {
+  it.each(["close", "replace", "dispose"] as const)("invalidates admission before %s persistence and never revives its signal", async action => {
+    const f = await fixture();
+    const signal = f.bridge.admissionSignal;
+    expect(signal.aborted).toBe(false);
+    const entered = deferred(), release = deferred();
+    const save = f.store.save.bind(f.store);
+    vi.spyOn(f.store, "save").mockImplementationOnce(async state => {
+      entered.resolve(); await release.promise; return save(state);
+    });
+    const work = action === "close" ? f.bridge.closeAdmission() : action === "replace" ? f.bridge.bind("pi-2", ["bash_async"]) : f.bridge.dispose();
+    try {
+      expect(signal.aborted).toBe(true);
+      await entered.promise;
+      expect(f.bridge.admissionOpen).toBe(false);
+    } finally { release.resolve(); await work; }
+    if (action === "close") await f.bridge.reopenAdmission();
+    expect(signal.aborted).toBe(true);
+    if (action !== "dispose") {
+      expect(f.bridge.admissionSignal.aborted).toBe(false);
+      expect(f.bridge.admissionSignal).not.toBe(signal);
+    }
+  });
+
   it("reconciles missing snapshot resources as unknown, and saves tombstones before observer disposal", async () => {
     const f = await fixture();
     f.send({ type: "task-register", task: f.task(), providerRevision: 1 }); await f.bridge.drain();
@@ -103,6 +126,7 @@ describe("durable async task host", () => {
     const disk = await f.store.loadReadOnly("session-1");
     const projections: unknown[] = [];
     f.supervisor.on("sessionProjectionTransaction", (value) => projections.push(value));
+    const admissionSignal = f.bridge.admissionSignal;
     vi.spyOn(f.store, "save").mockRejectedValueOnce(new Error("disk full"));
     f.send({ type: "task-register", task: f.task(), providerRevision: 1 });
     await f.bridge.drain();
@@ -111,6 +135,7 @@ describe("durable async task host", () => {
     expect(await f.store.loadReadOnly("session-1")).toEqual(disk);
     expect(projections).toEqual([]);
     expect(f.bridge.coverage().tracking).toBe("unsupported");
+    expect(admissionSignal.aborted).toBe(true);
   });
   it("persists an abandon-before-register tombstone and never gives a late grant", async () => {
     const f = await fixture();

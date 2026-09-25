@@ -22,6 +22,15 @@ function deferred<T>() {
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.unstubAllEnvs(); });
+function completionText(request: unknown, taskId: string): string {
+  const context = request as { messages: Array<{ role: string; content: unknown }> };
+  const texts = context.messages.filter(message => message.role === "user").map(message =>
+    typeof message.content === "string" ? message.content : (message.content as Array<{ type: string; text?: string }>).filter(part => part.type === "text").map(part => part.text).join("\n"));
+  const matching = texts.filter(text => text.includes(`[bash_async ${taskId}]`));
+  expect(matching).toHaveLength(1);
+  return matching[0]!;
+}
+
 type ToolInput = { name: string; arguments: ToolCall["arguments"] };
 async function fixture(tool: ToolInput | ToolInput[]) {
   expect(VERSION).toBe("0.87.1");
@@ -165,7 +174,7 @@ it("holds actual bash admission until the approval is durable and consumes its r
   expect(await readFile(disk!.piSessionFilePath!, "utf8")).toContain(completionId);
   expect(f.projections.some(state => state.completionTickets?.[0]?.state === "processing")).toBe(true);
   expect(JSON.stringify(f.requests.at(-1))).not.toContain(completionId);
-  expect(JSON.stringify(f.requests.at(-1))).toContain("W0B_REAL_RESULT");
+  expect(completionText(f.requests.at(-1), disk!.asyncTasks![0]!.taskId)).toContain("\nW0B_REAL_RESULT\n");
   expect(disk?.finalAnswer).toBe("W0B acknowledged actual result");
   expect(await readFile(join(f.root, "actual-spawns"), "utf8")).toBe("spawn");
   expect(f.frames.filter(frame => frame.type === "completion-observed")).toHaveLength(1);
@@ -321,8 +330,8 @@ it("does not revive actual provider completion payloads when admission closes an
   expect(disk?.asyncControl?.controlGeneration).toBe(2);
 }, 15000);
 
-it("preserves an unobserved actual result during compaction and consumes it on explicit continuation", async () => {
-  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_COMPACTION_RESULT", timeout: 5 } });
+it.each([0, 31_000])("automatically consumes an actual result after held compaction without new input (hold %ims)", async holdMs => {
+  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_COMPACTION_RESULT; printf spawn >> compact-spawns", timeout: 5 } });
   const entered = deferred<void>(), release = deferred<void>();
   f.api.on("session_before_compact", async event => {
     entered.resolve(); await release.promise;
@@ -334,16 +343,70 @@ it("preserves an unobserved actual result during compaction and consumes it on e
   const compact = f.session.compact();
   await entered.promise;
   try {
-    await vi.waitFor(() => expect(f.events.some(event => event.type === "status" && event.status === "failed" && event.summary?.includes("admission"))).toBe(true), { timeout: 5000 });
+    await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("submitted"), { timeout: 5000 });
     expect(f.frames.filter(frame => frame.type === "completion-observed")).toEqual([]);
     expect((await f.store.loadReadOnly("session-sdk"))?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+    const started = performance.now();
+    // Real elapsed time crosses the former production deadline while SDK, IO and
+    // provider batching continue on their normal clocks. This does not signal readiness.
+    if (holdMs) await new Promise(resolve => setTimeout(resolve, holdMs));
+    console.log("W0B_COMPACTION_DURATION", JSON.stringify({ holdMs, elapsedMs: performance.now() - started }));
   } finally { release.resolve(); await compact; }
   await f.session.waitForIdle();
   console.log("W0B_COMPACTION_HELD_TRACE", JSON.stringify({ disk: await f.store.loadReadOnly("session-sdk"), requests: f.requests.length }));
-  await f.supervisor.followUp("session-sdk", "Consume the retained completion");
   await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled"), { timeout: 5000 });
-  expect(JSON.stringify(f.requests.at(-1))).toContain("W0B_COMPACTION_RESULT");
+  await f.drainEvents();
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(completionText(f.requests.at(-1), disk!.asyncTasks![0]!.taskId)).toContain("\nW0B_COMPACTION_RESULT\n");
+  expect(JSON.stringify(f.requests.at(-1))).not.toContain(disk!.completionTickets![0]!.completionId);
+  expect(f.requests).toHaveLength(3);
+  expect(disk).toMatchObject({ status: "completed", finalAnswer: "W0B acknowledged actual result", asyncWorkSummary: { canReleaseRuntime: true } });
+  expect(f.projections.at(-1)?.completionTickets?.[0]?.state).toBe("handled");
+  expect(f.frames.filter(frame => frame.type === "completion-observed")).toHaveLength(1);
+  expect(f.notifications).toHaveLength(1);
+  expect(await readFile(join(f.root, "compact-spawns"), "utf8")).toBe("spawn");
   expect(f.frames.filter(frame => frame.type === "task-register")).toHaveLength(1);
+  console.log("W0B_COMPACTION_AUTO_TRACE", JSON.stringify({ disk, request: f.requests.at(-1), frames: f.frames, projection: f.projections.at(-1) }));
+}, 45000);
+
+it.each(["abort", "close-reopen"])("prevents a later model call when %s wins during held compaction", async action => {
+  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_STOPPED_RESULT", timeout: 5 } });
+  const entered = deferred<void>(), release = deferred<void>();
+  f.api.on("session_before_compact", async event => {
+    entered.resolve(); await release.promise;
+    return { compaction: { summary: "Offline held compaction", firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore } };
+  });
+  await f.supervisor.followUp("session-sdk", "Start before stop");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("pending"), { interval: 5 });
+  await f.session.waitForIdle();
+  const compact = f.session.compact().catch(error => error as Error);
+  let stop: Promise<void> | undefined;
+  await entered.promise;
+  try {
+    await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("submitted"));
+    expect(f.requests).toHaveLength(2);
+    if (action === "abort") stop = f.handle.abort();
+    else {
+      await f.handle.asyncTasks!.closeAdmission();
+      await f.handle.asyncTasks!.control(f.handle.asyncTasks!.snapshot().tasks[0]!, "closeAdmission");
+      await f.handle.asyncTasks!.reopenAdmission();
+    }
+  } finally { release.resolve(); await compact; await stop; }
+  await f.session.waitForIdle(); await f.drainEvents();
+  expect(f.requests).toHaveLength(2);
+  expect(f.frames.filter(frame => frame.type === "completion-observed")).toHaveLength(0);
+  expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).not.toBe("handled");
+  if (action === "close-reopen") {
+    await f.supervisor.followUp("session-sdk", "New authorized generation");
+    await vi.waitFor(() => expect(f.requests).toHaveLength(3));
+    await f.session.waitForIdle(); await f.drainEvents();
+    const last = f.requests.at(-1) as { messages: Array<{ role: string; content: unknown }> };
+    expect(JSON.stringify(last.messages.filter(message => message.role === "user"))).not.toContain("W0B_STOPPED_RESULT");
+    // A submitted delivery may already have entered a model elsewhere. Closing
+    // admission preserves its evidence; only never-submitted tickets are suppressed.
+    expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("submitted");
+  }
+  console.log("W0B_COMPACTION_STOP_TRACE", JSON.stringify({ action, disk: await f.store.loadReadOnly("session-sdk"), requests: f.requests }));
 }, 15000);
 
 it("keeps a durably approved unknown registration non-releasable after owner loss and reload", async () => {

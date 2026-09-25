@@ -19,6 +19,16 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   private chain: Promise<void> = Promise.resolve();
   private queued = 0;
   private closed = false;
+  private admissionLifetime = new AbortController();
+  get admissionSignal(): AbortSignal { return this.admissionLifetime.signal; }
+  private invalidateAdmission(): void {
+    this.closed = true;
+    this.admissionLifetime.abort();
+  }
+  private openAdmissionLifetime(): void {
+    if (this.admissionLifetime.signal.aborted) this.admissionLifetime = new AbortController();
+    this.closed = false;
+  }
   private failed = false;
   private unsubscribe: () => void;
   private pending = new Map<string, { owner: AsyncTaskOwner; resolve: (value: ControlResult) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -29,7 +39,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
       const parsed = AsyncTaskHostMessageSchema.safeParse(data);
       if (!parsed.success || !["host-query", "provider-ready", "task-register", "registration-query", "registration-abandon", "task-update", "snapshot", "control-result"].includes(parsed.data.type)) return;
       if (!this.piSessionId) {
-        if (this.early.length >= 1024) { this.failed = true; this.closed = true; return; }
+        if (this.early.length >= 1024) { this.failed = true; this.invalidateAdmission(); return; }
         this.early.push(parsed.data);
       } else this.enqueue(parsed.data);
     });
@@ -37,7 +47,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   async bind(piSessionId: string, toolNames: string[] | undefined, bindingIdentity?: object): Promise<void> {
     if (this.piSessionId === piSessionId && this.bindingIdentity === bindingIdentity) return;
     const replacing = this.piSessionId !== undefined;
-    this.closed = true;
+    this.invalidateAdmission();
     if (replacing) {
       await this.markUnknown();
       this.runtimeInstanceId = randomUUID();
@@ -49,7 +59,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     await this.owner.transact((state) => ({ ...state, control: state.control ? { ...state.control, controlGeneration: state.control.controlGeneration + (replacing ? 1 : 0) } : { controlGeneration: 0, admissionState: "open", operations: [] } }));
     this.piSessionId = piSessionId;
     this.bindingIdentity = bindingIdentity;
-    this.closed = this.owner.read().control?.admissionState !== "open";
+    if (this.owner.read().control?.admissionState === "open" && !this.failed) this.openAdmissionLifetime();
     for (const message of this.early.splice(0)) this.enqueue(message);
     this.emitCoverage();
   }
@@ -61,7 +71,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   get generation(): number { return this.owner.read().control?.controlGeneration ?? 0; }
   get admissionOpen(): boolean { return !this.closed && !this.failed && this.owner.read().control?.admissionState === "open"; }
   async closeAdmission(): Promise<RuntimeAsyncTaskState> {
-    this.closed = true;
+    this.invalidateAdmission();
     const state = await this.owner.transact((current) => ({ ...current, control: { ...current.control, operations: current.control?.operations ?? [], admissionState: "closed", controlGeneration: (current.control?.controlGeneration ?? 0) + 1 } }));
     this.publish(state);
     return state;
@@ -69,7 +79,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   async reopenAdmission(): Promise<RuntimeAsyncTaskState> {
     if (this.failed) throw new Error("Async host requires reconciliation");
     const state = await this.owner.transact((current) => ({ ...current, control: { ...current.control, operations: current.control?.operations ?? [], admissionState: "open", controlGeneration: (current.control?.controlGeneration ?? 0) + 1 } }));
-    this.closed = false;
+    this.openAdmissionLifetime();
     this.publish(state);
     return state;
   }
@@ -87,7 +97,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   }
   /** Save conservative evidence before removing observers. Shutdown cannot manufacture exit. */
   async dispose(): Promise<void> {
-    this.closed = true;
+    this.invalidateAdmission();
     await this.drain();
     await this.markUnknown();
     this.unsubscribe();
@@ -104,10 +114,10 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     this.publish(state);
   }
   private enqueue(message: AsyncTaskHostMessage): void {
-    if (++this.queued > 1024) { this.queued--; this.failed = true; this.closed = true; this.emitCoverage(); return; }
+    if (++this.queued > 1024) { this.queued--; this.failed = true; this.invalidateAdmission(); this.emitCoverage(); return; }
     this.chain = this.chain.then(() => this.receive(message)).catch(() => {
       // No reply on failed persistence. Retrying/querying cannot mistake failure for permission.
-      this.failed = true; this.closed = true; this.emitCoverage();
+      this.failed = true; this.invalidateAdmission(); this.emitCoverage();
     }).finally(() => { this.queued--; });
   }
   private async receive(message: AsyncTaskHostMessage): Promise<void> {

@@ -61,10 +61,17 @@ export class AsyncTaskModelFence {
     const original = session.agent.streamFunction;
     this.originalStream = original;
     session.agent.streamFunction = async (model, context, options) => {
-      await this.settled;
-      await this.bridge.owner.beforeModelRequest?.();
-      const observed = this.observation;
-      if (!observed || observed.invalid || observed.generation !== this.bridge.generation || !this.bridge.admissionOpen || session.isCompacting) throw new Error("Async model admission closed or stale");
+      const admissionSignal = this.bridge.admissionSignal;
+      await this.waitWhileAdmitted(this.settled, admissionSignal, options?.signal);
+      await this.waitWhileAdmitted(this.bridge.owner.beforeModelRequest?.() ?? Promise.resolve(), admissionSignal, options?.signal);
+      const observed = this.requireCurrentObservation(admissionSignal);
+      // This request has not reached the provider. Manual compaction can overlap
+      // an extension-triggered prompt; wait for its public end event, not agent idle
+      // (the waiting request itself keeps the agent active).
+      await this.waitForCompaction(session, admissionSignal, options?.signal);
+      await this.waitWhileAdmitted(this.settled, admissionSignal, options?.signal);
+      if (options?.signal?.aborted) throw new Error("Async model admission aborted");
+      this.requireCurrentObservation(admissionSignal, observed, session.isCompacting);
       const cycle: AgentCycle = this.cycle ?? { cycleId: randomUUID(), runtimeInstanceId: this.bridge.runtimeInstanceId, phase: "responding", controlGeneration: observed.generation };
       const keys = new Set(observed.deliveries.flatMap((delivery) => delivery.completionIds.map((id) => asyncIdentity(delivery, id))));
       const state = await this.bridge.owner.transact((current) => {
@@ -78,10 +85,51 @@ export class AsyncTaskModelFence {
       this.emit({ type: "async_task_cycle", cycle, deliveries: observed.deliveries });
       // The durable processing intent is recoverable even if stop wins during save.
       // SDK agent_end reports rejection and returns its tickets to pending, never handled.
-      if (!this.bridge.admissionOpen || observed.generation !== this.bridge.generation || session.isCompacting) throw new Error("Async model admission invalidated before dispatch");
+      if (options?.signal?.aborted || admissionSignal.aborted || !this.bridge.admissionOpen || observed.generation !== this.bridge.generation || session.isCompacting) throw new Error("Async model admission invalidated before dispatch");
       return original(model, context, options);
     };
     this.wrappedStream = session.agent.streamFunction;
+  }
+  private requireCurrentObservation(signal: AbortSignal, observed = this.observation, compacting = false): RequestObservation {
+    if (!observed || observed.invalid || observed.generation !== this.bridge.generation || !this.bridge.admissionOpen || signal.aborted || compacting) throw new Error("Async model admission closed or stale");
+    return observed;
+  }
+  private async waitWhileAdmitted(work: Promise<void>, admissionSignal: AbortSignal, signal?: AbortSignal): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const finish = (error?: unknown) => {
+        admissionSignal.removeEventListener("abort", abort);
+        signal?.removeEventListener("abort", abort);
+        if (error) reject(error); else resolve();
+      };
+      const abort = () => finish(new Error("Async model admission aborted"));
+      admissionSignal.addEventListener("abort", abort, { once: true });
+      signal?.addEventListener("abort", abort, { once: true });
+      void work.then(() => finish(), error => finish(error));
+      if (admissionSignal.aborted || signal?.aborted) abort();
+    });
+  }
+  private async waitForCompaction(session: AgentSession, admissionSignal: AbortSignal, signal?: AbortSignal): Promise<void> {
+    if (admissionSignal.aborted || signal?.aborted) throw new Error("Async model admission aborted during compaction");
+    if (!session.isCompacting) return;
+    await new Promise<void>((resolve, reject) => {
+      let finished = false;
+      const finish = (error?: Error) => {
+        if (finished) return;
+        finished = true;
+        unsubscribe();
+        signal?.removeEventListener("abort", abort);
+        admissionSignal.removeEventListener("abort", abort);
+        if (error) reject(error); else resolve();
+      };
+      const abort = () => finish(new Error("Async model admission aborted during compaction"));
+      const unsubscribe = session.subscribe(event => {
+        if (event.type === "compaction_end") finish();
+      });
+      signal?.addEventListener("abort", abort, { once: true });
+      admissionSignal.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted || admissionSignal.aborted) abort();
+      else if (!session.isCompacting) finish();
+    });
   }
   onEvent(event: { type: string; messages?: unknown[] }): void {
     if (event.type === "compaction_start" || event.type === "compaction_end") { this.recordCompaction(event.type === "compaction_start"); return; }

@@ -140,7 +140,7 @@ it("fences an old completion after close and reopen, then admits a later authori
 }, 15_000);
 
 
-it("does not consume a result on a concurrent compacted branch and can process its retained payload afterwards", async () => {
+it("defers a never-admitted result until concurrent compaction ends", async () => {
   const f = await fixture();
   await f.handle.followUp({ text: "Seed transcript", imagePaths: [] });
   await f.session.waitForIdle();
@@ -154,17 +154,68 @@ it("does not consume a result on a concurrent compacted branch and can process i
   });
   const compact = f.session.compact();
   await Promise.race([entered, compact.then(() => { throw new Error("Compaction bypassed the test hold"); })]);
+  const delivery = f.session.sendCustomMessage(message, { triggerTurn: true });
   try {
-    await f.session.sendCustomMessage(message, { triggerTurn: true });
+    await vi.waitFor(() => expect(f.session.isStreaming).toBe(true));
     expect(f.requests).toHaveLength(1);
     expect(f.handle.asyncTasks!.snapshot().tickets[0]?.state).toBe("submitted");
   } finally { release(); await compact; }
-  await f.session.waitForIdle();
-  await f.session.sendCustomMessage(message, { triggerTurn: true });
+  await delivery;
   await f.session.waitForIdle();
   await vi.waitFor(() => expect(f.handle.asyncTasks!.snapshot().tickets[0]?.state).toBe("handled"));
   expect(f.requests).toHaveLength(2);
   expect(JSON.stringify(f.requests.at(-1))).toContain("RESULT compacting");
+}, 15_000);
+
+it.each(["held", "failed"] as const)("cancels compaction admission while the close save is %s", async (saveMode) => {
+  const f = await fixture();
+  await f.handle.followUp({ text: "Seed transcript", imagePaths: [] });
+  await f.session.waitForIdle();
+  const message = await f.completion(`close-${saveMode}`);
+  let enter!: () => void, release!: () => void, releaseSave!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const heldSave = new Promise<void>(resolve => { releaseSave = resolve; });
+  f.api.on("session_before_compact", async event => {
+    enter(); await held;
+    return { compaction: { summary: "Offline summary", firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore } };
+  });
+  const compact = f.session.compact();
+  await entered;
+  let delivered = false;
+  const delivery = f.session.sendCustomMessage(message, { triggerTurn: true }).finally(() => { delivered = true; });
+  const save = f.store.save.bind(f.store);
+  let saveEntered = false;
+  const saveSpy = vi.spyOn(f.store, "save").mockImplementation(async state => {
+    if (state.asyncControl?.admissionState === "closed") {
+      saveEntered = true;
+      if (saveMode === "failed") throw new Error("Close save unavailable");
+      await heldSave;
+    }
+    return save(state);
+  });
+  let closing: Promise<unknown> | undefined;
+  try {
+    await vi.waitFor(() => expect(f.session.isStreaming).toBe(true));
+    closing = f.handle.asyncTasks!.closeAdmission().catch(error => error);
+    await vi.waitFor(() => expect(saveEntered).toBe(true));
+    // Neither compaction nor the held save has been released. Cancellation must
+    // settle the SDK delivery now, without dispatching the completion to a model.
+    await vi.waitFor(() => expect(delivered).toBe(true));
+    expect(f.session.isCompacting).toBe(true);
+    expect(f.requests).toHaveLength(1);
+    expect(f.frames.filter(frame => frame.type === "completion-observed")).toHaveLength(0);
+    if (saveMode === "failed") expect(await closing).toMatchObject({ message: "Close save unavailable" });
+  } finally {
+    releaseSave();
+    await closing;
+    saveSpy.mockRestore();
+    release(); await compact; await delivery;
+  }
+  await f.handle.asyncTasks!.reopenAdmission();
+  await f.session.waitForIdle();
+  expect(f.requests).toHaveLength(1);
+  expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).not.toBe("handled");
 }, 15_000);
 
 it("persists late task exit despite the old-turn abort guard and ignores a replayed pending ticket after handling", async () => {

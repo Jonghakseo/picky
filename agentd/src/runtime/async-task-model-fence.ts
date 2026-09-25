@@ -49,6 +49,7 @@ export class AsyncTaskModelFence {
       });
     } };
   }
+  get currentCycleId(): string | undefined { return this.cycle?.cycleId; }
   runAuthorized<T>(work: () => T): T { return this.authorization.run(this.bridge.generation, work); }
   bind(session: AgentSession): void {
     if (this.session === session && session.agent.streamFunction === this.wrappedStream) return;
@@ -58,6 +59,7 @@ export class AsyncTaskModelFence {
     this.originalStream = original;
     session.agent.streamFunction = async (model, context, options) => {
       await this.settled;
+      await this.bridge.owner.beforeModelRequest?.();
       const observed = this.observation;
       if (!observed || observed.invalid || observed.generation !== this.bridge.generation || !this.bridge.admissionOpen || session.isCompacting) throw new Error("Async model admission closed or stale");
       const cycle: AgentCycle = this.cycle ?? { cycleId: randomUUID(), runtimeInstanceId: this.bridge.runtimeInstanceId, phase: "responding", controlGeneration: observed.generation };
@@ -99,8 +101,9 @@ export class AsyncTaskModelFence {
   }
   private recordCompaction(started: boolean): void {
     this.enqueuePersistence(() => this.bridge.owner.transact((current) => {
+      if (!current.cycle) return current;
       const cycle: AgentCycle = {
-        cycleId: current.cycle?.cycleId ?? randomUUID(), runtimeInstanceId: this.bridge.runtimeInstanceId,
+        cycleId: current.cycle.cycleId, runtimeInstanceId: this.bridge.runtimeInstanceId,
         controlGeneration: this.bridge.generation, phase: started ? "compacting" : this.cycle ? "responding" : "idle",
       };
       return { ...current, cycle };

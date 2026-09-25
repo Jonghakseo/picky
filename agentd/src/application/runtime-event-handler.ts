@@ -1,3 +1,4 @@
+import { shouldIgnoreAsyncCycleTerminal } from "../domain/async-work-aggregate.js";
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "../artifact-store.js";
 import { mergeArtifacts } from "../domain/artifacts.js";
 import { fileArtifactFromWrite } from "./file-artifacts.js";
@@ -33,6 +34,7 @@ interface RuntimeMessageJournal {
 }
 
 interface RuntimeEventHandlerDependencies {
+  reconcileAsyncWork?(sessionId: string): Promise<void>;
   getSession(sessionId: string): PickyAgentSession;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>, options?: { emitSession?: boolean }): Promise<void>;
   emitToolActivityUpdated(sessionId: string, tool: PickyToolActivity): void;
@@ -90,13 +92,24 @@ export class RuntimeEventHandler {
   private readonly pendingThinkingFlushes = new Map<string, PendingThinkingFlush>();
   private readonly activeThinkingFlushes = new Map<string, Promise<void>>();
   private readonly seenToolCallIds = new Map<string, Set<string>>();
+  private readonly failedTerminalEvents = new Map<string, Extract<RuntimeEvent, { type: "status" }>>();
   private readonly processedTerminalRuns = new Set<string>();
   private readonly manualTerminalCompactionStatuses = new Map<string, "cancelled" | "failed">();
   private readonly suppressedManualTerminalCompactions = new Set<string>();
 
   constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
 
+  assertTerminalPersistenceReady(sessionId: string): void {
+    if (this.failedTerminalEvents.has(sessionId)) throw new Error("Response persistence blocked; retryAsyncWorkPersistence required");
+  }
+
+  async retryTerminalPersistence(sessionId: string, apply: (event: Extract<RuntimeEvent, { type: "status" }>) => Promise<void> = (event) => this.handle(sessionId, event)): Promise<void> {
+    const event = this.failedTerminalEvents.get(sessionId);
+    if (event) await apply(event);
+  }
+
   resetAssistantDraft(sessionId: string): void {
+    this.assertTerminalPersistenceReady(sessionId);
     this.assistantDrafts.set(sessionId, "");
     this.processedTerminalRuns.delete(sessionId);
     this.thinkingDrafts.set(sessionId, "");
@@ -150,24 +163,26 @@ export class RuntimeEventHandler {
   // eslint-disable-next-line complexity -- This is the exhaustive runtime-event router; splitting it would duplicate ordering and terminal-state guards.
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     // Async obligations are already committed by their durable owner, including after turn abort.
-    if (event.type === "async_task_state" || event.type === "async_task_coverage" || event.type === "async_task_cycle") return;
+    if (event.type === "async_task_state" || event.type === "async_task_coverage" || event.type === "async_task_cycle" || event.type === "async_task_idle") return this.dependencies.reconcileAsyncWork?.(sessionId);
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
     if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
     if (event.type === "subagent_invocation") return this.dependencies.messageBuilder.recordSubagentInvocation?.(sessionId, event.invocation);
     if (event.type === "subagent_run_update") return this.dependencies.updateSubagentRuns?.(sessionId, event.update);
     if (event.type === "assistant_turn_start") {
-      if (this.dependencies.getSession(sessionId).status !== "completed") return;
-      await this.dependencies.onAssistantTurnStart?.(sessionId);
+      const session = this.dependencies.getSession(sessionId);
+      if (session.status !== "completed" && !(session.asyncWorkSummary && this.processedTerminalRuns.has(sessionId))) return;
+      if (session.status === "completed") await this.dependencies.onAssistantTurnStart?.(sessionId);
       this.resetAssistantDraft(sessionId);
       return this.dependencies.patchSession(sessionId, { status: "running", lastSummary: "Assistant turn started", finalAnswer: undefined, thinkingPreview: undefined });
     }
     if (event.type === "input_message") {
-      const currentStatus = this.dependencies.getSession(sessionId).status;
-      if (isTerminalStatus(currentStatus) && currentStatus !== "completed") return;
+      const session = this.dependencies.getSession(sessionId);
+      if (isTerminalStatus(session.status) && session.status !== "completed" && !hasUnsettledAsyncWork(session)) return;
       await this.drainPendingThinkingFlush(sessionId);
       return this.applyInputMessageEvent(sessionId, event);
     }
-    if (event.type !== "status" && isTerminalStatus(this.dependencies.getSession(sessionId).status)) return;
+    const current = this.dependencies.getSession(sessionId);
+    if (event.type !== "status" && isTerminalStatus(current.status) && !hasUnsettledAsyncWork(current)) return;
     if (event.type === "assistant_delta") {
       await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
@@ -190,8 +205,19 @@ export class RuntimeEventHandler {
       }
       const ignoredTransientBusy = this.isIgnoredTransientBusyStatus(sessionId, event);
       if (!ignoredTransientBusy && event.status === "waiting_for_input") this.dependencies.finishAssistantMessage?.(sessionId);
-      await this.applyStatusEvent(sessionId, event);
-      if (!ignoredTransientBusy && terminal && isTerminalStatus(this.dependencies.getSession(sessionId).status)) {
+      const finalizedBefore = this.dependencies.getSession(sessionId).asyncWorkSummary?.episode?.finalizedCycleId;
+      try {
+        await this.applyStatusEvent(sessionId, event);
+        const retained = this.failedTerminalEvents.get(sessionId);
+        if (terminal && !event.noTurnRan && retained?.cycleId === event.cycleId) this.failedTerminalEvents.delete(sessionId);
+      } catch (error) {
+        if (terminal && !event.noTurnRan && this.dependencies.getSession(sessionId).asyncWorkSummary) this.failedTerminalEvents.set(sessionId, event);
+        throw error;
+      }
+      const sessionAfter = this.dependencies.getSession(sessionId);
+      const finalizedCycle = event.cycleId !== undefined && event.cycleId !== finalizedBefore
+        && sessionAfter.asyncWorkSummary?.episode?.finalizedCycleId === event.cycleId;
+      if (!ignoredTransientBusy && terminal && !event.noTurnRan && (finalizedCycle || (!sessionAfter.asyncWorkSummary && isTerminalStatus(sessionAfter.status)))) {
         this.dependencies.finishAssistantMessage?.(sessionId);
         this.dependencies.finishAssistantRun?.(sessionId, event.finalAnswer);
       }
@@ -323,7 +349,8 @@ export class RuntimeEventHandler {
     const precompletedRuntimeTerminal = currentSession.status === "completed"
       && event.status === "completed"
       && !this.processedTerminalRuns.has(sessionId);
-    if (isTerminalStatus(currentSession.status) && !terminalCompactionUpdate && !precompletedRuntimeTerminal) {
+    if (terminal && shouldIgnoreAsyncCycleTerminal(currentSession, event.cycleId)) return;
+    if (isTerminalStatus(currentSession.status) && !hasUnsettledAsyncWork(currentSession) && !terminalCompactionUpdate && !precompletedRuntimeTerminal) {
       if (event.noTurnRan) this.dependencies.consumeNoTurnRanSessionStateRestore?.(sessionId);
       return;
     }
@@ -530,6 +557,7 @@ export class RuntimeEventHandler {
 
   private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {
     const request = mapExtensionUiRequest(rawRequest);
+    if (this.dependencies.getSession(sessionId).asyncWorkSummary && request.sessionId !== sessionId) return;
     if (!waitsForInput) {
       if (request.method === "setWidget") return;
       await this.dependencies.appendLog(sessionId, extensionUiLogLine(request));
@@ -685,4 +713,9 @@ function terminalToolPreview(status: string): string {
   if (status === "cancelled") return "Tool stopped because the session was cancelled.";
   if (status === "failed") return "Tool stopped because the session failed.";
   return "Tool stopped when the session ended.";
+}
+
+/** Tracked blocked work may still have a live response or a result-consumption cycle. */
+function hasUnsettledAsyncWork(session: PickyAgentSession): boolean {
+  return session.asyncWorkSummary !== undefined && session.asyncWorkSummary.episode?.settled !== true;
 }

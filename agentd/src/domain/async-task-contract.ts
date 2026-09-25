@@ -26,6 +26,10 @@ export const AsyncWorkSummarySchema = z.object({
   tracking: z.enum(["ready", "reconciling", "unsupported"]),
   activeRootCount: revision, pendingCompletionCount: revision, uncertainExecutionCount: revision,
   attentionCount: revision, workRevision: revision, canReleaseRuntime: z.boolean(),
+  episode: z.object({
+    id, settled: z.boolean(), finalizedCycleId: id.optional(),
+    outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
+  }).strict().refine((episode) => !episode.settled || !!episode.finalizedCycleId && !!episode.outcome, "Settled episode requires its finalized response").optional(),
 }).strict();
 
 // Kind is deliberately open; future providers retain their opaque bounded details.

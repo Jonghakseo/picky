@@ -42,6 +42,13 @@ describe("async task shared contract", () => {
     expect(AsyncTaskDetailSchema.safeParse({ ...value, tasks: [{ ...value.tasks[0], presence: "probablyDone" }] }).success).toBe(false);
   });
 
+  it("rejects settled episodes without response identity and outcome", () => {
+    const original = session();
+    for (const episode of [{ id: "cycle", settled: true }, { id: "", settled: false }, { id: "cycle", settled: false, finalizedCycleId: "" }]) {
+      expect(PickyAgentSessionSchema.safeParse({ ...original, asyncWorkSummary: { ...original.asyncWorkSummary, episode } }).success).toBe(false);
+    }
+  });
+
   it("keeps new attempts distinct when their display run ID is reused", () => {
     const value = detail();
     value.tasks.push({ ...value.tasks[0]!, taskId: "task-2", rootTaskId: "task-2" });
@@ -53,9 +60,11 @@ describe("async task shared contract", () => {
     try {
       const store = new SessionStore(directory);
       const after = session();
+      after.asyncWorkSummary!.episode = { id: "first-cycle", settled: false, finalizedCycleId: after.agentCycle!.cycleId, outcome: "completed" };
       await store.save(after);
       const loaded = await store.loadReadOnly(after.id);
       expect(loaded).toEqual(after);
+      expect(loaded?.asyncWorkSummary?.episode).toEqual(after.asyncWorkSummary?.episode);
       const before = { ...after, agentCycle: undefined, asyncWorkSummary: undefined, asyncTasks: undefined, completionTickets: undefined, asyncControl: undefined };
       const mutations = buildSessionProjectionMutations(before, after);
       expect(mutations.map((mutation) => mutation.type)).toEqual(["metaPatch", "asyncTaskDetailSet", "asyncControlSet"]);

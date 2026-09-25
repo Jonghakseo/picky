@@ -36,9 +36,14 @@ struct PickyAsyncTaskContractTests {
         let updated = try #require(storage.applyProjectionTransaction(transaction, archived: false))
         #expect(store.conversationStore === conversationStore)
         #expect(updated.completionTickets?.first?.state == .pending)
+        #expect(updated.asyncWorkSummary?.episode?.id == "cycle-1")
+        #expect(updated.asyncWorkSummary?.episode?.finalizedCycleId == updated.agentCycle?.cycleId)
+        #expect(updated.asyncWorkSummary?.episode?.settled == false)
         let summary = try #require(storage.sessionSummaryForCLI(id: card.id))
         #expect(summary.asyncTasks == snapshot.projection.asyncTasks)
         #expect(summary.asyncControl == snapshot.projection.asyncControl)
+        #expect(summary.asyncWorkSummary?.episode == updated.asyncWorkSummary?.episode)
+        #expect(loaded(store.metaStore.metadataState)?.asyncWorkSummary?.episode == updated.asyncWorkSummary?.episode)
         #expect(summary.agentCycle == snapshot.projection.agentCycle)
         let legacy = PickyRegistrySessionProjectionStorage()
         legacy.replaceAllSessions(active: [updated], archived: [])
@@ -109,6 +114,23 @@ struct PickyAsyncTaskContractTests {
                 try decoder.decode(PickyAsyncTaskDetail.self, from: JSONSerialization.data(withJSONObject: ["tasks": [invalid], "tickets": tickets]))
             }
         }
+    }
+
+    @Test func episodeRejectsMissingFinalizationAndInvalidIdentity() throws {
+        let decoder = JSONDecoder()
+        for json in [
+            #"{"id":"cycle","settled":true}"#,
+            #"{"id":"","settled":false}"#,
+            #"{"id":"cycle","settled":false,"finalizedCycleId":""}"#,
+            #"{"id":"cycle","settled":true,"finalizedCycleId":"cycle","outcome":"unknown"}"#
+        ] {
+            #expect(throws: (any Error).self) {
+                try decoder.decode(PickyAsyncWorkSummary.Episode.self, from: Data(json.utf8))
+            }
+        }
+        let data = Data(#"{"id":"first","settled":true,"finalizedCycleId":"last","outcome":"completed"}"#.utf8)
+        let value = try decoder.decode(PickyAsyncWorkSummary.Episode.self, from: data)
+        #expect(try decoder.decode(PickyAsyncWorkSummary.Episode.self, from: JSONEncoder().encode(value)) == value)
     }
 
     private func loaded<Value>(_ state: PickyProjectionSectionState<Value>) -> Value? {

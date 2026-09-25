@@ -1,7 +1,8 @@
+import { shouldIgnoreAsyncCycleTerminal } from "../domain/async-work-aggregate.js";
 import type { PickyActivitySummary, PickyAgentSession, PickyArtifact, PickySessionMessage, PickySessionProjectionMutation } from "../protocol.js";
-import { finalizeTerminalSession, type TerminalRuntimeStatusEvent, type TerminalTransientReset } from "../domain/terminal-session-finalization.js";
+import { buildSessionProjectionMutations, finalizeTerminalSession, type TerminalRuntimeStatusEvent, type TerminalTransientReset } from "../domain/terminal-session-finalization.js";
 export { buildSessionProjectionMutations } from "../domain/terminal-session-finalization.js";
-export { projectionCommitRevision, publishSessionProjectionCommit, sessionProjectionCommitMutations, type SessionCommit } from "./session-projection-commit-publisher.js";
+export { commitSessionProjection, projectionCommitRevision, publishSessionProjectionCommit, sessionProjectionCommitMutations, type SessionCommit } from "./session-projection-commit-publisher.js";
 import { cleanFinalAnswer } from "../domain/session-summary.js";
 import { hasActivity, zeroActivitySummary } from "../domain/activity-summary.js";
 import { projectionCommitRevision } from "./session-projection-commit-publisher.js";
@@ -19,6 +20,7 @@ export interface TerminalDurableCommitDependencies {
   turnActivity(sessionId: string): PickyActivitySummary | undefined;
   materialize(session: PickyAgentSession): Promise<{ artifacts: PickyArtifact[]; emittedArtifacts: PickyArtifact[] } | undefined>;
   save(session: PickyAgentSession): Promise<void>;
+  aggregateSession?(before: PickyAgentSession, proposed: PickyAgentSession, event: Extract<RuntimeEvent, { type: "status" }>): PickyAgentSession;
   setSession(sessionId: string, session: PickyAgentSession): void;
   rehydrateMessageSession(sessionId: string, messages: readonly PickySessionMessage[]): void;
   resetTerminalAssistantDraft(sessionId: string): void;
@@ -53,6 +55,7 @@ export async function finalizeTerminalOperation(
   await dependencies.runExclusiveMessageOperation(sessionId, async () => {
     await dependencies.runSessionWrite(sessionId, async () => {
       const before = dependencies.getSession(sessionId);
+      if (shouldIgnoreAsyncCycleTerminal(before, event.cycleId)) return;
       const messageSnapshot = dependencies.messageSnapshot(sessionId);
       const runtimeSnapshot = dependencies.runtimeSnapshot(sessionId);
       const now = new Date().toISOString();
@@ -96,7 +99,7 @@ export async function finalizeTerminalOperation(
           now,
         })
         : provisional;
-      const after = { ...finalization.nextSession, revision: projectionCommitRevision(before.revision ?? 0, finalization.mutations) };
+      const { after, mutations } = aggregateTerminalCommit(dependencies, before, finalization, event);
 
       // The one terminal persistence effect. No reset, projection event, or notification precedes it.
       await dependencies.save(after);
@@ -107,7 +110,7 @@ export async function finalizeTerminalOperation(
       await dependencies.publish(sessionId, {
         before,
         after,
-        mutations: finalization.mutations,
+        mutations,
         revision: after.revision ?? 0,
       }, Boolean(activitySnapshot), materialized?.emittedArtifacts ?? []);
       // Completion is produced exactly once from the durable terminal commit,
@@ -124,6 +127,17 @@ export async function finalizeTerminalOperation(
       }
     });
   });
+}
+
+function aggregateTerminalCommit(
+  dependencies: TerminalDurableCommitDependencies,
+  before: PickyAgentSession,
+  finalization: ReturnType<typeof finalizeTerminalSession>,
+  event: Extract<RuntimeEvent, { type: "status" }>,
+) {
+  const proposed = dependencies.aggregateSession?.(before, finalization.nextSession, event) ?? finalization.nextSession;
+  const mutations = proposed === finalization.nextSession ? finalization.mutations : buildSessionProjectionMutations(before, proposed);
+  return { after: { ...proposed, revision: projectionCommitRevision(before.revision ?? 0, mutations) }, mutations };
 }
 
 function applyTransientResets(
@@ -218,7 +232,7 @@ function stageTerminalMessages(
   const messages = journal
     .filter((message) => message.kind !== "agent_thinking")
     .map((message) => (
-      session.pendingExtensionUiRequest?.id === message.id
+      !session.asyncWorkSummary && session.pendingExtensionUiRequest?.id === message.id
         ? { ...message, cancelledAt: now }
         : structuredClone(message)
     ));

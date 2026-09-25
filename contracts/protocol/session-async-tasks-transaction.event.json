@@ -25,7 +25,13 @@
           "uncertainExecutionCount": 1,
           "attentionCount": 1,
           "workRevision": 2,
-          "canReleaseRuntime": false
+          "canReleaseRuntime": false,
+          "episode": {
+            "id": "cycle-1",
+            "settled": false,
+            "finalizedCycleId": "cycle-1",
+            "outcome": "completed"
+          }
         }
       }
     },

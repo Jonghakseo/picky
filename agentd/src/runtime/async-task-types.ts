@@ -9,6 +9,8 @@ export interface RuntimeAsyncTaskOwner {
   /** The callback is synchronous and runs inside the existing session write serializer. */
   transact(build: (current: RuntimeAsyncTaskState) => RuntimeAsyncTaskState): Promise<RuntimeAsyncTaskState>;
   read(): RuntimeAsyncTaskState;
+  /** Wait for the host event writer and reject an unresolved response-save failure. */
+  beforeModelRequest?(): Promise<void>;
 }
 export interface RuntimeAsyncTaskCoverage {
   runtimeInstanceId: string;
@@ -17,6 +19,7 @@ export interface RuntimeAsyncTaskCoverage {
   readyProviders: string[];
 }
 export type RuntimeAsyncTaskEvent =
+  | { type: "async_task_idle" }
   | { type: "async_task_state"; state: RuntimeAsyncTaskState }
   | { type: "async_task_coverage"; coverage: RuntimeAsyncTaskCoverage }
   | { type: "async_task_cycle"; cycle: AgentCycle; deliveries: AsyncCompletionDelivery[] };

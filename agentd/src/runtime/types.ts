@@ -149,7 +149,7 @@ export type RuntimeEvent =
    */
   | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string; turnActive?: boolean; asyncTasks?: AsyncCompletionDelivery }
   | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
-  | { type: "status"; status: RuntimeSessionStatus; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
+  | { type: "status"; status: RuntimeSessionStatus; cycleId?: string; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
   /**
    * Per-turn assistant text flush. Emitted when a turn ends with both assistant
    * text and tool calls so the supervisor can speak the text-so-far through TTS
@@ -270,6 +270,8 @@ export interface RuntimeSessionHandle {
    * leave this undefined and the supervisor treats it as not-compacting.
    */
   readonly isCompacting?: boolean;
+  /** SDK run/settled hooks and prompt preflight, separate from streaming. */
+  readonly hasPendingAsyncWork?: boolean;
   /**
    * Path to the on-disk Pi JSONL transcript backing this runtime session. Returns undefined
    * for runtimes that do not persist transcripts (e.g. mock). Callers use this to fork an

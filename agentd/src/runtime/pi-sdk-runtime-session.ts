@@ -123,6 +123,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private autocompleteQueryController: AbortController | undefined;
   private readonly subagentInvocationTracker = new SubagentInvocationTracker();
   private readonly writeFileMetadataByToolCallId = new Map<string, WriteFileMetadata>();
+  private asyncSettled = true;
   private disposed = false;
   private disposePromise?: Promise<void>;
 
@@ -637,6 +638,10 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return this.runtime.session.isStreaming;
   }
 
+  get hasPendingAsyncWork(): boolean {
+    return this.asyncFence !== undefined && (!this.asyncSettled || !this.runtime.session.isIdle || this.pendingPromptPreflightDeliveryIds.size > 0);
+  }
+
   get isCompacting(): boolean {
     return piIsCompacting(this.runtime.session);
   }
@@ -734,9 +739,18 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     this.unsubscribe = session.subscribe((event: unknown) => {
       const record = asRecord(event);
+      if (record.type === "agent_start" || record.type === "compaction_start") this.asyncSettled = false;
+      const cycleId = this.asyncFence?.currentCycleId;
       this.asyncFence?.onEvent({ type: String(record.type), ...(Array.isArray(record.messages) ? { messages: record.messages } : {}) });
       const runtimeEvent = this.runtimeEventFromPiEvent(event);
-      if (runtimeEvent) this.emit(runtimeEvent);
+      if (runtimeEvent) this.emit(runtimeEvent.type === "status" && cycleId ? { ...runtimeEvent, cycleId } : runtimeEvent);
+      if ((record.type === "agent_settled" || record.type === "compaction_end") && this.asyncFence) {
+        // Settled hooks have returned, but deferred actions may still be in preflight.
+        // Their tickets and the SDK/host queues remain completion obligations.
+        void this.asyncFence.drain().then(() => {
+          if (!this.disposed && this.runtime.session === session) { this.asyncSettled = session.isIdle; this.emit({ type: "async_task_idle" }); }
+        }).catch((error) => this.emit({ type: "log", line: `Async task idle persistence blocked: ${messageOf(error)}` }));
+      }
       // General pi's footer recomputes context usage on every render. It therefore advances at
       // intermediate transcript boundaries (assistant/tool-result message_end), not only when the
       // whole agent run becomes terminal. Mirror those stable boundaries here so Picky's HUD keeps
@@ -923,7 +937,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         return undefined;
       }
       if (runtimeEvent.status === "failed" && record.type === "agent_end" && lastAssistantStopReason(record.messages) === "error") {
-        this.deferTerminalError(runtimeEvent);
+        this.deferTerminalError({ ...runtimeEvent, ...(this.asyncFence?.currentCycleId ? { cycleId: this.asyncFence.currentCycleId } : {}) });
         return undefined;
       }
       this.cancelDeferredTerminalError();

@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- SessionSupervisor remains the single mutable session owner; scripts/check-architecture-rules.js enforces its no-growth ratchet. */
-import { asyncTaskRuntimeOptions } from "./application/async-task-coordinator.js";
+import { aggregateAsyncSession, finalizeAsyncCycle, publishAsyncWorkCompletion, retryAsyncWorkPersistence, asyncTaskRuntimeOptions } from "./application/async-task-coordinator.js";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { extractSessionLinkArtifacts } from "./artifact-store.js";
@@ -11,7 +11,7 @@ import { RuntimeDisposalGate } from "./application/runtime-disposal-gate.js";
 import type { ExternalPickleCompletionRequest } from "./application/pickle-completion-coordinator.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
-import { emitTerminalV1Compatibility, finalizeTerminalOperation, projectionCommitRevision, publishSessionProjectionCommit, sessionProjectionCommitMutations, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
+import { emitTerminalV1Compatibility, finalizeTerminalOperation, commitSessionProjection, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
 import { SubagentRunUpdater } from "./application/subagent-run-updater.js";
 import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
@@ -185,6 +185,7 @@ export class SessionSupervisor extends EventEmitter {
       emitUpdated: (sessionId, runs, seq) => this.chainEmit(sessionId, async () => { this.emit("subagentRunsUpdated", sessionId, runs, seq); }),
     });
     this.runtimeEventHandler = new RuntimeEventHandler({
+      reconcileAsyncWork: async (id) => { await this.commitSession(id, (session) => session); },
       getSession: (sessionId) => this.mustGet(sessionId),
       patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
       emitToolActivityUpdated: (sessionId, tool) => this.emit("toolActivityUpdated", sessionId, tool),
@@ -671,7 +672,7 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("pickle handoff resume queued", { sessionId: id, sourceSessionFilePath, sessionFilePath: newFilePath, cwd });
       const resume = this.runtime.resume?.bind(this.runtime);
       if (!resume) throw new Error("Runtime cannot resume handoff sessions");
-      const handle = await resume(newFilePath, { cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
+      const handle = await resume(newFilePath, { cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build), () => this.awaitAsyncResponsePersistence(id)) });
       if (this.mustGet(id).status === "cancelled") {
         await disposeRuntimeHandle(handle, "cancelled-handoff-resume");
         logAgentd("pickle handoff resume resolved after session was cancelled", { sessionId: id });
@@ -725,7 +726,7 @@ export class SessionSupervisor extends EventEmitter {
     try {
       await this.upsert(session);
       logAgentd("empty pickle session queued", { sessionId: id, cwd: pickleContext.cwd, contextId: context.id });
-      const handle = await this.runtime.prewarm({ cwd: pickleContext.cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
+      const handle = await this.runtime.prewarm({ cwd: pickleContext.cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build), () => this.awaitAsyncResponsePersistence(id)) });
       if (this.mustGet(id).status === "cancelled") {
         await disposeRuntimeHandle(handle, "cancelled-empty-pickle-prewarm");
         logAgentd("empty pickle prewarm resolved after session was cancelled", { sessionId: id });
@@ -806,7 +807,7 @@ export class SessionSupervisor extends EventEmitter {
         messages: session.messages?.length ?? 0,
         cwd,
       });
-      const handle = await this.runtime.resume(newFilePath, { cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
+      const handle = await this.runtime.resume(newFilePath, { cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build), () => this.awaitAsyncResponsePersistence(id)) });
       await this.attachRuntimeHandle(id, handle);
       pendingHandle.resolve(handle);
       logAgentd("pickle session duplicate ready", { sourceSessionId, newSessionId: id });
@@ -888,7 +889,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.upsert(session);
       logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
       this.runtimeEventHandler.resetAssistantDraft(id);
-      const handle = await this.runtime.create(prompt, { ...options.runtimeDefaults, cwd: context.cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build)) });
+      const handle = await this.runtime.create(prompt, { ...options.runtimeDefaults, cwd: context.cwd, sessionId: id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(id) === true, () => this.mustGet(id), (build) => this.commitSession(id, build), () => this.awaitAsyncResponsePersistence(id)) });
       if (this.mustGet(id).status === "cancelled") {
         await disposeRuntimeHandle(handle, "cancelled-runtime-create");
         logAgentd("runtime create resolved after session was cancelled", { sessionId: id });
@@ -1020,15 +1021,10 @@ export class SessionSupervisor extends EventEmitter {
       session: (id) => this.mustGet(id),
       patch: (id, patch) => this.patch(id, patch),
       commit: (id, work) => this.runSessionWrite(id, work),
+      // Runtime controls already hold runSessionWrite; reuse the same commit without relocking.
       applyAssistantRun: async (id, currentAssistantRun) => {
-        const before = this.mustGet(id);
-        const proposed = { ...before, currentAssistantRun, updatedAt: new Date().toISOString() };
-        const mutations = sessionProjectionCommitMutations(before, proposed);
-        const after = { ...proposed, revision: projectionCommitRevision(before.revision ?? 0, mutations) };
-        await this.store.save(after);
-        this.sessions.set(id, after);
-        publishSessionProjectionCommit(this, before, after, mutations, this.sessionProjectionEpoch);
-        this.emit("sessionMeta", after);
+        const commit = await commitSessionProjection({ ...this.sessionCommitDependencies(), runWrite: (_id, work) => work() }, id, (before) => ({ ...before, currentAssistantRun, updatedAt: new Date().toISOString() }));
+        this.emit("sessionMeta", commit.after);
       },
     };
   }
@@ -1081,7 +1077,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async preparePickleSessionForUserInput(sessionId: string): Promise<void> {
     if (!this.isPickleSession(sessionId)) return;
-    this.mainAgent.clearLocalPickleTracking(sessionId);
+    if (!this.mustGet(sessionId).asyncWorkSummary) this.mainAgent.clearLocalPickleTracking(sessionId);
     if (this.mustGet(sessionId).pinned) await this.patch(sessionId, { pinned: false });
   }
 
@@ -1588,7 +1584,7 @@ export class SessionSupervisor extends EventEmitter {
     try {
       await this.runtimeDisposalGate.wait(session.id);
       logAgentd("runtime resume requested", { sessionId: session.id, sessionFilePath });
-      const handle = await this.runtime.resume(sessionFilePath, { cwd: session.cwd, sessionId: session.id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(session.id) === true, () => this.mustGet(session.id), (build) => this.commitSession(session.id, build)) });
+      const handle = await this.runtime.resume(sessionFilePath, { cwd: session.cwd, sessionId: session.id, ...asyncTaskRuntimeOptions(this.options.enableAsyncTasksForSession?.(session.id) === true, () => this.mustGet(session.id), (build) => this.commitSession(session.id, build), () => this.awaitAsyncResponsePersistence(session.id)) });
       const currentBeforeAttach = this.mustGet(session.id);
       if (["failed", "cancelled"].includes(currentBeforeAttach.status) && currentBeforeAttach.status !== session.status) {
         await disposeRuntimeHandle(handle, "discarded-terminal-runtime-resume");
@@ -1818,7 +1814,7 @@ export class SessionSupervisor extends EventEmitter {
         return;
       }
       if (event.type === "queue_update") {
-        if (!this.sessions.has(sessionId) || isTerminalStatus(this.mustGet(sessionId).status)) return;
+        if (!this.sessions.has(sessionId) || (isTerminalStatus(this.mustGet(sessionId).status) && !this.mustGet(sessionId).asyncWorkSummary)) return;
         await this.applyQueueUpdateWithModes(sessionId, event.steering, event.followUp, queueModes!.steeringMode, queueModes!.followUpMode);
         return;
       }
@@ -1849,6 +1845,10 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  private async awaitAsyncResponsePersistence(sessionId: string): Promise<void> { await this.waitForRuntimeEvents(sessionId); this.runtimeEventHandler.assertTerminalPersistenceReady(sessionId); }
+  async retryAsyncWorkPersistence(sessionId: string): Promise<void> {
+    await retryAsyncWorkPersistence(this.runtimeHandles.get(sessionId), () => this.waitForRuntimeEvents(sessionId), () => this.runtimeEventHandler.retryTerminalPersistence(sessionId, (event) => this.applyRuntimeEvent(sessionId, event)), () => this.commitSession(sessionId, (session) => session));
+  }
   private async waitForRuntimeEvents(sessionId: string): Promise<void> {
     await (this.runtimeEventChains.get(sessionId) ?? Promise.resolve());
   }
@@ -1935,6 +1935,7 @@ export class SessionSupervisor extends EventEmitter {
       runExclusiveMessageOperation: this.messageBuilder.runExclusiveTerminalOperation.bind(this.messageBuilder), runSessionWrite: this.runSessionWrite.bind(this), getSession: this.mustGet.bind(this),
       messageSnapshot: this.messageBuilder.terminalSnapshot.bind(this.messageBuilder), runtimeSnapshot: this.runtimeEventHandler.terminalSnapshot.bind(this.runtimeEventHandler), turnActivity: this.turnActivity.get.bind(this.turnActivity),
       materialize: this.artifactMaterializer.materializeTerminalArtifacts.bind(this.artifactMaterializer), save: this.store.save.bind(this.store), setSession: this.sessions.set.bind(this.sessions),
+      aggregateSession: (before, proposed, event) => this.aggregateSession(before, finalizeAsyncCycle(before, proposed, event)),
       rehydrateMessageSession: this.messageBuilder.commitTerminalSession.bind(this.messageBuilder), resetTerminalAssistantDraft: this.runtimeEventHandler.resetTerminalAssistantDraft.bind(this.runtimeEventHandler), resetTerminalThinkingDraft: this.runtimeEventHandler.resetTerminalThinkingDraft.bind(this.runtimeEventHandler), resetTerminalThinkingActive: this.runtimeEventHandler.resetTerminalThinkingActive.bind(this.runtimeEventHandler), clearTerminalPendingThinkingFlush: this.runtimeEventHandler.clearTerminalPendingThinkingFlush.bind(this.runtimeEventHandler), markTerminalRunProcessed: this.runtimeEventHandler.markTerminalRunProcessed.bind(this.runtimeEventHandler), clearTurnActivity: this.turnActivity.delete.bind(this.turnActivity),
       publish: async (id, publication, activity, artifacts) => { if (publication.mutations.length > 0) this.emit("sessionProjectionTransaction", id, publication.before, publication.after, publication.mutations, this.sessionProjectionEpoch); await emitTerminalV1Compatibility({ nextSeq: this.nextSeq.bind(this), chainEmit: this.chainEmit.bind(this), emitMessageAppended: (session, message, seq) => this.emit("messageAppended", session, message, seq), emitMessageRemoved: (session, messageId, seq) => this.emit("messageRemoved", session, messageId, seq), emitMessageReplaced: (session, messageId, message, seq) => this.emit("messageReplaced", session, messageId, message, seq), emitActivityUpdated: (session, value, seq) => this.emit("activityUpdated", session, value, seq), emitSessionMeta: (value) => this.emit("sessionMeta", value), emitArtifact: (session, artifact) => this.emit("artifact", session, artifact) }, id, publication.before, publication.after, activity, artifacts); },
       isPickleSession: this.isPickleSession.bind(this), notifyPickleCompletion: (sessionId, committedSession) => this.mainAgent.notifyLocalPickleCompletion(sessionId, committedSession),
@@ -1957,19 +1958,18 @@ export class SessionSupervisor extends EventEmitter {
   private async commitSession(session: PickyAgentSession): Promise<SessionCommit>;
   private async commitSession(sessionId: string, build: (current: PickyAgentSession) => PickyAgentSession, options?: { forceCollectionReplacements?: boolean }): Promise<SessionCommit>;
   private async commitSession(sessionOrId: PickyAgentSession | string, build?: (current: PickyAgentSession) => PickyAgentSession, options: { forceCollectionReplacements?: boolean } = {}): Promise<SessionCommit> {
-    const sessionId = typeof sessionOrId === "string" ? sessionOrId : sessionOrId.id; let result: SessionCommit | undefined;
-    await this.runSessionWrite(sessionId, async () => {
-      const before = this.sessions.get(sessionId); const proposed = typeof sessionOrId === "string" ? build!(this.mustGet(sessionId)) : sessionOrId;
-      const changed = proposed !== before;
-      const mutations = changed && before ? sessionProjectionCommitMutations(before, proposed, options) : [];
-      const after = changed && before ? { ...proposed, revision: projectionCommitRevision(before.revision ?? 0, mutations) } : proposed;
-      if (changed) {
-        await this.store.save(after); this.sessions.set(sessionId, after);
-        publishSessionProjectionCommit(this, before, after, mutations, this.sessionProjectionEpoch);
-      }
-      result = { before, after, changed };
-    });
-    return result!;
+    return commitSessionProjection({ ...this.sessionCommitDependencies(), runWrite: this.runSessionWrite.bind(this) }, sessionOrId, build, options);
+  }
+  private sessionCommitDependencies() {
+    return { read: (id: string) => this.sessions.get(id), save: (session: PickyAgentSession) => this.store.save(session), set: (id: string, session: PickyAgentSession) => this.sessions.set(id, session),
+      emitter: this, epoch: this.sessionProjectionEpoch, aggregate: this.aggregateSession.bind(this),
+      afterCommit: (commit: SessionCommit) => publishAsyncWorkCompletion(commit, { isPickle: this.isPickleSession.bind(this), clear: this.mainAgent.clearLocalPickleTracking.bind(this.mainAgent),
+        notify: this.mainAgent.notifyLocalPickleCompletion.bind(this.mainAgent), emit: (session) => this.emit("sessionMeta", session) }),
+    };
+  }
+  private aggregateSession(before: PickyAgentSession, proposed: PickyAgentSession): PickyAgentSession {
+    return aggregateAsyncSession(before, proposed, this.options.enableAsyncTasksForSession?.(proposed.id) === true,
+      this.runtimeHandles.get(proposed.id), (this.pendingQueueDeliveries.get(proposed.id)?.length ?? 0) > 0);
   }
   private async runSessionWrite(sessionId: string, work: () => Promise<void>): Promise<void> {
     await this.patchChains.run(sessionId, work);

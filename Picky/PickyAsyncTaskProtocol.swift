@@ -19,6 +19,14 @@ struct PickyAgentCycle: Codable, Equatable {
 }
 
 struct PickyAsyncWorkSummary: Codable, Equatable {
+    struct Episode: Codable, Equatable {
+        var id: String
+        var settled: Bool
+        var finalizedCycleId: String?
+        var outcome: PickyAgentCycle.Outcome?
+    }
+
+    var episode: Episode? = nil
     enum Tracking: String, Codable { case ready, reconciling, unsupported }
     var tracking: Tracking
     var activeRootCount: Int
@@ -27,6 +35,23 @@ struct PickyAsyncWorkSummary: Codable, Equatable {
     var attentionCount: Int
     var workRevision: Int
     var canReleaseRuntime: Bool
+}
+
+extension PickyAsyncWorkSummary.Episode {
+    private enum CodingKeys: String, CodingKey { case id, settled, finalizedCycleId, outcome }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        settled = try container.decode(Bool.self, forKey: .settled)
+        finalizedCycleId = try container.decodeIfPresent(String.self, forKey: .finalizedCycleId)
+        outcome = try container.decodeIfPresent(PickyAgentCycle.Outcome.self, forKey: .outcome)
+        guard (1...256).contains(id.utf16.count),
+              finalizedCycleId.map({ (1...256).contains($0.utf16.count) }) ?? true,
+              !settled || (finalizedCycleId != nil && outcome != nil) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid async work episode"))
+        }
+    }
 }
 
 struct PickyAsyncTaskOwner: Codable, Equatable, Hashable {

@@ -69,3 +69,42 @@ export function publishSessionProjectionCommit(
   if (mutations.length === 0) return;
   emitter.emit("sessionProjectionTransaction", after.id, before, after, mutations, epoch);
 }
+
+interface SessionCommitDependencies {
+  read(id: string): PickyAgentSession | undefined;
+  save(session: PickyAgentSession): Promise<void>;
+  set(id: string, session: PickyAgentSession): void;
+  runWrite(id: string, work: () => Promise<void>): Promise<void>;
+  emitter: SessionProjectionCommitEmitter;
+  epoch: string;
+  aggregate(before: PickyAgentSession, proposed: PickyAgentSession): PickyAgentSession;
+  afterCommit(commit: SessionCommit): Promise<void>;
+}
+
+/** Uses the owner's existing serializer. No memory, projection or effect precedes save. */
+export async function commitSessionProjection(
+  dependencies: SessionCommitDependencies,
+  sessionOrId: PickyAgentSession | string,
+  build?: (current: PickyAgentSession) => PickyAgentSession,
+  options: { forceCollectionReplacements?: boolean } = {},
+): Promise<SessionCommit> {
+  const sessionId = typeof sessionOrId === "string" ? sessionOrId : sessionOrId.id;
+  let result!: SessionCommit;
+  await dependencies.runWrite(sessionId, async () => {
+    const before = dependencies.read(sessionId);
+    if (typeof sessionOrId === "string" && (!before || !build)) throw new Error(`Unknown session: ${sessionId}`);
+    const built = typeof sessionOrId === "string" ? build!(before!) : sessionOrId;
+    const proposed = before ? dependencies.aggregate(before, built) : built;
+    const changed = proposed !== before;
+    const mutations = changed && before ? sessionProjectionCommitMutations(before, proposed, options) : [];
+    const after = changed && before ? { ...proposed, revision: projectionCommitRevision(before.revision ?? 0, mutations) } : proposed;
+    if (changed) {
+      await dependencies.save(after);
+      dependencies.set(sessionId, after);
+      publishSessionProjectionCommit(dependencies.emitter, before, after, mutations, dependencies.epoch);
+    }
+    result = { before, after, changed };
+  });
+  await dependencies.afterCommit(result);
+  return result;
+}

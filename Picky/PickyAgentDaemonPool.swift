@@ -76,6 +76,31 @@ final class DefaultPickyAgentDaemonLauncherFactory: PickyAgentDaemonLauncherMaki
     }
 }
 
+/// Authenticated owner and current local intent supplied by the router.
+struct PickyChildReleaseContext: Equatable {
+    var requestId: String
+    var daemonInstanceId: String
+    var runtimeInstanceId: String
+    var archiveIntentId: String
+    var workRevision: Int
+    var controlGeneration: Int
+
+    fileprivate var isComplete: Bool {
+        [requestId, daemonInstanceId, runtimeInstanceId, archiveIntentId]
+            .allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            && workRevision >= 0 && controlGeneration >= 0
+    }
+}
+
+/// Opaque local capture made before requesting owner approval. Never PID authority.
+struct PickyChildReleaseCapture {
+    let sessionId: String
+    let childGeneration: Int
+    fileprivate let childIdentity: ObjectIdentifier
+    fileprivate let processGeneration: Int
+    fileprivate let context: PickyChildReleaseContext
+}
+
 @MainActor
 final class PickyAgentDaemonPool: ObservableObject {
     struct Configuration {
@@ -89,11 +114,16 @@ final class PickyAgentDaemonPool: ObservableObject {
 
     private final class Child {
         let launcher: PickyAgentDaemonLauncher
+        let generation: Int
         var endpoint: PickyChildDaemonEndpoint?
         var continuation: CheckedContinuation<PickyChildDaemonEndpoint, Error>?
         var observerTask: Task<Void, Never>?
 
-        init(launcher: PickyAgentDaemonLauncher, continuation: CheckedContinuation<PickyChildDaemonEndpoint, Error>) {
+        init(
+            launcher: PickyAgentDaemonLauncher, generation: Int,
+            continuation: CheckedContinuation<PickyChildDaemonEndpoint, Error>
+        ) {
+            self.generation = generation
             self.launcher = launcher
             self.continuation = continuation
         }
@@ -115,6 +145,7 @@ final class PickyAgentDaemonPool: ObservableObject {
 
     private let factory: PickyAgentDaemonLauncherMaking
     private let configuration: Configuration
+    private var nextChildGeneration = 0
     private var children: [String: Child] = [:]
     private var spawnTimeoutTasks: [String: Task<Void, Never>] = [:]
 
@@ -170,7 +201,10 @@ final class PickyAgentDaemonPool: ObservableObject {
                             Task { @MainActor in self?.handleChildStdoutLine(sessionId: sessionId, line: line) }
                         }
                     )
-                    let child = Child(launcher: launcher, continuation: continuation)
+                    self.nextChildGeneration += 1
+                    let child = Child(
+                        launcher: launcher, generation: self.nextChildGeneration, continuation: continuation
+                    )
                     self.children[sessionId] = child
                     self.activeChildSessionIds.insert(sessionId)
 
@@ -215,6 +249,62 @@ final class PickyAgentDaemonPool: ObservableObject {
                 Task { @MainActor in self?.terminateChild(sessionId: sessionId) }
             }
         )
+    }
+
+    func captureRelease(sessionId: String, context: PickyChildReleaseContext) -> PickyChildReleaseCapture? {
+        guard context.isComplete, let child = children[sessionId], child.endpoint != nil,
+              let processGeneration = child.launcher.runningProcessGeneration else { return nil }
+        return PickyChildReleaseCapture(
+            sessionId: sessionId, childGeneration: child.generation,
+            childIdentity: ObjectIdentifier(child), processGeneration: processGeneration, context: context
+        )
+    }
+
+    /// Router authenticates/correlates the response and supplies current owner,
+    /// intent and prepared revisions after the await. Tokens are not self-authenticating.
+    /// No suspension or session lookup occurs between final validation and stop.
+    @discardableResult
+    func terminateChild(
+        capture: PickyChildReleaseCapture, result: PickyAsyncTaskCommandResult,
+        currentContext: PickyChildReleaseContext
+    ) -> Bool {
+        guard currentContext.isComplete,
+              currentContext.requestId == capture.context.requestId,
+              result.type == "asyncTaskCommandResult", result.outcome == .settled,
+              result.requestId == capture.context.requestId,
+              result.sessionId == capture.sessionId,
+              result.daemonInstanceId == currentContext.daemonInstanceId,
+              result.runtimeInstanceId == currentContext.runtimeInstanceId,
+              result.workRevision == currentContext.workRevision,
+              result.controlGeneration == currentContext.controlGeneration,
+              !result.operationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let approval = result.releaseApproval,
+              currentContext.daemonInstanceId == capture.context.daemonInstanceId,
+              currentContext.runtimeInstanceId == capture.context.runtimeInstanceId,
+              currentContext.archiveIntentId == capture.context.archiveIntentId,
+              currentContext.workRevision >= capture.context.workRevision,
+              currentContext.controlGeneration >= capture.context.controlGeneration,
+              approval.operationId == result.operationId,
+              !approval.releaseToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              approval.sessionId == capture.sessionId,
+              approval.daemonInstanceId == currentContext.daemonInstanceId,
+              approval.runtimeInstanceId == currentContext.runtimeInstanceId,
+              approval.archiveIntentId == currentContext.archiveIntentId,
+              approval.workRevision == currentContext.workRevision,
+              approval.controlGeneration == currentContext.controlGeneration,
+              approval.childGeneration == capture.childGeneration,
+              let child = children[capture.sessionId],
+              ObjectIdentifier(child) == capture.childIdentity,
+              child.generation == capture.childGeneration,
+              child.launcher.runningProcessGeneration == capture.processGeneration else { return false }
+        guard child.launcher.stop(ifProcessGeneration: capture.processGeneration) else { return false }
+        child.resolve(.failure(CancellationError()))
+        child.observerTask?.cancel()
+        spawnTimeoutTasks[capture.sessionId]?.cancel()
+        spawnTimeoutTasks.removeValue(forKey: capture.sessionId)
+        children.removeValue(forKey: capture.sessionId)
+        activeChildSessionIds.remove(capture.sessionId)
+        return true
     }
 
     /// Gracefully terminate a child daemon. Safe to call regardless of whether the child is

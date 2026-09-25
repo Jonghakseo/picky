@@ -863,6 +863,19 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         self.restartSleep = restartSleep
     }
 
+    /// In-process launch identity, never a PID. A failed replacement launch also
+    /// invalidates an earlier capture. Only a running launch can be released.
+    var runningProcessGeneration: Int? {
+        state == .running ? launchGeneration : nil
+    }
+
+    @discardableResult
+    func stop(ifProcessGeneration expected: Int) -> Bool {
+        guard runningProcessGeneration == expected else { return false }
+        stop()
+        return true
+    }
+
     func start() {
         guard state == .stopped else { return }
         pickyDaemonLog("start requested port=\(configuration.port) cwd=\(configuration.defaultCwd)")

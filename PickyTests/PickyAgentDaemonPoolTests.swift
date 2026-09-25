@@ -12,6 +12,7 @@ private final class StubProcessRunner: PickyProcessRunning {
     private(set) var launchCount = 0
     private(set) var lastConfiguration: PickyAgentDaemonConfiguration?
     private(set) var didTerminate = false
+    private(set) var terminationCount = 0
     var launchError: Error?
     private var stdout: ((Data) -> Void)?
     private var stderr: ((Data) -> Void)?
@@ -24,7 +25,7 @@ private final class StubProcessRunner: PickyProcessRunning {
         self.stderr = stderr
     }
 
-    func terminate() { didTerminate = true }
+    func terminate() { didTerminate = true; terminationCount += 1 }
     func emitStdout(_ text: String) { stdout?(Data(text.utf8)) }
     func crash(code: Int32) { terminationHandler?(code) }
 }
@@ -387,4 +388,182 @@ struct PickyAgentDaemonPoolTests {
         try await Task.sleep(nanoseconds: 100_000_000)
         #expect(runner.launchCount == 1)
     }
+    @Test func releaseApprovalRejectsStaleContextAndTerminatesExactlyOnce() async throws {
+        let root = tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let agentd = root.appendingPathComponent("agentd")
+        try makeStubAgentdPackage(at: agentd)
+        let factory = StubLauncherFactory(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: .init(token: "t", appSupportRoot: root), factory: factory
+        )
+        let spawn = Task { try await pool.spawnChild(sessionId: "release", cwd: "/tmp") }
+        let runner = try await factory.waitForRunner(sessionId: "release")
+        runner.emitStdout("picky-agentd listening on 127.0.0.1:33333\n")
+        _ = try await spawn.value
+        var context = releaseContext()
+        var incomplete = context
+        incomplete.requestId = ""
+        #expect(pool.captureRelease(sessionId: "release", context: incomplete) == nil)
+        incomplete = context
+        incomplete.daemonInstanceId = ""
+        #expect(pool.captureRelease(sessionId: "release", context: incomplete) == nil)
+        let capture = try #require(pool.captureRelease(sessionId: "release", context: context))
+        // Capture exists before the server allocates its independent operation ID.
+        context.workRevision += 2
+        context.controlGeneration += 1
+        let approval = releaseApproval(capture: capture, context: context)
+        #expect(approval.operationId != context.requestId)
+        let result = releaseResult(approval: approval, context: context)
+        var wrongResult = result
+        wrongResult.requestId = "another-request"
+        #expect(!pool.terminateChild(capture: capture, result: wrongResult, currentContext: context))
+        wrongResult = result; wrongResult.operationId = "another-operation"
+        #expect(!pool.terminateChild(capture: capture, result: wrongResult, currentContext: context))
+        wrongResult = result; wrongResult.releaseApproval = nil
+        #expect(!pool.terminateChild(capture: capture, result: wrongResult, currentContext: context))
+        wrongResult = result; wrongResult.outcome = .accepted
+        #expect(!pool.terminateChild(capture: capture, result: wrongResult, currentContext: context))
+        var invalidApprovals = [PickyReleaseApproval]()
+        var invalid = approval
+        invalid.operationId = "other"; invalidApprovals.append(invalid)
+        invalid = approval; invalid.releaseToken = ""; invalidApprovals.append(invalid)
+        invalid = approval; invalid.sessionId = "other"; invalidApprovals.append(invalid)
+        invalid = approval; invalid.daemonInstanceId = "other"; invalidApprovals.append(invalid)
+        invalid = approval; invalid.runtimeInstanceId = "other"; invalidApprovals.append(invalid)
+        invalid = approval; invalid.childGeneration += 1; invalidApprovals.append(invalid)
+        invalid = approval; invalid.archiveIntentId = "other"; invalidApprovals.append(invalid)
+        invalid = approval; invalid.workRevision += 1; invalidApprovals.append(invalid)
+        invalid = approval; invalid.controlGeneration += 1; invalidApprovals.append(invalid)
+        for invalid in invalidApprovals {
+            #expect(!pool.terminateChild(
+                capture: capture,
+                result: releaseResult(approval: invalid, context: context),
+                currentContext: context
+            ))
+        }
+        var changedIntent = context
+        changedIntent.archiveIntentId = "new-intent"
+        #expect(!pool.terminateChild(
+            capture: capture,
+            result: releaseResult(approval: approval, context: context),
+            currentContext: changedIntent
+        ))
+        var changedOwner = context
+        changedOwner.runtimeInstanceId = "replacement-runtime"
+        #expect(!pool.terminateChild(
+            capture: capture,
+            result: releaseResult(approval: approval, context: context),
+            currentContext: changedOwner
+        ))
+        #expect(runner.terminationCount == 0)
+        #expect(pool.endpoint(for: "release") != nil)
+        #expect(pool.terminateChild(
+            capture: capture,
+            result: releaseResult(approval: approval, context: context),
+            currentContext: context
+        ))
+        #expect(!pool.terminateChild(
+            capture: capture,
+            result: releaseResult(approval: approval, context: context),
+            currentContext: context
+        ))
+        #expect(runner.terminationCount == 1)
+        #expect(pool.endpoint(for: "release") == nil)
+        #expect(!pool.activeChildSessionIds.contains("release"))
+    }
+
+    @Test func releaseCaptureCannotTerminateReplacementChild() async throws {
+        let root = tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let agentd = root.appendingPathComponent("agentd")
+        try makeStubAgentdPackage(at: agentd)
+        let factory = StubLauncherFactory(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: .init(token: "t", appSupportRoot: root), factory: factory
+        )
+        let first = Task { try await pool.spawnChild(sessionId: "replace", cwd: "/tmp") }
+        let firstRunner = try await factory.waitForRunner(sessionId: "replace")
+        firstRunner.emitStdout("picky-agentd listening on 127.0.0.1:33333\n")
+        _ = try await first.value
+        let context = releaseContext()
+        let capture = try #require(pool.captureRelease(sessionId: "replace", context: context))
+        let approval = releaseApproval(capture: capture, context: context)
+        pool.terminateChild(sessionId: "replace")
+        let second = Task { try await pool.spawnChild(sessionId: "replace", cwd: "/tmp") }
+        try await waitUntil { factory.madeLaunchers.count == 2 }
+        let secondRunner = try #require(factory.madeLaunchers.last?.runner)
+        secondRunner.emitStdout("picky-agentd listening on 127.0.0.1:44444\n")
+        _ = try await second.value
+        #expect(!pool.terminateChild(
+            capture: capture,
+            result: releaseResult(approval: approval, context: context),
+            currentContext: context
+        ))
+        #expect(secondRunner.terminationCount == 0)
+        #expect(pool.endpoint(for: "replace")?.port == 44444)
+        let current = try #require(pool.captureRelease(sessionId: "replace", context: context))
+        #expect(current.childGeneration != capture.childGeneration)
+        #expect(pool.terminateChild(
+            capture: current,
+            result: releaseResult(approval: releaseApproval(capture: current, context: context), context: context),
+            currentContext: context
+        ))
+        #expect(secondRunner.terminationCount == 1)
+    }
+
+    @Test func releaseCaptureCannotTerminateRestartInsideSameLauncher() async throws {
+        let root = tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let agentd = root.appendingPathComponent("agentd")
+        try makeStubAgentdPackage(at: agentd)
+        let factory = StubLauncherFactory(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: .init(token: "t", appSupportRoot: root), factory: factory
+        )
+        let spawn = Task { try await pool.spawnChild(sessionId: "restart", cwd: "/tmp") }
+        let runner = try await factory.waitForRunner(sessionId: "restart")
+        runner.emitStdout("picky-agentd listening on 127.0.0.1:33333\n")
+        _ = try await spawn.value
+        let context = releaseContext()
+        let capture = try #require(pool.captureRelease(sessionId: "restart", context: context))
+        let launcher = try #require(factory.madeLaunchers.first?.launcher)
+        launcher.stop()
+        launcher.start()
+        // No yield: exercise the process boundary before queued pool observers run.
+        #expect(runner.launchCount == 2)
+        #expect(!pool.terminateChild(
+            capture: capture,
+            result: releaseResult(approval: releaseApproval(capture: capture, context: context), context: context),
+            currentContext: context
+        ))
+        #expect(runner.terminationCount == 1)
+        #expect(launcher.state == .running)
+        pool.terminateAllChildren()
+        #expect(runner.terminationCount == 2)
+    }
+
+    private func releaseContext() -> PickyChildReleaseContext {
+        .init(requestId: "client-request", daemonInstanceId: "daemon", runtimeInstanceId: "runtime",
+              archiveIntentId: "intent", workRevision: 2, controlGeneration: 3)
+    }
+
+    private func releaseResult(
+        approval: PickyReleaseApproval, context: PickyChildReleaseContext
+    ) -> PickyAsyncTaskCommandResult {
+        .init(type: "asyncTaskCommandResult", requestId: context.requestId, sessionId: approval.sessionId,
+              daemonInstanceId: context.daemonInstanceId, runtimeInstanceId: context.runtimeInstanceId,
+              workRevision: context.workRevision, controlGeneration: context.controlGeneration,
+              operationId: "server-operation", outcome: .settled, releaseApproval: approval)
+    }
+
+    private func releaseApproval(
+        capture: PickyChildReleaseCapture, context: PickyChildReleaseContext
+    ) -> PickyReleaseApproval {
+        .init(operationId: "server-operation", releaseToken: "owner-token", sessionId: capture.sessionId,
+              daemonInstanceId: context.daemonInstanceId, runtimeInstanceId: context.runtimeInstanceId,
+              childGeneration: capture.childGeneration, archiveIntentId: context.archiveIntentId,
+              workRevision: context.workRevision, controlGeneration: context.controlGeneration)
+    }
+
 }

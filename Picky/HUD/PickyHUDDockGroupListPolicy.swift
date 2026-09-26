@@ -87,7 +87,7 @@ enum PickyHUDDockGroupListPolicy {
                 title: row.title,
                 subtitle: PickyHUDDockGroupListRowPresentation.subtitle(
                     cwdLeaf: row.cwdLeaf,
-                    relativeTime: relativeTime(row.updatedAt)
+                    relativeTime: relativeTime(row.assistantMessageAt)
                 ),
                 isUnread: unreadSessionIDs.contains(row.id)
             )
@@ -113,7 +113,7 @@ enum PickyHUDDockGroupListPolicy {
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat
     ) -> CGFloat {
-        let row = PickyHUDDockGroupListRowModel(session: session, updatedAt: session.previewUpdatedAt)
+        let row = PickyHUDDockGroupListRowModel(session: session, assistantMessageAt: nil)
         return previewWidth(
             title: row.title,
             subtitle: PickyHUDDockGroupListRowPresentation.subtitle(

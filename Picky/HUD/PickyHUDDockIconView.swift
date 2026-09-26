@@ -1203,7 +1203,7 @@ struct PickyHUDMiniPreviewCardView: View {
         PickyHUDDockGroupListRow(
             row: PickyHUDDockGroupListRowModel(
                 session: session,
-                updatedAt: session.previewUpdatedAt
+                assistantMessageAt: nil
             ),
             isUnread: false,
             isSelected: false,

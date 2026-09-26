@@ -26,21 +26,21 @@ struct PickyHUDDockGroupListSurface<FillShape: Shape>: View {
 enum PickyHUDDockGroupListRelativeTimePresentation {
     private static let formatter = RelativeDateTimeFormatter()
 
-    /// Returns `nil` when the session has no known timestamp, so the row can
-    /// omit the field instead of rendering a fabricated age.
-    static func text(for updatedAt: Date?, relativeTo now: Date = .now) -> String? {
-        guard let updatedAt else { return nil }
-        guard abs(updatedAt.timeIntervalSince(now)) >= 60 else {
+    /// Returns `nil` when there is no date, so the row can omit the field
+    /// instead of rendering a fabricated age.
+    static func text(for date: Date?, relativeTo now: Date = .now) -> String? {
+        guard let date else { return nil }
+        guard abs(date.timeIntervalSince(now)) >= 60 else {
             return L10n.t("hud.groupList.time.justNow")
         }
-        return formatter.localizedString(for: updatedAt, relativeTo: now)
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 }
 
 @MainActor
 struct PickyHUDDockGroupListRowModel: Identifiable {
     let session: PickyHUDDockSession
-    let updatedAt: Date?
+    let assistantMessageAt: Date?
 
     var id: String { session.id }
 
@@ -616,7 +616,7 @@ struct PickyHUDDockGroupListView: View {
                     isLeavingGroup: draggingRowID == row.id && isLeavingGroup,
                     minimumHeight: rowHeight,
                     metrics: metrics,
-                    relativeTime: relativeTime(row.updatedAt),
+                    relativeTime: relativeTime(row.assistantMessageAt),
                     isScreenContextArmed: screenContextTargetSessionID == row.id,
                     isScreenContextSticky: screenContextTargetSessionID == row.id && screenContextTargetSticky,
                     moveTargetGroups: moveTargetGroups,

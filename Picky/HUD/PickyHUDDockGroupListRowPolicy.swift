@@ -27,7 +27,7 @@ enum PickyHUDDockGroupListRowProjection {
     static func rows<Session, Row>(
         memberSessionIDs: [String],
         activeSessionsByID: [String: Session],
-        updatedAt: (String) -> Date?,
+        assistantMessageAt: (String) -> Date?,
         makeRow: (Session, Date?) -> Row
     ) -> [Row] {
         memberSessionIDs.compactMap { sessionID in
@@ -35,7 +35,7 @@ enum PickyHUDDockGroupListRowProjection {
             // A missing timestamp stays missing. Substituting a sentinel date
             // here made `RelativeDateTimeFormatter` render its distance from
             // `Date.distantPast` as a plausible-looking "2,025 years ago".
-            return makeRow(session, updatedAt(sessionID))
+            return makeRow(session, assistantMessageAt(sessionID))
         }
     }
 }

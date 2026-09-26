@@ -63,8 +63,10 @@ struct PickySessionProjectionV2ApplicationTests {
             let rows = PickyHUDDockGroupListRowProjection.rows(
                 memberSessionIDs: snapshot.memberIDsByRecency(in: group),
                 activeSessionsByID: sessions,
-                updatedAt: { viewModel.sessionCard(sessionID: $0)?.updatedAt },
-                makeRow: { PickyHUDDockGroupListRowModel(session: $0, updatedAt: $1) }
+                assistantMessageAt: {
+                    viewModel.sessionCard(sessionID: $0)?.messages.last(where: { $0.kind == .agentText })?.createdAt
+                },
+                makeRow: { PickyHUDDockGroupListRowModel(session: $0, assistantMessageAt: $1) }
             )
             let folderIDs = snapshot.memberIDsByRecency(in: group).filter { sessions[$0] != nil }
             #expect(PickyHUDDockFolderBadgeViewModel(memberIDs: folderIDs).glyphMemberIDs == Array(rows.map(\.id).prefix(3)))

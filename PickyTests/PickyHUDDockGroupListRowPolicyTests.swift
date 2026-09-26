@@ -206,20 +206,20 @@ struct PickyHUDDockGroupListRowProjectionTests {
 
     private struct StubRow: Equatable {
         let id: String
-        let updatedAt: Date?
+        let assistantMessageAt: Date?
     }
 
     private func project(
         memberSessionIDs: [String],
         activeSessionIDs: [String],
-        updatedAt: [String: Date] = [:]
+        assistantMessageAt: [String: Date] = [:]
     ) -> [StubRow] {
         let sessions = Dictionary(uniqueKeysWithValues: activeSessionIDs.map { ($0, StubSession(id: $0)) })
         return PickyHUDDockGroupListRowProjection.rows(
             memberSessionIDs: memberSessionIDs,
             activeSessionsByID: sessions,
-            updatedAt: { updatedAt[$0] },
-            makeRow: { session, date in StubRow(id: session.id, updatedAt: date) }
+            assistantMessageAt: { assistantMessageAt[$0] },
+            makeRow: { session, date in StubRow(id: session.id, assistantMessageAt: date) }
         )
     }
 
@@ -267,21 +267,21 @@ struct PickyHUDDockGroupListRowProjectionTests {
 
     /// A sentinel date here used to reach `RelativeDateTimeFormatter`, which
     /// rendered the distance from `Date.distantPast` as "2,025 years ago".
-    @Test func missingTimestampsStayMissingRatherThanDroppingTheRow() {
+    @Test func missingAssistantMessageDatesStayMissingRatherThanDroppingTheRow() {
         let stamped = Date(timeIntervalSince1970: 1_700_000_000)
         let rows = project(
             memberSessionIDs: ["stamped", "unstamped"],
             activeSessionIDs: ["stamped", "unstamped"],
-            updatedAt: ["stamped": stamped]
+            assistantMessageAt: ["stamped": stamped]
         )
 
         #expect(rows.map(\.id) == ["stamped", "unstamped"])
-        #expect(rows[0].updatedAt == stamped)
-        #expect(rows[1].updatedAt == nil)
+        #expect(rows[0].assistantMessageAt == stamped)
+        #expect(rows[1].assistantMessageAt == nil)
     }
 
     @MainActor
-    @Test func relativeTimeIsOmittedWhenTheSessionHasNoTimestamp() {
+    @Test func relativeTimeIsOmittedWhenTheAssistantMessageDateIsMissing() {
         #expect(PickyHUDDockGroupListRelativeTimePresentation.text(for: nil) == nil)
     }
 }

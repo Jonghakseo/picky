@@ -470,9 +470,11 @@ extension PickyHUDOverlayManager {
         let rows = PickyHUDDockGroupListRowProjection.rows(
             memberSessionIDs: snapshot.memberIDsByRecency(in: group),
             activeSessionsByID: sessionsByID,
-            updatedAt: { [weak self] sessionID in self?.viewModel.sessionCard(sessionID: sessionID)?.updatedAt },
-            makeRow: { session, updatedAt in
-                PickyHUDDockGroupListRowModel(session: session, updatedAt: updatedAt)
+            assistantMessageAt: { [weak self] sessionID in
+                self?.viewModel.sessionCard(sessionID: sessionID)?.messages.last(where: { $0.kind == .agentText })?.createdAt
+            },
+            makeRow: { session, assistantMessageAt in
+                PickyHUDDockGroupListRowModel(session: session, assistantMessageAt: assistantMessageAt)
             }
         )
         return PickyHUDDockGroupListPanelContent(

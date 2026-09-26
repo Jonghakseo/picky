@@ -1108,7 +1108,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         fiveSessions.enumerated().map { index, session in
             PickyHUDDockGroupListRowModel(
                 session: session,
-                updatedAt: Self.referenceDate.addingTimeInterval(-Double(index * 60))
+                assistantMessageAt: Self.referenceDate.addingTimeInterval(-Double(index * 60))
             )
         }
     }

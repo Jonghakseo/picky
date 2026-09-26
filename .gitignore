@@ -69,6 +69,7 @@ __pycache__/
 # Misc
 *.orig
 .gw/
+/.audit/
 
 # Transient scratch dirs created by agentd seeded-extensions.test.ts (cleaned up
 # after each run, ignored here so a crashed test never pollutes git status).

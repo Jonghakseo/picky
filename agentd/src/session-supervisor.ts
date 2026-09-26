@@ -51,7 +51,7 @@ import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { isSemanticNoOpPatch } from "./domain/session-patch-policy.js";
 import { nextRevision } from "./domain/session-revision-policy.js";
-import { ARCHIVED_SESSION_RETENTION_DAYS, recoverAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
+import { ARCHIVED_SESSION_RETENTION_DAYS, hasQuiescentReleasedAsyncOwner, recoverAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldRestoreInterruptedRuntime, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext } from "./domain/session-title.js";
@@ -68,7 +68,7 @@ export class SessionSupervisor extends EventEmitter {
   readonly asyncControls = new AsyncControlCoordinator({
     read: (id) => this.mustGet(id), patch: (id, patch) => this.patch(id, patch), handle: (id) => this.runtimeHandles.get(id), runtimeBlocked: (id) => this.runtimeDisposalGate.isBlocked(id), pendingInput: (id) => (this.pendingQueueDeliveries.get(id)?.length ?? 0) > 0, commit: (id, build) => this.commitSession(id, build),
     abortModel: async (id, handle) => { await this.clearQueue(id, "all"); await handle.abort(); await this.waitForRuntimeEvents(id); },
-    drain: (id) => this.waitForRuntimeEvents(id), archived: (id, archived) => this.emit("sessionArchivedAuthoritative", id, archived),
+    drain: (id) => this.waitForRuntimeEvents(id), archived: (id, archived) => this.emit("sessionArchivedAuthoritative", id, archived), resumeReleased: (id) => this.tryResumeRuntimeHandle(this.mustGet(id)),
   });
   executeAsyncTaskCommand(command: AsyncTaskCommand) { return this.asyncControls.execute(command); }
   private sessions = new Map<string, PickyAgentSession>();
@@ -238,7 +238,7 @@ export class SessionSupervisor extends EventEmitter {
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
     for (const persistedSession of persisted) {
-      const migratedSession = recoverAsyncSession(withPiSessionFileFromLogs(persistedSession));
+      const migratedSession = recoverAsyncSession(withPiSessionFileFromLogs(persistedSession)); const releasedOwner = hasQuiescentReleasedAsyncOwner(migratedSession);
       const isPickleSession = hasPickleSessionMarkerLog(migratedSession);
       if (isPickleSession) this.pickleSessionIds.add(migratedSession.id);
       const session = isPickleSession
@@ -248,7 +248,7 @@ export class SessionSupervisor extends EventEmitter {
             notifyMacOSOnCompletion: migratedSession.notifyMacOSOnCompletion ?? false,
           }
         : migratedSession;
-      if (isAsyncTracked(session) || session.piSessionFilePath !== persistedSession.piSessionFilePath
+      if (isAsyncTracked(session) && !releasedOwner || session.piSessionFilePath !== persistedSession.piSessionFilePath
           || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion
           || session.notifyMacOSOnCompletion !== persistedSession.notifyMacOSOnCompletion) await this.commitSession(session);
       else this.sessions.set(session.id, session);
@@ -273,7 +273,7 @@ export class SessionSupervisor extends EventEmitter {
         continue;
       }
 
-      if (!isTerminalStatus(session.status)) {
+      if (shouldRestoreInterruptedRuntime(session, releasedOwner)) {
         if (session.archived === true) {
           const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
           const current = this.mustGet(session.id);

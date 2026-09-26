@@ -5,6 +5,7 @@ import type { PickyAgentSession } from "../protocol.js";
 import type { RuntimeSessionHandle } from "../runtime/types.js";
 import { sameAsyncOwner } from "../runtime/async-task-state.js";
 import { KeyedSerialQueue } from "../domain/keyed-serial-queue.js";
+import { hasQuiescentReleasedAsyncOwner } from "../domain/session-supervisor-projection-policy.js";
 
 type StopCommand = Omit<Extract<AsyncTaskCommand, { type: "prepareSessionArchive" }>, "type" | "archiveIntentId" | "requireQuiescence"> & { type: "stopAsyncTasks" };
 type LifecycleCommand = Omit<StopCommand, "type"> & { type: "prepareAsyncReplacement" | "reconcileAsyncControl"; inputLease?: boolean };
@@ -20,6 +21,7 @@ interface Dependencies {
   abortModel(id: string, handle: RuntimeSessionHandle): Promise<void>;
   drain(id: string): Promise<void>;
   archived(id: string, archived: boolean): void;
+  resumeReleased(id: string): Promise<RuntimeSessionHandle | undefined>;
 }
 export class ControlFailure extends Error {
   readonly code = "async_control_blocked";
@@ -126,13 +128,22 @@ export class AsyncControlCoordinator {
   }
 
   private async unarchive(sessionId: string, requestId: string): Promise<PickyAgentSession> {
-    await this.deps.patch(sessionId, { archived: false, archivedAt: undefined, asyncArchiveIntentId: undefined });
+    const released = this.deps.read(sessionId);
+    const approval = released.asyncControl?.releasePrepared;
+    if (approval && !this.deps.handle(sessionId)) {
+      if (!hasQuiescentReleasedAsyncOwner(released)) throw new Error("Released async owner requires reconciliation");
+      const handle = await this.deps.resumeReleased(sessionId);
+      if (!handle?.asyncTasks || handle.asyncTasks.coverage().runtimeInstanceId === approval.runtimeInstanceId) {
+        throw new Error("Fresh async runtime owner unavailable; retained for reconciliation");
+      }
+    }
     const token = this.deps.read(sessionId).asyncControl?.releasePrepared?.releaseToken;
     const prior = this.deps.read(sessionId).asyncControlJournal?.find((entry) => entry.result.requestId === `${requestId}:cancel`);
     if (token || prior) {
       const result = await this.execute(prior ? JSON.parse(prior.fingerprint) as AsyncTaskCommand : { ...this.commandContext(sessionId, `${requestId}:cancel`), type: "cancelRuntimeRelease", releaseToken: token! });
       if (result.outcome !== "settled") throw new Error(result.reason ?? result.outcome);
     }
+    await this.deps.patch(sessionId, { archived: false, archivedAt: undefined, asyncArchiveIntentId: undefined });
     this.deps.archived(sessionId, false); return this.deps.read(sessionId);
   }
 

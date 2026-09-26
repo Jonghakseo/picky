@@ -347,8 +347,30 @@ export function shouldPurgeArchivedSession(
 }
 
 /** An absent runtime cannot turn old-owner resources or delivery obligations into empty work. */
+export function hasQuiescentReleasedAsyncOwner(session: PickyAgentSession): boolean {
+  const control = session.asyncControl;
+  const approval = control?.releasePrepared;
+  const result = session.asyncControlJournal?.find((entry) => entry.result.operationId === approval?.operationId)?.result;
+  return session.archived === true && !!approval && !!result && releaseEvidenceMatches(session, approval, result)
+    && control?.admissionState === "closed" && session.asyncWorkSummary?.canReleaseRuntime === true
+    && session.asyncWorkSummary.tracking === "ready" && !hasAsyncExecutionObligations(session.asyncTasks ?? [])
+    && (session.completionTickets ?? []).every((ticket) => ticket.state === "handled" || ticket.state === "suppressed")
+    && !control.operations.some((operation) => operation.outcome === "accepted" || operation.outcome === "blocked_cleanup" || operation.outcome === "blocked_delivery");
+}
+
+function releaseEvidenceMatches(session: PickyAgentSession, approval: NonNullable<NonNullable<PickyAgentSession["asyncControl"]>["releasePrepared"]>, result: NonNullable<PickyAgentSession["asyncControlJournal"]>[number]["result"]): boolean {
+  return result.outcome === "settled" && result.releaseApproval?.releaseToken === approval.releaseToken
+    && approval.sessionId === session.id && approval.archiveIntentId === session.asyncArchiveIntentId
+    && approval.daemonInstanceId === result.daemonInstanceId && approval.runtimeInstanceId === result.runtimeInstanceId
+    && approval.workRevision === session.asyncWorkSummary?.workRevision && approval.controlGeneration === session.asyncControl?.controlGeneration;
+}
+
+export function shouldRestoreInterruptedRuntime(session: PickyAgentSession, releasedOwner: boolean): boolean {
+  return !isTerminalStatus(session.status) && !(session.archived === true && releasedOwner);
+}
+
 export function recoverAsyncSession(session: PickyAgentSession): PickyAgentSession {
-  if (!isAsyncTracked(session)) return session;
+  if (!isAsyncTracked(session) || hasQuiescentReleasedAsyncOwner(session)) return session;
   return { ...session, status: "blocked", lastSummary: "Async owner restarted; resource and delivery reconciliation required",
     asyncTasks: session.asyncTasks?.map((task) => hasAsyncExecutionObligations([task]) && task.presence !== "unknown" ? { ...task, presence: "unknown", execution: "interrupted" } : task),
     completionTickets: session.completionTickets?.map((ticket) => ["handled", "suppressed"].includes(ticket.state) ? ticket : { ...ticket, state: "unknown" }),

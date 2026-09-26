@@ -1,14 +1,16 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
+import WebSocket from "ws";
+import { AgentdServer } from "../server.js";
 import { awaitPickleSessionTerminal } from "../application/pickle-terminal-waiter.js";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager, type AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { afterEach, expect, it, vi } from "vitest";
 import { ASYNC_TASK_CONTRACT, AsyncTaskHostMessageSchema, type AsyncTaskHostMessage, type AsyncCompletionDelivery } from "../domain/async-task-contract.js";
-import { PickyAgentSessionSchema, type PickyAgentSession, type PickySessionProjectionMutation } from "../protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, type EventEnvelope, type PickyAgentSession, type PickySessionProjectionMutation } from "../protocol.js";
 import { SessionStore } from "../session-store.js";
 import { SessionSupervisor } from "../session-supervisor.js";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
@@ -66,6 +68,12 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
     const created = handle; cleanups.push(async () => { await created.dispose?.(); });
     return handle;
   });
+  const resume = runtime.resume.bind(runtime);
+  vi.spyOn(runtime, "resume").mockImplementation(async (path, options) => {
+    handle = await resume(path, options);
+    const created = handle; cleanups.push(async () => { await created.dispose?.(); });
+    return handle;
+  });
   const store = new SessionStore(join(root, "store"));
   const notifications: string[] = [];
   let sessionNumber = 0;
@@ -94,7 +102,6 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
   });
   await vi.waitFor(() => expect(host?.supported).toBe(true));
   const fixtureApi = api;
-  const fixtureHandle = handle;
   const owner = { sessionId: host.sessionId, piSessionId: host.piSessionId, runtimeInstanceId: host.runtimeInstanceId, providerId: host.providerId, providerInstanceId: host.providerInstanceId };
   const send = (data: object) => fixtureApi.events.emit(ASYNC_TASK_CONTRACT, { ...owner, contract: ASYNC_TASK_CONTRACT, requestId: "fixture-request", providerRevision: 0, controlGeneration: 0, ...data });
   if (!options.readyOnDiscovery) {
@@ -102,21 +109,24 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
     send({ type: "snapshot", watermark: 0, detail: { tasks: [], tickets: [] } });
   }
   await vi.waitFor(() => expect(handle.asyncTasks?.coverage().tracking).toBe("ready"));
-  async function completion(id: string, outcome: { execution: "succeeded" | "failed"; presence: "settled" | "active" | "unknown" } = { execution: "succeeded", presence: "settled" }) {
-    const task = { ...owner, taskId: id, rootTaskId: id, kind: "bash", title: "Finite", execution: "queued", presence: "settled", registration: "reserved", providerRevision: 1, controlGeneration: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    send({ type: "task-register", requestId: `register-${id}`, providerRevision: 1, task });
+  async function completion(id: string, outcome: { execution: "succeeded" | "failed" | "running"; presence: "settled" | "active" | "unknown" } = { execution: "succeeded", presence: "settled" }) {
+    const activeOwner = { sessionId: host.sessionId, piSessionId: host.piSessionId, runtimeInstanceId: host.runtimeInstanceId, providerId: host.providerId, providerInstanceId: host.providerInstanceId };
+    const generation = handle.asyncTasks!.snapshot().control?.controlGeneration ?? 0;
+    const sendCurrent = (data: object) => api.events.emit(ASYNC_TASK_CONTRACT, { ...activeOwner, contract: ASYNC_TASK_CONTRACT, requestId: "fixture-request", providerRevision: 0, controlGeneration: generation, ...data });
+    const task = { ...activeOwner, taskId: id, rootTaskId: id, kind: "bash", title: "Finite", execution: "queued", presence: "settled", registration: "reserved", providerRevision: 1, controlGeneration: generation, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    sendCurrent({ type: "task-register", requestId: `register-${id}`, providerRevision: 1, task });
     await vi.waitFor(() => expect(frames.some((frame) => frame.type === "task-register-result" && frame.taskId === id && frame.outcome === "accepted")).toBe(true));
-    const registered = fixtureHandle.asyncTasks!.snapshot().tasks.find((task) => task.taskId === id)!;
-    const delivery: AsyncCompletionDelivery = { ...owner, deliveryId: `delivery-${id}`, completionIds: [`completion-${id}`], taskIds: [id], controlGeneration: 0 };
-    send({ type: "task-update", providerRevision: 2, detail: { tasks: [{ ...registered, providerRevision: 2, ...outcome, registration: "spawned" }], tickets: [{ ...owner, completionId: `completion-${id}`, rootTaskId: id, target: "model", state: "submitted", deliveryId: delivery.deliveryId, controlGeneration: 0 }] } });
-    await vi.waitFor(() => expect(fixtureHandle.asyncTasks!.snapshot().tickets.some((ticket) => ticket.completionId === `completion-${id}`)).toBe(true));
+    const registered = handle.asyncTasks!.snapshot().tasks.find((entry) => entry.taskId === id)!;
+    const delivery: AsyncCompletionDelivery = { ...activeOwner, deliveryId: `delivery-${id}`, completionIds: [`completion-${id}`], taskIds: [id], controlGeneration: generation };
+    sendCurrent({ type: "task-update", providerRevision: 2, detail: { tasks: [{ ...registered, providerRevision: 2, ...outcome, registration: "spawned" }], tickets: [{ ...activeOwner, completionId: `completion-${id}`, rootTaskId: id, target: "model", state: "submitted", deliveryId: delivery.deliveryId, controlGeneration: generation }] } });
+    await vi.waitFor(() => expect(handle.asyncTasks!.snapshot().tickets.some((ticket) => ticket.completionId === `completion-${id}`)).toBe(true));
     return { role: "custom" as const, customType: "fixture-completion", content: `RESULT ${id}`, display: true, details: { asyncTasks: delivery }, timestamp: Date.now() };
   }
   async function drainEvents() {
     while (pending.size) await Promise.allSettled([...pending]);
     await supervisor.withSessionProjectionBarrier("session-sdk", async () => {});
   }
-  return { handle, session, supervisor, store, requests, completion, frames, api, send, events, projections, transactions, notifications,
+  return { root, runtime, handle, session, currentSession: () => session, supervisor, store, requests, completion, frames, api, send, events, projections, transactions, notifications,
     drainEvents, emitRuntime: (event: RuntimeEvent) => eventTarget.applyRuntimeEvent("session-sdk", event) };
 }
 
@@ -135,6 +145,109 @@ it("correlates real PiSdkRuntime context with persisted model consumption, not p
   expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]).toMatchObject({ state: "handled", cycleId: expect.any(String) });
   expect(f.frames.filter((frame) => frame.type === "completion-observed")).toHaveLength(1);
 }, 15_000);
+
+it("restores a quiescent released archive with a fresh provider owner and admits a new turn without replaying old work", async () => {
+  const f = await fixture({ readyOnDiscovery: true });
+  const result = await f.completion("released");
+  await f.session.sendCustomMessage(result, { triggerTurn: true });
+  await f.session.waitForIdle(); await f.drainEvents();
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncWorkSummary?.canReleaseRuntime).toBe(true));
+  const before = await f.store.loadReadOnly("session-sdk");
+  expect(before?.completionTickets).toMatchObject([{ state: "handled" }]);
+  await f.supervisor.setSessionArchived("session-sdk", true, "continue", "release-archive");
+  const context = f.supervisor.asyncControls.context("session-sdk");
+  const oldCommand = { type: "prepareRuntimeRelease" as const, requestId: "release-request", sessionId: "session-sdk",
+    daemonInstanceId: context.daemonInstanceId, runtimeInstanceId: context.runtimeInstanceId!, workRevision: context.workRevision,
+    controlGeneration: context.controlGeneration, archiveIntentId: "release-archive", childGeneration: 1 };
+  const approval = await f.supervisor.executeAsyncTaskCommand(oldCommand);
+  expect(approval.outcome).toBe("settled");
+  const releasedDisk = await f.store.loadReadOnly("session-sdk");
+  expect(releasedDisk).toMatchObject({ archived: true, asyncControl: { admissionState: "closed", releasePrepared: approval.releaseApproval }, asyncWorkSummary: { canReleaseRuntime: true } });
+  await f.handle.dispose?.();
+
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  expect(restarted.get("session-sdk")).toMatchObject({ archived: true, asyncControl: { releasePrepared: approval.releaseApproval } });
+  expect(restarted.asyncControls.context("session-sdk").runtimeInstanceId).toBeUndefined();
+  await expect(restarted.executeAsyncTaskCommand(oldCommand)).rejects.toThrow("owner changed");
+  const server = new AgentdServer({ port: 0, token: "released-recovery", supervisor: restarted });
+  const port = await server.start();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=released-recovery`);
+  const wire: EventEnvelope[] = [];
+  ws.on("message", (data) => wire.push(JSON.parse(String(data)) as EventEnvelope));
+  cleanups.push(async () => { ws.close(); await server.stop(); });
+  await once(ws, "open");
+  const dispatch = async (command: object, id: string) => {
+    ws.send(JSON.stringify({ ...command, id, protocolVersion: PROTOCOL_VERSION }));
+    await vi.waitFor(() => expect(wire.some((event) => event.type === "ack" && event.commandId === id || event.type === "error" && event.commandId === id)).toBe(true));
+    expect(wire.find((event) => event.type === "error" && event.commandId === id)).toBeUndefined();
+  };
+  await dispatch({ type: "registerAppCapabilities", capabilities: ["sessionProjectionV2"] }, "register-recovery");
+  expect(wire.some((event) => event.type === "sessionProjectionSnapshot" && event.sessionId === "session-sdk")).toBe(true);
+  await dispatch({ type: "setSessionArchived", sessionId: "session-sdk", archived: false }, "unarchive-recovery");
+  const recovered = restarted.asyncControls.context("session-sdk");
+  expect(recovered.runtimeInstanceId).toBeDefined();
+  expect(recovered.runtimeInstanceId).not.toBe(context.runtimeInstanceId);
+  await vi.waitFor(() => expect(restarted.asyncControls.context("session-sdk").tracking).toBe("ready"));
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncControl?.releasePrepared).toBeUndefined();
+  await dispatch({ type: "followUp", sessionId: "session-sdk", text: "Fresh input after release" }, "followup-recovery");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
+  const final = await f.store.loadReadOnly("session-sdk");
+  expect(final).toMatchObject({ archived: false, status: "completed", asyncWorkSummary: { tracking: "ready", canReleaseRuntime: true }, completionTickets: [{ state: "handled" }] });
+  expect(final?.asyncTasks).toHaveLength(1);
+  expect(final?.completionTickets).toHaveLength(1);
+  expect(f.requests).toHaveLength(2);
+  expect(JSON.stringify(f.requests.at(-1))).toContain("Fresh input after release");
+  const newResult = await f.completion("after-release");
+  await f.currentSession().sendCustomMessage(newResult, { triggerTurn: true });
+  await f.currentSession().waitForIdle();
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.at(-1)?.state).toBe("handled"));
+  const afterNewResult = await f.store.loadReadOnly("session-sdk");
+  expect(afterNewResult).toMatchObject({ status: "completed", asyncWorkSummary: { tracking: "ready", canReleaseRuntime: true } });
+  expect(afterNewResult?.asyncTasks).toHaveLength(2);
+  expect(afterNewResult?.completionTickets?.map((ticket) => ticket.state)).toEqual(["handled", "handled"]);
+  expect(afterNewResult?.asyncTasks?.at(-1)?.runtimeInstanceId).toBe(recovered.runtimeInstanceId);
+  expect(f.requests).toHaveLength(3);
+  expect(f.frames.filter((frame) => frame.type === "completion-observed")).toHaveLength(2);
+  await vi.waitFor(() => expect(wire.some((event) => event.type === "sessionProjectionTransaction" && event.sessionId === "session-sdk" && event.revision === afterNewResult?.revision)).toBe(true));
+}, 20_000);
+
+it("refuses resumed input until the fresh provider has negotiated its snapshot", async () => {
+  const options = { readyOnDiscovery: true };
+  const f = await fixture(options);
+  await f.supervisor.setSessionArchived("session-sdk", true, "continue", "coverage-archive");
+  const context = f.supervisor.asyncControls.context("session-sdk");
+  const result = await f.supervisor.executeAsyncTaskCommand({ type: "prepareRuntimeRelease", requestId: "coverage-release", sessionId: "session-sdk",
+    daemonInstanceId: context.daemonInstanceId, runtimeInstanceId: context.runtimeInstanceId!, workRevision: context.workRevision,
+    controlGeneration: context.controlGeneration, archiveIntentId: "coverage-archive", childGeneration: 1 });
+  expect(result.outcome).toBe("settled");
+  await f.handle.dispose?.();
+  options.readyOnDiscovery = false;
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  await restarted.setSessionArchived("session-sdk", false);
+  expect(restarted.asyncControls.context("session-sdk").tracking).toBe("reconciling");
+  await expect(restarted.followUp("session-sdk", "No provider snapshot yet")).rejects.toThrow(/coverage|reconciliation|cleanup/);
+  expect(f.requests).toHaveLength(0);
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks ?? []).toHaveLength(0);
+}, 20_000);
+
+it("keeps an unfinished archived owner fenced after a fresh daemon generation", async () => {
+  const f = await fixture({ readyOnDiscovery: true });
+  await f.completion("unfinished", { execution: "running", presence: "active" });
+  await f.supervisor.setSessionArchived("session-sdk", true, "continue", "unfinished-archive");
+  const before = await f.store.loadReadOnly("session-sdk");
+  expect(before?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+  expect(before?.asyncTasks?.[0]).toMatchObject({ presence: "active", execution: "running" });
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  expect(restarted.get("session-sdk")?.asyncTasks?.[0]?.presence).toBe("unknown");
+  expect(restarted.get("session-sdk")?.asyncWorkSummary).toMatchObject({ tracking: "reconciling", canReleaseRuntime: false });
+  await restarted.setSessionArchived("session-sdk", false);
+  await expect(restarted.followUp("session-sdk", "Must not execute unknown work")).rejects.toThrow(/Async owner unavailable|reconciliation|coverage|cleanup/);
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.[0]?.presence).toBe("unknown");
+  expect(f.requests).toHaveLength(0);
+}, 20_000);
 
 it("fences an old completion after close and reopen, then admits a later authorized prompt", async () => {
   const f = await fixture();

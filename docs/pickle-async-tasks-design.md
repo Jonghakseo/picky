@@ -325,6 +325,8 @@ dispose 때 Pi 응답 이벤트 구독과 task 자원 관측을 구분한다. �
 
 로그 파일이나 PID 존재만으로 실행 중임을 복원하지 않는다. 전체 task 이력을 복원하는 것과 실제 프로세스에 다시 연결하는 것은 다르다. `/compact`는 runtime을 교체하지 않는 경로라면 허용하되 task registry와 completion metadata가 transcript 압축에 의해 사라지지 않음을 검증한다.
 
+정상 해제된 보관 세션은 보관 의도·owner·generation·work revision·완료 저널이 모두 일치하는 quiescent `releasePrepared`만 유지한다. 복원 시 새 runtime owner를 붙여 이전 승인을 폐기하고, 현재 provider의 협상·snapshot을 확인한 뒤 새 입력을 받는다. 저장된 증거를 유지하는 것은 이전 generation에 새 종료 권한을 주는 것이 아니다. 승인 증거가 없거나 유실된 기록은 작업 수가 0이어도 자동 재개하지 않는다.
+
 ## 8. 프로젝션과 UI
 
 ### 8.1 영속 계약
@@ -388,9 +390,23 @@ coverage는 관측한 task 수가 아니라 이번 기능의 기대 producer 목
 
 npm publish, 설치, 실행 중 앱 재시작은 별도 승인 작업이다. consumer 선행 배포와 capability 기반 활성화로 rollout한다. 이미 활성화된 runtime은 기능 플래그를 내려도 작업 추적·결과 처리·취소를 drain할 때까지 유지한다. 지원 중단으로 task 목록만 지우는 rollback은 금지한다.
 
+### 9.1 Picky 전용 패키지와 접수 제어
+
+Picky는 검증한 두 provider를 앱의 agentd runtime에 포함한다. `agentd/async-task-providers.lock.json`으로 패키지 파일 내용을 확인하며, 버전 문자열만 같다고 승인하지 않는다. 원본 pack의 해시와 출처는 `agentd/vendor/async-task-providers/PROVENANCE.txt`에 남긴다. 전역 Pi 패키지를 교체하거나 누락된 패키지를 자동 설치하지 않는다.
+
+일반 확장과 Picky 전용 provider는 별도 로더를 사용한다. 일반 확장의 다른 도구·이벤트는 유지하지만 `pi.async-tasks.v1` 구독·발신은 허용하지 않는다. 패키지 검증에 실패한 새 Pickle에는 전역 legacy async 도구를 대신 노출하지 않는다. 기존 작업 의무가 있다면 미지원 상태에서도 보존한다.
+
+새 접수만 막는 명령은 다음과 같다. 실행 중인 앱을 재시작할 필요는 없다.
+
+```bash
+node scripts/set-async-task-rollout.mjs "$HOME/Library/Application Support/Picky" drain
+```
+
+기존 작업의 추적·결과 처리·중지는 계속한다. 다시 접수하려면 같은 명령의 마지막 인자를 `on`으로 바꾼다. `off`로 추적 전체를 끄는 모드는 없다. 작업이 남아 있을 때 이전 앱으로 교체하는 것은 이 drain 명령과 다르며 안전한 rollback으로 보지 않는다.
+
 ## 10. 검증 범위와 참고
 
-현재 완료한 검증은 코드 경로와 API/테스트 위치의 읽기 전용 확인이다. 새로운 계약의 실행, UI, 프로세스 정착, SDK 버전 조합은 아직 검증하지 않았다. 해당 증거와 challenger 지적 처리 내역은 [구현 계획](pickle-async-tasks-implementation-plan.md)에 남긴다.
+계약·provider·저장 상태·v2 프로젝션·Swift 렌더 검증에 이어 W8에서 실제 pack과 컴파일된 daemon 경로를 검증했다. 격리 모델과 유한한 자식 프로세스를 사용한 E2E를 실제 사용자 모델·네이티브 UI 검증과 구분한다. 최종 실행 결과와 남은 확인 항목은 [런타임 검증 보고서](pickle-async-tasks-runtime-verification.md), 단계별 기준은 [구현 계획](pickle-async-tasks-implementation-plan.md)에 남긴다.
 
 - [Pi 공식 extension 문서](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)
 - [Pi 공식 SDK 문서](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)

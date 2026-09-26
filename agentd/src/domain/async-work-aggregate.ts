@@ -7,24 +7,26 @@ export interface AsyncWorkObservation {
   tracking: AsyncWorkSummary["tracking"];
   runtimeBusy: boolean;
   queuedInput: boolean;
+  runtimeInstanceId?: string;
 }
 
 /** Pure whole-work policy. Response finalization and persistence remain owner effects. */
 export function aggregateAsyncWork(before: PickyAgentSession, proposed: PickyAgentSession, observation: AsyncWorkObservation): PickyAgentSession {
   let episode = episodeForCycle(proposed);
-  const counts = rootCounts(proposed);
+  const counts = rootCounts(proposed, observation);
   const pending = (proposed.completionTickets ?? []).filter((ticket) => !["handled", "suppressed"].includes(ticket.state));
   const failedDeliveryCount = pending.filter((ticket) => ["failed", "unknown"].includes(ticket.state)).length;
   const controls = controlObligations(proposed);
+  const executionPending = hasUnfinishedWork(proposed, observation, counts.activeRootCount, pending.length);
   const unfinished = hasUnfinishedWork(proposed, observation, counts.activeRootCount, pending.length, controls.pending);
-  const reason = attentionReason(counts.uncertainExecutionCount, failedDeliveryCount, controls.failures, episode?.outcome, unfinished, observation.tracking);
+  const reason = attentionReason(counts.uncertainExecutionCount, failedDeliveryCount, controls.failures, episode?.outcome, executionPending, observation.tracking);
   const attentionCount = counts.uncertainExecutionCount + failedDeliveryCount + controls.failures + reason.extraCount;
   const quiescent = observation.tracking === "ready" && attentionCount === 0 && !unfinished
     && !proposed.pendingExtensionUiRequest && responseFinalized(proposed, episode);
   // A settled episode is historical until a real new cycle is admitted. Queued/preflight input
   // must not erase that marker and accidentally reuse the previous notification identity.
   if (episode && quiescent && !episode.settled) episode = { ...episode, settled: true };
-  const status = aggregateStatus(proposed, attentionCount, quiescent, episode);
+  const status = aggregateStatus(proposed, attentionCount, executionPending, episode);
   const summary: AsyncWorkSummary = {
     tracking: observation.tracking, ...counts, pendingCompletionCount: pending.length, attentionCount,
     canReleaseRuntime: quiescent, workRevision: before.asyncWorkSummary?.workRevision ?? 0,
@@ -41,7 +43,7 @@ function summaryAfterRecovery(before: PickyAgentSession, proposed: PickyAgentSes
   return proposed.lastSummary;
 }
 
-function hasUnfinishedWork(session: PickyAgentSession, observation: AsyncWorkObservation, activeRoots: number, pendingTickets: number, pendingControl: boolean): boolean {
+function hasUnfinishedWork(session: PickyAgentSession, observation: AsyncWorkObservation, activeRoots: number, pendingTickets: number, pendingControl = false): boolean {
   return activeRoots > 0 || pendingTickets > 0 || pendingControl || observation.runtimeBusy || observation.queuedInput
     || session.agentCycle?.phase === "responding" || session.agentCycle?.phase === "compacting";
 }
@@ -58,13 +60,17 @@ function episodeForCycle(session: PickyAgentSession): Episode | undefined {
   return episode;
 }
 
-function rootCounts(session: PickyAgentSession): Pick<AsyncWorkSummary, "activeRootCount" | "uncertainExecutionCount"> {
+function rootCounts(session: PickyAgentSession, observation: AsyncWorkObservation): Pick<AsyncWorkSummary, "activeRootCount" | "uncertainExecutionCount"> {
   const roots = new Map<string, { active: boolean; uncertain: boolean }>();
   for (const task of session.asyncTasks ?? []) {
     const key = JSON.stringify([task.runtimeInstanceId, task.providerId, task.providerInstanceId, task.rootTaskId]);
     const root = roots.get(key) ?? { active: false, uncertain: false };
     root.active ||= asyncExecutionIsActive(task);
-    root.uncertain ||= task.presence === "unknown";
+    // A durable grant is unknown until the ready provider reports its start.
+    // It is pending only while this same live owner can still complete registration.
+    const pendingGrant = observation.tracking === "ready" && task.runtimeInstanceId === observation.runtimeInstanceId
+      && task.registration === "approved" && task.execution === "queued";
+    root.uncertain ||= task.presence === "unknown" && !pendingGrant;
     roots.set(key, root);
   }
   return { activeRootCount: [...roots.values()].filter((root) => root.active).length,
@@ -94,11 +100,11 @@ function responseFinalized(session: PickyAgentSession, episode: Episode | undefi
   return episode?.finalizedCycleId === session.agentCycle.cycleId;
 }
 
-function aggregateStatus(session: PickyAgentSession, attentionCount: number, quiescent: boolean, episode: Episode | undefined): PickyAgentSession["status"] {
+function aggregateStatus(session: PickyAgentSession, attentionCount: number, executionPending: boolean, episode: Episode | undefined): PickyAgentSession["status"] {
   if (attentionCount) return "blocked";
   if (session.pendingExtensionUiRequest) return "waiting_for_input";
-  if (!quiescent) return "running";
-  // A control-only operation on an empty Pickle is not a new model turn.
+  if (executionPending || !responseFinalized(session, episode)) return "running";
+  // Provider negotiation and control-only admission closure fence release, not a new turn.
   return episode?.outcome ?? (!session.agentCycle && session.status === "running" ? "waiting_for_input" : session.status);
 }
 

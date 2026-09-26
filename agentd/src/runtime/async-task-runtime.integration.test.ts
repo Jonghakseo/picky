@@ -18,7 +18,7 @@ import type { RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.unstubAllEnvs(); });
-async function fixture(options: { onTool?: () => Promise<void>; failModel?: boolean; readyOnDiscovery?: boolean } = {}) {
+async function fixture(options: { onTool?: () => Promise<void>; failModel?: boolean; readyOnDiscovery?: boolean; deferReady?: boolean; holdCloseAck?: boolean; captureSaved?: boolean; acceptCancel?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "picky-w3-sdk-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "home/.pi/agent"); await mkdir(agentDir, { recursive: true });
@@ -29,6 +29,8 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
   let host!: Extract<AsyncTaskHostMessage, { type: "host-state" }>;
   const requests: unknown[] = [];
   const frames: AsyncTaskHostMessage[] = [];
+  let acknowledgeClose!: () => void;
+  const closeAcknowledged = new Promise<void>((resolve) => { acknowledgeClose = resolve; });
   const runtime = new PiSdkRuntime({ agentDir, modelPattern: "w3-offline/finite",
     createServices: (options) => createAgentSessionServices({ ...options, settingsManager: SettingsManager.inMemory({ packages: [], retry: { enabled: false }, compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 100 } }) }),
     createSessionFromServices: async (options) => { const result = await createAgentSessionFromServices({ ...options, noTools: "builtin" }); session = result.session; return result; },
@@ -45,7 +47,13 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
           if (options.readyOnDiscovery && frame.supported) pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "provider-ready", providerVersion: "fixture", contractVersion: 1, snapshotReady: true, capabilities: { registration: true, snapshot: true, cancel: true, detail: true, closeAdmission: true, suppressDelivery: true } });
         }
         if (options.readyOnDiscovery && frame.type === "snapshot-request") pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "snapshot", watermark: frame.providerRevision, detail: { tasks: [], tickets: [] } });
-        if (options.readyOnDiscovery && frame.type === "control-request" && frame.action === "closeAdmission") pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "control-result", outcome: "settled", admissionClosed: true, submittedDeliveryIds: [] });
+        if (options.readyOnDiscovery && frame.type === "control-request" && frame.action === "cancel" && options.acceptCancel) {
+          pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "control-result", outcome: "accepted", admissionClosed: true, submittedDeliveryIds: [] });
+        }
+        if (options.readyOnDiscovery && frame.type === "control-request" && frame.action === "closeAdmission") {
+          const ack = () => pi.events.emit(ASYNC_TASK_CONTRACT, { ...envelope, type: "control-result", outcome: "settled", admissionClosed: true, submittedDeliveryIds: [] });
+          if (options.holdCloseAck) void closeAcknowledged.then(ack); else ack();
+        }
       });
       pi.on("session_start", (_event, context) => {
         pi.events.emit(ASYNC_TASK_CONTRACT, { contract: ASYNC_TASK_CONTRACT, type: "host-query", requestId: "discover", sessionId: null, runtimeInstanceId: null, piSessionId: context.sessionManager.getSessionId(), providerId: "bash-async", providerInstanceId: "fixture-instance", providerRevision: 0, controlGeneration: 0 });
@@ -75,13 +83,21 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
     return handle;
   });
   const store = new SessionStore(join(root, "store"));
+  const saved: PickyAgentSession[] = [];
+  const save = store.save.bind(store);
+  if (options.captureSaved) vi.spyOn(store, "save").mockImplementation(async (state) => {
+    await save(state);
+    saved.push(PickyAgentSessionSchema.parse(await store.loadReadOnly(state.id)));
+  });
   const notifications: string[] = [];
   let sessionNumber = 0;
   const supervisor = new SessionSupervisor(runtime, store, { sessionIdFactory: () => sessionNumber++ === 0 ? "session-sdk" : `session-other-${sessionNumber}`, enableAsyncTasksForSession: (id) => id === "session-sdk",
     forwardPickleCompletionToPrimary: async ({ completionId }) => { notifications.push(completionId); } });
   const events: RuntimeEvent[] = [];
   const projections: PickyAgentSession[] = [];
+  const snapshots: PickyAgentSession[] = [];
   const transactions: PickySessionProjectionMutation[][] = [];
+  supervisor.on("sessionProjectionSnapshot", (state) => snapshots.push(structuredClone(state)));
   supervisor.on("sessionProjectionTransaction", (_id, _before, after, mutations) => {
     projections.push(structuredClone(after)); transactions.push(structuredClone([...mutations]));
   });
@@ -104,11 +120,14 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
   const fixtureApi = api;
   const owner = { sessionId: host.sessionId, piSessionId: host.piSessionId, runtimeInstanceId: host.runtimeInstanceId, providerId: host.providerId, providerInstanceId: host.providerInstanceId };
   const send = (data: object) => fixtureApi.events.emit(ASYNC_TASK_CONTRACT, { ...owner, contract: ASYNC_TASK_CONTRACT, requestId: "fixture-request", providerRevision: 0, controlGeneration: 0, ...data });
-  if (!options.readyOnDiscovery) {
+  const ready = async () => {
     send({ type: "provider-ready", providerVersion: "fixture", contractVersion: 1, snapshotReady: true, capabilities: { registration: true, snapshot: true, cancel: true, detail: true, closeAdmission: true, suppressDelivery: true } });
     send({ type: "snapshot", watermark: 0, detail: { tasks: [], tickets: [] } });
-  }
-  await vi.waitFor(() => expect(handle.asyncTasks?.coverage().tracking).toBe("ready"));
+    await vi.waitFor(() => expect(handle.asyncTasks?.coverage().tracking).toBe("ready"));
+    await drainEvents();
+  };
+  if (!options.readyOnDiscovery && !options.deferReady) await ready();
+  if (options.readyOnDiscovery) await vi.waitFor(() => expect(handle.asyncTasks?.coverage().tracking).toBe("ready"));
   async function completion(id: string, outcome: { execution: "succeeded" | "failed" | "running"; presence: "settled" | "active" | "unknown" } = { execution: "succeeded", presence: "settled" }) {
     const activeOwner = { sessionId: host.sessionId, piSessionId: host.piSessionId, runtimeInstanceId: host.runtimeInstanceId, providerId: host.providerId, providerInstanceId: host.providerInstanceId };
     const generation = handle.asyncTasks!.snapshot().control?.controlGeneration ?? 0;
@@ -126,9 +145,71 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
     while (pending.size) await Promise.allSettled([...pending]);
     await supervisor.withSessionProjectionBarrier("session-sdk", async () => {});
   }
-  return { root, runtime, handle, session, currentSession: () => session, supervisor, store, requests, completion, frames, api, send, events, projections, transactions, notifications,
+  return { root, runtime, handle, session, currentSession: () => session, supervisor, store, saved, requests, completion, frames, api, send, ready, acknowledgeClose, events, projections, snapshots, transactions, notifications,
     drainEvents, emitRuntime: (event: RuntimeEvent) => eventTarget.applyRuntimeEvent("session-sdk", event) };
 }
+
+it("keeps a fresh empty Pickle waiting in durable v2 updates throughout provider negotiation", async () => {
+  const f = await fixture({ deferReady: true, captureSaved: true });
+  await f.drainEvents();
+  const beforeReady = await f.store.loadReadOnly("session-sdk");
+  expect(beforeReady).toMatchObject({ status: "waiting_for_input", asyncWorkSummary: { tracking: "reconciling", canReleaseRuntime: false } });
+  expect(f.snapshots).toMatchObject([{ status: "waiting_for_input" }]);
+  const pendingStates = [...f.snapshots, ...f.projections];
+  expect(pendingStates.every((state) => state.status === "waiting_for_input")).toBe(true);
+  expect(f.saved.every((state) => state.status === "waiting_for_input")).toBe(true);
+  await f.ready();
+  const afterReady = await f.store.loadReadOnly("session-sdk");
+  expect(afterReady).toMatchObject({ status: "waiting_for_input", asyncWorkSummary: { tracking: "ready", canReleaseRuntime: true } });
+  expect(f.saved.some((state) => state.asyncWorkSummary?.tracking === "reconciling" && state.asyncWorkSummary.canReleaseRuntime === false)).toBe(true);
+  expect(f.saved.every((state) => state.status === "waiting_for_input")).toBe(true);
+  expect([...f.snapshots, ...f.projections].every((state) => state.status === "waiting_for_input")).toBe(true);
+  expect(f.transactions.some((mutations) => mutations.some((mutation) => mutation.type === "metaPatch" && mutation.patch.asyncWorkSummary?.tracking === "ready"))).toBe(true);
+  expect(f.notifications).toEqual([]);
+  expect(f.requests).toEqual([]);
+  console.log("FRESH_PERSISTED_V2", JSON.stringify({ saved: f.saved.map((s) => [s.revision, s.status, s.asyncWorkSummary?.tracking, s.asyncWorkSummary?.canReleaseRuntime]), v2: [...f.snapshots, ...f.projections].map((s) => [s.revision, s.status, s.asyncWorkSummary?.tracking, s.asyncWorkSummary?.canReleaseRuntime]) }));
+  const from = f.saved.length, v2From = f.projections.length;
+  await f.supervisor.setSessionArchived("session-sdk", true, undefined, "empty-archive");
+  const archived = await f.store.loadReadOnly("session-sdk");
+  expect(archived).toMatchObject({ status: "waiting_for_input", archived: true, asyncControl: { admissionState: "closed" }, asyncWorkSummary: { canReleaseRuntime: true } });
+  expect(f.saved.slice(from).some((state) => state.asyncControl?.operations.some((operation) => operation.outcome === "accepted") && state.asyncWorkSummary?.canReleaseRuntime === false)).toBe(true);
+  expect(f.saved.slice(from).every((state) => state.status === "waiting_for_input")).toBe(true);
+  expect(f.projections.slice(v2From).every((state) => state.status === "waiting_for_input")).toBe(true);
+  expect(f.requests).toEqual([]);
+  expect(f.notifications).toEqual([]);
+  console.log("EMPTY_ARCHIVE_PERSISTED_V2", JSON.stringify({ saved: f.saved.slice(from).map((s) => [s.revision, s.status, s.archived, s.asyncControl?.admissionState, s.asyncWorkSummary?.canReleaseRuntime]), v2: f.projections.slice(v2From).map((s) => [s.revision, s.status, s.archived, s.asyncControl?.admissionState, s.asyncWorkSummary?.canReleaseRuntime]) }));
+}, 15_000);
+
+it("preserves a completed Pickle across durable archive accept, closing ACK, and v2 settlement", async () => {
+  const f = await fixture({ readyOnDiscovery: true, holdCloseAck: true, captureSaved: true });
+  await f.supervisor.followUp("session-sdk", "Finish before archive");
+  await f.session.waitForIdle(); await f.drainEvents();
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.status).toBe("completed"));
+  const before = await f.store.loadReadOnly("session-sdk");
+  const from = f.saved.length, v2From = f.projections.length;
+  const archive = f.supervisor.setSessionArchived("session-sdk", true, "stopThenArchive", "idle-archive");
+  try {
+    await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncControlJournal?.some((entry) => entry.result.requestId === "idle-archive:execute" && entry.result.outcome === "accepted")).toBe(true));
+    const during = await f.store.loadReadOnly("session-sdk");
+    expect(during).toMatchObject({ status: "completed", asyncControl: { admissionState: "closed" }, asyncWorkSummary: { canReleaseRuntime: false } });
+    expect(during?.archived).not.toBe(true);
+    console.log("ARCHIVE_HELD_PERSISTED_V2", JSON.stringify({ saved: f.saved.slice(from).map((s) => [s.revision, s.status, s.archived, s.asyncControl?.admissionState, s.asyncWorkSummary?.canReleaseRuntime, s.asyncControlJournal?.at(-1)?.result.outcome]), v2: f.projections.slice(v2From).map((s) => [s.revision, s.status, s.archived, s.asyncControl?.admissionState, s.asyncWorkSummary?.canReleaseRuntime]) }));
+    expect(f.saved.slice(from).some((state) => state.asyncControl?.operations.some((operation) => operation.outcome === "accepted") && state.asyncWorkSummary?.canReleaseRuntime === false)).toBe(true);
+    expect(f.frames.some((frame) => frame.type === "control-request" && frame.action === "closeAdmission")).toBe(true);
+    expect(f.saved.slice(from).every((state) => state.status === "completed")).toBe(true);
+    expect(f.projections.slice(v2From).every((state) => state.status === "completed")).toBe(true);
+  } finally { f.acknowledgeClose(); }
+  await archive;
+  const after = await f.store.loadReadOnly("session-sdk");
+  expect(after).toMatchObject({ status: "completed", archived: true, asyncControl: { admissionState: "closed" }, asyncWorkSummary: { canReleaseRuntime: true } });
+  expect(f.saved.slice(from).every((state) => state.status === "completed")).toBe(true);
+  expect(f.projections.slice(v2From).every((state) => state.status === "completed")).toBe(true);
+  expect(after?.messages).toEqual(before?.messages);
+  expect(after?.finalAnswer).toBe(before?.finalAnswer);
+  expect(f.notifications).toEqual([]);
+  expect(f.requests).toHaveLength(1);
+  console.log("ARCHIVE_PERSISTED_V2", JSON.stringify({ saved: f.saved.slice(from).map((s) => [s.revision, s.status, s.archived, s.asyncControl?.admissionState, s.asyncWorkSummary?.canReleaseRuntime, s.asyncControlJournal?.at(-1)?.result.outcome]), v2: f.projections.slice(v2From).map((s) => [s.revision, s.status, s.archived, s.asyncControl?.admissionState, s.asyncWorkSummary?.canReleaseRuntime]), mutations: f.transactions.slice(v2From).map((set) => set.map((m) => m.type)) }));
+}, 15_000);
 
 it("correlates real PiSdkRuntime context with persisted model consumption, not passive append", async () => {
   const f = await fixture();
@@ -796,4 +877,103 @@ it("finalizes a real failed SDK response but keeps its surviving work blocked", 
   expect(await f.store.loadReadOnly("session-sdk")).toMatchObject({ status: "blocked", lastSummary: "Agent failed with unfinished work", asyncWorkSummary: { activeRootCount: 1, pendingCompletionCount: 1, canReleaseRuntime: false, episode: { settled: false } } });
   expect(f.notifications).toEqual([]);
   expect(f.requests).toHaveLength(1);
+}, 15_000);
+
+it("does not abort an idle model while reconciling a stopped Pickle before follow-up", async () => {
+  const f = await fixture({ readyOnDiscovery: true, captureSaved: true });
+  await f.supervisor.followUp("session-sdk", "First turn");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
+  await f.session.waitForIdle(); await f.drainEvents();
+  const before = f.saved.length, v2Before = f.projections.length;
+  const stopped = await f.supervisor.asyncControls.stop("session-sdk", "stop-before-reopen");
+  expect(stopped.outcome).toBe("settled");
+  const cancellations = (await f.store.loadReadOnly("session-sdk"))!.messages?.filter(m => m.kind === "system" && m.text === "Cancelled by user").length ?? 0;
+  await f.supervisor.followUp("session-sdk", "Second turn");
+  await vi.waitFor(() => expect(f.requests).toHaveLength(2));
+  await f.session.waitForIdle(); await f.drainEvents();
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk).toMatchObject({ status: "completed", finalAnswer: "Finite reply", asyncControl: { admissionState: "open" } });
+  expect(disk?.messages?.filter(m => m.kind === "system" && m.text === "Cancelled by user")).toHaveLength(cancellations);
+  expect(f.requests).toHaveLength(2);
+  expect(f.saved.slice(before).every(s => s.status !== "cancelled")).toBe(true);
+  expect(f.projections.slice(v2Before).every(s => s.status !== "cancelled")).toBe(true);
+  console.log("STOP_REOPEN_PERSISTED_V2", JSON.stringify({ saved: f.saved.slice(before).map(s => [s.status, s.asyncControl?.admissionState, s.messages?.filter(m => m.text === "Cancelled by user").length]), v2: f.projections.slice(v2Before).map(s => [s.status, s.asyncControl?.admissionState]) }));
+}, 15_000);
+
+it.each(["stop-all", "child-cancel", "timeout"] as const)("%s targets the root and waits for actual child exit after an accepted ACK", async mode => {
+  const f = await fixture({ readyOnDiscovery: true, acceptCancel: true, captureSaved: true });
+  const owner = f.handle.asyncTasks!.owners!()[0]!;
+  const createdAt = new Date().toISOString();
+  for (const [id, parentTaskId] of [["root", undefined], ["child", "root"]] as const) {
+    const task = { ...owner, taskId: id, rootTaskId: "root", ...(parentTaskId ? { parentTaskId } : {}), kind: "subagent", title: id,
+      execution: "queued", presence: "settled", registration: "reserved", providerRevision: 1, controlGeneration: 0, createdAt, updatedAt: createdAt };
+    f.send({ type: "task-register", requestId: `grant-${id}`, providerRevision: 1, task });
+    await vi.waitFor(() => expect(f.frames.some(frame => frame.type === "task-register-result" && frame.taskId === id && frame.outcome === "accepted")).toBe(true));
+    expect((await f.store.loadReadOnly("session-sdk"))?.asyncWorkSummary).toMatchObject({ attentionCount: 0, canReleaseRuntime: false });
+  }
+  expect(f.saved.filter(s => s.asyncTasks?.some(task => task.registration === "approved")).every(s => s.status !== "blocked" && s.asyncWorkSummary?.attentionCount === 0)).toBe(true);
+  const grants = f.handle.asyncTasks!.snapshot().tasks;
+  expect(grants).toHaveLength(2);
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncWorkSummary).toMatchObject({ activeRootCount: 1, attentionCount: 0, canReleaseRuntime: false });
+  expect(f.projections.filter(s => s.asyncTasks?.length === 2).every(s => s.status !== "blocked")).toBe(true);
+  f.send({ type: "task-update", providerRevision: 2, detail: { tasks: grants.map(task => ({ ...task, registration: "spawned", execution: "running", presence: "active", providerRevision: 2 })), tickets: [] } });
+  await vi.waitFor(() => expect(f.handle.asyncTasks!.snapshot().tasks.every(task => task.presence === "active")).toBe(true));
+  const start = f.saved.length, v2Start = f.projections.length;
+  const context = f.supervisor.asyncControls.context("session-sdk");
+  const operation = mode === "stop-all" ? f.supervisor.asyncControls.stop("session-sdk", "stop-root-family")
+    : f.supervisor.executeAsyncTaskCommand({ type: "cancelAsyncTask", requestId: "cancel-child", sessionId: "session-sdk", taskId: "child", owner,
+      daemonInstanceId: context.daemonInstanceId, runtimeInstanceId: context.runtimeInstanceId!, workRevision: context.workRevision, controlGeneration: context.controlGeneration });
+  await vi.waitFor(() => expect(f.frames.filter(frame => frame.type === "control-request" && frame.action === "cancel")).toHaveLength(1));
+  expect(f.frames.flatMap(frame => frame.type === "control-request" && frame.action === "cancel" ? [frame.taskId] : [])).toEqual(["root"]);
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncControlJournal?.at(-1)?.result.outcome).toBe("accepted");
+  expect(f.projections.slice(v2Start).every(s => s.asyncWorkSummary?.canReleaseRuntime === false)).toBe(true);
+  if (mode === "timeout") {
+    const result = await operation;
+    expect(result).toMatchObject({ outcome: "blocked_cleanup", reason: "Async execution cleanup timed out; outcome remains unknown" });
+    const disk = await f.store.loadReadOnly("session-sdk");
+    expect(disk).toMatchObject({ status: "blocked", asyncWorkSummary: { canReleaseRuntime: false, attentionCount: 1 } });
+    expect(disk?.asyncTasks?.every(task => task.presence === "active")).toBe(true);
+    expect(f.projections.at(-1)).toMatchObject({ status: "blocked", asyncWorkSummary: { canReleaseRuntime: false } });
+    return;
+  }
+  const active = f.handle.asyncTasks!.snapshot().tasks;
+  f.send({ type: "task-update", providerRevision: 3, detail: { tasks: [{ ...active[0]!, execution: "cancelled", presence: "settled", providerRevision: 3 }, active[1]!], tickets: [] } });
+  await vi.waitFor(() => expect(f.handle.asyncTasks!.snapshot().tasks[0]?.presence).toBe("settled"));
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncControlJournal?.at(-1)?.result.outcome).toBe("accepted");
+  f.send({ type: "task-update", providerRevision: 4, detail: { tasks: [{ ...f.handle.asyncTasks!.snapshot().tasks[0]!, providerRevision: 4 }, { ...f.handle.asyncTasks!.snapshot().tasks[1]!, execution: "cancelled", presence: "settled", providerRevision: 4 }], tickets: [] } });
+  expect((await operation).outcome).toBe("settled");
+  await f.drainEvents();
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.asyncTasks?.every(task => task.presence === "settled")).toBe(true);
+  expect(disk?.asyncWorkSummary).toMatchObject({ attentionCount: 0, canReleaseRuntime: true });
+  expect(f.saved.slice(start).some(s => s.asyncControlJournal?.at(-1)?.result.outcome === "accepted" && s.asyncTasks?.some(task => task.presence === "active"))).toBe(true);
+  console.log("ROOT_CANCEL_PERSISTED_V2", JSON.stringify({ saved: f.saved.slice(start).map(s => [s.status, s.asyncControlJournal?.at(-1)?.result.outcome, s.asyncTasks?.map(t => t.presence), s.asyncWorkSummary?.attentionCount]), v2: f.projections.slice(v2Start).map(s => [s.status, s.asyncTasks?.map(t => t.presence), s.asyncWorkSummary?.attentionCount]) }));
+}, 15_000);
+
+it("records one explicit stop cancellation and no second bubble when follow-up reopens admission", async () => {
+  let entered!: () => void, release!: () => void;
+  const running = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const f = await fixture({ readyOnDiscovery: true, captureSaved: true, onTool: async () => { entered(); await held; } });
+  await f.supervisor.followUp("session-sdk", "Run until stopped");
+  await running;
+  const stop = f.supervisor.asyncControls.stop("session-sdk", "stop-busy-model");
+  try {
+    await vi.waitFor(() => expect(f.frames.some(frame => frame.type === "control-request" && frame.action === "closeAdmission")).toBe(true));
+  } finally { release(); }
+  const stopped = await stop;
+  expect(stopped.outcome).toBe("settled");
+  await f.session.waitForIdle(); await f.drainEvents();
+  const before = await f.store.loadReadOnly("session-sdk");
+  expect(before?.messages?.filter(m => m.kind === "system" && m.text === "Cancelled by user")).toHaveLength(1);
+  const start = f.saved.length, v2Start = f.projections.length;
+  await f.supervisor.followUp("session-sdk", "Start a later independent turn");
+  await vi.waitFor(() => expect(f.requests).toHaveLength(2));
+  await f.session.waitForIdle(); await f.drainEvents();
+  const after = await f.store.loadReadOnly("session-sdk");
+  expect(after?.messages?.filter(m => m.kind === "system" && m.text === "Cancelled by user")).toHaveLength(1);
+  expect(after?.finalAnswer).toBe("Finite reply");
+  expect(f.saved.slice(start).every(s => (s.messages?.filter(m => m.kind === "system" && m.text === "Cancelled by user").length ?? 0) === 1)).toBe(true);
+  expect(f.projections.slice(v2Start).every(s => (s.messages?.filter(m => m.kind === "system" && m.text === "Cancelled by user").length ?? 0) === 1)).toBe(true);
+  console.log("BUSY_STOP_REOPEN_PERSISTED_V2", JSON.stringify({ saved: f.saved.slice(start).map(s => [s.status, s.messages?.filter(m => m.text === "Cancelled by user").length]), v2: f.projections.slice(v2Start).map(s => [s.status, s.messages?.filter(m => m.text === "Cancelled by user").length]) }));
 }, 15_000);

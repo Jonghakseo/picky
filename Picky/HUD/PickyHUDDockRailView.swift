@@ -121,6 +121,7 @@ struct PickyHUDDockRailView: View {
     /// converts them to screen coordinates and freezes them at promotion.
     var onExternalDragGeometryChange: (PickyHUDDockExternalDragRailGeometryInput) -> Void = { _ in }
     @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
+    var archiveAccess: PickyHUDArchivedSessionAccess? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State var isAddSlotExpanded = false
@@ -339,6 +340,10 @@ struct PickyHUDDockRailView: View {
                 HStack(spacing: 2) {
                     dockAnchorHandle
                     sessionsAndAddSlot
+                    if let archiveAccess {
+                        PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
+                                                      commands: archiveAccess.commands)
+                    }
                 }
                 // Symmetric leading/trailing in horizontal so the dock doesn't
                 // look lopsided. Vertical's larger `bottomPadding` exists to
@@ -348,18 +353,22 @@ struct PickyHUDDockRailView: View {
                 // padding.
                 .padding(.horizontal, metrics.topPadding)
                 .padding(.vertical, metrics.horizontalPadding)
-                .frame(width: resolvedRailLength, height: horizontalRailCrossSize, alignment: .center)
+                .frame(width: resolvedRailLength, height: railCrossSize, alignment: .center)
             } else {
                 // Keep the handle inside the opaque dock capsule so the AppKit-backed
                 // handle row retains a reliable hit target across its full width.
                 VStack(spacing: 2) {
                     dockAnchorHandle
                     sessionsAndAddSlot
+                    if let archiveAccess {
+                        PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
+                                                      commands: archiveAccess.commands)
+                    }
                 }
                 .padding(.horizontal, metrics.horizontalPadding)
                 .padding(.top, metrics.topPadding)
                 .padding(.bottom, metrics.bottomPadding)
-                .frame(width: verticalRailCrossSize, height: resolvedRailLength, alignment: .top)
+                .frame(width: railCrossSize, height: resolvedRailLength, alignment: .top)
             }
         }
         .background(dockGlassBackground)
@@ -471,19 +480,13 @@ struct PickyHUDDockRailView: View {
     }
 
     private var groupCount: Int {
-        projection.items.reduce(into: 0) { count, item in
-            if case .group = item { count += 1 }
-        }
+        PickyHUDDockRailLayoutPolicy.groupCount(in: projection)
     }
 
     private var emptyGroupCount: Int {
-        let activeSessionIDs = Set(allSessions.map(\.id))
-        return projection.items.reduce(into: 0) { count, item in
-            guard case .group(let group) = item,
-                  !group.memberSessionIDs.contains(where: activeSessionIDs.contains)
-            else { return }
-            count += 1
-        }
+        PickyHUDDockRailLayoutPolicy.emptyGroupCount(
+            in: projection, activeSessionIDs: Set(allSessions.map(\.id))
+        )
     }
 
     private var sizingSlotCount: Int {
@@ -494,19 +497,9 @@ struct PickyHUDDockRailView: View {
         )
     }
 
-    private var verticalRailCrossSize: CGFloat {
-        PickyHUDDockRailLayoutPolicy.verticalCrossSize(
-            groupCount: groupCount,
-            metrics: metrics,
-            fontScale: fontScale
-        )
-    }
-
-    private var horizontalRailCrossSize: CGFloat {
-        PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
-            groupCount: groupCount,
-            metrics: metrics,
-            fontScale: fontScale
+    private var railCrossSize: CGFloat {
+        PickyHUDDockRailLayoutPolicy.crossSize(
+            groupCount: groupCount, dockSide: dockSide, metrics: metrics, fontScale: fontScale
         )
     }
 
@@ -519,13 +512,15 @@ struct PickyHUDDockRailView: View {
                 isAddSlotExpanded: isAddSlotExpanded,
                 dockSide: dockSide,
                 metrics: metrics,
-                fontScale: fontScale
+                fontScale: fontScale,
+                hasArchiveAccess: archiveAccess != nil
             ),
             availableLength: availableRailLength,
             fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
                 isAddSlotExpanded: isAddSlotExpanded,
                 dockSide: dockSide,
-                metrics: metrics
+                metrics: metrics,
+                hasArchiveAccess: archiveAccess != nil
             )
         )
     }

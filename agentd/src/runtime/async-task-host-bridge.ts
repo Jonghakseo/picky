@@ -33,6 +33,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   private failed = false;
   private unsubscribe: () => void;
   private pending = new Map<string, { owner: AsyncTaskOwner; resolve: (value: ControlResult) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  private stateListeners = new Set<() => void>();
   retryPersistence: () => Promise<void> = async () => {};
   onState?: (state: RuntimeAsyncTaskState) => void;
   constructor(private readonly bus: Bus, readonly sessionId: string, readonly owner: RuntimeAsyncTaskOwner, private readonly emit: (event: RuntimeAsyncTaskEvent) => void, private readonly timeoutMs = 5_000, private readonly drainAdmission: boolean | (() => boolean) = false, private readonly providersQualified = true, private readonly requiredProviders: string[] = []) {
@@ -66,6 +67,20 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   }
   owners(): AsyncTaskOwner[] { return [...this.providers.values()].map((provider) => ({ ...provider.owner })); }
   snapshot(): RuntimeAsyncTaskState { return this.owner.read(); }
+  async waitForChange(previous: RuntimeAsyncTaskState, timeoutMs: number): Promise<void> {
+    const changedSince = () => {
+      const current = this.snapshot();
+      return current.tasks !== previous.tasks || current.tickets !== previous.tickets || current.control !== previous.control || current.cycle !== previous.cycle;
+    };
+    if (changedSince()) return;
+    await new Promise<void>((resolve, reject) => {
+      const finish = () => { clearTimeout(timer); this.stateListeners.delete(changed); resolve(); };
+      const changed = () => { if (changedSince()) finish(); };
+      const timer = setTimeout(() => { this.stateListeners.delete(changed); reject(new Error("Async execution cleanup timed out; outcome remains unknown")); }, timeoutMs);
+      this.stateListeners.add(changed);
+      changed();
+    });
+  }
   coverage(): RuntimeAsyncTaskCoverage {
     const readyProviders = [...this.providers.values()].filter((provider) => provider.ready && provider.snapshot).map((provider) => provider.owner.providerId);
     return { runtimeInstanceId: this.runtimeInstanceId, tracking: this.failed || !this.expected ? "unsupported" : this.expected.every((id) => readyProviders.includes(id)) ? "ready" : "reconciling", expectedProviders: this.expected ?? [], readyProviders };
@@ -128,7 +143,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     let pending: Promise<void>;
     do { pending = this.chain; await pending; } while (pending !== this.chain);
   }
-  publish(state: RuntimeAsyncTaskState): void { this.onState?.(state); this.emit({ type: "async_task_state", state }); }
+  publish(state: RuntimeAsyncTaskState): void { this.onState?.(state); this.emit({ type: "async_task_state", state }); for (const listener of this.stateListeners) listener(); }
   private async markUnknown(): Promise<void> {
     const state = await this.owner.transact((current) => ({ ...current, tasks: current.tasks.map((task) => task.runtimeInstanceId === this.runtimeInstanceId && task.presence !== "settled" ? { ...task, presence: "unknown" } : task) }));
     this.publish(state);

@@ -31,6 +31,9 @@ function userTexts(request: unknown): string[] {
   return context.messages.filter(message => message.role === "user").map(message =>
     typeof message.content === "string" ? message.content : (message.content as Array<{ type: string; text?: string }>).filter(part => part.type === "text").map(part => part.text).join("\n"));
 }
+function nativeCancelIds(frames: AsyncTaskHostMessage[]): string[] {
+  return frames.flatMap(frame => frame.type === "control-request" && frame.action === "cancel" ? [frame.taskId!] : []);
+}
 function completionText(request: unknown, taskId: string): string {
   const context = request as { messages: Array<{ role: string; content: unknown }> };
   const texts = context.messages.filter(message => message.role === "user").map(message =>
@@ -78,6 +81,7 @@ async function fixture(tool: ToolInput | ToolInput[]) {
 import net from 'node:net';
 import { appendFileSync } from 'node:fs';
 appendFileSync(${JSON.stringify(join(root, "spawns"))}, 'spawn\\n');
+appendFileSync(${JSON.stringify(join(root, "child-pids"))}, String(process.pid) + '\\n');
 process.on('SIGTERM', () => {});
 const socket = net.connect(${JSON.stringify(join(root, "child.sock"))});
 socket.on('connect', () => socket.write('ready\\n'));
@@ -138,7 +142,7 @@ setTimeout(() => process.exit(70), 15000);
   await supervisor.createEmptyPickleSession({ id: "ctx", source: "text", capturedAt: new Date().toISOString(), cwd: root, screenshots: [], inkMarks: [], warnings: [] }, true);
   cleanups.push(async () => {
     while (pending.size) await Promise.allSettled([...pending]);
-    await supervisor.withSessionProjectionBarrier("session-sdk", async () => {});
+    if (supervisor.get("session-sdk")) await supervisor.withSessionProjectionBarrier("session-sdk", async () => {});
   });
   await vi.waitFor(() => expect(handle.asyncTasks?.coverage().tracking).toBe("ready"));
   expect(session.getAllTools().map(tool => tool.name)).toEqual(expect.arrayContaining(["bash_async", "subagent"]));
@@ -147,7 +151,7 @@ setTimeout(() => process.exit(70), 15000);
     while (pending.size) await Promise.allSettled([...pending]);
     await supervisor.withSessionProjectionBarrier("session-sdk", async () => {});
   }
-  return { root, runtime, bus, child: child.promise, handle, session, supervisor, store, requests, frames, api, events, projections, transactions, notifications,
+  return { root, runtime, bus, child: child.promise, childSockets: sockets, handle, session, supervisor, store, requests, frames, api, events, projections, transactions, notifications,
     drainEvents, emitRuntime: (event: RuntimeEvent) => eventTarget.applyRuntimeEvent("session-sdk", event) };
 }
 
@@ -484,6 +488,161 @@ it("W5 explicitly reopens actual providers after settled stop and executes a new
   expect(f.frames.filter((frame) => frame.type === "host-state" && frame.admissionState === "open" && frame.controlGeneration > closedGeneration).map((frame) => frame.providerId)).toEqual(expect.arrayContaining(["bash-async", "subagent"]));
   expect(f.projections.at(-1)?.asyncWorkSummary?.canReleaseRuntime).toBe(true);
 }, 15000);
+
+async function verifyPackedFollowUp(f: Awaited<ReturnType<typeof fixture>>, mode: string, projectionStart: number, modelRequestsBeforeStop: number, cancellationCount: number): Promise<void> {
+  await f.supervisor.followUp("session-sdk", `Continue after ${mode} stop`);
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("W0B acknowledged actual result"), { timeout: 10000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  const after = await f.store.loadReadOnly("session-sdk");
+  expect(after?.messages?.filter(message => message.kind === "system" && message.text === "Cancelled by user")).toHaveLength(cancellationCount);
+  expect(after?.asyncWorkSummary).toMatchObject({ attentionCount: 0, canReleaseRuntime: true });
+  expect(f.projections.slice(projectionStart).every(projection => projection.asyncWorkSummary?.attentionCount === 0 && projection.status !== "blocked" && (projection.messages?.filter(message => message.kind === "system" && message.text === "Cancelled by user").length ?? 0) === cancellationCount)).toBe(true);
+  expect(f.requests).toHaveLength(modelRequestsBeforeStop + 1);
+  expect(userTexts(f.requests.at(-1))).toContain(`Continue after ${mode} stop`);
+  expect(JSON.stringify(f.requests.at(-1))).not.toMatch(/Subagent execution was aborted|subagent batch .* aborted/);
+}
+
+it.each([
+  { mode: "single", commands: [{ name: "subagent", arguments: { command: "subagent run finite --isolated -- finite" } }], children: 1, roots: 1 },
+  { mode: "batch", commands: [{ name: "subagent", arguments: { command: "subagent batch --isolated --agent finite --task first --agent finite --task second" } }], children: 2, roots: 1 },
+  { mode: "parallel", commands: [
+    { name: "subagent", arguments: { command: "subagent run finite --isolated -- first" } },
+    { name: "subagent", arguments: { command: "subagent run finite --isolated -- second" } },
+  ], children: 2, roots: 2 },
+])("settles %s native background stop only after its real child exits, then follows up without warning spam", async ({ mode, commands, children, roots }) => {
+  const f = await fixture(commands);
+  await f.supervisor.followUp("session-sdk", `Start ${mode} native children`);
+  await vi.waitFor(async () => {
+    expect(f.childSockets).toHaveLength(children);
+    expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.filter(task => task.presence === "active" && task.taskId !== task.rootTaskId)).toHaveLength(children);
+  }, { timeout: 12000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  const before = await f.store.loadReadOnly("session-sdk");
+  expect(f.handle.isStreaming).toBe(false);
+  expect(before?.asyncWorkSummary).toMatchObject({ activeRootCount: roots, attentionCount: 0, canReleaseRuntime: false });
+  const pids = (await readFile(join(f.root, "child-pids"), "utf8")).trim().split("\n").map(Number);
+  expect(pids).toHaveLength(children);
+  const projectionStart = f.projections.length;
+  const frameStart = f.frames.length;
+  const modelRequestsBeforeStop = f.requests.length;
+  const stop = await f.supervisor.asyncControls.stop("session-sdk", `packed-${mode}-stop`);
+  expect(stop.outcome).toBe("settled");
+  await f.drainEvents();
+  const cancelled = await f.store.loadReadOnly("session-sdk");
+  expect(cancelled?.asyncTasks?.filter(task => task.taskId !== task.rootTaskId)).toHaveLength(children);
+  expect(cancelled?.asyncTasks?.every(task => task.presence === "settled" && !["queued", "running", "cancelling"].includes(task.execution))).toBe(true);
+  expect(cancelled?.asyncWorkSummary).toMatchObject({ attentionCount: 0, canReleaseRuntime: true });
+  expect(cancelled?.completionTickets?.every(ticket => ["suppressed", "handled"].includes(ticket.state))).toBe(true);
+  const cancelIds = nativeCancelIds(f.frames.slice(frameStart));
+  const rootIds = cancelled!.asyncTasks!.filter(task => task.taskId === task.rootTaskId).map(task => task.taskId);
+  expect(cancelIds).toHaveLength(roots);
+  expect(cancelIds.sort()).toEqual(rootIds.sort());
+  for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
+  expect(f.projections.slice(projectionStart).every(projection => projection.asyncWorkSummary?.attentionCount === 0 && projection.status !== "blocked")).toBe(true);
+  expect(f.events.filter(event => event.type === "extension_ui" && /warning|aborted/i.test(JSON.stringify(event)))).toEqual([]);
+  await verifyPackedFollowUp(f, mode, projectionStart, modelRequestsBeforeStop, cancelled?.messages?.filter(message => message.kind === "system" && message.text === "Cancelled by user").length ?? 0);
+  const after = await f.store.loadReadOnly("session-sdk");
+  console.log("PACKED_NATIVE_STOP", JSON.stringify({ mode, pids, rootIds, cancelIds, stop: stop.outcome, before: [before?.status, before?.asyncWorkSummary], after: [after?.status, after?.asyncWorkSummary], v2: f.projections.slice(projectionStart).map(projection => [projection.status, projection.asyncWorkSummary?.attentionCount, projection.messages?.filter(message => message.text === "Cancelled by user").length]) }));
+}, 25000);
+
+it("explicitly deletes an archived Pickle through v2 after its connected native child exits", async () => {
+  const f = await fixture({ name: "subagent", arguments: { command: "subagent run finite --isolated -- finite" } });
+  await f.supervisor.followUp("session-sdk", "Start a child for explicit deletion");
+  await vi.waitFor(async () => {
+    expect(f.childSockets).toHaveLength(1);
+    expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.some(task => task.presence === "active")).toBe(true);
+    expect(f.handle.isStreaming).toBe(false);
+  }, { timeout: 12000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  await f.supervisor.setSessionArchived("session-sdk", true, "continue");
+  const before = await f.store.loadReadOnly("session-sdk");
+  expect(before?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+  const pid = Number((await readFile(join(f.root, "child-pids"), "utf8")).trim());
+  const server = new AgentdServer({ port: 0, token: "fixture-token", supervisor: f.supervisor });
+  const port = await server.start();
+  cleanups.push(() => server.stop());
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=fixture-token`);
+  const received: EventEnvelope[] = [];
+  ws.on("message", data => received.push(JSON.parse(data.toString()) as EventEnvelope));
+  cleanups.push(async () => { ws.close(); });
+  await once(ws, "open");
+  ws.send(JSON.stringify({ id: "v2-delete-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["sessionProjectionV2"] }));
+  await vi.waitFor(() => expect(received.some(event => event.type === "sessionProjectionBootstrapComplete")).toBe(true));
+  expect(received.some(event => event.type === "sessionProjectionSnapshot" && event.sessionId === "session-sdk")).toBe(true);
+  const frameStart = f.frames.length;
+  ws.send(JSON.stringify({ id: "explicit-delete", protocolVersion: PROTOCOL_VERSION, type: "deleteSession", sessionId: "session-sdk" }));
+  await vi.waitFor(() => expect(received.some(event => event.type === "ack" && event.commandId === "explicit-delete")).toBe(true), { timeout: 20000 });
+  expect(received.some(event => event.type === "error" && event.commandId === "explicit-delete")).toBe(false);
+  expect(nativeCancelIds(f.frames.slice(frameStart))).toHaveLength(1);
+  expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
+  expect(f.supervisor.get("session-sdk")).toBeUndefined();
+  expect(await f.store.loadReadOnly("session-sdk")).toBeUndefined();
+  const reconnect = new WebSocket(`ws://127.0.0.1:${port}?token=fixture-token`);
+  const replay: EventEnvelope[] = [];
+  reconnect.on("message", data => replay.push(JSON.parse(data.toString()) as EventEnvelope));
+  cleanups.push(async () => { reconnect.close(); });
+  await once(reconnect, "open");
+  reconnect.send(JSON.stringify({ id: "v2-after-delete", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["sessionProjectionV2"] }));
+  await vi.waitFor(() => expect(replay.some(event => event.type === "sessionProjectionBootstrapComplete")).toBe(true));
+  expect(replay.some(event => event.type === "sessionProjectionSnapshot" && event.sessionId === "session-sdk")).toBe(false);
+  console.log("EXPLICIT_DELETE_NATIVE", JSON.stringify({ before: { status: before?.status, archived: before?.archived, tasks: before?.asyncTasks?.length }, pid, cancelIds: nativeCancelIds(f.frames.slice(frameStart)), childExited: true, ack: true, reconnectBootstrap: true, disk: await f.store.loadReadOnly("session-sdk"), replayIds: replay.filter(event => event.type === "sessionProjectionSnapshot").map(event => event.sessionId) }));
+}, 30000);
+
+it("cancels one packed native root without stopping the other, then settles the remaining child", async () => {
+  const f = await fixture([
+    { name: "subagent", arguments: { command: "subagent run finite --isolated -- first" } },
+    { name: "subagent", arguments: { command: "subagent run finite --isolated -- second" } },
+  ]);
+  await f.supervisor.followUp("session-sdk", "Start independent finite children");
+  await vi.waitFor(async () => {
+    expect(f.childSockets).toHaveLength(2);
+    expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.filter(task => task.taskId === task.rootTaskId && task.presence === "active")).toHaveLength(2);
+  }, { timeout: 12000 });
+  await vi.waitFor(async () => {
+    const disk = await f.store.loadReadOnly("session-sdk");
+    expect(disk?.agentCycle?.phase).toBe("settled");
+    expect(f.handle.isStreaming).toBe(false);
+    expect(f.requests.length).toBeGreaterThanOrEqual(2);
+  }, { timeout: 10000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  const roots = f.handle.asyncTasks!.snapshot().tasks.filter(task => task.taskId === task.rootTaskId);
+  const owner = f.handle.asyncTasks!.owners!().find(entry => entry.providerId === "subagent")!;
+  const context = f.supervisor.asyncControls.context("session-sdk");
+  const frameStart = f.frames.length;
+  let cancelled;
+  try {
+    cancelled = await f.supervisor.executeAsyncTaskCommand({ type: "cancelAsyncTask", requestId: "packed-one-root-cancel", sessionId: "session-sdk", owner, taskId: roots[0]!.taskId,
+      daemonInstanceId: context.daemonInstanceId, runtimeInstanceId: context.runtimeInstanceId!, workRevision: context.workRevision, controlGeneration: context.controlGeneration });
+  } catch (error) {
+    console.log("PACKED_NATIVE_INDIVIDUAL_DIAGNOSTIC", JSON.stringify({ before: context, after: f.supervisor.asyncControls.context("session-sdk"), disk: await f.store.loadReadOnly("session-sdk"), error: String(error) }));
+    for (const socket of f.childSockets) socket.end("exit\n");
+    await Promise.all(f.childSockets.map(socket => socket.destroyed ? Promise.resolve() : once(socket, "close")));
+    throw error;
+  }
+  expect(cancelled.outcome).toBe("settled");
+  await f.drainEvents();
+  const afterOne = await f.store.loadReadOnly("session-sdk");
+  expect(afterOne?.asyncTasks?.filter(task => task.rootTaskId === roots[0]!.taskId).every(task => task.presence === "settled")).toBe(true);
+  expect(afterOne?.asyncTasks?.filter(task => task.rootTaskId === roots[1]!.taskId).some(task => task.presence === "active")).toBe(true);
+  expect(afterOne?.asyncWorkSummary).toMatchObject({ activeRootCount: 1, attentionCount: 0, canReleaseRuntime: false });
+  expect(nativeCancelIds(f.frames.slice(frameStart))).toEqual([roots[0]!.taskId]);
+  const pids = (await readFile(join(f.root, "child-pids"), "utf8")).trim().split("\n").map(Number);
+  expect(pids).toHaveLength(2);
+  expect(pids.filter(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toHaveLength(1);
+  // Individual cancellation deliberately retains its model-target result;
+  // wait for that separate turn before issuing the next control command.
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled"), { timeout: 10000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  const stopped = await f.supervisor.asyncControls.stop("session-sdk", "packed-remaining-root-stop");
+  expect(stopped.outcome).toBe("settled");
+  const lastCancelIds = nativeCancelIds(f.frames.slice(frameStart));
+  expect(lastCancelIds).toEqual([roots[0]!.taskId, roots[1]!.taskId]);
+  for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
+  const final = await f.store.loadReadOnly("session-sdk");
+  expect(final?.asyncWorkSummary).toMatchObject({ attentionCount: 0, canReleaseRuntime: true });
+  expect(f.events.filter(event => event.type === "extension_ui" && /warning|aborted/i.test(JSON.stringify(event)))).toEqual([]);
+  console.log("PACKED_NATIVE_INDIVIDUAL", JSON.stringify({ pids, rootIds: roots.map(root => root.taskId), cancelIds: lastCancelIds, first: afterOne?.asyncWorkSummary, final: final?.asyncWorkSummary }));
+}, 25000);
 
 it("W5 guards direct SDK new, reload and rewind while a real child remains alive after model idle", async () => {
   const f = await fixture({ name: "subagent", arguments: { command: "subagent run finite --isolated -- finite" } });

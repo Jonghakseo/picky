@@ -3443,7 +3443,7 @@ struct PickySessionViewModelTests {
         #expect(deleteCommand.sessionId == "pickle-1")
     }
 
-    @Test func deleteAllArchivedSessionsDeletesOnlyTerminalArchivedRows() async throws {
+    @Test func deleteAllArchivedSessionsDeletesEveryArchivedRow() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
         let viewModel = PickySessionListViewModel(
@@ -3464,18 +3464,18 @@ struct PickySessionViewModelTests {
         try await settle()
 
         viewModel.deleteAllArchivedSessions()
-        try await settle()
+        try await wait(until: { viewModel.archivedSessions.isEmpty })
 
-        #expect(Set(viewModel.archivedSessions.map(\.id)) == activeIDs)
+        #expect(viewModel.archivedSessions.isEmpty)
         #expect(viewModel.sessions.map(\.id) == ["unarchived"])
-        #expect(archiveStore.archivedSessionIDs == activeIDs)
-        #expect(archiveStore.manuallyArchivedSessionIDs == activeIDs)
+        #expect(archiveStore.archivedSessionIDs.isEmpty)
+        #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
         let deleteCommandIDs = Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId))
-        #expect(deleteCommandIDs == terminalIDs)
+        #expect(deleteCommandIDs == terminalIDs.union(activeIDs))
     }
 
     @Test(arguments: ["queued", "running", "waiting_for_input"])
-    func deleteArchivedSessionRetainsActiveArchivedRow(status: String) async throws {
+    func deleteArchivedSessionDeletesActiveArchivedRow(status: String) async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
         let viewModel = PickySessionListViewModel(
@@ -3490,12 +3490,12 @@ struct PickySessionViewModelTests {
         try await settle()
 
         viewModel.deleteArchivedSession(sessionID: "pickle-1")
-        try await settle()
+        try await wait(until: { viewModel.archivedSessions.isEmpty })
 
-        #expect(viewModel.archivedSessions.map(\.id) == ["pickle-1"])
-        #expect(archiveStore.archivedSessionIDs == ["pickle-1"])
-        #expect(archiveStore.manuallyArchivedSessionIDs == ["pickle-1"])
-        #expect(!client.sentCommands.contains { $0.type == .deleteSession })
+        #expect(viewModel.archivedSessions.isEmpty)
+        #expect(archiveStore.archivedSessionIDs.isEmpty)
+        #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
+        #expect(client.sentCommands.contains { $0.type == .deleteSession && $0.sessionId == "pickle-1" })
     }
 
     @Test func deleteArchivedSessionRetainsRowWhenTransportFails() async throws {

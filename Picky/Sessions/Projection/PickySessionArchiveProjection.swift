@@ -29,29 +29,39 @@ extension PickySessionRegistry: PickySessionRunningCountProviding {}
 protocol PickySessionArchiveCommands: AnyObject {
     func unarchive(sessionID: String)
     func deleteArchivedSession(sessionID: String)
+    func deleteArchivedSession(sessionID: String, onFailure: @escaping @MainActor (Error) -> Void)
     func deleteAllArchivedSessions()
+    func deleteAllArchivedSessions(onFailure: @escaping @MainActor (Error) -> Void)
     func stopArchivedAsyncWork(sessionID: String) async throws
 }
 
 extension PickySessionListViewModel: PickySessionArchiveCommands {}
 
 extension PickyAsyncWorkSummary {
-    var permitsArchivedDeletion: Bool {
+    var permitsArchivedRuntimeRelease: Bool {
         tracking == .ready && activeRootCount == 0 && pendingCompletionCount == 0
-            && uncertainExecutionCount == 0 && canReleaseRuntime
+            && uncertainExecutionCount == 0 && attentionCount == 0 && canReleaseRuntime
     }
 }
 
 extension PickySessionMetadata {
-    var isSafeToDeleteArchived: Bool {
-        guard [.completed, .failed, .cancelled, .blocked].contains(status) else { return false }
-        return asyncWorkSummary?.permitsArchivedDeletion ?? (agentCycle == nil)
+    var isSafeToReleaseArchivedRuntime: Bool {
+        if let asyncWorkSummary {
+            return status != .running && status != .queued
+                && agentCycle?.phase != .responding && agentCycle?.phase != .compacting
+                && asyncWorkSummary.permitsArchivedRuntimeRelease
+        }
+        return [.completed, .failed, .cancelled, .blocked].contains(status) && agentCycle == nil
     }
 }
 
 extension PickySessionListViewModel.SessionCard {
-    var isSafeToDeleteArchived: Bool {
-        guard [.completed, .failed, .cancelled, .blocked].contains(status) else { return false }
-        return asyncWorkSummary?.permitsArchivedDeletion ?? !hasAsyncTracking
+    var isSafeToReleaseArchivedRuntime: Bool {
+        if let asyncWorkSummary {
+            return status != .running && status != .queued
+                && agentCycle?.phase != .responding && agentCycle?.phase != .compacting
+                && asyncWorkSummary.permitsArchivedRuntimeRelease
+        }
+        return [.completed, .failed, .cancelled, .blocked].contains(status) && !hasAsyncTracking
     }
 }

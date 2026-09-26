@@ -63,6 +63,13 @@ struct PickyConversationCardView: View {
     @State private var planExpansionSessionID: String?
     @State private var composerFocusRequestID = 0
     @State private var transientComposerHeightGrowth: CGFloat = 0
+    @State private var backgroundStopError: String?
+    private var showsBackgroundStopErrorInShelf: Bool {
+        guard case .loaded(let metadata) = sessionStore.metaStore.metadataState,
+              let summary = metadata.asyncWorkSummary else { return false }
+        return PickyAsyncTaskShelfPresentation.isEmptyAttention(summary: summary,
+            detail: sessionStore.asyncTaskStore.detailState)
+    }
     @State private var navigationRequest = PickyConversationNavigationRequest()
     @State private var viewportState = PickyConversationViewportState.pinned
 
@@ -303,9 +310,10 @@ struct PickyConversationCardView: View {
                     - 55 - transientComposerHeightGrowth)),
                 compact: PickyConversationCardHeightPolicy.resolvedHeight(
                     fixedHeight: fixedHeight, maxHeight: maxHeight,
-                    transientGrowth: transientComposerHeightGrowth) < 440
+                    transientGrowth: transientComposerHeightGrowth) < 440,
+                bottomSpacing: DS.Spacing.space2,
+                stopError: backgroundStopError
             )
-            .padding(.bottom, DS.Spacing.space2)
 
             PickyConversationComposerView(
                 metaStore: sessionStore.metaStore,
@@ -319,6 +327,8 @@ struct PickyConversationCardView: View {
                 isUtilityPanelOpen: isUtilityPanelOpen,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 isOptionModifierPressed: isOptionModifierPressed,
+                sharedStopError: $backgroundStopError,
+                stopErrorInShelf: showsBackgroundStopErrorInShelf,
                 onToggleUtilityPanel: onToggleUtilityPanel,
                 onRequestRewind: { showingRewindPicker = true },
                 onTransientHeightChange: { growth in
@@ -332,6 +342,7 @@ struct PickyConversationCardView: View {
         .onChange(of: plan.sessionID) { _, _ in
             viewportState = .pinned
             transientComposerHeightGrowth = 0
+            backgroundStopError = nil
         }
     }
 

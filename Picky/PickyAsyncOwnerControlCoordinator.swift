@@ -14,6 +14,7 @@ final class PickyAsyncSessionControlState {
     var stops: [String: PickyCommandEnvelope] = [:]
     var stopSources: [String: ObjectIdentifier] = [:]
     var releases: [String: Release] = [:]
+    var deletions: [String: Int] = [:]
     var intentGenerations: [String: Int] = [:]
     var archiveIntents: [String: String] = [:]
     var archiveModes: [String: PickyAsyncTaskCommand.ArchiveMode] = [:]
@@ -38,6 +39,18 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
 
     func blocksInput(sessionID: String) -> Bool {
         asyncControlState.restoring.contains(sessionID) || asyncControlState.releases[sessionID] != nil
+            || asyncControlState.deletions[sessionID] != nil
+    }
+
+    func beginDeletion(sessionID: String) {
+        asyncControlState.deletions[sessionID, default: 0] += 1
+        asyncControlState.intentGenerations[sessionID, default: 0] += 1
+        asyncControlState.releases[sessionID] = nil
+    }
+
+    func endDeletion(sessionID: String) {
+        let remaining = asyncControlState.deletions[sessionID, default: 0] - 1
+        asyncControlState.deletions[sessionID] = remaining > 0 ? remaining : nil
     }
 
     func asyncControlContext(sessionID: String) async throws -> PickyAsyncControlContext {
@@ -211,7 +224,7 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
     }
 
     func releaseArchivedAsyncSession(sessionID: String) async throws -> Bool {
-        guard !asyncControlState.restoring.contains(sessionID) else { return false }
+        guard !asyncControlState.restoring.contains(sessionID), asyncControlState.deletions[sessionID] == nil else { return false }
         guard let router else { throw PickyAgentClientRouterError.routerUnavailable }
         let generation = asyncControlState.intentGenerations[sessionID, default: 0]
         let release: PickyAsyncSessionControlState.Release
@@ -238,7 +251,8 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
             try requireAsyncSettlement(result)
         }
         let current = try await asyncControlContext(sessionID: sessionID)
-        guard release.intentGeneration == asyncControlState.intentGenerations[sessionID, default: 0],
+        guard asyncControlState.deletions[sessionID] == nil,
+              release.intentGeneration == asyncControlState.intentGenerations[sessionID, default: 0],
               current.hasCompleteCoverage, let intent = current.archiveIntentId,
               let runtime = current.runtimeInstanceId,
               current.releasePrepared == result.releaseApproval else { return false }
@@ -313,8 +327,28 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
         }
     }
 
+    func sendDeletion(_ command: PickyCommandEnvelope, timeout: TimeInterval) async throws -> PickyErrorEvent? {
+        guard let router, let sessionID = command.sessionId else {
+            throw PickyAgentClientRouterError.invalidBridgeRequest
+        }
+        beginDeletion(sessionID: sessionID)
+        defer { endDeletion(sessionID: sessionID) }
+        // Capture the connected owner without respawning an already retired child.
+        let owner = try await router.connectedClient(for: sessionID, allowRespawn: false)
+        let generation = router.childGenerationValue(for: sessionID)
+        let rejection = try await router.sendAwaitingError(command, timeout: timeout,
+            requireAcknowledgement: true, on: owner)
+        guard router.client(for: sessionID) === owner, router.childGenerationValue(for: sessionID) == generation else {
+            throw PickyAgentClientRouterError.bridgeCommandRejected("Pickle owner changed during deletion.")
+        }
+        return rejection
+    }
+
     func deleteSession(sessionID: String, timeout: TimeInterval) async throws {
-        try await legacyCommand(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID), timeout: timeout)
+        if let error = try await sendDeletion(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID),
+            timeout: timeout) {
+            throw PickyAgentClientRouterError.bridgeCommandRejected(error.message)
+        }
     }
 
     private func legacyCommand(_ command: PickyCommandEnvelope, timeout: TimeInterval = 5) async throws {

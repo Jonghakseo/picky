@@ -26,6 +26,7 @@ final class FakePickyAgentClient: PickyAgentClient {
     @MainActor var shouldThrowOnSend = false
     @MainActor var sendAwaitingErrorResult: PickyErrorEvent?
     @MainActor private(set) var acknowledgementRequirements: [Bool] = []
+    @MainActor private(set) var acknowledgementTimeouts: [TimeInterval] = []
     var beforeSend: ((PickyCommandEnvelope) async -> Void)?
 
     init() {
@@ -56,6 +57,7 @@ final class FakePickyAgentClient: PickyAgentClient {
         try await send(command)
         return await MainActor.run {
             acknowledgementRequirements.append(requireAcknowledgement)
+            acknowledgementTimeouts.append(timeout)
             return sendAwaitingErrorResult
         }
     }

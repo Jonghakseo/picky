@@ -21,6 +21,7 @@ final class PickySessionArchiveCoordinator: ObservableObject {
     private var commandIntents: [String: (sessionID: String, archived: Bool)] = [:]
     private var commits: [String: Task<Void, Never>] = [:]
     private var releasing = Set<String>()
+    private var deleting = Set<String>()
     private var generations: [String: Int] = [:]
 
     func setMembership(_ sessionID: String, archived: Bool, store: any PickySessionArchiveStoring) {
@@ -97,7 +98,7 @@ final class PickySessionArchiveCoordinator: ObservableObject {
     func release(sessionID: String, client: any PickyAgentClient, retry: Bool = false,
                  onReleased: @escaping @MainActor () -> Void) {
         if retry { states[sessionID] = nil }
-        guard states[sessionID] == nil, releasing.insert(sessionID).inserted else { return }
+        guard states[sessionID] == nil, !deleting.contains(sessionID), releasing.insert(sessionID).inserted else { return }
         Task { @MainActor in
             defer { self.releasing.remove(sessionID) }
             do {
@@ -107,16 +108,40 @@ final class PickySessionArchiveCoordinator: ObservableObject {
         }
     }
 
+    func requestDeleteAll(sessionIDs: [String], onDelete: (String) -> Void) {
+        guard !sessionIDs.isEmpty else { return }
+        pickySessionLog("delete all archived sessions count=\(sessionIDs.count)")
+        for id in sessionIDs { onDelete(id) }
+    }
+
+    func releaseIfCommitted(session: PickySessionListViewModel.SessionCard, client: any PickyAgentClient,
+                            childSessionReleaser: (any PickyChildSessionReleasing)?, alreadyReleased: Bool,
+                            onReleased: @escaping @MainActor () -> Void) {
+        guard session.hasAsyncTracking ? session.isSafeToReleaseArchivedRuntime : session.status.isTerminal else { return }
+        guard !hasCommit(sessionID: session.id), !alreadyReleased, !deleting.contains(session.id) else { return }
+        if session.hasAsyncTracking {
+            release(sessionID: session.id, client: client, onReleased: onReleased)
+            return
+        }
+        onReleased()
+        pickySessionLog("archive-commit session=\(session.id) releasing terminal child")
+        childSessionReleaser?.releaseChild(sessionId: session.id)
+    }
+
     func requestDelete(sessionID: String, client: any PickyAgentClient,
                        canDelete: @escaping @MainActor () -> Bool,
                        onConfirmed: @escaping @MainActor () -> Void,
                        onFailure: @escaping @MainActor (Error) -> Void) {
-        guard canDelete() else { return }
+        guard canDelete(), deleting.insert(sessionID).inserted else { return }
+        let control = client.asyncTaskControl
+        control?.beginDeletion(sessionID: sessionID)
+        let generation = generations[sessionID, default: 0]
         Task { @MainActor in
-            guard canDelete() else { return }
+            defer { deleting.remove(sessionID); control?.endDeletion(sessionID: sessionID) }
+            guard canDelete(), generation == generations[sessionID, default: 0] else { return }
             do {
                 try await delete(sessionID: sessionID, client: client)
-                if canDelete() { onConfirmed() }
+                if canDelete(), generation == generations[sessionID, default: 0] { onConfirmed() }
             } catch { onFailure(error) }
         }
     }
@@ -131,7 +156,7 @@ final class PickySessionArchiveCoordinator: ObservableObject {
 
     func delete(sessionID: String, client: any PickyAgentClient) async throws {
         if let rejection = try await client.sendAwaitingError(PickyCommandEnvelope(type: .deleteSession,
-            sessionId: sessionID), timeout: 5, requireAcknowledgement: true) {
+            sessionId: sessionID), timeout: 30, requireAcknowledgement: true) {
             throw PickyAgentClientRouterError.bridgeCommandRejected(rejection.message)
         }
     }

@@ -67,8 +67,8 @@ import { SessionMessageBuilder, type SessionMessageSyncPatch } from "./session-m
 export class SessionSupervisor extends EventEmitter {
   readonly asyncControls = new AsyncControlCoordinator({
     read: (id) => this.mustGet(id), patch: (id, patch) => this.patch(id, patch), handle: (id) => this.runtimeHandles.get(id), runtimeBlocked: (id) => this.runtimeDisposalGate.isBlocked(id), pendingInput: (id) => (this.pendingQueueDeliveries.get(id)?.length ?? 0) > 0, commit: (id, build) => this.commitSession(id, build),
-    abortModel: async (id, handle) => { await this.clearQueue(id, "all"); await handle.abort(); await this.waitForRuntimeEvents(id); },
-    drain: (id) => this.waitForRuntimeEvents(id), archived: (id, archived) => this.emit("sessionArchivedAuthoritative", id, archived), resumeReleased: (id) => this.tryResumeRuntimeHandle(this.mustGet(id)),
+    abortModel: async (id, handle) => { await this.clearQueue(id, "all"); if (handle.isStreaming || handle.isCompacting || handle.hasPendingAsyncWork) await handle.abort(); await this.waitForRuntimeEvents(id); },
+    drain: (id) => this.waitForRuntimeEvents(id), archived: (id, archived) => this.emit("sessionArchivedAuthoritative", id, archived), resumeReleased: (id) => this.tryResumeRuntimeHandle(this.mustGet(id)), pendingRuntimeHandle: (id, action) => this.pendingRuntimeHandle(id, action),
   });
   executeAsyncTaskCommand(command: AsyncTaskCommand) { return this.asyncControls.execute(command); }
   private sessions = new Map<string, PickyAgentSession>();
@@ -944,46 +944,41 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
-  /**
-   * Permanent purge of a single archived session triggered by the user from
-   * Settings → Pickle. Mirrors the inner body of `purgeStaleArchivedSessions`
-   * but operates on one session id and refuses to act on anything still
-   * running so the user cannot accidentally rip a live runtime handle out
-   * from under itself. Caller is expected to broadcast a fresh
-   * `sessionSnapshot` so clients prune their local arrays.
-   */
+  /** Explicit user deletion, distinct from automatic retention and runtime release. */
   async deleteSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       logAgentd("deleteSession skipped: unknown session", { sessionId });
       return;
     }
-    if (!isTerminalStatus(session.status) && !isAsyncTracked(session)) {
-      throw new Error(`Cannot delete a session that is not in a terminal state: ${sessionId} (${session.status})`);
-    }
-    if (session.archived !== true) {
-      throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
-    }
-    if (this.asyncControls.retained(sessionId)) throw new Error("Async work or provider coverage prevents deletion");
-    await this.detachRuntimeHandle(sessionId, true);
+    if (session.archived !== true) throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
+
+    await this.asyncControls.prepareExplicitDeletion(sessionId);
+
+    // No attached owner means archived history can be discarded, not that an
+    // unknown process is safe to stop or that a release was approved.
+    await this.detachRuntimeHandle(sessionId, true, true);
     await this.setTerminalSessionTailEnabled(sessionId, false);
-    await this.store.deleteSession(sessionId);
-    this.sessions.delete(sessionId);
-    this.messageBuilder.onSessionRemoved(sessionId);
-    this.pickleSessionIds.delete(sessionId);
-    this.sessionContexts.delete(sessionId);
-    this.sessionSeq.delete(sessionId);
-    this.clearPendingQueueDeliveries(sessionId);
-    this.pickleVisualDslCoordinator.deactivate(sessionId, "session deleted");
-    this.materializedQueueDeliveries.delete(sessionId);
-    this.turnActivity.delete(sessionId);
-    this.noTurnRanSessionStateRestores.delete(sessionId);
-    this.pendingResourceReloadSessionIDs.delete(sessionId);
-    this.pendingPostCompactionReloadIds.delete(sessionId);
-    this.lastEmittedSteeringMode.delete(sessionId);
-    this.lastEmittedFollowUpMode.delete(sessionId);
-    this.mainAgent.clearLocalPickleTracking(sessionId);
-    logAgentd("session deleted", { sessionId });
+    await this.runSessionWrite(sessionId, async () => {
+      if (this.mustGet(sessionId).archived !== true) throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
+      await this.store.deleteSession(sessionId);
+      this.sessions.delete(sessionId);
+      this.messageBuilder.onSessionRemoved(sessionId);
+      this.pickleSessionIds.delete(sessionId);
+      this.sessionContexts.delete(sessionId);
+      this.sessionSeq.delete(sessionId);
+      this.clearPendingQueueDeliveries(sessionId);
+      this.pickleVisualDslCoordinator.deactivate(sessionId, "session deleted");
+      this.materializedQueueDeliveries.delete(sessionId);
+      this.turnActivity.delete(sessionId);
+      this.noTurnRanSessionStateRestores.delete(sessionId);
+      this.pendingResourceReloadSessionIDs.delete(sessionId);
+      this.pendingPostCompactionReloadIds.delete(sessionId);
+      this.lastEmittedSteeringMode.delete(sessionId);
+      this.lastEmittedFollowUpMode.delete(sessionId);
+      this.mainAgent.clearLocalPickleTracking(sessionId);
+      logAgentd("session deleted", { sessionId });
+    });
   }
 
   async setSessionArchived(sessionId: string, archived: boolean, archiveMode?: "continue" | "stopThenArchive", requestId?: string): Promise<PickyAgentSession> {
@@ -1773,17 +1768,18 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
-  private async detachRuntimeHandle(sessionId: string, abort = false): Promise<void> {
-    await this.asyncControls.prepareReplacement(sessionId);
+  private async detachRuntimeHandle(sessionId: string, abort = false, explicitDeletion = false): Promise<void> {
+    if (!explicitDeletion) await this.asyncControls.prepareReplacement(sessionId);
     const handle = this.runtimeHandles.get(sessionId);
     this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
     // Tracked observers remain attached until the fenced runtime actually disposes.
     const tracked = isAsyncTracked(this.mustGet(sessionId));
-    if (tracked) await this.asyncControls.dispose(sessionId, () => this.runtimeDisposalGate.dispose(sessionId, handle, "tracked-runtime"));
+    if (tracked && !explicitDeletion) await this.asyncControls.dispose(sessionId, () => this.runtimeDisposalGate.dispose(sessionId, handle, "tracked-runtime"));
+    if (explicitDeletion) await this.runtimeDisposalGate.dispose(sessionId, handle, "explicit-archived-delete");
     this.runtimeHandleUnsubscribes.get(sessionId)?.();
     this.runtimeHandleUnsubscribes.delete(sessionId);
     this.runtimeHandles.delete(sessionId);
-    if (!tracked) await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
+    if (!tracked && !explicitDeletion) await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
   }
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     await this.runtimeDisposalGate.waitOrDispose(sessionId, handle);

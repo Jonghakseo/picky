@@ -242,16 +242,17 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   async abort(): Promise<void> {
     if (this.disposed) return;
+    const hadActiveTurn = this.runtime.session.isStreaming || piIsCompacting(this.runtime.session) || this.initialPromptTimer !== undefined;
     logAgentd("pi abort", { sessionId: this.id });
     if (this.initialPromptTimer) {
       clearTimeout(this.initialPromptTimer);
       this.initialPromptTimer = undefined;
     }
-    this.pendingAbortAcknowledgements += 1;
+    if (hadActiveTurn) this.pendingAbortAcknowledgements += 1;
     this.uiBridge.cancelAll();
     this.runtime.session.abortCompaction();
     await this.runtime.session.abort();
-    this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    if (hadActiveTurn) this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
   }
 
   async dispose(): Promise<void> {
@@ -655,7 +656,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   get hasPendingAsyncWork(): boolean {
-    return this.asyncFence !== undefined && (!this.asyncSettled || !this.runtime.session.isIdle || this.pendingPromptPreflightDeliveryIds.size > 0);
+    return this.asyncFence !== undefined && (this.initialPromptTimer !== undefined || !this.asyncSettled || !this.runtime.session.isIdle || this.pendingPromptPreflightDeliveryIds.size > 0);
   }
 
   get isCompacting(): boolean {

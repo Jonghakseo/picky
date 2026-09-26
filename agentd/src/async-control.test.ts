@@ -385,17 +385,24 @@ it("routes legacy archive through the same owner choice and settled state", asyn
   expect(f.calls).toHaveLength(effects);
 });
 
-it("protects reload, new, rewind, plugin reload, terminal sync and deletion without losing the resource observer", async () => {
+it("protects automatic replacement while explicitly deleting archived connected work", async () => {
   const f = await fixture(); await f.addTask(false);
   for (const text of ["/new", "/reload"]) await expect(f.supervisor.followUp("session-1", text)).rejects.toThrow(/Async|async/);
   await expect(f.supervisor.rewindToEntry("session-1", "entry")).rejects.toThrow(/Async|async/);
   expect((await f.supervisor.reloadPlugins()).pickleDeferredCount).toBe(1);
   await expect(f.supervisor.syncTerminalSession("session-1")).rejects.toThrow("Terminal sync blocked");
   await f.supervisor.setSessionArchived("session-1", true, "continue");
-  await expect(f.supervisor.deleteSession("session-1")).rejects.toThrow();
   expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.[0]?.presence).toBe("active");
-  expect((await f.supervisor.asyncControls.stop("session-1", "stop-after-guards")).outcome).toBe("settled");
-  expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.[0]?.presence).toBe("settled");
+  await f.supervisor.deleteSession("session-1");
+  expect(await f.store.loadReadOnly("session-1")).toBeUndefined();
+});
+
+it("keeps an archived Pickle when explicit deletion cannot confirm connected task cleanup", async () => {
+  const f = await fixture({ fail: "cancel" }); await f.addTask(false);
+  await f.supervisor.setSessionArchived("session-1", true, "continue");
+  await expect(f.supervisor.deleteSession("session-1")).rejects.toThrow(/cleanup|cancel|settled/i);
+  expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.[0]?.presence).toBe("active");
+  expect(f.supervisor.get("session-1")?.archived).toBe(true);
 });
 
 it("retains archived old-owner work across restart and TTL even when optional control metadata is absent", async () => {
@@ -407,8 +414,8 @@ it("retains archived old-owner work across restart and TTL even when optional co
   const disk = await f.store.loadReadOnly("session-1");
   expect(disk?.asyncTasks?.[0]).toMatchObject({ presence: "unknown", execution: "interrupted" });
   expect(disk?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
-  await expect(restarted.deleteSession("session-1")).rejects.toThrow();
-  expect(await f.store.loadReadOnly("session-1")).toBeDefined();
+  await restarted.deleteSession("session-1");
+  expect(await f.store.loadReadOnly("session-1")).toBeUndefined();
 });
 
 it("keeps the archived record and runtime ownership when final disposal fails", async () => {
@@ -424,9 +431,9 @@ it("does not discard a reserved grant merely because its presence is settled", a
   await expect(f.supervisor.setSessionArchived("session-1", true)).rejects.toThrow("Archive choice required");
   await expect(f.supervisor.followUp("session-1", "/new")).rejects.toThrow();
   await f.supervisor.setSessionArchived("session-1", true, "continue");
-  await expect(f.supervisor.deleteSession("session-1")).rejects.toThrow();
+  await expect(f.supervisor.deleteSession("session-1")).rejects.toThrow(/cleanup|grant|timed out/i);
   expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.[0]).toMatchObject({ registration: "approved", presence: "settled" });
-});
+}, 20000);
 
 it("retains original resource observers when the external JSONL tail advances", async () => {
   const f = await fixture(); await f.addTask(false);

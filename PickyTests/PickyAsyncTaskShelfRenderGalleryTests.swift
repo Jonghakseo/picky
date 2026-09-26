@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import Testing
+import Vision
 @testable import Picky
 
 @MainActor
@@ -52,6 +53,360 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
         #expect(scenes.count == 80)
+    }
+
+    @Test func emptyNewAndReenteredPicklesNeverMountLoadingShelfButRealWorkAndUncertaintyDo() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let commands = PickySessionListViewModel(client: FakePickyAgentClient())
+        var session = PickyAgentSession(id: "session", title: "New Pickle", status: .waiting_for_input,
+            cwd: "/tmp/project", createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 2), logs: [], tools: [], artifacts: [], changedFiles: [])
+        session.asyncTasks = []
+        session.completionTickets = []
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, tracking: .reconciling)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let store = storage.registry.sessionStore(sessionID: "session")
+        let full = NSHostingView(rootView: PickyMountedAsyncTaskShelfView(store: store, commands: commands,
+            maxListHeight: 160, bottomSpacing: DS.Spacing.space2).frame(width: 380))
+        let compact = NSHostingView(rootView: PickyMountedAsyncTaskShelfView(store: store, commands: commands,
+            maxListHeight: 160, compact: true, bottomSpacing: DS.Spacing.space2).frame(width: 380))
+
+        func install(_ revision: Int, omitted: [String] = []) throws {
+            let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+            let data = try JSONSerialization.data(withJSONObject: ["sessionId": "session", "epoch": "epoch",
+                "revision": revision, "complete": omitted.isEmpty, "omittedFields": omitted, "projection": projection])
+            let snapshot = try JSONDecoder.pickyAgentProtocolDecoder()
+                .decode(PickySessionProjectionSnapshot.self, from: data)
+            #expect(storage.applyProjectionSnapshot(snapshot, archived: false) != nil)
+            full.layoutSubtreeIfNeeded()
+            compact.layoutSubtreeIfNeeded()
+        }
+        func heights() -> [CGFloat] {
+            full.rootView = PickyMountedAsyncTaskShelfView(store: store, commands: commands,
+                maxListHeight: 160, bottomSpacing: DS.Spacing.space2).frame(width: 380)
+            compact.rootView = PickyMountedAsyncTaskShelfView(store: store, commands: commands,
+                maxListHeight: 160, compact: true, bottomSpacing: DS.Spacing.space2).frame(width: 380)
+            full.layoutSubtreeIfNeeded()
+            compact.layoutSubtreeIfNeeded()
+            return [full.fittingSize.height, compact.fittingSize.height]
+        }
+        try install(1)
+        let initialHeights = heights()
+        print("mounted empty initial full/compact heights: \(initialHeights)")
+        #expect(initialHeights.allSatisfy { $0 == 0 }, "No blank band before the first instruction")
+        try install(2)
+        let negotiatingHeights = heights()
+        print("mounted empty negotiating full/compact heights: \(negotiatingHeights)")
+        #expect(negotiatingHeights.allSatisfy { $0 == 0 }, "Provider negotiation must not shift the composer")
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0)
+        try install(3)
+        let readyHeights = heights()
+        print("mounted empty ready full/compact heights: \(readyHeights)")
+        #expect(readyHeights.allSatisfy { $0 == 0 }, "Ready empty session remains absent")
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, tracking: .unsupported)
+        try install(4)
+        #expect(heights().allSatisfy { $0 == 0 }, "Unsupported tracking without work needs no empty shelf")
+
+        // An existing Pickle has a settled cycle and a last request. Re-entry first omits
+        // detail, then hydrates settled history, before new background work appears.
+        session.agentCycle = .init(cycleId: "previous", runtimeInstanceId: "runtime",
+            phase: .settled, outcome: .completed, controlGeneration: 1)
+        session.lastRequest = .init(source: .followUp, text: "Earlier request")
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, tracking: .reconciling)
+        try install(5, omitted: ["asyncTasks", "completionTickets"])
+        #expect(heights().allSatisfy { $0 == 0 }, "Re-entry with omitted detail must not shift the composer")
+        let old = PickyAsyncTaskShelfFixtures.task("old", execution: .succeeded, presence: .settled)
+        session.asyncTasks = [old]
+        try install(6)
+        #expect(heights().allSatisfy { $0 == 0 }, "Hydrated settled history must not create an empty header")
+        session.asyncTasks = []
+        try install(7)
+        #expect(heights().allSatisfy { $0 == 0 }, "Loaded empty detail stays quiet during reconciliation")
+
+        session.status = .running
+        session.asyncTasks = [PickyAsyncTaskShelfFixtures.task("root")]
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 1, tracking: .reconciling)
+        try install(8)
+        let workHeights = heights()
+        print("mounted real work full/compact heights: \(workHeights)")
+        #expect(workHeights.allSatisfy { $0 >= 28 }, "Real work remains visible during negotiation")
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            for compact in [false, true] {
+                let view = PickyMountedAsyncTaskShelfView(store: store, commands: commands,
+                    maxListHeight: 160, compact: compact, bottomSpacing: DS.Spacing.space2)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .frame(width: 380)
+                let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                    logicalSize: CGSize(width: 380, height: workHeights[compact ? 1 : 0]),
+                    scale: 2, appearance: .aqua))
+                let recognition = VNRecognizeTextRequest()
+                recognition.recognitionLevel = .accurate
+                recognition.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([recognition])
+                let lines = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                #expect(!lines.contains { $0.localizedCaseInsensitiveContains("Checking task status") }, "\(lines)")
+                if !compact { #expect(lines.contains { $0.contains("Run local checks") }, "\(lines)") }
+            }
+        }
+        session.status = .blocked
+        session.asyncTasks?[0].presence = .unknown
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, unknown: 1, tracking: .reconciling)
+        try install(9)
+        #expect(heights().allSatisfy { $0 >= 28 }, "Unknown execution remains visible")
+        session.asyncTasks?[0].presence = .settled
+        session.asyncTasks?[0].execution = .failed
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, attention: 1)
+        try install(10)
+        #expect(heights().allSatisfy { $0 >= 28 }, "Attention remains visible")
+        session.asyncTasks = nil
+        session.completionTickets = nil
+        try install(11, omitted: ["asyncTasks", "completionTickets"])
+        #expect(heights().allSatisfy { $0 >= 28 }, "Canonical attention remains visible without detail")
+    }
+
+    @Test func focusedExpandedTaskRendersOnceWithNoIdleRefreshControl() throws {
+        let outputRequest = request.deletingLastPathComponent()
+            .appendingPathComponent(".async-tasks-focused-output-path")
+        let path = try? String(contentsOf: outputRequest, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = path.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        if let output { try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true) }
+        let title = "Run 100-second dummy task"
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            for light in [false, true] {
+                for state in ["simple", "long", "failure", "unknown", "attention"] {
+                    var root = recent(PickyAsyncTaskShelfFixtures.task("root", title: state == "long"
+                        ? "Run 100-second dummy task and inspect every step of the long output without losing the full title"
+                        : title, execution: state == "attention" ? .failed : .running,
+                        presence: state == "unknown" ? .unknown : state == "attention" ? .settled : .active))
+                    if state == "long" { root.details = ["report": .string("Full provider note retained")] }
+                    let summary = PickyAsyncTaskShelfFixtures.summary(active: state == "attention" ? 0 : 1,
+                        unknown: state == "unknown" ? 1 : 0, attention: state == "attention" ? 1 : 0)
+                    let detail = PickyAsyncTaskDetail(tasks: [root], tickets: [])
+                    let view = PickyAsyncTaskShelfView(summary: summary, detailState: .loaded(detail),
+                        initiallyExpandedRows: true,
+                        detailError: { _ in state == "failure" ? "Provider refused the detail request." : nil },
+                        cancelAvailability: { _ in .available }, onAction: { _ in })
+                        .environment(\.pickyAppFontScale, state == "long" ? 1.3 : 1)
+                        .environment(\.locale, Locale(identifier: "en"))
+                        .environment(\.colorScheme, light ? .light : .dark)
+                        .frame(width: 420).padding(DS.Spacing.space3).background(DS.Colors.background)
+                    let appearance: NSAppearance.Name = light ? .aqua : .darkAqua
+                    let host = NSHostingView(rootView: view)
+                    host.appearance = NSAppearance(named: appearance)
+                    host.layoutSubtreeIfNeeded()
+                    let size = host.fittingSize
+                    #expect(size.height > 0)
+                    let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                        logicalSize: size, scale: 2, appearance: appearance))
+                    if state == "simple" || state == "failure" {
+                        let recognition = VNRecognizeTextRequest()
+                        recognition.recognitionLevel = .accurate
+                        recognition.recognitionLanguages = ["en-US"]
+                        try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([recognition])
+                        let lines = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                        #expect(lines.filter { $0.contains(title) }.count == 1,
+                            "The expanded task has one visible title: \(lines)")
+                        if state == "failure" {
+                            #expect(lines.contains { $0.localizedCaseInsensitiveContains("Retry loading details") },
+                                "A failed fetch offers a labeled retry: \(lines)")
+                        }
+                    }
+                    if let output {
+                        try #require(bitmap.representation(using: .png, properties: [:]))
+                            .write(to: output.appendingPathComponent("focused-\(state)-\(light ? "light" : "dark").png"))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test func mountedRegistrationStopAndUnresolvedControlRenderOneClearStatus() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let store = storage.registry.sessionStore(sessionID: "session")
+        let commands = PickySessionListViewModel(client: FakePickyAgentClient())
+        var session = PickyAgentSession(id: "session", title: "Background control", status: .running,
+            cwd: "/tmp/project", createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 2), logs: [], tools: [], artifacts: [], changedFiles: [])
+        let first = recent(PickyAsyncTaskShelfFixtures.task("first", title: "First root"))
+        let second = recent(PickyAsyncTaskShelfFixtures.task("second", title: "Second root"))
+        var registering = recent(PickyAsyncTaskShelfFixtures.task("third", title: "New root",
+            execution: .queued, presence: .unknown))
+        registering.registration = .approved
+        session.asyncTasks = [first, second, registering]
+        session.completionTickets = []
+        session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 3)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let outputRequest = request.deletingLastPathComponent()
+            .appendingPathComponent(".async-tasks-focused-output-path")
+        let path = try? String(contentsOf: outputRequest, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = path.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        if let output { try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true) }
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            for (index, state) in ["registering", "reconciling-grant", "uncertain-grant",
+                                   "older-owner-grant", "stopping", "unresolved"].enumerated() {
+                if state == "registering" {
+                    session.agentCycle = .init(cycleId: "cycle", runtimeInstanceId: "runtime",
+                        phase: .idle, outcome: nil, controlGeneration: 1)
+                } else if state == "reconciling-grant" || state == "uncertain-grant" || state == "older-owner-grant" {
+                    session.asyncTasks = [registering]
+                    session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 1, unknown: 1,
+                        tracking: state == "reconciling-grant" ? .reconciling : .ready)
+                    session.agentCycle?.runtimeInstanceId = state == "older-owner-grant" ? "new-runtime" : "runtime"
+                } else if state == "stopping" {
+                    session.asyncTasks = [first, second].map { task in
+                        var task = task
+                        task.execution = .cancelling
+                        return task
+                    }
+                    session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 2)
+                } else if state == "unresolved" {
+                    session.status = .blocked
+                    session.asyncTasks = []
+                    session.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, attention: 1)
+                    session.asyncControl = PickyAsyncControlState(controlGeneration: 2, admissionState: .closed,
+                        operations: [.init(requestId: "stop", operationId: "stop", outcome: .blocked_cleanup,
+                            controlGeneration: 2, reason: "Cleanup confirmation timed out")], releasePrepared: nil)
+                }
+                let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+                let data = try JSONSerialization.data(withJSONObject: ["sessionId": "session", "epoch": "epoch",
+                    "revision": index + 1, "complete": true, "omittedFields": [String](), "projection": projection])
+                let snapshot = try JSONDecoder.pickyAgentProtocolDecoder()
+                    .decode(PickySessionProjectionSnapshot.self, from: data)
+                #expect(storage.applyProjectionSnapshot(snapshot, archived: false) != nil)
+                guard case .loaded(let metadata) = store.metaStore.metadataState else {
+                    Issue.record("Mounted metadata was not projected")
+                    return
+                }
+                let summary = try #require(metadata.asyncWorkSummary)
+                let detail = store.asyncTaskStore.detailState
+                if state == "registering", case .loaded(let value) = detail {
+                    #expect(PickyAsyncTaskShelfPresentation.roots(in: value).count == 3)
+                    #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(value.tasks[2], tickets: [],
+                        summary: summary, runtimeInstanceId: metadata.agentCycle?.runtimeInstanceId)
+                        == "hud.asyncTasks.execution.queued")
+                }
+                if state.hasSuffix("grant"), case .loaded(let value) = detail {
+                    #expect(value.tasks[0].registration == .approved && value.tasks[0].execution == .queued
+                        && value.tasks[0].presence == .unknown)
+                    #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(value.tasks[0], tickets: [],
+                        summary: summary, runtimeInstanceId: metadata.agentCycle?.runtimeInstanceId)
+                        == "hud.asyncTasks.execution.unknown")
+                }
+                if state == "stopping", case .loaded(let value) = detail {
+                    #expect(PickyAsyncTaskShelfPresentation.roots(in: value).count == 2)
+                    #expect(value.tasks.allSatisfy { PickyAsyncTaskShelfPresentation.executionKey($0, summary: summary)
+                        == "hud.asyncTasks.execution.cancelling" })
+                }
+                if state == "unresolved" {
+                    #expect(PickyAsyncTaskShelfPresentation.hasUnresolvedControl(summary: summary, detail: detail,
+                        control: store.asyncTaskStore.controlState))
+                }
+                for light in [false, true] {
+                    let appearance: NSAppearance.Name = light ? .aqua : .darkAqua
+                    for compact in [false, true] {
+                        let view = PickyMountedAsyncTaskShelfView(store: store, commands: commands,
+                            maxListHeight: 200, compact: compact,
+                            stopError: state == "unresolved" ? "Cleanup confirmation timed out" : nil)
+                            .environment(\.colorScheme, light ? .light : .dark)
+                            .frame(width: 420).padding(DS.Spacing.space3).background(DS.Colors.background)
+                        let host = NSHostingView(rootView: view)
+                        host.appearance = NSAppearance(named: appearance)
+                        host.layoutSubtreeIfNeeded()
+                        let size = host.fittingSize
+                        #expect(size.height > 0)
+                        let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                            logicalSize: size, scale: 2, appearance: appearance))
+                        if let output {
+                            try #require(bitmap.representation(using: .png, properties: [:])).write(to:
+                                output.appendingPathComponent("control-\(state)-\(compact ? "compact" : "full")-\(light ? "light" : "dark").png"))
+                        }
+                        guard !compact else { continue } // Popover shares the full shelf component.
+                        let recognition = VNRecognizeTextRequest()
+                        recognition.recognitionLevel = .accurate
+                        recognition.recognitionLanguages = ["en-US"]
+                        try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([recognition])
+                        let lines = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                        print("control \(state) \(light ? "light" : "dark") \(size): \(lines)")
+                        if state == "registering" {
+                            #expect(lines.contains { $0.contains("New root") })
+                            #expect(lines.contains { $0.contains("Queued") })
+                            #expect(!lines.contains { $0.contains("Unknown") || $0.contains("Needs attention") })
+                        } else if state.hasSuffix("grant") {
+                            #expect(lines.contains { $0.contains("New root") })
+                            #expect(lines.contains { $0.contains("Unknown") })
+                            #expect(!lines.contains { $0.contains("Queued") })
+                        } else if state == "stopping" {
+                            #expect(lines.filter { $0.contains("Stopping") }.count == 2)
+                            #expect(!lines.contains { $0.contains("Needs attention") })
+                        } else {
+                            #expect(lines.filter { $0.contains("Could not complete") }.count == 1)
+                            #expect(lines.contains { $0.contains("Cleanup confirmation timed out") })
+                            #expect(!lines.contains { $0.contains("No task rows") || $0.contains("Needs attention") })
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test func archivedListShowsOnlyIdentityAndActionsDespiteRetainedWork() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let commands = PickySessionListViewModel(client: FakePickyAgentClient())
+        var session = PickyAgentSession(id: "session", title: "Archived Pickle", status: .completed,
+            cwd: "/tmp/project", createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 2), logs: [], tools: [], artifacts: [], changedFiles: [])
+        session.archived = true
+        session.completionTickets = []
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            for (index, state) in ["active", "unknown", "settled"].enumerated() {
+                var summary = PickyAsyncTaskShelfFixtures.summary(active: state == "active" ? 1 : 0,
+                    unknown: state == "unknown" ? 1 : 0)
+                summary.canReleaseRuntime = state == "settled"
+                session.asyncWorkSummary = summary
+                var task = PickyAsyncTaskShelfFixtures.task("root", title: "TECHNICAL TASK TITLE",
+                    execution: state == "settled" ? .cancelled : .running,
+                    presence: state == "settled" ? .settled : state == "unknown" ? .unknown : .active)
+                task.progress = "TECHNICAL PROGRESS"
+                session.asyncTasks = [task]
+                session.asyncControl = state == "settled" ? nil : .init(controlGeneration: 2, admissionState: .closed,
+                    operations: [.init(requestId: "stop", operationId: "stop", outcome: .blocked_cleanup,
+                        controlGeneration: 2, reason: "async_request_identity_conflict")], releasePrepared: nil)
+                let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
+                let data = try JSONSerialization.data(withJSONObject: ["sessionId": "session", "epoch": "epoch",
+                    "revision": index + 1, "complete": true, "omittedFields": [String](), "projection": projection])
+                let snapshot = try JSONDecoder.pickyAgentProtocolDecoder()
+                    .decode(PickySessionProjectionSnapshot.self, from: data)
+                #expect(storage.applyProjectionSnapshot(snapshot, archived: true) != nil)
+                let store = try #require(storage.registry.existingSessionStore(sessionID: "session"))
+                guard case .loaded = store.metaStore.metadataState else {
+                    Issue.record("Archived metadata was not projected for \(state)")
+                    return
+                }
+                let view = PickyHUDArchivedSessionsListView(archiveMembership: storage.registry, commands: commands)
+                    .environment(\.locale, Locale(identifier: "en_US"))
+                    .environment(\.colorScheme, .light).frame(width: 420, height: 230)
+                    .background(DS.Colors.background)
+                let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                    logicalSize: CGSize(width: 420, height: 230), scale: 2, appearance: .aqua))
+                let recognition = VNRecognizeTextRequest()
+                recognition.recognitionLevel = .accurate
+                recognition.recognitionLanguages = ["en-US"]
+                try VNImageRequestHandler(cgImage: #require(bitmap.cgImage)).perform([recognition])
+                let lines = (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                let text = lines.joined(separator: " ")
+                #expect(text.contains("Archived Pickle") && text.contains("project"), "\(state): \(lines)")
+                #expect(text.contains("Restore") && text.contains("Delete"), "\(state): \(lines)")
+                #expect(!text.contains("TECHNICAL") && !text.contains("async_request_identity_conflict")
+                    && !text.contains("Stop") && !text.contains("Archived work"), "\(state): \(lines)")
+            }
+        }
     }
 
     @Test func boundedDetailsRemainReachableWithoutInflatingShortRows() throws {
@@ -145,7 +500,7 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
                     let registry = PickySessionRegistry()
                     let store = registry.sessionStore(sessionID: "session")
                     var card = PickySessionCard.fromAgentSession(PickyAgentSession(
-                        id: "session", title: "보관된 작업 / Archived work", status: .running, cwd: "/tmp/project",
+                        id: "session", title: "보관된 피클 / Archived Pickle", status: .running, cwd: "/tmp/project",
                         createdAt: Date(timeIntervalSince1970: 1), updatedAt: Date(timeIntervalSince1970: 2),
                         lastSummary: "Background work", logs: [], tools: [], artifacts: [], changedFiles: [], messages: []))
                     card.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 1)
@@ -298,8 +653,8 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
                         .frame(width: 80, height: 60).background(DS.Colors.background)
                     let emptyBitmap = try #require(PickyRenderGalleryRasterizer.rasterize(empty,
                         logicalSize: CGSize(width: 80, height: 60), scale: 2, appearance: appearance))
-                    #expect(png != emptyBitmap.representation(using: .png, properties: [:]),
-                        "Attention-only archived work must render a reachable Dock entry")
+                    #expect(png == emptyBitmap.representation(using: .png, properties: [:]),
+                        "The archive entry stays quiet even when archived work needs attention")
                     try png.write(to: output.appendingPathComponent(name), options: .atomic)
                     scenes.append(["file": name, "pixelWidth": bitmap.pixelsWide,
                         "pixelHeight": bitmap.pixelsHigh, "logicalWidth": 80, "logicalHeight": 60])
@@ -370,7 +725,7 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
                                       availability: availability, onAction: { _ in }, isExpanded: true)
         } else {
             // A fetched response predating the v2 processing state must never restore the old running status.
-            PickyAsyncTaskShelfView(summary: summary, detailState: state == "reconciling" || state == "unsupported" ? .unavailable : .loaded(detail),
+            PickyAsyncTaskShelfView(summary: summary, detailState: state == "unsupported" ? .unavailable : .loaded(detail),
                                    initiallyExpanded: state == "multiple" && scale == 1.3,
                                    maxListHeight: state == "expanded" ? 120 : 200,
                                    initiallyExpandedRows: state == "expanded" || state == "failure",

@@ -4,12 +4,23 @@ import Testing
 
 @MainActor
 struct PickyAsyncTaskShelfTests {
-    @Test func missingDetailPreservesSummaryAndIsNotKnownEmpty() {
-        let summary = PickyAsyncTaskShelfFixtures.summary(active: 0)
-        #expect(PickyAsyncTaskShelfPresentation.isVisible(summary: summary, detail: .unavailable))
-        #expect(!PickyAsyncTaskShelfPresentation.isVisible(summary: summary, detail: .loaded(.init(tasks: [], tickets: []))))
+    @Test func omittedDetailDoesNotCreateLoadingShelfWithoutEvidenceOfWork() {
+        let empty = PickyAsyncTaskShelfFixtures.summary(active: 0)
+        for tracking in [PickyAsyncWorkSummary.Tracking.ready, .reconciling, .unsupported] {
+            var summary = empty
+            summary.tracking = tracking
+            #expect(!PickyAsyncTaskShelfPresentation.isVisible(summary: summary, detail: .unavailable))
+            #expect(!PickyAsyncTaskShelfPresentation.isVisible(summary: summary,
+                detail: .loaded(.init(tasks: [], tickets: []))))
+        }
         #expect(PickyAsyncTaskShelfPresentation.isVisible(summary: PickyAsyncTaskShelfFixtures.summary(active: 2),
-                                                          detail: .loaded(.init(tasks: [], tickets: []))))
+            detail: .unavailable))
+        #expect(PickyAsyncTaskShelfPresentation.isVisible(summary: PickyAsyncTaskShelfFixtures.summary(active: 0, pending: 1),
+            detail: .unavailable))
+        #expect(PickyAsyncTaskShelfPresentation.isVisible(summary: PickyAsyncTaskShelfFixtures.summary(active: 0, unknown: 1),
+            detail: .unavailable))
+        #expect(PickyAsyncTaskShelfPresentation.isVisible(summary: PickyAsyncTaskShelfFixtures.summary(active: 0, attention: 1),
+            detail: .loaded(.init(tasks: [], tickets: []))))
     }
 
     @Test func currentRootsPrecedeHistoryAndSettledSuccessDoesNotKeepShelfOpen() {
@@ -37,7 +48,7 @@ struct PickyAsyncTaskShelfTests {
             PickyAsyncTaskShelfFixtures.ticket(delivery, state: .processing)
         ])
         #expect(PickyAsyncTaskShelfPresentation.roots(in: detail).map(\.taskId) == ["queued", "delivery", "failed"])
-        #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(delivery, tickets: detail.tickets) == "hud.asyncTasks.result.processing")
+        #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(delivery, tickets: detail.tickets, summary: PickyAsyncTaskShelfFixtures.summary(active: 0, pending: 1)) == "hud.asyncTasks.result.processing")
         #expect(PickyAsyncTaskShelfPresentation.roots(in: .init(tasks: [delivery], tickets: [])).isEmpty)
     }
 
@@ -55,21 +66,7 @@ struct PickyAsyncTaskShelfTests {
         let authoritative = PickyAsyncTaskDetail(tasks: [updated], tickets: [PickyAsyncTaskShelfFixtures.ticket(updated, state: .handled)])
         #expect(PickyAsyncTaskShelfPresentation.supplementalLines(for: updated, in: response).isEmpty)
         #expect(PickyAsyncTaskShelfPresentation.roots(in: authoritative).isEmpty)
-        #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(updated, tickets: authoritative.tickets) == "hud.asyncTasks.execution.succeeded")
-    }
-
-    @Test func archivedDeletionRequiresReadyQuiescentAuthoritativeSummary() {
-        var summary = PickyAsyncTaskShelfFixtures.summary(active: 0)
-        summary.canReleaseRuntime = true
-        #expect(summary.permitsArchivedDeletion)
-        summary.pendingCompletionCount = 1
-        #expect(!summary.permitsArchivedDeletion)
-        summary.pendingCompletionCount = 0
-        summary.tracking = .reconciling
-        #expect(!summary.permitsArchivedDeletion)
-        summary.tracking = .ready
-        summary.uncertainExecutionCount = 1
-        #expect(!summary.permitsArchivedDeletion)
+        #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(updated, tickets: authoritative.tickets, summary: PickyAsyncTaskShelfFixtures.summary(active: 0)) == "hud.asyncTasks.execution.succeeded")
     }
 
     @Test func descendantsAreDetailsNotIndependentCancelTargets() {
@@ -105,7 +102,7 @@ struct PickyAsyncTaskShelfTests {
 
     @Test func resultHandlingDoesNotPretendExecutionIsRunning() {
         let root = PickyAsyncTaskShelfFixtures.task("done", execution: .succeeded, presence: .settled)
-        #expect(PickyAsyncTaskShelfPresentation.executionKey(root) == "hud.asyncTasks.execution.succeeded")
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(root, summary: PickyAsyncTaskShelfFixtures.summary(active: 0)) == "hud.asyncTasks.execution.succeeded")
         #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .pending)]) == "hud.asyncTasks.result.pending")
         #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .processing)]) == "hud.asyncTasks.result.processing")
         #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .failed)]) == "hud.asyncTasks.result.failed")
@@ -143,6 +140,43 @@ struct PickyAsyncTaskShelfTests {
                                                           summary: PickyAsyncTaskShelfFixtures.summary(), availability: .available))
     }
 
+    @Test func resolvedControlDoesNotReuseAnOlderFailure() {
+        let summary = PickyAsyncTaskShelfFixtures.summary(active: 0, attention: 1)
+        let detail: PickyProjectionSectionState<PickyAsyncTaskDetail> = .loaded(.init(tasks: [], tickets: []))
+        let failed = PickyAsyncControlOperation(requestId: "old", operationId: "stop", outcome: .blocked_cleanup,
+            controlGeneration: 1, reason: "Previous failure")
+        let settled = PickyAsyncControlOperation(requestId: "new", operationId: "stop", outcome: .settled,
+            controlGeneration: 2, reason: nil)
+        let control: PickyProjectionSectionState<PickyAsyncControlState> = .loaded(.init(
+            controlGeneration: 2, admissionState: .closed, operations: [failed, settled], releasePrepared: nil))
+        #expect(!PickyAsyncTaskShelfPresentation.hasUnresolvedControl(summary: summary, detail: detail, control: control))
+        #expect(PickyAsyncTaskShelfPresentation.unresolvedControlReason(summary: summary, detail: detail, control: control) == nil)
+    }
+
+    @Test func queuedRegistrationIsNeutralOnlyWhenReadyAndCanonicallyCertainForCurrentOwner() {
+        var registering = PickyAsyncTaskShelfFixtures.task("new", kind: "subagent",
+            execution: .queued, presence: .unknown)
+        registering.registration = .approved
+        let ready = PickyAsyncTaskShelfFixtures.summary()
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(registering, summary: ready,
+            runtimeInstanceId: "runtime") == "hud.asyncTasks.execution.queued")
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(registering,
+            summary: PickyAsyncTaskShelfFixtures.summary(unknown: 1, tracking: .reconciling),
+            runtimeInstanceId: "runtime") == "hud.asyncTasks.execution.unknown")
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(registering,
+            summary: PickyAsyncTaskShelfFixtures.summary(unknown: 1),
+            runtimeInstanceId: "runtime") == "hud.asyncTasks.execution.unknown")
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(registering, summary: ready,
+            runtimeInstanceId: "new-runtime") == "hud.asyncTasks.execution.unknown")
+        registering.registration = .starting
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(registering, summary: ready)
+            == "hud.asyncTasks.execution.unknown")
+        registering.registration = .approved
+        registering.execution = .running
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(registering, summary: ready)
+            == "hud.asyncTasks.execution.unknown")
+    }
+
     @Test func settledRootWithSurvivingChildCanStillBeStopped() {
         let root = PickyAsyncTaskShelfFixtures.task("root", execution: .failed, presence: .settled)
         let child = PickyAsyncTaskShelfFixtures.task("child", root: "root")
@@ -151,7 +185,7 @@ struct PickyAsyncTaskShelfTests {
         #expect(PickyAsyncTaskShelfPresentation.canCancel(root, in: .init(tasks: [root, child], tickets: []), summary: summary, availability: .available))
         var unknown = root
         unknown.presence = .unknown
-        #expect(PickyAsyncTaskShelfPresentation.executionKey(unknown) == "hud.asyncTasks.execution.unknown")
+        #expect(PickyAsyncTaskShelfPresentation.executionKey(unknown, summary: summary) == "hud.asyncTasks.execution.unknown")
     }
 }
 

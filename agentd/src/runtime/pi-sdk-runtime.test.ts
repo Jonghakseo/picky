@@ -609,6 +609,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+    fakeSession.isStreaming = true;
     const events: RuntimeEvent[] = [];
     handle.subscribe((event) => events.push(event));
 
@@ -2367,6 +2368,15 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual([]);
   });
 
+  it("does not synthesize a cancellation when an idle runtime is aborted for housekeeping", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "idle-abort" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe(event => events.push(event));
+    await handle.abort();
+    expect(statusEvents(events).filter(event => event.status === "cancelled")).toEqual([]);
+  });
+
   it("suppresses the aborted turn_end that drains after an explicit abort", async () => {
     // After handle.abort() we already emit a synthetic `cancelled` so the HUD reflects the
     // cancellation immediately. Pi keeps draining the aborted turn and eventually flushes its
@@ -2375,6 +2385,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-late-turn-end" });
+    fakeSession.isStreaming = true;
     const events: unknown[] = [];
     handle.subscribe((event) => events.push(event));
 
@@ -2390,6 +2401,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-late-agent-end" });
+    fakeSession.isStreaming = true;
     const events: unknown[] = [];
     handle.subscribe((event) => events.push(event));
 
@@ -2409,6 +2421,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-double-drain" });
+    fakeSession.isStreaming = true;
     const events: unknown[] = [];
     handle.subscribe((event) => events.push(event));
 
@@ -2422,18 +2435,20 @@ describe("PiSdkRuntime", () => {
     ]);
   });
 
-  it("absorbs aborted drains across two back-to-back abort cycles", async () => {
-    // Two abort cycles without an interleaved agent_start: each abort() bumps the counter, so
-    // every aborted drain that arrives before Pi opens a new cycle must stay suppressed. The
-    // user-visible cancellations are the two synthetic events emitted by the abort() calls.
+  it("absorbs aborted drains across two genuinely active abort cycles", async () => {
+    // Two active abort cycles each emit one cancellation. The old aborted terminal
+    // must not create a third while Pi is draining the second cycle.
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-double-cycle" });
+    fakeSession.isStreaming = true;
     const events: unknown[] = [];
     handle.subscribe((event) => events.push(event));
 
     await handle.abort();
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "aborted", content: [] }, toolResults: [] });
+    fakeSession.emit("event", { type: "agent_start" });
+    fakeSession.isStreaming = true;
     await handle.abort();
     fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted", content: [] }] });
 
@@ -2450,6 +2465,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-then-new-cycle" });
+    fakeSession.isStreaming = true;
     const events: unknown[] = [];
     handle.subscribe((event) => events.push(event));
 

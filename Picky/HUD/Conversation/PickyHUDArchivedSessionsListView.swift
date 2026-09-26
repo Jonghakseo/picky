@@ -14,69 +14,40 @@ struct PickyHUDArchivedSessionAccess {
     let commands: any PickySessionArchiveCommands
 }
 
-struct PickyHUDDockArchiveAccessory<Content: View>: View {
-    let orientation: PickyHUDDockOrientation
-    let access: PickyHUDArchivedSessionAccess?
-    @ViewBuilder let rail: () -> Content
-
-    var body: some View {
-        if orientation == .vertical {
-            VStack(spacing: DS.Spacing.space2) {
-                rail()
-                if let access {
-                    PickyHUDArchivedDockAccessView(archiveMembership: access.membership, commands: access.commands)
-                }
-            }
-        } else {
-            HStack(spacing: DS.Spacing.space2) {
-                rail()
-                if let access {
-                    PickyHUDArchivedDockAccessView(archiveMembership: access.membership, commands: access.commands)
-                }
-            }
-        }
+/// Archive and rail bounds share the HUD coordinate space for geometry checks.
+struct PickyHUDDockArchiveFramePreferenceKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
     }
 }
 
-/// Small Dock entry that observes only archived membership and scalar work summaries.
+/// Fixed utility entry rendered inside the dock rail, not alongside its material.
 struct PickyHUDArchivedDockAccessView: View {
     let archiveMembership: any PickySessionArchiveMembership
     let commands: any PickySessionArchiveCommands
     @State private var isPresented = false
 
-    private var retainedCount: Int {
-        archiveMembership.archivedSessionIDs.reduce(into: 0) { count, id in
-            guard let store = archiveMembership.existingSessionStore(sessionID: id),
-                  case .loaded(let metadata) = store.metaStore.metadataState,
-                  let summary = metadata.asyncWorkSummary else { return }
-            if summary.activeRootCount > 0 || summary.pendingCompletionCount > 0
-                || summary.uncertainExecutionCount > 0 || summary.attentionCount > 0
-                || summary.tracking != .ready { count += 1 }
-        }
-    }
-
     var body: some View {
-        if retainedCount > 0 {
-            Button {
-                isPresented.toggle()
-            } label: {
-                Label(L10n.t("hud.asyncTasks.archivedWork"), systemImage: "archivebox")
-                    .labelStyle(.iconOnly)
-                    .overlay(alignment: .topTrailing) {
-                        Text("\(retainedCount)").pickyFont(size: 10)
-                            .foregroundStyle(DS.Colors.warningText)
-                            .offset(x: 7, y: -7)
-                    }
-                    .frame(minWidth: 28, minHeight: 28)
-            }
-            .buttonStyle(.borderless)
-            .help(L10n.t("hud.asyncTasks.archivedWork"))
-            .accessibilityLabel(L10n.t("hud.asyncTasks.archivedWork"))
-            .popover(isPresented: $isPresented) {
-                PickyHUDArchivedSessionsListView(archiveMembership: archiveMembership, commands: commands)
-                    .frame(width: 380)
-                    .padding(DS.Spacing.space3)
-            }
+        Button {
+            isPresented.toggle()
+        } label: {
+            Image(systemName: "archivebox")
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.borderless)
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: PickyHUDDockArchiveFramePreferenceKey.self,
+                value: proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName)))
+        })
+        .help(L10n.t("hud.archivedList.title"))
+        .accessibilityLabel(L10n.t("hud.archivedList.title"))
+        .accessibilityValue("\(archiveMembership.archivedSessionIDs.count)")
+        .popover(isPresented: $isPresented) {
+            PickyHUDArchivedSessionsListView(archiveMembership: archiveMembership, commands: commands)
+                .frame(width: 380)
+                .padding(DS.Spacing.space3)
         }
     }
 }
@@ -95,6 +66,7 @@ struct PickyHUDArchivedSessionsListView: View {
     @State private var pendingDeleteSessionID: String?
     @State private var pendingDeleteResetTask: Task<Void, Never>?
     @State private var isDeleteAllConfirmationPresented = false
+    @State private var deletionError: String?
 
     /// Time window the two-step delete confirmation stays armed. After this we
     /// snap the row back to the neutral "Delete" label so a stale red state
@@ -105,20 +77,16 @@ struct PickyHUDArchivedSessionsListView: View {
         archiveMembership.archivedSessionIDs
     }
 
-    private var deletableSessionCount: Int {
-        archivedSessionIDs.filter { sessionID in
-            guard let store = archiveMembership.existingSessionStore(sessionID: sessionID),
-                  case .loaded(let metadata) = store.metaStore.metadataState
-            else { return false }
-            return metadata.isSafeToDeleteArchived
-        }.count
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if showsHeader {
                 header
                 Divider().opacity(0.5)
+            }
+            if let deletionError {
+                Text(deletionError)
+                    .pickyFont(size: 11)
+                    .foregroundStyle(DS.Colors.destructiveText)
             }
             if archivedSessionIDs.isEmpty {
                 emptyState
@@ -150,7 +118,10 @@ struct PickyHUDArchivedSessionsListView: View {
             Button("hud.archivedList.confirmDeleteAllCancel", role: .cancel) {}
             Button("hud.archivedList.confirmDeleteAllConfirm", role: .destructive) {
                 resetPendingDelete()
-                commands.deleteAllArchivedSessions()
+                deletionError = nil
+                commands.deleteAllArchivedSessions { error in
+                    deletionError = L10n.t("hud.archivedList.deleteFailed", error.localizedDescription)
+                }
             }
         } message: {
             Text("hud.archivedList.confirmDeleteAllMessage")
@@ -200,17 +171,17 @@ struct PickyHUDArchivedSessionsListView: View {
                 )
         }
         .buttonStyle(.plain)
-        .disabled(deletableSessionCount == 0)
+        .disabled(archivedSessionIDs.isEmpty)
         .accessibilityLabel(L10n.t("hud.archive.deleteAll.accessibility"))
     }
 
-    /// Localized alert title pre-formatted with the current deletable count so
+    /// Localized alert title pre-formatted with the current archived count so
     /// the SwiftUI alert can be rendered with a plain `Text` (`.alert` does
     /// not interpolate LocalizedStringKey arguments on macOS the way Text
     /// initializers do).
     private var deleteAllConfirmationTitle: String {
         let format = L10n.t("hud.archivedList.confirmDeleteAllTitle")
-        return String.localizedStringWithFormat(format, deletableSessionCount)
+        return String.localizedStringWithFormat(format, archivedSessionIDs.count)
     }
 
     private var emptyState: some View {
@@ -235,13 +206,15 @@ struct PickyHUDArchivedSessionsListView: View {
                     pendingDeleteSessionID = nil
                     pendingDeleteResetTask?.cancel()
                     pendingDeleteResetTask = nil
-                    commands.deleteArchivedSession(sessionID: store.sessionID)
+                    deletionError = nil
+                    commands.deleteArchivedSession(sessionID: store.sessionID) { error in
+                        deletionError = L10n.t("hud.archivedList.deleteFailed", error.localizedDescription)
+                    }
                 } else {
                     armPendingDelete(for: store.sessionID)
                 }
             },
-            onRowTap: { resetPendingDelete(except: store.sessionID) },
-            commands: commands
+            onRowTap: { resetPendingDelete(except: store.sessionID) }
         )
     }
 
@@ -272,52 +245,30 @@ private struct PickyHUDArchivedSessionRow: View {
     let onRestore: () -> Void
     let onDelete: () -> Void
     let onRowTap: () -> Void
-    let commands: any PickySessionArchiveCommands
-    @State private var showsWork = false
-    @State private var stopping = false
-    @State private var stopError: String?
 
     var body: some View {
-        if case .loaded(let metadata) = store.metaStore.metadataState {
-            let canDelete = metadata.isSafeToDeleteArchived
-            VStack(alignment: .leading, spacing: 4) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(metadata.title)
-                        .pickyFont(size: 12, weight: .medium)
-                        .foregroundColor(DS.Colors.textPrimary)
+        let metadata: PickySessionMetadata? = switch store.metaStore.metadataState {
+        case .loaded(let value): value
+        default: nil
+        }
+        VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(metadata?.title ?? store.sessionID)
+                    .pickyFont(size: 12, weight: .medium)
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let cwd = compactCwdDescription(metadata?.cwd) {
+                    Text(cwd)
+                        .pickyFont(size: 10)
+                        .foregroundColor(DS.Colors.textTertiary)
                         .lineLimit(1)
-                        .truncationMode(.tail)
-                    if let cwd = compactCwdDescription(metadata.cwd) {
-                        Text(cwd)
-                            .pickyFont(size: 10)
-                            .foregroundColor(DS.Colors.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
+                        .truncationMode(.middle)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: 8) {
-                    Spacer(minLength: 0)
-                if metadata.asyncWorkSummary != nil {
-                    Button("hud.asyncTasks.archivedWork") { showsWork.toggle() }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(L10n.t("hud.asyncTasks.archivedWork"))
-                    if let summary = metadata.asyncWorkSummary,
-                       summary.activeRootCount > 0 || summary.uncertainExecutionCount > 0
-                        || summary.pendingCompletionCount > 0 {
-                        Button("hud.asyncTasks.stop") {
-                            guard !stopping else { return }
-                            stopping = true
-                            stopError = nil
-                            Task { @MainActor in
-                                defer { stopping = false }
-                                do { try await commands.stopArchivedAsyncWork(sessionID: store.sessionID) } catch { stopError = error.localizedDescription }
-                            }
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(stopping)
-                    }
-                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
                 Button(action: onRestore) {
                     Text("hud.archivedList.restore")
                         .pickyFont(size: 11, weight: .semibold)
@@ -345,23 +296,13 @@ private struct PickyHUDArchivedSessionRow: View {
                         .animation(.easeOut(duration: 0.12), value: isDeleteArmed)
                 }
                 .buttonStyle(.plain)
-                .disabled(!canDelete)
-                .help(L10n.t(canDelete
-                    ? "hud.archive.delete.accessibility" : "hud.archivedList.deleteUnavailableActive"))
-                .accessibilityHint(L10n.t(canDelete
-                    ? "hud.archive.delete.accessibility" : "hud.archivedList.deleteUnavailableActive"))
+                .help(L10n.t("hud.archive.delete.accessibility"))
+                .accessibilityHint(L10n.t("hud.archive.delete.accessibility"))
                 .accessibilityLabel(isDeleteArmed ? L10n.t("hud.archive.confirmDelete.accessibility") : L10n.t("hud.archive.delete.accessibility"))
-                }
+            }
             .padding(.vertical, 4)
             .contentShape(Rectangle())
             .onTapGesture(perform: onRowTap)
-            if let stopError {
-                Text(stopError).foregroundStyle(DS.Colors.destructiveText)
-            }
-            if showsWork, let taskCommands = commands as? any PickySessionCommands {
-                PickyMountedAsyncTaskShelfView(store: store, commands: taskCommands, maxListHeight: 160)
-            }
-            }
         }
     }
 

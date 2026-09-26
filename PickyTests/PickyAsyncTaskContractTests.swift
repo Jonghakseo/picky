@@ -49,7 +49,8 @@ struct PickyAsyncTaskContractTests {
                     #expect(visible && roots.count == 1)
                     #expect(composer.submitStatus == .completed)
                     if checkpoint.name == "result-pending" {
-                        #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(roots[0], tickets: detail.tickets)
+                        #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(roots[0], tickets: detail.tickets,
+                            summary: summary, runtimeInstanceId: metadata.agentCycle?.runtimeInstanceId)
                             == "hud.asyncTasks.result.pending")
                     }
                 } else {

@@ -246,7 +246,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         pool: PickyAgentDaemonPool,
         clientFactory: PickyAgentClientFactoryProtocol = DefaultPickyAgentClientFactory(),
         handoffPickleSessionIdFactory: @escaping () -> String = { "session-\(UUID().uuidString)" },
-        permanentDeletionAcknowledgementTimeout: TimeInterval = 5,
+        permanentDeletionAcknowledgementTimeout: TimeInterval = 30,
         notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyNotificationPreferencesStore(),
         supportsSessionProjectionV2: Bool = false,
         capabilityRegistrationTimeoutNanoseconds: UInt64 = 10_000_000_000,
@@ -429,7 +429,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         timeout: TimeInterval = 1.0,
         requireAcknowledgement: Bool = false
     ) async throws -> PickyErrorEvent? {
-        try await sendAwaitingError(command, timeout: timeout, requireAcknowledgement: requireAcknowledgement, on: nil)
+        if command.type == .deleteSession { return try await asyncOwnerControl.sendDeletion(command, timeout: timeout) }
+        return try await sendAwaitingError(command, timeout: timeout, requireAcknowledgement: requireAcknowledgement, on: nil)
     }
 
     // Keep the protocol witness above separate from explicit-client routing.
@@ -732,9 +733,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         pool.terminateChild(sessionId: sessionId)
     }
 
-    private func currentChildGeneration(for sessionId: String) -> ChildGeneration {
-        ChildGeneration(sessionId: sessionId, value: childGenerations[sessionId, default: 0])
-    }
+    func childGenerationValue(for sessionId: String) -> Int { childGenerations[sessionId, default: 0] }
+    private func currentChildGeneration(for sessionId: String) -> ChildGeneration { .init(sessionId: sessionId, value: childGenerationValue(for: sessionId)) }
 
     private func advanceChildGeneration(for sessionId: String) {
         childGenerations[sessionId, default: 0] += 1

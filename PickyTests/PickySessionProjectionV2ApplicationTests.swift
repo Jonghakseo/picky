@@ -584,7 +584,7 @@ struct PickySessionProjectionV2ApplicationTests {
         expectStoresRemainIntact()
     }
 
-    @Test func archivedUncertainWorkCannotDeleteUntilV2SummaryConfirmsQuiescence() async throws {
+    @Test func archivedUncertainWorkCanBeExplicitlyDeletedWithoutRuntimeReleaseApproval() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = V2ArchiveStore()
         let storage = PickyRegistrySessionProjectionStorage()
@@ -594,19 +594,159 @@ struct PickySessionProjectionV2ApplicationTests {
         apply(snapshot(sessionID: "retained", title: "Retained", status: .completed, revision: 1,
                        archived: true, extraProjectionFields: cycle + uncertain), to: viewModel)
         let store = storage.registry.sessionStore(sessionID: "retained")
-        #expect(store.metaStore.metadataState.loadedValue?.isSafeToDeleteArchived == false)
-        viewModel.deleteAllArchivedSessions()
-        viewModel.deleteArchivedSession(sessionID: "retained")
-        #expect(!client.sentCommands.contains { $0.type == .deleteSession })
-        #expect(storage.registry.archivedSessionIDs == ["retained"])
-
-        let ready = #"[{"type":"metaPatch","patch":{"asyncWorkSummary":{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":2,"canReleaseRuntime":true}}}]"#
-        apply(transaction(sessionID: "retained", baseRevision: 1, revision: 2, mutations: ready), to: viewModel)
-        #expect(store.metaStore.metadataState.loadedValue?.isSafeToDeleteArchived == true)
+        #expect(store.metaStore.metadataState.loadedValue?.isSafeToReleaseArchivedRuntime == false)
         viewModel.deleteArchivedSession(sessionID: "retained")
         await waitUntil { storage.registry.archivedSessionIDs.isEmpty }
         #expect(client.sentCommands.filter { $0.type == .deleteSession }.map(\.sessionId) == ["retained"])
         #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
+    }
+
+    @Test func idleTrackedWaitingArchiveDeletesOnlyAfterAcknowledgement() async throws {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let archive = V2ArchiveStore()
+        let viewModel = makeViewModel(client: client, storage: storage, archiveStore: archive)
+        let summary = #","asyncWorkSummary":{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":1,"canReleaseRuntime":true}"#
+        apply(snapshot(sessionID: "idle", title: "Idle", status: .waiting_for_input, revision: 1,
+                       archived: true, extraProjectionFields: summary), to: viewModel)
+        let store = storage.registry.sessionStore(sessionID: "idle")
+        #expect(store.metaStore.metadataState.loadedValue?.isSafeToReleaseArchivedRuntime == true)
+        #expect(viewModel.archivedSessions.first?.isSafeToReleaseArchivedRuntime == true)
+
+        let gate = AsyncStream<Void>.makeStream()
+        let progress = ArchiveDeletionProgress()
+        client.beforeSend = { command in
+            if command.type == .deleteSession {
+                await MainActor.run { progress.awaitingACK = true }
+                for await _ in gate.stream { break }
+            }
+        }
+        viewModel.deleteArchivedSession(sessionID: "idle")
+        await waitUntil { progress.awaitingACK }
+        viewModel.deleteArchivedSession(sessionID: "idle")
+        // The fake has not returned its authoritative ACK, so neither registry
+        // membership nor persisted archive membership may move yet.
+        #expect(storage.registry.archivedSessionIDs == ["idle"])
+        #expect(archive.archivedSessionIDs == ["idle"])
+        gate.continuation.yield(())
+        gate.continuation.finish()
+        await waitUntil { storage.registry.archivedSessionIDs.isEmpty }
+        #expect(client.sentCommands.filter { $0.type == .deleteSession }.map(\.sessionId) == ["idle"])
+        #expect(archive.archivedSessionIDs.isEmpty)
+        #expect(client.acknowledgementRequirements.last == true)
+        #expect(client.acknowledgementTimeouts.last == 30)
+    }
+
+    @Test func restoreDuringArchivedDeletionACKKeepsRestoredPickle() async throws {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: client, storage: storage, archiveStore: V2ArchiveStore())
+        apply(snapshot(sessionID: "restored", title: "Restored", status: .completed, revision: 1,
+                       archived: true), to: viewModel)
+        let gate = AsyncStream<Void>.makeStream()
+        let progress = ArchiveDeletionProgress()
+        client.beforeSend = { command in
+            if command.type == .deleteSession {
+                await MainActor.run { progress.awaitingACK = true }
+                for await _ in gate.stream { break }
+            }
+        }
+        viewModel.deleteArchivedSession(sessionID: "restored")
+        await waitUntil { progress.awaitingACK }
+        viewModel.unarchive(sessionID: "restored")
+        #expect(storage.registry.activeSessionIDs == ["restored"])
+        gate.continuation.yield(())
+        gate.continuation.finish()
+        await waitUntil { client.sentCommands.contains { $0.type == .deleteSession } }
+        #expect(storage.registry.activeSessionIDs == ["restored"])
+        #expect(client.sentCommands.filter { $0.type == .deleteSession }.map(\.sessionId) == ["restored"])
+    }
+
+    @MainActor private final class ArchiveDeletionProgress {
+        var awaitingACK = false
+    }
+
+    @Test func archivedWaitingWorkWithUnknownSummaryCanBeExplicitlyDeleted() async throws {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: client, storage: storage)
+        let summaries: [(String, String)] = [
+            ("running", #""tracking":"ready","activeRootCount":1,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"canReleaseRuntime":false"#),
+            ("pending", #""tracking":"ready","activeRootCount":0,"pendingCompletionCount":1,"uncertainExecutionCount":0,"attentionCount":0,"canReleaseRuntime":false"#),
+            ("unknown", #""tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":1,"attentionCount":0,"canReleaseRuntime":false"#),
+            ("unsupported", #""tracking":"unsupported","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"canReleaseRuntime":true"#),
+            ("not-releaseable", #""tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"canReleaseRuntime":false"#),
+            ("attention", #""tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":1,"canReleaseRuntime":true"#)
+        ]
+        for (id, fields) in summaries {
+            apply(snapshot(sessionID: id, title: id, status: .waiting_for_input, revision: 1,
+                           archived: true, extraProjectionFields: #", "asyncWorkSummary":{\#(fields),"workRevision":1}"#), to: viewModel)
+            #expect(storage.registry.sessionStore(sessionID: id).metaStore.metadataState.loadedValue?.isSafeToReleaseArchivedRuntime == false)
+        }
+        apply(snapshot(sessionID: "legacy", title: "Legacy", status: .waiting_for_input, revision: 1,
+                       archived: true), to: viewModel)
+        let apparentlyEmpty = #","asyncWorkSummary":{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":1,"canReleaseRuntime":true}"#
+        apply(snapshot(sessionID: "responding", title: "Responding", status: .running, revision: 1,
+                       archived: true, extraProjectionFields: apparentlyEmpty), to: viewModel)
+        let cycle = #","agentCycle":{"cycleId":"cycle","runtimeInstanceId":"runtime","phase":"responding","controlGeneration":1}"#
+        apply(snapshot(sessionID: "cycle-active", title: "Cycle active", status: .waiting_for_input, revision: 1,
+                       archived: true, extraProjectionFields: apparentlyEmpty + cycle), to: viewModel)
+        let ids = Set(summaries.map(\.0) + ["legacy", "responding", "cycle-active"])
+        viewModel.deleteAllArchivedSessions()
+        await waitUntil { storage.registry.archivedSessionIDs.isEmpty }
+        #expect(Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId)) == ids)
+    }
+
+    @Test func bulkArchiveDeleteRequestsEveryArchivedRow() async throws {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let archive = V2ArchiveStore()
+        let viewModel = makeViewModel(client: client, storage: storage, archiveStore: archive)
+        let ready = #","asyncWorkSummary":{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":1,"canReleaseRuntime":true}"#
+        let active = #","asyncWorkSummary":{"tracking":"ready","activeRootCount":1,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":1,"canReleaseRuntime":false}"#
+        apply(snapshot(sessionID: "idle", title: "Idle", status: .waiting_for_input, revision: 1,
+                       archived: true, extraProjectionFields: ready), to: viewModel)
+        apply(snapshot(sessionID: "working", title: "Working", status: .running, revision: 1,
+                       archived: true, extraProjectionFields: active), to: viewModel)
+        apply(snapshot(sessionID: "unarchived", title: "Unarchived", status: .running, revision: 1,
+                       archived: false, extraProjectionFields: active), to: viewModel)
+        viewModel.deleteAllArchivedSessions()
+        await waitUntil { storage.registry.archivedSessionIDs.isEmpty }
+        #expect(archive.archivedSessionIDs.isEmpty)
+        #expect(storage.registry.activeSessionIDs == ["unarchived"])
+        #expect(Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId)) == ["idle", "working"])
+    }
+
+    @Test func bulkDeleteIncludesArchivedRegistryIDsWhoseCardsAreStillLoading() async throws {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: client, storage: storage, archiveStore: V2ArchiveStore())
+        apply(snapshot(sessionID: "loaded", title: "Loaded", status: .completed, revision: 1,
+                       archived: true), to: viewModel)
+        storage.registry.replaceMembership(active: [], archived: ["loaded", "unloaded"])
+        #expect(viewModel.archivedSessions.map(\.id) == ["loaded"])
+        viewModel.deleteAllArchivedSessions()
+        await waitUntil { storage.registry.archivedSessionIDs.isEmpty }
+        #expect(Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId)) == ["loaded", "unloaded"])
+    }
+
+    @Test func rejectedTrackedArchiveDeleteKeepsRowAndSurfacesFailure() async {
+        let client = FakePickyAgentClient()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let archive = V2ArchiveStore()
+        let viewModel = makeViewModel(client: client, storage: storage, archiveStore: archive)
+        let summary = #","asyncWorkSummary":{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":1,"canReleaseRuntime":true}"#
+        apply(snapshot(sessionID: "idle", title: "Idle", status: .waiting_for_input, revision: 1,
+                       archived: true, extraProjectionFields: summary), to: viewModel)
+        client.sendAwaitingErrorResult = PickyErrorEvent(code: "cleanup_failed", message: "Could not settle work", commandId: nil)
+        var failure: String?
+        viewModel.deleteArchivedSession(sessionID: "idle") { failure = $0.localizedDescription }
+        await waitUntil { failure != nil }
+        #expect(storage.registry.archivedSessionIDs == ["idle"])
+        #expect(archive.archivedSessionIDs == ["idle"])
+        #expect(viewModel.lastError?.contains("Could not settle work") == true)
+        #expect(failure?.contains("Could not settle work") == true)
+        #expect(client.acknowledgementRequirements.last == true)
     }
 
     @Test func correlatedRecoverySnapshotResolvesConflictingPendingArchiveIntent() async throws {
@@ -1100,21 +1240,25 @@ struct PickySessionProjectionV2ApplicationTests {
         withExtendedLifetime(cancellable) {}
     }
 
-    @Test func bulkArchiveDeletionPreservesActiveV2SessionsAndTheirPersistedMembership() async {
+    @Test func bulkArchiveDeletionRemovesArchivedV2SessionsButPreservesUnarchivedActivePickle() async {
         let client = FakePickyAgentClient()
         let storage = PickyRegistrySessionProjectionStorage()
         let archive = V2ArchiveStore()
         let viewModel = makeViewModel(client: client, storage: storage, archiveStore: archive)
         apply(snapshot(sessionID: "active", title: "Active", status: .running, revision: 1, archived: true), to: viewModel)
         apply(snapshot(sessionID: "finished", title: "Finished", status: .completed, revision: 1, archived: true), to: viewModel)
+        apply(snapshot(sessionID: "unarchived", title: "Unarchived", status: .running, revision: 1, archived: false), to: viewModel)
 
         viewModel.deleteAllArchivedSessions()
-        await waitUntil { viewModel.archivedSessions.map(\.id) == ["active"] }
+        await waitUntil { storage.registry.archivedSessionIDs.isEmpty }
 
-        #expect(viewModel.archivedSessions.map(\.id) == ["active"])
-        #expect(storage.registry.archivedSessionIDs == ["active"])
-        #expect(archive.archivedSessionIDs == ["active"])
-        #expect(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId) == ["finished"])
+        #expect(viewModel.archivedSessions.isEmpty)
+        #expect(storage.registry.archivedSessionIDs.isEmpty)
+        #expect(archive.archivedSessionIDs.isEmpty)
+        #expect(archive.manuallyArchivedSessionIDs.isEmpty)
+        #expect(storage.registry.activeSessionIDs == ["unarchived"])
+        #expect(viewModel.sessions.map(\.id) == ["unarchived"])
+        #expect(Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId)) == ["active", "finished"])
     }
 
     private func makeViewModel(

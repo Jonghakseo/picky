@@ -1692,18 +1692,11 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func releaseArchivedTerminalChildIfCommitted(_ session: SessionCard) {
-        guard session.status.isTerminal else { return }
-        guard !archiveCoordinator.hasCommit(sessionID: session.id) else { return }
-        guard !releasedArchivedChildSessionIDs.contains(session.id) else { return }
-        if session.hasAsyncTracking {
-            archiveCoordinator.release(sessionID: session.id, client: client) { [weak self] in
+        archiveCoordinator.releaseIfCommitted(session: session, client: client,
+            childSessionReleaser: childSessionReleaser,
+            alreadyReleased: releasedArchivedChildSessionIDs.contains(session.id)) { [weak self] in
                 self?.releasedArchivedChildSessionIDs.insert(session.id)
             }
-            return
-        }
-        releasedArchivedChildSessionIDs.insert(session.id)
-        pickySessionLog("archive-commit session=\(session.id) releasing terminal child")
-        childSessionReleaser?.releaseChild(sessionId: session.id)
     }
 
     func unarchive(sessionID: String) {
@@ -1752,27 +1745,30 @@ final class PickySessionListViewModel: ObservableObject {
             archived: archivedSessions.first { $0.id == sessionID }, client: client)
     }
 
-    /// Delete only archived sessions accepted by the daemon's terminal-state rule.
-    func deleteAllArchivedSessions() {
-        let ids = archivedSessions.filter(\.isSafeToDeleteArchived).map(\.id)
-        guard !ids.isEmpty else { return }
-        pickySessionLog("delete all archived sessions count=\(ids.count)")
-        for sessionID in ids {
-            deleteArchivedSession(sessionID: sessionID)
-        }
+    /// Explicit deletion requests every archived session; the daemon settles connected work.
+    func deleteAllArchivedSessions() { deleteAllArchivedSessions(onFailure: { _ in }) }
+
+    func deleteAllArchivedSessions(onFailure: @escaping @MainActor (Error) -> Void) {
+        let ids = (sessionProjectionStorage as? PickyRegistrySessionProjectionStorage)?.registry.archivedSessionIDs
+            ?? archivedSessions.map(\.id)
+        archiveCoordinator.requestDeleteAll(sessionIDs: ids) { [weak self] sessionID in self?.deleteArchivedSession(sessionID: sessionID, onFailure: onFailure) }
     }
 
-    /// Match the daemon's deletion rule, which also treats blocked as terminal.
-    /// Keep local state when transport fails; send success is not a daemon ack.
-    func deleteArchivedSession(sessionID: String) {
+    /// Keep local state until the authoritative daemon acknowledgement arrives.
+    func deleteArchivedSession(sessionID: String) { deleteArchivedSession(sessionID: sessionID, onFailure: { _ in }) }
+
+    func deleteArchivedSession(sessionID: String, onFailure: @escaping @MainActor (Error) -> Void) {
         archiveCoordinator.requestDelete(sessionID: sessionID, client: client,
             canDelete: { [weak self] in
-                self?.archivedSessions.first(where: { $0.id == sessionID })?.isSafeToDeleteArchived == true
+                guard let self else { return false }
+                if let storage = self.sessionProjectionStorage as? PickyRegistrySessionProjectionStorage { return storage.registry.archivedSessionIDs.contains(sessionID) }
+                return self.archivedSessions.contains(where: { $0.id == sessionID })
             },
             onConfirmed: { [weak self] in self?.finalizeDeletedArchivedSession(sessionID: sessionID) },
             onFailure: { [weak self] error in
                 self?.lastError = L10n.t("hud.archivedList.deleteFailed", error.localizedDescription)
                 pickySessionLog("delete archived session failed session=\(sessionID) error=\(error)")
+                onFailure(error)
             })
     }
 
@@ -1787,11 +1783,15 @@ final class PickySessionListViewModel: ObservableObject {
         releasedArchivedChildSessionIDs.remove(sessionID)
 
         archiveCoordinator.setMembership(sessionID, archived: false, store: archiveStore)
+        childSessionReleaser?.releaseChild(sessionId: sessionID)
 
-        // Mirror removeOnboardingDemoSession's cleanup: prune every per-session
-        // map so a future incoming sessionUpdated for an unrelated session id
-        // doesn't accidentally revive stale state for the deleted one.
-        removeSession(id: sessionID)
+        // Mirror removeOnboardingDemoSession's cleanup, without rebuilding v2
+        // membership from cards while other archived records are still loading.
+        if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
+            storage.removeSessions(ids: [sessionID])
+        } else {
+            removeSession(id: sessionID)
+        }
         unreadSessionIDs.remove(sessionID)
         pendingDoneFlashSessionIDs.remove(sessionID)
         deliveredNotificationKeys.remove("\(sessionID):completed")

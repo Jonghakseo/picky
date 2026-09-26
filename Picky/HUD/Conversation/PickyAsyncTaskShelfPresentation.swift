@@ -63,12 +63,12 @@ enum PickyAsyncTaskShelfPresentation {
     }
 
     static func isVisible(summary: PickyAsyncWorkSummary, detail: PickyProjectionSectionState<PickyAsyncTaskDetail>) -> Bool {
-        if summary.tracking != .ready || summary.activeRootCount > 0 || summary.pendingCompletionCount > 0
+        // Reconciliation and omitted detail do not imply work, even after a previous session cycle.
+        // Canonical counts still keep work and unresolved owner state visible until detail arrives.
+        if summary.activeRootCount > 0 || summary.pendingCompletionCount > 0
             || summary.uncertainExecutionCount > 0 || summary.attentionCount > 0 { return true }
-        switch detail {
-        case .unavailable: return true
-        case .loaded(let value): return !roots(in: value).isEmpty
-        }
+        guard case .loaded(let value) = detail else { return false }
+        return !roots(in: value).isEmpty
     }
 
     private static func hasWork(_ task: PickyAsyncTask) -> Bool {
@@ -120,14 +120,51 @@ enum PickyAsyncTaskShelfPresentation {
         }
     }
 
-    static func executionKey(_ task: PickyAsyncTask) -> String {
-        if task.presence == .unknown { return "hud.asyncTasks.execution.unknown" }
+    static func executionKey(_ task: PickyAsyncTask, summary: PickyAsyncWorkSummary,
+                             runtimeInstanceId: String? = nil) -> String {
+        // Only a ready, canonically non-uncertain grant belonging to this runtime can still register.
+        let registering = summary.tracking == .ready && summary.uncertainExecutionCount == 0
+            && (runtimeInstanceId == nil || runtimeInstanceId == task.runtimeInstanceId)
+            && task.execution == .queued && [.reserved, .approved].contains(task.registration)
+        if task.presence == .unknown && !registering {
+            return "hud.asyncTasks.execution.unknown"
+        }
         return "hud.asyncTasks.execution.\(task.execution.rawValue)"
     }
 
-    static func primaryStateKey(_ root: PickyAsyncTask, tickets: [PickyCompletionTicket]) -> String {
+    static func isEmptyAttention(summary: PickyAsyncWorkSummary,
+                                 detail: PickyProjectionSectionState<PickyAsyncTaskDetail>) -> Bool {
+        guard summary.attentionCount > 0, summary.activeRootCount == 0,
+              summary.pendingCompletionCount == 0, summary.uncertainExecutionCount == 0,
+              case .loaded(let value) = detail else { return false }
+        return roots(in: value).isEmpty
+    }
+
+    static func unresolvedControlReason(summary: PickyAsyncWorkSummary,
+                                        detail: PickyProjectionSectionState<PickyAsyncTaskDetail>,
+                                        control: PickyProjectionSectionState<PickyAsyncControlState>) -> String? {
+        guard isEmptyAttention(summary: summary, detail: detail),
+              case .loaded(let state) = control else { return nil }
+        guard let latest = state.operations.last,
+              [.rejected, .blocked_cleanup, .blocked_delivery, .unsupported, .stale].contains(latest.outcome) else {
+            return nil
+        }
+        return latest.reason
+    }
+
+    static func hasUnresolvedControl(summary: PickyAsyncWorkSummary,
+                                     detail: PickyProjectionSectionState<PickyAsyncTaskDetail>,
+                                     control: PickyProjectionSectionState<PickyAsyncControlState>) -> Bool {
+        guard isEmptyAttention(summary: summary, detail: detail),
+              case .loaded(let state) = control else { return false }
+        guard let latest = state.operations.last else { return false }
+        return [.rejected, .blocked_cleanup, .blocked_delivery, .unsupported, .stale].contains(latest.outcome)
+    }
+
+    static func primaryStateKey(_ root: PickyAsyncTask, tickets: [PickyCompletionTicket],
+                                summary: PickyAsyncWorkSummary, runtimeInstanceId: String? = nil) -> String {
         if root.presence == .settled, root.execution == .succeeded, let result = resultKey(tickets) { return result }
-        return executionKey(root)
+        return executionKey(root, summary: summary, runtimeInstanceId: runtimeInstanceId)
     }
 
     static func resultKey(_ tickets: [PickyCompletionTicket]) -> String? {

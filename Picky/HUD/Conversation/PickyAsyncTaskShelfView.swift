@@ -4,6 +4,9 @@ import SwiftUI
 struct PickyAsyncTaskShelfView: View {
     let summary: PickyAsyncWorkSummary
     let detailState: PickyProjectionSectionState<PickyAsyncTaskDetail>
+    var metadata: PickySessionMetadata?
+    var controlState: PickyProjectionSectionState<PickyAsyncControlState> = .unavailable
+    var stopError: String?
     let cancelAvailability: (PickyAsyncTask) -> PickyAsyncTaskCancelAvailability
     let onAction: (PickyAsyncTaskShelfAction) -> Void
     var maxListHeight: CGFloat = 200
@@ -16,7 +19,9 @@ struct PickyAsyncTaskShelfView: View {
     @State private var providerExpansion: [PickyAsyncTaskShelfIdentity: Bool] = [:]
 
     init(summary: PickyAsyncWorkSummary, detailState: PickyProjectionSectionState<PickyAsyncTaskDetail>,
-         initiallyExpanded: Bool = false, maxListHeight: CGFloat = 200,
+         metadata: PickySessionMetadata? = nil,
+         controlState: PickyProjectionSectionState<PickyAsyncControlState> = .unavailable,
+         stopError: String? = nil, initiallyExpanded: Bool = false, maxListHeight: CGFloat = 200,
          initiallyExpandedRows: Bool = false,
          fetchedDetail: @escaping (PickyAsyncTask) -> PickyAsyncTaskDetail? = { _ in nil },
          detailPending: @escaping (PickyAsyncTask) -> Bool = { _ in false },
@@ -25,6 +30,9 @@ struct PickyAsyncTaskShelfView: View {
          onAction: @escaping (PickyAsyncTaskShelfAction) -> Void) {
         self.summary = summary
         self.detailState = detailState
+        self.metadata = metadata
+        self.controlState = controlState
+        self.stopError = stopError
         self.cancelAvailability = cancelAvailability
         self.onAction = onAction
         self.maxListHeight = maxListHeight
@@ -33,6 +41,14 @@ struct PickyAsyncTaskShelfView: View {
         self.detailPending = detailPending
         self.detailError = detailError
         _isExpanded = State(initialValue: initiallyExpanded)
+    }
+
+    private var unresolvedControl: Bool {
+        PickyAsyncTaskShelfPresentation.hasUnresolvedControl(summary: summary, detail: detailState, control: controlState)
+    }
+
+    private var emptyAttention: Bool {
+        PickyAsyncTaskShelfPresentation.isEmptyAttention(summary: summary, detail: detailState)
     }
 
     var body: some View {
@@ -46,14 +62,13 @@ struct PickyAsyncTaskShelfView: View {
                             .foregroundStyle(DS.Colors.textSecondary)
                     }
                     Spacer(minLength: 0)
-                    if summary.attentionCount > 0 {
+                    if summary.attentionCount > 0 && !emptyAttention {
                         Text(L10n.t("hud.asyncTasks.attentionCount", summary.attentionCount))
                             .foregroundStyle(DS.Colors.destructiveText)
                     }
                 }
-                if summary.tracking != .ready {
-                    Label(L10n.t(summary.tracking == .reconciling ? "hud.asyncTasks.reconciling" : "hud.asyncTasks.unsupported"),
-                          systemImage: "exclamationmark.circle")
+                if summary.tracking == .unsupported {
+                    Label(L10n.t("hud.asyncTasks.unsupported"), systemImage: "exclamationmark.circle")
                         .foregroundStyle(DS.Colors.warningText)
                 }
                 switch detailState {
@@ -75,9 +90,24 @@ struct PickyAsyncTaskShelfView: View {
     @ViewBuilder
     private func taskList(_ detail: PickyAsyncTaskDetail) -> some View {
         let roots = PickyAsyncTaskShelfPresentation.roots(in: detail)
+        if emptyAttention {
+            Label(L10n.t(unresolvedControl || stopError != nil
+                ? "hud.asyncTasks.controlUnresolved" : "hud.asyncTasks.attentionUnknown"),
+                systemImage: "exclamationmark.triangle")
+                .foregroundStyle(DS.Colors.destructiveText)
+            if let reason = stopError ?? PickyAsyncTaskShelfPresentation.unresolvedControlReason(
+                summary: summary, detail: detailState, control: controlState), !reason.isEmpty {
+                Text(reason)
+                    .pickyFont(size: PickyHUDTypography.bodyCompactNSFont(fontScale: 1).pointSize)
+                    .foregroundStyle(DS.Colors.textSecondary)
+                    .textSelection(.enabled)
+            }
+        }
         if roots.isEmpty {
-            Text("hud.asyncTasks.noDetails")
-                .foregroundStyle(DS.Colors.textSecondary)
+            if !emptyAttention && summary.tracking == .ready {
+                Text("hud.asyncTasks.noDetails")
+                    .foregroundStyle(DS.Colors.textSecondary)
+            }
         } else {
             let visible = isExpanded ? roots : Array(roots.prefix(3))
             BoundedTaskListLayout(maxHeight: maxListHeight) {
@@ -107,7 +137,8 @@ struct PickyAsyncTaskShelfView: View {
             ForEach(roots, id: \.shelfIdentity) { root in
                 if root.shelfIdentity != roots.first?.shelfIdentity { Divider().overlay(DS.Colors.borderSubtle) }
                 PickyAsyncTaskShelfRowView(root: root, detail: detail, supplementalDetail: fetchedDetail(root),
-                    summary: summary, availability: cancelAvailability(root), onAction: onAction,
+                    summary: summary, runtimeInstanceId: metadata?.agentCycle?.runtimeInstanceId,
+                    availability: cancelAvailability(root), onAction: onAction,
                     isExpanded: initiallyExpandedRows,
                     expandedBinding: Binding(get: { rowExpansion[root.shelfIdentity] ?? initiallyExpandedRows },
                                              set: { rowExpansion[root.shelfIdentity] = $0 }),
@@ -142,6 +173,8 @@ struct PickyMountedAsyncTaskShelfView: View {
     let commands: any PickySessionCommands
     let maxListHeight: CGFloat
     var compact = false
+    var bottomSpacing: CGFloat = 0
+    var stopError: String?
     @State private var showsCompactWork = false
     @State private var pending = Set<PickyAsyncTaskShelfIdentity>()
     @State private var errors: [PickyAsyncTaskShelfIdentity: String] = [:]
@@ -159,7 +192,7 @@ struct PickyMountedAsyncTaskShelfView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .overlay(alignment: .trailing) {
                             Text(summary.activeRootCount > 0 ? "\(summary.activeRootCount)" : "!")
-                                .foregroundStyle(DS.Colors.warningText)
+                                .foregroundStyle(summary.attentionCount > 0 ? DS.Colors.destructiveText : DS.Colors.textSecondary)
                         }
                         .frame(minHeight: 28)
                 }
@@ -168,19 +201,23 @@ struct PickyMountedAsyncTaskShelfView: View {
                 .accessibilityLabel(L10n.t("hud.asyncTasks.showWork"))
                 .accessibilityValue(L10n.t("hud.asyncTasks.counts", summary.activeRootCount,
                     summary.pendingCompletionCount, summary.uncertainExecutionCount, summary.attentionCount))
+                .padding(.bottom, bottomSpacing)
                 .popover(isPresented: $showsCompactWork) {
-                    shelf(summary: summary, maxListHeight: 200)
+                    shelf(summary: summary, metadata: metadata, maxListHeight: 200)
                         .frame(width: 380)
                         .padding(DS.Spacing.space2)
                 }
             } else {
-                shelf(summary: summary, maxListHeight: maxListHeight)
+                shelf(summary: summary, metadata: metadata, maxListHeight: maxListHeight)
+                    .padding(.bottom, bottomSpacing)
             }
         }
     }
 
-    private func shelf(summary: PickyAsyncWorkSummary, maxListHeight: CGFloat) -> some View {
+    private func shelf(summary: PickyAsyncWorkSummary, metadata: PickySessionMetadata,
+                       maxListHeight: CGFloat) -> some View {
             PickyAsyncTaskShelfView(summary: summary, detailState: store.asyncTaskStore.detailState,
+                metadata: metadata, controlState: store.asyncTaskStore.controlState, stopError: stopError,
                 maxListHeight: maxListHeight,
                 fetchedDetail: { fetchedDetails[$0.shelfIdentity] },
                 detailPending: { detailPending.contains($0.shelfIdentity) },
@@ -226,6 +263,7 @@ struct PickyAsyncTaskShelfRowView: View {
     let detail: PickyAsyncTaskDetail
     var supplementalDetail: PickyAsyncTaskDetail?
     let summary: PickyAsyncWorkSummary
+    var runtimeInstanceId: String? = nil
     let availability: PickyAsyncTaskCancelAvailability
     let onAction: (PickyAsyncTaskShelfAction) -> Void
     @State var isExpanded = false
@@ -261,13 +299,14 @@ struct PickyAsyncTaskShelfRowView: View {
                 Text(root.title)
                     .pickyFont(size: PickyHUDTypography.labelSemiboldNSFont(fontScale: 1).pointSize, weight: .semibold)
                     .foregroundStyle(DS.Colors.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(disclosure.wrappedValue ? nil : 1)
                     .help(root.title)
                     .accessibilityLabel(root.title)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: DS.Spacing.space1) {
                     statusLabel(primaryTask,
-                        key: PickyAsyncTaskShelfPresentation.primaryStateKey(primaryTask, tickets: tickets))
+                        key: PickyAsyncTaskShelfPresentation.primaryStateKey(primaryTask, tickets: tickets,
+                            summary: summary, runtimeInstanceId: runtimeInstanceId))
                         .lineLimit(1)
                     if primaryTask.presence == .active {
                         Text(primaryTask.createdAt, style: .timer)
@@ -295,7 +334,12 @@ struct PickyAsyncTaskShelfRowView: View {
                 .disabled(!canCancel)
                 .accessibilityLabel(L10n.t("hud.asyncTasks.stopNamed", root.title))
                 .help(availability.explanation ?? L10n.t("hud.asyncTasks.stopHelp"))
-                Button { disclosure.wrappedValue.toggle() } label: {
+                Button {
+                    if !disclosure.wrappedValue {
+                        onAction(.detail(owner: root.owner, taskID: root.taskId))
+                    }
+                    disclosure.wrappedValue.toggle()
+                } label: {
                     Image(systemName: disclosure.wrappedValue ? "chevron.up" : "chevron.down")
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
@@ -335,10 +379,6 @@ struct PickyAsyncTaskShelfRowView: View {
 
     private var expandedDetails: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space1) {
-            Text(root.title)
-                .pickyFont(size: PickyHUDTypography.bodyCompactNSFont(fontScale: 1).pointSize)
-                .foregroundStyle(DS.Colors.textPrimary)
-                .textSelection(.enabled)
             if let progress = root.progress, !progress.isEmpty {
                 Text(progress)
                     .pickyFont(size: PickyHUDTypography.bodyCompactNSFont(fontScale: 1).pointSize)
@@ -352,7 +392,8 @@ struct PickyAsyncTaskShelfRowView: View {
                         .lineLimit(1)
                         .help(child.title)
                     Spacer(minLength: DS.Spacing.space1)
-                    statusLabel(child, key: PickyAsyncTaskShelfPresentation.executionKey(child))
+                    statusLabel(child, key: PickyAsyncTaskShelfPresentation.executionKey(child,
+                        summary: summary, runtimeInstanceId: runtimeInstanceId))
                         .fixedSize()
                 }
                 if let progress = child.progress, !progress.isEmpty {
@@ -373,27 +414,22 @@ struct PickyAsyncTaskShelfRowView: View {
             }
             if root.presence == .settled, root.execution == .succeeded,
                PickyAsyncTaskShelfPresentation.resultKey(tickets) != nil {
-                statusLabel(root, key: PickyAsyncTaskShelfPresentation.executionKey(root))
+                statusLabel(root, key: PickyAsyncTaskShelfPresentation.executionKey(root,
+                    summary: summary, runtimeInstanceId: runtimeInstanceId))
             }
-            HStack(spacing: DS.Spacing.space1) {
+            if isDetailPending { ProgressView().controlSize(.small) }
+            if let detailError {
+                failureLine("hud.asyncTasks.detailFailedShort", reason: detailError)
+                fullReason(detailError)
                 Button {
                     onAction(.detail(owner: root.owner, taskID: root.taskId))
                 } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                    Text("hud.asyncTasks.retryDetails")
+                        .foregroundStyle(DS.Colors.accentText)
+                        .frame(minHeight: 24)
                 }
                 .buttonStyle(.borderless)
-                .tint(DS.Colors.accentText)
-                .disabled(isDetailPending)
-                .help(L10n.t("hud.asyncTasks.refreshDetails"))
-                .accessibilityLabel(L10n.t("hud.asyncTasks.refreshDetails"))
-                if isDetailPending { ProgressView().controlSize(.small) }
-                if let detailError {
-                    failureLine("hud.asyncTasks.detailFailedShort", reason: detailError)
-                }
             }
-            if let detailError { fullReason(detailError) }
             let lines = PickyAsyncTaskShelfPresentation.supplementalLines(for: root, in: supplementalDetail)
             if !lines.isEmpty {
                 DisclosureGroup(isExpanded: providerBinding ?? $showsProviderDetails) {
@@ -426,9 +462,9 @@ struct PickyAsyncTaskShelfRowView: View {
     }
 
     private func statusLabel(_ task: PickyAsyncTask, key: String) -> some View {
-        let unknown = task.presence == .unknown
+        let unknown = key == "hud.asyncTasks.execution.unknown"
         let failed = key.hasSuffix("failed") ||
-            task.execution == .interrupted && key == PickyAsyncTaskShelfPresentation.executionKey(task)
+            task.execution == .interrupted && key == "hud.asyncTasks.execution.interrupted"
         let symbol = unknown ? "questionmark.circle" : failed ? "exclamationmark.triangle" :
             task.execution == .cancelled ? "stop.circle" : key.contains("result") ? "tray" :
             task.presence == .active || task.execution == .queued ? "clock" : "checkmark.circle"

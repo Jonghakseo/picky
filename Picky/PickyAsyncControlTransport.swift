@@ -27,6 +27,8 @@ enum PickyAsyncControlError: LocalizedError, Equatable {
 
 @MainActor
 protocol PickyAsyncTaskControlling: AnyObject {
+    func beginDeletion(sessionID: String)
+    func endDeletion(sessionID: String)
     func asyncControlContext(sessionID: String) async throws -> PickyAsyncControlContext
     func executeAsyncControl(_ command: PickyAsyncTaskCommand) async throws -> PickyAsyncTaskCommandResult
     func stopAsyncWork(sessionID: String) async throws -> PickyAsyncTaskCommandResult

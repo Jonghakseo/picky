@@ -46,6 +46,22 @@ enum PickyHUDDockExternalDragRailGeometryPolicy {
 }
 
 enum PickyHUDDockRailLayoutPolicy {
+    static func groupCount(in projection: PickyDockProjection) -> Int {
+        projection.items.reduce(into: 0) { count, item in
+            if case .group = item { count += 1 }
+        }
+    }
+
+    /// Empty folders have shorter tiles, even when their members are archived.
+    static func emptyGroupCount(in projection: PickyDockProjection, activeSessionIDs: Set<String>) -> Int {
+        projection.items.reduce(into: 0) { count, item in
+            guard case .group(let group) = item,
+                  !group.memberSessionIDs.contains(where: activeSessionIDs.contains)
+            else { return }
+            count += 1
+        }
+    }
+
     /// The rail has one folder tile per group, plus one compact header for
     /// that tile. Member count deliberately does not participate in this
     /// calculation, so a growing group cannot stretch the rail.
@@ -56,10 +72,12 @@ enum PickyHUDDockRailLayoutPolicy {
         isAddSlotExpanded: Bool,
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale,
+        hasArchiveAccess: Bool = false
     ) -> CGFloat {
+        let archiveLength = archiveChromeLength(hasArchiveAccess: hasArchiveAccess)
         if dockSide.orientation == .horizontal {
-            return PickyHUDDockLayout.horizontalDockRailLength(
+            return archiveLength + PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: sessionCount,
                 groupCount: groupCount,
                 isAddSlotExpanded: isAddSlotExpanded,
@@ -74,11 +92,22 @@ enum PickyHUDDockRailLayoutPolicy {
             sessionCount: sessionCount,
             isAddSlotExpanded: isAddSlotExpanded,
             metrics: metrics
-        ) - emptyGroupHeightReduction + PickyHUDDockLayout.dockGroupHeaderExtraLength(
+        ) - emptyGroupHeightReduction + archiveLength + PickyHUDDockLayout.dockGroupHeaderExtraLength(
             groupHeaderCount: groupCount,
             metrics: metrics,
             fontScale: fontScale
         )
+    }
+
+    static func crossSize(
+        groupCount: Int,
+        dockSide: PickyHUDDockSide,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+    ) -> CGFloat {
+        dockSide.orientation == .horizontal
+            ? horizontalCrossSize(groupCount: groupCount, metrics: metrics, fontScale: fontScale)
+            : verticalCrossSize(groupCount: groupCount, metrics: metrics, fontScale: fontScale)
     }
 
     static func verticalCrossSize(
@@ -105,18 +134,25 @@ enum PickyHUDDockRailLayoutPolicy {
         )
     }
 
+    /// The utility button is fixed chrome, never part of the draggable/scrolling slots.
+    static func archiveChromeLength(hasArchiveAccess: Bool) -> CGFloat {
+        hasArchiveAccess ? 30 : 0 // 28pt button + 2pt rail spacing
+    }
+
     static func fixedChromeLength(
         isAddSlotExpanded: Bool,
         dockSide: PickyHUDDockSide,
-        metrics: PickyHUDDockMetrics
+        metrics: PickyHUDDockMetrics,
+        hasArchiveAccess: Bool = false
     ) -> CGFloat {
+        let archiveLength = archiveChromeLength(hasArchiveAccess: hasArchiveAccess)
         if dockSide.orientation == .horizontal {
-            return (metrics.topPadding * 2)
+            return archiveLength + (metrics.topPadding * 2)
                 + metrics.handleAreaHeight
                 + 4
                 + PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
         }
-        return metrics.topPadding
+        return archiveLength + metrics.topPadding
             + metrics.handleAreaHeight
             + 2
             + metrics.addSlotTopPadding

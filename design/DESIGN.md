@@ -2,7 +2,7 @@
 title: Picky Design System
 version: 0.1.0-draft
 status: draft
-last_updated: 2026-07-14
+last_updated: 2026-09-26
 ---
 
 # Picky Design System
@@ -12,6 +12,8 @@ Picky는 데스크톱 위에서 장기 실행되는 Pi 작업의 상태와 다�
 이 문서는 Picky 디자인 시스템의 단일 진입점이자 최상위 제품 디자인 기준이다. 외부 레퍼런스의 외형을 복제하지 않고, Picky의 제품 목적과 macOS 플랫폼 관습에 맞게 원칙을 해석한다.
 
 ## 1. Product promise
+
+UI/UX의 대원칙은 **사용자의 인지부하를 최소화하는 것**이다. 화면마다 지금 필요한 정보와 행동만 남기며, 내부 상태를 사용자가 해석하게 만들지 않는다. 구체적인 판단은 [PRINCIPLES.md](./PRINCIPLES.md)를 따른다.
 
 Picky의 UI는 사용자가 다음 질문에 빠르게 답할 수 있게 해야 한다.
 
@@ -50,9 +52,9 @@ UI chrome은 이 정보와 행동보다 앞에 나서지 않는다.
 - 여러 Pickle의 상태를 동시에 구분할 수 있어야 한다.
 - `running`, `waiting`, `completed`, `failed`, `blocked`, `queued`가 명확히 구분돼야 한다.
 - follow-up, abort, rewind, archive 같은 세션 제어가 예측 가능해야 한다.
-- tool activity, logs, artifacts, confirmation UI가 숨겨지지 않아야 한다.
+- 도구 활동·로그·결과물은 관련 세션에서 접근할 수 있어야 하며, 확인 요청은 사용자가 대응할 수 있는 곳에 보여야 한다.
 - light/dark appearance와 키보드 중심 조작을 지원해야 한다.
-- 장식적 단순화를 위해 정보나 상태를 제거하지 않는다.
+- 안전에 필요한 상태와 확인 절차는 유지한다. 화면 목적과 무관한 진행 정보와 내부 기술 상태는 기본 화면에 노출하지 않는다.
 - 시각 변경이 HUD 성능, 레이아웃 안정성, 텍스트 입력을 악화시키면 안 된다.
 
 ## 5. System overview

@@ -35,6 +35,7 @@ export function aggregateAsyncSession(before: PickyAgentSession, proposed: Picky
   if (!enabled || !proposed.asyncControl) return proposed;
   return aggregateAsyncWork(before, proposed, {
     tracking: handle ? handle.asyncTasks?.coverage().tracking ?? "unsupported" : "reconciling",
+    runtimeInstanceId: handle?.asyncTasks?.coverage().runtimeInstanceId,
     runtimeBusy: handle?.isStreaming === true || handle?.isCompacting === true || handle?.hasPendingAsyncWork === true,
     queuedInput: hasQueuedInput(proposed, handle, pendingDeliveries),
   });

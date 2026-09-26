@@ -28,6 +28,8 @@ export interface RuntimeAsyncTaskControl {
   retryPersistence(): Promise<void>;
   coverage(): RuntimeAsyncTaskCoverage;
   snapshot(): RuntimeAsyncTaskState;
+  /** Wait for persisted provider evidence, without treating an ACK as physical exit. */
+  waitForChange?(previous: RuntimeAsyncTaskState, timeoutMs: number): Promise<void>;
   /** Discovered authoritative owners, including providers with zero observed tasks. */
   owners?(): AsyncTaskOwner[];
   control(owner: AsyncTaskOwner, action: Extract<AsyncTaskHostMessage, { type: "control-request" }>["action"], options?: { taskId?: string; deliveryIds?: string[] }): Promise<Extract<AsyncTaskHostMessage, { type: "control-result" }>>;

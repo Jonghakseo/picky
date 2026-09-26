@@ -22,7 +22,15 @@ interface Dependencies {
   drain(id: string): Promise<void>;
   archived(id: string, archived: boolean): void;
   resumeReleased(id: string): Promise<RuntimeSessionHandle | undefined>;
+  pendingRuntimeHandle(id: string, action: string): Promise<RuntimeSessionHandle | undefined>;
 }
+function hasUnsettledAttachedAsyncWork(handle: RuntimeSessionHandle, session: PickyAgentSession): boolean {
+  const unsettled = (task: NonNullable<PickyAgentSession["asyncTasks"]>[number]) =>
+    task.presence !== "settled" || ["queued", "running", "cancelling"].includes(task.execution);
+  return handle.isStreaming === true || handle.isCompacting === true || handle.hasPendingAsyncWork === true
+    || session.asyncTasks?.some(unsettled) === true || handle.asyncTasks?.snapshot().tasks.some(unsettled) === true;
+}
+
 export class ControlFailure extends Error {
   readonly code = "async_control_blocked";
   constructor(readonly outcome: Outcome, message: string) { super(message); }
@@ -106,6 +114,24 @@ export class AsyncControlCoordinator {
     if (!isAsyncTracked(this.deps.read(sessionId))) return;
     const result = await this.execute(this.internalCommand(sessionId, "prepareAsyncReplacement", inputLease));
     if (result.outcome !== "settled") throw new Error(result.reason ?? result.outcome);
+  }
+
+  /** Explicit deletion settles an attached owner, without requiring automatic release approval. */
+  async prepareExplicitDeletion(sessionId: string): Promise<void> {
+    // A prewarm must attach or fail before its archived metadata can be removed.
+    await this.deps.pendingRuntimeHandle(sessionId, "delete session");
+    const session = this.deps.read(sessionId);
+    if (session.archived !== true) throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
+    const handle = this.deps.handle(sessionId);
+    if (handle && isAsyncTracked(session)) {
+      if (handle.asyncTasks?.coverage().tracking === "ready" && !session.asyncControl?.releasePrepared) {
+        const stopped = await this.stop(sessionId, randomUUID());
+        if (stopped.outcome !== "settled") throw new Error(stopped.reason ?? stopped.outcome);
+      } else if (hasUnsettledAttachedAsyncWork(handle, session)) {
+        throw new Error("Async provider cleanup is unavailable for attached work");
+      }
+    }
+    if (this.deps.read(sessionId).archived !== true) throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
   }
 
   async archive(sessionId: string, archived: boolean, mode?: "continue" | "stopThenArchive", requestId: string = randomUUID()): Promise<PickyAgentSession> {
@@ -371,7 +397,7 @@ export class AsyncControlCoordinator {
         if (suppressed.outcome !== "settled") throw new ControlFailure("blocked_delivery", "Submitted async delivery suppression unconfirmed");
       }
     }));
-    await this.deps.drain(command.sessionId);
+    await withTimeout(this.deps.drain(command.sessionId));
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;
     if (coverageFailure) throw coverageFailure;
@@ -383,13 +409,12 @@ export class AsyncControlCoordinator {
     this.owners(command, handle);
     const task = control.snapshot().tasks.find((entry) => sameAsyncOwner(entry, command.owner) && entry.taskId === command.taskId);
     if (!task) throw new ControlFailure("rejected", "Unknown async task owner or task");
-    const cancelled = await control.control(command.owner, "cancel", { taskId: command.taskId });
-    if (cancelled.outcome !== "settled") throw new ControlFailure("blocked_cleanup", "Async task cleanup unconfirmed");
-    await this.deps.drain(command.sessionId);
-    this.assertOwner(command);
+    const root = control.snapshot().tasks.find((entry) => sameAsyncOwner(entry, task) && entry.taskId === task.rootTaskId);
+    if (!root) throw new ControlFailure("blocked_cleanup", "Task family root is missing");
+    const cancelled = await control.control(root, "cancel", { taskId: root.taskId });
+    if (!["settled", "accepted"].includes(cancelled.outcome)) throw new ControlFailure("blocked_cleanup", cancelled.reason ?? "Async task cleanup unconfirmed");
     // Individual cancel preserves model-target completion tickets for Pi to interpret.
-    const current = control.snapshot();
-    if (current.tasks.some((entry) => sameAsyncOwner(entry, task) && entry.rootTaskId === task.rootTaskId && (entry.presence !== "settled" || ["queued", "running", "cancelling"].includes(entry.execution)))) throw new ControlFailure("blocked_cleanup", "Task family still has execution obligations");
+    await this.awaitPhysicalSettlement(command, handle, () => !control.snapshot().tasks.some((entry) => sameAsyncOwner(entry, root) && entry.rootTaskId === root.taskId && (entry.presence !== "settled" || ["queued", "running", "cancelling"].includes(entry.execution))));
   }
 
   private async stopWork(command: Command): Promise<void> {
@@ -400,19 +425,38 @@ export class AsyncControlCoordinator {
       if (control?.admissionState !== "closed" || control.controlGeneration <= command.controlGeneration) throw error;
       closureFailure = error;
     }
-    const cancellations = await Promise.allSettled(handle.asyncTasks!.snapshot().tasks.map(async (task) => {
-      if (task.presence === "settled" && !["queued", "running", "cancelling"].includes(task.execution)) return;
-      const cancelled = await handle.asyncTasks!.control(task, "cancel", { taskId: task.taskId });
-      if (cancelled.outcome !== "settled") throw new ControlFailure("blocked_cleanup", "Async execution cleanup is not settled");
+    const tasks = handle.asyncTasks!.snapshot().tasks;
+    const cancellations = await Promise.allSettled(tasks.filter((task) => task.taskId === task.rootTaskId && tasks.some((member) => sameAsyncOwner(member, task) && member.rootTaskId === task.taskId && (member.presence !== "settled" || ["queued", "running", "cancelling"].includes(member.execution)))).map(async (root) => {
+      const cancelled = await handle.asyncTasks!.control(root, "cancel", { taskId: root.taskId });
+      if (!["settled", "accepted"].includes(cancelled.outcome)) throw new ControlFailure("blocked_cleanup", cancelled.reason ?? "Async execution cleanup is not settled");
     }));
     let modelFailure: unknown;
     try { await withTimeout(this.deps.abortModel(command.sessionId, handle)); } catch (error) { modelFailure = error; }
-    await this.deps.drain(command.sessionId);
+    await withTimeout(this.deps.drain(command.sessionId));
     if (closureFailure) throw closureFailure;
     const failed = cancellations.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;
     if (modelFailure) throw modelFailure;
-    this.assertQuiescent(command, handle);
+    await this.awaitPhysicalSettlement(command, handle, () => { this.assertQuiescent(command, handle); return true; });
+  }
+
+  private async awaitPhysicalSettlement(command: Command, handle: RuntimeSessionHandle, settled: () => boolean): Promise<void> {
+    const control = handle.asyncTasks!;
+    // Native subagents first escalate an ignored SIGTERM, then publish exit evidence.
+    // Give that bounded teardown time to finish before declaring cleanup unknown.
+    const deadline = Date.now() + 12_000;
+    for (;;) {
+      this.assertOwner(command);
+      const previous = control.snapshot();
+      await withTimeout(this.deps.drain(command.sessionId));
+      try { if (settled()) return; } catch (error) {
+        if (!(error instanceof ControlFailure) || error.outcome !== "blocked_cleanup") throw error;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || !control.waitForChange) throw new ControlFailure("blocked_cleanup", "Async execution cleanup timed out; outcome remains unknown");
+      try { await control.waitForChange(previous, remaining); }
+      catch { this.assertOwner(command); throw new ControlFailure("blocked_cleanup", "Async execution cleanup timed out; outcome remains unknown"); }
+    }
   }
 
   private assertQuiescent(command: Command, handle: RuntimeSessionHandle): void {

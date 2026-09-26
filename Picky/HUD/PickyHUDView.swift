@@ -383,7 +383,7 @@ struct PickyHUDView: View {
             // When the handle drag crosses the snap threshold, only the optional
             // conversation-card side changes; the AppKit-backed handle view that owns
             // the active mouse drag stays alive instead of being recreated mid-drag.
-            dockRailWithArchive
+            dockRail
             if placement.dockSide == .left {
                 conversationCard
             }
@@ -395,7 +395,7 @@ struct PickyHUDView: View {
             if placement.dockSide == .bottom {
                 cardOrPreviewReserve
             }
-            dockRailWithArchive
+            dockRail
             if placement.dockSide == .top {
                 cardOrPreviewReserve
             }
@@ -621,13 +621,6 @@ struct PickyHUDView: View {
         utilityPanelResizeStartHeight = nil
     }
 
-    private var dockRailWithArchive: some View {
-        PickyHUDDockArchiveAccessory(orientation: placement.dockSide.orientation,
-                                     access: viewModel.archivedSessionAccess) {
-            dockRail
-        }
-    }
-
     @ViewBuilder
     private var dockRail: some View {
         // The rail is intentionally suppressed while the very first
@@ -698,7 +691,8 @@ struct PickyHUDView: View {
                     externalDockGeometryInput = input
                     reportExternalDockGeometry()
                 },
-                externalDragPresentationStore: externalDragPresentationStore
+                externalDragPresentationStore: externalDragPresentationStore,
+                archiveAccess: viewModel.archivedSessionAccess
             )
             // Measured before the mini-preview slack padding so only the rail
             // itself counts as visible chrome for ink pass-through.

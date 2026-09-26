@@ -8690,17 +8690,57 @@ describe("SessionSupervisor deleteSession", () => {
     expect(supervisor.get("unarchived")).toBeDefined();
   });
 
-  it("refuses to delete a session that is not in a terminal state", async () => {
+  it("deletes an archived running session but leaves unrelated unarchived work intact", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-delete-running-test-"));
+    const store = new SessionStore(dir);
     const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const supervisor = new SessionSupervisor(runtime, store);
     await supervisor.load();
     const session = await supervisor.create(context("running delete"));
     await supervisor.setSessionArchived(session.id, true);
+    const other = await supervisor.create(context("unrelated running work"));
 
-    await expect(supervisor.deleteSession(session.id)).rejects.toThrow(/terminal state/);
-    expect(runtime.handle?.aborts).toBe(0);
-    expect(supervisor.get(session.id)).toBeDefined();
+    await supervisor.deleteSession(session.id);
+    expect(supervisor.get(session.id)).toBeUndefined();
+    expect((await store.loadAll()).map((entry) => entry.id)).toEqual([other.id]);
+    expect(supervisor.get(other.id)?.status).toBe("running");
+  });
+
+  it("deletes archived old-owner history without manufacturing release approval", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-delete-old-owner-test-"));
+    const store = new SessionStore(dir);
+    await store.save(baseDeleteSession({ id: "old-owner", status: "blocked", archived: true,
+      asyncControl: { controlGeneration: 1, admissionState: "closed", operations: [] },
+      asyncWorkSummary: { tracking: "reconciling", activeRootCount: 0, pendingCompletionCount: 0, uncertainExecutionCount: 0, attentionCount: 0, workRevision: 1, canReleaseRuntime: false },
+    }));
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+    expect(supervisor.get("old-owner")?.asyncControl?.releasePrepared).toBeUndefined();
+
+    await supervisor.deleteSession("old-owner");
+    expect(supervisor.get("old-owner")).toBeUndefined();
+    expect(await store.loadReadOnly("old-owner")).toBeUndefined();
+  });
+
+  it("retains an archived record when runtime disposal or storage deletion fails", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-delete-failure-test-"));
+    const store = new SessionStore(dir);
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const session = await supervisor.create(context("failed deletion"));
+    await supervisor.setSessionArchived(session.id, true);
+    runtime.handle!.dispose = async () => { throw new Error("resource still open"); };
+    await expect(supervisor.deleteSession(session.id)).rejects.toThrow(/teardown did not complete/);
+    expect(supervisor.get(session.id)?.archived).toBe(true);
+    expect(await store.loadReadOnly(session.id)).toBeDefined();
+
+    const other = await supervisor.create(context("storage failure"));
+    await supervisor.setSessionArchived(other.id, true);
+    vi.spyOn(store, "deleteSession").mockRejectedValueOnce(new Error("storage unavailable"));
+    await expect(supervisor.deleteSession(other.id)).rejects.toThrow("storage unavailable");
+    expect(supervisor.get(other.id)?.archived).toBe(true);
+    expect(await store.loadReadOnly(other.id)).toBeDefined();
   });
 
   describe("reloadPlugins", () => {

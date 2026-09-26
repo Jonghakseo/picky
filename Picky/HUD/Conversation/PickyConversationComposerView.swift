@@ -55,7 +55,12 @@ struct PickyConversationComposerView: View {
     @State private var isFocused: Bool = false
     @State private var queueActionInFlight: PickyQueueDockAction?
     @State private var queueActionError: String?
-    @State private var stopError: String?
+    @State private var localStopError: String?
+    private var sharedStopError: Binding<String?>?
+    var stopErrorInShelf = false
+    private var stopError: String? { get { sharedStopError?.wrappedValue ?? localStopError }
+        nonmutating set { if let sharedStopError { sharedStopError.wrappedValue = newValue } else { localStopError = newValue } }
+    }
     @State private var isStopping = false
     @StateObject private var runtimeControls = PickyComposerRuntimeControlsModel()
     @State private var isAttachmentPickerPresented = false
@@ -72,6 +77,8 @@ struct PickyConversationComposerView: View {
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
         isOptionModifierPressed: Bool = false,
+        sharedStopError: Binding<String?>? = nil,
+        stopErrorInShelf: Bool = false,
         onToggleUtilityPanel: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { },
         onTransientHeightChange: @escaping (CGFloat) -> Void = { _ in }
@@ -87,6 +94,8 @@ struct PickyConversationComposerView: View {
         self.isUtilityPanelOpen = isUtilityPanelOpen
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.isOptionModifierPressed = isOptionModifierPressed
+        self.sharedStopError = sharedStopError
+        self.stopErrorInShelf = stopErrorInShelf
         self.onToggleUtilityPanel = onToggleUtilityPanel
         self.onRequestRewind = onRequestRewind
         self.onTransientHeightChange = onTransientHeightChange
@@ -140,7 +149,7 @@ struct PickyConversationComposerView: View {
         let _ = PickyPerf.event("composer_body")
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             queueDock
-            if let stopError {
+            if let stopError, !stopErrorInShelf {
                 Label(L10n.t("hud.asyncTasks.stopError", stopError), systemImage: "exclamationmark.triangle")
                     .foregroundStyle(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)

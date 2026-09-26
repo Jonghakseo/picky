@@ -305,12 +305,15 @@ final class PickyHUDOverlayManager {
         isAddSlotExpanded: Bool = false
     ) -> CGFloat {
         let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let contentLength = PickyHUDDockLayout.horizontalDockRailLength(
+        let hasArchiveAccess = viewModel.archivedSessionAccess != nil
+        let contentLength = PickyHUDDockRailLayoutPolicy.contentLength(
             sessionCount: projectedDockSessionCount(for: displayID),
             groupCount: projectedDockGroupCount(for: displayID),
             isAddSlotExpanded: isAddSlotExpanded,
+            dockSide: dockSide,
             metrics: metrics,
-            fontScale: fontScaleStore.cgValue
+            fontScale: fontScaleStore.cgValue,
+            hasArchiveAccess: hasArchiveAccess
         )
         return PickyHUDDockOverflowPolicy.layout(
             contentLength: contentLength,
@@ -319,7 +322,12 @@ final class PickyHUDOverlayManager {
                 dockSide: dockSide,
                 anchorPercent: position(for: displayID).anchorPercent
             ),
-            fixedChromeLength: 0
+            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                isAddSlotExpanded: isAddSlotExpanded,
+                dockSide: dockSide,
+                metrics: metrics,
+                hasArchiveAccess: hasArchiveAccess
+            )
         ).railLength
     }
 

@@ -412,6 +412,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             visibleSessionIDs: fiveSessions.map(\.id)
         )
         let fontScale: CGFloat = 1.3
+        let archiveAccess = PickyProjectionReplayFixtures.makeViewModel().archivedSessionAccess
         let railSize = CGSize(
             width: PickyHUDDockRailLayoutPolicy.contentLength(
                 sessionCount: projection.slots.count,
@@ -419,7 +420,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
                 isAddSlotExpanded: false,
                 dockSide: .bottom,
                 metrics: metrics,
-                fontScale: fontScale
+                fontScale: fontScale,
+                hasArchiveAccess: true
             ),
             height: PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
                 groupCount: groups.count,
@@ -447,7 +449,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
                     dockSide: .bottom,
                     metrics: metrics,
                     availableRailLength: railSize.width,
-                    externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore()
+                    externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore(),
+                    archiveAccess: archiveAccess
                 )
                 .frame(width: railSize.width, height: railSize.height, alignment: .topLeading)
                 .padding(DS.Spacing.space4)
@@ -493,6 +496,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
             layout: layout,
             visibleSessionIDs: fiveSessions.map(\.id)
         )
+        let archiveAccess = PickyProjectionReplayFixtures.makeViewModel().archivedSessionAccess
         let railSize = CGSize(
             width: PickyHUDDockRailLayoutPolicy.verticalCrossSize(
                 groupCount: 4,
@@ -505,7 +509,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
                 isAddSlotExpanded: false,
                 dockSide: .right,
                 metrics: metrics,
-                fontScale: 1
+                fontScale: 1,
+                hasArchiveAccess: true
             )
         )
         let contentSize = CGSize(
@@ -532,7 +537,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
                         metrics: metrics,
                         availableRailLength: railSize.height,
                         externalDragPresentationStore: presentationStore,
-                        openedSessionID: fiveSessions[0].id
+                        openedSessionID: fiveSessions[0].id,
+                        archiveAccess: archiveAccess
                     )
                     .frame(width: railSize.width, height: railSize.height, alignment: .topLeading)
                     .padding(DS.Spacing.space4)
@@ -761,6 +767,90 @@ struct PickyHUDDockGroupRenderGalleryTests {
         )
     }
 
+    @Test func archiveControlStaysInsideRenderedRailOnEverySideAndOverflowBudget() throws {
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel()
+        let access = try #require(viewModel.archivedSessionAccess)
+        let sessions = fiveSessions
+        let layout = PickyDockLayout(entries: sessions.map { .session(id: $0.id) })
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: sessions.map(\.id))
+        for side in PickyHUDDockSide.allCases {
+            for fontScale: CGFloat in [1, 1.3] {
+                let metrics = PickyHUDDockMetrics(preset: .small)
+                let full = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: sessions.count,
+                    isAddSlotExpanded: false, dockSide: side, metrics: metrics,
+                    fontScale: fontScale, hasArchiveAccess: true)
+                for available: CGFloat in [full, 160] {
+                    let expected = PickyHUDDockOverflowPolicy.layout(contentLength: full,
+                        availableLength: available,
+                        fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                            isAddSlotExpanded: false, dockSide: side, metrics: metrics, hasArchiveAccess: true))
+                    let crossSize = side.orientation == .horizontal
+                        ? PickyHUDDockRailLayoutPolicy.horizontalCrossSize(groupCount: 0, metrics: metrics, fontScale: fontScale)
+                        : PickyHUDDockRailLayoutPolicy.verticalCrossSize(groupCount: 0, metrics: metrics, fontScale: fontScale)
+                    let railSize = side.orientation == .horizontal
+                        ? CGSize(width: expected.railLength, height: crossSize)
+                        : CGSize(width: crossSize, height: expected.railLength)
+                    let bounds = ArchiveRailBounds()
+                    let fontStore = PickyAppFontScaleStore()
+                    fontStore.setScale(Double(fontScale))
+                    let root = PickyAppFontScaleRoot(store: fontStore) {
+                        dockRail(sessions: sessions, allSessions: sessions, layout: layout,
+                            projection: projection, dockSide: side, metrics: metrics,
+                            availableRailLength: available,
+                            externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore(),
+                            archiveAccess: access)
+                        .frame(width: railSize.width, height: railSize.height, alignment: .topLeading)
+                        .padding(DS.Spacing.space4)
+                    }
+                    .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
+                    .onPreferenceChange(PickyHUDDockRailFramePreferenceKey.self) { bounds.rail = $0 }
+                    .onPreferenceChange(PickyHUDDockArchiveFramePreferenceKey.self) { bounds.archive = $0 }
+                    .onPreferenceChange(PickyHUDRailViewportFrameKey.self) { bounds.viewport = $0 }
+                    .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { bounds.sessionCenters = $0 }
+                    let canvas = CGSize(width: railSize.width + 32, height: railSize.height + 32)
+                    let bitmap = PickyRenderGalleryRasterizer.rasterize(root, logicalSize: canvas,
+                        scale: 2, appearance: .darkAqua)
+                    #expect(bitmap != nil)
+                    #expect(bounds.rail.width > 0 && bounds.archive.width > 0)
+                    #expect(abs(bounds.archive.width - 28) < 1)
+                    #expect(abs(bounds.archive.height - 28) < 1)
+                    #expect(bounds.rail.insetBy(dx: -0.5, dy: -0.5).contains(bounds.archive))
+                    if side.orientation == .horizontal {
+                        #expect(abs(bounds.rail.maxX - bounds.archive.maxX - metrics.topPadding) < 1)
+                    }
+                    if expected.needsScroll {
+                        // The viewport reporter uses rail-local coordinates. Archive chrome
+                        // must remain beyond the scrollable sessions on either dock axis.
+                        #expect(bounds.viewport.width > 0 && bounds.viewport.height > 0)
+                        if side.orientation == .horizontal {
+                            #expect(bounds.archive.minX >= bounds.rail.minX + bounds.viewport.maxX)
+                        } else {
+                            #expect(bounds.archive.minY >= bounds.rail.minY + bounds.viewport.maxY)
+                        }
+                    } else {
+                        let lastSessionID = try #require(sessions.last).id
+                        let lastSession = try #require(bounds.sessionCenters[lastSessionID])
+                        if side.orientation == .horizontal {
+                            #expect(bounds.archive.minX >= bounds.rail.minX + lastSession.x + metrics.sessionTileWidth / 2)
+                        } else {
+                            #expect(bounds.archive.minY >= bounds.rail.minY + lastSession.y + metrics.sessionTileHeight / 2)
+                        }
+                    }
+                    #expect(abs((side.orientation == .horizontal ? bounds.rail.width : bounds.rail.height)
+                        - expected.railLength) < 1)
+                    #expect(expected.sessionsViewportLength >= 0)
+                }
+            }
+        }
+    }
+
+    private final class ArchiveRailBounds {
+        var rail: CGRect = .zero
+        var archive: CGRect = .zero
+        var viewport: CGRect = .zero
+        var sessionCenters: [String: CGPoint] = [:]
+    }
+
     private func dockRail(
         sessions: [PickyHUDDockSession],
         allSessions: [PickyHUDDockSession],
@@ -770,7 +860,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         metrics: PickyHUDDockMetrics,
         availableRailLength: CGFloat,
         externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore,
-        openedSessionID: String? = nil
+        openedSessionID: String? = nil,
+        archiveAccess: PickyHUDArchivedSessionAccess? = nil
     ) -> some View {
         PickyHUDDockRailView(
             sessions: sessions,
@@ -819,7 +910,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
             onDockHandleDragChanged: { _ in },
             onDockHandleDragEnded: {},
             onDockHandleDoubleClick: {},
-            externalDragPresentationStore: externalDragPresentationStore
+            externalDragPresentationStore: externalDragPresentationStore,
+            archiveAccess: archiveAccess
         )
     }
 

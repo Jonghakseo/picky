@@ -51,7 +51,7 @@ import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { isSemanticNoOpPatch } from "./domain/session-patch-policy.js";
 import { nextRevision } from "./domain/session-revision-policy.js";
-import { ARCHIVED_SESSION_RETENTION_DAYS, hasQuiescentReleasedAsyncOwner, recoverAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldRestoreInterruptedRuntime, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
+import { ARCHIVED_SESSION_RETENTION_DAYS, hasQuiescentReleasedAsyncOwner, recoverAsyncSession, shouldResumeIdleAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldRestoreInterruptedRuntime, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext } from "./domain/session-title.js";
@@ -298,7 +298,8 @@ export class SessionSupervisor extends EventEmitter {
           );
           await this.commitSession(session.id, () => restored);
         }
-      } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))) {
+      } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))
+        || shouldResumeIdleAsyncSession(session, releasedOwner, Boolean(piSessionFilePathForSession(session)))) {
         await this.tryResumeRuntimeHandle(session);
       }
     }

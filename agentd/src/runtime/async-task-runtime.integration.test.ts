@@ -145,7 +145,7 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
     while (pending.size) await Promise.allSettled([...pending]);
     await supervisor.withSessionProjectionBarrier("session-sdk", async () => {});
   }
-  return { root, runtime, handle, session, currentSession: () => session, supervisor, store, saved, requests, completion, frames, api, send, ready, acknowledgeClose, events, projections, snapshots, transactions, notifications,
+  return { root, runtime, handle, session, currentHandle: () => handle, currentSession: () => session, supervisor, store, saved, requests, completion, frames, api, send, ready, acknowledgeClose, events, projections, snapshots, transactions, notifications,
     drainEvents, emitRuntime: (event: RuntimeEvent) => eventTarget.applyRuntimeEvent("session-sdk", event) };
 }
 
@@ -291,6 +291,95 @@ it("restores a quiescent released archive with a fresh provider owner and admits
   expect(f.requests).toHaveLength(3);
   expect(f.frames.filter((frame) => frame.type === "completion-observed")).toHaveLength(2);
   await vi.waitFor(() => expect(wire.some((event) => event.type === "sessionProjectionTransaction" && event.sessionId === "session-sdk" && event.revision === afterNewResult?.revision)).toBe(true));
+}, 20_000);
+
+it.each(["waiting_for_input", "blocked", "completed", "blocked-completed"] as const)("restores an empty %s Pickle through resume, store and v2 before admitting its first follow-up", async persistedStatus => {
+  const f = await fixture({ readyOnDiscovery: true, captureSaved: true });
+  await f.drainEvents();
+  expect(f.requests).toEqual([]);
+  await f.handle.dispose?.();
+  const original = (await f.store.loadReadOnly("session-sdk"))!;
+  expect(original).toMatchObject({ status: "waiting_for_input", asyncWorkSummary: { canReleaseRuntime: true } });
+  if (persistedStatus !== "waiting_for_input") await f.store.save({ ...original,
+    status: persistedStatus.startsWith("blocked") ? "blocked" : "completed",
+    lastSummary: persistedStatus.startsWith("blocked") ? "Async owner restarted; resource and delivery reconciliation required" : "Earlier answer",
+    ...(persistedStatus.includes("completed") ? { finalAnswer: "Earlier answer" } : {}),
+  });
+  const savedBefore = f.saved.length;
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk",
+    forwardPickleCompletionToPrimary: async ({ completionId }) => { f.notifications.push(completionId); } });
+  const projections: PickyAgentSession[] = [];
+  restarted.on("sessionProjectionTransaction", (_id, _before, after) => projections.push(structuredClone(after)));
+  await restarted.load();
+  await vi.waitFor(() => expect(restarted.asyncControls.context("session-sdk").tracking).toBe("ready"));
+  await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
+  const disk = await f.store.loadReadOnly("session-sdk");
+  const server = new AgentdServer({ port: 0, token: "empty-reentry", supervisor: restarted });
+  const port = await server.start();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=empty-reentry`);
+  const wire: EventEnvelope[] = [];
+  ws.on("message", data => wire.push(JSON.parse(String(data)) as EventEnvelope));
+  cleanups.push(async () => { ws.close(); await server.stop(); });
+  await once(ws, "open");
+  ws.send(JSON.stringify({ type: "registerAppCapabilities", id: "register-empty", protocolVersion: PROTOCOL_VERSION, capabilities: ["sessionProjectionV2"] }));
+  await vi.waitFor(() => expect(wire.some(event => event.type === "sessionProjectionSnapshot" && event.sessionId === "session-sdk")).toBe(true));
+  const snapshot = wire.find(event => event.type === "sessionProjectionSnapshot" && event.sessionId === "session-sdk");
+  const expectedStatus = persistedStatus.includes("completed") ? "completed" : "waiting_for_input";
+  expect(projections.at(-1)?.status).toBe(expectedStatus);
+  console.log("EMPTY_REENTRY_BEFORE", JSON.stringify({ persistedStatus, disk: [disk?.status, disk?.lastSummary, disk?.asyncWorkSummary], saved: f.saved.slice(savedBefore).map(s => [s.status, s.asyncWorkSummary?.tracking]), v2: [snapshot?.type, projections.at(-1)?.status], notifications: f.notifications.length }));
+  expect(f.notifications).toEqual([]);
+  await restarted.setSessionModel("session-sdk", "w3-offline", "finite");
+  ws.send(JSON.stringify({ type: "followUp", id: "first-input", protocolVersion: PROTOCOL_VERSION, sessionId: "session-sdk", text: "First input after restart" }));
+  await vi.waitFor(() => expect(wire.some(event => event.type === "ack" && event.commandId === "first-input" || event.type === "error" && event.commandId === "first-input")).toBe(true));
+  expect(wire.some(event => event.type === "error" && event.commandId === "first-input")).toBe(false);
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
+  expect(JSON.stringify(f.requests.at(-1))).toContain("First input after restart");
+  console.log("EMPTY_REENTRY_AFTER", JSON.stringify({ persistedStatus, status: (await f.store.loadReadOnly("session-sdk"))?.status, requests: f.requests.length }));
+  expect(disk).toMatchObject({ status: expectedStatus, asyncControl: { admissionState: "closed" }, asyncWorkSummary: { tracking: "ready", canReleaseRuntime: true } });
+  expect(disk?.lastSummary).toBe(expectedStatus === "completed" ? "Earlier answer" : "Ready for instructions");
+  expect(snapshot).toMatchObject({ type: "sessionProjectionSnapshot", projection: { status: expectedStatus } });
+}, 20_000);
+
+it("keeps an empty resumed Pickle fenced until its new provider snapshot is ready", async () => {
+  const options = { readyOnDiscovery: true };
+  const f = await fixture(options);
+  await f.handle.dispose?.();
+  options.readyOnDiscovery = false;
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  expect(restarted.asyncControls.context("session-sdk").tracking).toBe("reconciling");
+  expect(await f.store.loadReadOnly("session-sdk")).toMatchObject({ status: "waiting_for_input", asyncControl: { admissionState: "closed" }, asyncWorkSummary: { canReleaseRuntime: false } });
+  await expect(restarted.followUp("session-sdk", "Wait for coverage")).rejects.toThrow(/coverage|reconciliation|cleanup/);
+  expect(f.requests).toEqual([]);
+}, 20_000);
+
+it.each(["failed-control", "unrelated-block"] as const)("does not clear a %s on reentry despite empty tasks", async reason => {
+  const f = await fixture({ readyOnDiscovery: true });
+  await f.handle.dispose?.();
+  const original = (await f.store.loadReadOnly("session-sdk"))!;
+  await f.store.save({ ...original, status: "blocked",
+    lastSummary: reason === "unrelated-block" ? "Runtime not attached" : "Async owner restarted; resource and delivery reconciliation required",
+    asyncControl: reason === "failed-control" ? { ...original.asyncControl!, operations: [{ requestId: "old-stop", operationId: "old-operation", outcome: "blocked_cleanup", controlGeneration: 0 }] } : original.asyncControl });
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  await vi.waitFor(() => expect(restarted.asyncControls.context("session-sdk").tracking).toBe("ready"));
+  await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.status).toBe("blocked");
+  if (reason === "failed-control") {
+    expect(disk?.asyncControl?.operations).toMatchObject([{ outcome: "blocked_cleanup" }]);
+    expect(disk?.asyncWorkSummary).toMatchObject({ attentionCount: 1, canReleaseRuntime: false });
+    expect(f.requests).toEqual([]);
+  } else {
+    expect(disk?.lastSummary).toBe("Runtime not attached");
+    await f.currentHandle().dispose?.();
+    const secondRestart = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+    await secondRestart.load();
+    await vi.waitFor(() => expect(secondRestart.asyncControls.context("session-sdk").tracking).toBe("ready"));
+    await secondRestart.withSessionProjectionBarrier("session-sdk", async () => {});
+    expect(await f.store.loadReadOnly("session-sdk")).toMatchObject({ status: "blocked", lastSummary: "Runtime not attached", asyncWorkSummary: { tracking: "ready" } });
+    expect(f.requests).toEqual([]);
+  }
 }, 20_000);
 
 it("refuses resumed input until the fresh provider has negotiated its snapshot", async () => {

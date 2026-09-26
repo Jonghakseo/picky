@@ -1,4 +1,5 @@
 import { hasAsyncExecutionObligations, isAsyncTracked } from "./async-work-aggregate.js";
+import { summaryFromFinalAnswer } from "./session-summary.js";
 import type { PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState } from "../protocol.js";
 import { zeroActivitySummary } from "./activity-summary.js";
 import type { MainRolloverPickleSession } from "./main-agent-policy.js";
@@ -232,6 +233,8 @@ export function buildRuntimeReattachPatch(
   hadPendingExtensionUiRequest: boolean,
 ): Partial<PickyAgentSession> {
   if (isTerminalStatus(session.status)) return { ...interruptedPatch };
+  // A never-started async Pickle has no model run to report as interrupted.
+  if (session.status === "waiting_for_input" && hasNoAsyncReentryObligations(session)) return { ...interruptedPatch };
   return {
     ...interruptedPatch,
     status: "blocked",
@@ -369,9 +372,43 @@ export function shouldRestoreInterruptedRuntime(session: PickyAgentSession, rele
   return !isTerminalStatus(session.status) && !(session.archived === true && releasedOwner);
 }
 
+export function shouldResumeIdleAsyncSession(session: PickyAgentSession, releasedOwner: boolean, hasPiSessionFile: boolean): boolean {
+  return isAsyncTracked(session) && !releasedOwner && session.archived !== true && session.status === "completed" && hasPiSessionFile;
+}
+
+const ASYNC_RESTART_SUMMARY = "Async owner restarted; resource and delivery reconciliation required";
+
+function hasNoInterruptedSessionActivity(session: PickyAgentSession): boolean {
+  return !session.pendingExtensionUiRequest && !(session.queuedSteers?.length || session.queuedFollowUps?.length)
+    && !session.tools.some((tool) => tool.status === "running")
+    && !(session.subagentRuns ?? []).some((run) => run.status === "running");
+}
+
+function hasNoAsyncReentryObligations(session: PickyAgentSession): boolean {
+  return !!session.asyncWorkSummary && !!session.asyncControl && !session.agentCycle && !session.asyncWorkSummary.episode
+    && hasNoInterruptedSessionActivity(session) && !session.asyncControl.releasePrepared
+    && !hasAsyncExecutionObligations(session.asyncTasks ?? [])
+    && (session.completionTickets ?? []).every((ticket) => ticket.state === "handled" || ticket.state === "suppressed")
+    && !session.asyncControl?.operations.some((operation) => ["accepted", "blocked_cleanup", "blocked_delivery"].includes(operation.outcome));
+}
+
+function idleReentryStatus(session: PickyAgentSession): PickyAgentSession["status"] | undefined {
+  if (session.archived || !hasNoAsyncReentryObligations(session)
+    || session.asyncWorkSummary?.tracking !== "ready" || !session.asyncWorkSummary.canReleaseRuntime) return undefined;
+  if (session.status === "completed") return "completed";
+  if (session.status === "waiting_for_input") return "waiting_for_input";
+  if (session.status !== "blocked" || session.lastSummary !== ASYNC_RESTART_SUMMARY) return undefined;
+  return session.finalAnswer ? "completed" : "waiting_for_input";
+}
+
 export function recoverAsyncSession(session: PickyAgentSession): PickyAgentSession {
   if (!isAsyncTracked(session) || hasQuiescentReleasedAsyncOwner(session)) return session;
-  return { ...session, status: "blocked", lastSummary: "Async owner restarted; resource and delivery reconciliation required",
+  const idleStatus = idleReentryStatus(session);
+  const lastSummary = idleStatus === undefined
+    ? session.status === "blocked" && session.lastSummary && session.lastSummary !== ASYNC_RESTART_SUMMARY ? session.lastSummary : ASYNC_RESTART_SUMMARY
+    : session.status !== "blocked" ? session.lastSummary
+      : session.finalAnswer ? summaryFromFinalAnswer(session.finalAnswer) : "Ready for instructions";
+  return { ...session, status: idleStatus ?? "blocked", lastSummary,
     asyncTasks: session.asyncTasks?.map((task) => hasAsyncExecutionObligations([task]) && task.presence !== "unknown" ? { ...task, presence: "unknown", execution: "interrupted" } : task),
     completionTickets: session.completionTickets?.map((ticket) => ["handled", "suppressed"].includes(ticket.state) ? ticket : { ...ticket, state: "unknown" }),
     asyncControl: session.asyncControl ? { ...session.asyncControl, admissionState: "closed", releasePrepared: undefined,

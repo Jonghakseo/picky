@@ -1,10 +1,14 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 
 interface CapturedPiSdkRuntimeOptions {
+  asyncProviderPaths?: string[];
+  asyncAdmissionDrain?: boolean | (() => boolean);
+  asyncProvidersQualified?: boolean;
   resourceLoaderOptions?: { extensionFactories?: InlineExtension[] };
 }
 
@@ -25,6 +29,7 @@ vi.mock("./runtime/pi-sdk-runtime.js", () => ({
 import { composeAgentdServices, createSingleUseSessionIdFactory, parseAgentdConfig, primeSessionIdFactoryForResume, type AgentdConfig } from "./bootstrap.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { PickyContextPacket } from "./protocol.js";
+import type { AgentRuntime, RuntimeCreateOptions } from "./runtime/types.js";
 
 type BeforeAgentStartHandler = (event: { systemPrompt: string }) => { systemPrompt?: string } | undefined;
 
@@ -87,6 +92,7 @@ describe("parseAgentdConfig", () => {
     expect(config.defaultCwd).toBe("/tmp/workspace");
     expect(config.port).toBe(0);
     expect(config.primaryUrl).toBe("ws://127.0.0.1:17631");
+    expect(config.asyncTaskRollout).toBe("on");
   });
 
   it("ignores an inherited PICKY_AGENTD_PORT in child mode so children never reuse a primary's pinned port", () => {
@@ -97,6 +103,11 @@ describe("parseAgentdConfig", () => {
       PICKY_AGENTD_PORT: "12345",
     }));
     expect(config.port).toBe(0);
+  });
+
+  it("accepts the drain rollout and rejects an unsafe all-tracking-off flag", () => {
+    expect(parseAgentdConfig(envFor({ PICKY_ASYNC_TASK_ROLLOUT: "drain" })).asyncTaskRollout).toBe("drain");
+    expect(() => parseAgentdConfig(envFor({ PICKY_ASYNC_TASK_ROLLOUT: "off" }))).toThrow(/PICKY_ASYNC_TASK_ROLLOUT/);
   });
 
   it("rejects unknown PICKY_AGENTD_MODE values", () => {
@@ -133,6 +144,26 @@ describe("createSingleUseSessionIdFactory", () => {
 });
 
 describe("composeAgentdServices", () => {
+  function qualifiedCapsule() {
+    const root = tmpAppSupportDir();
+    const lock: { packages: Record<string, { name: string; version: string; files: Record<string, string> }> } = { packages: {} };
+    for (const [id, version] of [["bash-async", "0.2.1"], ["subagent", "0.5.7"]]) {
+      const dir = join(root, "packages", id!);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "index.ts"), "export default function () {};");
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: `@ryan_nookpi/pi-extension-${id}`, version, pi: { extensions: ["./index.ts"] } }));
+      lock.packages[id!] = { name: `@ryan_nookpi/pi-extension-${id}`, version: version!, files: Object.fromEntries(["index.ts", "package.json"].map((name) => [name, createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")])) };
+    }
+    for (const name of ["yaml", "@anthropic-ai/claude-agent-sdk"]) {
+      const dir = join(root, "node_modules", name);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name, main: "index.js" }));
+      writeFileSync(join(dir, "index.js"), "module.exports = {};");
+    }
+    const lockPath = join(root, "lock.json"); writeFileSync(lockPath, JSON.stringify(lock));
+    return { root, lockPath };
+  }
+
   function baseConfig(overrides: Partial<AgentdConfig> = {}): AgentdConfig {
     return {
       mode: "primary",
@@ -146,6 +177,58 @@ describe("composeAgentdServices", () => {
       ...overrides,
     };
   }
+
+  it("enables only a qualified Pickle capsule and keeps main, mock, and legacy handles unhosted", async () => {
+    piSdkRuntimeOptions.length = 0;
+    const capsule = qualifiedCapsule();
+    const config = baseConfig({ mode: "child", sessionId: "pickle-async", sessionCwd: "/tmp", useMockRuntime: false });
+    const real = composeAgentdServices(config, { asyncProviderCapsule: capsule, stabilizeCwd: () => ({ ok: true, cwd: "/tmp" }) });
+    expect(piSdkRuntimeOptions.at(-1)).toMatchObject({ asyncProvidersQualified: true, asyncProviderPaths: [expect.stringContaining("bash-async/index.ts"), expect.stringContaining("subagent/index.ts")] });
+    const legacy = composeAgentdServices(config, { stabilizeCwd: () => ({ ok: true, cwd: "/tmp" }) });
+    expect(piSdkRuntimeOptions.at(-1)).toMatchObject({ asyncProvidersQualified: false });
+    expect(piSdkRuntimeOptions.at(-1)?.asyncProviderPaths).toEqual([]);
+    writeFileSync(join(capsule.root, "packages", "bash-async", "index.ts"), "tampered");
+    composeAgentdServices(config, { asyncProviderCapsule: capsule, stabilizeCwd: () => ({ ok: true, cwd: "/tmp" }) });
+    expect(piSdkRuntimeOptions.at(-1)).toMatchObject({ asyncProvidersQualified: false, asyncProviderPaths: [] });
+    composeAgentdServices(baseConfig({ useMockRuntime: true }), { asyncProviderCapsule: capsule });
+    expect(piSdkRuntimeOptions).toHaveLength(3);
+    expect(real.mainRuntime).toBeUndefined();
+    expect(legacy.mainRuntime).toBeUndefined();
+  });
+
+  it("passes the host only through the real Pickle prewarm boundary, never for legacy or mock sessions", async () => {
+    const context: PickyContextPacket = { id: "context", source: "text", capturedAt: new Date().toISOString(), cwd: "/tmp", screenshots: [], inkMarks: [], warnings: [] };
+    const options: RuntimeCreateOptions[] = [];
+    const setup = (qualified: boolean) => {
+      const mock = new MockRuntime();
+      const runtime: AgentRuntime = { create: mock.create.bind(mock), prewarm: async (value) => { options.push(value); return mock.prewarm(); } };
+      return composeAgentdServices(baseConfig({ mode: "child", sessionId: qualified ? "qualified" : "legacy", sessionCwd: "/tmp", useMockRuntime: false }), {
+        runtimeFactory: () => runtime, stabilizeCwd: () => ({ ok: true, cwd: "/tmp" }),
+        ...(qualified ? { asyncProviderCapsule: qualifiedCapsule() } : {}),
+      });
+    };
+    await setup(true).supervisor.createEmptyPickleSession(context);
+    await setup(false).supervisor.createEmptyPickleSession(context);
+    expect(options[0]?.asyncTaskHost).toBeDefined();
+    expect(options[1]?.asyncTaskHost).toBeUndefined();
+  });
+
+  it("switches live qualified Pickle admission between drain and on without dropping its host or changing main", () => {
+    piSdkRuntimeOptions.length = 0;
+    const config = baseConfig({ useMockRuntime: false, asyncTaskRollout: "drain" });
+    const result = composeAgentdServices(config, { asyncProviderCapsule: qualifiedCapsule() });
+    const draining = piSdkRuntimeOptions[0]?.asyncAdmissionDrain;
+    expect(typeof draining).toBe("function");
+    if (typeof draining !== "function") throw new Error("Qualified Pickle must have a live drain gate");
+    expect(draining()).toBe(true);
+    writeFileSync(join(config.appSupportDir, "async-task-rollout"), "on\n");
+    expect(draining()).toBe(false);
+    writeFileSync(join(config.appSupportDir, "async-task-rollout"), "invalid\n");
+    expect(draining()).toBe(true);
+    expect(piSdkRuntimeOptions[0]?.asyncProvidersQualified).toBe(true);
+    expect(piSdkRuntimeOptions[1]?.asyncProviderPaths).toBeUndefined();
+    expect(result.mainRuntime).toBeDefined();
+  });
 
   it("constructs a main runtime in primary mode (non-mock)", () => {
     const mainFactory = vi.fn(() => new MockRuntime());

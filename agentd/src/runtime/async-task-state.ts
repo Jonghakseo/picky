@@ -19,6 +19,19 @@ export function registrationState(state: RuntimeAsyncTaskState, message: Registr
   const abandoned = state.control?.operations.some((op) => op.operationId === `abandon-${asyncIdentity(message, taskId)}`);
   return { registration: abandoned ? "abandoned" : "reserved" };
 }
+/** A denied start is durable so a provider's later no-spawn snapshot cannot
+ * turn the host unsupported or hide older active work. No grant is minted. */
+export function rejectAsyncTaskRegistration(state: RuntimeAsyncTaskState, message: Extract<RegistrationRequest, { type: "task-register" }>): RuntimeAsyncTaskState {
+  if (registrationState(state, message).registration !== "reserved") return state;
+  if (state.control?.admissionState !== "open" || message.controlGeneration !== state.control.controlGeneration
+    || message.task.controlGeneration !== message.controlGeneration || message.task.providerRevision > message.providerRevision) return state;
+  const control = state.control;
+  return { ...state, control: { ...control, operations: [...control.operations, {
+    requestId: message.requestId, operationId: `abandon-${asyncIdentity(message, message.task.taskId)}`,
+    outcome: "settled", controlGeneration: control.controlGeneration,
+  }] } };
+}
+
 export function registerAsyncTask(state: RuntimeAsyncTaskState, message: RegistrationRequest): RuntimeAsyncTaskState {
   const prior = registrationState(state, message);
   if (message.type === "registration-query" || prior.registration === "abandoned") return state;
@@ -44,7 +57,13 @@ export function mergeAsyncDetail(state: RuntimeAsyncTaskState, message: Extract<
   const tasks = state.tasks.map((task) => message.type === "snapshot" && sameAsyncOwner(task, message) && task.presence !== "settled" && !message.detail.tasks.some((incoming) => incoming.taskId === task.taskId) ? { ...task, presence: "unknown" as const } : task);
   for (const incoming of message.detail.tasks) {
     const index = tasks.findIndex((task) => task.taskId === incoming.taskId && sameAsyncOwner(task, incoming));
-    if (index < 0) throw new Error("Unregistered async task in provider detail");
+    if (index < 0) {
+      // A rejected registration can still appear in the provider's no-spawn
+      // snapshot. Only an exact durable denial may be ignored; unknown tasks
+      // still fail closed rather than manufacturing empty coverage.
+      if (state.control?.operations.some((operation) => operation.operationId === `abandon-${asyncIdentity(incoming, incoming.taskId)}`)) continue;
+      throw new Error("Unregistered async task in provider detail");
+    }
     const current = tasks[index]!;
     if (incoming.providerRevision <= current.providerRevision || current.registration === "abandoned") continue;
     if (incoming.grantId !== current.grantId || incoming.controlGeneration !== current.controlGeneration) throw new Error("Async task grant mismatch");

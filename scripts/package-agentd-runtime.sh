@@ -12,6 +12,10 @@ AGENTD_DIR="${ROOT_DIR}/agentd"
 BUILD_ROOT="${PICKY_PACKAGE_BUILD_DIR:-${ROOT_DIR}/build/package}"
 RUNTIME_DIR="${PICKY_AGENTD_RUNTIME_DIR:-${BUILD_ROOT}/agentd-runtime}"
 PNPM_BIN="${PICKY_PNPM_BIN:-pnpm}"
+NODE_BIN="${PICKY_NODE_BIN:-node}"
+PROVIDER_SOURCE="${PICKY_ASYNC_PROVIDER_SOURCE_DIR:-${AGENTD_DIR}/vendor/async-task-providers}"
+PROVIDER_LOCK="${ROOT_DIR}/agentd/async-task-providers.lock.json"
+PROVIDER_DEPS="${ROOT_DIR}/agentd/async-task-provider-deps"
 
 if [[ ! -f "${AGENTD_DIR}/package.json" ]]; then
   echo "❌ agentd/package.json not found. Run this script from the Picky repository." >&2
@@ -39,6 +43,16 @@ echo "📦 Creating production agentd runtime at ${RUNTIME_DIR}..."
   cd "${ROOT_DIR}"
   "${PNPM_BIN}" --filter picky-agentd deploy --prod --legacy "${RUNTIME_DIR}"
 )
+
+# Copy only locally qualified, content-pinned packed providers. Install their
+# transitive dependencies in a separate capsule to keep agentd's Zod 3 intact.
+# Never install packages or extensions into the user's global Pi agent directory.
+PICKY_ASYNC_PROVIDER_PREINSTALL_ONLY=1 "${NODE_BIN}" "${ROOT_DIR}/scripts/install-async-task-providers.mjs" \
+  "${RUNTIME_DIR}" "${PROVIDER_SOURCE}" "${PROVIDER_LOCK}" "${PROVIDER_DEPS}"
+"${PNPM_BIN}" --dir "${RUNTIME_DIR}/async-task-providers" install --ignore-workspace --prod --frozen-lockfile --ignore-scripts
+PICKY_ASYNC_PROVIDER_VERIFY_ONLY=1 "${NODE_BIN}" "${ROOT_DIR}/scripts/install-async-task-providers.mjs" \
+  "${RUNTIME_DIR}" "${PROVIDER_SOURCE}" "${PROVIDER_LOCK}" "${PROVIDER_DEPS}"
+rm -rf "${RUNTIME_DIR}/vendor/async-task-providers" "${RUNTIME_DIR}/async-task-provider-deps"
 
 # Keep the bundle focused on files needed by `node dist/index.js` and the bundled `picky` CLI.
 rm -rf \

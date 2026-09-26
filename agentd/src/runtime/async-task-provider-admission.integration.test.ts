@@ -44,7 +44,7 @@ type ToolInput = { name: string; arguments: ToolCall["arguments"] };
 async function fixture(tool: ToolInput | ToolInput[]) {
   expect(VERSION).toBe("0.87.1");
   const extensionRoot = process.env.PICKY_TEST_EXTENSION_ROOT;
-  if (!extensionRoot) throw new Error("PICKY_TEST_EXTENSION_ROOT must name the frozen provider checkout");
+  if (!extensionRoot) throw new Error("PICKY_TEST_EXTENSION_ROOT must name the provider package root");
   const root = await mkdtemp(join(tmpdir(), "picky-w0b-provider-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "home/.pi/agent"); await mkdir(agentDir, { recursive: true });
@@ -58,6 +58,9 @@ async function fixture(tool: ToolInput | ToolInput[]) {
   const frames: AsyncTaskHostMessage[] = [];
   for (const name of ["bash-async", "subagent"]) {
     await cp(join(extensionRoot, "packages", name), join(root, "packages", name), { recursive: true, filter: path => !path.includes("/node_modules") });
+    if (process.env.PICKY_TEST_EXTENSION_ARTIFACT === "1") {
+      await symlink(join(extensionRoot, "node_modules"), join(root, "packages", name, "node_modules"));
+    }
   }
   await symlink(join(process.cwd(), "node_modules"), join(root, "node_modules"));
   await writeFile(join(root, "package.json"), JSON.stringify({ type: "module" }));
@@ -582,7 +585,9 @@ async function replayRecorder(f: ProviderFixture, scenario: "bash" | "subagent")
       providerEntrySha256: { bash: await hash(join(providerRoot, "packages/bash-async/index.ts")), subagent: await hash(join(providerRoot, "packages/subagent/index.ts")) },
       runtimeSha256: await hash(fileURLToPath(new URL("./pi-sdk-runtime.ts", import.meta.url))),
       sdkEntrySha256: await hash(join(process.cwd(), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")),
-      providerPath: "actual checkout packages/{bash-async,subagent}/index.ts copied into isolated Pi resource loader",
+      providerPath: process.env.PICKY_TEST_EXTENSION_ARTIFACT === "1"
+        ? "extracted npm pack packages/{bash-async,subagent}/index.ts copied into isolated Pi resource loader"
+        : "actual checkout packages/{bash-async,subagent}/index.ts copied into isolated Pi resource loader",
       inputPath: "supervisor.followUp -> offline model tool call -> real Pi SDK", sessionId: "session-sdk" };
     const raw = { provenance, frames, checkpoints };
     // Keep all frames and mutations. Replace only volatile string values, with one

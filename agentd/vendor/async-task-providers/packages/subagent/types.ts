@@ -1,0 +1,237 @@
+/**
+ * Type definitions, interfaces, and Typebox schemas for the Subagent tool.
+ */
+
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import type { AgentConfig, AgentRuntime } from "./agents.js";
+import type { SubagentErrorClass } from "./failure-telemetry.js";
+
+// ─── Interfaces ──────────────────────────────────────────────────────────────
+
+export interface UsageStats {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+	contextTokens: number;
+	turns: number;
+}
+
+export interface SingleResult {
+	agent: string;
+	agentSource: "user" | "project" | "unknown";
+	task: string;
+	exitCode: number;
+	messages: Message[];
+	stderr: string;
+	usage: UsageStats;
+	model?: string;
+	stopReason?: string;
+	errorMessage?: string;
+	errorClass?: SubagentErrorClass;
+	peakContextTokens?: number;
+	lastToolName?: string;
+	lastToolOutputChars?: number;
+	step?: number;
+	liveText?: string;
+	liveThinking?: string;
+	liveToolCalls?: number;
+	thoughtText?: string;
+	sessionFile?: string;
+	runtime?: AgentRuntime;
+	claudeSessionId?: string;
+	claudeProjectDir?: string;
+	liveActivityPreview?: string;
+}
+
+export interface BatchOrChainItem {
+	agent: string;
+	task: string;
+}
+
+export interface SubagentLaunchSummary {
+	agent: string;
+	mode: "run" | "continue" | "batch" | "chain";
+	runId?: number;
+	batchId?: string;
+	pipelineId?: string;
+	stepIndex?: number;
+}
+
+export interface SubagentDetails {
+	mode: "single" | "batch" | "chain";
+	inheritMainContext: boolean;
+	projectAgentsDir: string | null;
+	results: SingleResult[];
+	launches?: SubagentLaunchSummary[];
+}
+
+export interface CommandRunState {
+	id: number;
+	agent: string;
+	task: string;
+	displayTask?: string;
+	status: "running" | "done" | "error";
+	startedAt: number;
+	elapsedMs: number;
+	toolCalls: number;
+	lastLine: string;
+	lastOutput?: string;
+	continuedFromRunId?: number;
+	turnCount: number;
+	sessionFile?: string;
+	persistedSessionBaseOffset?: number;
+	abortController?: AbortController;
+	usage?: UsageStats;
+	model?: string;
+	removed?: boolean;
+	contextMode?: "main" | "sub";
+	thoughtText?: string;
+	/** Timestamp of last detected activity (tool call / turn / liveText change). Used for hang detection. */
+	lastActivityAt: number;
+	/** Number of auto-retries already attempted for this run. */
+	retryCount?: number;
+	/** Last transient failure reason that triggered an auto-retry. */
+	lastRetryReason?: string;
+	/** Normalized terminal failure category for analytics. */
+	errorClass?: SubagentErrorClass;
+	/** Highest reported context usage observed during the run. */
+	peakContextTokens?: number;
+	/** Most recently completed/started tool name. */
+	lastToolName?: string;
+	/** Text character count of the most recent tool result. */
+	lastToolOutputChars?: number;
+	/** Hang detector reason preserved until the normal finalizer emits the sole completion. */
+	autoAbortReason?: string;
+	/** True while a removed invocation is still settling; blocks same-ID continuation races. */
+	abortPending?: boolean;
+	runtime?: AgentRuntime;
+	claudeSessionId?: string;
+	claudeProjectDir?: string;
+	/** Origin of this run: "tool" = LLM called subagent tool, "command" = user slash-command / >> shorthand. */
+	source?: "tool" | "command";
+	/** Optional batch group id for tool-level grouped parallel launches. */
+	batchId?: string;
+	/** Optional pipeline id for tool-level sequential launches. */
+	pipelineId?: string;
+	/** Zero-based step index inside batch/pipeline metadata. */
+	pipelineStepIndex?: number;
+	/** How completion/start events should be surfaced back to the user. */
+	deliveryMode?: "followUp" | "humanOnly";
+}
+
+export interface SessionReplayItem {
+	type: "user" | "assistant" | "tool";
+	title: string;
+	content: string;
+	timestamp: Date;
+	elapsed?: string;
+}
+
+export type DisplayItem =
+	| { type: "text"; text: string }
+	| { type: "toolCall"; name: string; args: Record<string, unknown> };
+
+export interface AgentAliasMatch {
+	matchedAgent?: AgentConfig;
+	ambiguousAgents: AgentConfig[];
+}
+
+export type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
+
+/**
+ * Pending completion message stored when a run finishes while the user
+ * is in a different session from where the run originated.
+ */
+export interface PendingCompletion {
+	message: {
+		customType: string;
+		content: string;
+		display: boolean;
+		details: Record<string, unknown>;
+	};
+	options: {
+		deliverAs: "followUp";
+		triggerTurn?: boolean;
+	};
+	createdAt: number;
+}
+
+/** Live child process state owned by the current Pi extension runtime. */
+export interface GlobalRunEntry {
+	runState: CommandRunState;
+	abortController: AbortController;
+	originSessionFile: string;
+	/** Set when the run completes while the user is in a different session. */
+	pendingCompletion?: PendingCompletion;
+}
+
+export interface BatchGroupState {
+	batchId: string;
+	runIds: number[];
+	completedRunIds: Set<number>;
+	failedRunIds: Set<number>;
+	abortedRunIds: Set<number>;
+	originSessionFile: string;
+	createdAt: number;
+	/** Immutable member states captured as each batch run completes. */
+	completedRuns: Map<number, CommandRunState>;
+	pendingCompletion?: PendingCompletion;
+}
+
+export interface PipelineStepResult {
+	runId: number;
+	agent: string;
+	task: string;
+	output: string;
+	status: "done" | "error" | "aborted";
+}
+
+export interface PipelineState {
+	pipelineId: string;
+	currentIndex: number;
+	/** Set by `abort <pipelineId>` to prevent any subsequent step from launching. */
+	abortRequested: boolean;
+	stepRunIds: number[];
+	stepResults: PipelineStepResult[];
+	originSessionFile: string;
+	createdAt: number;
+	pendingCompletion?: PendingCompletion;
+}
+
+/** A single member (batch run or chain step) captured in a finished-group snapshot. */
+export interface FinishedGroupMember {
+	/** Pre-rendered one-line summary, frozen at retirement time. */
+	summaryLine: string;
+	/** Full member output, truncated only when rendered. */
+	output: string;
+	/** Chain step task (omitted for batch runs). */
+	task?: string;
+}
+
+/**
+ * Immutable snapshot of a completed batch/chain group, retained briefly so
+ * `subagent status/detail <groupId>` still works after the live group is gone.
+ */
+export interface FinishedGroupSnapshot {
+	groupId: string;
+	kind: "batch" | "chain";
+	terminalStatus: "completed" | "error" | "aborted" | "stopped";
+	finishedAt: number;
+	total: number;
+	failed: number;
+	aborted: number;
+	members: FinishedGroupMember[];
+}
+
+export const ListAgentsParams = Type.Object({});
+
+export const SubagentParams = Type.Object({
+	command: Type.String({
+		description:
+			"Command string, e.g. 'subagent help', 'subagent run worker --main -- <task>', 'subagent batch --main --agent worker --task \"A\" --agent reviewer --task \"B\"'. Write long task context to a temp file and reference its path.",
+	}),
+});

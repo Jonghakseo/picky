@@ -2,7 +2,7 @@ import { hasAsyncExecutionObligations } from "../domain/async-work-aggregate.js"
 import { randomUUID } from "node:crypto";
 import { ASYNC_TASK_CONTRACT, AsyncTaskHostMessageSchema, type AsyncTaskHostMessage, type AsyncTaskOwner } from "../domain/async-task-contract.js";
 import type { RuntimeAsyncTaskControl, RuntimeAsyncTaskCoverage, RuntimeAsyncTaskEvent, RuntimeAsyncTaskOwner, RuntimeAsyncTaskState } from "./async-task-types.js";
-import { mergeAsyncDetail, registerAsyncTask, registrationState, registrationTaskId, sameAsyncOwner, type RegistrationRequest } from "./async-task-state.js";
+import { mergeAsyncDetail, registerAsyncTask, rejectAsyncTaskRegistration, registrationState, registrationTaskId, sameAsyncOwner, type RegistrationRequest } from "./async-task-state.js";
 
 interface Bus { on(channel: string, handler: (data: unknown) => void): () => void; emit(channel: string, data: unknown): void }
 const capabilities = { registration: true, snapshot: true, cancel: true, detail: true, closeAdmission: true, suppressDelivery: true };
@@ -35,7 +35,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
   private pending = new Map<string, { owner: AsyncTaskOwner; resolve: (value: ControlResult) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   retryPersistence: () => Promise<void> = async () => {};
   onState?: (state: RuntimeAsyncTaskState) => void;
-  constructor(private readonly bus: Bus, readonly sessionId: string, readonly owner: RuntimeAsyncTaskOwner, private readonly emit: (event: RuntimeAsyncTaskEvent) => void, private readonly timeoutMs = 5_000) {
+  constructor(private readonly bus: Bus, readonly sessionId: string, readonly owner: RuntimeAsyncTaskOwner, private readonly emit: (event: RuntimeAsyncTaskEvent) => void, private readonly timeoutMs = 5_000, private readonly drainAdmission: boolean | (() => boolean) = false, private readonly providersQualified = true, private readonly requiredProviders: string[] = []) {
     this.unsubscribe = bus.on(ASYNC_TASK_CONTRACT, (data) => {
       const parsed = AsyncTaskHostMessageSchema.safeParse(data);
       if (!parsed.success || !["host-query", "provider-ready", "task-register", "registration-query", "registration-abandon", "task-update", "snapshot", "control-result"].includes(parsed.data.type)) return;
@@ -56,7 +56,7 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
       for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Async runtime replaced")); }
       this.pending.clear();
     }
-    this.expected = toolNames ? [...new Set(toolNames.flatMap((name) => name === "bash_async" ? ["bash-async"] : name === "subagent" || name === "sub" || name === "sub:isolate" ? ["subagent"] : []))] : undefined;
+    this.expected = this.providersQualified && toolNames ? [...new Set([...this.requiredProviders, ...toolNames.flatMap((name) => name === "bash_async" ? ["bash-async"] : name === "subagent" || name === "sub" || name === "sub:isolate" ? ["subagent"] : [])])] : undefined;
     await this.owner.transact((state) => ({ ...state, control: state.control ? { ...state.control, controlGeneration: state.control.controlGeneration + (replacing ? 1 : 0) } : { controlGeneration: 0, admissionState: "open", operations: [] } }));
     this.piSessionId = piSessionId;
     this.bindingIdentity = bindingIdentity;
@@ -196,14 +196,18 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     this.send({ ...this.envelope(owner, message.requestId, 0), type: "host-state", supported, admissionState: this.admissionOpen ? "open" : "closed", capabilities });
   }
   private async registration(message: RegistrationRequest, provider: Provider): Promise<void> {
-    const canRegister = () => provider.ready && provider.snapshot && this.coverage().tracking === "ready" && this.admissionOpen && message.controlGeneration === this.generation;
-    const state = await this.owner.transact((current) => message.type === "task-register" && !canRegister() ? current : registerAsyncTask(current, message));
+    const isDraining = () => typeof this.drainAdmission === "function" ? this.drainAdmission() : this.drainAdmission;
+    const providerReady = () => provider.ready && provider.snapshot && this.coverage().tracking === "ready" && this.admissionOpen && message.controlGeneration === this.generation;
+    const canRegister = () => !isDraining() && providerReady();
+    const state = await this.owner.transact((current) => message.type === "task-register" && isDraining() && providerReady()
+      ? rejectAsyncTaskRegistration(current, message)
+      : message.type === "task-register" && !canRegister() ? current : registerAsyncTask(current, message));
     const result = registrationState(state, message);
     const task = state.tasks.find((task) => sameAsyncOwner(task, message) && task.taskId === registrationTaskId(message));
     const bindingGeneration = task?.controlGeneration ?? message.controlGeneration;
     const stale = bindingGeneration !== this.generation || message.controlGeneration !== this.generation;
     this.publish(state);
-    this.send({ ...this.envelope(provider.owner, message.requestId, provider.revision), controlGeneration: bindingGeneration, type: "task-register-result", taskId: registrationTaskId(message), ...result, outcome: result.registration === "abandoned" ? "settled" : stale ? "stale" : result.grantId && canRegister() ? "accepted" : "rejected" });
+    this.send({ ...this.envelope(provider.owner, message.requestId, provider.revision), controlGeneration: bindingGeneration, type: "task-register-result", taskId: registrationTaskId(message), ...result, outcome: message.type === "task-register" && result.registration === "abandoned" ? "rejected" : result.registration === "abandoned" ? "settled" : stale ? "stale" : result.grantId && canRegister() ? "accepted" : "rejected" });
   }
   private envelope(owner: AsyncTaskOwner, requestId: string, providerRevision: number) {
     return { ...owner, contract: ASYNC_TASK_CONTRACT as typeof ASYNC_TASK_CONTRACT, requestId, providerRevision, controlGeneration: this.generation };

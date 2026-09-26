@@ -1,0 +1,7 @@
+Picky-owned async providers, local unpublished npm packs (not registry releases).
+Source commit: 23e3fddae3f042330b305afb710573bd67384d90
+bash-async 0.2.1 tarball SHA256: 8f04a9d0cd53efd44896b4f779ed82280634009dbfbb5582244a9b8544c7e80d
+subagent 0.5.7 tarball SHA256: 62108cede9e7e26ee8658572c97d140fe419bf188cdd855ca14dadfa013af2c3
+Original pack artifacts and npm manifest: .audit/pickle-async-tasks/w8/artifact-manifest.json
+The checked-in async-task-providers.lock.json pins every one of the 69 extracted package file bytes.
+Do not replace these with a developer checkout, version-only npm lookup, or an unqualified tarball.

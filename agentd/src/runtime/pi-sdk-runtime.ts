@@ -1,16 +1,19 @@
 import { AsyncTaskHostBridge } from "./async-task-host-bridge.js";
 import { AsyncTaskModelFence } from "./async-task-model-fence.js";
+import { asyncProviderLoaderOptions, composeAsyncProviderLoader, noInstallProviderSettings, ordinaryExtensionBus } from "./qualified-async-providers.js";
 import {
 type AgentSessionServices,
 type CreateAgentSessionRuntimeFactory,
 type CreateAgentSessionServicesOptions,
+DefaultResourceLoader,
 type ToolDefinition,
 createAgentSessionFromServices,
 createAgentSessionRuntime,
 createAgentSessionServices,
 createEventBus,
 getAgentDir,
-SessionManager
+SessionManager,
+SettingsManager
 } from "@earendil-works/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { type DialogMethod } from "../runtime/extension-ui-bridge.js";
@@ -42,6 +45,9 @@ export const PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL = "picky.external-deliv
 
 interface PiSdkRuntimeOptions {
   agentDir?: string;
+  asyncProviderPaths?: string[];
+  asyncAdmissionDrain?: boolean | (() => boolean);
+  asyncProvidersQualified?: boolean;
   createRuntime?: typeof createAgentSessionRuntime;
   createServices?: typeof createAgentSessionServices;
   createSessionFromServices?: typeof createAgentSessionFromServices;
@@ -52,6 +58,19 @@ interface PiSdkRuntimeOptions {
   modelPattern?: string;
   disableBlockingDialogs?: boolean;
   allowedBlockingDialogMethods?: readonly DialogMethod[];
+}
+
+function requiredAsyncProviders(paths: string[] | undefined): string[] { return paths ? ["bash-async", "subagent"] : []; }
+
+async function prepareAsyncProviderResources(paths: string[] | undefined, base: CreateAgentSessionServicesOptions["resourceLoaderOptions"], cwd: string, agentDir: string) {
+  if (!paths) return { settingsManager: undefined, providerOptions: {}, refresh: undefined };
+  const { settingsManager, refresh } = await noInstallProviderSettings(cwd, agentDir);
+  const providerOptions = await asyncProviderLoaderOptions(paths, cwd, agentDir, settingsManager, base?.additionalExtensionPaths);
+  return { settingsManager, providerOptions: {
+    ...providerOptions,
+    extensionsOverride: (result: Parameters<NonNullable<typeof providerOptions.extensionsOverride>>[0]) =>
+      providerOptions.extensionsOverride!(base?.extensionsOverride?.(result) ?? result),
+  }, refresh };
 }
 
 export class PiSdkRuntime implements AgentRuntime {
@@ -142,7 +161,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const sessionId = options.sessionId ?? "picky-pi-session";
     let sessionHandle: PiSdkRuntimeSession | undefined;
     const externalDeliveryEventBus = createEventBus();
-    const asyncTasks = options.asyncTaskHost ? new AsyncTaskHostBridge(externalDeliveryEventBus, sessionId, options.asyncTaskHost, (event) => sessionHandle?.emitAsyncTaskEvent(event)) : undefined;
+    const asyncTasks = options.asyncTaskHost ? new AsyncTaskHostBridge(externalDeliveryEventBus, sessionId, options.asyncTaskHost, (event) => sessionHandle?.emitAsyncTaskEvent(event), 5_000, this.options.asyncAdmissionDrain, this.options.asyncProvidersQualified, requiredAsyncProviders(this.options.asyncProviderPaths)) : undefined;
     const asyncFence = asyncTasks ? new AsyncTaskModelFence(asyncTasks, (event) => sessionHandle?.emitAsyncTaskEvent(event), (data) => externalDeliveryEventBus.emit("pi.async-tasks.v1", data)) : undefined;
     let externalDeliveryPaused = false;
     externalDeliveryEventBus.on(PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, () => {
@@ -163,21 +182,47 @@ export class PiSdkRuntime implements AgentRuntime {
 
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
       const resourceLoaderOptions = this.options.resourceLoaderOptions;
+      const { settingsManager, providerOptions, refresh } = await prepareAsyncProviderResources(this.options.asyncProviderPaths, resourceLoaderOptions, runtimeCwd, agentDir);
+      const ordinaryBus = this.options.asyncProviderPaths ? ordinaryExtensionBus(externalDeliveryEventBus) : externalDeliveryEventBus;
+      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), inputRewriteObserver.inlineExtension];
+      const normalOptions = {
+        ...resourceLoaderOptions, ...providerOptions,
+        eventBus: ordinaryBus,
+        extensionFactories: this.options.asyncProviderPaths ? ordinaryFactories : [...ordinaryFactories, ...(asyncFence ? [asyncFence.inlineExtension] : [])],
+      };
       const services = await createServices({
-        cwd: runtimeCwd,
-        agentDir,
-        resourceLoaderOptions: {
-          ...resourceLoaderOptions,
-          // Do not inherit a process-level bus. External delivery policy belongs to
-          // this exact Pi session and must survive extension reload through its own bus.
-          eventBus: externalDeliveryEventBus,
-          extensionFactories: [
-            ...(resourceLoaderOptions?.extensionFactories ?? []),
-            inputRewriteObserver.inlineExtension,
-            ...(asyncFence ? [asyncFence.inlineExtension] : []),
-          ],
-        },
+        ...(settingsManager ? { settingsManager } : {}),
+        cwd: runtimeCwd, agentDir, resourceLoaderOptions: normalOptions,
       });
+      if (refresh && settingsManager) {
+        // SDK factories capture their loader's runtime. Load the owned extensions
+        // separately with the real bus, then bind both runtimes through one public
+        // ResourceLoader. Ordinary resources continue to come from the normal loader.
+        const ownedOptions = {
+          noExtensions: true, additionalExtensionPaths: this.options.asyncProviderPaths ?? [],
+          noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+          eventBus: externalDeliveryEventBus,
+          extensionFactories: asyncFence ? [asyncFence.inlineExtension] : [],
+        };
+        const ownedServices = await createServices({ cwd: runtimeCwd, agentDir, settingsManager,
+          modelRuntime: services.modelRuntime, resourceLoaderOptions: ownedOptions });
+        const makeLoaders = async (): Promise<[DefaultResourceLoader, DefaultResourceLoader]> => {
+          await refresh();
+          const current = await asyncProviderLoaderOptions(this.options.asyncProviderPaths ?? [], runtimeCwd, agentDir, settingsManager, resourceLoaderOptions?.additionalExtensionPaths);
+          const ordinary = new DefaultResourceLoader({ cwd: runtimeCwd, agentDir, settingsManager,
+            ...resourceLoaderOptions, ...current,
+            extensionsOverride: base => current.extensionsOverride!(resourceLoaderOptions?.extensionsOverride?.(base) ?? base),
+            eventBus: ordinaryBus, extensionFactories: ordinaryFactories });
+          const owned = new DefaultResourceLoader({ cwd: runtimeCwd, agentDir, settingsManager, ...ownedOptions });
+          await ordinary.reload();
+          await owned.reload();
+          return [ordinary, owned];
+        };
+        services.resourceLoader = composeAsyncProviderLoader(services.resourceLoader, ownedServices.resourceLoader, makeLoaders);
+        // Keep Pi's model/preference writes on the ordinary file-backed manager.
+        services.settingsManager = SettingsManager.create(runtimeCwd, agentDir);
+        services.diagnostics.push(...ownedServices.diagnostics);
+      }
       await refreshModelCatalog(services);
       // Picky defaults establish only a brand-new Pickle. Pi transcript restoration
       // is authoritative when resuming, including its model and thinking level.

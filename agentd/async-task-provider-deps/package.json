@@ -1,0 +1,11 @@
+{
+  "name": "picky-owned-async-provider-dependencies",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.141",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
+  }
+}

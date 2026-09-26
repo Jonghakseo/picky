@@ -217,14 +217,21 @@ fi
 mkdir -p "${CLONED_SOURCE_PACKAGES_DIR}"
 
 # Cache guard: skip the agentd repackage step when nothing relevant changed.
-# The hash covers TS sources, package metadata, and the workspace lockfile.
+# The hash covers TS sources, pinned provider bytes and dependencies, package
+# metadata, and the workspace lockfile. A newly qualified capsule must never
+# reuse an older signed agentd runtime.
 agentd_input_hash() {
   (
     cd "${ROOT_DIR}"
     /usr/bin/find \
       agentd/src \
+      agentd/vendor/async-task-providers \
+      agentd/async-task-providers.lock.json \
+      agentd/async-task-provider-deps \
       agentd/package.json \
       agentd/tsconfig.json \
+      scripts/package-agentd-runtime.sh \
+      scripts/install-async-task-providers.mjs \
       docs/user-manual.md \
       pnpm-lock.yaml \
       -type f -print0 2>/dev/null \

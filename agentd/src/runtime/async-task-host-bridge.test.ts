@@ -14,7 +14,7 @@ const roots: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 const capabilities = { registration: true, snapshot: true, cancel: true, detail: true, closeAdmission: true, suppressDelivery: true };
 function deferred() { let resolve!: () => void; const promise = new Promise<void>((done) => { resolve = done; }); return { promise, resolve }; }
-async function fixture(options: { early?: boolean; missing?: boolean } = {}) {
+async function fixture(fixtureOptions: { early?: boolean; missing?: boolean; drain?: boolean | (() => boolean); qualified?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "picky-w3-bridge-")); roots.push(root);
   const store = new SessionStore(root);
   const mock = new MockRuntime();
@@ -25,14 +25,14 @@ async function fixture(options: { early?: boolean; missing?: boolean } = {}) {
   const runtime: AgentRuntime = {
     create: mock.create.bind(mock),
     prewarm: async (options: RuntimeCreateOptions) => {
-      bridge = new AsyncTaskHostBridge(bus, options.sessionId!, options.asyncTaskHost!, () => {}, 15);
+      bridge = new AsyncTaskHostBridge(bus, options.sessionId!, options.asyncTaskHost!, () => {}, 15, fixtureOptions.drain, fixtureOptions.qualified);
       if (optionsEarly) bus.emit(ASYNC_TASK_CONTRACT, { ...base, sessionId: null, runtimeInstanceId: null, type: "host-query" });
       await bridge.bind("pi-1", optionsMissing ? ["bash_async", "subagent"] : ["bash_async"]);
       return mock.prewarm();
     },
   };
-  const optionsEarly = options.early;
-  const optionsMissing = options.missing;
+  const optionsEarly = fixtureOptions.early;
+  const optionsMissing = fixtureOptions.missing;
   const supervisor = new SessionSupervisor(runtime, store, { sessionIdFactory: () => "session-1", enableAsyncTasksForSession: () => true });
   await supervisor.load();
   await supervisor.createEmptyPickleSession({ id: "context-1", source: "text", capturedAt: new Date().toISOString(), cwd: root, screenshots: [], inkMarks: [], warnings: [] });
@@ -96,6 +96,42 @@ describe("durable async task host", () => {
     expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.[0]?.presence).toBe("settled");
   });
 
+  it("drains existing work to persisted settlement while rejecting new starts, even after input reopens", async () => {
+    let draining = false;
+    const f = await fixture({ drain: () => draining });
+    expect(f.bridge.coverage().tracking).toBe("ready");
+    const existing = f.task("existing");
+    await f.bridge.owner.transact((state) => ({ ...state, tasks: [{ ...existing, registration: "spawned", execution: "running", presence: "active" }] }));
+    draining = true;
+    f.send({ type: "task-register", task: f.task("new"), providerRevision: 1 }); await f.bridge.drain();
+    expect(f.frames.find((frame) => frame.type === "task-register-result" && frame.taskId === "new")).toMatchObject({ outcome: "rejected" });
+    expect(f.bridge.snapshot().tasks.map((task) => task.taskId)).toEqual(["existing"]);
+    f.send({ type: "task-update", providerRevision: 2, detail: { tasks: [{ ...f.task("new"), registration: "abandoned", execution: "cancelled", presence: "settled", providerRevision: 2 }], tickets: [] } });
+    await f.bridge.drain();
+    expect(f.bridge.coverage().tracking).toBe("ready");
+    expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.map((task) => task.taskId)).toEqual(["existing"]);
+    await f.bridge.reopenAdmission();
+    f.send({ type: "task-register", task: f.task("new-again"), providerRevision: 2, controlGeneration: f.bridge.generation }); await f.bridge.drain();
+    expect(f.frames.find((frame) => frame.type === "task-register-result" && frame.taskId === "new-again")).toMatchObject({ outcome: "rejected" });
+    f.send({ type: "task-update", providerRevision: 3, controlGeneration: f.bridge.generation, detail: {
+      tasks: [{ ...existing, registration: "spawned", execution: "succeeded", presence: "settled", providerRevision: 3 }],
+      tickets: [{ sessionId: existing.sessionId, piSessionId: existing.piSessionId, runtimeInstanceId: existing.runtimeInstanceId, providerId: existing.providerId, providerInstanceId: existing.providerInstanceId, completionId: "existing-completion", rootTaskId: existing.taskId, target: "model", state: "pending", controlGeneration: existing.controlGeneration }],
+    } });
+    await f.bridge.drain();
+    const persisted = await f.store.loadReadOnly("session-1");
+    expect(persisted?.asyncTasks?.[0]).toMatchObject({ taskId: "existing", execution: "succeeded", presence: "settled" });
+    expect(persisted?.completionTickets?.[0]).toMatchObject({ completionId: "existing-completion", state: "pending" });
+    expect(f.bridge.coverage().tracking).toBe("ready");
+    draining = false;
+    f.send({ type: "task-register", task: { ...f.task("reopened"), controlGeneration: f.bridge.generation }, providerRevision: 4, controlGeneration: f.bridge.generation }); await f.bridge.drain();
+    expect(f.frames.find((frame) => frame.type === "task-register-result" && frame.taskId === "reopened")).toMatchObject({ outcome: "accepted" });
+  });
+  it("rejects legacy provider discovery when no capsule is qualified, never asserting empty coverage", async () => {
+    const f = await fixture({ qualified: false });
+    expect(f.bridge.coverage().tracking).toBe("unsupported");
+    expect(f.frames.find((frame) => frame.type === "host-state")).toMatchObject({ supported: false });
+    expect(f.bridge.coverage().readyProviders).toEqual([]);
+  });
   it("buffers construction-time discovery and leaves missing producer coverage reconciling", async () => {
     const f = await fixture({ early: true, missing: true });
     expect(f.frames.some((frame) => frame.type === "host-state" && frame.supported)).toBe(true);

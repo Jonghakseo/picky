@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { AgentdServer, APP_PICKLE_HANDOFF_UNAVAILABLE, type AppPickleBridgeRequest, type AppPickleBridgeResult } from "./server.js";
 import { defaultAppSupportRoot } from "./artifact-store.js";
@@ -5,6 +7,7 @@ import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
+import { qualifyAsyncProviders } from "./runtime/qualified-async-providers.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAskUserQuestionTool } from "./runtime/ask-user-question-tool.js";
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./runtime/user-guide-tool.js";
@@ -34,6 +37,7 @@ export interface AgentdConfig {
   pickleThinkingLevel?: ThinkingLevel;
   pickleModelPattern?: string;
   useMockRuntime: boolean;
+  asyncTaskRollout?: "on" | "drain";
   sessionId?: string;
   sessionCwd?: string;
   primaryUrl?: string;
@@ -43,6 +47,7 @@ interface ComposeOverrides {
   runtimeFactory?: (config: AgentdConfig) => AgentRuntime;
   mainRuntimeFactory?: (config: AgentdConfig, supervisorRef: { current?: SessionSupervisor }, currentDefaultCwd: { value: string }) => AgentRuntime | undefined;
   stabilizeCwd?: (targetDir: string) => ProcessCwdStabilizerResult;
+  asyncProviderCapsule?: { root: string; lockPath: string };
 }
 
 interface ComposeResult {
@@ -85,10 +90,17 @@ export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
     pickleThinkingLevel: parseThinkingLevel(env.PICKY_PICKLE_THINKING_LEVEL, { label: "pickle" }),
     pickleModelPattern: env.PICKY_PICKLE_MODEL?.trim() || undefined,
     useMockRuntime: env.PICKY_AGENTD_RUNTIME === "mock",
+    asyncTaskRollout: parseAsyncTaskRollout(env.PICKY_ASYNC_TASK_ROLLOUT),
     sessionId,
     sessionCwd,
     primaryUrl: env.PICKY_AGENTD_PRIMARY_URL?.trim() || undefined,
   };
+}
+
+function parseAsyncTaskRollout(value: string | undefined): "on" | "drain" {
+  if (!value || value === "on") return "on";
+  if (value === "drain") return value;
+  throw new Error(`Invalid PICKY_ASYNC_TASK_ROLLOUT: ${JSON.stringify(value)}`);
 }
 
 function parseAgentdMode(value: string | undefined): AgentdMode {
@@ -160,16 +172,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   const currentDefaultCwd = { value: config.defaultCwd };
   const supervisorRef: { current?: SessionSupervisor } = {};
   const appPickleBridgeRef: { current?: (request: AppPickleBridgeRequest) => Promise<AppPickleBridgeResult> } = {};
-
-  const runtime = overrides.runtimeFactory
-    ? overrides.runtimeFactory(config)
-    : config.useMockRuntime
-      ? new MockRuntime()
-      : new PiSdkRuntime({
-          thinkingLevel: config.pickleThinkingLevel,
-          modelPattern: config.pickleModelPattern,
-          customTools: [createPickyAskUserQuestionTool()],
-        });
+  const { runtime, hostedAsync } = createPickleRuntime(config, overrides);
 
   // The primary main agent delegates through the real `picky` CLI using its existing bash tool.
   // Child daemons run one Pickle session and never receive that primary-only CLI environment.
@@ -206,6 +209,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     taskRouter: config.useMockRuntime ? new ConservativeMockTaskRouter() : undefined,
     mainRuntime,
     sessionIdFactory,
+    enableAsyncTasksForSession: (id) => canHostAsyncTasks(config, supervisorRef, hostedAsync, id),
     forwardPickleCompletionToPrimary,
     mainCustomToolsBuilder,
     onDisabledBuiltinToolsChanged,
@@ -216,7 +220,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   const pickleClassifier = hubStatistics
     ? new PickleClassifier({
         statistics: hubStatistics,
-        completer: config.useMockRuntime ? runtime as RuntimeTextCompleter : new PiTextCompleter({ cwd: config.mainAgentCwd }),
+        completer: config.useMockRuntime ? (hasTextCompletion(runtime) ? runtime : new MockRuntime()) : new PiTextCompleter({ cwd: config.mainAgentCwd }),
       })
     : undefined;
   void pickleClassifier?.start();
@@ -251,6 +255,44 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     sessionIdFactory,
     pickleClassifier,
   };
+}
+
+function hasTextCompletion(runtime: AgentRuntime): runtime is AgentRuntime & RuntimeTextCompleter {
+  return "complete" in runtime && typeof runtime.complete === "function";
+}
+
+function canHostAsyncTasks(config: AgentdConfig, supervisorRef: { current?: SessionSupervisor }, hostedAsync: boolean, id: string): boolean {
+  if (config.mode === "child" && id !== config.sessionId) return false;
+  return hostedAsync || supervisorRef.current?.get(id)?.asyncWorkSummary !== undefined;
+}
+
+function asyncAdmissionDraining(config: AgentdConfig): boolean {
+  try {
+    // This local file is an immediate, reversible gate for already-live handles.
+    // Invalid content or I/O failure must never reopen new work by accident.
+    return readFileSync(join(config.appSupportDir, "async-task-rollout"), "utf8").trim() !== "on";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+    return config.asyncTaskRollout === "drain";
+  }
+}
+
+function createPickleRuntime(config: AgentdConfig, overrides: ComposeOverrides): { runtime: AgentRuntime; hostedAsync: boolean } {
+  const capsule = config.useMockRuntime ? undefined : qualifyAsyncProviders(overrides.asyncProviderCapsule?.root, overrides.asyncProviderCapsule?.lockPath);
+  const hostedAsync = capsule !== undefined;
+  logAgentd("async task rollout", { requested: config.asyncTaskRollout ?? "on", capsuleQualified: hostedAsync });
+  if (overrides.runtimeFactory) return { runtime: overrides.runtimeFactory(config), hostedAsync };
+  if (config.useMockRuntime) return { runtime: new MockRuntime(), hostedAsync };
+  return { runtime: new PiSdkRuntime({
+    thinkingLevel: config.pickleThinkingLevel,
+    modelPattern: config.pickleModelPattern,
+    customTools: [createPickyAskUserQuestionTool()],
+    // Even without a qualified capsule, Pickles must reject legacy async tools.
+    // An empty allowlist keeps unrelated global extensions available.
+    asyncProviderPaths: capsule?.paths ?? [],
+    asyncAdmissionDrain: () => asyncAdmissionDraining(config),
+    asyncProvidersQualified: hostedAsync,
+  }), hostedAsync };
 }
 
 // Called by index.ts after `supervisor.load()` in child mode. If a scoped session for the

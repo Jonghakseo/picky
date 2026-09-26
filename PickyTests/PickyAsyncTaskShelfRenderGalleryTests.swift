@@ -47,10 +47,11 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
             }
         }
         try renderMountedScenes(into: output, scenes: &scenes)
+        try renderReviewScenes(into: output, scenes: &scenes)
         let manifest: [String: Any] = ["schemaVersion": 1, "renderer": "production shelf, mounted conversation and archive / offscreen NSHostingView", "scenes": scenes]
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
-        #expect(scenes.count == 60)
+        #expect(scenes.count == 80)
     }
 
     @Test func boundedDetailsRemainReachableWithoutInflatingShortRows() throws {
@@ -207,6 +208,101 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
                         scenes.append(["file": name, "pixelWidth": bitmap.pixelsWide, "pixelHeight": bitmap.pixelsHigh,
                             "logicalWidth": size.width, "logicalHeight": size.height])
                     }
+                }
+            }
+        }
+    }
+
+    private func renderReviewScenes(into output: URL, scenes: inout [[String: Any]]) throws {
+        for light in [false, true] {
+            for scale in [1.0, 1.3] {
+                try LocaleManager.shared.withTemporaryChoiceForTesting(scale == 1.3 ? .korean : .english) {
+                    let appearance: NSAppearance.Name = light ? .aqua : .darkAqua
+                    let states = ["fresh-failure-child", "delivery-no-reason",
+                                  "delivery-unknown-no-reason", "delivery-resolved-reason"]
+                    for state in states {
+                        var root = PickyAsyncTaskShelfFixtures.task("root", title: "Run local checks",
+                            execution: state == "fresh-failure-child" ? .failed : .succeeded, presence: .settled)
+                        root.createdAt = Date().addingTimeInterval(-35)
+                        root.updatedAt = Date().addingTimeInterval(-25)
+                        let child = PickyAsyncTaskShelfFixtures.task("child", root: root.taskId,
+                            title: "Surviving child")
+                        var ticket = PickyAsyncTaskShelfFixtures.ticket(root,
+                            state: state == "delivery-unknown-no-reason" ? .unknown :
+                                state == "delivery-resolved-reason" ? .handled : .failed)
+                        ticket.failureReason = state == "delivery-resolved-reason"
+                            ? "Previous failure already resolved." : nil
+                        let detail = PickyAsyncTaskDetail(
+                            tasks: state == "fresh-failure-child" ? [root, child] : [root],
+                            tickets: state == "fresh-failure-child" ? [] : [ticket])
+                        let summary = PickyAsyncTaskShelfFixtures.summary(
+                            active: state == "fresh-failure-child" ? 1 : 0,
+                            attention: state == "delivery-resolved-reason" ? 0 : 1)
+                        let view = PickyAsyncTaskShelfView(summary: summary, detailState: .loaded(detail),
+                            initiallyExpandedRows: state == "fresh-failure-child",
+                            cancelAvailability: { _ in .available }, onAction: { _ in })
+                            .environment(\.pickyAppFontScale, scale)
+                            .environment(\.colorScheme, light ? .light : .dark)
+                            .frame(width: 420).padding(DS.Spacing.space3).background(DS.Colors.background)
+                        let host = NSHostingView(rootView: view)
+                        host.appearance = NSAppearance(named: appearance)
+                        host.layoutSubtreeIfNeeded()
+                        let size = host.fittingSize
+                        #expect(size.height > 0)
+                        let name = "review-\(state)-\(light ? "light" : "dark")-\(Int(scale * 100)).png"
+                        let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                            logicalSize: size, scale: 2, appearance: appearance))
+                        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                        try png.write(to: output.appendingPathComponent(name), options: .atomic)
+                        scenes.append(["file": name, "pixelWidth": bitmap.pixelsWide,
+                            "pixelHeight": bitmap.pixelsHigh, "logicalWidth": size.width, "logicalHeight": size.height])
+                    }
+                    let storage = PickyRegistrySessionProjectionStorage()
+                    var archived = PickyAgentSession(id: "attention", title: "Archived failure", status: .completed,
+                        cwd: "/tmp/project", createdAt: Date(), updatedAt: Date(), logs: [], tools: [],
+                        artifacts: [], changedFiles: [])
+                    archived.archived = true
+                    archived.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, attention: 1)
+                    var failed = PickyAsyncTaskShelfFixtures.task("failed", execution: .failed, presence: .settled)
+                    failed.sessionId = "attention"
+                    archived.asyncTasks = [failed]
+                    archived.completionTickets = []
+                    let encoder = JSONEncoder()
+                    encoder.dateEncodingStrategy = .iso8601
+                    let projection = try JSONSerialization.jsonObject(with: encoder.encode(archived))
+                    let data = try JSONSerialization.data(withJSONObject: ["sessionId": "attention", "epoch": "epoch",
+                        "revision": 1, "complete": true, "omittedFields": [String](), "projection": projection])
+                    let snapshot = try JSONDecoder.pickyAgentProtocolDecoder()
+                        .decode(PickySessionProjectionSnapshot.self, from: data)
+                    #expect(storage.applyProjectionSnapshot(snapshot, archived: true) != nil)
+                    #expect(storage.registry.archivedSessionIDs == ["attention"])
+                    let store = try #require(storage.registry.existingSessionStore(sessionID: "attention"))
+                    if case .loaded(let detail) = store.asyncTaskStore.detailState {
+                        #expect(detail.tasks.first?.execution == .failed)
+                    } else {
+                        Issue.record("Archived v2 failure detail was not retained")
+                    }
+                    let model = PickySessionListViewModel(client: FakePickyAgentClient())
+                    let view = PickyHUDArchivedDockAccessView(archiveMembership: storage.registry, commands: model)
+                        .environment(\.pickyAppFontScale, scale)
+                        .environment(\.colorScheme, light ? .light : .dark)
+                        .frame(width: 80, height: 60).background(DS.Colors.background)
+                    let name = "review-archived-attention-\(light ? "light" : "dark")-\(Int(scale * 100)).png"
+                    let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                        logicalSize: CGSize(width: 80, height: 60), scale: 2, appearance: appearance))
+                    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                    let empty = PickyHUDArchivedDockAccessView(
+                        archiveMembership: PickySessionRegistry(), commands: model)
+                        .environment(\.pickyAppFontScale, scale)
+                        .environment(\.colorScheme, light ? .light : .dark)
+                        .frame(width: 80, height: 60).background(DS.Colors.background)
+                    let emptyBitmap = try #require(PickyRenderGalleryRasterizer.rasterize(empty,
+                        logicalSize: CGSize(width: 80, height: 60), scale: 2, appearance: appearance))
+                    #expect(png != emptyBitmap.representation(using: .png, properties: [:]),
+                        "Attention-only archived work must render a reachable Dock entry")
+                    try png.write(to: output.appendingPathComponent(name), options: .atomic)
+                    scenes.append(["file": name, "pixelWidth": bitmap.pixelsWide,
+                        "pixelHeight": bitmap.pixelsHigh, "logicalWidth": 80, "logicalHeight": 60])
                 }
             }
         }

@@ -2930,6 +2930,83 @@ extension PickyAgentClientRouterTests {
         #expect(storage.registry.existingSessionStore(sessionID: "tracked") === originalStore)
     }
 
+    @Test func overlappingArchiveChoicesKeepTheVisibleTargetUntilItsOperationSettles() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(
+            token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000,
+            sessionProjectionStorage: storage)
+        await router.connect()
+        for id in ["first", "second"] {
+            viewModel.apply(.protocolEvent(trackedSessionEvent(id: id)))
+        }
+        let actions = PickyHUDArchiveActionController()
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id, sessionID: envelope.sessionId ?? "")
+                context.requiresArchiveChoice = true
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+            }
+        }
+        actions.request(sessionID: "first", commands: viewModel, onConfirmed: { _ in })
+        try await waitUntil { actions.choiceSessionID == "first" }
+        actions.request(sessionID: "second", commands: viewModel, onConfirmed: { _ in })
+        // Let the second request reach the same production event stream before choosing.
+        for _ in 0..<10 { await Task.yield() }
+        #expect(actions.choiceSessionID == "first", "A visible choice must never be replaced by B")
+        actions.choose(.continue)
+        try await waitUntil { viewModel.archivedSessions.map(\.id).contains("first") }
+        #expect(viewModel.archivedSessions.map(\.id) == ["first"])
+        #expect(viewModel.sessions.map(\.id) == ["second"])
+        try await waitUntil { actions.choiceSessionID == "second" }
+        actions.cancelChoice()
+        #expect(viewModel.sessions.map(\.id) == ["second"])
+    }
+
+    @Test func archiveChoiceErrorAndCancellationReleaseTheNextTargetAndAllowRetry() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(
+            token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000,
+            sessionProjectionStorage: PickyRegistrySessionProjectionStorage())
+        await router.connect()
+        for id in ["first", "second"] { viewModel.apply(.protocolEvent(trackedSessionEvent(id: id))) }
+        let actions = PickyHUDArchiveActionController()
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id, sessionID: envelope.sessionId ?? "")
+                context.requiresArchiveChoice = true
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command, command.type == .prepareSessionArchive {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(
+                    asyncControlResult(command, outcome: .stale)))))
+            }
+        }
+        actions.request(sessionID: "first", commands: viewModel, onConfirmed: { _ in })
+        try await waitUntil { actions.choiceSessionID == "first" }
+        actions.request(sessionID: "second", commands: viewModel, onConfirmed: { _ in })
+        actions.choose(.continue)
+        try await waitUntil { actions.error != nil }
+        #expect(actions.choiceSessionID == nil)
+        #expect(viewModel.archivedSessions.isEmpty)
+        actions.dismissError()
+        try await waitUntil { actions.choiceSessionID == "second" }
+        actions.cancelChoice()
+        actions.request(sessionID: "first", commands: viewModel, onConfirmed: { _ in })
+        try await waitUntil { actions.choiceSessionID == "first" }
+        actions.cancelChoice()
+        #expect(viewModel.sessions.map(\.id).sorted() == ["first", "second"])
+    }
+
     @Test func trackedCLIBridgeDoesNotFinishOnDispatchOrAcceptedResult() async throws {
         let primary = StubAgentClient(id: "primary")
         let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))

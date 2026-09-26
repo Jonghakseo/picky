@@ -49,6 +49,23 @@
         }
       }
     },
+    "hud.asyncTasks.archiveChoice.namedTitle": {
+      "comment": "Archive confirmation title. Argument is the exact Pickle title displayed in the HUD.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive %1$@?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@을(를) 보관할까요?"
+          }
+        }
+      }
+    },
     "hud.asyncTasks.archiveChoice.stop": {
       "localizations": {
         "en": {

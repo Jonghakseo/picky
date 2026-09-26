@@ -274,7 +274,7 @@ struct PickyAsyncTaskShelfRowView: View {
                             .foregroundStyle(DS.Colors.textTertiary)
                             .pickyFont(size: PickyHUDTypography.metaNSFont(fontScale: 1).pointSize)
                             .lineLimit(1)
-                    } else if root.presence == .settled, Date().timeIntervalSince(root.updatedAt) >= 60 {
+                    } else if root.presence == .settled {
                         Text(root.updatedAt, style: .relative)
                             .foregroundStyle(DS.Colors.textTertiary)
                             .pickyFont(size: PickyHUDTypography.metaNSFont(fontScale: 1).pointSize)
@@ -320,8 +320,8 @@ struct PickyAsyncTaskShelfRowView: View {
             case .available, .unsupported:
                 EmptyView()
             }
-            if let reason = tickets.compactMap(\.failureReason).first {
-                failureLine("hud.asyncTasks.deliveryFailedShort", reason: reason)
+            if let failedTicket = tickets.first(where: { $0.state == .failed || $0.state == .unknown }) {
+                failureLine("hud.asyncTasks.deliveryFailedShort", reason: failedTicket.failureReason)
             }
             if disclosure.wrappedValue {
                 expandedDetails
@@ -367,7 +367,9 @@ struct PickyAsyncTaskShelfRowView: View {
                 fullReason(reason)
             }
             ForEach(Array(tickets.enumerated()), id: \.offset) { _, ticket in
-                if let reason = ticket.failureReason { fullReason(reason) }
+                if ticket.state == .failed || ticket.state == .unknown, let reason = ticket.failureReason {
+                    fullReason(reason)
+                }
             }
             if root.presence == .settled, root.execution == .succeeded,
                PickyAsyncTaskShelfPresentation.resultKey(tickets) != nil {
@@ -408,12 +410,12 @@ struct PickyAsyncTaskShelfRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func failureLine(_ key: String, reason: String) -> some View {
+    private func failureLine(_ key: String, reason: String?) -> some View {
         Label(L10n.t(key), systemImage: "exclamationmark.triangle")
             .foregroundStyle(DS.Colors.destructiveText)
             .lineLimit(1)
-            .help(reason)
-            .accessibilityLabel("\(L10n.t(key)) \(reason)")
+            .help(reason ?? L10n.t(key))
+            .accessibilityLabel(reason.map { "\(L10n.t(key)) \($0)" } ?? L10n.t(key))
     }
 
     private func fullReason(_ reason: String) -> some View {

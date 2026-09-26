@@ -50,7 +50,8 @@ struct PickyHUDArchivedDockAccessView: View {
                   case .loaded(let metadata) = store.metaStore.metadataState,
                   let summary = metadata.asyncWorkSummary else { return }
             if summary.activeRootCount > 0 || summary.pendingCompletionCount > 0
-                || summary.uncertainExecutionCount > 0 || summary.tracking != .ready { count += 1 }
+                || summary.uncertainExecutionCount > 0 || summary.attentionCount > 0
+                || summary.tracking != .ready { count += 1 }
         }
     }
 

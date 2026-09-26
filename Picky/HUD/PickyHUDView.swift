@@ -183,24 +183,27 @@ struct PickyHUDView: View {
         let _ = PickyPerf.event("hud_root_body")
         hudContent
             .confirmationDialog(
-                Text("hud.asyncTasks.archiveChoice.title"),
+                Text(archiveActions.choiceSessionID.map { sessionID in
+                    L10n.t("hud.asyncTasks.archiveChoice.namedTitle",
+                        viewModel.sessionCard(sessionID: sessionID)?.title ?? sessionID)
+                } ?? L10n.t("hud.asyncTasks.archiveChoice.title")),
                 isPresented: Binding(get: { archiveActions.choiceSessionID != nil },
-                                     set: { if !$0 { archiveActions.choiceSessionID = nil } })
+                                     set: { if !$0 { archiveActions.cancelChoice() } })
             ) {
                 Button("hud.asyncTasks.archiveChoice.continue") {
-                    archiveActions.choose(.continue, commands: viewModel, onConfirmed: finishArchive)
+                    archiveActions.choose(.continue)
                 }
                 Button("hud.asyncTasks.archiveChoice.stop") {
-                    archiveActions.choose(.stopThenArchive, commands: viewModel, onConfirmed: finishArchive)
+                    archiveActions.choose(.stopThenArchive)
                 }
-                Button("hud.asyncTasks.archiveChoice.cancel", role: .cancel) { archiveActions.choiceSessionID = nil }
+                Button("hud.asyncTasks.archiveChoice.cancel", role: .cancel) { archiveActions.cancelChoice() }
             } message: {
                 Text("hud.asyncTasks.archiveChoice.message")
             }
             .alert(Text(L10n.t(archiveActions.errorTitleKey)), isPresented: Binding(
-                get: { archiveActions.error != nil }, set: { if !$0 { archiveActions.error = nil } }
+                get: { archiveActions.error != nil }, set: { if !$0 { archiveActions.dismissError() } }
             )) {
-                Button("hud.asyncTasks.archiveChoice.cancel") { archiveActions.error = nil }
+                Button("hud.asyncTasks.archiveChoice.cancel") { archiveActions.dismissError() }
             } message: {
                 Text(archiveActions.error ?? "")
             }

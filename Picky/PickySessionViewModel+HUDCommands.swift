@@ -54,6 +54,10 @@ extension PickySessionListViewModel: PickyGitChipActionViewModelDispatch, PickyS
             .registry.existingSessionStore(sessionID: sessionID)
     }
 
+    var archivedSessionAccess: PickyHUDArchivedSessionAccess? {
+        .init(membership: sessionRegistry, commands: self)
+    }
+
     /// Registry-owned archive membership for settings/onboarding consumers.
     /// Production always uses the registry backend, so these UI surfaces never
     /// fall back to a parallel array-backed projection.

@@ -584,6 +584,31 @@ struct PickySessionProjectionV2ApplicationTests {
         expectStoresRemainIntact()
     }
 
+    @Test func archivedUncertainWorkCannotDeleteUntilV2SummaryConfirmsQuiescence() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = V2ArchiveStore()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: client, storage: storage, archiveStore: archiveStore)
+        let cycle = #","agentCycle":{"cycleId":"cycle","runtimeInstanceId":"runtime","phase":"idle","controlGeneration":1}"#
+        let uncertain = #","asyncWorkSummary":{"tracking":"reconciling","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":1,"attentionCount":0,"workRevision":1,"canReleaseRuntime":false}"#
+        apply(snapshot(sessionID: "retained", title: "Retained", status: .completed, revision: 1,
+                       archived: true, extraProjectionFields: cycle + uncertain), to: viewModel)
+        let store = storage.registry.sessionStore(sessionID: "retained")
+        #expect(store.metaStore.metadataState.loadedValue?.isSafeToDeleteArchived == false)
+        viewModel.deleteAllArchivedSessions()
+        viewModel.deleteArchivedSession(sessionID: "retained")
+        #expect(!client.sentCommands.contains { $0.type == .deleteSession })
+        #expect(storage.registry.archivedSessionIDs == ["retained"])
+
+        let ready = #"[{"type":"metaPatch","patch":{"asyncWorkSummary":{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":2,"canReleaseRuntime":true}}}]"#
+        apply(transaction(sessionID: "retained", baseRevision: 1, revision: 2, mutations: ready), to: viewModel)
+        #expect(store.metaStore.metadataState.loadedValue?.isSafeToDeleteArchived == true)
+        viewModel.deleteArchivedSession(sessionID: "retained")
+        await waitUntil { storage.registry.archivedSessionIDs.isEmpty }
+        #expect(client.sentCommands.filter { $0.type == .deleteSession }.map(\.sessionId) == ["retained"])
+        #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
+    }
+
     @Test func correlatedRecoverySnapshotResolvesConflictingPendingArchiveIntent() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = V2ArchiveStore()

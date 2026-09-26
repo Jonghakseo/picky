@@ -81,7 +81,7 @@ final class PickySessionStore {
     /// Rebuilds the legacy card input from independently owned child snapshots.
     /// Unavailable sections intentionally contribute their empty/default value,
     /// so omitted P0 hydration data can never revive stale child projection.
-    func materializedSessionCard() -> PickySessionListViewModel.SessionCard? {
+    func materializedSessionCard(includeAsyncDetail: Bool = true) -> PickySessionListViewModel.SessionCard? {
         guard case .loaded(let metadata) = metaStore.metadataState,
               metadata.id == sessionID else {
             return nil
@@ -121,9 +121,9 @@ final class PickySessionStore {
             subagentRuns: subagentRuns,
             agentCycle: metadata.agentCycle,
             asyncWorkSummary: metadata.asyncWorkSummary,
-            asyncTasks: asyncTaskStore.detailState.loadedValue?.tasks,
-            completionTickets: asyncTaskStore.detailState.loadedValue?.tickets,
-            asyncControl: asyncTaskStore.controlState.loadedValue,
+            asyncTasks: includeAsyncDetail ? asyncTaskStore.detailState.loadedValue?.tasks : nil,
+            completionTickets: includeAsyncDetail ? asyncTaskStore.detailState.loadedValue?.tickets : nil,
+            asyncControl: includeAsyncDetail ? asyncTaskStore.controlState.loadedValue : nil,
             artifacts: artifacts,
             changedFiles: changedFiles,
             messages: messages,

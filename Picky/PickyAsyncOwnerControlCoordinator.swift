@@ -17,6 +17,7 @@ final class PickyAsyncSessionControlState {
     var intentGenerations: [String: Int] = [:]
     var archiveIntents: [String: String] = [:]
     var archiveModes: [String: PickyAsyncTaskCommand.ArchiveMode] = [:]
+    var archiveChoices: [String: PickyAsyncControlContext] = [:]
 }
 
 @MainActor
@@ -126,13 +127,24 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
             prepare = pending
             archiveMode = retainedMode
         } else {
-            let context = try await asyncControlContext(sessionID: sessionID)
+            // A user choice must execute against the revision originally shown to
+            // the user. A changed owner/revision is rejected by the daemon, not
+            // silently recaptured while the dialog is open.
+            let context: PickyAsyncControlContext
+            if mode != nil, let choice = asyncControlState.archiveChoices.removeValue(forKey: sessionID) {
+                context = choice
+            } else {
+                context = try await asyncControlContext(sessionID: sessionID)
+            }
             guard generation == asyncControlState.intentGenerations[sessionID, default: 0] else {
                 throw CancellationError()
             }
             if let mode { archiveMode = mode } else {
                 guard context.hasCompleteCoverage else { throw PickyAsyncControlError.unsupported }
-                guard context.requiresArchiveChoice == false else { throw PickyAsyncControlError.archiveChoiceRequired }
+                guard context.requiresArchiveChoice == false else {
+                    asyncControlState.archiveChoices[sessionID] = context
+                    throw PickyAsyncControlError.archiveChoiceRequired
+                }
                 archiveMode = .continue
             }
             prepare = try context.command(.prepareSessionArchive)
@@ -159,6 +171,7 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
         asyncControlState.restoring.insert(sessionID)
         asyncControlState.intentGenerations[sessionID, default: 0] += 1
         asyncControlState.archiveIntents[sessionID] = nil
+        asyncControlState.archiveChoices[sessionID] = nil
     }
 
     func restoreAsyncSession(sessionID: String) async throws {

@@ -44,6 +44,9 @@ struct PickyHUDDockSession: Equatable, Identifiable {
     var status: PickySessionStatus { projection.status }
     var cwd: String? { projection.cwd }
     var todoState: PickyTodoState? { projection.todoState }
+    var asyncActiveCount: Int { projection.asyncActiveCount }
+    var asyncAttentionCount: Int { projection.asyncAttentionCount }
+    var asyncRetainsWork: Bool { projection.asyncRetainsWork }
     var gitRefreshBucket: Int { projection.gitRefreshBucket }
     var previewUpdatedAt: Date { projection.previewUpdatedAt }
     var canRequestDockCompaction: Bool { projection.canRequestDockCompaction }

@@ -107,6 +107,28 @@ final class PickySessionArchiveCoordinator: ObservableObject {
         }
     }
 
+    func requestDelete(sessionID: String, client: any PickyAgentClient,
+                       canDelete: @escaping @MainActor () -> Bool,
+                       onConfirmed: @escaping @MainActor () -> Void,
+                       onFailure: @escaping @MainActor (Error) -> Void) {
+        guard canDelete() else { return }
+        Task { @MainActor in
+            guard canDelete() else { return }
+            do {
+                try await delete(sessionID: sessionID, client: client)
+                if canDelete() { onConfirmed() }
+            } catch { onFailure(error) }
+        }
+    }
+
+    func confirmArchive(sessionID: String, tracked: Bool, mode: PickyAsyncTaskCommand.ArchiveMode?,
+                        client: any PickyAgentClient) async throws {
+        if tracked { try await archive(sessionID: sessionID, mode: mode, client: client) } else if let error = try await client.sendAwaitingError(PickyCommandEnvelope(type: .setSessionArchived,
+            sessionId: sessionID, archived: true), timeout: 5, requireAcknowledgement: true) {
+            throw PickyAgentClientRouterError.bridgeCommandRejected(error.message)
+        }
+    }
+
     func delete(sessionID: String, client: any PickyAgentClient) async throws {
         if let rejection = try await client.sendAwaitingError(PickyCommandEnvelope(type: .deleteSession,
             sessionId: sessionID), timeout: 5, requireAcknowledgement: true) {

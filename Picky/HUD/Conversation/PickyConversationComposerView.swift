@@ -55,6 +55,8 @@ struct PickyConversationComposerView: View {
     @State private var isFocused: Bool = false
     @State private var queueActionInFlight: PickyQueueDockAction?
     @State private var queueActionError: String?
+    @State private var stopError: String?
+    @State private var isStopping = false
     @StateObject private var runtimeControls = PickyComposerRuntimeControlsModel()
     @State private var isAttachmentPickerPresented = false
 
@@ -138,6 +140,11 @@ struct PickyConversationComposerView: View {
         let _ = PickyPerf.event("composer_body")
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             queueDock
+            if let stopError {
+                Label(L10n.t("hud.asyncTasks.stopError", stopError), systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(DS.Colors.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             screenContextAttachmentChip
             // The custom layout reports only the composer's size, so opening
             // suggestions never reflows the card. It measures the popup itself
@@ -1252,7 +1259,7 @@ struct PickyConversationComposerView: View {
 
     var placeholderText: String { placeholder }
     var defaultSubmitKind: PickyConversationComposerSubmitKind? {
-        switch session.status {
+        switch session.submitStatus {
         case .running, .queued, .waiting_for_input, .cancelled, .failed:
             return .steer
         case .completed, .blocked:
@@ -1261,7 +1268,7 @@ struct PickyConversationComposerView: View {
     }
 
     var optionReturnSubmitKind: PickyConversationComposerSubmitKind? {
-        switch session.status {
+        switch session.submitStatus {
         case .running, .queued, .waiting_for_input, .completed, .blocked:
             return .followUp
         case .cancelled, .failed:
@@ -1293,7 +1300,7 @@ struct PickyConversationComposerView: View {
         PickyComposerLabelPolicy.placeholder(
             isCompacting: session.isCompacting,
             isFileDropTargeted: isFileDropTargeted,
-            status: session.status
+            status: session.submitStatus
         )
     }
 
@@ -1472,7 +1479,12 @@ struct PickyConversationComposerView: View {
     private static let autocompleteDebounceNanoseconds: UInt64 = 80_000_000
 
     private func stopIfPossible() {
-        guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }
-        Task { try? await commands.abortRestoringQueuedInputs(sessionID: session.id) }
+        guard [.running, .queued, .waiting_for_input].contains(session.status), !isStopping else { return }
+        isStopping = true
+        stopError = nil
+        Task { @MainActor in
+            defer { isStopping = false }
+            do { try await commands.abortRestoringQueuedInputs(sessionID: session.id) } catch { stopError = error.localizedDescription }
+        }
     }
 }

@@ -30,6 +30,28 @@ protocol PickySessionArchiveCommands: AnyObject {
     func unarchive(sessionID: String)
     func deleteArchivedSession(sessionID: String)
     func deleteAllArchivedSessions()
+    func stopArchivedAsyncWork(sessionID: String) async throws
 }
 
 extension PickySessionListViewModel: PickySessionArchiveCommands {}
+
+extension PickyAsyncWorkSummary {
+    var permitsArchivedDeletion: Bool {
+        tracking == .ready && activeRootCount == 0 && pendingCompletionCount == 0
+            && uncertainExecutionCount == 0 && canReleaseRuntime
+    }
+}
+
+extension PickySessionMetadata {
+    var isSafeToDeleteArchived: Bool {
+        guard [.completed, .failed, .cancelled, .blocked].contains(status) else { return false }
+        return asyncWorkSummary?.permitsArchivedDeletion ?? (agentCycle == nil)
+    }
+}
+
+extension PickySessionListViewModel.SessionCard {
+    var isSafeToDeleteArchived: Bool {
+        guard [.completed, .failed, .cancelled, .blocked].contains(status) else { return false }
+        return asyncWorkSummary?.permitsArchivedDeletion ?? !hasAsyncTracking
+    }
+}

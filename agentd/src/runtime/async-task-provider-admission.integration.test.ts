@@ -1,4 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { createServer, type Socket } from "node:net";
 import WebSocket from "ws";
@@ -6,6 +7,7 @@ import { AgentdServer } from "../server.js";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createAssistantMessageEventStream, type AssistantMessage, type ToolCall } from "@earendil-works/pi-ai";
 import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager, VERSION, type AgentSession, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vitest";
@@ -524,6 +526,149 @@ it("W5 guards direct SDK new, reload and rewind while a real child remains alive
   console.log("W5C_REPLACEMENT_TRACE", JSON.stringify({ owner, freshOwner, request: f.requests.at(-1), disk, projection: f.projections.at(-1) }));
 }, 20000);
 
+
+type ProviderFixture = Awaited<ReturnType<typeof fixture>>;
+type ProjectionWire = Extract<EventEnvelope, { type: "sessionProjectionSnapshot" | "sessionProjectionTransaction" | "sessionProjectionBootstrapComplete" }>;
+
+async function replayRecorder(f: ProviderFixture, scenario: "bash" | "subagent") {
+  const server = new AgentdServer({ port: 0, token: "w7-replay", supervisor: f.supervisor });
+  const port = await server.start();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=w7-replay`);
+  const wire: EventEnvelope[] = [];
+  ws.on("message", data => wire.push(JSON.parse(String(data)) as EventEnvelope));
+  cleanups.push(async () => { ws.close(); await server.stop(); });
+  await once(ws, "open");
+  ws.send(JSON.stringify({ id: "w7-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["sessionProjectionV2"] }));
+  await vi.waitFor(() => expect(wire.some(event => event.type === "sessionProjectionBootstrapComplete")).toBe(true));
+  const snapshots = wire.filter(event => event.type === "sessionProjectionSnapshot");
+  expect(snapshots.map(event => event.sessionId)).toEqual(["session-sdk"]);
+  const checkpoints: Array<{ name: string; through: number; disk: { revision: number; status: string; asyncTasks: PickyAgentSession["asyncTasks"]; completionTickets: PickyAgentSession["completionTickets"]; asyncWorkSummary: PickyAgentSession["asyncWorkSummary"]; agentCycle: PickyAgentSession["agentCycle"] } }> = [];
+  async function checkpoint(name: string) {
+    await f.drainEvents();
+    const disk = await f.store.loadReadOnly("session-sdk");
+    expect(disk).toBeDefined();
+    const revision = disk!.revision!;
+    await vi.waitFor(() => expect(wire.some(event => event.type === "sessionProjectionTransaction" && event.sessionId === "session-sdk" && event.revision === revision)).toBe(true));
+    const frames = wire.filter(event => event.type === "sessionProjectionSnapshot" || event.type === "sessionProjectionTransaction" || event.type === "sessionProjectionBootstrapComplete");
+    const through = frames.findIndex(event => event.type === "sessionProjectionTransaction" && event.sessionId === "session-sdk" && event.revision === revision);
+    expect(through).toBeGreaterThan(1);
+    expect(frames.slice(through + 1).some(event => event.type === "sessionProjectionTransaction" && event.sessionId === "session-sdk")).toBe(false);
+    checkpoints.push({ name, through, disk: { revision, status: disk!.status, asyncTasks: disk!.asyncTasks, completionTickets: disk!.completionTickets, asyncWorkSummary: disk!.asyncWorkSummary, agentCycle: disk!.agentCycle } });
+  }
+  async function finish() {
+    const frames = wire.filter((event): event is ProjectionWire => event.type === "sessionProjectionSnapshot" || event.type === "sessionProjectionTransaction" || event.type === "sessionProjectionBootstrapComplete");
+    expect(frames.at(-1)).toMatchObject({ type: "sessionProjectionTransaction", revision: checkpoints.at(-1)!.disk.revision });
+    const epoch = frames[0]!.epoch;
+    expect(frames.every(frame => frame.epoch === epoch)).toBe(true);
+    let revision = snapshots[0]!.revision;
+    for (const frame of frames) {
+      if (frame.type !== "sessionProjectionTransaction") continue;
+      expect(frame.baseRevision).toBe(revision);
+      expect(frame.revision).toBe(revision + 1);
+      revision = frame.revision;
+    }
+    expect(revision).toBe(checkpoints.at(-1)!.disk.revision);
+    expect(checkpoints.map(point => point.through)).toEqual([...checkpoints.map(point => point.through)].sort((a, b) => a - b));
+    for (const point of checkpoints) expect(frames[point.through]).toMatchObject({ type: "sessionProjectionTransaction", revision: point.disk.revision });
+    expect(checkpoints.at(-1)!.disk).toMatchObject({ status: "completed", asyncWorkSummary: { canReleaseRuntime: true } });
+    if (scenario === "bash") expect(checkpoints[1]!.disk).toMatchObject({ status: "running", completionTickets: [{ state: "pending" }], asyncWorkSummary: { canReleaseRuntime: false } });
+    else {
+      expect(checkpoints[0]!.disk).toMatchObject({ status: "running", asyncWorkSummary: { canReleaseRuntime: false } });
+      expect(checkpoints[0]!.disk.asyncTasks?.some(task => task.presence === "active")).toBe(true);
+    }
+    const providerRoot = process.env.PICKY_TEST_EXTENSION_ROOT!;
+    const hash = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");
+    const provenance = { scenario, sdkVersion: VERSION, nodeVersion: process.version, protocolVersion: PROTOCOL_VERSION,
+      providerEntrySha256: { bash: await hash(join(providerRoot, "packages/bash-async/index.ts")), subagent: await hash(join(providerRoot, "packages/subagent/index.ts")) },
+      runtimeSha256: await hash(fileURLToPath(new URL("./pi-sdk-runtime.ts", import.meta.url))),
+      sdkEntrySha256: await hash(join(process.cwd(), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")),
+      providerPath: "actual checkout packages/{bash-async,subagent}/index.ts copied into isolated Pi resource loader",
+      inputPath: "supervisor.followUp -> offline model tool call -> real Pi SDK", sessionId: "session-sdk" };
+    const raw = { provenance, frames, checkpoints };
+    // Keep all frames and mutations. Replace only volatile string values, with one
+    // stable token per distinct identity across the entire envelope.
+    const uuids = new Map<string, string>();
+    const times = new Map<string, string>();
+    const sessionFiles = new Map<string, string>();
+    const sessionPath = new RegExp(`${f.root}/home/\\.pi/agent/sessions/[^\\s\"]+\\.jsonl`, "g");
+    const alias = (values: Map<string, string>, value: string, create: (index: number) => string) => {
+      if (!values.has(value)) values.set(value, create(values.size + 1));
+      return values.get(value)!;
+    };
+    const normalize = (value: unknown): unknown => {
+      if (typeof value === "string") return value.replace(sessionPath, match => alias(sessionFiles, match, index => `<fixture-root>/home/.pi/agent/sessions/session-${index}.jsonl`))
+        .replaceAll(f.root, "<fixture-root>")
+        .replaceAll(f.root.split("/").at(-1)!, "<fixture-name>")
+        .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, match => alias(uuids, match, index => `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`))
+        .replace(/\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z\b/g, match => alias(times, match, index => new Date(Date.UTC(2026, 0, 1) + index).toISOString()));
+      if (Array.isArray(value)) return value.map(normalize);
+      if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalize(item)]));
+      return value;
+    };
+    const normalized = normalize(raw);
+    if (process.env.W7_REPLAY_EXPORT_DIR) {
+      await mkdir(process.env.W7_REPLAY_EXPORT_DIR, { recursive: true });
+      await writeFile(join(process.env.W7_REPLAY_EXPORT_DIR, `${scenario}.json`), JSON.stringify(normalized, null, 2) + "\n");
+    }
+    if (process.env.W7_REPLAY_RAW_DIR) {
+      await mkdir(process.env.W7_REPLAY_RAW_DIR, { recursive: true });
+      await writeFile(join(process.env.W7_REPLAY_RAW_DIR, `${scenario}.json`), JSON.stringify(raw, null, 2) + "\n");
+    }
+    return { frames, checkpoints };
+  }
+  return { checkpoint, finish };
+}
+
+it("records real bash v2 bootstrap, retained pending completion, and durable settlement", async () => {
+  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "sleep 0.4; printf W7_BASH_RESULT", timeout: 5 } });
+  const recorder = await replayRecorder(f, "bash");
+  await f.supervisor.followUp("session-sdk", "Run the finite bash job");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.[0]).toMatchObject({ execution: "running", presence: "active" }), { timeout: 7000 });
+  await f.session.waitForIdle();
+  await recorder.checkpoint("tool-returned-running");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("pending"), { timeout: 7000, interval: 5 });
+  await recorder.checkpoint("result-pending");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.status).toBe("completed"), { timeout: 10000 });
+  await f.session.waitForIdle();
+  await recorder.checkpoint("settled");
+  const { checkpoints } = await recorder.finish();
+  expect(checkpoints[0]!.disk.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+  expect(checkpoints[1]!.disk).toMatchObject({ status: "running", asyncWorkSummary: { canReleaseRuntime: false, pendingCompletionCount: 1 } });
+  expect(checkpoints[2]!.disk).toMatchObject({ status: "completed", asyncWorkSummary: { canReleaseRuntime: true } });
+  expect(f.frames.filter(frame => frame.type === "task-register")).toHaveLength(1);
+  expect(completionText(f.requests.at(-1), checkpoints[2]!.disk.asyncTasks![0]!.taskId)).toContain("W7_BASH_RESULT");
+}, 20000);
+
+it("records real subagent v2 result retention through native child exit and ordinary task-only input", async () => {
+  const f = await fixture({ name: "subagent", arguments: { command: "subagent run finite --isolated -- finite" } });
+  const recorder = await replayRecorder(f, "subagent");
+  await f.supervisor.followUp("session-sdk", "Start finite subagent");
+  const child = await f.child;
+  child.write("result\n");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled"), { timeout: 10000 });
+  await f.session.waitForIdle();
+  await recorder.checkpoint("result-handled-child-alive");
+  expect(checkpointsActive(await f.store.loadReadOnly("session-sdk"))).toBe(true);
+  const count = f.requests.length;
+  await f.supervisor.followUp("session-sdk", "Ordinary input while child is alive");
+  await vi.waitFor(() => expect(f.requests.length).toBe(count + 1));
+  await f.session.waitForIdle();
+  await recorder.checkpoint("task-only-running-input-delivered");
+  const closed = once(child, "close"); child.end("exit\n"); await closed;
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.status).toBe("completed"), { timeout: 10000 });
+  await recorder.checkpoint("child-exited-settled");
+  const { checkpoints } = await recorder.finish();
+  expect(userTexts(f.requests.at(-1))).toContain("Ordinary input while child is alive");
+  expect(checkpoints[0]!.disk.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+  expect(checkpoints[1]!.disk.asyncTasks?.[0]?.presence).toBe("active");
+  expect(checkpoints[2]!.disk.asyncTasks?.[0]?.presence).toBe("settled");
+  expect(await readFile(join(f.root, "spawns"), "utf8")).toBe("spawn\n");
+  expect(f.notifications).toHaveLength(1);
+}, 20000);
+
+function checkpointsActive(disk: PickyAgentSession | undefined): boolean {
+  return disk?.asyncTasks?.[0]?.presence === "active" && disk.asyncWorkSummary?.canReleaseRuntime === false;
+}
 
 async function verifyQueuedRegistration(mode: "continue" | undefined, f: Awaited<ReturnType<typeof fixture>>, direct: Promise<unknown>, requestId: string): Promise<Socket | undefined> {
   if (mode === undefined) {

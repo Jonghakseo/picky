@@ -292,6 +292,21 @@ struct PickyConversationCardView: View {
             }
             .padding(.bottom, DS.Spacing.sm)
 
+            // Stable sibling: detail mutations invalidate this narrow owner, not the editor.
+            PickyMountedAsyncTaskShelfView(
+                store: sessionStore,
+                commands: viewModel,
+                maxListHeight: max(76, min(180,
+                    PickyConversationCardHeightPolicy.resolvedHeight(
+                        fixedHeight: fixedHeight, maxHeight: maxHeight,
+                        transientGrowth: transientComposerHeightGrowth) * 0.27
+                    - 55 - transientComposerHeightGrowth)),
+                compact: PickyConversationCardHeightPolicy.resolvedHeight(
+                    fixedHeight: fixedHeight, maxHeight: maxHeight,
+                    transientGrowth: transientComposerHeightGrowth) < 440
+            )
+            .padding(.bottom, DS.Spacing.space2)
+
             PickyConversationComposerView(
                 metaStore: sessionStore.metaStore,
                 conversationStore: sessionStore.conversationStore,

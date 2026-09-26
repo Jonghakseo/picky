@@ -6,6 +6,67 @@ import Testing
 
 @MainActor
 struct PickyAsyncTaskContractTests {
+    @Test(arguments: ["bash", "subagent"])
+    func actualProviderFramesReplayToPersistedShelfComposerAndDock(provider: String) throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("contracts/async-tasks/runtime-replay/\(provider).json")
+        let recording = try JSONDecoder().decode(ProviderReplayRecording.self, from: Data(contentsOf: url))
+        let storage = PickyRegistrySessionProjectionStorage()
+        let model = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        var checkpointIndex = 0
+        for (index, frame) in recording.frames.enumerated() {
+            let envelope = try decoder.decode(PickyEventEnvelope.self, from: frame)
+            model.apply(.protocolEvent(envelope))
+            guard checkpointIndex < recording.checkpoints.count,
+                  recording.checkpoints[checkpointIndex].through == index else { continue }
+            let checkpoint = recording.checkpoints[checkpointIndex]
+            checkpointIndex += 1
+            let expected = checkpoint.disk
+            let store = storage.registry.sessionStore(sessionID: "session-sdk")
+            let metadata = try #require(loaded(store.metaStore.metadataState))
+            let detail = try #require(loaded(store.asyncTaskStore.detailState))
+            let summary = try #require(metadata.asyncWorkSummary)
+            let diskTasks = try decoder.decode([PickyAsyncTask].self, from: expected.asyncTasks)
+            let diskTickets = try decoder.decode([PickyCompletionTicket].self, from: expected.completionTickets)
+            let diskSummary = try decoder.decode(PickyAsyncWorkSummary.self, from: expected.asyncWorkSummary)
+            let diskCycle = try decoder.decode(PickyAgentCycle.self, from: expected.agentCycle)
+            #expect(metadata.revision == expected.revision)
+            #expect(metadata.status.rawValue == expected.status)
+            #expect(detail.tasks == diskTasks)
+            #expect(detail.tickets == diskTickets)
+            #expect(summary == diskSummary)
+            #expect(metadata.agentCycle == diskCycle)
+            let roots = PickyAsyncTaskShelfPresentation.roots(in: detail)
+            let visible = PickyAsyncTaskShelfPresentation.isVisible(summary: summary, detail: .loaded(detail))
+            let dock = try #require(store.dockStore.projection)
+            #expect(dock.asyncActiveCount == summary.activeRootCount)
+            #expect(dock.asyncRetainsWork == !summary.canReleaseRuntime)
+            let composer = PickyConversationComposerProjection(metaStore: store.metaStore,
+                conversationStore: store.conversationStore, queueStore: store.queueStore)
+            if provider == "bash" {
+                if checkpoint.name == "tool-returned-running" || checkpoint.name == "result-pending" {
+                    #expect(visible && roots.count == 1)
+                    #expect(composer.submitStatus == .completed)
+                    if checkpoint.name == "result-pending" {
+                        #expect(PickyAsyncTaskShelfPresentation.primaryStateKey(roots[0], tickets: detail.tickets)
+                            == "hud.asyncTasks.result.pending")
+                    }
+                } else {
+                    #expect(!visible && roots.isEmpty)
+                }
+            } else if checkpoint.name == "child-exited-settled" {
+                #expect(!visible && roots.isEmpty)
+            } else {
+                #expect(visible && roots.count == 1)
+                #expect(PickyAsyncTaskShelfPresentation.members(of: roots[0], in: detail).count == 2)
+                #expect(composer.submitStatus == .completed)
+                #expect(!summary.canReleaseRuntime)
+            }
+        }
+        #expect(checkpointIndex == 3)
+    }
+
     @Test func commandDTOsRoundTripSharedFixtures() throws {
         let urls = try fixtureURLs(in: "contracts/extensions/async-tasks-v1/commands")
         #expect(urls.count == 7)
@@ -50,6 +111,38 @@ struct PickyAsyncTaskContractTests {
         #expect(legacy.sessionSummaryForCLI(id: card.id)?.asyncTasks == summary.asyncTasks)
         let encoded = try JSONEncoder.pickyAgentProtocolEncoder().encode(summary)
         #expect(try decoder.decode(PickyAgentSession.self, from: encoded) == summary)
+    }
+
+    @Test func v2AsyncMetadataRoutesIdleComposerAndKeepsDockScalarStableAcrossDetailProgress() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        var object = try #require(JSONSerialization.jsonObject(with: fixture("session-async-tasks-snapshot.event.json")) as? [String: Any])
+        var projection = try #require(object["projection"] as? [String: Any])
+        projection["status"] = "running"
+        var cycle = try #require(projection["agentCycle"] as? [String: Any])
+        cycle["phase"] = "idle"
+        cycle.removeValue(forKey: "outcome")
+        projection["agentCycle"] = cycle
+        var summary = try #require(projection["asyncWorkSummary"] as? [String: Any])
+        summary["activeRootCount"] = 1
+        projection["asyncWorkSummary"] = summary
+        object["projection"] = projection
+        let snapshot = try decoder.decode(PickySessionProjectionSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
+        let storage = PickyRegistrySessionProjectionStorage()
+        storage.applyProjectionSnapshot(snapshot, archived: false)
+        let store = storage.registry.sessionStore(sessionID: snapshot.sessionId)
+        #expect(PickyConversationComposerProjection(metaStore: store.metaStore,
+            conversationStore: store.conversationStore, queueStore: store.queueStore).submitStatus == .completed)
+        #expect(store.dockStore.projection?.asyncActiveCount == 1)
+        #expect(store.dockStore.projection?.asyncAttentionCount == 1)
+        #expect(store.dockStore.projection?.asyncRetainsWork == true)
+        #expect(PickyConversationStoreResolver.card(from: store)?.asyncTasks == nil)
+        let stableDock = store.dockStore.projection
+        var task = try #require(store.materializedAgentSessionSummary()?.asyncTasks?.first)
+        task.progress = "New output"
+        store.asyncTaskStore.replaceDetail(.init(tasks: [task], tickets: []))
+        #expect(store.dockStore.projection == stableDock)
+        #expect(PickyConversationStoreResolver.card(from: store)?.asyncTasks == nil)
+        #expect(store.materializedAgentSessionSummary()?.asyncTasks?.first?.progress == "New output")
     }
 
     @Test func detailOnlyProgressDoesNotPublishConversationCards() throws {
@@ -141,5 +234,47 @@ struct PickyAsyncTaskContractTests {
     private func fixture(_ name: String) throws -> Data {
         let url = try #require(fixtureURLs(in: "contracts/protocol").first { $0.lastPathComponent == name })
         return try Data(contentsOf: url)
+    }
+}
+
+private struct ProviderReplayRecording: Decodable {
+    struct Checkpoint: Decodable {
+        struct Disk: Decodable {
+            let revision: Int
+            let status: String
+            let asyncTasks: Data
+            let completionTickets: Data
+            let asyncWorkSummary: Data
+            let agentCycle: Data
+
+            enum CodingKeys: String, CodingKey {
+                case revision, status, asyncTasks, completionTickets, asyncWorkSummary, agentCycle
+            }
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                revision = try container.decode(Int.self, forKey: .revision)
+                status = try container.decode(String.self, forKey: .status)
+                func bytes(_ key: CodingKeys) throws -> Data {
+                    let json = try container.decode(JSONValue.self, forKey: key)
+                    return try JSONEncoder().encode(json)
+                }
+                asyncTasks = try bytes(.asyncTasks)
+                completionTickets = try bytes(.completionTickets)
+                asyncWorkSummary = try bytes(.asyncWorkSummary)
+                agentCycle = try bytes(.agentCycle)
+            }
+        }
+        let name: String
+        let through: Int
+        let disk: Disk
+    }
+    let frames: [Data]
+    let checkpoints: [Checkpoint]
+
+    enum CodingKeys: String, CodingKey { case frames, checkpoints }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        frames = try container.decode([JSONValue].self, forKey: .frames).map { try JSONEncoder().encode($0) }
+        checkpoints = try container.decode([Checkpoint].self, forKey: .checkpoints)
     }
 }

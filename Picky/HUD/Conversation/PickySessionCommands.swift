@@ -84,7 +84,10 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func syncTerminalSessionOnce(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot?)
     func duplicate(sessionID: String) async throws
     func requestCompaction(sessionID: String) async
+    func cancelAsyncTask(owner: PickyAsyncTaskOwner, taskID: String) async throws
+    func loadAsyncTaskDetail(owner: PickyAsyncTaskOwner, taskID: String) async throws -> PickyAsyncTaskDetail
     func archive(sessionID: String)
+    func archiveSessionConfirmed(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws
 
     // HUD-only imperative bridge. These commands deliberately remain
     // unobserved; mounted HUD subtrees read their exact registry stores.
@@ -94,6 +97,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func markConversationCardOpened(sessionID: String)
     func markSessionClosed(sessionID: String)
     func sessionStore(sessionID: String) -> PickySessionStore?
+    var archivedSessionAccess: PickyHUDArchivedSessionAccess? { get }
     func toggleStickyScreenContextTarget(sessionID: String)
     func assignSessionToDockGroup(sessionID: String, groupID: String)
     func removeRecentPickleFolder(_ cwd: String)
@@ -146,7 +150,7 @@ enum PickyConversationStoreResolver {
     }
 
     static func card(from store: PickySessionStore) -> PickySessionCard? {
-        store.materializedSessionCard()
+        store.materializedSessionCard(includeAsyncDetail: false)
     }
 }
 
@@ -221,6 +225,7 @@ struct PickyConversationHeaderProjection {
 struct PickyConversationComposerProjection {
     let id: String
     let status: PickySessionStatus
+    let agentPhase: PickyAgentCycle.Phase?
     let lastSummary: String
     let notifyMainOnCompletion: Bool?
     let notifyMacOSOnCompletion: Bool?
@@ -241,6 +246,7 @@ struct PickyConversationComposerProjection {
         }
         id = metadata.id
         status = metadata.status
+        agentPhase = metadata.agentCycle?.phase
         lastSummary = metadata.lastSummary ?? ""
         notifyMainOnCompletion = metadata.notifyMainOnCompletion
         notifyMacOSOnCompletion = metadata.notifyMacOSOnCompletion
@@ -257,6 +263,7 @@ struct PickyConversationComposerProjection {
     init(card: PickyConversationSessionCard) {
         id = card.id
         status = card.status
+        agentPhase = card.agentCycle?.phase
         lastSummary = card.lastSummary
         notifyMainOnCompletion = card.notifyMainOnCompletion
         notifyMacOSOnCompletion = card.notifyMacOSOnCompletion
@@ -276,8 +283,14 @@ struct PickyConversationComposerProjection {
         )
     }
 
+    var submitStatus: PickySessionStatus {
+        if status == .running, agentPhase == .idle || agentPhase == .settled { return .completed }
+        return status
+    }
+
     var isCompacting: Bool {
-        status == .running && lastSummary.localizedCaseInsensitiveContains("compacting")
+        if let agentPhase { return agentPhase == .compacting }
+        return status == .running && lastSummary.localizedCaseInsensitiveContains("compacting")
     }
 }
 

@@ -75,6 +75,7 @@ struct PickyHUDView: View {
     @State private var dockGroupBadgeFrames: [String: CGRect] = [:]
     @State private var dockGroupInteractionFrames: [String: CGRect] = [:]
     @State private var dockRailFrame: CGRect = .zero
+    @StateObject private var archiveActions = PickyHUDArchiveActionController()
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
@@ -181,6 +182,28 @@ struct PickyHUDView: View {
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
         hudContent
+            .confirmationDialog(
+                Text("hud.asyncTasks.archiveChoice.title"),
+                isPresented: Binding(get: { archiveActions.choiceSessionID != nil },
+                                     set: { if !$0 { archiveActions.choiceSessionID = nil } })
+            ) {
+                Button("hud.asyncTasks.archiveChoice.continue") {
+                    archiveActions.choose(.continue, commands: viewModel, onConfirmed: finishArchive)
+                }
+                Button("hud.asyncTasks.archiveChoice.stop") {
+                    archiveActions.choose(.stopThenArchive, commands: viewModel, onConfirmed: finishArchive)
+                }
+                Button("hud.asyncTasks.archiveChoice.cancel", role: .cancel) { archiveActions.choiceSessionID = nil }
+            } message: {
+                Text("hud.asyncTasks.archiveChoice.message")
+            }
+            .alert(Text(L10n.t(archiveActions.errorTitleKey)), isPresented: Binding(
+                get: { archiveActions.error != nil }, set: { if !$0 { archiveActions.error = nil } }
+            )) {
+                Button("hud.asyncTasks.archiveChoice.cancel") { archiveActions.error = nil }
+            } message: {
+                Text(archiveActions.error ?? "")
+            }
             // Measure the HUD's intrinsic content height before the hosting view
             // applies the current panel height. Without this, active streaming
             // updates can report the already-clipped height and prevent growth.
@@ -357,7 +380,7 @@ struct PickyHUDView: View {
             // When the handle drag crosses the snap threshold, only the optional
             // conversation-card side changes; the AppKit-backed handle view that owns
             // the active mouse drag stays alive instead of being recreated mid-drag.
-            dockRail
+            dockRailWithArchive
             if placement.dockSide == .left {
                 conversationCard
             }
@@ -369,7 +392,7 @@ struct PickyHUDView: View {
             if placement.dockSide == .bottom {
                 cardOrPreviewReserve
             }
-            dockRail
+            dockRailWithArchive
             if placement.dockSide == .top {
                 cardOrPreviewReserve
             }
@@ -593,6 +616,13 @@ struct PickyHUDView: View {
         }
         utilityPanelHeightOverride = nil
         utilityPanelResizeStartHeight = nil
+    }
+
+    private var dockRailWithArchive: some View {
+        PickyHUDDockArchiveAccessory(orientation: placement.dockSide.orientation,
+                                     access: viewModel.archivedSessionAccess) {
+            dockRail
+        }
     }
 
     @ViewBuilder
@@ -976,10 +1006,12 @@ struct PickyHUDView: View {
 
     private func archiveSession(_ sessionID: String) {
         cancelPendingClose()
+        archiveActions.request(sessionID: sessionID, commands: viewModel, onConfirmed: finishArchive)
+    }
+
+    private func finishArchive(_ sessionID: String) {
         let title = visibleSessions.first(where: { $0.id == sessionID })?.title
-            ?? viewModel.sessionCard(sessionID: sessionID)?.title
-            ?? "Pickle"
-        viewModel.archive(sessionID: sessionID)
+            ?? viewModel.sessionCard(sessionID: sessionID)?.title ?? "Pickle"
         utilityPanelOpenSessionIDs.remove(sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
@@ -989,7 +1021,11 @@ struct PickyHUDView: View {
 
     private func stopSession(_ sessionID: String) {
         cancelPendingClose()
-        Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: sessionID) }
+        Task { @MainActor in
+            do { try await viewModel.abortRestoringQueuedInputs(sessionID: sessionID) } catch {
+                archiveActions.presentStopError(error)
+            }
+        }
     }
 
     private func scheduleCloseIfNeeded() {
@@ -1430,7 +1466,7 @@ private struct PickyHUDConversationCardResolver<Content: View>: View {
 
     var body: some View {
         if let store = viewModel.sessionStore(sessionID: sessionID),
-           let session = store.materializedSessionCard() {
+           let session = store.materializedSessionCard(includeAsyncDetail: false) {
             content(store, session)
                 .id(sessionID)
         }

@@ -1109,6 +1109,16 @@ final class PickySessionListViewModel: ObservableObject {
         try await steer(text: text, sessionID: sessionID)
     }
 
+    func cancelAsyncTask(owner: PickyAsyncTaskOwner, taskID: String) async throws {
+        try await PickySessionAsyncTaskActions.cancel(owner: owner, taskID: taskID,
+            client: client, store: sessionStore(sessionID: owner.sessionId))
+    }
+
+    func loadAsyncTaskDetail(owner: PickyAsyncTaskOwner, taskID: String) async throws -> PickyAsyncTaskDetail {
+        try await PickySessionAsyncTaskActions.detail(owner: owner, taskID: taskID,
+            client: client, store: sessionStore(sessionID: owner.sessionId))
+    }
+
     func abort(sessionID: String) async throws {
         pickySessionLog("abort session=\(sessionID)")
         if (sessions + archivedSessions).first(where: { $0.id == sessionID })?.hasAsyncTracking == true {
@@ -1589,11 +1599,8 @@ final class PickySessionListViewModel: ObservableObject {
 
     func archiveSessionConfirmed(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws {
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }) else { throw PickyDockGroupManagementError.sessionNotFound(sessionID) }
-        if session.hasAsyncTracking { try await archiveCoordinator.archive(sessionID: sessionID, mode: mode, client: client) }
-        else if let error = try await client.sendAwaitingError(PickyCommandEnvelope(type: .setSessionArchived,
-            sessionId: sessionID, archived: true), timeout: 5, requireAcknowledgement: true) {
-            throw PickyAgentClientRouterError.bridgeCommandRejected(error.message)
-        }
+        try await archiveCoordinator.confirmArchive(sessionID: sessionID, tracked: session.hasAsyncTracking,
+            mode: mode, client: client)
         commitArchive(sessionID: sessionID, sendIntent: false)
     }
 
@@ -1740,11 +1747,14 @@ final class PickySessionListViewModel: ObservableObject {
         syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
+    func stopArchivedAsyncWork(sessionID: String) async throws {
+        try await PickySessionAsyncTaskActions.stopArchived(sessionID: sessionID,
+            archived: archivedSessions.first { $0.id == sessionID }, client: client)
+    }
+
     /// Delete only archived sessions accepted by the daemon's terminal-state rule.
     func deleteAllArchivedSessions() {
-        let ids = archivedSessions.filter {
-            [.completed, .failed, .cancelled, .blocked].contains($0.status)
-        }.map(\.id)
+        let ids = archivedSessions.filter(\.isSafeToDeleteArchived).map(\.id)
         guard !ids.isEmpty else { return }
         pickySessionLog("delete all archived sessions count=\(ids.count)")
         for sessionID in ids {
@@ -1755,25 +1765,15 @@ final class PickySessionListViewModel: ObservableObject {
     /// Match the daemon's deletion rule, which also treats blocked as terminal.
     /// Keep local state when transport fails; send success is not a daemon ack.
     func deleteArchivedSession(sessionID: String) {
-        guard let session = archivedSessions.first(where: { $0.id == sessionID }),
-              [.completed, .failed, .cancelled, .blocked].contains(session.status)
-        else { return }
-        Task { @MainActor [weak self] in
-            guard let self,
-                  let session = self.archivedSessions.first(where: { $0.id == sessionID }),
-                  [.completed, .failed, .cancelled, .blocked].contains(session.status)
-            else { return }
-            do {
-                try await self.archiveCoordinator.delete(sessionID: sessionID, client: self.client)
-                guard let current = self.archivedSessions.first(where: { $0.id == sessionID }),
-                      [.completed, .failed, .cancelled, .blocked].contains(current.status)
-                else { return }
-                self.finalizeDeletedArchivedSession(sessionID: sessionID)
-            } catch {
-                self.lastError = L10n.t("hud.archivedList.deleteFailed", error.localizedDescription)
+        archiveCoordinator.requestDelete(sessionID: sessionID, client: client,
+            canDelete: { [weak self] in
+                self?.archivedSessions.first(where: { $0.id == sessionID })?.isSafeToDeleteArchived == true
+            },
+            onConfirmed: { [weak self] in self?.finalizeDeletedArchivedSession(sessionID: sessionID) },
+            onFailure: { [weak self] error in
+                self?.lastError = L10n.t("hud.archivedList.deleteFailed", error.localizedDescription)
                 pickySessionLog("delete archived session failed session=\(sessionID) error=\(error)")
-            }
-        }
+            })
     }
 
     /// Local half of permanent deletion, called after the Settings command is sent

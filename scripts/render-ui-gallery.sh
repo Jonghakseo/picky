@@ -39,8 +39,13 @@ if manifest.stat().st_mtime < request.stat().st_mtime:
     raise SystemExit('Stale async-task manifest')
 scenes = json.loads(manifest.read_text())['scenes']
 expected = {f'{state}-{appearance}-{scale}.png'
-            for state in ('single', 'multiple', 'group', 'processing', 'failure', 'reconciling', 'unsupported', 'unknown')
+            for state in ('single', 'multiple', 'group', 'expanded', 'processing', 'failure', 'reconciling', 'unsupported', 'unknown')
             for appearance in ('light', 'dark') for scale in (100, 130)}
+expected |= {f'mounted-{state}-{appearance}-{scale}.png'
+             for state in ('running', 'short', 'processing', 'failure', 'unavailable')
+             for appearance in ('light', 'dark') for scale in (100, 130)}
+expected |= {f'archived-{appearance}-{scale}.png'
+             for appearance in ('light', 'dark') for scale in (100, 130)}
 if len(scenes) != len(expected) or {scene['file'] for scene in scenes} != expected:
     raise SystemExit('Unexpected async-task scene matrix')
 for scene in scenes:

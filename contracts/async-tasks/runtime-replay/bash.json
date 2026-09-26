@@ -1,0 +1,1388 @@
+{
+  "provenance": {
+    "scenario": "bash",
+    "sdkVersion": "0.87.1",
+    "nodeVersion": "v24.18.1",
+    "protocolVersion": "2026-08-25",
+    "providerEntrySha256": {
+      "bash": "894d50e78893dac2c4dabd720c3fa1a04148c74d1d5f7a41dfac31e29ada3e87",
+      "subagent": "20c518de1e8bedaf7bf159d428e2019c113405def11616cc258df35fef5c5d61"
+    },
+    "runtimeSha256": "1e7d43a50158480adf2cd50de2c6849f380ccb4cfb2e63cdffef4bd8baf592e6",
+    "sdkEntrySha256": "1e3601da1e18a7be4dfdcc625d7a7fb942cc095a5d737bb1b70211af33b61e05",
+    "providerPath": "actual checkout packages/{bash-async,subagent}/index.ts copied into isolated Pi resource loader",
+    "inputPath": "supervisor.followUp -> offline model tool call -> real Pi SDK",
+    "sessionId": "session-sdk"
+  },
+  "frames": [
+    {
+      "id": "event-00000000-0000-4000-8000-000000000001",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.001Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "revision": 6,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-sdk",
+        "revision": 6,
+        "title": "New Pickle · <fixture-name>",
+        "status": "waiting_for_input",
+        "cwd": "<fixture-root>",
+        "piSessionFilePath": "<fixture-root>/home/.pi/agent/sessions/session-1.jsonl",
+        "createdAt": "2026-01-01T00:00:00.002Z",
+        "updatedAt": "2026-01-01T00:00:00.003Z",
+        "lastSummary": "Ready for instructions",
+        "logs": [
+          "pi session: <fixture-root>/home/.pi/agent/sessions/session-1.jsonl",
+          "manual pickle: waiting for first instruction",
+          "manual pickle cwd: <fixture-root>"
+        ],
+        "tools": [],
+        "subagentRuns": [],
+        "asyncWorkSummary": {
+          "tracking": "ready",
+          "activeRootCount": 0,
+          "pendingCompletionCount": 0,
+          "uncertainExecutionCount": 0,
+          "attentionCount": 0,
+          "workRevision": 2,
+          "canReleaseRuntime": true
+        },
+        "asyncTasks": [],
+        "completionTickets": [],
+        "asyncControl": {
+          "controlGeneration": 0,
+          "admissionState": "open",
+          "operations": []
+        },
+        "artifacts": [],
+        "changedFiles": [],
+        "messages": [],
+        "queuedSteers": [],
+        "queuedFollowUps": [],
+        "steeringMode": "one-at-a-time",
+        "followUpMode": "one-at-a-time",
+        "activitySummary": {
+          "read": 0,
+          "bash": 0,
+          "edit": 0,
+          "write": 0,
+          "thinking": 0,
+          "other": 0
+        },
+        "currentAssistantRun": {
+          "model": "finite",
+          "thinkingLevel": "off"
+        },
+        "notifyMainOnCompletion": true,
+        "notifyMacOSOnCompletion": false
+      }
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000003",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.001Z",
+      "type": "sessionProjectionBootstrapComplete",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "bootstrapId": "w7-register",
+      "sessionIds": [
+        "session-sdk"
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000004",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.004Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 6,
+      "revision": 7,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.005Z",
+            "lastRequest": {
+              "source": "followUp",
+              "text": "Run the finite bash job"
+            }
+          }
+        },
+        {
+          "type": "logAppend",
+          "line": "follow-up: Run the finite bash job"
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000005",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.004Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 7,
+      "revision": 8,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.004Z",
+            "lastSummary": "Follow-up queued"
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000006",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.006Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 8,
+      "revision": 9,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 3
+            },
+            "status": "running",
+            "updatedAt": "2026-01-01T00:00:00.007Z",
+            "lastSummary": "Agent started"
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000007",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.008Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 9,
+      "revision": 10,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.009Z"
+          }
+        },
+        {
+          "type": "messagesImport",
+          "messages": [
+            {
+              "id": "msg-user-00000000-0000-4000-8000-000000000008",
+              "kind": "user_text",
+              "createdAt": "2026-01-01T00:00:00.009Z",
+              "originatedBy": "user",
+              "text": "Run the finite bash job"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000009",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.008Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 10,
+      "revision": 11,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "agentCycle": {
+              "cycleId": "00000000-0000-4000-8000-00000000000a",
+              "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+              "phase": "responding",
+              "controlGeneration": 0
+            },
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 4,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-00000000000c",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.010Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 11,
+      "revision": 12,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.011Z",
+            "contextUsage": {
+              "tokens": 1247,
+              "contextWindow": 100000,
+              "percent": 1.247
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-00000000000d",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.012Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 12,
+      "revision": 13,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 1,
+              "uncertainExecutionCount": 1,
+              "pendingCompletionCount": 0,
+              "attentionCount": 1,
+              "canReleaseRuntime": false,
+              "workRevision": 5,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false
+              }
+            },
+            "status": "blocked",
+            "lastSummary": "Async execution outcome unknown"
+          }
+        },
+        {
+          "type": "asyncTaskDetailSet",
+          "detail": {
+            "tasks": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "taskId": "00000000-0000-4000-8000-000000000010",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "kind": "bash",
+                "title": "sleep",
+                "execution": "queued",
+                "presence": "unknown",
+                "registration": "approved",
+                "providerRevision": 1,
+                "controlGeneration": 0,
+                "createdAt": "2026-01-01T00:00:00.013Z",
+                "updatedAt": "2026-01-01T00:00:00.013Z",
+                "grantId": "00000000-0000-4000-8000-000000000011"
+              }
+            ],
+            "tickets": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000012",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.014Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 13,
+      "revision": 14,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.012Z"
+          }
+        },
+        {
+          "type": "activitySet",
+          "activitySummary": {
+            "read": 0,
+            "bash": 0,
+            "edit": 0,
+            "write": 0,
+            "thinking": 0,
+            "other": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000013",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.015Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 14,
+      "revision": 15,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 1,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 6,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false
+              }
+            },
+            "status": "running"
+          }
+        },
+        {
+          "type": "asyncTaskDetailSet",
+          "detail": {
+            "tasks": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "taskId": "00000000-0000-4000-8000-000000000010",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "kind": "bash",
+                "title": "sleep",
+                "execution": "queued",
+                "presence": "active",
+                "registration": "approved",
+                "grantId": "00000000-0000-4000-8000-000000000011",
+                "providerRevision": 2,
+                "controlGeneration": 0,
+                "createdAt": "2026-01-01T00:00:00.013Z",
+                "updatedAt": "2026-01-01T00:00:00.012Z"
+              }
+            ],
+            "tickets": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000014",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.015Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 15,
+      "revision": 16,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.015Z"
+          }
+        },
+        {
+          "type": "toolUpsert",
+          "tool": {
+            "toolCallId": "actual-provider-call-0",
+            "name": "bash_async",
+            "status": "running",
+            "preview": "{\"command\":\"sleep 0.4; printf W7_BASH_RESULT\",\"action\":\"start\",\"timeout\":5}",
+            "argsPreview": "{\"command\":\"sleep 0.4; printf W7_BASH_RESULT\",\"action\":\"start\",\"timeout\":5}",
+            "startedAt": "2026-01-01T00:00:00.014Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000015",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.016Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 16,
+      "revision": 17,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 1,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 7,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false
+              }
+            }
+          }
+        },
+        {
+          "type": "asyncTaskDetailSet",
+          "detail": {
+            "tasks": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "taskId": "00000000-0000-4000-8000-000000000010",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "kind": "bash",
+                "title": "sleep",
+                "execution": "running",
+                "presence": "active",
+                "registration": "spawned",
+                "grantId": "00000000-0000-4000-8000-000000000011",
+                "providerRevision": 4,
+                "controlGeneration": 0,
+                "createdAt": "2026-01-01T00:00:00.013Z",
+                "updatedAt": "2026-01-01T00:00:00.017Z"
+              }
+            ],
+            "tickets": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000016",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.018Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 17,
+      "revision": 18,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.016Z"
+          }
+        },
+        {
+          "type": "toolUpsert",
+          "tool": {
+            "toolCallId": "actual-provider-call-0",
+            "name": "bash_async",
+            "status": "succeeded",
+            "preview": "{\"content\":[{\"type\":\"text\",\"text\":\"Started background job 00000000-0000-4000-8000-000000000010 (running): sleep\\nDo not call sleep or poll status, output, or list to wait. Continue only with work that does not depend on this job; otherwise end the turn. Success, failure, timeout, and kill results arrive automatically as a follow-up.\"}],\"details\":{\"jobId\":\"00000000-0000-4000-8000-000000000010\",\"status\":\"running\",\"title\":\"sleep\",\"command\":\"sleep 0.4; printf W7_BASH_RESULT\",\"cwd\":\"/var/folders/r...",
+            "argsPreview": "{\"command\":\"sleep 0.4; printf W7_BASH_RESULT\",\"action\":\"start\",\"timeout\":5}",
+            "resultPreview": "{\"content\":[{\"type\":\"text\",\"text\":\"Started background job 00000000-0000-4000-8000-000000000010 (running): sleep\\nDo not call sleep or poll status, output, or list to wait. Continue only with work that does not depend on this job; otherwise end the turn. Success, failure, timeout, and kill results arrive automatically as a follow-up.\"}],\"details\":{\"jobId\":\"00000000-0000-4000-8000-000000000010\",\"status\":\"running\",\"title\":\"sleep\",\"command\":\"sleep 0.4; printf W7_BASH_RESULT\",\"cwd\":\"/var/folders/r...",
+            "resultJSONPreview": "{\"content\":[{\"type\":\"text\",\"text\":\"Started background job 00000000-0000-4000-8000-000000000010 (running): sleep\\nDo not call sleep or poll status, output, or list to wait. Continue only with work that does not depend on this job; otherwise end the turn. Success, failure, timeout, and kill results arrive automatically as a follow-up.\"}],\"details\":{\"jobId\":\"00000000-0000-4000-8000-000000000010\",\"status\":\"running\",\"title\":\"sleep\",\"command\":\"sleep 0.4; printf W7_BASH_RESULT\",\"cwd\":\"/var/folders/r\"}}",
+            "startedAt": "2026-01-01T00:00:00.014Z",
+            "endedAt": "2026-01-01T00:00:00.016Z",
+            "resultPreviewTruncated": true,
+            "resultPreviewRepaired": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000017",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.018Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 18,
+      "revision": 19,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.018Z",
+            "contextUsage": {
+              "tokens": 2,
+              "contextWindow": 100000,
+              "percent": 0.002
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000018",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.019Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 19,
+      "revision": 20,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.020Z",
+            "contextUsage": {
+              "tokens": 77,
+              "contextWindow": 100000,
+              "percent": 0.077
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000019",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.021Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 20,
+      "revision": 21,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "agentCycle": {
+              "cycleId": "00000000-0000-4000-8000-00000000000a",
+              "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+              "phase": "settled",
+              "controlGeneration": 0,
+              "outcome": "completed"
+            },
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 1,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 8,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-00000000001a",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.022Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 21,
+      "revision": 22,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 1,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 9,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false,
+                "finalizedCycleId": "00000000-0000-4000-8000-00000000000a",
+                "outcome": "completed"
+              }
+            },
+            "updatedAt": "2026-01-01T00:00:00.021Z",
+            "lastSummary": "W0B acknowledged actual result"
+          }
+        },
+        {
+          "type": "messagesImport",
+          "messages": [
+            {
+              "id": "msg-agent-text-00000000-0000-4000-8000-00000000001b",
+              "kind": "agent_text",
+              "createdAt": "2026-01-01T00:00:00.021Z",
+              "text": "W0B acknowledged actual result",
+              "assistantRun": {
+                "model": "finite",
+                "thinkingLevel": "off"
+              }
+            },
+            {
+              "id": "msg-activity-00000000-0000-4000-8000-00000000001c",
+              "kind": "agent_activity",
+              "createdAt": "2026-01-01T00:00:00.021Z",
+              "activitySnapshot": {
+                "read": 0,
+                "bash": 0,
+                "edit": 0,
+                "write": 0,
+                "thinking": 0,
+                "other": 1
+              }
+            }
+          ]
+        },
+        {
+          "type": "activitySet",
+          "activitySummary": {
+            "read": 0,
+            "bash": 0,
+            "edit": 0,
+            "write": 0,
+            "thinking": 0,
+            "other": 0
+          }
+        },
+        {
+          "type": "finalAnswerSet",
+          "finalAnswer": "W0B acknowledged actual result"
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-00000000001d",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.023Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 22,
+      "revision": 23,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.022Z",
+            "contextUsage": {
+              "tokens": 2,
+              "contextWindow": 100000,
+              "percent": 0.002
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-00000000001e",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.024Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 23,
+      "revision": 24,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 1,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 10,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false,
+                "finalizedCycleId": "00000000-0000-4000-8000-00000000000a",
+                "outcome": "completed"
+              }
+            }
+          }
+        },
+        {
+          "type": "asyncTaskDetailSet",
+          "detail": {
+            "tasks": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "taskId": "00000000-0000-4000-8000-000000000010",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "kind": "bash",
+                "title": "sleep",
+                "execution": "succeeded",
+                "presence": "settled",
+                "registration": "spawned",
+                "grantId": "00000000-0000-4000-8000-000000000011",
+                "providerRevision": 5,
+                "controlGeneration": 0,
+                "createdAt": "2026-01-01T00:00:00.013Z",
+                "updatedAt": "2026-01-01T00:00:00.025Z"
+              }
+            ],
+            "tickets": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "completionId": "00000000-0000-4000-8000-00000000001f",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "target": "model",
+                "state": "pending",
+                "controlGeneration": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000020",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.026Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 24,
+      "revision": 25,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 1,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 11,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false,
+                "finalizedCycleId": "00000000-0000-4000-8000-00000000000a",
+                "outcome": "completed"
+              }
+            }
+          }
+        },
+        {
+          "type": "asyncTaskDetailSet",
+          "detail": {
+            "tasks": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "taskId": "00000000-0000-4000-8000-000000000010",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "kind": "bash",
+                "title": "sleep",
+                "execution": "succeeded",
+                "presence": "settled",
+                "registration": "spawned",
+                "grantId": "00000000-0000-4000-8000-000000000011",
+                "providerRevision": 5,
+                "controlGeneration": 0,
+                "createdAt": "2026-01-01T00:00:00.013Z",
+                "updatedAt": "2026-01-01T00:00:00.025Z"
+              }
+            ],
+            "tickets": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "completionId": "00000000-0000-4000-8000-00000000001f",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "target": "model",
+                "state": "submitted",
+                "controlGeneration": 0,
+                "deliveryId": "00000000-0000-4000-8000-000000000021"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000022",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.027Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 25,
+      "revision": 26,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.028Z",
+            "lastSummary": "Agent started"
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000023",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.029Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 26,
+      "revision": 27,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.027Z"
+          }
+        },
+        {
+          "type": "messagesImport",
+          "messages": [
+            {
+              "id": "msg-extension-00000000-0000-4000-8000-000000000024",
+              "kind": "system",
+              "createdAt": "2026-01-01T00:00:00.027Z",
+              "originatedBy": "pi_extension",
+              "text": "[bash_async 00000000-0000-4000-8000-000000000010] sleep: succeeded (exit 0) in 0s\nW7_BASH_RESULT\nLog: /var/folders/rz/qnhm16hj2kgcdrw5msbnqbx00000gn/T/pi-bash-async/00000000-0000-4000-8000-00000000000e/1790382054040-00000000-0000-4000-8000-000000000010.log",
+              "customType": "bash-async-completion"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000025",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.030Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 27,
+      "revision": 28,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.029Z",
+            "lastSummary": "Pi extension message started"
+          }
+        },
+        {
+          "type": "finalAnswerSet",
+          "finalAnswer": null
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000026",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.031Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 28,
+      "revision": 29,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "agentCycle": {
+              "cycleId": "00000000-0000-4000-8000-000000000027",
+              "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+              "phase": "responding",
+              "controlGeneration": 0
+            },
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 1,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 12,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false,
+                "finalizedCycleId": "00000000-0000-4000-8000-00000000000a",
+                "outcome": "completed"
+              }
+            }
+          }
+        },
+        {
+          "type": "asyncTaskDetailSet",
+          "detail": {
+            "tasks": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "taskId": "00000000-0000-4000-8000-000000000010",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "kind": "bash",
+                "title": "sleep",
+                "execution": "succeeded",
+                "presence": "settled",
+                "registration": "spawned",
+                "grantId": "00000000-0000-4000-8000-000000000011",
+                "providerRevision": 5,
+                "controlGeneration": 0,
+                "createdAt": "2026-01-01T00:00:00.013Z",
+                "updatedAt": "2026-01-01T00:00:00.025Z"
+              }
+            ],
+            "tickets": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "completionId": "00000000-0000-4000-8000-00000000001f",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "target": "model",
+                "state": "processing",
+                "controlGeneration": 0,
+                "deliveryId": "00000000-0000-4000-8000-000000000021",
+                "cycleId": "00000000-0000-4000-8000-000000000027"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000028",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.032Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 29,
+      "revision": 30,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "updatedAt": "2026-01-01T00:00:00.033Z",
+            "contextUsage": {
+              "tokens": 66,
+              "contextWindow": 100000,
+              "percent": 0.066
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-000000000029",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.034Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 30,
+      "revision": 31,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "agentCycle": {
+              "cycleId": "00000000-0000-4000-8000-000000000027",
+              "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+              "phase": "settled",
+              "controlGeneration": 0,
+              "outcome": "completed"
+            },
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 13,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false,
+                "finalizedCycleId": "00000000-0000-4000-8000-00000000000a",
+                "outcome": "completed"
+              }
+            }
+          }
+        },
+        {
+          "type": "asyncTaskDetailSet",
+          "detail": {
+            "tasks": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "taskId": "00000000-0000-4000-8000-000000000010",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "kind": "bash",
+                "title": "sleep",
+                "execution": "succeeded",
+                "presence": "settled",
+                "registration": "spawned",
+                "grantId": "00000000-0000-4000-8000-000000000011",
+                "providerRevision": 5,
+                "controlGeneration": 0,
+                "createdAt": "2026-01-01T00:00:00.013Z",
+                "updatedAt": "2026-01-01T00:00:00.025Z"
+              }
+            ],
+            "tickets": [
+              {
+                "sessionId": "session-sdk",
+                "piSessionId": "00000000-0000-4000-8000-00000000000e",
+                "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+                "providerId": "bash-async",
+                "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+                "completionId": "00000000-0000-4000-8000-00000000001f",
+                "rootTaskId": "00000000-0000-4000-8000-000000000010",
+                "target": "model",
+                "state": "handled",
+                "controlGeneration": 0,
+                "deliveryId": "00000000-0000-4000-8000-000000000021",
+                "cycleId": "00000000-0000-4000-8000-000000000027"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-00000000002a",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.035Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 31,
+      "revision": 32,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": false,
+              "workRevision": 14,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": false,
+                "finalizedCycleId": "00000000-0000-4000-8000-000000000027",
+                "outcome": "completed"
+              }
+            },
+            "updatedAt": "2026-01-01T00:00:00.034Z",
+            "lastSummary": "W0B acknowledged actual result"
+          }
+        },
+        {
+          "type": "messagesImport",
+          "messages": [
+            {
+              "id": "msg-agent-text-00000000-0000-4000-8000-00000000002b",
+              "kind": "agent_text",
+              "createdAt": "2026-01-01T00:00:00.034Z",
+              "text": "W0B acknowledged actual result",
+              "assistantRun": {
+                "model": "finite",
+                "thinkingLevel": "off"
+              }
+            }
+          ]
+        },
+        {
+          "type": "finalAnswerSet",
+          "finalAnswer": "W0B acknowledged actual result"
+        }
+      ]
+    },
+    {
+      "id": "event-00000000-0000-4000-8000-00000000002c",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-01-01T00:00:00.036Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-sdk",
+      "epoch": "00000000-0000-4000-8000-000000000002",
+      "baseRevision": 32,
+      "revision": 33,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "asyncWorkSummary": {
+              "tracking": "ready",
+              "activeRootCount": 0,
+              "uncertainExecutionCount": 0,
+              "pendingCompletionCount": 0,
+              "attentionCount": 0,
+              "canReleaseRuntime": true,
+              "workRevision": 15,
+              "episode": {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "settled": true,
+                "finalizedCycleId": "00000000-0000-4000-8000-000000000027",
+                "outcome": "completed"
+              }
+            },
+            "status": "completed",
+            "updatedAt": "2026-01-01T00:00:00.035Z",
+            "contextUsage": {
+              "tokens": 2,
+              "contextWindow": 100000,
+              "percent": 0.002
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "name": "tool-returned-running",
+      "through": 18,
+      "disk": {
+        "revision": 23,
+        "status": "running",
+        "asyncTasks": [
+          {
+            "sessionId": "session-sdk",
+            "piSessionId": "00000000-0000-4000-8000-00000000000e",
+            "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+            "providerId": "bash-async",
+            "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+            "taskId": "00000000-0000-4000-8000-000000000010",
+            "rootTaskId": "00000000-0000-4000-8000-000000000010",
+            "kind": "bash",
+            "title": "sleep",
+            "execution": "running",
+            "presence": "active",
+            "registration": "spawned",
+            "grantId": "00000000-0000-4000-8000-000000000011",
+            "providerRevision": 4,
+            "controlGeneration": 0,
+            "createdAt": "2026-01-01T00:00:00.013Z",
+            "updatedAt": "2026-01-01T00:00:00.017Z"
+          }
+        ],
+        "completionTickets": [],
+        "asyncWorkSummary": {
+          "tracking": "ready",
+          "activeRootCount": 1,
+          "pendingCompletionCount": 0,
+          "uncertainExecutionCount": 0,
+          "attentionCount": 0,
+          "workRevision": 9,
+          "canReleaseRuntime": false,
+          "episode": {
+            "id": "00000000-0000-4000-8000-00000000000a",
+            "settled": false,
+            "finalizedCycleId": "00000000-0000-4000-8000-00000000000a",
+            "outcome": "completed"
+          }
+        },
+        "agentCycle": {
+          "cycleId": "00000000-0000-4000-8000-00000000000a",
+          "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+          "phase": "settled",
+          "outcome": "completed",
+          "controlGeneration": 0
+        }
+      }
+    },
+    {
+      "name": "result-pending",
+      "through": 19,
+      "disk": {
+        "revision": 24,
+        "status": "running",
+        "asyncTasks": [
+          {
+            "sessionId": "session-sdk",
+            "piSessionId": "00000000-0000-4000-8000-00000000000e",
+            "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+            "providerId": "bash-async",
+            "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+            "taskId": "00000000-0000-4000-8000-000000000010",
+            "rootTaskId": "00000000-0000-4000-8000-000000000010",
+            "kind": "bash",
+            "title": "sleep",
+            "execution": "succeeded",
+            "presence": "settled",
+            "registration": "spawned",
+            "grantId": "00000000-0000-4000-8000-000000000011",
+            "providerRevision": 5,
+            "controlGeneration": 0,
+            "createdAt": "2026-01-01T00:00:00.013Z",
+            "updatedAt": "2026-01-01T00:00:00.025Z"
+          }
+        ],
+        "completionTickets": [
+          {
+            "sessionId": "session-sdk",
+            "piSessionId": "00000000-0000-4000-8000-00000000000e",
+            "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+            "providerId": "bash-async",
+            "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+            "completionId": "00000000-0000-4000-8000-00000000001f",
+            "rootTaskId": "00000000-0000-4000-8000-000000000010",
+            "target": "model",
+            "state": "pending",
+            "controlGeneration": 0
+          }
+        ],
+        "asyncWorkSummary": {
+          "tracking": "ready",
+          "activeRootCount": 0,
+          "pendingCompletionCount": 1,
+          "uncertainExecutionCount": 0,
+          "attentionCount": 0,
+          "workRevision": 10,
+          "canReleaseRuntime": false,
+          "episode": {
+            "id": "00000000-0000-4000-8000-00000000000a",
+            "settled": false,
+            "finalizedCycleId": "00000000-0000-4000-8000-00000000000a",
+            "outcome": "completed"
+          }
+        },
+        "agentCycle": {
+          "cycleId": "00000000-0000-4000-8000-00000000000a",
+          "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+          "phase": "settled",
+          "outcome": "completed",
+          "controlGeneration": 0
+        }
+      }
+    },
+    {
+      "name": "settled",
+      "through": 28,
+      "disk": {
+        "revision": 33,
+        "status": "completed",
+        "asyncTasks": [
+          {
+            "sessionId": "session-sdk",
+            "piSessionId": "00000000-0000-4000-8000-00000000000e",
+            "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+            "providerId": "bash-async",
+            "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+            "taskId": "00000000-0000-4000-8000-000000000010",
+            "rootTaskId": "00000000-0000-4000-8000-000000000010",
+            "kind": "bash",
+            "title": "sleep",
+            "execution": "succeeded",
+            "presence": "settled",
+            "registration": "spawned",
+            "grantId": "00000000-0000-4000-8000-000000000011",
+            "providerRevision": 5,
+            "controlGeneration": 0,
+            "createdAt": "2026-01-01T00:00:00.013Z",
+            "updatedAt": "2026-01-01T00:00:00.025Z"
+          }
+        ],
+        "completionTickets": [
+          {
+            "sessionId": "session-sdk",
+            "piSessionId": "00000000-0000-4000-8000-00000000000e",
+            "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+            "providerId": "bash-async",
+            "providerInstanceId": "00000000-0000-4000-8000-00000000000f",
+            "completionId": "00000000-0000-4000-8000-00000000001f",
+            "rootTaskId": "00000000-0000-4000-8000-000000000010",
+            "target": "model",
+            "state": "handled",
+            "controlGeneration": 0,
+            "deliveryId": "00000000-0000-4000-8000-000000000021",
+            "cycleId": "00000000-0000-4000-8000-000000000027"
+          }
+        ],
+        "asyncWorkSummary": {
+          "tracking": "ready",
+          "activeRootCount": 0,
+          "pendingCompletionCount": 0,
+          "uncertainExecutionCount": 0,
+          "attentionCount": 0,
+          "workRevision": 15,
+          "canReleaseRuntime": true,
+          "episode": {
+            "id": "00000000-0000-4000-8000-00000000000a",
+            "settled": true,
+            "finalizedCycleId": "00000000-0000-4000-8000-000000000027",
+            "outcome": "completed"
+          }
+        },
+        "agentCycle": {
+          "cycleId": "00000000-0000-4000-8000-000000000027",
+          "runtimeInstanceId": "00000000-0000-4000-8000-00000000000b",
+          "phase": "settled",
+          "outcome": "completed",
+          "controlGeneration": 0
+        }
+      }
+    }
+  ]
+}

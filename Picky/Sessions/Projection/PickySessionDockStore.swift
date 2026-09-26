@@ -15,6 +15,9 @@ struct PickySessionDockProjection: Equatable {
     let status: PickySessionStatus
     let cwd: String?
     let todoState: PickyTodoState?
+    let asyncActiveCount: Int
+    let asyncAttentionCount: Int
+    let asyncRetainsWork: Bool
     /// Changes only at the legacy hover-preview Git refresh cadence, avoiding
     /// a dock publication for every metadata timestamp update.
     let gitRefreshBucket: Int
@@ -29,6 +32,12 @@ struct PickySessionDockProjection: Equatable {
         status = metadata.status
         cwd = metadata.cwd
         self.todoState = todoState
+        asyncActiveCount = metadata.asyncWorkSummary?.activeRootCount ?? 0
+        asyncAttentionCount = metadata.asyncWorkSummary?.attentionCount ?? 0
+        asyncRetainsWork = metadata.asyncWorkSummary.map {
+            $0.activeRootCount > 0 || $0.pendingCompletionCount > 0 || $0.uncertainExecutionCount > 0
+                || $0.tracking != .ready
+        } ?? false
         gitRefreshBucket = Int(metadata.updatedAt.timeIntervalSince1970 / Self.gitRefreshBucketSeconds)
         let isCompacting = status == .running
             && (metadata.lastSummary ?? "").localizedCaseInsensitiveContains("compacting")

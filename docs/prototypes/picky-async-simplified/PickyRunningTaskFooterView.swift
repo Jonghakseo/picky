@@ -108,15 +108,27 @@ struct PickyRunningTaskFooterView: View {
             return root.title
         }
         let children = runningMembers(of: root, detail: detail).filter { $0.taskId != root.taskId }
-        if children.count == 1,
-           let saved = subagentRun(for: children[0], root: root)?.displayTask?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !saved.isEmpty {
-            return saved
+        let agents = children.compactMap { child -> String? in
+            guard let name = subagentRun(for: child, root: root)?.agent.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else { return nil }
+            return name
         }
-        // AsyncTask.title is the command/agent name, not displayTask. No local guessing,
-        // prompt shortening, or extra model call when a saved label is absent.
-        return children.isEmpty ? L10n.t("hud.asyncTasks.subagentWork") :
-            L10n.t("hud.asyncTasks.subagentCount", children.count)
+        // Do not silently omit an active child whose run metadata has not arrived.
+        guard !agents.isEmpty, agents.count == children.count else {
+            return children.isEmpty ? L10n.t("hud.asyncTasks.subagentWork") :
+                L10n.t("hud.asyncTasks.subagentCount", children.count)
+        }
+        var order: [String] = []
+        var counts: [String: Int] = [:]
+        for agent in agents {
+            if counts[agent] == nil { order.append(agent) }
+            counts[agent, default: 0] += 1
+        }
+        let types = order.map { agent in
+            let count = counts[agent, default: 0]
+            return count > 1 ? "\(agent) × \(count)" : agent
+        }.joined(separator: " · ")
+        return L10n.t("hud.asyncTasks.subagentTypesRunning", types)
     }
 
     private func subagentRun(for task: PickyAsyncTask, root: PickyAsyncTask) -> PickySubagentRun? {

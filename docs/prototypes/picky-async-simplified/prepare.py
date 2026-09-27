@@ -54,7 +54,9 @@ labels = {key: translations,
           'hud.asyncTasks.subagentCount': {'en': 'Subagents · %1$lld', 'ko': '하위 에이전트 %1$lld개',
               'ja': 'サブエージェント %1$lld件', 'zh-Hans': '子代理 · %1$lld', 'zh-Hant': '子代理 · %1$lld'},
           'hud.asyncTasks.subagentWork': {'en': 'Subagent work', 'ko': '하위 에이전트 작업',
-              'ja': 'サブエージェントの作業', 'zh-Hans': '子代理任务', 'zh-Hant': '子代理工作'}}
+              'ja': 'サブエージェントの作業', 'zh-Hans': '子代理任务', 'zh-Hant': '子代理工作'},
+          'hud.asyncTasks.subagentTypesRunning': {'en': 'Running subagents: %1$@', 'ko': '서브에이전트 %1$@ 실행중',
+              'ja': 'サブエージェント %1$@ 実行中', 'zh-Hans': '子代理 %1$@ 正在运行', 'zh-Hant': '子代理 %1$@ 執行中'}}
 entries = {label: {'localizations': {lang: {'stringUnit': {'state': 'translated', 'value': value}}
                                    for lang, value in values.items()}} for label, values in labels.items()}
 # Preserve the catalog formatting rather than reformatting the entire file.

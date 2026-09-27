@@ -45,7 +45,7 @@ struct PickyHUDArchivedDockAccessView: View {
         .help(L10n.t("hud.archivedList.title"))
         .accessibilityLabel(L10n.t("hud.archivedList.title"))
         .accessibilityValue("\(archiveMembership.archivedSessionIDs.count)")
-        .popover(isPresented: $isPresented) {
+        .pickyInstantPopover(isPresented: $isPresented) {
             let _ = PickyPerf.event("archived_pickle_content_build")
             PickyHUDArchivedSessionsListView(archiveMembership: archiveMembership, commands: commands)
                 .frame(width: 380)

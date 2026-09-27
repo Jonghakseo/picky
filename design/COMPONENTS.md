@@ -82,6 +82,10 @@
 
 ## Shells and surfaces
 
+### Transient popover
+
+앱의 팝오버는 `pickyInstantPopover` (`Picky/App/PickyInstantPopover.swift`)를 사용한다. 표시 전에 네이티브 `NSPopover`의 `animates = false`를 설정한다. 내용 갱신, 앵커 방향, 포커스, 바깥 클릭과 Escape로 닫기, 동적 크기, 호출부의 `Binding`을 보존해야 한다. 아키텍처 가드는 SwiftUI `.popover` 직접 호출과 다른 곳에서의 `NSPopover` 생성을 막는다. AppKit은 `animates`를 힌트로 취급하므로 어댑터를 변경하면 서명된 앱에서 실제 전환을 확인한다.
+
 ### HUD Dock
 
 주요 구현:

@@ -202,7 +202,7 @@ struct PickyMountedAsyncTaskShelfView: View {
                 .accessibilityValue(L10n.t("hud.asyncTasks.counts", summary.activeRootCount,
                     summary.pendingCompletionCount, summary.uncertainExecutionCount, summary.attentionCount))
                 .padding(.bottom, bottomSpacing)
-                .popover(isPresented: $showsCompactWork) {
+                .pickyInstantPopover(isPresented: $showsCompactWork) {
                     shelf(summary: summary, metadata: metadata, maxListHeight: 200)
                         .frame(width: 380)
                         .padding(DS.Spacing.space2)

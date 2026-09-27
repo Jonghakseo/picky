@@ -1033,7 +1033,41 @@ function checkHubSettingsMenuBoundary() {
   }
 }
 
+// SwiftUI's .popover always uses the system presentation transition. AppKit
+// popovers must go through the one adapter that sets animates=false before show.
+function hasUnmanagedSwiftPopover(source) {
+  const code = stripSwiftCommentsAndStrings(source);
+  return /(?:\.\s*|\b)popover\s*\(|\bNSPopover\b|\.animates\s*=\s*true\b/.test(code);
+}
+
+function checkInstantPopoverBoundary() {
+  const owner = "Picky/App/PickyInstantPopover.swift";
+  const implementation = read(owner);
+  const code = stripSwiftCommentsAndStrings(implementation);
+  const disableIndex = code.indexOf("popover.animates = false");
+  const showIndex = code.indexOf("popover.show(");
+  if ((code.match(/\bNSPopover\s*\(/g) ?? []).length !== 1 || disableIndex < 0 || showIndex < disableIndex ||
+      /(?:\.\s*|\b)popover\s*\(|\.animates\s*=\s*true\b/.test(code)) {
+    addError(`${owner} must own the only NSPopover and disable animation before presenting it.`);
+  }
+  for (const file of walk("Picky", (candidate) => candidate.endsWith(".swift") && rel(candidate) !== owner)) {
+    if (hasUnmanagedSwiftPopover(fs.readFileSync(file, "utf8"))) {
+      addError(`${rel(file)}: use pickyInstantPopover; raw SwiftUI/AppKit popovers can animate.`);
+    }
+  }
+  const blocked = ["view.popover(isPresented: flag) {}", "popover(isPresented: flag) {}", "NSPopover()", "NSPopover.init()", "popover.animates = true"];
+  const allowed = ["view.pickyInstantPopover(isPresented: flag) {}", "// view.popover(isPresented: flag)\nText(\"NSPopover()\")"];
+  if (blocked.some((sample) => !hasUnmanagedSwiftPopover(sample)) || allowed.some(hasUnmanagedSwiftPopover)) {
+    addError("Instant popover boundary self-test failed.");
+  }
+}
+
 function main() {
+  if (process.argv.includes("--self-test=popover")) {
+    checkInstantPopoverBoundary();
+    finish();
+    return;
+  }
   if (process.argv.includes("--self-test=hub-focus")) {
     checkHubSettingsMenuBoundary();
     finish();
@@ -1068,6 +1102,7 @@ function main() {
     checkSessionProjectionRules();
     checkTestWindowReleasePolicy();
     checkHubSettingsMenuBoundary();
+    checkInstantPopoverBoundary();
     checkFileSizeRatchet();
   }
 

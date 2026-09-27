@@ -291,7 +291,7 @@ struct CompanionPanelExtensionsSection: View {
         .buttonStyle(CompanionPanelIconActionStyle())
         .help(tooltipText(for: row))
         .accessibilityLabel(Text(tooltipText(for: row)))
-        .popover(
+        .pickyInstantPopover(
             isPresented: Binding(
                 get: { infoPopoverRowName == row.name },
                 set: { presented in

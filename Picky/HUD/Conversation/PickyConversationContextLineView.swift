@@ -369,7 +369,7 @@ struct PickyConversationContextLineView: View {
         .pickyFont(size: 10.5, weight: .medium)
         .foregroundColor(DS.Colors.textSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .popover(isPresented: $isDetailsPresented, arrowEdge: .bottom) {
+        .pickyInstantPopover(isPresented: $isDetailsPresented, arrowEdge: .bottom) {
             contextDetails
         }
         // These refresh tasks stay on the always-mounted summary root. Opening

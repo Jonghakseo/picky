@@ -988,7 +988,7 @@ struct PickyHeaderSessionMetaPill: View {
                 .buttonStyle(.plain)
                 .background(contextControlBackground)
                 .onHover { isContextControlHovered = $0 }
-                .popover(isPresented: $isContextPopoverPresented, arrowEdge: .top) {
+                .pickyInstantPopover(isPresented: $isContextPopoverPresented, arrowEdge: .top) {
                     PickyHeaderContextCompactionPopoverView(
                         display: contextDisplay,
                         compactionPresentation: compactionPresentation,

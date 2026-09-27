@@ -167,7 +167,7 @@ struct PickyHubSidebarFooter: View {
                 screens = PickyPerf.interval("hub_dock_screens") { NSScreen.screens }
                 isDockPickerPresented = dockControl.activate()
             }
-            .popover(isPresented: $isDockPickerPresented, arrowEdge: .trailing) {
+            .pickyInstantPopover(isPresented: $isDockPickerPresented, arrowEdge: .trailing) {
                 dockPicker
                     .onAppear { PickyPerf.event("hub_dock_picker_appear") }
                     .onDisappear { PickyPerf.event("hub_dock_picker_disappear") }

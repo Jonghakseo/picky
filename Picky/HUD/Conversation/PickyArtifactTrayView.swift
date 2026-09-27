@@ -32,7 +32,7 @@ struct PickyArtifactTrayButton: View {
         .accessibilityLabel(L10n.t("hud.artifactTray.accessibilityLabel", Int64(count)))
         // PickyHUDPanel is key-capable despite its nonactivating style, so a native
         // popover preserves macOS focus and Escape dismissal without a custom panel.
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+        .pickyInstantPopover(isPresented: $isPresented, arrowEdge: .bottom) {
             PickyArtifactTrayPopover(artifacts: trayArtifacts, isPresented: $isPresented)
         }
     }

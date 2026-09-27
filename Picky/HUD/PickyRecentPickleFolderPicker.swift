@@ -48,7 +48,7 @@ extension View {
         suggestedGroupColor: PickyDockGroupColor = .teal,
         onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)? = nil
     ) -> some View {
-        popover(isPresented: isPresented, arrowEdge: arrowEdge) {
+        pickyInstantPopover(isPresented: isPresented, arrowEdge: arrowEdge) {
             let _ = PickyPerf.event("new_pickle_content_build")
             PickyRecentPickleFolderPickerView(
                 isPresented: isPresented,

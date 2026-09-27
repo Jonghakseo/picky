@@ -141,7 +141,7 @@ struct PickyConversationRuntimeControlsView: View {
             .accessibilityLabel(presentation.modelLabel ?? modelText)
             .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
             .disabled(isModelActionInFlight)
-            .popover(isPresented: $isModelPickerPresented, arrowEdge: .bottom) { modelPicker }
+            .pickyInstantPopover(isPresented: $isModelPickerPresented, arrowEdge: .bottom) { modelPicker }
         }
     }
 
@@ -159,7 +159,7 @@ struct PickyConversationRuntimeControlsView: View {
             .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
             .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
             .disabled((runtimeOptions?.thinkingLevels.isEmpty ?? true) || isThinkingActionInFlight)
-            .popover(isPresented: $isThinkingPickerPresented, arrowEdge: .bottom) { thinkingPicker }
+            .pickyInstantPopover(isPresented: $isThinkingPickerPresented, arrowEdge: .bottom) { thinkingPicker }
         }
     }
 

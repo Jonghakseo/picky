@@ -103,10 +103,13 @@ struct PickyHubCronCalendarView: View {
             onVisibleIntervalChange(range)
             focusSchedule(data.layout.events)
         }
-        .popover(isPresented: Binding(
+        .pickyInstantPopover(isPresented: Binding(
             get: { selection != nil || selectedDay != nil },
             set: { if !$0 { selection = nil; selectedDay = nil } }
-        )) {
+        ), presentationIdentity: {
+            if let selection { return AnyHashable(selection.id) }
+            return selectedDay.map(AnyHashable.init)
+        }) {
             if let selection {
                 PickyHubCronOccurrenceDetail(occurrence: currentSelection(selection, events: events), prompt: prompt.result, isHistoricalPrompt: prompt.isHistorical)
             } else if let selectedDay {

@@ -2,9 +2,8 @@
 //  PickyHUDDockGroupViews.swift
 //  Picky
 //
-//  Slim group-rendering primitives for the dock rail. Each visual block is
-//  designed to add at most ~14px of vertical chrome above its members so the
-//  dock stays compact even with 3+ groups stacked.
+//  Group-rendering primitives for the dock rail. Folder identity and member
+//  status share the same square footprint as a session tile.
 //
 
 import SwiftUI
@@ -25,8 +24,7 @@ struct PickyHUDDockGroupBadgeFramePreferenceKey: PreferenceKey {
     }
 }
 
-/// Publishes each folder tile plus its label as the owning interaction area.
-/// This intentionally differs from the badge-only frame used to anchor a child panel.
+/// Publishes the square folder and its embedded identity as one interaction area.
 struct PickyHUDDockGroupInteractionFramePreferenceKey: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
 
@@ -155,8 +153,8 @@ extension View {
         }
     }
 
-    /// Publishes only the visible folder badge in rail coordinates. The label
-    /// remains part of the folder's click area, but not its grouping drop zone.
+    /// Publishes the visible square folder in rail coordinates, including its
+    /// embedded label, as the grouping drop zone.
     func publishDockGroupDropFrame(groupID: String) -> some View {
         background {
             GeometryReader { proxy in
@@ -190,8 +188,8 @@ struct PickyDockGroupDropFramePreferenceKey: PreferenceKey {
     }
 }
 
-/// Quiet identity typography and geometry for a folder tile label. The AppKit
-/// font gives layout and regression tests the same measurement source SwiftUI renders.
+/// Identity typography and geometry inside the folder tile. The AppKit font
+/// gives layout and regression tests the same measurement source SwiftUI renders.
 enum PickyHUDDockGroupHeaderPresentation {
     static var font: Font { PickyHUDTypography.dockGroupIdentity }
 
@@ -199,21 +197,14 @@ enum PickyHUDDockGroupHeaderPresentation {
         PickyHUDTypography.dockGroupIdentityNSFont(fontScale: fontScale)
     }
 
-    /// Reserve four representative CJK glyphs using the exact AppKit font
-    /// paired with the SwiftUI identity role. A `space.1` optical margin keeps
-    /// the label clear of the folder edge without opting out of app font scale.
+    /// The identity stays inset inside the tile at every app font scale.
+    /// Longer names truncate; the full name remains available via help and accessibility.
     static func labelWidth(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
-        let measuredFourCJKWidth = ("가나다라" as NSString).size(withAttributes: [
-            .font: labelFont(fontScale: fontScale),
-        ]).width
-        let opticalSafety = metrics.groupHeaderContentSpacing
-        return ceil(max(metrics.sessionTileWidth, measuredFourCJKWidth + opticalSafety))
+        metrics.sessionTileWidth - (metrics.groupHeaderContentSpacing * 2)
     }
 
-    /// The accessible label hit area is the exact rendered line height plus a
-    /// `space.1` inset above and below. This same metric drives rail geometry.
     static func labelHeight(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
-        lineHeight(for: labelFont(fontScale: fontScale)) + (metrics.groupHeaderVerticalInset * 2)
+        ceil(lineHeight(for: labelFont(fontScale: fontScale)))
     }
 
     private static func lineHeight(for font: NSFont) -> CGFloat {
@@ -226,8 +217,8 @@ enum PickyHUDDockGroupSurfacePresentation {
     static let borderOpacity = 0.78
 }
 
-/// Quiet, centered identity label above a folder tile. The rail supplies
-/// the tap and group-reorder gesture.
+/// Identity inset into the bottom of a folder tile. The rail owns the
+/// label's tap, context menu, and group-reorder gesture.
 struct PickyHUDDockGroupHeader: View {
     let group: PickyDockGroup
     let metrics: PickyHUDDockMetrics
@@ -253,6 +244,7 @@ struct PickyHUDDockGroupHeader: View {
                 alignment: .center
             )
             .contentShape(Rectangle())
+            .help(group.displayName)
             .accessibilityHidden(true)
     }
 }
@@ -448,6 +440,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
 
     @State private var isHovered = false
 
+    @Environment(\.pickyAppFontScale) private var fontScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Hover and pinned share one visual so a peek needs no vocabulary of its
@@ -489,11 +482,17 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     }
 
     var body: some View {
-        let containerSide = min(metrics.sessionTileWidth, metrics.sessionTileHeight)
-        let inset = max(4, containerSide * 0.11)
-        let gap = max(3, containerSide * 0.06)
+        let containerSide = min(
+            metrics.sessionTileWidth,
+            metrics.sessionTileHeight - PickyHUDDockGroupHeaderPresentation.labelHeight(
+                metrics: metrics,
+                fontScale: fontScale
+            ) - metrics.groupHeaderContentSpacing
+        )
+        let inset = max(2, containerSide * 0.08)
+        let gap = max(2, containerSide * 0.06)
         let cellSide = max(8, (containerSide - inset * 2 - gap) / 2)
-        let glyphSide = cellSide * 0.74
+        let glyphSide = max(8, cellSide * 0.9)
         let grid = cells
 
         ZStack(alignment: .topTrailing) {
@@ -507,11 +506,14 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                 }
             }
             .frame(width: containerSide, height: containerSide)
-            .pickyDockGroupDrawer(
-                tint: tint,
-                cornerRadius: metrics.iconCornerRadius,
-                isLifted: isLifted
-            )
+            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight, alignment: .top)
+            .background {
+                Color.clear.pickyDockGroupDrawer(
+                    tint: tint,
+                    cornerRadius: metrics.iconCornerRadius,
+                    isLifted: isLifted
+                )
+            }
 
             if unreadCount > 0 {
                 Text("\(unreadCount)")
@@ -607,6 +609,8 @@ struct PickyHUDDockGroupEmptySlot: View {
     var isDropTargeted: Bool = false
     let onCreatePickle: () -> Void
 
+    @Environment(\.pickyAppFontScale) private var fontScale
+
     var body: some View {
         Button(action: onCreatePickle) {
             RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
@@ -618,12 +622,19 @@ struct PickyHUDDockGroupEmptySlot: View {
                     RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                         .fill(color.accent.opacity(0.06))
                 )
-                .frame(width: metrics.sessionTileWidth, height: metrics.emptyGroupSlotHeight)
-                .overlay(
+                .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+                .overlay(alignment: .top) {
                     Image(systemName: "plus")
                         .font(.system(size: metrics.plusFontSize, weight: .medium))
                         .foregroundColor(DS.Colors.textSecondary)
-                )
+                        .frame(
+                            width: metrics.sessionTileWidth,
+                            height: metrics.sessionTileHeight - PickyHUDDockGroupHeaderPresentation.labelHeight(
+                                metrics: metrics,
+                                fontScale: fontScale
+                            )
+                        )
+                }
                 .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)

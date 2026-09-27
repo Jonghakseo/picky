@@ -52,7 +52,7 @@ enum PickyHUDDockRailLayoutPolicy {
         }
     }
 
-    /// Empty folders have shorter tiles, even when their members are archived.
+    /// Membership count remains useful for callers, but no longer changes geometry.
     static func emptyGroupCount(in projection: PickyDockProjection, activeSessionIDs: Set<String>) -> Int {
         projection.items.reduce(into: 0) { count, item in
             guard case .group(let group) = item,
@@ -62,9 +62,7 @@ enum PickyHUDDockRailLayoutPolicy {
         }
     }
 
-    /// The rail has one folder tile per group, plus one compact header for
-    /// that tile. Member count deliberately does not participate in this
-    /// calculation, so a growing group cannot stretch the rail.
+    /// Titles live inside tiles. Membership and label length cannot move the rail.
     static func contentLength(
         sessionCount: Int,
         groupCount: Int = 0,
@@ -75,27 +73,12 @@ enum PickyHUDDockRailLayoutPolicy {
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale,
         hasArchiveAccess: Bool = false
     ) -> CGFloat {
-        let archiveLength = archiveChromeLength(hasArchiveAccess: hasArchiveAccess)
-        if dockSide.orientation == .horizontal {
-            return archiveLength + PickyHUDDockLayout.horizontalDockRailLength(
-                sessionCount: sessionCount,
-                groupCount: groupCount,
-                isAddSlotExpanded: isAddSlotExpanded,
-                metrics: metrics,
-                fontScale: fontScale
-            )
-        }
-        let measuredEmptyGroupCount = max(0, min(emptyGroupCount, sessionCount))
-        let emptyGroupHeightReduction = CGFloat(measuredEmptyGroupCount)
-            * (metrics.sessionTileHeight - metrics.emptyGroupSlotHeight)
-        return PickyHUDDockLayout.dockRailHeight(
-            sessionCount: sessionCount,
-            isAddSlotExpanded: isAddSlotExpanded,
-            metrics: metrics
-        ) - emptyGroupHeightReduction + archiveLength + PickyHUDDockLayout.dockGroupHeaderExtraLength(
-            groupHeaderCount: groupCount,
-            metrics: metrics,
-            fontScale: fontScale
+        let count = max(1, sessionCount)
+        let tileLength = dockSide.orientation == .horizontal ? metrics.sessionTileWidth : metrics.sessionTileHeight
+        let tiles = CGFloat(count) * tileLength + CGFloat(count - 1) * metrics.sessionSpacing
+        return tiles + fixedChromeLength(
+            isAddSlotExpanded: isAddSlotExpanded, dockSide: dockSide,
+            metrics: metrics, hasArchiveAccess: hasArchiveAccess
         )
     }
 
@@ -134,10 +117,8 @@ enum PickyHUDDockRailLayoutPolicy {
         )
     }
 
-    /// The utility button is fixed chrome, never part of the draggable/scrolling slots.
-    static func archiveChromeLength(hasArchiveAccess: Bool) -> CGFloat {
-        hasArchiveAccess ? 30 : 0 // 28pt button + 2pt rail spacing
-    }
+    /// Both utilities share the cross axis; adding archive access never lengthens the rail.
+    static func archiveChromeLength(hasArchiveAccess: Bool) -> CGFloat { 0 }
 
     static func fixedChromeLength(
         isAddSlotExpanded: Bool,
@@ -145,20 +126,10 @@ enum PickyHUDDockRailLayoutPolicy {
         metrics: PickyHUDDockMetrics,
         hasArchiveAccess: Bool = false
     ) -> CGFloat {
-        let archiveLength = archiveChromeLength(hasArchiveAccess: hasArchiveAccess)
-        if dockSide.orientation == .horizontal {
-            return archiveLength + (metrics.topPadding * 2)
-                + metrics.handleAreaHeight
-                + 4
-                + PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
-        }
-        return archiveLength + metrics.topPadding
-            + metrics.handleAreaHeight
-            + 2
-            + metrics.addSlotTopPadding
-            + PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
-            + metrics.bottomPadding
+        metrics.handleInset + metrics.collapseInset + metrics.utilityButtonSide
+            + metrics.chromeSpacing * 2 + 1
     }
+
 }
 
 /// A nominal identity for the persisted dock structure. Drag cancellation

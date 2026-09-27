@@ -34,6 +34,7 @@ struct PickyHUDView: View {
     var onDockHandleDragChanged: (CGPoint) -> Void = { _ in }
     var onDockHandleDragEnded: () -> Void = { }
     var onDockHandleDoubleClick: () -> Void = { }
+    var onDockMinimize: () -> Void = { }
     var onCardMeasuredSize: (CGSize) -> Void = { _ in }
     /// Reports the visible HUD chrome frames (dock rail, conversation card) in
     /// the root's top-left SwiftUI coordinate space. The overlay manager uses
@@ -226,8 +227,8 @@ struct PickyHUDView: View {
             .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onPreferenceChange(PickyHUDCardSizePreferenceKey.self, perform: handleCardMeasuredSize)
-            .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) {
-                onVisibleChromeFramesChange($0)
+            .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) { frames in
+                onVisibleChromeFramesChange(frames)
             }
             .onPreferenceChange(PickyHUDDockGroupBadgeFramePreferenceKey.self) { frames in
                 dockGroupBadgeFrames = frames
@@ -238,6 +239,7 @@ struct PickyHUDView: View {
                 reportDockGroupListGeometry()
             }
             .onPreferenceChange(PickyHUDDockRailFramePreferenceKey.self) { frame in
+                guard !placement.isMinimized else { return }
                 dockRailFrame = frame
                 reportDockGroupListGeometry()
                 reportExternalDockGeometry()
@@ -247,6 +249,9 @@ struct PickyHUDView: View {
             }
             .onChange(of: openedSessionID) { _, _ in
                 reportDockGroupListGeometry()
+            }
+            .onChange(of: placement.isMinimized) { _, isMinimized in
+                if isMinimized { clearMinimizedDockTransientState() }
             }
             .onChange(of: placement.dockGroupListCreateRequestGroupID) { _, groupID in
                 guard let groupID else { return }
@@ -290,7 +295,9 @@ struct PickyHUDView: View {
             .onChange(of: dockSnapshot.openSessionRequest) { _, request in
                 handleOpenSessionRequest(request)
             }
-            .onReceive(closeRequests) { closeHeldSession() }
+            .onReceive(closeRequests) {
+                if !placement.isMinimized { closeHeldSession() }
+            }
             .onChange(of: dockSnapshot.screenContextArmCollapseToken) { _, _ in
                 // Arming a Pickle (one-shot or sticky) from any entry point —
                 // header tap/long-press, dock context menu, ⌘K — collapses
@@ -341,6 +348,7 @@ struct PickyHUDView: View {
     }
 
     private var shouldHoldPanelHeightDuringActiveTurn: Bool {
+        guard !placement.isMinimized else { return false }
         switch activeSession?.status {
         case .running, .queued, .waiting_for_input:
             return true
@@ -410,31 +418,21 @@ struct PickyHUDView: View {
     /// boundary.
     @ViewBuilder
     private var cardOrPreviewReserve: some View {
-        if activeSession != nil {
+        if !placement.isMinimized && activeSession != nil {
             conversationCard
         } else {
             Color.clear
                 .frame(
                     width: placement.cardWidth,
-                    height: horizontalPreviewReserveHeight
+                    height: PickyHUDDockMinimizedGeometry.horizontalPreviewReserveHeight(metrics: dockMetrics)
                 )
                 .accessibilityHidden(true)
         }
     }
 
-    private var horizontalPreviewReserveHeight: CGFloat {
-        // Match the Y distance in `PickyHUDDockIconView.miniPreviewOffset`
-        // (preview half-height + panelGap) plus another preview half-height
-        // for the card's own extent on the far side of its center, plus a
-        // small breathing margin so the preview doesn't sit flush against
-        // the panel's outer shadow inset.
-        let estimatedPreviewHalfHeight = max(20, 25 * dockMetrics.scale)
-        return (estimatedPreviewHalfHeight * 2) + PickyHUDDockLayout.panelGap + 8
-    }
-
     @ViewBuilder
     private var conversationCard: some View {
-        if let activeSessionID {
+        if !placement.isMinimized, let activeSessionID {
             PickyHUDConversationCardResolver(viewModel: viewModel, sessionID: activeSessionID) { store, session in
                 conversationCard(for: session, store: store)
             }
@@ -621,15 +619,18 @@ struct PickyHUDView: View {
         utilityPanelResizeStartHeight = nil
     }
 
-    @ViewBuilder
     private var dockRail: some View {
-        // The rail is intentionally suppressed while the very first
-        // `sessionSnapshot` is still in flight so the dock doesn't briefly
-        // flash an empty capsule before the persisted Pickles fade in. The
-        // `isLoadingInitialSessionSnapshot` flag is paired with a 4s safety
-        // watchdog in `PickySessionListViewModel` so a stalled handshake can
-        // never leave the dock permanently invisible.
-        if !dockSnapshot.isLoadingInitialSessionSnapshot {
+        PickyHUDDockMinimizedPresentation(
+            isLoading: dockSnapshot.isLoadingInitialSessionSnapshot,
+            isMinimized: placement.isMinimized,
+            dockSide: placement.dockSide,
+            metrics: dockMetrics,
+            projection: dockProjection,
+            availableRailLength: placement.availableDockRailLength,
+            hasArchiveAccess: viewModel.archivedSessionAccess != nil,
+            activeSessionID: activeSession?.id,
+            onRestore: restoreDock
+        ) {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
                 allSessions: dockSnapshot.activeSessions,
@@ -692,38 +693,38 @@ struct PickyHUDView: View {
                     reportExternalDockGeometry()
                 },
                 externalDragPresentationStore: externalDragPresentationStore,
-                archiveAccess: viewModel.archivedSessionAccess
+                archiveAccess: viewModel.archivedSessionAccess,
+                onMinimize: minimizeDock
             )
-            // Measured before the mini-preview slack padding so only the rail
-            // itself counts as visible chrome for ink pass-through.
-            .background(PickyHUDVisibleChromeFrameReporter())
-            // In horizontal mode the mini hover preview is centered on each dock
-            // icon (`miniPreviewOffset` x = 0), so previewing an edge icon makes
-            // the card extend up to `groupListPanelWidth/2 - sessionTileWidth/2`
-            // beyond the rail's leading/trailing edge. Without explicit slack on
-            // both sides, the NSPanel content view ends at the rail edge and the
-            // preview gets clipped — visible in long horizontal docks where the
-            // first/last session's hover card lost its right/left portion.
-            // Reserve the worst-case overflow symmetrically so the panel widens
-            // enough to let the preview render in full.
-            .padding(.horizontal, miniPreviewHorizontalReserve)
-            .zIndex(10)
-            // Keep rail state changes instantaneous; the conversation card handles
-            // its own sizing and scroll stabilization when it appears.
-            .transaction(value: activeSession?.id) { transaction in
-                transaction.animation = nil
-            }
         }
     }
 
-    /// Symmetric horizontal slack reserved around the dock rail in horizontal
-    /// mode so a hover-preview card popping out of an edge dock icon stays
-    /// inside the NSPanel content bounds. Returns 0 in vertical mode because
-    /// the preview pops sideways into the conversation card area, which already
-    /// has `detailWidth` of room.
-    private var miniPreviewHorizontalReserve: CGFloat {
-        guard placement.dockSide.orientation == .horizontal else { return 0 }
-        return PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: dockMetrics)
+    private func minimizeDock() {
+        cancelPendingClose()
+        cancelHoverPreviewClose()
+        hoverPreviewSessionID = nil
+        isDockHovered = false
+        isHUDHovered = false
+        isDockAddSlotExpanded = false
+        isCommandShortcutHintVisible = false
+        isOptionModifierPressed = false
+        archiveActions.cancelChoice()
+        archiveActions.dismissError()
+        onDockMinimize()
+    }
+
+    private func clearMinimizedDockTransientState() {
+        cancelPendingClose()
+        cancelHoverPreviewClose()
+        hoverPreviewSessionID = nil
+        dockRailFrame = .zero
+        dockGroupBadgeFrames = [:]
+        dockGroupInteractionFrames = [:]
+        externalDockGeometryInput = nil
+    }
+
+    private func restoreDock() {
+        placement.isMinimized = false
     }
 
     private func consumeAuthoritativeRemovalEvent(_ event: PickyHUDDockRemovalEvent?) {
@@ -750,11 +751,12 @@ struct PickyHUDView: View {
     }
 
     private func reportExternalDockGeometry() {
-        guard let externalDockGeometryInput, dockRailFrame != .zero else { return }
+        guard !placement.isMinimized, let externalDockGeometryInput, dockRailFrame != .zero else { return }
         onExternalDockGeometryChange(externalDockGeometryInput, dockRailFrame)
     }
 
     private func reportDockGroupListGeometry() {
+        guard !placement.isMinimized else { return }
         onDockGroupListGeometryChange(
             dockGroupBadgeFrames,
             dockGroupInteractionFrames,
@@ -769,6 +771,7 @@ struct PickyHUDView: View {
     }
 
     private func handleHUDHover(_ isHovering: Bool) {
+        guard !placement.isMinimized else { return }
         isHUDHovered = isHovering
         if isHovering {
             cancelPendingClose()
@@ -786,7 +789,7 @@ struct PickyHUDView: View {
     }
 
     private func markFocusedActiveSessionReadIfNeeded() {
-        guard isCurrentHUDPanel(NSApp.keyWindow), let activeSessionID else { return }
+        guard !placement.isMinimized, isCurrentHUDPanel(NSApp.keyWindow), let activeSessionID else { return }
         viewModel.markSessionRead(sessionID: activeSessionID)
     }
 
@@ -865,17 +868,17 @@ struct PickyHUDView: View {
     }
 
     private func handleOpenSessionRequest(_ request: PickyHUDOpenSessionRequest?) {
-        guard let request else { return }
-        // Honor the requested target display so a notification only opens the
-        // card on the screen the user clicked. `nil` target updates everywhere.
-        if let target = request.targetDisplayID, target != displayID { return }
-        switch request.action {
-        case .open:
-            pendingRequestedOpenSessionID = request.sessionID
+        let effect = PickyHUDDockOpenRequestPolicy.apply(
+            request, displayID: displayID, openedSessionID: openedSessionID, placement: placement
+        )
+        switch effect {
+        case .open(let sessionID):
+            pendingRequestedOpenSessionID = sessionID
             openPendingRequestedSessionIfVisible()
-        case .close:
-            guard openedSessionID == request.sessionID else { return }
-            toggleOpenSession(request.sessionID)
+        case .close(let sessionID):
+            toggleOpenSession(sessionID)
+        case nil:
+            break
         }
     }
 
@@ -1026,6 +1029,7 @@ struct PickyHUDView: View {
     }
 
     private func scheduleCloseIfNeeded() {
+        guard !placement.isMinimized else { return }
         closeExpansionTask?.cancel()
         closeExpansionTask = Task {
             do {
@@ -1080,6 +1084,7 @@ struct PickyHUDView: View {
         updateModifierKeyState(modifierFlags: event.modifierFlags)
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
         if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
+        guard !placement.isMinimized else { return false }
         keyWindow.restoreRememberedNativeInputResponderIfNeeded()
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if let focusedTerminal = focusedTerminalView(in: keyWindow) {
@@ -1321,6 +1326,7 @@ struct PickyHUDView: View {
     }
 
     private func openHeldSession(_ next: PickyHUDDockHold) {
+        restoreDock()
         pendingManualAutoOpenSessionID = nil
         pendingRequestedOpenSessionID = nil
         cancelPendingClose()
@@ -1466,27 +1472,6 @@ private struct PickyHUDConversationCardResolver<Content: View>: View {
            let session = store.materializedSessionCard(includeAsyncDetail: false) {
             content(store, session)
                 .id(sessionID)
-        }
-    }
-}
-
-private struct PickyHUDVisibleChromeFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [CGRect] = []
-
-    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
-        value.append(contentsOf: nextValue())
-    }
-}
-
-/// Reports the frame of the chrome component it backs, measured in the HUD
-/// root's named coordinate space, for ink pass-through hit testing.
-private struct PickyHUDVisibleChromeFrameReporter: View {
-    var body: some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: PickyHUDVisibleChromeFramePreferenceKey.self,
-                value: [proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName))]
-            )
         }
     }
 }

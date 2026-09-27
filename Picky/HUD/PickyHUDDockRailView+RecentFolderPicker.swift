@@ -168,26 +168,16 @@ extension PickyHUDDockRailView {
             PickyPerf.event("new_pickle_button_action")
             showRecentPickleFolderPicker(anchorGroupID: nil, targetGroupID: nil)
         } label: {
-            ZStack {
-                PickyHUDMaterialFill(
-                    shape: RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous),
-                    fallback: DS.Colors.surface1
-                )
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(Color.primary.opacity(0.04))
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .strokeBorder(
-                        DS.Colors.textTertiary.opacity(0.7),
-                        style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
-                    )
-                Image(systemName: "plus")
-                    .font(.system(size: metrics.plusFontSize, weight: .medium)) // design-token-exception: preserves the existing dock add-slot SF Symbol optical size during ownership extraction
-                    .foregroundColor(DS.Colors.textSecondary)
-            }
-            .frame(width: metrics.addSlotButtonSide, height: metrics.addSlotButtonSide)
-            .contentShape(Rectangle())
+            Image(systemName: "plus")
+                .font(.system(size: metrics.plusFontSize, weight: .medium)) // design-token-exception: dock utility SF Symbol optical size.
+                .foregroundStyle(DS.Colors.accentText)
+                .frame(width: baseProjection.items.isEmpty ? metrics.sessionTileWidth : metrics.utilityButtonSide,
+                       height: baseProjection.items.isEmpty ? metrics.sessionTileHeight : metrics.utilityButtonSide)
+                .background(baseProjection.items.isEmpty ? DS.Colors.accentSubtle : .clear,
+                            in: RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius))
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyHUDDockUtilityButtonStyle())
         .recentPickleFolderPicker(
             isPresented: newPicklePickerBinding(anchorGroupID: nil),
             onPresentationAcknowledged: {
@@ -227,98 +217,8 @@ extension PickyHUDDockRailView {
         PickyDockGroupColor.defaultColor
     }
 
-    var collapsibleAddAgentSlot: some View {
-        let presentationRequestID = PickyHUDDockGroupPickerPresentationIdentity.requestID(
-            forAnchorGroupID: nil,
-            activeAnchorGroupID: newPickleAnchorGroupID,
-            activeRequest: pickleFolderPickerPresentationRequest
-        )
-        return Button {
-            PickyPerf.event("new_pickle_button_action")
-            showRecentPickleFolderPicker(anchorGroupID: nil, targetGroupID: nil)
-        } label: {
-            ZStack {
-                ZStack {
-                    PickyHUDMaterialFill(
-                        shape: RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous),
-                        fallback: DS.Colors.surface1
-                    )
-                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
-                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                        .strokeBorder(
-                            DS.Colors.textTertiary.opacity(0.7),
-                            style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
-                        )
-                    Image(systemName: "plus")
-                        .font(.system(size: metrics.plusFontSize, weight: .medium)) // design-token-exception: preserves the existing dock add-slot SF Symbol optical size during ownership extraction
-                        .foregroundColor(DS.Colors.textSecondary)
-                }
-                .frame(width: metrics.addSlotButtonSide, height: metrics.addSlotButtonSide)
-                .opacity(isAddSlotExpanded ? 1 : 0)
-
-                Capsule(style: .continuous)
-                    .fill(DS.Colors.textSecondary.opacity(0.78))
-                    .frame(
-                        width: dockSide.orientation == .horizontal ? metrics.collapsedDashHeight : metrics.collapsedDashWidth,
-                        height: dockSide.orientation == .horizontal ? metrics.collapsedDashWidth : metrics.collapsedDashHeight
-                    )
-                    .shadow(color: Color.black.opacity(0.12), radius: 1, y: 0.4) // design-token-exception: preserves the existing collapsed dock add-slot depth cue during ownership extraction
-                    .opacity(isAddSlotExpanded ? 0 : 1)
-            }
-            .frame(
-                width: dockSide.orientation == .horizontal
-                    ? PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
-                    : metrics.addSlotButtonSide,
-                height: dockSide.orientation == .horizontal
-                    ? metrics.addSlotButtonSide
-                    : PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .recentPickleFolderPicker(
-            isPresented: newPicklePickerBinding(anchorGroupID: nil),
-            onPresentationAcknowledged: {
-                guard let presentationRequestID else { return }
-                acknowledgePickleFolderPickerPresentation(requestID: presentationRequestID)
-            },
-            arrowEdge: recentPickleFolderPickerArrowEdge,
-            pinnedPickleCwds: pinnedPickleCwds,
-            recentPickleCwds: recentPickleCwds,
-            onCreatePickleInRecentFolder: { cwd in
-                createPickleInRecentFolder(cwd)
-            },
-            onChooseFolder: {
-                chooseFolderForNewPickle()
-            },
-            onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
-            onPinPickleFolder: onPinPickleFolder,
-            onUnpinPickleFolder: onUnpinPickleFolder,
-            onReorderPinnedPickleFolders: onReorderPinnedPickleFolders,
-            // Use the full live list, not the collapsed projection slots, so
-            // members hidden behind folder tiles remain selectable.
-            availableSessionsForGroupCreation: allSessions,
-            suggestedGroupColor: nextSuggestedGroupColor,
-            onCreateGroup: { name, memberIDs in
-                _ = onCreateDockGroup(name, memberIDs)
-            }
-        )
-        .onHover { hovering in
-            let pickerKeepsExpanded = PickyHUDDockNewPicklePopoverPolicy.shouldExpandDockAddSlot(
-                pickerIsPresented: isRecentPickleFolderPickerPresented,
-                activeAnchorGroupID: newPickleAnchorGroupID
-            )
-            let expanded = hovering || pickerKeepsExpanded
-            onAddSlotExpandedChanged(expanded)
-            withAnimation(PickyHUDExpansion.animation) {
-                isAddSlotExpanded = expanded
-            }
-        }
-        .accessibilityLabel(L10n.t("dock.startPickle"))
-        .accessibilityHint(L10n.t("dock.startPickle.hint"))
-        .hoverAffordance()
-    }
+    /// Stable utility geometry: hovering or opening the picker never resizes the rail.
+    var collapsibleAddAgentSlot: some View { addAgentSlotButton }
 
     private var recentPickleFolderPickerArrowEdge: Edge {
         switch dockSide {

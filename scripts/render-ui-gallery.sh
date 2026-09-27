@@ -408,9 +408,50 @@ mkdir -p "$OUTPUT"
 printf '%s\n' "$OUTPUT" > "$REQUEST_FILE"
 trap 'rm -f "$REQUEST_FILE"' EXIT
 
-echo "Rendering dock-group gallery offscreen to $OUTPUT"
+CHROME_OUTPUT="$ROOT/build/render-gallery/dock-chrome"
+CHROME_REQUEST="$ROOT/build/render-gallery/.dock-chrome-output-path"
+mkdir -p "$CHROME_OUTPUT"
+printf '%s\n' "$CHROME_OUTPUT" > "$CHROME_REQUEST"
+trap 'rm -f "$REQUEST_FILE" "$CHROME_REQUEST"' EXIT
+if pgrep -x xcodebuild >/dev/null; then
+  echo "Another xcodebuild is running; wait before rendering the dock." >&2
+  exit 75
+fi
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+if [[ "$(xcodebuild -version | head -n 1)" != "Xcode 16.3" ]]; then
+  echo "The dock gallery requires Xcode 16.3." >&2
+  exit 1
+fi
+echo "Rendering production dock and group galleries offscreen to $OUTPUT and $CHROME_OUTPUT"
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
-  test -only-testing:PickyTests/PickyHUDDockGroupRenderGalleryTests
+  -derivedDataPath "$HUB_DERIVED_DATA_PATH" test \
+  -only-testing:PickyTests/PickyHUDDockGroupRenderGalleryTests \
+  -only-testing:PickyTests/PickyHUDDockChromeTests \
+  -only-testing:PickyTests/PickyHUDDockMinimizationTests \
+  -only-testing:PickyTests/PickyHUDDockMinimizedPresentationTests \
+  -only-testing:PickyTests/PickyHUDDockRailPolicyTests \
+  -only-testing:PickyTests/PickyHUDDockGroupDropCandidateBuilderTests \
+  -only-testing:PickyTests/PickyHUDDockHandlePresentationTests \
+  -only-testing:PickyTests/PickyTests
+
+python3 - "$CHROME_OUTPUT" <<'PY'
+import json, struct, sys
+from pathlib import Path
+output = Path(sys.argv[1])
+files = json.loads((output / 'manifest.json').read_text())
+expected = {f'{size}-{appearance}-{orientation}-{state}.png'
+            for size in ['s', 'm', 'l'] for appearance in ['light', 'dark']
+            for orientation in ['vertical', 'horizontal']
+            for state in ['group', 'empty-group', 'empty-dock', 'overflow']}
+expected |= {'minimized-light.png', 'minimized-dark.png'}
+if set(files) != expected:
+    raise SystemExit('Dock chrome gallery does not contain the expected 50 scenes')
+for name in files:
+    data = (output / name).read_bytes()
+    if data[:8] != b'\x89PNG\r\n\x1a\n' or min(struct.unpack('>II', data[16:24])) <= 0:
+        raise SystemExit(f'Invalid dock chrome image: {name}')
+print('Validated 50 production dock chrome PNGs.')
+PY
 
 python3 - "$OUTPUT" "${EXPECTED[@]}" <<'PY'
 import json

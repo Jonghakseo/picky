@@ -50,7 +50,7 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
         #expect(filled.first?.halfExtent == 27)
     }
 
-    @Test func missingOrEmptyMeasuredFrameFallsBackToTheVisibleBadgeRange() {
+    @Test func missingOrEmptyMeasuredFrameFallsBackToTheSquareFolderRange() {
         let layout = PickyDockLayout(entries: [
             .session(id: "loose"),
             .group(PickyDockGroup(id: "filled", memberSessionIDs: ["member"])),
@@ -72,12 +72,7 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
             metrics: metrics,
             fontScale: 1
         )
-        let titleAndSpacing = PickyHUDDockGroupHeaderPresentation.labelHeight(
-            metrics: metrics,
-            fontScale: 1
-        ) + metrics.groupHeaderContentSpacing
-
-        let expectedCenter = topEntryCenter + titleAndSpacing * 0.5
+        let expectedCenter = topEntryCenter
         let destination = PickyDockDropResolver.resolveDropContainer(
             draggedSessionID: "loose",
             cursorAxis: expectedCenter,

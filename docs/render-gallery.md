@@ -61,6 +61,22 @@ It runs only `PickyHUDDockGroupRenderGalleryTests`. That test uses `PickyRenderG
 
 The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-empty alpha content, transparent canvas edges, list panel geometry from `PickyHUDDockGroupListPolicy`, and folder/header geometry from `PickyHUDDockGroupHeaderPresentation`. External-drag scenes use the production list, rail presentation store, rail projection, folder tile, and detached-preview content. It intentionally does not compare byte-for-byte or commit golden images because macOS font and material rendering varies between OS versions.
 
+### Full dock chrome
+
+The `dock-group` command also writes 50 production Dock images to
+`build/render-gallery/dock-chrome/` through `PickyHUDDockChromeTests`.
+The matrix covers S/M/L, light/dark, vertical/horizontal, populated groups,
+empty groups, an empty dock, and overflow, plus the two 32pt restore-button
+appearances. These mount `PickyHUDDockRailView`, including its actual inset
+notches, internal group labels, utility controls, and archive access. They do
+not recreate the standalone design-study app.
+
+The command uses Xcode 16.3 and shared `/private/tmp/PickyAgentDD` and includes
+the affected geometry, minimization, drop-candidate, handle, and core policy
+tests. Static rendering does not prove real panel anchoring, desktop
+pass-through, drag gestures, or keyboard focus. The standalone prototype under
+`build/design-prototypes/` is design reference only, not production validation.
+
 ## Conversation context gallery
 
 ```bash

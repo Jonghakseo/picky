@@ -134,7 +134,18 @@ struct PickyHUDDockMetrics: Equatable {
 
     static let medium = PickyHUDDockMetrics(preset: .medium)
 
-    var railWidth: CGFloat { max(sessionTileWidth + (horizontalPadding * 2), scaled(PickyHUDDockLayout.railWidth)) }
+    var railWidth: CGFloat { max(sessionTileWidth, utilityButtonSide * 2 + utilitySpacing) + horizontalPadding * 2 }
+    // Dock chrome stays usable at S without growing to session-tile size at L.
+    var utilityButtonSide: CGFloat { 24 }
+    var utilitySpacing: CGFloat { 2 }
+    var chromeSpacing: CGFloat { DS.Spacing.space1 }
+    var handleInset: CGFloat { 20 }
+    var collapseInset: CGFloat { 28 }
+    var handleNotchWidth: CGFloat { 34 }
+    var collapseNotchWidth: CGFloat { 28 }
+    var notchDepth: CGFloat { 11 }
+    var minimizedSide: CGFloat { 32 }
+    var minimizedCornerRadius: CGFloat { 10 } // component exception: approved compact restore-button silhouette.
     var iconSide: CGFloat { scaled(PickyHUDDockLayout.addSlotButtonSide) }
     var iconCornerRadius: CGFloat { scaled(12) }
     /// Outer dock capsule corner radius. Reduced from a full capsule to a refined
@@ -143,9 +154,8 @@ struct PickyHUDDockMetrics: Equatable {
     var outerCornerRadius: CGFloat { scaled(14) }
     var sessionTileWidth: CGFloat { max(40, scaled(54)) }
     var sessionTileHeight: CGFloat { max(42, scaled(54)) }
-    /// Empty groups keep the full folder width but use a quieter half-height
-    /// create affordance. Groups with members continue using sessionTileHeight.
-    var emptyGroupSlotHeight: CGFloat { sessionTileHeight * 0.5 }
+    /// Membership changes never resize a group or move neighboring tiles.
+    var emptyGroupSlotHeight: CGFloat { sessionTileHeight }
     var sessionTileCornerRadius: CGFloat { scaled(9) }
     var sessionLogoSide: CGFloat { max(17, scaled(24)) }
     var sessionLabelFontSize: CGFloat { max(10.5, scaled(15)) }
@@ -156,7 +166,7 @@ struct PickyHUDDockMetrics: Equatable {
     var addSlotTopPadding: CGFloat { max(5, scaled(7)) }
     var addSlotButtonSide: CGFloat { iconSide }
     var collapsedAddSlotVisualHeight: CGFloat { max(10, scaled(PickyHUDDockLayout.collapsedAddSlotVisualHeight)) }
-    var addSlotCollapsedExpansionReserve: CGFloat { max(0, addSlotButtonSide - collapsedAddSlotVisualHeight) }
+    var addSlotCollapsedExpansionReserve: CGFloat { 0 }
     var handleAreaHeight: CGFloat { max(12, scaled(PickyHUDExpansion.dockHandleAreaHeight)) }
     var handleIdleWidth: CGFloat { max(16, scaled(18)) }
     var handleActiveWidth: CGFloat { max(22, scaled(24)) }
@@ -285,107 +295,47 @@ enum PickyHUDDockLayout {
     }
 
     static func addSlotFrameHeight(isExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
-        isExpanded ? metrics.addSlotButtonSide : metrics.collapsedAddSlotVisualHeight
+        metrics.utilityButtonSide
     }
 
     static func dockRailSessionsHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
-        guard sessionCount > 0 else { return metrics.addSlotButtonSide }
-        let sessionRowsHeight = CGFloat(sessionCount) * metrics.sessionTileHeight
-        let sessionGapsHeight = CGFloat(max(0, sessionCount - 1)) * metrics.sessionSpacing
-        return sessionRowsHeight
-            + sessionGapsHeight
-            + metrics.addSlotTopPadding
-            + addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
+        let count = max(1, sessionCount)
+        return CGFloat(count) * metrics.sessionTileHeight + CGFloat(count - 1) * metrics.sessionSpacing
+            + metrics.chromeSpacing * 2 + 1 + metrics.utilityButtonSide
     }
 
     static func dockRailHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
-        metrics.topPadding
-            + metrics.handleAreaHeight
-            + 2
+        metrics.handleInset + metrics.collapseInset
             + dockRailSessionsHeight(sessionCount: sessionCount, isAddSlotExpanded: isAddSlotExpanded, metrics: metrics)
-            + metrics.bottomPadding
     }
 
-    /// Long-axis (X) length of the dock rail in horizontal orientation.
-    /// Mirrors `dockRailHeight` but uses symmetric leading/trailing padding
-    /// (small `topPadding` on both sides instead of vertical's larger
-    /// `bottomPadding`) and drops `addSlotTopPadding` between the last
-    /// session and the collapsed `+` slot — horizontal needs less internal
-    /// breathing room than vertical because the dock is short on the cross
-    /// axis and any extra padding reads as wasted space.
     static func verticalDockRailCrossSize(
-        hasGroupHeaders: Bool,
-        metrics: PickyHUDDockMetrics = .medium,
+        hasGroupHeaders: Bool, metrics: PickyHUDDockMetrics = .medium,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
-    ) -> CGFloat {
-        guard hasGroupHeaders else { return metrics.railWidth }
-        return max(
-            metrics.railWidth,
-            PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: fontScale)
-                + (metrics.horizontalPadding * 2)
-        )
-    }
+    ) -> CGFloat { metrics.railWidth }
 
     static func horizontalDockRailCrossSize(
-        hasGroupHeaders: Bool,
-        metrics: PickyHUDDockMetrics = .medium,
+        hasGroupHeaders: Bool, metrics: PickyHUDDockMetrics = .medium,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
-        guard hasGroupHeaders else { return metrics.railWidth }
-        let folderCrossSize = max(
-            verticalDockRailCrossSize(
-                hasGroupHeaders: hasGroupHeaders,
-                metrics: metrics,
-                fontScale: fontScale
-            ),
-            metrics.sessionTileHeight + (metrics.horizontalPadding * 2)
-        )
-        return folderCrossSize
-            + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
-            + metrics.groupHeaderContentSpacing
+        max(metrics.sessionTileHeight, metrics.utilityButtonSide * 2 + metrics.utilitySpacing)
+            + metrics.horizontalPadding * 2
     }
 
     static func dockGroupHeaderExtraLength(
-        groupHeaderCount: Int,
-        metrics: PickyHUDDockMetrics = .medium,
+        groupHeaderCount: Int, metrics: PickyHUDDockMetrics = .medium,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
-    ) -> CGFloat {
-        CGFloat(groupHeaderCount) * (
-            PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
-                + metrics.groupHeaderContentSpacing
-        )
-    }
+    ) -> CGFloat { 0 }
 
     static func horizontalDockRailLength(
-        sessionCount: Int,
-        groupCount: Int = 0,
-        isAddSlotExpanded: Bool,
+        sessionCount: Int, groupCount: Int = 0, isAddSlotExpanded: Bool,
         metrics: PickyHUDDockMetrics = .medium,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
-        let sessionsAndSlot: CGFloat = {
-            guard sessionCount > 0 else { return metrics.addSlotButtonSide }
-            let measuredGroupCount = max(0, min(groupCount, sessionCount))
-            let groupSlotWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
-                metrics: metrics,
-                fontScale: fontScale
-            )
-            let groupWidthExpansion = CGFloat(measuredGroupCount)
-                * max(0, groupSlotWidth - metrics.sessionTileWidth)
-            let sessionRows = CGFloat(sessionCount) * metrics.sessionTileWidth
-                + groupWidthExpansion
-            let sessionGaps = CGFloat(max(0, sessionCount - 1)) * metrics.sessionSpacing
-            // 2pt parent-HStack spacing between the sessions row and the slot.
-            return sessionRows
-                + sessionGaps
-                + 2
-                + addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
-        }()
-        return metrics.topPadding
-            + metrics.handleAreaHeight
-            + 2
-            + sessionsAndSlot
-            + metrics.topPadding
+        PickyHUDDockRailLayoutPolicy.contentLength(
+            sessionCount: sessionCount, groupCount: groupCount, isAddSlotExpanded: isAddSlotExpanded,
+            dockSide: .bottom, metrics: metrics, fontScale: fontScale
+        )
     }
 
     /// Worst-case horizontal overflow of the hover-preview card past an edge

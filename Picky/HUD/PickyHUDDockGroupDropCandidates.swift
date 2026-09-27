@@ -108,22 +108,14 @@ enum PickyHUDDockGroupDropCandidateBuilder {
         }
 
         // Preference publication is asynchronous. A drag can begin before the
-        // badge frame lands, so recover the same visible badge range from the
-        // already-established top-entry center instead of dropping the folder
-        // from the candidate list. The title is rendered above the badge.
+        // square folder frame lands, so use its top-entry center as the same
+        // visible drop range instead of dropping the folder from the list.
         guard let topEntryCenter else { return nil }
         switch orientation {
         case .horizontal:
             return (topEntryCenter, metrics.sessionTileWidth * 0.5)
         case .vertical:
-            let titleAndSpacing = PickyHUDDockGroupHeaderPresentation.labelHeight(
-                metrics: metrics,
-                fontScale: fontScale
-            ) + metrics.groupHeaderContentSpacing
-            return (
-                topEntryCenter + titleAndSpacing * 0.5,
-                metrics.sessionTileHeight * 0.5
-            )
+            return (topEntryCenter, metrics.sessionTileHeight * 0.5)
         }
     }
 }

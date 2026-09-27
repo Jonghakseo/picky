@@ -233,26 +233,27 @@ struct PickyTests {
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 200, targetHeight: 180, deferShrink: false))
     }
 
-    @Test func dockAddSlotUsesCompactCollapsedHitAreaAndReservesPanelRoomOnly() throws {
+    @Test func dockUtilitiesKeepTheirHitAreaAndRailSizeAcrossHoverStates() throws {
         let smallMetrics = PickyHUDDockMetrics(preset: .small)
         let mediumMetrics = PickyHUDDockMetrics(preset: .medium)
         let largeMetrics = PickyHUDDockMetrics(preset: .large)
-        #expect(smallMetrics.railWidth < mediumMetrics.railWidth)
+        #expect(smallMetrics.railWidth <= mediumMetrics.railWidth)
         #expect(mediumMetrics.railWidth < largeMetrics.railWidth)
 
         for metrics in [smallMetrics, mediumMetrics, largeMetrics] {
             let collapsed = PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: metrics)
             let expanded = PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true, metrics: metrics)
-            // Collapsed slot keeps a compact hit area; expanding claims exactly the
-            // room the reserve promised to the panel.
-            #expect(collapsed < expanded)
+            // Hovering reveals emphasis, never new geometry or a smaller hit target.
+            #expect(collapsed == expanded)
+            #expect(collapsed >= 24)
             #expect(metrics.addSlotCollapsedExpansionReserve == expanded - collapsed)
         }
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: mediumMetrics))
         #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == mediumMetrics.addSlotCollapsedExpansionReserve)
 
-        // An empty dock still reserves full room for the add button.
-        #expect(PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 0, isAddSlotExpanded: false, metrics: mediumMetrics) == mediumMetrics.addSlotButtonSide)
+        // The empty creation tile occupies the same slot as the first Pickle.
+        #expect(PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 0, isAddSlotExpanded: false, metrics: mediumMetrics)
+            == PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 1, isAddSlotExpanded: false, metrics: mediumMetrics))
         // Each additional session grows the rail by exactly one tile plus one gap,
         // in both orientations, and the rail chrome around the sessions stays fixed.
         let sessionsThree = PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics)
@@ -266,7 +267,7 @@ struct PickyTests {
         let horizontalFour = PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 4, isAddSlotExpanded: false, metrics: mediumMetrics)
         #expect(horizontalFour - horizontalThree == mediumMetrics.sessionTileWidth + mediumMetrics.sessionSpacing)
 
-        // Expanding the add slot grows the rail by the reserve and nothing else.
+        // Hovering the add control never grows the rail.
         #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - railThree == mediumMetrics.addSlotCollapsedExpansionReserve)
         #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - horizontalThree == mediumMetrics.addSlotCollapsedExpansionReserve)
 

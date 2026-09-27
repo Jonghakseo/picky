@@ -19,6 +19,8 @@ struct PickyHUDDockIconView: View {
     /// scale/shadow/zIndex transforms via this flag and feeds the offset.
     var isDragging: Bool = false
     var dragOffset: CGSize = .zero
+    /// A one-member group draws its identity over the reserved caption area.
+    var hidesCaptionForGroup = false
     let onHoverChanged: (Bool) -> Void
     let onOpen: () -> Void
     let onToggleScreenContextTarget: () -> Void
@@ -256,6 +258,7 @@ struct PickyHUDDockIconView: View {
 
             Text(dockLabel)
                 .font(dockLabelFont)
+                .opacity(hidesCaptionForGroup ? 0 : 1)
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)

@@ -23,6 +23,8 @@ final class PickyHUDPlacement: ObservableObject {
     /// drags across the screen midpoint or resets the handle so SwiftUI can mirror
     /// the card/dock order without rebuilding the hosting view.
     @Published var dockSide: PickyHUDDockSide
+    /// Transient display-local dock presentation; never written to Settings.
+    @Published var isMinimized = false
     /// S/M/L size preset for the dock rail. The overlay manager updates this from
     /// Settings without rebuilding the hosting view, preserving HUD hover/open state.
     @Published var dockSizePreset: PickyHUDDockSizePreset
@@ -43,6 +45,25 @@ final class PickyHUDPlacement: ObservableObject {
     /// Folder whose list is pinned open on this display. A hover peek stays
     /// `nil` here, so the rail marks only the deliberate, persistent state.
     @Published var pinnedDockGroupListGroupID: String?
+
+    /// Top-left of the 32pt restore button within the expanded rail's bounds.
+    /// Both orientations keep its center on the existing leading/top drag handle.
+    static func minimizedButtonOrigin(
+        dockSide: PickyHUDDockSide,
+        metrics: PickyHUDDockMetrics,
+        railSize: CGSize
+    ) -> CGPoint {
+        let halfButton: CGFloat = 16
+        let halfHandle = metrics.handleInset / 2
+        switch dockSide.orientation {
+        case .vertical:
+            return CGPoint(x: railSize.width / 2 - halfButton,
+                           y: halfHandle - halfButton)
+        case .horizontal:
+            return CGPoint(x: halfHandle - halfButton,
+                           y: railSize.height / 2 - halfButton)
+        }
+    }
 
     var cardWidth: CGFloat { cardSize?.width ?? PickyHUDCardSize.defaultWidth }
     var fixedCardHeight: CGFloat? { cardSize?.height }

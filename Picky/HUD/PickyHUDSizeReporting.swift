@@ -182,3 +182,24 @@ extension CGSize {
             && abs(height - other.height) <= tolerance
     }
 }
+
+struct PickyHUDVisibleChromeFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [CGRect] = []
+
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// Reports the frame of the chrome component it backs, measured in the HUD
+/// root's named coordinate space, for ink pass-through hit testing.
+struct PickyHUDVisibleChromeFrameReporter: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: PickyHUDVisibleChromeFramePreferenceKey.self,
+                value: [proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName))]
+            )
+        }
+    }
+}

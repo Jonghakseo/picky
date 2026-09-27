@@ -1655,6 +1655,38 @@
         }
       }
     },
+    "dock.minimize": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimize dock"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도크 최소화"
+          }
+        }
+      }
+    },
+    "dock.restore": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand dock"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도크 펼치기"
+          }
+        }
+      }
+    },
     "dock.startPickle": {
       "localizations": {
         "en": {

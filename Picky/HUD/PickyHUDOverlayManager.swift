@@ -173,7 +173,8 @@ final class PickyHUDOverlayManager {
         input: PickyHUDDockExternalDragRailGeometryInput,
         railFrame: CGRect
     ) {
-        guard railFrame.width > 0, railFrame.height > 0 else { return }
+        guard panelsByDisplayID[displayID]?.placement.isMinimized == false,
+              railFrame.width > 0, railFrame.height > 0 else { return }
         externalDockGeometryByDisplayID[displayID] = .init(input: input, railFrame: railFrame)
     }
 
@@ -185,13 +186,26 @@ final class PickyHUDOverlayManager {
         draggedSessionID: String
     ) -> PickyHUDDockExternalDragGeometrySnapshot? {
         guard let entry = externalDockGeometryByDisplayID[displayID],
-              let panel = panelsByDisplayID[displayID]?.panel
+              let panelEntry = panelsByDisplayID[displayID],
+              !panelEntry.placement.isMinimized
         else { return nil }
         return entry.input.screenSnapshot(
             draggedSessionID: draggedSessionID,
             hudRailFrame: entry.railFrame,
-            hudPanelFrame: panel.frame
+            hudPanelFrame: panelEntry.panel.frame
         )
+    }
+
+    /// Collapse only this display's dock. Keep its panel and placement alive so
+    /// session/card state can be restored without changing persistent visibility.
+    func minimizeDock(displayID: CGDirectDisplayID) {
+        guard var entry = panelsByDisplayID[displayID], !entry.placement.isMinimized else { return }
+        tearDownDockSurface(displayID: displayID)
+        externalDockGeometryByDisplayID.removeValue(forKey: displayID)
+        dockGroupListGeometryByDisplayID.removeValue(forKey: displayID)
+        entry.visibleChromeFrames = []
+        panelsByDisplayID[displayID] = entry
+        entry.placement.isMinimized = true
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -591,6 +605,9 @@ final class PickyHUDOverlayManager {
             },
             onDockHandleDoubleClick: { [weak self] in
                 self?.handleDockHandleDoubleClick(displayID: displayID)
+            },
+            onDockMinimize: { [weak self] in
+                self?.minimizeDock(displayID: displayID)
             },
             onCardMeasuredSize: { [weak self] size in
                 self?.handleCardMeasuredSize(displayID: displayID, size: size)

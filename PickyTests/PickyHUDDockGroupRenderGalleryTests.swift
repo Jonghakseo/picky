@@ -134,7 +134,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         let originalChoice = localeManager.choice
         defer { localeManager.apply(originalChoice) }
         localeManager.apply(.korean)
-        #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "그룹에 피클 생성")
+        #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "그룹에 Pickle 생성")
 
         try localeManager.withTemporaryChoiceForTesting(.english) {
             #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "Create Pickle in group")
@@ -144,7 +144,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
 
         #expect(localeManager.choice == .korean)
         #expect(localeManager.effectiveLocale.identifier == "ko")
-        #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "그룹에 피클 생성")
+        #expect(L10n.t("group.list.newPickle.accessibilityLabel") == "그룹에 Pickle 생성")
     }
 
     @Test func panelGeometryIncludesProductionChromeRowsAndSpacing() {
@@ -176,7 +176,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         #expect(dark.materialKind == .ultraThin)
     }
 
-    @Test func folderGeometryContainsTheProductionHeaderAtAllGalleryScales() {
+    @Test func folderIdentityFitsInsideTheSameTileFootprintAtAllGalleryScales() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             for fontScale: CGFloat in [1, 1.3] {
@@ -185,17 +185,66 @@ struct PickyHUDDockGroupRenderGalleryTests {
                     metrics: metrics,
                     fontScale: fontScale
                 )
-                #expect(size.width == PickyHUDDockGroupHeaderPresentation.labelWidth(
+                #expect(size.width == metrics.sessionTileWidth)
+                #expect(size.height == metrics.sessionTileHeight)
+                #expect(PickyHUDDockGroupHeaderPresentation.labelWidth(
                     metrics: metrics,
                     fontScale: fontScale
-                ))
-                #expect(size.height == metrics.sessionTileHeight + metrics.groupHeaderContentSpacing + headerHeight)
-                #expect(headerHeight > metrics.groupHeaderVerticalInset * 2)
+                ) < size.width)
+                #expect(headerHeight > 0 && headerHeight < size.height)
+                #expect(metrics.emptyGroupSlotHeight == size.height)
             }
         }
     }
 
-    @Test func combinedSceneKeepsThePanelAnchoredToTheBadgeBelowTheTitle() {
+    @Test func renderedEmptyAndPopulatedFoldersPublishTheSameSquareHitArea() {
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            for fontScale: CGFloat in [1, 1.3] {
+                for members in [[], fiveSessions] {
+                    let group = group(
+                        id: "measured",
+                        name: "한글그룹이름길게",
+                        color: .purple,
+                        memberIDs: members.map(\.id)
+                    )
+                    let bounds = FolderBounds()
+                    let fontStore = PickyAppFontScaleStore()
+                    fontStore.setScale(Double(fontScale))
+                    let root = PickyAppFontScaleRoot(store: fontStore) {
+                        folder(group: group, members: members, metrics: metrics, fontScale: fontScale)
+                            .publishDockGroupBadgeFrame(groupID: group.id)
+                            .publishDockGroupInteractionFrame(groupID: group.id)
+                            .padding(DS.Spacing.space4)
+                    }
+                    .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
+                    .onPreferenceChange(PickyHUDDockGroupBadgeFramePreferenceKey.self) {
+                        bounds.badge = $0[group.id] ?? .zero
+                    }
+                    .onPreferenceChange(PickyHUDDockGroupInteractionFramePreferenceKey.self) {
+                        bounds.interaction = $0[group.id] ?? .zero
+                    }
+                    let canvas = CGSize(width: metrics.sessionTileWidth + 32, height: metrics.sessionTileHeight + 32)
+                    #expect(PickyRenderGalleryRasterizer.rasterize(
+                        root,
+                        logicalSize: canvas,
+                        scale: 2,
+                        appearance: .darkAqua
+                    ) != nil)
+                    #expect(bounds.badge.width == metrics.sessionTileWidth)
+                    #expect(bounds.badge.height == metrics.sessionTileHeight)
+                    #expect(bounds.interaction == bounds.badge)
+                }
+            }
+        }
+    }
+
+    private final class FolderBounds {
+        var badge: CGRect = .zero
+        var interaction: CGRect = .zero
+    }
+
+    @Test func combinedSceneKeepsThePanelAnchoredToTheSquareFolder() {
         let metrics = PickyHUDDockMetrics(preset: .medium)
         let folderFrame = folderSize(metrics: metrics, fontScale: 1)
         let group = group(id: "group", name: "Picky", color: .blue, memberIDs: fiveRows.map(\.id))
@@ -203,7 +252,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         let scene = combinedScene(group: group, metrics: metrics)
 
         #expect(scene.contentLogicalSize.width == folderFrame.width + PickyHUDDockLayout.panelGap + panelSize.width)
-        #expect(scene.contentLogicalSize.height == max(folderFrame.height, folderBadgeTopInset(metrics: metrics, fontScale: 1) + panelSize.height))
+        #expect(scene.contentLogicalSize.height == max(folderFrame.height, panelSize.height))
     }
 
     private func makeScenes() -> [Scene] {
@@ -214,7 +263,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
         let research = group(id: "group-research", name: "Research", color: .teal, memberIDs: twoRows.map(\.id))
         let idleRows = Array(fiveRows.prefix(4))
         let idle = group(id: "group-idle", name: "Idle", color: .gray, memberIDs: idleRows.map(\.id))
-        let cjk = group(id: "group-cjk", name: "한글그룹", color: .purple, memberIDs: fiveRows.map(\.id))
+        let cjk = group(id: "group-cjk", name: "한글그룹이름길게", color: .purple, memberIDs: fiveRows.map(\.id))
         let empty = group(id: "group-empty", name: "Empty", color: .gray, memberIDs: [])
 
         return [
@@ -268,11 +317,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
     ) -> Scene {
         Scene(
             name: name,
-            contentLogicalSize: folderSize(
-                metrics: metrics,
-                fontScale: fontScale,
-                tileHeight: members.isEmpty ? metrics.emptyGroupSlotHeight : metrics.sessionTileHeight
-            ),
+            contentLogicalSize: folderSize(metrics: metrics, fontScale: fontScale),
             canvasInsets: galleryCanvasInsets,
             appearance: appearance,
             preset: metrics.preset,
@@ -357,12 +402,11 @@ struct PickyHUDDockGroupRenderGalleryTests {
     private func combinedScene(group: PickyDockGroup, metrics: PickyHUDDockMetrics) -> Scene {
         let panelSize = listSize(group: group, rows: fiveRows, metrics: metrics, fontScale: 1)
         let folderFrame = folderSize(metrics: metrics, fontScale: 1)
-        let badgeTopInset = folderBadgeTopInset(metrics: metrics, fontScale: 1)
         return Scene(
             name: "combined-folder-panel-medium-dark-100.png",
             contentLogicalSize: CGSize(
                 width: folderFrame.width + PickyHUDDockLayout.panelGap + panelSize.width,
-                height: max(folderFrame.height, badgeTopInset + panelSize.height)
+                height: max(folderFrame.height, panelSize.height)
             ),
             canvasInsets: galleryCanvasInsets,
             appearance: .dark,
@@ -390,7 +434,7 @@ struct PickyHUDDockGroupRenderGalleryTests {
                         )
                         .offset(
                             x: folderFrame.width + PickyHUDDockLayout.panelGap,
-                            y: badgeTopInset
+                            y: 0
                         )
                 }
             )
@@ -812,11 +856,11 @@ struct PickyHUDDockGroupRenderGalleryTests {
                         scale: 2, appearance: .darkAqua)
                     #expect(bitmap != nil)
                     #expect(bounds.rail.width > 0 && bounds.archive.width > 0)
-                    #expect(abs(bounds.archive.width - 28) < 1)
-                    #expect(abs(bounds.archive.height - 28) < 1)
+                    #expect(abs(bounds.archive.width - metrics.utilityButtonSide) < 1)
+                    #expect(abs(bounds.archive.height - metrics.utilityButtonSide) < 1)
                     #expect(bounds.rail.insetBy(dx: -0.5, dy: -0.5).contains(bounds.archive))
                     if side.orientation == .horizontal {
-                        #expect(abs(bounds.rail.maxX - bounds.archive.maxX - metrics.topPadding) < 1)
+                        #expect(abs(bounds.rail.maxX - bounds.archive.maxX - metrics.collapseInset) < 1)
                     }
                     if expected.needsScroll {
                         // The viewport reporter uses rail-local coordinates. Archive chrome
@@ -1058,22 +1102,8 @@ struct PickyHUDDockGroupRenderGalleryTests {
         """
     }
 
-    private func folderSize(
-        metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat,
-        tileHeight: CGFloat? = nil
-    ) -> CGSize {
-        CGSize(
-            width: PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: fontScale),
-            height: (tileHeight ?? metrics.sessionTileHeight)
-                + metrics.groupHeaderContentSpacing
-                + PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
-        )
-    }
-
-    private func folderBadgeTopInset(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
-        PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
-            + metrics.groupHeaderContentSpacing
+    private func folderSize(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGSize {
+        CGSize(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
     }
 
     private func listSize(memberCount: Int, metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGSize {

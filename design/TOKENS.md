@@ -161,6 +161,24 @@ Component 토큰:
 
 결정 사항: 기존 10pt(`DS.CornerRadius.large`)는 목표 scale에 없으므로 `radius.surface`(12pt)로 통합하고 삭제한다.
 
+### Dock chrome component geometry
+
+The dual-notch Dock uses fixed utility geometry across S/M/L so small controls
+remain clickable without growing to Pickle-tile size. These values belong to
+`PickyHUDDockMetrics` rather than general-purpose spacing or typography.
+
+| Component | Logical points | Contract |
+|---|---:|---|
+| Utility button | 24 × 24 | Hover and open popovers do not resize it |
+| Utility pair gap | 2 | Cross-axis pair, horizontal for vertical docks and vice versa |
+| Handle notch | 34 × 11 | Top or leading edge, inset into the shell |
+| Collapse notch | 28 × 11 | Opposite edge; 24pt hit depth reserved separately |
+| Restore button | 32 × 32, radius 10 | Logo only, anchored at the former handle |
+| Group tile | Same as session tile | Internal title; empty membership does not shrink it |
+
+Group labels retain `type.dockGroupIdentity` and truncate within the tile instead
+of expanding the rail. Full names remain available through help and accessibility.
+
 ## Material
 
 | 토큰 | 처리 | 용도 |

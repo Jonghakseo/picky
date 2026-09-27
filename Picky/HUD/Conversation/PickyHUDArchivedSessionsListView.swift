@@ -35,9 +35,11 @@ struct PickyHUDArchivedDockAccessView: View {
             isPresented.toggle()
         } label: {
             Image(systemName: "archivebox")
-                .frame(width: 28, height: 28)
+                .font(.system(size: 12, weight: .medium)) // design-token-exception: compact dock utility SF Symbol.
+                .foregroundStyle(DS.Colors.textSecondary)
+                .frame(width: 24, height: 24)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(PickyHUDDockUtilityButtonStyle())
         .background(GeometryReader { proxy in
             Color.clear.preference(key: PickyHUDDockArchiveFramePreferenceKey.self,
                 value: proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName)))

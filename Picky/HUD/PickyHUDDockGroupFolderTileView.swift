@@ -2,9 +2,9 @@
 //  PickyHUDDockGroupFolderTileView.swift
 //  Picky
 //
-//  Shared folder-tile composition used by the dock rail and offscreen render
-//  gallery. The callers supply tile and header wrappers so the rail preserves
-//  its picker, context-menu, and drag ownership around those visual surfaces.
+//  Shared square folder-tile composition used by the dock rail and offscreen
+//  gallery. The title stays inside the tile's bottom edge while each caller
+//  retains its picker, context-menu, and drag ownership.
 //
 
 import SwiftUI
@@ -17,17 +17,11 @@ struct PickyHUDDockGroupFolderTileView<Tile: View, Header: View>: View {
     @ViewBuilder let header: (PickyHUDDockGroupHeader) -> Header
 
     var body: some View {
-        VStack(spacing: metrics.groupHeaderContentSpacing) {
-            header(PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale))
-            tile()
-        }
-        // The interaction frame follows the CJK-safe identity width, not just
-        // the square tile, so the visible label is never outside its folder.
-        .frame(
-            width: PickyHUDDockGroupHeaderPresentation.labelWidth(
-                metrics: metrics,
-                fontScale: fontScale
-            )
-        )
+        tile()
+            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+            .overlay(alignment: .bottom) {
+                header(PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale))
+            }
+            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
     }
 }

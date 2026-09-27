@@ -122,6 +122,7 @@ struct PickyHUDDockRailView: View {
     var onExternalDragGeometryChange: (PickyHUDDockExternalDragRailGeometryInput) -> Void = { _ in }
     @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
     var archiveAccess: PickyHUDArchivedSessionAccess? = nil
+    var onMinimize: () -> Void = {}
 
     @Environment(\.colorScheme) private var colorScheme
     @State var isAddSlotExpanded = false
@@ -335,43 +336,25 @@ struct PickyHUDDockRailView: View {
     var body: some View {
         let _ = PickyPerf.event("dock_rail_body")
         let resolvedRailLength = overflowLayout.railLength
-        Group {
-            if dockSide.orientation == .horizontal {
-                HStack(spacing: 2) {
-                    dockAnchorHandle
-                    sessionsAndAddSlot
-                    if let archiveAccess {
-                        PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
-                                                      commands: archiveAccess.commands)
-                    }
+        PickyHUDDockChrome(
+            dockSide: dockSide, metrics: metrics, railLength: resolvedRailLength,
+            crossSize: railCrossSize, onMinimize: onMinimize
+        ) {
+            sessionsAndAddSlot
+        } utilities: {
+            let layout = dockSide.orientation == .horizontal
+                ? AnyLayout(VStackLayout(spacing: metrics.utilitySpacing))
+                : AnyLayout(HStackLayout(spacing: metrics.utilitySpacing))
+            layout {
+                if !projection.items.isEmpty { collapsibleAddAgentSlot }
+                if let archiveAccess {
+                    PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
+                                                  commands: archiveAccess.commands)
                 }
-                // Symmetric leading/trailing in horizontal so the dock doesn't
-                // look lopsided. Vertical's larger `bottomPadding` exists to
-                // give the `+` button breathing room below the dash; in
-                // horizontal the equivalent breathing room comes from the
-                // empty panel area to the right of the dock, not from internal
-                // padding.
-                .padding(.horizontal, metrics.topPadding)
-                .padding(.vertical, metrics.horizontalPadding)
-                .frame(width: resolvedRailLength, height: railCrossSize, alignment: .center)
-            } else {
-                // Keep the handle inside the opaque dock capsule so the AppKit-backed
-                // handle row retains a reliable hit target across its full width.
-                VStack(spacing: 2) {
-                    dockAnchorHandle
-                    sessionsAndAddSlot
-                    if let archiveAccess {
-                        PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
-                                                      commands: archiveAccess.commands)
-                    }
-                }
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.top, metrics.topPadding)
-                .padding(.bottom, metrics.bottomPadding)
-                .frame(width: railCrossSize, height: resolvedRailLength, alignment: .top)
             }
+        } handle: {
+            dockAnchorHandle
         }
-        .background(dockGlassBackground)
         .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
         .background(PickyHUDDockRailFrameReporter())
         .overlay { draggedFloatingIconOverlay }
@@ -546,60 +529,35 @@ struct PickyHUDDockRailView: View {
     }
 
     private var horizontalSessionsAndAddSlot: some View {
-        // Bottom-align so ungrouped Pickle icons (`sessionTileHeight`) share
-        // the same baseline as a grouped drawer. The collapsible `+` slot is
-        // not a Pickle and stays vertically centered in its wrapper.
-        HStack(alignment: .bottom, spacing: 2) {
-            HStack(alignment: .bottom, spacing: metrics.sessionSpacing) {
-                dockBodyItems
-            }
-            collapsibleAddAgentSlot
-                .frame(maxHeight: .infinity)
-        }
+        HStack(spacing: metrics.sessionSpacing) { dockBodyItems }
     }
 
-    @ViewBuilder
     private var verticalSessionsAndAddSlot: some View {
-        VStack(spacing: metrics.sessionSpacing) {
-            dockBodyItems
-        }
-        collapsibleAddAgentSlot
-            .padding(.top, metrics.addSlotTopPadding)
+        VStack(spacing: metrics.sessionSpacing) { dockBodyItems }
     }
 
     private var horizontalScrollableSessionsAndAddSlot: some View {
-        HStack(alignment: .bottom, spacing: 2) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: metrics.sessionSpacing) {
-                        dockBodyItems
-                    }
-                }
-                .frame(width: overflowLayout.sessionsViewportLength)
-                .background(PickyHUDDockRailViewportFrameReporter())
-                .onAppear { revealActiveSession(using: proxy) }
-                .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: metrics.sessionSpacing) { dockBodyItems }
             }
-            collapsibleAddAgentSlot
-                .frame(maxHeight: .infinity)
+            .frame(width: overflowLayout.sessionsViewportLength)
+            .background(PickyHUDDockRailViewportFrameReporter())
+            .onAppear { revealActiveSession(using: proxy) }
+            .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
         }
     }
 
-    @ViewBuilder
     private var verticalScrollableSessionsAndAddSlot: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: metrics.sessionSpacing) {
-                    dockBodyItems
-                }
+                VStack(spacing: metrics.sessionSpacing) { dockBodyItems }
             }
             .frame(height: overflowLayout.sessionsViewportLength)
             .background(PickyHUDDockRailViewportFrameReporter())
             .onAppear { revealActiveSession(using: proxy) }
             .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
         }
-        collapsibleAddAgentSlot
-            .padding(.top, metrics.addSlotTopPadding)
     }
 
     private func revealActiveSession(using proxy: ScrollViewProxy) {
@@ -696,7 +654,8 @@ struct PickyHUDDockRailView: View {
                                 ),
                                 visibleIndex: slot.visibleIndex
                             ),
-                            hoverAction: { onDockGroupTileHover(group.id, $0) }
+                            hoverAction: { onDockGroupTileHover(group.id, $0) },
+                            hidesCaptionForGroup: true
                         )
                         // A group keeps its visual boundary even after it shrinks
                         // to one visible Pickle, while preserving the full tile.
@@ -737,7 +696,16 @@ struct PickyHUDDockRailView: View {
             }
         } header: { header in
             header
-                .onTapGesture { activateGroupTile(group.id) }
+                .onHover { onDockGroupTileHover(group.id, $0) }
+                .onTapGesture {
+                    if case .singleSession(let id) = PickyHUDDockGroupTilePresentation.resolve(
+                        visibleMemberIDs: memberCards.map(\.id)
+                    ) {
+                        onOpenSession(id)
+                    } else {
+                        activateGroupTile(group.id)
+                    }
+                }
                 .pickyDockGroupContextMenu(
                     group: group,
                     onRename: { presentRenameDialog(for: group) },
@@ -855,7 +823,8 @@ struct PickyHUDDockRailView: View {
     private func iconView(
         for session: PickyHUDDockSession,
         slot: PickyDockSlot,
-        hoverAction: ((Bool) -> Void)? = nil
+        hoverAction: ((Bool) -> Void)? = nil,
+        hidesCaptionForGroup: Bool = false
     ) -> some View {
         if effectiveDraggingSessionID == session.id {
             // The dragged Pickle is rendered as a floating overlay that never
@@ -884,6 +853,7 @@ struct PickyHUDDockRailView: View {
                 metrics: metrics,
                 isDragging: false,
                 dragOffset: .zero,
+                hidesCaptionForGroup: hidesCaptionForGroup,
                 onHoverChanged: { hovering in
                     if let hoverAction {
                         hoverAction(hovering)
@@ -1341,7 +1311,6 @@ struct PickyHUDDockRailView: View {
     /// purely decorative and never claims clicks.
     private var dockAnchorHandle: some View {
         let isActive = isHandleHovered || isHandleDragging
-        let presentation = PickyHUDDockHandlePresentation.resolve(isActive: isActive)
         return PickyHUDDockAnchorHandleHost(
             onHoverChanged: { hovering in isHandleHovered = hovering },
             onDragChanged: { delta in
@@ -1354,33 +1323,12 @@ struct PickyHUDDockRailView: View {
             },
             onDoubleClick: onDockHandleDoubleClick
         )
-        // Fill the capsule's available inner width (railWidth minus the dock's
-        // 6pt horizontal padding on each side) so the handle row spans the
-        // entire top of the capsule.
         .frame(
-            maxWidth: dockSide.orientation == .horizontal ? nil : .infinity,
-            maxHeight: dockSide.orientation == .horizontal ? .infinity : nil
+            width: dockSide.orientation == .horizontal ? metrics.handleInset : metrics.handleNotchWidth,
+            height: dockSide.orientation == .horizontal ? metrics.handleNotchWidth : metrics.handleInset
         )
-        .frame(
-            width: dockSide.orientation == .horizontal ? metrics.handleAreaHeight : nil,
-            height: dockSide.orientation == .horizontal ? nil : metrics.handleAreaHeight
-        )
-        .overlay {
-            // Visible without hover so the drag affordance survives translucent
-            // light surfaces. Hover and drag expand and strengthen its contrast.
-            Capsule(style: .continuous)
-                .fill(presentation.foregroundColor.opacity(presentation.opacity))
-                .frame(
-                    width: dockSide.orientation == .horizontal
-                        ? metrics.handleHeight
-                        : (isActive ? metrics.handleActiveWidth : metrics.handleIdleWidth),
-                    height: dockSide.orientation == .horizontal
-                        ? (isActive ? metrics.handleActiveWidth : metrics.handleIdleWidth)
-                        : metrics.handleHeight
-                )
-                .animation(.easeOut(duration: 0.14), value: isHandleHovered)
-                .animation(.easeOut(duration: 0.14), value: isHandleDragging)
-                .allowsHitTesting(false)
+        .overlay(alignment: dockSide.orientation == .horizontal ? .leading : .top) {
+            PickyHUDDockHandleNotch(dockSide: dockSide, metrics: metrics, isActive: isActive)
         }
         .onDisappear {
             isHandleHovered = false
@@ -1391,46 +1339,6 @@ struct PickyHUDDockRailView: View {
         }
         .accessibilityLabel(L10n.t("dock.handle.accessibility"))
         .accessibilityHint(L10n.t("dock.handle.help"))
-    }
-
-    /// Frosted-glass panel that hosts the dock icons. Uses .ultraThinMaterial
-    /// so the desktop / app underneath actually shows through, then layers a
-    /// gradient stroke (bright top, dimmer bottom) for the macOS-style top
-    /// gloss, and an ambient shadow so the dock no longer disappears against
-    /// light backgrounds. Outer shape is a refined rounded rectangle (radius
-    /// scales with the preset) for a more polished panel feel than a full pill.
-    private var dockGlassBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
-        let style = PickyHUDDockSurfacePresentation.style(for: colorScheme)
-        return PickyHUDMaterialFill(
-            shape: shape,
-            fallback: DS.Colors.surface1,
-            material: style.materialKind.material
-        )
-            .overlay(
-                shape
-                    .fill(DS.Colors.surface1.opacity(style.surfaceOverlayOpacity))
-            )
-            .overlay(
-                shape
-                    .strokeBorder(
-                        DS.Colors.borderSubtle.opacity(style.borderOpacity),
-                        lineWidth: 0.8
-                    )
-            )
-            .compositingGroup()
-            .shadow(
-                color: Color.black.opacity(PickyHUDExpansion.dockShadowOpacity),
-                radius: PickyHUDExpansion.dockShadowRadius,
-                x: 0,
-                y: PickyHUDExpansion.dockShadowYOffset
-            )
-            .shadow(
-                color: Color.black.opacity(PickyHUDExpansion.dockTightShadowOpacity),
-                radius: PickyHUDExpansion.dockTightShadowRadius,
-                x: 0,
-                y: PickyHUDExpansion.dockTightShadowYOffset
-            )
     }
 
 }

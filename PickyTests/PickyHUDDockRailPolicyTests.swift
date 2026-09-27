@@ -91,112 +91,38 @@ struct PickyHUDDockRailPolicyTests {
         ) == base)
     }
 
-    @Test func folderLabelsUseTheRenderedIdentityFontForEveryPresetAndAppFontScale() {
+    @Test func embeddedGroupIdentityDoesNotExpandEitherDockAxis() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
-            let groupCount = 2
             for fontScale: CGFloat in [1, 1.3] {
-                let vertical = PickyHUDDockRailLayoutPolicy.contentLength(
-                    sessionCount: 4,
-                    groupCount: groupCount,
-                    isAddSlotExpanded: false,
-                    dockSide: .left,
-                    metrics: metrics,
-                    fontScale: fontScale
-                )
-                let horizontal = PickyHUDDockRailLayoutPolicy.contentLength(
-                    sessionCount: 4,
-                    groupCount: groupCount,
-                    isAddSlotExpanded: false,
-                    dockSide: .bottom,
-                    metrics: metrics,
-                    fontScale: fontScale
-                )
-                let verticalCrossSize = PickyHUDDockRailLayoutPolicy.verticalCrossSize(
-                    groupCount: groupCount,
-                    metrics: metrics,
-                    fontScale: fontScale
-                )
-                let horizontalCrossSize = PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
-                    groupCount: groupCount,
-                    metrics: metrics,
-                    fontScale: fontScale
-                )
-                let labelWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
-                    metrics: metrics,
-                    fontScale: fontScale
-                )
-                let folderCrossSize = max(
-                    metrics.railWidth,
-                    labelWidth + (metrics.horizontalPadding * 2)
-                )
-                let renderedFont = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)
-                let renderedLineHeight = renderedFont.ascender - renderedFont.descender + renderedFont.leading
-                let labelHeight = PickyHUDDockGroupHeaderPresentation.labelHeight(
-                    metrics: metrics,
-                    fontScale: fontScale
-                )
-                let labelChrome = labelHeight + metrics.groupHeaderContentSpacing
-
-                #expect(labelHeight >= renderedLineHeight)
-                #expect(vertical == PickyHUDDockLayout.dockRailHeight(
-                    sessionCount: 4,
-                    isAddSlotExpanded: false,
-                    metrics: metrics
-                ) + PickyHUDDockLayout.dockGroupHeaderExtraLength(
-                    groupHeaderCount: groupCount,
-                    metrics: metrics,
-                    fontScale: fontScale
-                ))
-                #expect(horizontal == PickyHUDDockLayout.horizontalDockRailLength(
-                    sessionCount: 4,
-                    groupCount: groupCount,
-                    isAddSlotExpanded: false,
-                    metrics: metrics,
-                    fontScale: fontScale
-                ))
-                // A CJK-safe label grows the rail's cross axis once per
-                // folder block, never once per member.
-                #expect(verticalCrossSize == folderCrossSize)
-                #expect(horizontalCrossSize == folderCrossSize + labelChrome)
+                let font = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)
+                let height = PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
+                #expect(height >= font.ascender - font.descender + font.leading)
+                for side: PickyHUDDockSide in [.left, .bottom] {
+                    let grouped = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 4, groupCount: 3,
+                        isAddSlotExpanded: false, dockSide: side, metrics: metrics, fontScale: fontScale)
+                    let ungrouped = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 4,
+                        isAddSlotExpanded: false, dockSide: side, metrics: metrics, fontScale: fontScale)
+                    #expect(grouped == ungrouped)
+                    #expect(PickyHUDDockRailLayoutPolicy.crossSize(groupCount: 3, dockSide: side, metrics: metrics, fontScale: fontScale)
+                        == PickyHUDDockRailLayoutPolicy.crossSize(groupCount: 0, dockSide: side, metrics: metrics, fontScale: fontScale))
+                }
             }
         }
     }
 
-    @Test func horizontalRailLengthIncludesFontScaledGroupIdentityWidths() {
+    @Test func archiveAndNewPickleShareTheSameFixedUtilityColumn() {
         let metrics = PickyHUDDockMetrics(preset: .small)
-        let sessionCount = 5
-        let groupCount = 3
-        let fontScale: CGFloat = 1.3
-        let groupSlotWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
-            metrics: metrics,
-            fontScale: fontScale
-        )
-        let expectedItemWidth = CGFloat(sessionCount - groupCount) * metrics.sessionTileWidth
-            + CGFloat(groupCount) * groupSlotWidth
-        let expectedLength = (metrics.topPadding * 2)
-            + metrics.handleAreaHeight
-            + 2
-            + expectedItemWidth
-            + CGFloat(sessionCount - 1) * metrics.sessionSpacing
-            + 2
-            + PickyHUDDockLayout.addSlotFrameHeight(
-                isExpanded: false,
-                metrics: metrics
-            )
-
-        #expect(groupSlotWidth > metrics.sessionTileWidth)
-        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: sessionCount,
-            groupCount: groupCount,
-            isAddSlotExpanded: false,
-            dockSide: .bottom,
-            metrics: metrics,
-            fontScale: fontScale
-        ) == expectedLength)
+        for side: PickyHUDDockSide in [.left, .bottom] {
+            let withoutArchive = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 5, groupCount: 3,
+                isAddSlotExpanded: false, dockSide: side, metrics: metrics, hasArchiveAccess: false)
+            let withArchive = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 5, groupCount: 3,
+                isAddSlotExpanded: true, dockSide: side, metrics: metrics, hasArchiveAccess: true)
+            #expect(withoutArchive == withArchive)
+        }
     }
 
-    @Test func verticalRailLengthUsesHalfHeightForEmptyGroupSlotsOnly() {
+    @Test func emptyGroupsKeepTheirFullTileFootprint() {
         let metrics = PickyHUDDockMetrics(preset: .medium)
         let fullVerticalLength = PickyHUDDockRailLayoutPolicy.contentLength(
             sessionCount: 2,
@@ -231,7 +157,8 @@ struct PickyHUDDockRailPolicyTests {
             metrics: metrics
         )
 
-        #expect(fullVerticalLength - emptyVerticalLength == metrics.sessionTileHeight - metrics.emptyGroupSlotHeight)
+        #expect(fullVerticalLength == emptyVerticalLength)
+        #expect(metrics.emptyGroupSlotHeight == metrics.sessionTileHeight)
         #expect(fullHorizontalLength == emptyHorizontalLength)
     }
 
@@ -275,24 +202,14 @@ struct PickyHUDDockRailPolicyTests {
         ))
     }
 
-    @Test func groupHeaderFitsFourCJKCharactersAtEveryDockPresetAndFontScale() {
+    @Test func largerIdentityTextDoesNotMoveNeighboringTiles() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
-            for fontScale: CGFloat in [1, 1.3] {
-                let font = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)
-                let fourCJKCharactersWidth = ("가나다라" as NSString).size(withAttributes: [.font: font]).width
-                let availableLabelWidth = PickyHUDDockGroupHeaderPresentation.labelWidth(
-                    metrics: metrics,
-                    fontScale: fontScale
-                )
-
-                // Measure the actual AppKit font paired with the SwiftUI label
-                // role, rather than relying on a brittle point-width constant.
-                #expect(
-                    availableLabelWidth >= fourCJKCharactersWidth + metrics.groupHeaderContentSpacing,
-                    "\(preset) at \(fontScale)x truncates before four CJK characters"
-                )
-            }
+            #expect(PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: 1.3).pointSize
+                > PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: 1).pointSize)
+            #expect(PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: 1.3)
+                == PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: 1))
+            #expect(PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: 1) < metrics.sessionTileWidth)
         }
     }
 
@@ -602,11 +519,6 @@ struct PickyHUDDockRailPolicyTests {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             for fontScale: CGFloat in [1, 1.3] {
-                let labelChrome = PickyHUDDockGroupHeaderPresentation.labelHeight(
-                    metrics: metrics,
-                    fontScale: fontScale
-                ) + metrics.groupHeaderContentSpacing
-
                 for dockSide in PickyHUDDockSide.allCases {
                     let railCrossSize = dockSide.orientation == .horizontal
                         ? PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
@@ -621,17 +533,8 @@ struct PickyHUDDockRailPolicyTests {
                         )
                     let sourceCenter: CGPoint
                     if dockSide.orientation == .horizontal {
-                        // `horizontalSessionsAndAddSlot` bottom-aligns a loose
-                        // Pickle with folder tiles, placing it below the rail
-                        // center by the folder identity chrome.
-                        sourceCenter = CGPoint(
-                            x: 120,
-                            y: railCrossSize - metrics.horizontalPadding - (metrics.sessionTileHeight / 2)
-                        )
-                        #expect(sourceCenter.y > railCrossSize / 2)
-                        #expect(railCrossSize >= metrics.sessionTileHeight
-                            + (metrics.horizontalPadding * 2)
-                            + labelChrome)
+                        sourceCenter = CGPoint(x: 120, y: railCrossSize / 2)
+                        #expect(railCrossSize >= metrics.sessionTileHeight + metrics.horizontalPadding * 2)
                     } else {
                         sourceCenter = CGPoint(x: railCrossSize / 2, y: 120)
                     }

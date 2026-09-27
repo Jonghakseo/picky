@@ -73,6 +73,41 @@ struct PickyPanelKeyboardShortcutTests {
         #expect(closeRequestCount == 1)
     }
 
+    @Test func minimizedDockOnlyAcceptsPointerOverRestoreChromeAndDoesNotClaimCommandW() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 100, y: 200, width: 600, height: 500),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
+        )
+        var closes = 0
+        panel.onCloseRequested = { closes += 1 }
+        panel.acceptsMouseMovedEvents = false
+        panel.minimizedVisibleChromeFrames = [CGRect(x: 20, y: 30, width: 32, height: 32)]
+        panel.isDockMinimized = true
+        #expect(panel.acceptsMouseMovedEvents)
+
+        // A click over the former card/rail must be delivered to the application below.
+        panel.updateMinimizedDockPointer(CGPoint(x: 400, y: 400))
+        #expect(panel.ignoresMouseEvents)
+        #expect(!panel.canBecomeKey)
+        #expect(!panel.performKeyEquivalent(with: try Self.keyEvent(characters: "w", keyCode: 13)))
+        #expect(closes == 0)
+
+        // The actual AppKit flag re-enables pointer delivery only over the 32pt logo.
+        panel.updateMinimizedDockPointer(CGPoint(x: 136, y: 654))
+        #expect(!panel.ignoresMouseEvents)
+        #expect(!panel.canBecomeKey)
+        panel.minimizedVisibleChromeFrames = []
+        panel.updateMinimizedDockPointer(CGPoint(x: 136, y: 654))
+        #expect(panel.ignoresMouseEvents)
+
+        panel.prepareForSessionFocus()
+        #expect(!panel.acceptsMouseMovedEvents)
+        #expect(!panel.ignoresMouseEvents)
+        #expect(panel.canBecomeKey)
+        #expect(panel.performKeyEquivalent(with: try Self.keyEvent(characters: "w", keyCode: 13)))
+        #expect(closes == 1)
+    }
+
     private static func keyEvent(
         characters: String,
         modifiers: NSEvent.ModifierFlags = .command,

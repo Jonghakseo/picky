@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct PickyHUDUnreadFocusRoutingTests {
-    @Test func focusesOnlyTheTargetDisplayPanel() {
+    @Test func focusesOnlyTheTargetDisplayAfterRestoringMinimizedInput() {
         let target = FakeHUDSessionFocusPanel()
         let other = FakeHUDSessionFocusPanel()
 
@@ -151,12 +151,17 @@ struct PickyHUDUnreadFocusRoutingTests {
 private final class FakeHUDSessionFocusPanel: PickyHUDSessionFocusPanelPresenting {
     private(set) var orderFrontCallCount = 0
     private(set) var makeKeyCallCount = 0
+    private var acceptsKeyFocus = false
+
+    func prepareForSessionFocus() { acceptsKeyFocus = true }
 
     func orderFrontRegardless() {
         orderFrontCallCount += 1
     }
 
     func makeKey() {
+        // Model the native minimized panel refusing key focus until restored.
+        guard acceptsKeyFocus else { return }
         makeKeyCallCount += 1
     }
 }

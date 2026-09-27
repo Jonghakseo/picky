@@ -35,6 +35,7 @@ struct PickyHUDView: View {
     var onDockHandleDragEnded: () -> Void = { }
     var onDockHandleDoubleClick: () -> Void = { }
     var onDockMinimize: () -> Void = { }
+    var onDockRestore: () -> Void = { }
     var onCardMeasuredSize: (CGSize) -> Void = { _ in }
     /// Reports the visible HUD chrome frames (dock rail, conversation card) in
     /// the root's top-left SwiftUI coordinate space. The overlay manager uses
@@ -252,6 +253,7 @@ struct PickyHUDView: View {
             }
             .onChange(of: placement.isMinimized) { _, isMinimized in
                 if isMinimized { clearMinimizedDockTransientState() }
+                else { onDockRestore() }
             }
             .onChange(of: placement.dockGroupListCreateRequestGroupID) { _, groupID in
                 guard let groupID else { return }
@@ -724,6 +726,7 @@ struct PickyHUDView: View {
     }
 
     private func restoreDock() {
+        onDockRestore()
         placement.isMinimized = false
     }
 
@@ -873,6 +876,7 @@ struct PickyHUDView: View {
         )
         switch effect {
         case .open(let sessionID):
+            onDockRestore()
             pendingRequestedOpenSessionID = sessionID
             openPendingRequestedSessionIfVisible()
         case .close(let sessionID):

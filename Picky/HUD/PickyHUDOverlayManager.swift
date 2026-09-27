@@ -204,6 +204,7 @@ final class PickyHUDOverlayManager {
         externalDockGeometryByDisplayID.removeValue(forKey: displayID)
         dockGroupListGeometryByDisplayID.removeValue(forKey: displayID)
         entry.visibleChromeFrames = []
+        entry.panel.minimizeDockInput()
         panelsByDisplayID[displayID] = entry
         entry.placement.isMinimized = true
     }
@@ -606,9 +607,8 @@ final class PickyHUDOverlayManager {
             onDockHandleDoubleClick: { [weak self] in
                 self?.handleDockHandleDoubleClick(displayID: displayID)
             },
-            onDockMinimize: { [weak self] in
-                self?.minimizeDock(displayID: displayID)
-            },
+            onDockMinimize: { [weak self] in self?.minimizeDock(displayID: displayID) },
+            onDockRestore: { [weak hudPanel] in hudPanel?.isDockMinimized = false },
             onCardMeasuredSize: { [weak self] size in
                 self?.handleCardMeasuredSize(displayID: displayID, size: size)
             },
@@ -838,6 +838,7 @@ final class PickyHUDOverlayManager {
 
     private func handleVisibleChromeFramesChange(displayID: CGDirectDisplayID, frames: [CGRect]) {
         guard var entry = panelsByDisplayID[displayID] else { return }
+        entry.panel.updateDockInput(isMinimized: entry.placement.isMinimized, visibleChromeFrames: frames)
         entry.visibleChromeFrames = frames
         panelsByDisplayID[displayID] = entry
     }

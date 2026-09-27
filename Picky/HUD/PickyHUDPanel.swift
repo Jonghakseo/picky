@@ -8,14 +8,78 @@
 import AppKit
 
 final class PickyHUDPanel: PickySecureSurfacePanel {
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { !isDockMinimized }
     override var canBecomeMain: Bool { false }
+
+    /// Retained layout space does not imply input ownership. Only the visible
+    /// restore button accepts pointer input while this panel is minimized.
+    var isDockMinimized = false {
+        didSet {
+            guard oldValue != isDockMinimized else { return }
+            if isDockMinimized {
+                acceptsMouseMovedEventsBeforeMinimizing = acceptsMouseMovedEvents
+                acceptsMouseMovedEvents = true
+                resignFocusedControl()
+                if isKeyWindow { resignKey() }
+            } else {
+                acceptsMouseMovedEvents = acceptsMouseMovedEventsBeforeMinimizing
+            }
+            synchronizeMinimizedPointerMonitoring()
+        }
+    }
+    var minimizedVisibleChromeFrames: [CGRect] = [] {
+        didSet { updateMinimizedDockPointer(NSEvent.mouseLocation) }
+    }
+    private var minimizedPointerMonitors: [Any] = []
+    private var acceptsMouseMovedEventsBeforeMinimizing = false
+
+    deinit {
+        for monitor in minimizedPointerMonitors { NSEvent.removeMonitor(monitor) }
+    }
+
+    func minimizeDockInput() {
+        minimizedVisibleChromeFrames = []
+        isDockMinimized = true
+    }
+
+    func updateDockInput(isMinimized: Bool, visibleChromeFrames: [CGRect]) {
+        isDockMinimized = isMinimized
+        minimizedVisibleChromeFrames = visibleChromeFrames
+    }
+
+    /// Real pointer monitors and unshown-panel tests use the same AppKit boundary.
+    func updateMinimizedDockPointer(_ point: CGPoint) {
+        ignoresMouseEvents = isDockMinimized && !PickyHUDInkPassThroughPolicy.contains(
+            point, swiftUIFrames: minimizedVisibleChromeFrames, panelFrame: frame
+        )
+    }
+
+    private func synchronizeMinimizedPointerMonitoring() {
+        for monitor in minimizedPointerMonitors { NSEvent.removeMonitor(monitor) }
+        minimizedPointerMonitors = []
+        updateMinimizedDockPointer(NSEvent.mouseLocation)
+        guard isDockMinimized, isVisible else { return }
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            self?.updateMinimizedDockPointer(NSEvent.mouseLocation)
+        }) { minimizedPointerMonitors.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            self?.updateMinimizedDockPointer(NSEvent.mouseLocation)
+            return event
+        }) { minimizedPointerMonitors.append(local) }
+    }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        if isDockMinimized { updateMinimizedDockPointer(NSEvent.mouseLocation) }
+    }
 
     /// Bridges AppKit's window-close command into the display-local SwiftUI
     /// card state. The HUD panel itself stays alive because it also owns the dock.
     var onCloseRequested: (() -> Void)?
 
     override func performClose(_ sender: Any?) {
+        guard !isDockMinimized else { return }
         guard let onCloseRequested else {
             super.performClose(sender)
             return
@@ -27,6 +91,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     /// nonactivating panel becomes key, AppKit may route the first Cmd+W here
     /// instead of through the SwiftUI-installed local keyDown monitor.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard !isDockMinimized else { return false }
         if handlePickyCloseWindowShortcut(event) { return true }
         return super.performKeyEquivalent(with: event)
     }
@@ -68,15 +133,15 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if handlePickyCloseWindowShortcut(event) { return }
-        if event.type == .leftMouseDown || event.type == .rightMouseDown {
+        if !isDockMinimized && handlePickyCloseWindowShortcut(event) { return }
+        if !isDockMinimized && (event.type == .leftMouseDown || event.type == .rightMouseDown) {
             PickyPerf.event("hud_panel_mouse_down")
             PickyPerf.interval("hud_panel_make_key") { makeKey() }
             if !clickHitsFocusedControl(event) {
                 resignFocusedControl()
             }
         }
-        if event.type == .keyDown {
+        if !isDockMinimized && event.type == .keyDown {
             restoreRememberedNativeInputResponderIfNeeded()
             if let terminal = focusedTerminalView,
                terminal.handleMacLineEditingShortcut(event) {
@@ -150,6 +215,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     }
 
     private func reportActualVisibility() {
+        synchronizeMinimizedPointerMonitoring()
         onActualVisibilityChanged?(isVisible)
     }
 }

@@ -389,7 +389,7 @@ enum PickyHubButtonRole {
 /// Rectangular button in three roles (mockup `.primary-button`,
 /// `.secondary-button`, `.danger-button`).
 struct PickyHubButton: View {
-    let title: LocalizedStringKey
+    let title: String
     var role: PickyHubButtonRole = .primary
     var systemImage: String?
     var isBusy = false
@@ -397,41 +397,45 @@ struct PickyHubButton: View {
     var minWidth: CGFloat? = nil
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var parentEnabled
     @State private var isHovering = false
-    @FocusState private var isFocused: Bool
+    @State private var isFocused = false
+    @State private var isPressed = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: PickyHubTheme.Spacing.related) {
-                if isBusy {
-                    ProgressView().controlSize(.mini)
-                } else if let systemImage {
-                    Image(systemName: systemImage)
-                        .pickyFont(size: 11, weight: .medium)
-                }
-                Text(title)
-                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
-                    .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: PickyHubTheme.Spacing.related) {
+            if isBusy {
+                ProgressView().controlSize(.mini)
+            } else if let systemImage {
+                Image(systemName: systemImage)
+                    .pickyFont(size: 11, weight: .medium)
             }
-            .foregroundColor(foreground)
-            .frame(minWidth: minWidth)
-            .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
-            .padding(.vertical, PickyHubTheme.Spacing.related)
-            .frame(minHeight: PickyHubTheme.Control.minimumHeight)
-            .background(
-                RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous)
-                    .fill(background)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous))
-
+            Text(LocalizedStringKey(title))
+                .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .medium)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(PickyHubPressStyle())
+        .foregroundColor(foreground)
+        .frame(minWidth: minWidth)
+        .padding(.horizontal, PickyHubTheme.Control.horizontalInset)
+        .padding(.vertical, PickyHubTheme.Spacing.related)
+        .frame(minHeight: PickyHubTheme.Control.minimumHeight)
+        .background(
+            RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous)
+                .fill(background)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous)
+                .stroke(borderColor, lineWidth: 1)
+        )
+        .opacity(parentEnabled && !isBusy && isEnabled ? (isPressed ? 0.8 : 1) : 0.55)
+        .offset(y: isPressed && !reduceMotion ? 1 : 0)
+        .overlay {
+            PickyHubNativeButton(accessibilityLabel: L10n.t(title),
+                                 onPress: action,
+                                 onFocusChanged: { isFocused = $0 },
+                                 onPressedChanged: { isPressed = $0 })
+        }
         .disabled(isBusy || !isEnabled)
-        .focused($isFocused)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.control)
         .onHover { isHovering = $0 }
         .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)
@@ -569,7 +573,7 @@ struct PickyHubEmptyState: View {
     var systemImage: String = "tray"
     let title: LocalizedStringKey
     let message: LocalizedStringKey
-    var actionTitle: LocalizedStringKey?
+    var actionTitle: String?
     var actionSystemImage: String?
     var action: (() -> Void)?
 

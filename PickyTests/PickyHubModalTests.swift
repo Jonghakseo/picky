@@ -3,12 +3,35 @@
 //  PickyTests
 //
 
+import AppKit
 import SwiftUI
 import Testing
 @testable import Picky
 
 @MainActor
 struct PickyHubModalTests {
+    @Test func hubButtonKeepsItsAccessibleNameAndFullNativeHitArea() throws {
+        let host = NSHostingView(rootView: PickyHubButton(title: "common.close", role: .secondary) {})
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 160),
+                              styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        host.frame = window.contentView!.bounds
+        window.contentView = host
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        host.layoutSubtreeIfNeeded()
+
+        func buttons(in view: NSView) -> [NSButton] {
+            ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap { buttons(in: $0) }
+        }
+        let button = try #require(buttons(in: host).first)
+        #expect(button.accessibilityLabel() == L10n.t("common.close"))
+        #expect(button.bounds.width >= 24 && button.bounds.height >= PickyHubTheme.Control.minimumHeight)
+        #expect(button.isEnabled)
+    }
+
     @Test func dismissalCompletesOnceWithoutAViewLifecycleCallback() async {
         let host = PickyHubModalHost()
         var restorations = 0

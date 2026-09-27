@@ -232,7 +232,7 @@ Turn **Screen pointing & drawing** off under **Hub → Settings → Accounts and
 
 Pickles are independent Pi sessions shown in the Picky HUD dock. They are useful for long-running work that should continue in the background.
 
-The dock can be vertical or horizontal and can attach to the screen edge.
+The dock can be vertical or horizontal and can attach to the screen edge. Its handle sits at the top in vertical mode (left in horizontal mode); the compact action controls and collapse notch sit at the opposite end.
 
 ### 7.1 Dock states
 
@@ -262,6 +262,7 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
+| Click the notch at the bottom (right in horizontal mode) | Minimize the dock to a Picky logo button at the handle end. Click that button to expand the dock, or drag it to move the minimized dock without expanding it. |
 
 Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 top-level dock slots, top to bottom. A group always counts as one slot. If it has one visible Pickle, pressing its number opens that Pickle directly; larger groups open their member list, and empty groups open the recent-folder picker. While `Cmd` is held, every numbered slot shows its badge.
 
@@ -279,7 +280,7 @@ When you start a Pickle this way, Picky creates an empty Pickle for that folder 
 
 ### 7.4 Pickle groups
 
-Group related Pickles into one dock slot. Empty and multi-Pickle groups use a folder tile; a group with one visible Pickle renders that Pickle as a full session tile while preserving the group slot and its drop target. Each group has a quiet color-marked name header, so its identity stays visible without expanding the rail by member count.
+Group related Pickles into one dock slot. Empty and multi-Pickle groups use a folder tile; a group with one visible Pickle renders that Pickle as a full session tile while preserving the group slot and its drop target. Empty groups use the same tile height as other groups. Each group keeps its color-marked name inside the tile, including in horizontal mode, so its identity stays visible without expanding the rail by member count.
 
 Create a group:
 
@@ -290,7 +291,7 @@ Manage membership:
 
 - Ask the Picky main agent to organize existing Pickles. It uses the local `picky` CLI to list groups, create a named group, add/remove exact Pickle session IDs, or ungroup while keeping members. These operations update the same persisted dock layout used by the UI.
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
-- Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
+- Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group with active Pickles asks for confirmation before archiving them; an empty group or one whose members are already archived is removed immediately.
 - A group with one visible Pickle behaves like a normal Pickle tile when clicked: clicking it opens or closes that conversation card directly. Hovering it still shows the group's member list, including the group actions used to add another Pickle.
 - Hover any group with visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the group-panel corridor. Clicking a multi-Pickle folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
 - For a group with two or more visible Pickles, `Cmd + 1`…`9` or accessibility activation pins its member list for keyboard navigation. Opening a member list never changes the open conversation card; selecting a member opens its card and closes the list.
@@ -324,7 +325,7 @@ Right-click a group’s folder tile for more actions:
 | Rename | Rename the group via a dialog. |
 | Color | Pick the group's accent color. |
 | Ungroup (keep pickles) | Remove the group but keep its Pickles in the dock. |
-| Delete group + archive pickles | Remove the group and archive all its Pickles (with confirmation; an empty group is removed immediately with no prompt). |
+| Delete group + archive pickles | Remove the group and archive its active Pickles (with confirmation when any are active; no prompt when the group is empty or only has archived members). |
 
 ### 7.5 Archiving and undo
 
@@ -333,6 +334,8 @@ Archive methods:
 - Press and hold a Pickle dock icon until the hold timer completes.
 - Use the dock right-click menu → **Archive**.
 - Use the conversation card menu → **Archive**.
+
+If a Pickle still has tracked background work, archiving it asks whether to **Keep running and archive**, **Stop and archive**, or **Cancel**. The choice applies to that Pickle's running work; simply hiding its card does not stop it. If stopping fails, Picky shows an error instead of silently treating the work as stopped.
 
 After archiving:
 
@@ -362,6 +365,7 @@ The card contains:
 - Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; full-text reply and system bubbles longer than 50 lines collapse behind a **Show more** toggle, while older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
 - Subagent activity bubbles when the Pickle delegates work to Pi subagents (see 8.11).
 - Extension message bubbles when a Pi extension posts tagged output such as `bash_async` job completions (see 8.12).
+- A **Background tasks** shelf when the runtime reports tracked work. It shows active tasks and items needing attention; expand a row for details or use its **Stop** action when available. A background job may keep running after the current response ends. Some runtimes cannot track or stop background work, and the shelf identifies that limitation instead of claiming a task has stopped.
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
 - A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel. As progress advances, the drawer scrolls the current task into view.

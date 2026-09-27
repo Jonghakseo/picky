@@ -21,6 +21,9 @@ struct PickyHUDDockGroupFolderTileView<Tile: View, Header: View>: View {
             .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
             .overlay(alignment: .bottom) {
                 header(PickyHUDDockGroupHeader(group: group, metrics: metrics, fontScale: fontScale))
+                    .padding(.bottom, PickyHUDDockGroupHeaderPresentation.bottomInset(
+                        metrics: metrics, fontScale: fontScale
+                    ))
             }
             .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
     }

@@ -223,7 +223,7 @@ struct PickyHUDDockIconView: View {
     private var dockIconContent: some View {
         let todoProgressPresentation = PickyTodoProgressPresentation(state: session.todoState)
 
-        return VStack(spacing: max(1, 2 * metrics.scale)) {
+        return VStack(spacing: metrics.groupHeaderContentSpacing) {
             ZStack {
                 if isScreenContextArmed {
                     ZStack {
@@ -255,6 +255,9 @@ struct PickyHUDDockIconView: View {
                     }
                 }
             }
+
+            .scaleEffect(hidesCaptionForGroup ? metrics.groupPreviewGlyphSide / metrics.sessionLogoSide : 1)
+            .frame(height: hidesCaptionForGroup ? metrics.groupPreviewHeight : nil)
 
             Text(dockLabel)
                 .font(dockLabelFont)
@@ -301,12 +304,10 @@ struct PickyHUDDockIconView: View {
     }
 
     private var dockIconBackground: some View {
-        // Session tile in the dock: quiet transparent by default, subtle neutral
-        // plate on hover/preview, and a status-tinted selected outline while the
-        // Pickle is open. The old standalone accent dot is intentionally omitted;
-        // status now lives in the pickle glyph + selected outline.
+        // The approved study uses a quiet filled tile, with blue for running
+        // work. Keep selection, hover and archive feedback on that same surface.
         RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
-            .fill((isSelected || isSoftHighlighted) ? DS.Colors.surface1.opacity(0.24) : Color.clear)
+            .fill(hidesCaptionForGroup ? Color.clear : (session.status == .running ? DS.Colors.accentSubtle : DS.Colors.surface2))
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .fill(tileFillColor)
@@ -396,18 +397,18 @@ struct PickyHUDDockIconView: View {
 
     private var tileFillColor: Color {
         if isSelected { return statusColor.opacity(0.10) }
-        if isSoftHighlighted { return DS.Colors.surface1.opacity(0.58) }
+        if isSoftHighlighted { return DS.Colors.surface3 }
         return .clear
     }
 
     private var tileStrokeColor: Color {
         if isSelected { return statusColor.opacity(0.92) }
         if isSoftHighlighted { return DS.Colors.borderSubtle.opacity(0.66) }
-        return .clear
+        return session.status == .running && !hidesCaptionForGroup ? DS.Colors.accentText.opacity(0.5) : .clear
     }
 
     private var tileStrokeWidth: CGFloat {
-        isSelected ? 1.35 : (isSoftHighlighted ? 0.85 : 0)
+        isSelected ? 1.35 : (isSoftHighlighted ? 0.85 : (session.status == .running ? 0.75 : 0))
     }
 
     private var isSelected: Bool {
@@ -433,9 +434,7 @@ struct PickyHUDDockIconView: View {
     }
 
     private var dockLabelFont: Font {
-        PickyHUDDockLabelPolicy.containsHangul(dockLabel)
-            ? .system(size: metrics.sessionLabelFontSize, weight: .medium)
-            : .system(size: metrics.sessionLabelFontSize, weight: .medium, design: .rounded)
+        Font(PickyHUDTypography.labelSemiboldNSFont(fontScale: fontScale))
     }
 
     private var tileScale: CGFloat {
@@ -863,12 +862,14 @@ struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
     var onDragChanged: (CGPoint) -> Void
     var onDragEnded: () -> Void
     var onDoubleClick: () -> Void
+    var onClick: (() -> Void)? = nil
 
     final class Coordinator {
         var onHoverChanged: ((Bool) -> Void)?
         var onDragChanged: ((CGPoint) -> Void)?
         var onDragEnded: (() -> Void)?
         var onDoubleClick: (() -> Void)?
+        var onClick: (() -> Void)?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -878,6 +879,7 @@ struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
         context.coordinator.onDragChanged = onDragChanged
         context.coordinator.onDragEnded = onDragEnded
         context.coordinator.onDoubleClick = onDoubleClick
+        context.coordinator.onClick = onClick
         let view = PickyHUDDockAnchorHandleNSView()
         view.coordinator = context.coordinator
         return view
@@ -888,6 +890,7 @@ struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
         context.coordinator.onDragChanged = onDragChanged
         context.coordinator.onDragEnded = onDragEnded
         context.coordinator.onDoubleClick = onDoubleClick
+        context.coordinator.onClick = onClick
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
@@ -899,6 +902,7 @@ struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
         coordinator.onDragChanged = nil
         coordinator.onDragEnded = nil
         coordinator.onDoubleClick = nil
+        coordinator.onClick = nil
     }
 }
 
@@ -1057,10 +1061,14 @@ final class PickyHUDCardResizeHandleNSView: NSView {
 final class PickyHUDDockAnchorHandleNSView: NSView {
     weak var coordinator: PickyHUDDockAnchorHandleHost.Coordinator?
     private var dragStartScreenPoint: CGPoint?
+    private var hasDragged = false
+    private weak var capturedPanel: PickyHUDPanel?
+    var pointerLocation: () -> CGPoint = { NSEvent.mouseLocation }
     private var trackingArea: NSTrackingArea?
     private var hasClosedHandPushed = false
 
     override var isFlipped: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     deinit {
         cancelInteraction(notifyingCallbacks: false)
@@ -1108,12 +1116,17 @@ final class PickyHUDDockAnchorHandleNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        if event.clickCount >= 2 {
+        if event.clickCount >= 2 && coordinator?.onClick == nil {
             dragStartScreenPoint = nil
             coordinator?.onDoubleClick?()
             return
         }
-        dragStartScreenPoint = NSEvent.mouseLocation
+        dragStartScreenPoint = pointerLocation()
+        hasDragged = false
+        if let panel = window as? PickyHUDPanel, panel.isDockMinimized {
+            capturedPanel = panel
+            panel.setMinimizedPointerCapture(true)
+        }
         if !hasClosedHandPushed {
             NSCursor.closedHand.push()
             hasClosedHandPushed = true
@@ -1122,32 +1135,38 @@ final class PickyHUDDockAnchorHandleNSView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard let startPoint = dragStartScreenPoint else { return }
-        let delta = CGPoint(
-            x: NSEvent.mouseLocation.x - startPoint.x,
-            y: NSEvent.mouseLocation.y - startPoint.y
-        )
+        let point = pointerLocation()
+        let delta = CGPoint(x: point.x - startPoint.x, y: point.y - startPoint.y)
+        if coordinator?.onClick != nil && !hasDragged && hypot(delta.x, delta.y) < 4 { return }
+        hasDragged = true
         coordinator?.onDragChanged?(delta)
     }
 
     override func mouseUp(with event: NSEvent) {
-        let wasDragging = dragStartScreenPoint != nil
+        let hadPress = dragStartScreenPoint != nil
+        let wasDragging = hadPress && (hasDragged || coordinator?.onClick == nil)
         if hasClosedHandPushed {
             NSCursor.pop()
             hasClosedHandPushed = false
         }
         dragStartScreenPoint = nil
-        if wasDragging {
-            coordinator?.onDragEnded?()
-        }
+        hasDragged = false
+        capturedPanel?.setMinimizedPointerCapture(false)
+        capturedPanel = nil
+        if wasDragging { coordinator?.onDragEnded?() }
+        else if hadPress { coordinator?.onClick?() }
     }
 
     func cancelInteraction(notifyingCallbacks shouldNotify: Bool = true) {
-        let wasDragging = dragStartScreenPoint != nil
+        let wasDragging = dragStartScreenPoint != nil && (hasDragged || coordinator?.onClick == nil)
         if hasClosedHandPushed {
             NSCursor.pop()
             hasClosedHandPushed = false
         }
         dragStartScreenPoint = nil
+        hasDragged = false
+        capturedPanel?.setMinimizedPointerCapture(false)
+        capturedPanel = nil
         guard shouldNotify else { return }
         coordinator?.onHoverChanged?(false)
         if wasDragging {

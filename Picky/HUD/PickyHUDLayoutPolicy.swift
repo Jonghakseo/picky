@@ -138,7 +138,7 @@ struct PickyHUDDockMetrics: Equatable {
     // Dock chrome stays usable at S without growing to session-tile size at L.
     var utilityButtonSide: CGFloat { 24 }
     var utilitySpacing: CGFloat { 2 }
-    var chromeSpacing: CGFloat { DS.Spacing.space1 }
+    var chromeSpacing: CGFloat { 6 }
     var handleInset: CGFloat { 20 }
     var collapseInset: CGFloat { 28 }
     var handleNotchWidth: CGFloat { 34 }
@@ -147,20 +147,17 @@ struct PickyHUDDockMetrics: Equatable {
     var minimizedSide: CGFloat { 32 }
     var minimizedCornerRadius: CGFloat { 10 } // component exception: approved compact restore-button silhouette.
     var iconSide: CGFloat { scaled(PickyHUDDockLayout.addSlotButtonSide) }
-    var iconCornerRadius: CGFloat { scaled(12) }
-    /// Outer dock capsule corner radius. Reduced from a full capsule to a refined
-    /// rounded rectangle so the dock reads as a polished panel rather than a pill.
-    /// Scales with the preset: S ≈ 10pt, M ≈ 12pt, L = 14pt.
-    var outerCornerRadius: CGFloat { scaled(14) }
+    var iconCornerRadius: CGFloat { 9 }
+    /// Approved shell and tile radii do not change with the dock preset.
+    var outerCornerRadius: CGFloat { 14 }
     var sessionTileWidth: CGFloat { max(40, scaled(54)) }
-    var sessionTileHeight: CGFloat { max(42, scaled(54)) }
+    var sessionTileHeight: CGFloat { sessionTileWidth }
     /// Membership changes never resize a group or move neighboring tiles.
     var emptyGroupSlotHeight: CGFloat { sessionTileHeight }
-    var sessionTileCornerRadius: CGFloat { scaled(9) }
+    var sessionTileCornerRadius: CGFloat { 9 }
     var sessionLogoSide: CGFloat { max(17, scaled(24)) }
-    var sessionLabelFontSize: CGFloat { max(10.5, scaled(15)) }
     var sessionSpacing: CGFloat { max(7, scaled(9)) }
-    var horizontalPadding: CGFloat { max(3, scaled(4)) }
+    var horizontalPadding: CGFloat { 5 }
     var topPadding: CGFloat { max(3, scaled(4)) }
     var bottomPadding: CGFloat { max(8, scaled(10)) }
     var addSlotTopPadding: CGFloat { max(5, scaled(7)) }
@@ -168,9 +165,9 @@ struct PickyHUDDockMetrics: Equatable {
     var collapsedAddSlotVisualHeight: CGFloat { max(10, scaled(PickyHUDDockLayout.collapsedAddSlotVisualHeight)) }
     var addSlotCollapsedExpansionReserve: CGFloat { 0 }
     var handleAreaHeight: CGFloat { max(12, scaled(PickyHUDExpansion.dockHandleAreaHeight)) }
-    var handleIdleWidth: CGFloat { max(16, scaled(18)) }
+    var handleIdleWidth: CGFloat { 15 }
     var handleActiveWidth: CGFloat { max(22, scaled(24)) }
-    var handleHeight: CGFloat { max(2.5, scaled(3)) }
+    var handleHeight: CGFloat { 2.5 }
     var plusFontSize: CGFloat { max(11, scaled(13)) }
     var collapsedDashWidth: CGFloat { max(16, scaled(18)) }
     var collapsedDashHeight: CGFloat { max(1, 1 * scale) }
@@ -181,7 +178,10 @@ struct PickyHUDDockMetrics: Equatable {
     /// deliberate `space.1` vertical hit insets. The label-to-tile gap is also
     /// `space.1`, so the full group block follows the 4pt spacing scale.
     var groupHeaderVerticalInset: CGFloat { scaled(4) } // space.1
-    var groupHeaderContentSpacing: CGFloat { scaled(4) } // space.1
+    var groupHeaderContentSpacing: CGFloat { 2 }
+    var groupPreviewHeight: CGFloat { 20 }
+    var groupPreviewGlyphSide: CGFloat { 13 }
+    var chromeSeparatorThickness: CGFloat { 0.5 }
     /// Maximum width for both the content-fitting group list and mini preview.
     /// Dock-panel geometry scales with the dock preset. The large-preset baselines
     /// map to the design system's 4pt spacing and shape tokens.
@@ -301,7 +301,7 @@ enum PickyHUDDockLayout {
     static func dockRailSessionsHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
         let count = max(1, sessionCount)
         return CGFloat(count) * metrics.sessionTileHeight + CGFloat(count - 1) * metrics.sessionSpacing
-            + metrics.chromeSpacing * 2 + 1 + metrics.utilityButtonSide
+            + metrics.chromeSpacing * 2 + metrics.chromeSeparatorThickness + metrics.utilityButtonSide
     }
 
     static func dockRailHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {

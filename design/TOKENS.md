@@ -163,6 +163,18 @@ Component 토큰:
 
 ### Dock chrome component geometry
 
+The approved dual-notch study also fixes the visual treatment: 15 × 2.5pt grip,
+14pt shell radius, 9pt tile radius, 5pt cross-axis padding, 6pt utility separator
+spacing, and a 0.5pt separator. Session labels use 11.5pt semibold system text
+at the app font scale, not the Dock preset scale. Tiles have a neutral surface;
+running tiles use the subtle action fill and keep their status ring. A folder
+shows two 13pt member glyphs in a 20pt row, followed by a 2pt gap and its title.
+That whole block is centered vertically, including empty and single-member
+groups. Group color remains a faint 4% tint. The shell uses the study's native
+`hudWindow` material (`withinWindow`, active), with a solid semantic fallback
+for Reduce Transparency and a 12% black shadow (8pt radius, 3pt offset).
+
+
 The dual-notch Dock uses fixed utility geometry across S/M/L so small controls
 remain clickable without growing to Pickle-tile size. These values belong to
 `PickyHUDDockMetrics` rather than general-purpose spacing or typography.

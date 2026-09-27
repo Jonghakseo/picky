@@ -69,7 +69,7 @@ struct PickySessionProjectionV2ApplicationTests {
                 makeRow: { PickyHUDDockGroupListRowModel(session: $0, assistantMessageAt: $1) }
             )
             let folderIDs = snapshot.memberIDsByRecency(in: group).filter { sessions[$0] != nil }
-            #expect(PickyHUDDockFolderBadgeViewModel(memberIDs: folderIDs).glyphMemberIDs == Array(rows.map(\.id).prefix(3)))
+            #expect(PickyHUDDockFolderBadgeViewModel(memberIDs: folderIDs).glyphMemberIDs == Array(rows.map(\.id).prefix(2)))
             #expect(PickyHUDDockGroupListKeyboardPolicy.rowID(forShortcutNumber: 1, rowIDs: rows.map(\.id)) == rows.first?.id)
             return rows.map(\.id)
         }

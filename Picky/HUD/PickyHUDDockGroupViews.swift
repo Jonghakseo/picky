@@ -200,11 +200,16 @@ enum PickyHUDDockGroupHeaderPresentation {
     /// The identity stays inset inside the tile at every app font scale.
     /// Longer names truncate; the full name remains available via help and accessibility.
     static func labelWidth(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
-        metrics.sessionTileWidth - (metrics.groupHeaderContentSpacing * 2)
+        metrics.sessionTileWidth - 6
     }
 
     static func labelHeight(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
         ceil(lineHeight(for: labelFont(fontScale: fontScale)))
+    }
+
+    static func bottomInset(metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
+        max(0, (metrics.sessionTileHeight - metrics.groupPreviewHeight
+            - metrics.groupHeaderContentSpacing - labelHeight(metrics: metrics, fontScale: fontScale)) / 2)
     }
 
     private static func lineHeight(for font: NSFont) -> CGFloat {
@@ -213,8 +218,8 @@ enum PickyHUDDockGroupHeaderPresentation {
 }
 
 enum PickyHUDDockGroupSurfacePresentation {
-    static let tintOpacity = 0.12
-    static let borderOpacity = 0.78
+    static let tintOpacity = 0.04
+    static let borderOpacity = 1.0
 }
 
 /// Identity inset into the bottom of a folder tile. The rail owns the
@@ -226,7 +231,7 @@ struct PickyHUDDockGroupHeader: View {
 
     var body: some View {
         Text(group.displayName)
-            .font(PickyHUDDockGroupHeaderPresentation.font)
+            .font(Font(PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)))
             // A group name is identity, not metadata. Primary text remains
             // readable after the rail adapts its material to the appearance.
             .foregroundStyle(DS.Colors.textPrimary)
@@ -298,7 +303,7 @@ struct PickyDockGroupDrawerBackground: ViewModifier {
                         DS.Colors.borderStrong.opacity(
                             PickyHUDDockGroupSurfacePresentation.borderOpacity
                         ),
-                        lineWidth: 0.5
+                        lineWidth: 0.75
                     )
             )
     }
@@ -348,10 +353,10 @@ struct PickyHUDDockFolderBadgeViewModel {
     let overflowCount: Int
 
     init(memberIDs: [String]) {
-        self.glyphMemberIDs = Array(memberIDs.prefix(3))
+        self.glyphMemberIDs = Array(memberIDs.prefix(2))
         self.overflowCount = PickyDockFolderGlyphPolicy.overflowCount(
             memberCount: memberIDs.count,
-            glyphCellCount: 3
+            glyphCellCount: 2
         )
     }
 }
@@ -412,12 +417,8 @@ extension View {
 }
 
 /// App-drawer style badge that represents a group as a single dock
-/// slot. Member pickles are shown as mini glyphs inside a rounded folder
-/// container laid out as a 2x2 grid; the visible glyph count communicates
-/// the member count (so the header no longer needs a count chip). When more
-/// than four members exist, the fourth cell collapses into a `+N` tile. An
-/// unread chip in the top-right corner mirrors the per-Pickle blue
-/// unread dot pattern.
+/// slot. Two recent member glyphs and the group name form one centered block.
+/// The member list retains the complete group; unread and shortcut badges remain visible.
 struct PickyHUDDockCollapsedGroupBadge: View {
     let members: [PickyHUDDockSession]
     let unreadCount: Int
@@ -448,65 +449,22 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     /// and the difference the user cares about is that a pinned tile stays lit.
     private var isLifted: Bool { isHovered || isListPinned }
 
-    private enum GridCell: Identifiable {
-        case member(PickyHUDDockSession)
-        case overflow(Int)
-        case empty(Int)
-
-        var id: String {
-            switch self {
-            case .member(let card): return "m-\(card.id)"
-            case .overflow(let n): return "o-\(n)"
-            case .empty(let i): return "e-\(i)"
-            }
-        }
-    }
-
-    /// Up to four cells: the three most recently updated members are shown first,
-    /// then a `+N` cell for every member behind them.
-    private var cells: [GridCell] {
-        let presentation = PickyHUDDockFolderBadgeViewModel(
-            memberIDs: members.map { $0.id }
-        )
-        let membersByID = Dictionary(uniqueKeysWithValues: members.map { ($0.id, $0) })
-        var result = presentation.glyphMemberIDs.compactMap { membersByID[$0] }.map { GridCell.member($0) }
-        if presentation.overflowCount > 0 {
-            result.append(.overflow(presentation.overflowCount))
-        }
-        var pad = 0
-        while result.count < 4 {
-            result.append(.empty(pad))
-            pad += 1
-        }
-        return Array(result.prefix(4))
-    }
-
     var body: some View {
-        let containerSide = min(
-            metrics.sessionTileWidth,
-            metrics.sessionTileHeight - PickyHUDDockGroupHeaderPresentation.labelHeight(
-                metrics: metrics,
-                fontScale: fontScale
-            ) - metrics.groupHeaderContentSpacing
-        )
-        let inset = max(2, containerSide * 0.08)
-        let gap = max(2, containerSide * 0.06)
-        let cellSide = max(8, (containerSide - inset * 2 - gap) / 2)
-        let glyphSide = max(8, cellSide * 0.9)
-        let grid = cells
-
-        ZStack(alignment: .topTrailing) {
-            VStack(spacing: gap) {
-                ForEach(0..<2, id: \.self) { row in
-                    HStack(spacing: gap) {
-                        ForEach(0..<2, id: \.self) { col in
-                            cellView(grid[row * 2 + col], side: cellSide, glyphSide: glyphSide)
-                        }
+        let preview = PickyHUDDockFolderBadgeViewModel(memberIDs: members.map(\.id))
+        let visibleMembers = members.filter { preview.glyphMemberIDs.contains($0.id) }
+        return ZStack(alignment: .topTrailing) {
+            VStack(spacing: metrics.groupHeaderContentSpacing) {
+                HStack(spacing: 3) {
+                    ForEach(visibleMembers, id: \.id) { member in
+                        PickyDockMiniPickleGlyph(status: member.status, side: metrics.groupPreviewGlyphSide)
                     }
                 }
+                .frame(height: metrics.groupPreviewHeight)
+                Color.clear.frame(height: PickyHUDDockGroupHeaderPresentation.labelHeight(
+                    metrics: metrics, fontScale: fontScale
+                ))
             }
-            .frame(width: containerSide, height: containerSide)
-            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight, alignment: .top)
+            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
             .background {
                 Color.clear.pickyDockGroupDrawer(
                     tint: tint,
@@ -578,31 +536,10 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         }
     }
 
-    @ViewBuilder
-    private func cellView(_ entry: GridCell, side: CGFloat, glyphSide: CGFloat) -> some View {
-        switch entry {
-        case .member(let card):
-            PickyDockMiniPickleGlyph(status: card.status, side: glyphSide)
-                .frame(width: side, height: side)
-        case .overflow(let n):
-            RoundedRectangle(cornerRadius: max(3, side * 0.28), style: .continuous)
-                .fill(DS.Colors.surface3)
-                .frame(width: side, height: side)
-                .overlay(
-                    Text("+\(n)")
-                        .pickyFont(size: max(8, side * 0.42), weight: .medium)
-                        .foregroundColor(DS.Colors.textPrimary)
-                )
-        case .empty:
-            Color.clear
-                .frame(width: side, height: side)
-        }
-    }
 }
 
-/// Dashed-outline create button rendered for a group that currently has no
-/// visible members. It remains a stable drop target while also letting the
-/// user start a Pickle that will be assigned to this group automatically.
+/// The empty group keeps the same centered composition and drop target.
+/// Clicking creates a Pickle assigned to this group.
 struct PickyHUDDockGroupEmptySlot: View {
     let color: PickyDockGroupColor
     let metrics: PickyHUDDockMetrics
@@ -613,29 +550,18 @@ struct PickyHUDDockGroupEmptySlot: View {
 
     var body: some View {
         Button(action: onCreatePickle) {
-            RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                .strokeBorder(
-                    color.accent.opacity(0.55),
-                    style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                        .fill(color.accent.opacity(0.06))
-                )
-                .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
-                .overlay(alignment: .top) {
-                    Image(systemName: "plus")
-                        .font(.system(size: metrics.plusFontSize, weight: .medium))
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .frame(
-                            width: metrics.sessionTileWidth,
-                            height: metrics.sessionTileHeight - PickyHUDDockGroupHeaderPresentation.labelHeight(
-                                metrics: metrics,
-                                fontScale: fontScale
-                            )
-                        )
-                }
-                .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+            VStack(spacing: metrics.groupHeaderContentSpacing) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 16)) // design-token-exception: approved empty-folder glyph inside the fixed 20pt preview row.
+                    .foregroundStyle(DS.Colors.textSecondary)
+                    .frame(height: metrics.groupPreviewHeight)
+                Color.clear.frame(height: PickyHUDDockGroupHeaderPresentation.labelHeight(
+                    metrics: metrics, fontScale: fontScale
+                ))
+            }
+            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+            .pickyDockGroupDrawer(tint: color.accent, cornerRadius: metrics.iconCornerRadius)
+            .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .pickyDockGroupEmphasis(

@@ -68,6 +68,48 @@ struct PickyHUDDockMinimizedPresentationTests {
         }
     }
 
+    @Test func minimizedLogoRestoresOnClickButMovesWithoutRestoringAfterDrag() throws {
+        var restores = 0
+        var deltas: [CGPoint] = []
+        var dragEnds = 0
+        let hosting = NSHostingView(rootView: PickyHUDDockMinimizedButton(
+            onRestore: { restores += 1 }, onDragChanged: { deltas.append($0) },
+            onDragEnded: { dragEnds += 1 }
+        ))
+        hosting.frame = CGRect(x: 0, y: 0, width: 32, height: 32)
+        hosting.layoutSubtreeIfNeeded()
+        func findHandle(in view: NSView) -> PickyHUDDockAnchorHandleNSView? {
+            if let handle = view as? PickyHUDDockAnchorHandleNSView { return handle }
+            return view.subviews.lazy.compactMap { findHandle(in: $0) }.first
+        }
+        let handle = try #require(findHandle(in: hosting))
+        var pointer = CGPoint(x: 100, y: 100)
+        handle.pointerLocation = { pointer }
+        func event(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [],
+                timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+
+        handle.mouseDown(with: try event(.leftMouseDown))
+        pointer = CGPoint(x: 102, y: 101)
+        handle.mouseDragged(with: try event(.leftMouseDragged))
+        handle.mouseUp(with: try event(.leftMouseUp))
+        #expect(restores == 1)
+        #expect(deltas.isEmpty && dragEnds == 0)
+
+        pointer = CGPoint(x: 100, y: 100)
+        handle.mouseDown(with: try event(.leftMouseDown))
+        pointer = CGPoint(x: 130, y: 120)
+        handle.mouseDragged(with: try event(.leftMouseDragged))
+        // Returning to the press point must not turn a completed drag into a click.
+        pointer = CGPoint(x: 100, y: 100)
+        handle.mouseDragged(with: try event(.leftMouseDragged))
+        handle.mouseUp(with: try event(.leftMouseUp))
+        #expect(deltas == [CGPoint(x: 30, y: 20), .zero])
+        #expect(dragEnds == 1)
+        #expect(restores == 1)
+    }
+
     @Test func minimizedRailPreservesTheExpandedFootprintWhenOverflowing() {
         let layout = PickyDockLayout(entries: [
             .session(id: "first"), .session(id: "second"), .session(id: "third")

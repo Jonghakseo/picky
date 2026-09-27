@@ -169,7 +169,7 @@ extension PickyHUDDockRailView {
             showRecentPickleFolderPicker(anchorGroupID: nil, targetGroupID: nil)
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: metrics.plusFontSize, weight: .medium)) // design-token-exception: dock utility SF Symbol optical size.
+                .font(.system(size: baseProjection.items.isEmpty ? 20 : 13, weight: .medium)) // design-token-exception: approved 20pt empty-dock action and 13pt compact utility glyph.
                 .foregroundStyle(DS.Colors.accentText)
                 .frame(width: baseProjection.items.isEmpty ? metrics.sessionTileWidth : metrics.utilityButtonSide,
                        height: baseProjection.items.isEmpty ? metrics.sessionTileHeight : metrics.utilityButtonSide)

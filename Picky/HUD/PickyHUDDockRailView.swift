@@ -1,40 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct PickyHUDDockSurfaceStyle: Equatable {
-    let materialKind: PickyHUDMaterialKind
-    let surfaceOverlayOpacity: Double
-    let borderOpacity: Double
-}
-
-enum PickyHUDDockSurfacePresentation {
-    static func style(for colorScheme: ColorScheme) -> PickyHUDDockSurfaceStyle {
-        switch colorScheme {
-        case .light:
-            // Ultra-thin material can inherit a dark desktop almost unchanged,
-            // leaving light-appearance text with no contrast. A regular material
-            // and stronger semantic surface layer make the rail reliably light.
-            PickyHUDDockSurfaceStyle(
-                materialKind: .regular,
-                surfaceOverlayOpacity: 0.52,
-                borderOpacity: 0.78
-            )
-        case .dark:
-            PickyHUDDockSurfaceStyle(
-                materialKind: .ultraThin,
-                surfaceOverlayOpacity: 0.18,
-                borderOpacity: 0.55
-            )
-        @unknown default:
-            PickyHUDDockSurfaceStyle(
-                materialKind: .regular,
-                surfaceOverlayOpacity: 0.52,
-                borderOpacity: 0.78
-            )
-        }
-    }
-}
-
 struct PickyHUDDockRailView: View {
     let sessions: [PickyHUDDockSession]
     /// All live sessions, including collapsed members. Folder previews resolve

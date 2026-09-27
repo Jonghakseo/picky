@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Shared production shell, also used by the offscreen dock gallery.
@@ -10,7 +11,7 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
     @ViewBuilder var content: () -> Content
     @ViewBuilder var utilities: () -> Utilities
     @ViewBuilder var handle: () -> Handle
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var horizontal: Bool { dockSide.orientation == .horizontal }
 
@@ -21,8 +22,8 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
         layout {
             content()
             Rectangle().fill(DS.Colors.borderSubtle)
-                .frame(width: horizontal ? 1 : metrics.collapseNotchWidth,
-                       height: horizontal ? metrics.collapseNotchWidth : 1)
+                .frame(width: horizontal ? metrics.chromeSeparatorThickness : metrics.collapseNotchWidth,
+                       height: horizontal ? metrics.collapseNotchWidth : metrics.chromeSeparatorThickness)
             utilities()
                 .frame(width: horizontal ? metrics.utilityButtonSide : nil,
                        height: horizontal ? nil : metrics.utilityButtonSide)
@@ -41,31 +42,29 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
 
     private var surface: some View {
         let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
-        let style = PickyHUDDockSurfacePresentation.style(for: colorScheme)
-        return PickyHUDMaterialFill(shape: shape, fallback: DS.Colors.surface1, material: style.materialKind.material)
-            .overlay(shape.fill(DS.Colors.surface1.opacity(style.surfaceOverlayOpacity)))
-            .overlay(shape.strokeBorder(DS.Colors.borderSubtle.opacity(style.borderOpacity), lineWidth: 0.8))
-            .compositingGroup()
-            .shadow(color: .black.opacity(PickyHUDExpansion.dockShadowOpacity),
-                    radius: PickyHUDExpansion.dockShadowRadius, y: PickyHUDExpansion.dockShadowYOffset)
-            .shadow(color: .black.opacity(PickyHUDExpansion.dockTightShadowOpacity),
-                    radius: PickyHUDExpansion.dockTightShadowRadius, y: PickyHUDExpansion.dockTightShadowYOffset)
+        return Group {
+            if reduceTransparency { DS.Colors.surface1 }
+            else { PickyHUDDockNativeMaterial() }
+        }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3) // design-token-exception: approved dual-notch shell elevation, shared across dock presets.
     }
 }
 
 /// An inset pocket connected to the outer edge, rather than a separate toolbar strip.
 struct PickyHUDDockNotchShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let shoulder = min(rect.width / 4, rect.height)
+        let shoulder: CGFloat = 8
         var path = Path()
         path.move(to: .zero)
         path.addCurve(to: CGPoint(x: shoulder, y: rect.height),
-                      control1: CGPoint(x: shoulder * 0.6, y: 0),
-                      control2: CGPoint(x: shoulder * 0.25, y: rect.height))
+                      control1: CGPoint(x: 5, y: 0),
+                      control2: CGPoint(x: 2, y: rect.height))
         path.addLine(to: CGPoint(x: rect.width - shoulder, y: rect.height))
         path.addCurve(to: CGPoint(x: rect.width, y: 0),
-                      control1: CGPoint(x: rect.width - shoulder * 0.25, y: rect.height),
-                      control2: CGPoint(x: rect.width - shoulder * 0.6, y: 0))
+                      control1: CGPoint(x: rect.width - 2, y: rect.height),
+                      control2: CGPoint(x: rect.width - 5, y: 0))
         path.closeSubpath()
         return path
     }
@@ -78,10 +77,9 @@ struct PickyHUDDockHandleNotch: View {
 
     var body: some View {
         let horizontal = dockSide.orientation == .horizontal
-        let presentation = PickyHUDDockHandlePresentation.resolve(isActive: isActive)
         ZStack(alignment: .top) {
-            PickyHUDDockNotchShape().fill(isActive ? DS.Colors.surface4 : DS.Colors.surface3)
-            Capsule().fill(presentation.foregroundColor.opacity(presentation.opacity))
+            PickyHUDDockNotchShape().fill(DS.Colors.surface3)
+            Capsule().fill(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                 .frame(width: metrics.handleIdleWidth, height: metrics.handleHeight)
                 .padding(.top, DS.Spacing.space1)
         }
@@ -149,8 +147,11 @@ struct PickyHUDDockUtilityButtonStyle: ButtonStyle {
 
 struct PickyHUDDockMinimizedButton: View {
     let onRestore: () -> Void
+    var onDragChanged: (CGPoint) -> Void = { _ in }
+    var onDragEnded: () -> Void = {}
     private let metrics = PickyHUDDockMetrics.medium
     @State private var hovered = false
+    @State private var dragging = false
     var body: some View {
         Button(action: onRestore) {
             Image("PickyCursorNormal").resizable().renderingMode(.template).scaledToFit()
@@ -163,9 +164,35 @@ struct PickyHUDDockMinimizedButton: View {
                     RoundedRectangle(cornerRadius: metrics.minimizedCornerRadius)
                         .strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5)
                 }
+                .shadow(color: .black.opacity(0.10), radius: 4, y: 2) // design-token-exception: approved 32pt restore-control elevation.
         }
-        .buttonStyle(.plain).onHover { hovered = $0 }
-        .help(L10n.t("dock.restore"))
+        .buttonStyle(.plain)
+        .overlay {
+            PickyHUDDockAnchorHandleHost(
+                onHoverChanged: { hovered = $0 },
+                onDragChanged: { delta in dragging = true; onDragChanged(delta) },
+                onDragEnded: { dragging = false; onDragEnded() },
+                onDoubleClick: {}, onClick: onRestore
+            )
+            .accessibilityHidden(true)
+        }
+        .onDisappear {
+            if dragging { dragging = false; onDragEnded() }
+        }
+        .help(L10n.t("dock.restore.help"))
         .accessibilityLabel(L10n.t("dock.restore"))
+        .accessibilityHint(L10n.t("dock.restore.help"))
     }
+}
+
+/// Uses the same AppKit material as the approved standalone study.
+struct PickyHUDDockNativeMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .withinWindow
+        view.state = .active
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

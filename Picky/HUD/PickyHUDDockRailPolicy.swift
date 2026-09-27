@@ -127,7 +127,7 @@ enum PickyHUDDockRailLayoutPolicy {
         hasArchiveAccess: Bool = false
     ) -> CGFloat {
         metrics.handleInset + metrics.collapseInset + metrics.utilityButtonSide
-            + metrics.chromeSpacing * 2 + 1
+            + metrics.chromeSpacing * 2 + metrics.chromeSeparatorThickness
     }
 
 }

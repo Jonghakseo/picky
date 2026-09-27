@@ -13,6 +13,8 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
     let hasArchiveAccess: Bool
     let activeSessionID: String?
     let onRestore: () -> Void
+    var onDragChanged: (CGPoint) -> Void = { _ in }
+    var onDragEnded: () -> Void = {}
     @ViewBuilder var expandedRail: () -> ExpandedRail
 
     private var previewReserve: CGFloat {
@@ -35,7 +37,8 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
                     .frame(width: size.width, height: size.height)
                     .allowsHitTesting(false)
                     .overlay(alignment: .topLeading) {
-                        PickyHUDDockMinimizedButton(onRestore: onRestore)
+                        PickyHUDDockMinimizedButton(onRestore: onRestore,
+                            onDragChanged: onDragChanged, onDragEnded: onDragEnded)
                             .background(PickyHUDVisibleChromeFrameReporter())
                             .offset(x: origin.x, y: origin.y)
                     }

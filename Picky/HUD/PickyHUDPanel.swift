@@ -32,6 +32,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     }
     private var minimizedPointerMonitors: [Any] = []
     private var acceptsMouseMovedEventsBeforeMinimizing = false
+    private var hasMinimizedPointerCapture = false
 
     deinit {
         for monitor in minimizedPointerMonitors { NSEvent.removeMonitor(monitor) }
@@ -47,9 +48,16 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
         minimizedVisibleChromeFrames = visibleChromeFrames
     }
 
+    /// AppKit owns the entire press/drag sequence even if the pointer briefly
+    /// leaves the restore control while the panel is repositioned or snaps edges.
+    func setMinimizedPointerCapture(_ captured: Bool) {
+        hasMinimizedPointerCapture = captured
+        updateMinimizedDockPointer(NSEvent.mouseLocation)
+    }
+
     /// Real pointer monitors and unshown-panel tests use the same AppKit boundary.
     func updateMinimizedDockPointer(_ point: CGPoint) {
-        ignoresMouseEvents = isDockMinimized && !PickyHUDInkPassThroughPolicy.contains(
+        ignoresMouseEvents = isDockMinimized && !hasMinimizedPointerCapture && !PickyHUDInkPassThroughPolicy.contains(
             point, swiftUIFrames: minimizedVisibleChromeFrames, panelFrame: frame
         )
     }
@@ -59,6 +67,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
         minimizedPointerMonitors = []
         updateMinimizedDockPointer(NSEvent.mouseLocation)
         guard isDockMinimized, isVisible else { return }
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
             self?.updateMinimizedDockPointer(NSEvent.mouseLocation)

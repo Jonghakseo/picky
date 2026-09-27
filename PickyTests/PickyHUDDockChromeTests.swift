@@ -26,6 +26,33 @@ struct PickyHUDDockChromeTests {
         }
     }
 
+    @Test func renderedHandleKeepsTheApprovedThinGripAtEveryDockSize() throws {
+        for preset in PickyHUDDockSizePreset.allCases {
+            for side: PickyHUDDockSide in [.right, .bottom] {
+                let horizontal = side.orientation == .horizontal
+                let view = PickyHUDDockHandleNotch(dockSide: side,
+                    metrics: PickyHUDDockMetrics(preset: preset)).environment(\.colorScheme, .light)
+                let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                    logicalSize: horizontal ? CGSize(width: 11, height: 34) : CGSize(width: 34, height: 11),
+                    scale: 2, appearance: .aqua))
+                var gripPixels: [CGPoint] = []
+                for y in 0..<bitmap.pixelsHigh {
+                    for x in 0..<bitmap.pixelsWide {
+                        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                              color.alphaComponent > 0.8,
+                              max(color.redComponent, color.greenComponent, color.blueComponent) < 0.65 else { continue }
+                        gripPixels.append(CGPoint(x: x, y: y))
+                    }
+                }
+                let width = try #require(gripPixels.map(\.x).max()) - #require(gripPixels.map(\.x).min()) + 1
+                let height = try #require(gripPixels.map(\.y).max()) - #require(gripPixels.map(\.y).min()) + 1
+                // The approved 15 x 2.5pt capsule at 2x, allowing antialiasing at its edges.
+                #expect(abs((horizontal ? height : width) - 30) <= 2)
+                #expect(abs((horizontal ? width : height) - 5) <= 1)
+            }
+        }
+    }
+
     @Test func minimizedDockRendersOnlyA32PointRestoreControl() {
         let host = NSHostingView(rootView: PickyHUDDockMinimizedButton(onRestore: {}))
         #expect(host.fittingSize == CGSize(width: 32, height: 32))

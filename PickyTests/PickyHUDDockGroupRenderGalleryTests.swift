@@ -166,14 +166,18 @@ struct PickyHUDDockGroupRenderGalleryTests {
         }
     }
 
-    @Test func lightDockSurfaceUsesAStableSemanticLayerOverDesktopMaterial() {
-        let light = PickyHUDDockSurfacePresentation.style(for: .light)
-        let dark = PickyHUDDockSurfacePresentation.style(for: .dark)
-
-        #expect(light.materialKind == .regular)
-        #expect(light.surfaceOverlayOpacity > dark.surfaceOverlayOpacity)
-        #expect(light.borderOpacity > dark.borderOpacity)
-        #expect(dark.materialKind == .ultraThin)
+    @Test func dockUsesTheApprovedNativeHUDMaterial() throws {
+        let host = NSHostingView(rootView: PickyHUDDockNativeMaterial().frame(width: 64, height: 200))
+        host.frame = CGRect(x: 0, y: 0, width: 64, height: 200)
+        host.layoutSubtreeIfNeeded()
+        func material(in view: NSView) -> NSVisualEffectView? {
+            if let effect = view as? NSVisualEffectView { return effect }
+            return view.subviews.lazy.compactMap { material(in: $0) }.first
+        }
+        let effect = try #require(material(in: host))
+        #expect(effect.material == .hudWindow)
+        #expect(effect.blendingMode == .withinWindow)
+        #expect(effect.state == .active)
     }
 
     @Test func folderIdentityFitsInsideTheSameTileFootprintAtAllGalleryScales() {

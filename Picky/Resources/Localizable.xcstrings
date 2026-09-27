@@ -1687,6 +1687,22 @@
         }
       }
     },
+    "dock.restore.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click to expand. Drag to move."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클릭하면 펼치고, 드래그하면 이동해요."
+          }
+        }
+      }
+    },
     "dock.startPickle": {
       "localizations": {
         "en": {

@@ -16,8 +16,8 @@ struct PickyDockFolderGlyphPolicyTests {
 
     @Test func folderShowsTheLeadingListMembersAndCountsTheRest() {
         let model = PickyHUDDockFolderBadgeViewModel(memberIDs: ["newest", "second", "third", "oldest"])
-        #expect(model.glyphMemberIDs == ["newest", "second", "third"])
-        #expect(model.overflowCount == 1)
+        #expect(model.glyphMemberIDs == ["newest", "second"])
+        #expect(model.overflowCount == 2)
     }
 
     @Test func emptyAndSmallGroupsHaveNoOverflow() {

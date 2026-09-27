@@ -631,7 +631,9 @@ struct PickyHUDView: View {
             availableRailLength: placement.availableDockRailLength,
             hasArchiveAccess: viewModel.archivedSessionAccess != nil,
             activeSessionID: activeSession?.id,
-            onRestore: restoreDock
+            onRestore: restoreDock,
+            onDragChanged: onDockHandleDragChanged,
+            onDragEnded: onDockHandleDragEnded
         ) {
             PickyHUDDockRailView(
                 sessions: visibleSessions,

@@ -92,6 +92,14 @@ struct PickyPanelKeyboardShortcutTests {
         #expect(!panel.performKeyEquivalent(with: try Self.keyEvent(characters: "w", keyCode: 13)))
         #expect(closes == 0)
 
+        panel.setMinimizedPointerCapture(true)
+        panel.updateMinimizedDockPointer(CGPoint(x: 400, y: 400))
+        #expect(!panel.ignoresMouseEvents)
+        #expect(!panel.canBecomeKey)
+        panel.setMinimizedPointerCapture(false)
+        panel.updateMinimizedDockPointer(CGPoint(x: 400, y: 400))
+        #expect(panel.ignoresMouseEvents)
+
         // The actual AppKit flag re-enables pointer delivery only over the 32pt logo.
         panel.updateMinimizedDockPointer(CGPoint(x: 136, y: 654))
         #expect(!panel.ignoresMouseEvents)

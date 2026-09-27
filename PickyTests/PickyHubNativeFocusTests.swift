@@ -35,15 +35,15 @@ struct PickyHubNativeFocusTests {
 
         // Both controls use the same window, locale and post-mount focus request.
         // The standard control distinguishes environment failures from Hub behavior.
-        for useHubButton in [false, true] {
+        for control in [ControlKind.standard, .styledStandard, .hub] {
             let probe = HubFocusProbe()
             let hosting = NSHostingView(rootView: LocalizedHostingRoot {
-                HubFocusFixture(host: host, probe: probe, useHubButton: useHubButton)
+                HubFocusFixture(host: host, probe: probe, control: control)
             })
             hosting.frame = NSRect(origin: .zero, size: window.contentLayoutRect.size)
             window.contentView = hosting
             hosting.layoutSubtreeIfNeeded()
-            let kind = useHubButton ? "Hub" : "standard"
+            let kind = control.rawValue
             let mounted = try await observe("\(kind) mounted", window: window, probe: probe) { probe.didAppear }
             try #require(mounted, "The control must mount before requesting initial focus")
             probe.focusRequest += 1
@@ -58,12 +58,12 @@ struct PickyHubNativeFocusTests {
                 probe.presses == 1
             }
             try #require(activated, "\(kind) must activate through Space, not a direct action invocation")
-            if useHubButton {
+            if control != .standard {
                 try await verifyModalRestoration(host: host, window: window, probe: probe)
             }
 
             window.contentView = nil
-            if useHubButton {
+            if control == .hub {
                 window.orderOut(nil)
                 window.close()
             }
@@ -72,11 +72,15 @@ struct PickyHubNativeFocusTests {
             }
             try #require(removed, "Final counts must be checked after SwiftUI fixture cleanup")
             host.dismiss()
-            #expect(probe.focusRequest == (useHubButton ? 2 : 1))
-            #expect(probe.presses == (useHubButton ? 2 : 1))
-            #expect(probe.cancelPresses == (useHubButton ? 1 : 0))
+            #expect(probe.focusRequest == (control == .standard ? 1 : 2))
+            #expect(probe.presses == (control == .standard ? 1 : 2))
+            #expect(probe.cancelPresses == (control == .standard ? 0 : 1))
             #expect(probe.confirmPresses == 0)
         }
+    }
+
+    fileprivate enum ControlKind: String {
+        case standard, styledStandard, hub
     }
 
     private func verifyModalRestoration(
@@ -183,7 +187,7 @@ private final class HubFocusProbe: ObservableObject {
 private struct HubFocusFixture: View {
     @ObservedObject var host: PickyHubModalHost
     @ObservedObject var probe: HubFocusProbe
-    let useHubButton: Bool
+    let control: PickyHubNativeFocusTests.ControlKind
     @FocusState private var triggerFocused: Bool
 
     var body: some View {
@@ -199,10 +203,15 @@ private struct HubFocusFixture: View {
 
     @ViewBuilder
     private var trigger: some View {
-        if useHubButton {
+        switch control {
+        case .hub:
             PickyHubButton(title: "common.close", role: .secondary) { probe.presses += 1 }
                 .focused($triggerFocused)
-        } else {
+        case .styledStandard:
+            Button("common.close") { probe.presses += 1 }
+                .buttonStyle(PickyHubPressStyle())
+                .focused($triggerFocused)
+        case .standard:
             Button("common.close") { probe.presses += 1 }
                 .focused($triggerFocused)
         }

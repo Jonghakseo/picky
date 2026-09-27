@@ -4,14 +4,11 @@ import SwiftUI
 /// lifecycle bookkeeping and completion tickets remain in the stores, not in this surface.
 struct PickyRunningTaskFooterView: View {
     let store: PickySessionStore
-    let commands: any PickySessionCommands
     let maxListHeight: CGFloat
     var compact = false
     var bottomSpacing: CGFloat = 0
     @State private var expanded = false
     @State private var selected: PickyAsyncTaskShelfIdentity?
-    @State private var pending = Set<PickyAsyncTaskShelfIdentity>()
-    @State private var actionError: String?
 
     private var detail: PickyAsyncTaskDetail? {
         guard case .loaded(let value) = store.asyncTaskStore.detailState else { return nil }
@@ -70,14 +67,6 @@ struct PickyRunningTaskFooterView: View {
                 }
             }
             .padding(.bottom, bottomSpacing)
-            // User-requested cancellation errors belong to the action dialog, not a status shelf.
-            .alert(L10n.t("hud.asyncTasks.stopError.title"), isPresented: Binding(
-                get: { actionError != nil }, set: { if !$0 { actionError = nil } }
-            )) {
-                Button("shellCommand.ok", role: .cancel) { actionError = nil }
-            } message: {
-                Text(actionError ?? "")
-            }
         }
     }
 
@@ -126,10 +115,21 @@ struct PickyRunningTaskFooterView: View {
 
     private func taskDetails(_ root: PickyAsyncTask) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            // Provider titles can be commands, not friendly summaries. Reveal the original
+            // text on selection rather than inventing a shortened description or progress.
+            Text(root.title).foregroundStyle(DS.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
             if let detail {
                 ForEach(runningMembers(of: root, detail: detail), id: \.shelfIdentity) { task in
                     if task.taskId != root.taskId {
                         Text(task.title).foregroundStyle(DS.Colors.textPrimary)
+                        if let run = subagentRun(for: task, root: root) {
+                            Text(run.displayTask ?? run.task)
+                                .foregroundStyle(DS.Colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
                     }
                     if let progress = task.progress, !progress.isEmpty {
                         Text(progress).foregroundStyle(DS.Colors.textSecondary)
@@ -138,35 +138,17 @@ struct PickyRunningTaskFooterView: View {
                     }
                 }
             }
-            HStack {
-                Spacer()
-                Button {
-                    let identity = root.shelfIdentity
-                    guard pending.insert(identity).inserted else { return }
-                    Task { @MainActor in
-                        defer { pending.remove(identity) }
-                        do { try await commands.cancelAsyncTask(owner: root.owner, taskID: root.taskId) }
-                        catch { actionError = error.localizedDescription }
-                    }
-                } label: {
-                    Text("hud.asyncTasks.stop").frame(minHeight: 24)
-                }
-                .buttonStyle(.borderless)
-                .tint(DS.Colors.accentText)
-                .disabled(!canCancel(root))
-                .help(L10n.t("hud.asyncTasks.stopHelp"))
-                .accessibilityLabel(L10n.t("hud.asyncTasks.stopNamed", root.title))
-            }
         }
         .pickyFont(size: PickyHUDTypography.bodyCompactNSFont(fontScale: 1).pointSize)
         .padding(.horizontal, DS.Spacing.space2)
         .padding(.bottom, DS.Spacing.space2)
     }
 
-    private func canCancel(_ root: PickyAsyncTask) -> Bool {
-        guard let detail, let summary else { return false }
-        return PickyAsyncTaskShelfPresentation.canCancel(root, in: detail, summary: summary,
-            availability: pending.contains(root.shelfIdentity) ? .pending : .available)
+    private func subagentRun(for task: PickyAsyncTask, root: PickyAsyncTask) -> PickySubagentRun? {
+        guard let invocationID = root.invocationId,
+              case .number(let runID)? = task.details?["runId"],
+              case .loaded(let runs) = store.subagentStore.runsState else { return nil }
+        return runs.first { Double($0.runId) == runID && $0.invocationId == invocationID }
     }
 }
 

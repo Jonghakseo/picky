@@ -29,7 +29,8 @@ old = '''    private var showsBackgroundStopErrorInShelf: Bool {
 assert card.count(old) == 1, 'Card changed; review the integration seam instead of silently approximating it.'
 assert card.count('PickyMountedAsyncTaskShelfView(') == 1
 new = card.replace(old, '    private var showsBackgroundStopErrorInShelf: Bool { false }')
-new = new.replace('PickyMountedAsyncTaskShelfView(', 'PickyRunningTaskFooterView(')
+new = new.replace('PickyMountedAsyncTaskShelfView(\n                store: sessionStore,\n                commands: viewModel,',
+                  'PickyRunningTaskFooterView(\n                store: sessionStore,')
 new = new.replace('                bottomSpacing: DS.Spacing.space2,\n                stopError: backgroundStopError',
                   '                bottomSpacing: DS.Spacing.space2')
 (out / 'ProductionConversationCard.swift').write_text('@testable import Picky\n' + new.replace(
@@ -76,6 +77,37 @@ for lang, value in translations.items():
     strings = plistlib.loads(data)
     strings[key] = value
     path.write_bytes(plistlib.dumps(strings, fmt=plistlib.FMT_BINARY))
+# Private local session examples stay under ignored build/. Fresh checkouts use
+# recorded real-provider fields instead, never invented progress/percentage text.
+local_fixture = out / 'local-session-fixture.json'
+if local_fixture.exists():
+    fixture = json.loads(local_fixture.read_text())
+else:
+    def objects(value):
+        if isinstance(value, dict):
+            yield value
+            for child in value.values():
+                yield from objects(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from objects(child)
+    recordings = {name: json.loads((root / f'contracts/async-tasks/runtime-replay/{name}.json').read_text())
+                  for name in ['bash', 'subagent']}
+    tasks = {name: next(item for item in objects(data) if item.get('execution') == 'running'
+                       and item.get('taskId') == item.get('rootTaskId') and item.get('title'))
+             for name, data in recordings.items()}
+    runs = {}
+    for item in objects(recordings['subagent']):
+        if 'runId' in item and 'agent' in item and 'task' in item:
+            runs.setdefault(item['runId'], {**{key: item[key] for key in ['runId', 'agent', 'task', 'elapsedMs'] if key in item},
+                                           'status': 'running', 'invocationId': 'study-invocation'})
+    fixture = {'label': '실제 공급자 리플레이 fixture · 실행 상태 재구성', 'sessionTitle': '실제 공급자 작업',
+               'bashTitle': tasks['bash']['title'], 'subagentTitle': tasks['subagent']['title'],
+               'runs': list(runs.values()), 'messages': [],
+               'provenance': {'source': 'contracts/async-tasks/runtime-replay/{bash,subagent}.json',
+                              'reconstruction': 'Recorded title/agent/task fields; replay identities and running lifecycle.'}}
+(resources / 'session-fixture.json').write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + '\n')
+
 plist = {'CFBundleIdentifier': 'local.picky.async-ui-study.production', 'CFBundleName': 'Picky Async UI Study',
          'CFBundleExecutable': 'AsyncWorkStudy', 'CFBundleDevelopmentRegion': 'en',
          'CFBundleLocalizations': list(translations), 'NSHighResolutionCapable': True}
@@ -83,6 +115,7 @@ plist = {'CFBundleIdentifier': 'local.picky.async-ui-study.production', 'CFBundl
 manifest = {'sourceRevision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
             'cardSource': str(card_path), 'cardSHA256': hashlib.sha256(card.encode()).hexdigest(),
             'cardWidth': 446, 'cardHeight': 640, 'productionSourcesCopiedWithoutRestyling': True,
-            'patchAppliedToRepository': False, 'transport': 'in-memory fixture only'}
+            'patchAppliedToRepository': False, 'transport': 'in-memory fixture only',
+            'fixtureProvenance': fixture['provenance']}
 (out / 'provenance.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
 print(out)

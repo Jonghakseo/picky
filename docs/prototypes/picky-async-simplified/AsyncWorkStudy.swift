@@ -11,41 +11,25 @@ private final class StudySession {
     let model: PickySessionListViewModel
     let store: PickySessionStore
     var session: PickyAgentSession
+    let fixture: StudyFixture
     private var revision = 0
 
-    init() {
+    init() throws {
+        fixture = try StudyFixture.load()
         model = PickySessionListViewModel(client: client, sessionProjectionStorage: storage)
         store = storage.registry.sessionStore(sessionID: "async-ui-study")
         let now = Date()
-        session = PickyAgentSession(id: "async-ui-study", title: "로그인 오류 수정", status: .running,
-            cwd: "/tmp/picky-ui-study", createdAt: now.addingTimeInterval(-180), updatedAt: now,
-            lastSummary: "테스트와 변경사항 리뷰를 실행하고 있어요.", logs: [], tools: [], artifacts: [], changedFiles: [],
-            messages: [
-                Self.message("request", .userText, "로그인 오류를 고치고 테스트도 확인해줘.", now.addingTimeInterval(-170)),
-                Self.message("reply", .agentText,
-                    "인증 토큰을 갱신하는 부분을 수정했어요.\n\n테스트와 변경사항 리뷰를 함께 실행하고 있어요.", now.addingTimeInterval(-100))
-            ])
+        let messageCount = fixture.messages.count
+        session = PickyAgentSession(id: "async-ui-study", title: fixture.sessionTitle, status: .running,
+            cwd: "/tmp/picky-ui-study", createdAt: now, updatedAt: now,
+            logs: [], tools: [], artifacts: [], changedFiles: [],
+            messages: fixture.messages.enumerated().map { index, message in
+                Self.message("fixture-\(index)", message.kind, message.text, now.addingTimeInterval(Double(index - messageCount)))
+            })
         session.agentCycle = .init(cycleId: "study-cycle", runtimeInstanceId: "study-runtime",
                                   phase: .idle, outcome: nil, controlGeneration: 1)
         session.currentAssistantRun = .init(model: "openai-codex/gpt-5.6", thinkingLevel: .high)
-        client.onControl = { [weak self] command in
-            guard let self else { throw PickyAsyncControlError.requestConflict }
-            if command.type == .cancelAsyncTask {
-                for index in session.asyncTasks?.indices ?? 0..<0 {
-                    if session.asyncTasks?[index].rootTaskId == command.taskId {
-                        session.asyncTasks?[index].execution = .cancelled
-                        session.asyncTasks?[index].presence = .settled
-                    }
-                }
-                try publish()
-            }
-            return PickyAsyncTaskCommandResult(type: "asyncTaskResult", requestId: command.requestId,
-                sessionId: command.sessionId, daemonInstanceId: command.daemonInstanceId,
-                runtimeInstanceId: command.runtimeInstanceId, workRevision: command.workRevision,
-                controlGeneration: command.controlGeneration, operationId: "study-operation", outcome: .settled,
-                detail: .init(tasks: session.asyncTasks ?? [], tickets: session.completionTickets ?? []))
-        }
-        try! install("running")
+        try install("running")
     }
 
     private static func message(_ id: String, _ kind: PickySessionMessageKind, _ text: String, _ date: Date) -> PickySessionMessage {
@@ -55,30 +39,42 @@ private final class StudySession {
 
     func task(_ id: String, title: String, execution: PickyExecutionState = .running,
               presence: PickyExecutionPresence = .active, root: String? = nil) -> PickyAsyncTask {
-        var task = PickyAsyncTask(sessionId: session.id, piSessionId: "study-pi", runtimeInstanceId: "study-runtime",
-            providerId: "study-provider", providerInstanceId: "study-instance", taskId: id,
-            rootTaskId: root ?? id, parentTaskId: root, kind: id == "review" ? "subagent" : "bash", title: title,
+        let task = PickyAsyncTask(sessionId: session.id, piSessionId: "study-pi", runtimeInstanceId: "study-runtime",
+            providerId: id == "review" || root == "review" ? "subagent" : "bash-async", providerInstanceId: "study-instance", taskId: id,
+            rootTaskId: root ?? id, parentTaskId: root, kind: id == "review" || root == "review" ? "subagent" : "bash", title: title,
             execution: execution, presence: presence, registration: .spawned, providerRevision: 1,
-            controlGeneration: 1, createdAt: Date().addingTimeInterval(id == "review" ? -38 : -102), updatedAt: Date())
-        task.progress = id == "review" ? "토큰 갱신과 오류 처리 부분을 검토하고 있어요." : "인증 관련 테스트를 실행하고 있어요."
+            controlGeneration: 1, createdAt: Date(), updatedAt: Date())
         return task
     }
 
     func install(_ state: String) throws {
-        let first = task("tests", title: "테스트 실행")
+        let first = task("tests", title: fixture.bashTitle)
         session.completionTickets = []
+        session.subagentRuns = []
         switch state {
-        case "running": session.asyncTasks = [first, task("review", title: "변경사항 리뷰")]
+        case "running":
+            var root = task("review", title: fixture.subagentTitle)
+            root.invocationId = "study-invocation"
+            let children = fixture.runs.map { run in
+                var child = task("run-\(run.runId)", title: run.agent, root: "review")
+                child.invocationId = root.invocationId
+                child.details = ["runId": .number(Double(run.runId))]
+                child.createdAt = Date().addingTimeInterval(-(run.elapsedMs ?? 0) / 1000)
+                return child
+            }
+            root.createdAt = children.map(\.createdAt).min() ?? root.createdAt
+            session.asyncTasks = [first, root] + children
+            session.subagentRuns = fixture.runs
         case "processing":
-            session.asyncTasks = [task("tests", title: "테스트 실행", execution: .succeeded, presence: .settled)]
+            session.asyncTasks = [task("tests", title: fixture.bashTitle, execution: .succeeded, presence: .settled)]
             session.completionTickets = [.init(sessionId: session.id, piSessionId: "study-pi", runtimeInstanceId: "study-runtime",
-                providerId: "study-provider", providerInstanceId: "study-instance", completionId: "study-result",
+                providerId: "bash-async", providerInstanceId: "study-instance", completionId: "study-result",
                 rootTaskId: "tests", target: .model, state: .processing, controlGeneration: 1, cycleId: "study-cycle")]
-        case "failed": session.asyncTasks = [task("tests", title: "테스트 실행", execution: .failed, presence: .settled)]
-        case "unknown": session.asyncTasks = [task("tests", title: "테스트 실행", presence: .unknown)]
+        case "failed": session.asyncTasks = [task("tests", title: fixture.bashTitle, execution: .failed, presence: .settled)]
+        case "unknown": session.asyncTasks = [task("tests", title: fixture.bashTitle, presence: .unknown)]
         case "queued": session.asyncTasks = [task("tests", title: "テスト", execution: .queued)]
         case "surviving-child":
-            session.asyncTasks = [task("tests", title: "테스트 실행", execution: .failed, presence: .settled),
+            session.asyncTasks = [task("tests", title: fixture.bashTitle, execution: .failed, presence: .settled),
                                   task("child", title: "통합 테스트", root: "tests")]
         default: session.asyncTasks = []
         }
@@ -106,32 +102,32 @@ private final class StudySession {
     }
 }
 
+private struct StudyFixture: Decodable {
+    struct Message: Decodable { let kind: PickySessionMessageKind; let text: String }
+    let label: String
+    let sessionTitle: String
+    let bashTitle: String
+    let subagentTitle: String
+    let runs: [PickySubagentRun]
+    let messages: [Message]
+
+    static func load() throws -> Self {
+        guard let url = Bundle.main.url(forResource: "session-fixture", withExtension: "json") else {
+            throw PickyAsyncControlError.invalidResponse
+        }
+        return try JSONDecoder.pickyAgentProtocolDecoder().decode(Self.self, from: Data(contentsOf: url))
+    }
+}
+
 @MainActor
-private final class StudyClient: PickyAgentClient, PickyAsyncTaskControlling {
+private final class StudyClient: PickyAgentClient {
     let events = AsyncStream<PickyClientEvent> { $0.finish() }
-    var onControl: ((PickyAsyncTaskCommand) throws -> PickyAsyncTaskCommandResult)?
     func connect() async {}
     func disconnect() {}
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
         throw PickyAsyncControlError.unsupported
     }
     func send(_ command: PickyCommandEnvelope) async throws {}
-    func asyncControlContext(sessionID: String) async throws -> PickyAsyncControlContext {
-        .init(requestId: "study", sessionId: sessionID, daemonInstanceId: "study-daemon",
-              runtimeInstanceId: "study-runtime", workRevision: 1, controlGeneration: 1, admissionState: .open,
-              tracking: .ready, expectedProviders: ["study-provider"], readyProviders: ["study-provider"])
-    }
-    func executeAsyncControl(_ command: PickyAsyncTaskCommand) async throws -> PickyAsyncTaskCommandResult {
-        guard let onControl else { throw PickyAsyncControlError.unsupported }
-        return try onControl(command)
-    }
-    func beginDeletion(sessionID: String) {}
-    func endDeletion(sessionID: String) {}
-    func invalidateAsyncArchiveIntent(sessionID: String) {}
-    func stopAsyncWork(sessionID: String) async throws -> PickyAsyncTaskCommandResult { throw PickyAsyncControlError.unsupported }
-    func archiveAsyncSession(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws { throw PickyAsyncControlError.unsupported }
-    func restoreAsyncSession(sessionID: String) async throws { throw PickyAsyncControlError.unsupported }
-    func releaseArchivedAsyncSession(sessionID: String) async throws -> Bool { false }
 }
 
 private struct StudyBoard: View {
@@ -146,13 +142,17 @@ private struct StudyBoard: View {
             HStack {
                 VStack(alignment: .leading, spacing: DS.Spacing.space1) {
                     Text("백그라운드 작업 · 실제 UI 비교").font(PickyHUDTypography.heading(level: 1))
-                    Text("동일한 세션 · 446 × 640pt · 하단 작업 표시만 변경")
+                    Text(session.fixture.label)
                         .font(PickyHUDTypography.supporting).foregroundStyle(DS.Colors.textSecondary)
                 }
                 Spacer()
-                Toggle("실행 중인 작업", isOn: $running).toggleStyle(.switch).controlSize(.small)
+                Toggle("실행 중인 작업", isOn: $running)
+                    .toggleStyle(.button).controlSize(.regular)
+                    .accessibilityIdentifier("study.running")
                     .onChange(of: running) { _, value in try? session.install(value ? "running" : "empty") }
-                Toggle("다크 모드", isOn: $dark).toggleStyle(.switch).controlSize(.small)
+                Toggle("다크 모드", isOn: $dark)
+                    .toggleStyle(.button).controlSize(.regular)
+                    .accessibilityIdentifier("study.dark")
                     .disabled(forcedDark != nil)
                     .onChange(of: dark) { _, value in NSApp.appearance = NSAppearance(named: value ? .darkAqua : .aqua) }
             }
@@ -168,7 +168,7 @@ private struct StudyBoard: View {
                         maxHeight: 640, width: 446, fixedHeight: 640)
                 }
             }
-            Text("예시 데이터예요. 작업 줄을 펼치고 작업을 선택하면 상세와 중지가 나타나요.")
+            Text("작업명·경과 시간 → 원문과 하위 에이전트의 위임 내용. 진행 설명은 실제 데이터가 있을 때만 표시해요.")
                 .font(PickyHUDTypography.supporting).foregroundStyle(DS.Colors.textSecondary)
         }
         .padding(DS.Spacing.space6)
@@ -188,7 +188,7 @@ private enum AsyncWorkStudyApp {
         setenv("XCTestBundlePath", "PickyAsyncUIStudy", 1)
         let app = NSApplication.shared
         LocaleManager.shared.apply(.korean)
-        let session = StudySession()
+        let session = try StudySession()
         if CommandLine.arguments.contains("--verify") {
             app.setActivationPolicy(.prohibited)
             try verify(session)
@@ -234,7 +234,7 @@ private enum AsyncWorkStudyApp {
     }
 
     @MainActor private static func verify(_ session: StudySession) throws {
-        let host = NSHostingView(rootView: PickyRunningTaskFooterView(store: session.store, commands: session.model,
+        let host = NSHostingView(rootView: PickyRunningTaskFooterView(store: session.store,
             maxListHeight: 120).frame(width: 422))
         for state in ["running", "processing", "failed", "unknown", "queued", "empty", "surviving-child", "empty"] {
             try session.install(state)

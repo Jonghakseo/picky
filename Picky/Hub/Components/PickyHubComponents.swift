@@ -397,8 +397,8 @@ struct PickyHubButton: View {
     var minWidth: CGFloat? = nil
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isFocused) private var isFocused
     @State private var isHovering = false
-    @FocusState private var isFocused: Bool
 
     var body: some View {
         Button(action: action) {
@@ -431,7 +431,6 @@ struct PickyHubButton: View {
         }
         .buttonStyle(PickyHubPressStyle())
         .disabled(isBusy || !isEnabled)
-        .focused($isFocused)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.control)
         .onHover { isHovering = $0 }
         .animation(reduceMotion ? nil : PickyHubTheme.Motion.hover, value: isHovering)

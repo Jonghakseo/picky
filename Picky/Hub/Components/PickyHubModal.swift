@@ -34,6 +34,9 @@ final class PickyHubModalHost: ObservableObject {
     weak var window: NSWindow?
     private var escapeMonitor: Any?
     private var pendingDismissal: Presentation?
+    private var contentMounted = false
+    private var reenabledContentForID: UUID?
+    private var completedRemovalID: UUID?
 
     var isPresenting: Bool { presentation != nil }
     var presentationID: UUID? { presentation?.id }
@@ -90,18 +93,38 @@ final class PickyHubModalHost: ObservableObject {
             withAnimation(nil, completionCriteria: .removed) {
                 self.renderedPresentation = nil
             } completion: { [weak self] in
-                self?.restoreFocusAfterRemoval(id: id)
+                // Removal completion can precede the next update that lifts
+                // .disabled from the content beneath the modal.
+                self?.completedRemovalID = id
+                self?.restoreFocusIfReady()
             }
         }
     }
 
-    private func restoreFocusAfterRemoval(id: UUID) {
-        // With no animation, SwiftUI may complete synchronously. Leave that
-        // transaction before changing the caller's focus binding.
+    func contentDidMount() { contentMounted = true }
+
+    func contentDidUnmount() {
+        contentMounted = false
+        restoreFocusIfReady()
+    }
+
+    func contentDidBecomeEnabled() {
+        guard presentation == nil, renderedPresentation == nil, let pendingDismissal else { return }
+        reenabledContentForID = pendingDismissal.id
+        restoreFocusIfReady()
+    }
+
+    private func restoreFocusIfReady() {
+        // Leave the animation or SwiftUI environment update before setting the
+        // caller's focus binding. A dismissed/replaced modal never steals focus.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.presentation == nil,
-                  let pending = self.pendingDismissal, pending.id == id else { return }
+                  let pending = self.pendingDismissal,
+                  self.completedRemovalID == pending.id,
+                  !self.contentMounted || self.reenabledContentForID == pending.id else { return }
             self.pendingDismissal = nil
+            self.completedRemovalID = nil
+            self.reenabledContentForID = nil
             pending.onDismiss()
         }
     }
@@ -137,7 +160,7 @@ struct PickyHubModalOverlay<Content: View>: View {
 
     var body: some View {
         ZStack {
-            content()
+            PickyHubModalContent(host: host, content: content)
                 .disabled(host.renderedPresentation != nil)
                 .accessibilityHidden(host.renderedPresentation != nil)
 
@@ -179,6 +202,24 @@ struct PickyHubModalOverlay<Content: View>: View {
             }
         }
         .animation(reduceMotion ? nil : PickyHubTheme.Motion.modal, value: host.renderedPresentation?.id)
+    }
+}
+
+/// The enabled environment is observed inside .disabled, after SwiftUI has
+/// applied the removal to the underlying content rather than at the host's
+/// earlier animation-completion callback.
+private struct PickyHubModalContent<Content: View>: View {
+    @ObservedObject var host: PickyHubModalHost
+    @ViewBuilder var content: () -> Content
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        content()
+            .onAppear { host.contentDidMount() }
+            .onDisappear { host.contentDidUnmount() }
+            .onChange(of: isEnabled) { _, enabled in
+                if enabled { host.contentDidBecomeEnabled() }
+            }
     }
 }
 

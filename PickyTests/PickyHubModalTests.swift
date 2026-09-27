@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import SwiftUI
 import Testing
 @testable import Picky
@@ -21,6 +22,37 @@ struct PickyHubModalTests {
         await waitUntil { restorations == 1 }
         #expect(host.renderedPresentation == nil)
         #expect(restorations == 1)
+    }
+
+    @Test func mountedModalRestoresFocusOnlyAfterItsTriggerIsEnabled() async {
+        let host = PickyHubModalHost()
+        var enabled = false
+        var enabledAtRestoration: Bool?
+        let hosting = NSHostingView(rootView: PickyHubModalOverlay(host: host) {
+            ModalEnabledProbe { enabled = $0 }
+        })
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 260),
+                              styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        hosting.frame = window.contentView!.bounds
+        window.contentView = hosting
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        hosting.layoutSubtreeIfNeeded()
+        await waitUntil { enabled }
+        #expect(enabled, "The offscreen modal content must mount before testing restoration")
+
+        host.present(accessibilityLabel: "Confirm", onDismiss: { enabledAtRestoration = enabled }) {
+            Text("Confirmation")
+        }
+        await waitUntil { !enabled }
+        #expect(!enabled, "The modal must disable the trigger while presented")
+
+        host.dismiss()
+        await waitUntil { enabledAtRestoration != nil }
+        #expect(enabledAtRestoration == true, "Restore focus only after SwiftUI re-enables the trigger")
     }
 
     @Test func lateDismissalDoesNotRepeatCleanupOrRestoration() async {
@@ -122,5 +154,16 @@ struct PickyHubModalTests {
         while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(5))
         }
+    }
+}
+
+private struct ModalEnabledProbe: View {
+    let onEnabledChange: (Bool) -> Void
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button("Trigger") {}
+            .onAppear { onEnabledChange(isEnabled) }
+            .onChange(of: isEnabled) { _, enabled in onEnabledChange(enabled) }
     }
 }

@@ -1,25 +1,39 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-OUT="$ROOT/build/design-prototypes/async-simplified"
-APP="$OUT/Picky Async UI Study.app"
+cd "$ROOT"
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-mkdir -p "$APP/Contents/MacOS"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>local.picky.async-ui-study</string>
-<key>CFBundleName</key><string>Picky Async UI Study</string>
-<key>CFBundleExecutable</key><string>AsyncWorkStudy</string>
-<key>NSHighResolutionCapable</key><true/>
-</dict></plist>
-PLIST
-xcrun swiftc -parse-as-library -framework SwiftUI -framework AppKit \
-  "$ROOT/docs/prototypes/picky-async-simplified/AsyncWorkStudy.swift" \
-  -o "$APP/Contents/MacOS/AsyncWorkStudy"
-if [[ "${1:-}" == "--render" ]]; then
-  "$APP/Contents/MacOS/AsyncWorkStudy" --render "$OUT/renders"
+DD=/private/tmp/PickyAgentDD
+OUT="$ROOT/build/design-prototypes/async-simplified/production"
+PRODUCTS="$DD/Build/Products/Debug"
+APP="$OUT/Picky Async UI Study.app"
+mkdir -p "$OUT"
+# --reuse-build is for the same source revision after a successful agent-owned build.
+if [[ "${1:-}" == "--reuse-build" ]]; then
+  shift
 else
-  open "$APP"
+  if pgrep -x xcodebuild >/dev/null; then
+    echo 'An Xcode build is already running. Wait for its result before running this study.' >&2
+    exit 75
+  fi
+  xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" \
+    -derivedDataPath "$DD" build > "$OUT/production-build.log" 2>&1
 fi
+python3 docs/prototypes/picky-async-simplified/prepare.py "$PRODUCTS"
+xcrun swiftc -parse-as-library -swift-version 5 -enable-testing \
+  -I "$PRODUCTS" -F "$PRODUCTS" -F "$PRODUCTS/Picky.app/Contents/Frameworks" \
+  -framework SwiftUI -framework AppKit \
+  "$PRODUCTS/Picky.app/Contents/MacOS/Picky.debug.dylib" \
+  -Xlinker -rpath -Xlinker "$PRODUCTS/Picky.app/Contents/MacOS" \
+  -Xlinker -rpath -Xlinker "$PRODUCTS/Picky.app/Contents/Frameworks" \
+  "$ROOT/docs/prototypes/picky-async-simplified/AsyncWorkStudy.swift" \
+  "$OUT/ProductionConversationCard.swift" "$OUT/PickyRunningTaskFooterView.swift" \
+  "$ROOT/PickyTests/PickyRenderGalleryRasterizer.swift" \
+  -o "$APP/Contents/MacOS/AsyncWorkStudy"
+git apply --check "$OUT/apply-to-production.patch"
+case "${1:-}" in
+  --render) "$APP/Contents/MacOS/AsyncWorkStudy" --render "$OUT/renders" ;;
+  --verify) "$APP/Contents/MacOS/AsyncWorkStudy" --verify ;;
+  --build-only) ;;
+  *) open "$APP" ;;
+esac

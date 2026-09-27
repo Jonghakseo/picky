@@ -1140,20 +1140,21 @@ final class PickySessionListViewModel: ObservableObject {
 
     func answerExtensionUi(sessionID: String, requestID: String, value: JSONValue) async throws {
         pickySessionLog("answer extension-ui session=\(sessionID) request=\(requestID)")
-        try await client.send(PickyCommandEnvelope(type: .answerExtensionUi, sessionId: sessionID, requestId: requestID, value: value))
-        mutateSession(sessionID: sessionID) { card in
-            let now = Date()
-            if let pending = card.pendingExtensionUiRequest, pending.id == requestID {
-                if let summary = PickyAskUserQuestionFormState.summarizeAnswer(request: pending, value: value) {
-                    card.lastRequestText = summary
-                    card.lastRequestAt = now
-                }
-                card.pendingExtensionUiRequest = nil
-                card.status = .running
-                card.lastSummary = "Extension UI answered"
-            }
-            card.updatedAt = now
+        let command = PickyCommandEnvelope(type: .answerExtensionUi, sessionId: sessionID, requestId: requestID, value: value)
+        if let rejection = try await client.sendAwaitingError(command, timeout: 5, requireAcknowledgement: true) {
+            throw PickyCommandRejection(event: rejection)
         }
+        // Preserve the accepted answer in the HUD request row without closing the
+        // question. The daemon may already have opened a different question.
+        if let pending = (sessions + archivedSessions).first(where: { $0.id == sessionID })?.pendingExtensionUiRequest,
+           pending.id == requestID, let summary = PickyAskUserQuestionFormState.summarizeAnswer(request: pending, value: value) {
+            mutateSession(sessionID: sessionID) { card in
+                guard card.pendingExtensionUiRequest?.id == requestID else { return }
+                card.lastRequestText = summary
+                card.lastRequestAt = Date()
+            }
+        }
+        // Only the daemon's authoritative session projection may close it.
     }
 
     func cancelExtensionUi(sessionID: String, requestID: String) async throws {

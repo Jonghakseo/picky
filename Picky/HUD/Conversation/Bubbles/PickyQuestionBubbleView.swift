@@ -22,6 +22,10 @@ struct PickyQuestionBubbleView: View {
     @State private var seededFormRequestID: String?
     @State private var isCollapsed: Bool = false
     @State private var didInitCollapse: Bool = false
+    @State private var isSubmitting = false
+    @State private var didSubmit = false
+    @State private var failedSubmission: Submission?
+    @State private var submittedRequestID: String?
     @FocusState private var isQuestionFocused: Bool
     @AccessibilityFocusState private var isQuestionAccessibilityFocused: Bool
 
@@ -60,8 +64,17 @@ struct PickyQuestionBubbleView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     controls
-                        .disabled(isClosed)
-                        .opacity(isClosed ? 0.48 : 1)
+                        .disabled(isClosed || isSubmitting || didSubmit)
+                        .opacity(isClosed || isSubmitting || didSubmit ? 0.48 : 1)
+                    if let failedSubmission, !isClosed {
+                        HStack(spacing: 6) {
+                            Text("hud.question.sendFailed")
+                                .foregroundColor(DS.Colors.destructiveText)
+                            Button(L10n.t("hud.error.retry")) { submit(failedSubmission) }
+                                .disabled(isSubmitting)
+                        }
+                        .font(PickyHUDTypography.supportingMedium)
+                    }
                 }
             }
             .padding(.horizontal, 10)
@@ -106,6 +119,10 @@ struct PickyQuestionBubbleView: View {
             seededFormRequestID = nil
             seedFormDefaultsIfNeeded()
             isCollapsed = isClosed
+            isSubmitting = false
+            didSubmit = false
+            failedSubmission = nil
+            submittedRequestID = nil
         }
         .onChange(of: isActiveRequest) { _, _ in autoCollapseIfClosed() }
         .onChange(of: cancelledAt) { _, _ in autoCollapseIfClosed() }
@@ -360,12 +377,37 @@ struct PickyQuestionBubbleView: View {
         seededFormRequestID = request.id
     }
 
-    private func answer(_ value: JSONValue) {
-        Task { try? await commands.answerExtensionUi(sessionID: request.sessionId, requestID: request.id, value: value) }
+    private enum Submission {
+        case answer(JSONValue)
+        case cancel
     }
 
-    private func cancel() {
-        Task { try? await commands.cancelExtensionUi(sessionID: request.sessionId, requestID: request.id) }
+    private func answer(_ value: JSONValue) { submit(.answer(value)) }
+    private func cancel() { submit(.cancel) }
+
+    private func submit(_ submission: Submission) {
+        guard !isClosed, !isSubmitting, !didSubmit else { return }
+        isSubmitting = true
+        failedSubmission = nil
+        let requestID = request.id
+        let sessionID = request.sessionId
+        submittedRequestID = requestID
+        Task {
+            do {
+                switch submission {
+                case .answer(let value):
+                    try await commands.answerExtensionUi(sessionID: sessionID, requestID: requestID, value: value)
+                case .cancel:
+                    try await commands.cancelExtensionUi(sessionID: sessionID, requestID: requestID)
+                }
+                guard submittedRequestID == requestID else { return }
+                didSubmit = true
+            } catch {
+                guard submittedRequestID == requestID else { return }
+                failedSubmission = submission
+            }
+            isSubmitting = false
+        }
     }
 }
 

@@ -262,7 +262,18 @@ extension PickySessionCard {
         let didReplacePiSession = incoming.piSessionFilePath != nil && incoming.piSessionFilePath != piSessionFilePath
         let didResetPiSession = incoming.representsFreshPiSessionReset(comparedTo: self)
         let shouldCarryPreviousSessionState = !didReplacePiSession && !didResetPiSession
-        if shouldCarryPreviousSessionState && !status.canTransition(to: incoming.status) {
+        // v1 snapshots have no revision. Keep the pre-existing merge behavior
+        // for ordinary updates, but fence the async attention edge by time and
+        // workRevision so a late terminal snapshot cannot erase a new block.
+        if shouldCarryPreviousSessionState && status == .blocked
+            && (asyncWorkSummary?.attentionCount ?? 0) > 0 && incoming.updatedAt < updatedAt { return self }
+        let newerAsyncAttention: Bool = {
+            guard status == .completed, incoming.status == .blocked,
+                  incoming.updatedAt >= updatedAt,
+                  let summary = incoming.asyncWorkSummary, summary.attentionCount > 0 else { return false }
+            return asyncWorkSummary.map { summary.workRevision > $0.workRevision } ?? true
+        }()
+        if shouldCarryPreviousSessionState && !newerAsyncAttention && !status.canTransition(to: incoming.status) {
             result.status = status
         }
         if shouldCarryPreviousSessionState && result.logPreview.isEmpty { result.logPreview = logPreview }

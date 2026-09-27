@@ -941,6 +941,25 @@ struct PickySessionViewModelTests {
         #expect(answers.first?.value == .bool(true))
         #expect(answers.last?.requestId == "ui-2")
         #expect(answers.last?.value == .object(["cancelled": .bool(true)]))
+        #expect(client.acknowledgementRequirements == [true, true])
+    }
+
+    @MainActor @Test func rejectedExtensionUiAnswerKeepsQuestionAvailableForRetry() async throws {
+        let client = FakePickyAgentClient()
+        client.sendAwaitingErrorResult = PickyErrorEvent(code: "bad_message", message: "Request no longer available", commandId: nil)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.askUserQuestionRequest())))
+
+        do {
+            try await viewModel.answerExtensionUi(sessionID: "session-1", requestID: "ui-form", value: .object(["value": .string("reply")]))
+            Issue.record("A rejected answer must not be treated as accepted")
+        } catch {
+            #expect(error.localizedDescription.contains("Request no longer available"))
+        }
+        #expect(client.acknowledgementRequirements == [true])
+        #expect(viewModel.sessions.first?.pendingExtensionUiRequest?.id == "ui-form")
+        #expect(viewModel.sessions.first?.status == .waiting_for_input)
     }
 
     @MainActor @Test func sessionRewoundRestoresComposerDraftAndMessageRemovedDropsBubbles() throws {
@@ -1346,8 +1365,10 @@ struct PickySessionViewModelTests {
         #expect(answer.value == value)
 
         let card = try #require(viewModel.sessions.first)
-        #expect(card.pendingExtensionUiRequest == nil)
+        #expect(card.pendingExtensionUiRequest?.id == "ui-form", "Only the daemon's authoritative state clears a submitted question")
         #expect(card.lastRequestText == "Scope?: Project \u{00B7} Items?: Rule \u{00B7} Note: ok")
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", updatedAt: "2026-05-01T00:00:02.000Z"))))
+        #expect(viewModel.sessions.first?.pendingExtensionUiRequest == nil)
     }
 
     @MainActor @Test func sessionUpdateClearsPendingExtensionUiRequestWhenIncomingHasNone() throws {
@@ -1394,7 +1415,7 @@ struct PickySessionViewModelTests {
         try await viewModel.cancelExtensionUi(sessionID: "session-1", requestID: "ui-form")
 
         let card = try #require(viewModel.sessions.first)
-        #expect(card.pendingExtensionUiRequest == nil)
+        #expect(card.pendingExtensionUiRequest?.id == "ui-form")
         #expect(card.lastRequestText == "계속 진행해줘.")
     }
 
@@ -4320,6 +4341,24 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.status == .completed)
     }
 
+    @MainActor @Test func completedSessionShowsNewAsyncAttentionButRejectsOlderSnapshot() {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        let attention = #"{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":1,"attentionCount":1,"workRevision":2,"canReleaseRuntime":false}"#
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pickle-1", status: "completed", updatedAt: "2026-05-01T00:00:10.000Z", piSessionFilePath: "/tmp/pi-session.jsonl"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pickle-1", status: "blocked", summary: "Async execution outcome unknown", updatedAt: "2026-05-01T00:00:11.000Z",
+            piSessionFilePath: "/tmp/pi-session.jsonl", asyncWorkSummaryJSON: attention
+        ))))
+        #expect(viewModel.sessions.first?.status == .blocked)
+        #expect(viewModel.sessions.first?.asyncWorkSummary?.attentionCount == 1)
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pickle-1", status: "completed", updatedAt: "2026-05-01T00:00:09.000Z", piSessionFilePath: "/tmp/pi-session.jsonl"
+        ))))
+        #expect(viewModel.sessions.first?.status == .blocked)
+    }
+
     @Test func terminalCommandShellQuotesPaths() throws {
         let cliCommand = PickyPiTerminalCommand.makeCliResumeCommand(
             sessionFilePath: "/tmp/pi session's.jsonl",
@@ -6118,7 +6157,8 @@ private enum EventJSON {
         notifyMainOnCompletion: Bool? = nil,
         notifyMacOSOnCompletion: Bool? = nil,
         pinned: Bool? = nil,
-        lastRequest: String? = nil
+        lastRequest: String? = nil,
+        asyncWorkSummaryJSON: String? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
         let encodedLastRequest = lastRequest.map { ",\"lastRequest\":{\"source\":\"steer\",\"text\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))}" } ?? ""
@@ -6127,8 +6167,9 @@ private enum EventJSON {
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         let encodedMacOSNotify = notifyMacOSOnCompletion.map { ",\"notifyMacOSOnCompletion\":\($0)" } ?? ""
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
+        let encodedAsyncWorkSummary = asyncWorkSummaryJSON.map { ",\"asyncWorkSummary\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedMacOSNotify)\(encodedPinned)\(encodedLastRequest)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedMacOSNotify)\(encodedPinned)\(encodedLastRequest)\(encodedAsyncWorkSummary)}}
         """
     }
 

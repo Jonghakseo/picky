@@ -70,7 +70,8 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     override func sendEvent(_ event: NSEvent) {
         if handlePickyCloseWindowShortcut(event) { return }
         if event.type == .leftMouseDown || event.type == .rightMouseDown {
-            makeKey()
+            PickyPerf.event("hud_panel_mouse_down")
+            PickyPerf.interval("hud_panel_make_key") { makeKey() }
             if !clickHitsFocusedControl(event) {
                 resignFocusedControl()
             }

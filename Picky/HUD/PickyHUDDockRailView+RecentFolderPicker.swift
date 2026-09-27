@@ -60,6 +60,7 @@ extension PickyHUDDockRailView {
         newPickleAnchorGroupID = anchorGroupID
         newPickleTargetGroupID = targetGroupID
         pickleFolderPickerPresentationRequest = request
+        PickyPerf.event("new_pickle_show_request")
         updateDockAddSlotExpansion(pickerIsPresented: true)
         isRecentPickleFolderPickerPresented = true
     }
@@ -164,6 +165,7 @@ extension PickyHUDDockRailView {
             activeRequest: pickleFolderPickerPresentationRequest
         )
         return Button {
+            PickyPerf.event("new_pickle_button_action")
             showRecentPickleFolderPicker(anchorGroupID: nil, targetGroupID: nil)
         } label: {
             ZStack {
@@ -232,6 +234,7 @@ extension PickyHUDDockRailView {
             activeRequest: pickleFolderPickerPresentationRequest
         )
         return Button {
+            PickyPerf.event("new_pickle_button_action")
             showRecentPickleFolderPicker(anchorGroupID: nil, targetGroupID: nil)
         } label: {
             ZStack {

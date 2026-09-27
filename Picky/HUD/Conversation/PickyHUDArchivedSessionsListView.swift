@@ -31,6 +31,7 @@ struct PickyHUDArchivedDockAccessView: View {
 
     var body: some View {
         Button {
+            PickyPerf.event("archived_pickle_button_action")
             isPresented.toggle()
         } label: {
             Image(systemName: "archivebox")
@@ -45,9 +46,11 @@ struct PickyHUDArchivedDockAccessView: View {
         .accessibilityLabel(L10n.t("hud.archivedList.title"))
         .accessibilityValue("\(archiveMembership.archivedSessionIDs.count)")
         .popover(isPresented: $isPresented) {
+            let _ = PickyPerf.event("archived_pickle_content_build")
             PickyHUDArchivedSessionsListView(archiveMembership: archiveMembership, commands: commands)
                 .frame(width: 380)
                 .padding(DS.Spacing.space3)
+                .onAppear { PickyPerf.event("archived_pickle_content_appear") }
         }
     }
 }
@@ -78,6 +81,7 @@ struct PickyHUDArchivedSessionsListView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("archived_pickle_content_body")
         VStack(alignment: .leading, spacing: 8) {
             if showsHeader {
                 header

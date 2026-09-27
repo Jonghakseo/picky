@@ -49,6 +49,7 @@ extension View {
         onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)? = nil
     ) -> some View {
         popover(isPresented: isPresented, arrowEdge: arrowEdge) {
+            let _ = PickyPerf.event("new_pickle_content_build")
             PickyRecentPickleFolderPickerView(
                 isPresented: isPresented,
                 pinnedPickleCwds: pinnedPickleCwds,
@@ -63,7 +64,10 @@ extension View {
                 suggestedGroupColor: suggestedGroupColor,
                 onCreateGroup: onCreateGroup
             )
-            .onAppear(perform: onPresentationAcknowledged)
+            .onAppear {
+                PickyPerf.event("new_pickle_content_appear")
+                onPresentationAcknowledged()
+            }
         }
     }
 }
@@ -96,6 +100,7 @@ struct PickyRecentPickleFolderPickerView: View {
     @State private var draggingPinnedCwd: String?
 
     var body: some View {
+        let _ = PickyPerf.event("new_pickle_content_body")
         if isShowingGroupCreator, let onCreateGroup {
             PickyDockGroupCreatorView(
                 availableSessions: availableSessionsForGroupCreation,

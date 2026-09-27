@@ -9,6 +9,27 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockRailPolicyTests {
+    @Test func groupDeletionOnlyConfirmsForActiveMembers() {
+        let archivedOnly = PickyDockGroup(id: "archived-only", memberSessionIDs: ["archived"])
+        let mixed = PickyDockGroup(id: "mixed", memberSessionIDs: ["archived", "active"])
+        let activeIDs: Set<String> = ["active"]
+
+        #expect(!PickyHUDDockGroupDeletePrompt.requiresConfirmation(group: archivedOnly, activeSessionIDs: activeIDs))
+        #expect(!PickyHUDDockGroupDeletePrompt.requiresConfirmation(
+            group: PickyDockGroup(id: "empty", memberSessionIDs: []), activeSessionIDs: activeIDs
+        ))
+        #expect(PickyHUDDockGroupDeletePrompt.requiresConfirmation(group: mixed, activeSessionIDs: activeIDs))
+    }
+
+    @MainActor @Test func archivedOnlyGroupDeletesImmediately() {
+        let group = PickyDockGroup(id: "archived-only", memberSessionIDs: ["archived"])
+        var didDelete = false
+        PickyHUDDockGroupDeletePrompt.delete(group: group, activeSessionIDs: []) {
+            didDelete = true
+        }
+        #expect(didDelete)
+    }
+
     @MainActor @Test func externalPresentationStoreScopesUpdatesAndClearsToItsToken() {
         let store = PickyHUDDockExternalDragRailPresentationStore()
         let token = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!

@@ -76,6 +76,7 @@ struct PickyHUDDockGroupTileClickHostTests {
                 )
                 .pickyDockGroupContextMenu(
                     group: group,
+                    activeSessionIDs: [],
                     onRename: {},
                     onSetColor: { _ in },
                     onUngroup: {},
@@ -85,6 +86,7 @@ struct PickyHUDDockGroupTileClickHostTests {
                 header
                     .pickyDockGroupContextMenu(
                         group: group,
+                        activeSessionIDs: [],
                         onRename: {},
                         onSetColor: { _ in },
                         onUngroup: {},

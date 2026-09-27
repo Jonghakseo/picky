@@ -601,6 +601,7 @@ struct PickyHUDDockRailView: View {
                 .publishDockGroupDropFrame(groupID: group.id)
                 .pickyDockGroupContextMenu(
                     group: group,
+                    activeSessionIDs: Set(allSessions.map(\.id)),
                     onRename: { presentRenameDialog(for: group) },
                     onSetColor: { onSetDockGroupColor(group.id, $0) },
                     onUngroup: { onRemoveDockGroup(group.id, true) },
@@ -654,6 +655,7 @@ struct PickyHUDDockRailView: View {
                 .publishDockGroupDropFrame(groupID: group.id)
                 .pickyDockGroupContextMenu(
                     group: group,
+                    activeSessionIDs: Set(allSessions.map(\.id)),
                     onRename: { presentRenameDialog(for: group) },
                     onSetColor: { onSetDockGroupColor(group.id, $0) },
                     onUngroup: { onRemoveDockGroup(group.id, true) },
@@ -674,6 +676,7 @@ struct PickyHUDDockRailView: View {
                 }
                 .pickyDockGroupContextMenu(
                     group: group,
+                    activeSessionIDs: Set(allSessions.map(\.id)),
                     onRename: { presentRenameDialog(for: group) },
                     onSetColor: { onSetDockGroupColor(group.id, $0) },
                     onUngroup: { onRemoveDockGroup(group.id, true) },
@@ -710,8 +713,9 @@ struct PickyHUDDockRailView: View {
             presentRenameDialog(for: group)
         }
         .accessibilityAction(named: Text(L10n.t("group.folder.action.delete"))) {
-            PickyHUDDockGroupDeletePrompt.confirmDeleteWithArchive(
-                groupName: group.displayName,
+            PickyHUDDockGroupDeletePrompt.delete(
+                group: group,
+                activeSessionIDs: Set(allSessions.map(\.id)),
                 onConfirm: { onRemoveDockGroup(group.id, false) }
             )
         }
@@ -1221,16 +1225,18 @@ struct PickyHUDDockRailView: View {
         groupDragReferenceTopEntryCenters = [:]
         groupDragReferenceTopEntryIDs = []
         if didRemove {
-            // Released outside the dock: remove the group and archive its
-            // members (same outcome as the context-menu delete). A group with
-            // Pickles inside confirms first; an empty group is removed at once.
-            let group = layout.group(withID: groupID)
-            if let group, !group.memberSessionIDs.isEmpty {
+            let activeSessionIDs = Set(allSessions.map(\.id))
+            // Archived members are hidden from the dock and need no confirmation.
+            if let group = layout.group(withID: groupID),
+               PickyHUDDockGroupDeletePrompt.requiresConfirmation(
+                   group: group, activeSessionIDs: activeSessionIDs
+               ) {
                 // Defer the modal so the block first springs back into the
                 // dock, then the confirmation appears over a settled layout.
                 DispatchQueue.main.async {
-                    PickyHUDDockGroupDeletePrompt.confirmDeleteWithArchive(
-                        groupName: group.displayName
+                    PickyHUDDockGroupDeletePrompt.delete(
+                        group: group,
+                        activeSessionIDs: activeSessionIDs
                     ) {
                         onRemoveDockGroup(groupID, false)
                     }

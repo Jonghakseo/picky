@@ -579,6 +579,7 @@ struct PickyHUDDockGroupEmptySlot: View {
 /// label, preventing the two right-click surfaces from drifting.
 private struct PickyHUDDockGroupContextMenuModifier: ViewModifier {
     let group: PickyDockGroup
+    let activeSessionIDs: Set<String>
     let onRename: () -> Void
     let onSetColor: (PickyDockGroupColor) -> Void
     let onUngroup: () -> Void
@@ -588,6 +589,7 @@ private struct PickyHUDDockGroupContextMenuModifier: ViewModifier {
         content.contextMenu {
             PickyHUDDockGroupContextMenu(
                 group: group,
+                activeSessionIDs: activeSessionIDs,
                 onRename: onRename,
                 onSetColor: onSetColor,
                 onUngroup: onUngroup,
@@ -600,6 +602,7 @@ private struct PickyHUDDockGroupContextMenuModifier: ViewModifier {
 extension View {
     func pickyDockGroupContextMenu(
         group: PickyDockGroup,
+        activeSessionIDs: Set<String>,
         onRename: @escaping () -> Void,
         onSetColor: @escaping (PickyDockGroupColor) -> Void,
         onUngroup: @escaping () -> Void,
@@ -607,6 +610,7 @@ extension View {
     ) -> some View {
         modifier(PickyHUDDockGroupContextMenuModifier(
             group: group,
+            activeSessionIDs: activeSessionIDs,
             onRename: onRename,
             onSetColor: onSetColor,
             onUngroup: onUngroup,
@@ -630,6 +634,7 @@ enum PickyHUDDockGroupContextMenuPresentation {
 /// Right-click context menu content for a group folder tile and label.
 struct PickyHUDDockGroupContextMenu: View {
     let group: PickyDockGroup
+    let activeSessionIDs: Set<String>
     let onRename: () -> Void
     let onSetColor: (PickyDockGroupColor) -> Void
     let onUngroup: () -> Void
@@ -656,13 +661,9 @@ struct PickyHUDDockGroupContextMenu: View {
         Divider()
         Button(PickyHUDDockGroupContextMenuPresentation.ungroupTitle, action: onUngroup)
         Button(PickyHUDDockGroupContextMenuPresentation.deleteTitle, role: .destructive) {
-            // Empty group: nothing to archive, so delete without confirmation.
-            guard !group.memberSessionIDs.isEmpty else {
-                onDeleteWithArchive()
-                return
-            }
-            PickyHUDDockGroupDeletePrompt.confirmDeleteWithArchive(
-                groupName: group.displayName,
+            PickyHUDDockGroupDeletePrompt.delete(
+                group: group,
+                activeSessionIDs: activeSessionIDs,
                 onConfirm: onDeleteWithArchive
             )
         }
@@ -673,8 +674,21 @@ struct PickyHUDDockGroupContextMenu: View {
 /// Pickles. Used by both the header context menu and the drag-out gesture so
 /// the prompt stays identical no matter how the removal is triggered.
 enum PickyHUDDockGroupDeletePrompt {
+    static func requiresConfirmation(group: PickyDockGroup, activeSessionIDs: Set<String>) -> Bool {
+        group.memberSessionIDs.contains { activeSessionIDs.contains($0) }
+    }
+
     @MainActor
-    static func confirmDeleteWithArchive(groupName: String, onConfirm: () -> Void) {
+    static func delete(group: PickyDockGroup, activeSessionIDs: Set<String>, onConfirm: () -> Void) {
+        guard requiresConfirmation(group: group, activeSessionIDs: activeSessionIDs) else {
+            onConfirm()
+            return
+        }
+        confirmDeleteWithArchive(groupName: group.displayName, onConfirm: onConfirm)
+    }
+
+    @MainActor
+    private static func confirmDeleteWithArchive(groupName: String, onConfirm: () -> Void) {
         // Surface a quick confirmation by routing through an NSAlert so we
         // don't silently archive a user's work.
         let alert = NSAlert()

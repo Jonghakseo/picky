@@ -50,16 +50,20 @@ translations = {'en': 'Running tasks · %1$lld', 'ko': '작업 %1$lld개 실행 
 catalog_path = Path('Picky/Resources/Localizable.xcstrings')
 catalog_text = (root / catalog_path).read_text()
 catalog = json.loads(catalog_text)
-entry = {'comment': 'Count of root task families with confirmed running work. %1$lld is the count.',
-         'localizations': {lang: {'stringUnit': {'state': 'translated', 'value': value}}
-                           for lang, value in translations.items()}}
-# Preserve Apple's catalog formatting rather than reformatting the entire file.
+labels = {key: translations,
+          'hud.asyncTasks.subagentCount': {'en': 'Subagents · %1$lld', 'ko': '하위 에이전트 %1$lld개',
+              'ja': 'サブエージェント %1$lld件', 'zh-Hans': '子代理 · %1$lld', 'zh-Hant': '子代理 · %1$lld'},
+          'hud.asyncTasks.subagentWork': {'en': 'Subagent work', 'ko': '하위 에이전트 작업',
+              'ja': 'サブエージェントの作業', 'zh-Hans': '子代理任务', 'zh-Hant': '子代理工作'}}
+entries = {label: {'localizations': {lang: {'stringUnit': {'state': 'translated', 'value': value}}
+                                   for lang, value in values.items()}} for label, values in labels.items()}
+# Preserve the catalog formatting rather than reformatting the entire file.
 anchor = '    "hud.asyncTasks.showLess": {'
-assert catalog_text.count(anchor) == 1 and key not in catalog['strings']
-entry_text = json.dumps({key: entry}, ensure_ascii=False, indent=2)[2:-2]
+assert catalog_text.count(anchor) == 1 and not set(entries).intersection(catalog['strings'])
+entry_text = json.dumps(entries, ensure_ascii=False, indent=2)[2:-2]
 entry_text = '\n'.join('  ' + line for line in entry_text.splitlines())
 updated_catalog = catalog_text.replace(anchor, entry_text + ',\n' + anchor)
-assert json.loads(updated_catalog)['strings'][key] == entry
+assert all(json.loads(updated_catalog)['strings'][label] == entry for label, entry in entries.items())
 (out / 'Localizable.xcstrings').write_text(updated_catalog)
 patch += diff(catalog_text, updated_catalog, catalog_path)
 (out / 'apply-to-production.patch').write_text(patch)
@@ -75,7 +79,8 @@ for lang, value in translations.items():
     # Xcode currently emits binary plists for .strings; plutil also handles text catalogs.
     data = subprocess.check_output(['plutil', '-convert', 'binary1', '-o', '-', str(path)])
     strings = plistlib.loads(data)
-    strings[key] = value
+    for label, values in labels.items():
+        strings[label] = values[lang]
     path.write_bytes(plistlib.dumps(strings, fmt=plistlib.FMT_BINARY))
 # Private local session examples stay under ignored build/. Fresh checkouts use
 # recorded real-provider fields instead, never invented progress/percentage text.

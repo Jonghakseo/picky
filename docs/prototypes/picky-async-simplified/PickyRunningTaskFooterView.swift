@@ -8,7 +8,6 @@ struct PickyRunningTaskFooterView: View {
     var compact = false
     var bottomSpacing: CGFloat = 0
     @State private var expanded = false
-    @State private var selected: PickyAsyncTaskShelfIdentity?
 
     private var detail: PickyAsyncTaskDetail? {
         guard case .loaded(let value) = store.asyncTaskStore.detailState else { return nil }
@@ -82,66 +81,42 @@ struct PickyRunningTaskFooterView: View {
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(roots, id: \.shelfIdentity) { root in
-                let isSelected = selected == root.shelfIdentity
-                Button { selected = isSelected ? nil : root.shelfIdentity } label: {
-                    HStack(spacing: DS.Spacing.space2) {
-                        Text(root.title)
-                            .foregroundStyle(DS.Colors.textPrimary)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if let detail, let current = runningMembers(of: root, detail: detail).first {
-                            Text(current.createdAt, style: .timer)
-                                .monospacedDigit()
-                                .foregroundStyle(DS.Colors.textTertiary)
-                                .fixedSize()
-                        }
-                        Image(systemName: isSelected ? "chevron.down" : "chevron.right")
+                HStack(spacing: DS.Spacing.space2) {
+                    Text(displayTitle(for: root))
+                        .foregroundStyle(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let detail, let current = runningMembers(of: root, detail: detail).first {
+                        Text(current.createdAt, style: .timer)
+                            .monospacedDigit()
                             .foregroundStyle(DS.Colors.textTertiary)
+                            .fixedSize()
                     }
-                    .pickyFont(size: PickyHUDTypography.labelSemiboldNSFont(fontScale: 1).pointSize)
-                    .padding(.horizontal, DS.Spacing.space2)
-                    .frame(minHeight: 28)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(RunningFooterButtonStyle(selected: isSelected))
-                .help(root.title)
-                .accessibilityLabel(L10n.t("hud.asyncTasks.detailsNamed", root.title))
-                if isSelected {
-                    taskDetails(root)
-                }
+                .pickyFont(size: PickyHUDTypography.labelSemiboldNSFont(fontScale: 1).pointSize)
+                .padding(.horizontal, DS.Spacing.space2)
+                .frame(minHeight: 28)
+                .accessibilityElement(children: .combine)
             }
         }
     }
 
-    private func taskDetails(_ root: PickyAsyncTask) -> some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            // Provider titles can be commands, not friendly summaries. Reveal the original
-            // text on selection rather than inventing a shortened description or progress.
-            Text(root.title).foregroundStyle(DS.Colors.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            if let detail {
-                ForEach(runningMembers(of: root, detail: detail), id: \.shelfIdentity) { task in
-                    if task.taskId != root.taskId {
-                        Text(task.title).foregroundStyle(DS.Colors.textPrimary)
-                        if let run = subagentRun(for: task, root: root) {
-                            Text(run.displayTask ?? run.task)
-                                .foregroundStyle(DS.Colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                        }
-                    }
-                    if let progress = task.progress, !progress.isEmpty {
-                        Text(progress).foregroundStyle(DS.Colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                }
-            }
+    private func displayTitle(for root: PickyAsyncTask) -> String {
+        guard ["subagent", "subagent_group", "subagent-group"].contains(root.kind), let detail else {
+            // bash_async preserves its optional title; without one the provider supplies
+            // a command token. Do not claim that either value is a guaranteed objective.
+            return root.title
         }
-        .pickyFont(size: PickyHUDTypography.bodyCompactNSFont(fontScale: 1).pointSize)
-        .padding(.horizontal, DS.Spacing.space2)
-        .padding(.bottom, DS.Spacing.space2)
+        let children = runningMembers(of: root, detail: detail).filter { $0.taskId != root.taskId }
+        if children.count == 1,
+           let saved = subagentRun(for: children[0], root: root)?.displayTask?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !saved.isEmpty {
+            return saved
+        }
+        // AsyncTask.title is the command/agent name, not displayTask. No local guessing,
+        // prompt shortening, or extra model call when a saved label is absent.
+        return children.isEmpty ? L10n.t("hud.asyncTasks.subagentWork") :
+            L10n.t("hud.asyncTasks.subagentCount", children.count)
     }
 
     private func subagentRun(for task: PickyAsyncTask, root: PickyAsyncTask) -> PickySubagentRun? {
@@ -153,7 +128,7 @@ struct PickyRunningTaskFooterView: View {
 }
 
 /// Same intrinsic-document measurement as the production async shelf. Short lists
-/// must not reserve the maximum scroll height; long details remain scrollable.
+/// must not reserve the maximum scroll height; larger lists remain scrollable.
 private struct RunningTaskListLayout: Layout {
     let maxHeight: CGFloat
 
@@ -169,19 +144,17 @@ private struct RunningTaskListLayout: Layout {
 }
 
 private struct RunningFooterButtonStyle: ButtonStyle {
-    var selected = false
     func makeBody(configuration: Configuration) -> some View {
-        Content(configuration: configuration, selected: selected)
+        Content(configuration: configuration)
     }
 
     private struct Content: View {
         let configuration: ButtonStyleConfiguration
-        let selected: Bool
         @State private var hovered = false
         var body: some View {
             configuration.label
                 .background(configuration.isPressed ? DS.Colors.surface3 :
-                    selected || hovered ? DS.Colors.surface2 : .clear,
+                    hovered ? DS.Colors.surface2 : .clear,
                     in: RoundedRectangle(cornerRadius: DS.CornerRadius.compact))
                 .onHover { hovered = $0 }
         }

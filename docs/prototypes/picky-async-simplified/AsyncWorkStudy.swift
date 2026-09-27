@@ -168,7 +168,7 @@ private struct StudyBoard: View {
                         maxHeight: 640, width: 446, fixedHeight: 640)
                 }
             }
-            Text("작업명·경과 시간 → 원문과 하위 에이전트의 위임 내용. 진행 설명은 실제 데이터가 있을 때만 표시해요.")
+            Text("실제 제목과 경과 시간만 표시해요. 목적형 제목이 없는 하위 에이전트는 개수로 표시하며, 항목별 상세는 없어요.")
                 .font(PickyHUDTypography.supporting).foregroundStyle(DS.Colors.textSecondary)
         }
         .padding(DS.Spacing.space6)

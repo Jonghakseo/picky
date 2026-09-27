@@ -13,6 +13,7 @@ These defaults follow OpenAI's [GPT-6 Astra guidance](https://developers.openai.
 - Keep autonomy within the requested scope. Do not restart the running app, change signing, perform destructive operations, push, create PRs, or publish without the required authorization. Do not add approval gates for routine local edits or focused validation.
 - Use a short plan for multi-phase work; handle small, obvious changes directly. Report meaningful findings, blockers, and completion, not every tool call. Default to a concise final answer with changes, validation, and any actionable limitation.
 - Read the relevant code path and nearest tests first; expand investigation only when evidence points elsewhere. Batch independent reads and searches. Delegate independent, bounded work when the time or quality benefit exceeds coordination cost; keep small, tightly coupled edits local and avoid overlapping file ownership.
+- For parallel reviews in Picky, designate one owner for CPU- or memory-intensive build/test execution. Other reviewers investigate read-only and send validation requests to that owner; the main agent must not start duplicate validation concurrently. If resource pressure is observed, run only the needed scope with the existing `test:serial` command or `--maxWorkers=1`. This resource-safety exception does not make serial execution the default for all Vitest runs.
 - Run long commands asynchronously when supported and continue independent work. Await the actual result before claiming completion; do not busy-poll, duplicate in-flight checks, or run concurrent Xcode jobs against the same DerivedData path.
 - Apply skills to the task rather than turning every task into their largest workflow. For routine test scope and permission, the policy below supersedes blanket repository guidance to always add tests or to wait for an explicit test-writing request. Keep domain-specific safety gates and higher-priority instructions. If another instruction genuinely blocks progress, cite its exact file and rule rather than silently stopping.
 
@@ -219,6 +220,7 @@ Expected: `picky-agentd listening on 127.0.0.1:17631`; quitting the app closes t
 ## Implementation guidance
 
 - Prefer small, focused changes. Add/update nearby tests only when they protect a meaningful behavior gap, following Behavior-focused validation above.
+- When moving Pi features into Picky's bundled runtime, compare the original documentation and implementation for execution triggers, process ownership, behavior after app/session exit, and restart/resume conditions. Record which contracts are preserved, changed, or excluded; do not silently reduce agreed behavior. Separate unverified lifecycle behavior from completed work in the final report. This comparison does not authorize quitting or restarting the user's running app.
 - Keep context packets neutral: transcript, app/window, browser URL/title/selection, screenshots, cwd, selected session.
 - Follow-up routing must be explicit and predictable; avoid surprising session capture.
 - Extension UI and confirmation flows should remain visible in the HUD, not hidden in logs.

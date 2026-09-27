@@ -962,11 +962,11 @@ describe("protocol contract fixtures", () => {
   });
 
   it("keeps projection mutation ownership and schema variants in exact parity", () => {
-    // `transactionEnvelope` carries the durable session revision and is not a
-    // field mutation variant; it remains outside the mutation discriminated union.
-    const transactionEnvelopeMutations = new Set(["transactionEnvelope"]);
+    // Revision envelopes and snapshot-only daemon recovery fields are not
+    // field mutation variants. The latter have no Swift projection store.
+    const nonMutationOwnership = new Set(["transactionEnvelope", "snapshotOnly"]);
     expect(new Set(PickySessionProjectionMutationVariantSchema.options.map((option) => option.shape.type.value))).toEqual(
-      new Set(persistedSessionFieldOwnership.flatMap(mutationNames).filter((name) => !transactionEnvelopeMutations.has(name))),
+      new Set(persistedSessionFieldOwnership.flatMap(mutationNames).filter((name) => !nonMutationOwnership.has(name))),
     );
   });
 

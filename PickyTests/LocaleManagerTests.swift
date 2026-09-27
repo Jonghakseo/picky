@@ -42,7 +42,7 @@ final class LocaleManagerTests: XCTestCase {
         XCTAssertEqual(L10n.t("hud.conversation.turn.latest"), "Latest")
         XCTAssertEqual(L10n.t("hud.thinking.title"), "Thinking")
         XCTAssertEqual(activityCategoryLabels(), ["Read", "bash", "Edit", "Write", "Subagent", "Other"])
-        XCTAssertEqual(activitySummaryLabel(), "Used 20 tools")
+        XCTAssertEqual(activitySummaryLabel(), "Made 20 tool calls")
 
         manager.apply(.korean)
         XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "컨텍스트: 43%")

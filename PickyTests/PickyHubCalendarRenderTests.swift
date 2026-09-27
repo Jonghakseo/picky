@@ -22,7 +22,7 @@ struct PickyHubCalendarRenderTests {
                     .environment(\.locale, Locale(identifier: "ko_KR"))
                 let image = try rasterize(view, name: "hub-calendar-missing-\(Int(width))", width: width, height: 720)
                 let lines = try recognizedLines(image)
-                #expect(lines.contains { $0.contains("Cron 설치") }, "Missing plugin should offer installation: \(lines)")
+                #expect(lines.contains { $0.contains("예약 기능(Cron) 설치") }, "Missing plugin should offer installation: \(lines)")
                 #expect(lines.contains { $0.contains("가이드 및 업데이트") }, "Sidebar title must be a single readable line: \(lines)")
             }
         }

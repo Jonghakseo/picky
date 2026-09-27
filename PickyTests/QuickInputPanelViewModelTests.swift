@@ -79,13 +79,15 @@ struct QuickInputPanelViewModelTests {
 
     @Test
     func pickleRecipientPresentationHidesMainHistoryAndNamesTarget() {
-        let viewModel = QuickInputPanelViewModel()
+        LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let viewModel = QuickInputPanelViewModel()
 
-        viewModel.beginPresentation(recipient: .pickle(sessionID: "pickle-a", label: "Investigate logs"))
+            viewModel.beginPresentation(recipient: .pickle(sessionID: "pickle-a", label: "Investigate logs"))
 
-        #expect(viewModel.recipient == .pickle(sessionID: "pickle-a", label: "Investigate logs"))
-        #expect(viewModel.recipient.prompt == "Message Investigate logs…")
-        #expect(!viewModel.recipient.showsMainAgentHistory)
+            #expect(viewModel.recipient == .pickle(sessionID: "pickle-a", label: "Investigate logs"))
+            #expect(viewModel.recipient.prompt == "Message Investigate logs…")
+            #expect(!viewModel.recipient.showsMainAgentHistory)
+        }
     }
 
     @Test
@@ -104,25 +106,27 @@ struct QuickInputPanelViewModelTests {
 
     @Test
     func failedSendRestoresPickleRecipientUntilAnExplicitMainPresentation() {
-        let manager = QuickInputPanelManager()
-        let recipient = QuickInputRecipientProjection.pickle(sessionID: "pickle-a", label: "Investigate logs")
-        let viewModel = manager.viewModelForTesting
-        viewModel.beginPresentation(recipient: recipient)
-        viewModel.isSending = true
+        LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let manager = QuickInputPanelManager()
+            let recipient = QuickInputRecipientProjection.pickle(sessionID: "pickle-a", label: "Investigate logs")
+            let viewModel = manager.viewModelForTesting
+            viewModel.beginPresentation(recipient: recipient)
+            viewModel.isSending = true
 
-        manager.panelDidFinishSending(success: false, errorMessage: nil)
+            manager.panelDidFinishSending(success: false, errorMessage: nil)
 
-        #expect(!manager.isPanelVisible)
-        #expect(viewModel.recipient == recipient)
-        #expect(viewModel.recipient.prompt == "Message Investigate logs…")
-        #expect(!viewModel.recipient.showsMainAgentHistory)
+            #expect(!manager.isPanelVisible)
+            #expect(viewModel.recipient == recipient)
+            #expect(viewModel.recipient.prompt == "Message Investigate logs…")
+            #expect(!viewModel.recipient.showsMainAgentHistory)
 
-        manager.dismiss()
-        manager.presentPanel(near: .zero, recipient: .main)
+            manager.dismiss()
+            manager.presentPanel(near: .zero, recipient: .main)
 
-        #expect(!manager.isPanelVisible)
-        #expect(viewModel.recipient == .main)
+            #expect(!manager.isPanelVisible)
+            #expect(viewModel.recipient == .main)
 
-        manager.dismiss()
+            manager.dismiss()
+        }
     }
 }

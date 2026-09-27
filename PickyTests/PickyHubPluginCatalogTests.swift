@@ -476,10 +476,10 @@ struct PickyHubPluginCatalogTests {
             #expect(visibleWords.localizedCaseInsensitiveContains(expectedWords), "Missing card feedback: \(text)")
             #expect(text.contains(L10n.t("hub.plugins.card.viewJobs")), "Cron jobs must remain accessible")
             #expect(text.contains(L10n.t("hub.plugins.card.setupDaemon")), "Daemon setup must be a visible action")
-            #expect(
-                text.components(separatedBy: L10n.t("hub.plugins.detail.installed")).count >= 3,
-                "Both the installed badge and common removal control must be visible: \(text)"
-            )
+            #expect(text.contains(L10n.t("hub.plugins.detail.installed")),
+                    "The installed badge must remain visible: \(text)")
+            #expect(text.contains(L10n.t("hub.plugins.card.remove")),
+                    "The common removal control must remain visible: \(text)")
             let png = try #require(bitmap.representation(using: .png, properties: [:]))
             try png.write(to: output.appendingPathComponent("cron-\(state)-\(Int(width))-\(Int(scale * 100)).png"))
         }

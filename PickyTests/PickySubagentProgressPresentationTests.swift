@@ -8,18 +8,21 @@ import Testing
 @testable import Picky
 
 struct PickySubagentProgressPresentationTests {
+    @MainActor
     @Test func mergesPlannedChainStepsWithSpawnedRunsInOrder() throws {
-        let presentation = try #require(makePresentation(
-            action: .chain,
-            planned: [plan("worker", "Implement"), plan("verifier", "Verify"), plan("reviewer", "Review")],
-            runs: [run(8, agent: "worker", status: .done), run(9, agent: "verifier", status: .running)]
-        ))
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let presentation = try #require(makePresentation(
+                action: .chain,
+                planned: [plan("worker", "Implement"), plan("verifier", "Verify"), plan("reviewer", "Review")],
+                runs: [run(8, agent: "worker", status: .done), run(9, agent: "verifier", status: .running)]
+            ))
 
-        #expect(presentation.headerLabel == "chain 2/3")
-        #expect(presentation.chainAgentsText == "worker → verifier → reviewer")
-        #expect(presentation.rows.map(\.status) == [.done, .running, .pending])
-        #expect(presentation.rows.last?.displayTask == "Review")
-        #expect(!presentation.isComplete)
+            #expect(presentation.headerLabel == "chain 2/3")
+            #expect(presentation.chainAgentsText == "worker → verifier → reviewer")
+            #expect(presentation.rows.map(\.status) == [.done, .running, .pending])
+            #expect(presentation.rows.last?.displayTask == "Review")
+            #expect(!presentation.isComplete)
+        }
     }
 
     @Test func collapsesOnlyAfterEveryPlannedRunSettles() throws {

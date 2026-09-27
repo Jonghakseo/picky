@@ -120,7 +120,7 @@ it("does not equate a settled control reply with actual resource exit", async ()
   const f = await fixture({ unresolved: true }); await f.addTask(false);
   expect((await f.supervisor.asyncControls.stop("session-1", "stop-unknown")).outcome).toBe("blocked_cleanup");
   expect((await f.store.loadReadOnly("session-1"))?.asyncTasks?.[0]?.presence).toBe("active");
-});
+}, 20_000); // The production ownership fence waits up to 12 seconds for actual resource exit.
 
 it("binds a zero-root release to the owner and persists prepare/cancel for exact retry", async () => {
   const f = await fixture(); await f.archive();

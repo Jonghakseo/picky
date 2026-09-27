@@ -43,11 +43,18 @@ function completionText(request: unknown, taskId: string): string {
   return matching[0]!;
 }
 
+// Keep required async-provider coverage independent of optional, historical
+// memory/cron integration suites that use PICKY_TEST_EXTENSION_ROOT.
+function providerPackageRoot(): string {
+  const root = process.env.PICKY_TEST_ASYNC_PROVIDER_ROOT ?? process.env.PICKY_TEST_EXTENSION_ROOT;
+  if (!root) throw new Error("PICKY_TEST_ASYNC_PROVIDER_ROOT must name the provider package root");
+  return root;
+}
+
 type ToolInput = { name: string; arguments: ToolCall["arguments"] };
 async function fixture(tool: ToolInput | ToolInput[]) {
   expect(VERSION).toBe("0.87.1");
-  const extensionRoot = process.env.PICKY_TEST_EXTENSION_ROOT;
-  if (!extensionRoot) throw new Error("PICKY_TEST_EXTENSION_ROOT must name the provider package root");
+  const extensionRoot = providerPackageRoot();
   const root = await mkdtemp(join(tmpdir(), "picky-w0b-provider-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "home/.pi/agent"); await mkdir(agentDir, { recursive: true });
@@ -738,7 +745,7 @@ async function replayRecorder(f: ProviderFixture, scenario: "bash" | "subagent")
       expect(checkpoints[0]!.disk).toMatchObject({ status: "running", asyncWorkSummary: { canReleaseRuntime: false } });
       expect(checkpoints[0]!.disk.asyncTasks?.some(task => task.presence === "active")).toBe(true);
     }
-    const providerRoot = process.env.PICKY_TEST_EXTENSION_ROOT!;
+    const providerRoot = providerPackageRoot();
     const hash = async (path: string) => createHash("sha256").update(await readFile(path)).digest("hex");
     const provenance = { scenario, sdkVersion: VERSION, nodeVersion: process.version, protocolVersion: PROTOCOL_VERSION,
       providerEntrySha256: { bash: await hash(join(providerRoot, "packages/bash-async/index.ts")), subagent: await hash(join(providerRoot, "packages/subagent/index.ts")) },

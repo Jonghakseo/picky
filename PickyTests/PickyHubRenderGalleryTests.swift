@@ -159,7 +159,8 @@ struct PickyHubRenderGalleryTests {
                 let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
                 #expect(text.components(separatedBy: "Continue").count - 1 == 1,
                         "Continue must appear only on the action, not again as a kicker: \(text)")
-                #expect(text.contains("First instruction not confirmed"), "Do not delete the recovery warning: \(text)")
+                #expect(text.contains("The first instruction has not been confirmed."), "Do not delete the recovery warning: \(text)")
+                #expect(text.contains("check before sending again"), "Keep the recovery action visible: \(text)")
                 if let output, !output.isEmpty {
                     let directory = URL(fileURLWithPath: output).appendingPathComponent("typography")
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

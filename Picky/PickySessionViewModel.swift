@@ -130,7 +130,6 @@ final class PickySessionListViewModel: ObservableObject {
     /// not yet present here are auto-prepended when first observed, so brand
     /// new Pickles always land on the visually-end slot, regardless of any
     /// past drag the user did to existing sessions.
-    // Dock layout facade owns reset-to-default order through this state.
     var manualOrder: [String] = []
     /// Persisted dock layout (groups + ordered top-level entries). Source of
     /// truth for the dock rail's visual ordering once any group has been

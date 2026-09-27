@@ -1326,6 +1326,10 @@ struct ProtocolContractTests {
             "PickySessionActivityStore", "PickySessionArtifactStore", "PickySessionExtensionUiStore", "PickySessionAsyncTaskStore",
             "PickySessionLogStore", "PickySessionMessageStore", "PickySessionMetaStore", "PickySessionRevisionCursor",
             "PickySessionQueueStore", "PickySessionSubagentStore", "PickySessionTodoStore", "PickySessionToolStore",
+            "not-projected",
+        ])
+        #expect(Set(ownership.filter { $0.swiftStore == "not-projected" }.map(\.field)) == [
+            "asyncArchiveIntentId", "asyncControlJournal",
         ])
         #expect(ownership.allSatisfy { ["replace", "merge", "clear-if-omitted-explicit"].contains($0.snapshotSemantics) })
         #expect(Set(ownership.filter { $0.v2Mutation.contains("metaPatch") }.map(\.field)) == Set(PickySessionMetaPatch.CodingKeys.allCases.map(\.stringValue)))

@@ -64,12 +64,6 @@ struct PickyConversationCardView: View {
     @State private var composerFocusRequestID = 0
     @State private var transientComposerHeightGrowth: CGFloat = 0
     @State private var backgroundStopError: String?
-    private var showsBackgroundStopErrorInShelf: Bool {
-        guard case .loaded(let metadata) = sessionStore.metaStore.metadataState,
-              let summary = metadata.asyncWorkSummary else { return false }
-        return PickyAsyncTaskShelfPresentation.isEmptyAttention(summary: summary,
-            detail: sessionStore.asyncTaskStore.detailState)
-    }
     @State private var navigationRequest = PickyConversationNavigationRequest()
     @State private var viewportState = PickyConversationViewportState.pinned
 
@@ -300,9 +294,8 @@ struct PickyConversationCardView: View {
             .padding(.bottom, DS.Spacing.sm)
 
             // Stable sibling: detail mutations invalidate this narrow owner, not the editor.
-            PickyMountedAsyncTaskShelfView(
+            PickyRunningTaskFooterView(
                 store: sessionStore,
-                commands: viewModel,
                 maxListHeight: max(76, min(180,
                     PickyConversationCardHeightPolicy.resolvedHeight(
                         fixedHeight: fixedHeight, maxHeight: maxHeight,
@@ -311,8 +304,7 @@ struct PickyConversationCardView: View {
                 compact: PickyConversationCardHeightPolicy.resolvedHeight(
                     fixedHeight: fixedHeight, maxHeight: maxHeight,
                     transientGrowth: transientComposerHeightGrowth) < 440,
-                bottomSpacing: DS.Spacing.space2,
-                stopError: backgroundStopError
+                bottomSpacing: DS.Spacing.space2
             )
 
             PickyConversationComposerView(
@@ -328,7 +320,7 @@ struct PickyConversationCardView: View {
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 isOptionModifierPressed: isOptionModifierPressed,
                 sharedStopError: $backgroundStopError,
-                stopErrorInShelf: showsBackgroundStopErrorInShelf,
+                stopErrorInShelf: false,
                 onToggleUtilityPanel: onToggleUtilityPanel,
                 onRequestRewind: { showingRewindPicker = true },
                 onTransientHeightChange: { growth in

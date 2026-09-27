@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$ROOT"
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-DD=/private/tmp/PickyAgentDD
+DD="${PICKY_STUDY_DERIVED_DATA_PATH:-/private/tmp/PickyAgentDD}"
 OUT="$ROOT/build/design-prototypes/async-simplified/production"
 PRODUCTS="$DD/Build/Products/Debug"
 APP="$OUT/Picky Async UI Study.app"
@@ -30,7 +30,9 @@ xcrun swiftc -parse-as-library -swift-version 5 -enable-testing \
   "$OUT/ProductionConversationCard.swift" "$OUT/PickyRunningTaskFooterView.swift" \
   "$ROOT/PickyTests/PickyRenderGalleryRasterizer.swift" \
   -o "$APP/Contents/MacOS/AsyncWorkStudy"
-git apply --check "$OUT/apply-to-production.patch"
+if [[ -s "$OUT/apply-to-production.patch" ]]; then
+  git apply --check "$OUT/apply-to-production.patch"
+fi
 case "${1:-}" in
   --render) "$APP/Contents/MacOS/AsyncWorkStudy" --render "$OUT/renders" ;;
   --verify) "$APP/Contents/MacOS/AsyncWorkStudy" --verify ;;

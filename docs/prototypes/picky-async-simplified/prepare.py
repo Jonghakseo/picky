@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mount current production code; export the exact proposal as an unapplied patch."""
+"""Compare production with the approved footer; export a patch until adoption."""
 import difflib
 import hashlib
 import json
@@ -26,13 +26,17 @@ old = '''    private var showsBackgroundStopErrorInShelf: Bool {
         return PickyAsyncTaskShelfPresentation.isEmptyAttention(summary: summary,
             detail: sessionStore.asyncTaskStore.detailState)
     }'''
-assert card.count(old) == 1, 'Card changed; review the integration seam instead of silently approximating it.'
-assert card.count('PickyMountedAsyncTaskShelfView(') == 1
-new = card.replace(old, '    private var showsBackgroundStopErrorInShelf: Bool { false }')
-new = new.replace('PickyMountedAsyncTaskShelfView(\n                store: sessionStore,\n                commands: viewModel,',
-                  'PickyRunningTaskFooterView(\n                store: sessionStore,')
-new = new.replace('                bottomSpacing: DS.Spacing.space2,\n                stopError: backgroundStopError',
-                  '                bottomSpacing: DS.Spacing.space2')
+adopted = card.count('PickyRunningTaskFooterView(') == 1
+if adopted:
+    new = card
+else:
+    assert card.count(old) == 1, 'Card changed; review the integration seam instead of silently approximating it.'
+    assert card.count('PickyMountedAsyncTaskShelfView(') == 1
+    new = card.replace(old, '    private var showsBackgroundStopErrorInShelf: Bool { false }')
+    new = new.replace('PickyMountedAsyncTaskShelfView(\n                store: sessionStore,\n                commands: viewModel,',
+                      'PickyRunningTaskFooterView(\n                store: sessionStore,')
+    new = new.replace('                bottomSpacing: DS.Spacing.space2,\n                stopError: backgroundStopError',
+                      '                bottomSpacing: DS.Spacing.space2')
 (out / 'ProductionConversationCard.swift').write_text('@testable import Picky\n' + new.replace(
     'struct PickyConversationCardView: View', 'struct StudyConversationCardView: View'))
 footer = (source / 'PickyRunningTaskFooterView.swift').read_text()
@@ -43,7 +47,8 @@ def diff(before, after, path):
         fromfile='a/' + str(path) if before else '/dev/null', tofile='b/' + str(path)))
 
 patch = diff(card, new, card_path)
-patch += diff('', footer, 'Picky/HUD/Conversation/PickyRunningTaskFooterView.swift')
+if not adopted:
+    patch += diff('', footer, 'Picky/HUD/Conversation/PickyRunningTaskFooterView.swift')
 key = 'hud.asyncTasks.runningCount'
 translations = {'en': 'Running tasks · %1$lld', 'ko': '작업 %1$lld개 실행 중',
                 'ja': '%1$lld件のタスクを実行中', 'zh-Hans': '%1$lld 个任务正在运行', 'zh-Hant': '%1$lld 個工作正在執行'}
@@ -61,10 +66,13 @@ entries = {label: {'localizations': {lang: {'stringUnit': {'state': 'translated'
                                    for lang, value in values.items()}} for label, values in labels.items()}
 # Preserve the catalog formatting rather than reformatting the entire file.
 anchor = '    "hud.asyncTasks.showLess": {'
-assert catalog_text.count(anchor) == 1 and not set(entries).intersection(catalog['strings'])
-entry_text = json.dumps(entries, ensure_ascii=False, indent=2)[2:-2]
-entry_text = '\n'.join('  ' + line for line in entry_text.splitlines())
-updated_catalog = catalog_text.replace(anchor, entry_text + ',\n' + anchor)
+assert catalog_text.count(anchor) == 1
+missing = {label: entry for label, entry in entries.items() if label not in catalog['strings']}
+updated_catalog = catalog_text
+if missing:
+    entry_text = json.dumps(missing, ensure_ascii=False, indent=2)[2:-2]
+    entry_text = '\n'.join('  ' + line for line in entry_text.splitlines())
+    updated_catalog = catalog_text.replace(anchor, entry_text + ',\n' + anchor)
 assert all(json.loads(updated_catalog)['strings'][label] == entry for label, entry in entries.items())
 (out / 'Localizable.xcstrings').write_text(updated_catalog)
 patch += diff(catalog_text, updated_catalog, catalog_path)
@@ -122,7 +130,7 @@ plist = {'CFBundleIdentifier': 'local.picky.async-ui-study.production', 'CFBundl
 manifest = {'sourceRevision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
             'cardSource': str(card_path), 'cardSHA256': hashlib.sha256(card.encode()).hexdigest(),
             'cardWidth': 446, 'cardHeight': 640, 'productionSourcesCopiedWithoutRestyling': True,
-            'patchAppliedToRepository': False, 'transport': 'in-memory fixture only',
+            'patchAppliedToRepository': adopted, 'transport': 'in-memory fixture only',
             'fixtureProvenance': fixture['provenance']}
 (out / 'provenance.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
 print(out)

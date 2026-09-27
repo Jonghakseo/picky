@@ -35,7 +35,7 @@ struct PickyHubNativeFocusTests {
 
         // Both controls use the same window, locale and post-mount focus request.
         // The standard control distinguishes environment failures from Hub behavior.
-        for control in [ControlKind.standard, .plainStandard, .hub] {
+        for control in [ControlKind.standard, .native, .plainStandard, .hub] {
             let probe = HubFocusProbe()
             let hosting = NSHostingView(rootView: LocalizedHostingRoot {
                 HubFocusFixture(host: host, probe: probe, control: control)
@@ -80,7 +80,7 @@ struct PickyHubNativeFocusTests {
     }
 
     fileprivate enum ControlKind: String {
-        case standard, plainStandard, hub
+        case standard, native, plainStandard, hub
     }
 
     private func verifyModalRestoration(
@@ -184,6 +184,34 @@ private final class HubFocusProbe: ObservableObject {
     var confirmPresses = 0
 }
 
+private struct NativeFocusProbeButton: NSViewRepresentable {
+    let onPress: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPress: onPress) }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = FocusProbeNSButton(title: "Close", target: context.coordinator,
+                                        action: #selector(Coordinator.press))
+        button.isBordered = false
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        button.isEnabled = context.environment.isEnabled
+        context.coordinator.onPress = onPress
+    }
+
+    final class Coordinator: NSObject {
+        var onPress: () -> Void
+        init(onPress: @escaping () -> Void) { self.onPress = onPress }
+        @objc func press() { onPress() }
+    }
+}
+
+private final class FocusProbeNSButton: NSButton {
+    override var acceptsFirstResponder: Bool { true }
+}
+
 private struct HubFocusFixture: View {
     @ObservedObject var host: PickyHubModalHost
     @ObservedObject var probe: HubFocusProbe
@@ -206,6 +234,9 @@ private struct HubFocusFixture: View {
         switch control {
         case .hub:
             PickyHubButton(title: "common.close", role: .secondary) { probe.presses += 1 }
+                .focused($triggerFocused)
+        case .native:
+            NativeFocusProbeButton { probe.presses += 1 }
                 .focused($triggerFocused)
         case .plainStandard:
             Button("common.close") { probe.presses += 1 }

@@ -432,27 +432,50 @@ struct CompanionPanelSettingsView: View {
     /// can tell "unconfigured" from "empty draft about to be filled".
     @ViewBuilder
     private func gitChipActionEditor(
-        label: LocalizedStringKey,
+        label: String,
         action: Binding<PickyGitChipAction?>
     ) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            fieldLabel(label)
-            Picker(label, selection: gitChipKindBinding(action)) {
-                Text("settings.pickle.gitChipActions.kindPi").tag(PickyGitChipActionKind.pi)
-                Text("settings.pickle.gitChipActions.kindShell").tag(PickyGitChipActionKind.shell)
+            fieldLabel(LocalizedStringKey(label))
+            if presentation.showsNavigationChrome {
+                gitChipKindSegment(label: label, action: action)
+                gitChipCommandField(action: action)
+            } else {
+                HStack(spacing: PickyHubTheme.Spacing.related) {
+                    gitChipCommandField(action: action)
+                    PickyHubMenuPicker(
+                        title: L10n.t(label),
+                        selection: gitChipKindBinding(action),
+                        options: [
+                            .init(value: .pi, title: L10n.t("settings.pickle.gitChipActions.kindPi")),
+                            .init(value: .shell, title: L10n.t("settings.pickle.gitChipActions.kindShell")),
+                        ]
+                    )
+                    .frame(width: 112)
+                }
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .controlSize(.regular)
-            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-            TextField(
-                "settings.pickle.gitChipActions.commandPlaceholder",
-                text: gitChipCommandBinding(action)
-            )
-            .textFieldStyle(.roundedBorder)
-            .controlSize(.small)
-            .onSubmit { saveImmediately(for: .pickle) }
         }
+    }
+
+    private func gitChipKindSegment(label: String, action: Binding<PickyGitChipAction?>) -> some View {
+        Picker(L10n.t(label), selection: gitChipKindBinding(action)) {
+            Text("settings.pickle.gitChipActions.kindPi").tag(PickyGitChipActionKind.pi)
+            Text("settings.pickle.gitChipActions.kindShell").tag(PickyGitChipActionKind.shell)
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .controlSize(.regular)
+        .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
+    }
+
+    private func gitChipCommandField(action: Binding<PickyGitChipAction?>) -> some View {
+        TextField(
+            "settings.pickle.gitChipActions.commandPlaceholder",
+            text: gitChipCommandBinding(action)
+        )
+        .textFieldStyle(.roundedBorder)
+        .controlSize(presentation.showsNavigationChrome ? .small : .regular)
+        .onSubmit { saveImmediately(for: .pickle) }
     }
 
     private var gitChipDiffBinding: Binding<PickyGitChipAction?> {
@@ -1572,15 +1595,26 @@ struct CompanionPanelSettingsView: View {
     private var dockSizePresetPicker: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
             fieldLabel("settings.field.dockSize")
-            Picker(L10n.t("settings.field.dockSize"), selection: $viewModel.settings.hudDockSizePreset) {
-                ForEach(PickyHUDDockSizePreset.allCases) { preset in
-                    Text(preset.displayName).tag(preset)
+            Group {
+                if presentation.showsNavigationChrome {
+                    Picker(L10n.t("settings.field.dockSize"), selection: $viewModel.settings.hudDockSizePreset) {
+                        ForEach(PickyHUDDockSizePreset.allCases) { preset in
+                            Text(preset.displayName).tag(preset)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .controlSize(.regular)
+                    .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
+                } else {
+                    PickyHubMenuPicker(
+                        title: L10n.t("settings.field.dockSize"),
+                        selection: $viewModel.settings.hudDockSizePreset,
+                        options: PickyHUDDockSizePreset.allCases.map { .init(value: $0, title: $0.displayName) }
+                    )
+                    .frame(width: 160, alignment: .leading)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .controlSize(.regular)
-            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
             .onChange(of: viewModel.settings.hudDockSizePreset) { _, _ in
                 saveImmediately(for: .pickle)
             }

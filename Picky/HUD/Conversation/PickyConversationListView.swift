@@ -700,13 +700,18 @@ struct PickyConversationListView: View {
     /// resolves each stable leaf store. A streaming replacement therefore keeps
     /// every row ID stable and only changes the replaced leaf's value revision.
     private var orderedMessages: [PickySessionMessage] {
-        guard let conversationStore else { return session.messages }
-        return conversationStore.orderedMessageIDs.compactMap { messageID in
-            guard case .loaded(let message) = conversationStore.messageStore(id: messageID).messageState else {
-                return nil
+        let messages: [PickySessionMessage]
+        if let conversationStore {
+            messages = conversationStore.orderedMessageIDs.compactMap { messageID in
+                guard case .loaded(let message) = conversationStore.messageStore(id: messageID).messageState else {
+                    return nil
+                }
+                return message
             }
-            return message
+        } else {
+            messages = session.messages
         }
+        return messages.filter(PickyConversationBackgroundWorkVisibility.isVisible)
     }
 
     var hiddenHistoryCount: Int {
@@ -1098,7 +1103,7 @@ enum PickyConversationBubbleKind: Equatable {
     case questionFallback
     case error
     case activitySummary
-    /// `agentActivity` whose snapshot has no visible tool calls renders nothing.
+    /// Empty tool activity or background execution already represented by the footer.
     case hiddenActivity
     case compactCompletion
     case compactFailure
@@ -1110,6 +1115,10 @@ enum PickyConversationBubbleKind: Equatable {
     case systemText
 
     init(message: PickySessionMessage) {
+        guard PickyConversationBackgroundWorkVisibility.isVisible(message) else {
+            self = .hiddenActivity
+            return
+        }
         switch message.kind {
         case .userText:
             self = .userText

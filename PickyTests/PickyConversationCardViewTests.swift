@@ -101,7 +101,7 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
-    @Test func subagentInvocationMessagesRenderDedicatedConversationBubbles() {
+    @Test func subagentInvocationMessagesAreOmittedFromConversationForTheTaskFooter() {
         let invocation = PickySubagentInvocation(
             invocationId: "tool-subagent-1",
             action: .batch,
@@ -119,7 +119,8 @@ struct PickyConversationCardViewTests {
         )
 
         let snapshot = PickyConversationListView(session: session, viewModel: makeViewModel()).renderSnapshot
-        #expect(snapshot.subagentInvocationBubbleCount == 1)
+        #expect(snapshot.subagentInvocationBubbleCount == 0)
+        #expect(PickyConversationListView(session: session, viewModel: makeViewModel()).visibleMessages.map(\.id) == ["m-user"])
     }
 
     @Test func activityStripShowsOtherCategoryWhenOnlyOtherToolsRan() {

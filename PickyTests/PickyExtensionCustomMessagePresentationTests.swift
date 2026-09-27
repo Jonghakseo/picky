@@ -134,7 +134,7 @@ struct PickyExtensionCustomMessagePresentationTests {
     @Test("Tagged extension messages route to the collapsible bubble kind")
     func routesToCollapsibleBubbleKind() {
         let tagged = PickyConversationBubbleKind(
-            message: customMessage(text: "headline\ndetail", customType: "bash-async-completion")
+            message: customMessage(text: "headline\ndetail", customType: "web-search-content-ready")
         )
         guard case .extensionCustomMessage(let presentation) = tagged else {
             Issue.record("expected extensionCustomMessage, got \(tagged)")

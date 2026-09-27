@@ -35,7 +35,7 @@ struct PickyHubNativeFocusTests {
 
         // Both controls use the same window, locale and post-mount focus request.
         // The standard control distinguishes environment failures from Hub behavior.
-        for control in [ControlKind.standard, .styledStandard, .hub] {
+        for control in [ControlKind.standard, .plainStandard, .hub] {
             let probe = HubFocusProbe()
             let hosting = NSHostingView(rootView: LocalizedHostingRoot {
                 HubFocusFixture(host: host, probe: probe, control: control)
@@ -80,7 +80,7 @@ struct PickyHubNativeFocusTests {
     }
 
     fileprivate enum ControlKind: String {
-        case standard, styledStandard, hub
+        case standard, plainStandard, hub
     }
 
     private func verifyModalRestoration(
@@ -207,9 +207,9 @@ private struct HubFocusFixture: View {
         case .hub:
             PickyHubButton(title: "common.close", role: .secondary) { probe.presses += 1 }
                 .focused($triggerFocused)
-        case .styledStandard:
+        case .plainStandard:
             Button("common.close") { probe.presses += 1 }
-                .buttonStyle(PickyHubPressStyle())
+                .buttonStyle(.plain)
                 .focused($triggerFocused)
         case .standard:
             Button("common.close") { probe.presses += 1 }

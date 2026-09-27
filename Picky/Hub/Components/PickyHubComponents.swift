@@ -429,7 +429,9 @@ struct PickyHubButton: View {
             .contentShape(RoundedRectangle(cornerRadius: PickyHubTheme.Radius.control, style: .continuous))
 
         }
-        .buttonStyle(PickyHubPressStyle())
+        // The custom press style can lose keyboard focus when a modal disables
+        // and re-enables this button. Keep the native button's focus behavior.
+        .buttonStyle(.plain)
         .disabled(isBusy || !isEnabled)
         .pickyHubFocusRing(isFocused: isFocused, cornerRadius: PickyHubTheme.Radius.control)
         .onHover { isHovering = $0 }

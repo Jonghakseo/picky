@@ -94,6 +94,29 @@ struct PickyPanelKeyboardShortcutTests {
         #expect(panel.ignoresMouseEvents)
     }
 
+    /// Regression: the undo toast reports no dock chrome frames, so the dock's
+    /// pass-through recalculation on mouse-up made the whole toast click-through
+    /// after its first click and the Undo button stopped responding.
+    @Test func archiveUndoToastKeepsAcceptingClicksAfterEachClick() throws {
+        let panel = PickyHUDArchiveUndoToastPanelFactory.makePanel()
+        panel.setFrame(NSRect(x: 1000, y: 40, width: 304, height: 78), display: false)
+        #expect(!panel.ignoresMouseEvents)
+
+        for _ in 0..<2 {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let click = try #require(NSEvent.mouseEvent(with: type, location: NSPoint(x: 150, y: 40),
+                    modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+                    eventNumber: 0, clickCount: 1, pressure: 1))
+                panel.sendEvent(click)
+                #expect(!panel.ignoresMouseEvents)
+            }
+        }
+        panel.updateDockPointer(CGPoint(x: 1150, y: 80))
+        #expect(!panel.ignoresMouseEvents)
+        panel.updateDockPointer(CGPoint(x: 10, y: 10))
+        #expect(!panel.ignoresMouseEvents)
+    }
+
     @Test func minimizedDockOnlyAcceptsPointerOverRestoreChromeAndDoesNotClaimCommandW() throws {
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 100, y: 200, width: 600, height: 500),

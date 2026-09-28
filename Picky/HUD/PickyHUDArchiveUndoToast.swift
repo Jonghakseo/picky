@@ -5,6 +5,7 @@
 //  Screen-level undo toast shown after archiving a HUD session.
 //
 
+import AppKit
 import SwiftUI
 
 struct PickyHUDArchiveUndoToast: Identifiable, Equatable {
@@ -17,6 +18,29 @@ enum PickyHUDArchiveUndoToastPolicy {
     static let durationNanoseconds: UInt64 = 6_000_000_000
     static let panelSize = CGSize(width: 304, height: 78)
     static let screenMargin: CGFloat = 18
+}
+
+@MainActor
+enum PickyHUDArchiveUndoToastPanelFactory {
+    static func makePanel() -> PickyHUDPanel {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .statusBar
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.isExcludedFromWindowsMenu = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        // The toast reports no dock chrome frames; without this, the first
+        // mouse-up turns the whole toast click-through and Undo stops working.
+        panel.ownsEntireFrameForPointer = true
+        return panel
+    }
 }
 
 enum PickyHUDArchiveUndoToastLayout {
@@ -75,18 +99,23 @@ struct PickyHUDArchiveUndoToastView: View {
             }
             .frame(maxWidth: 128, alignment: .leading)
 
-            Button("hud.archiveToast.undo", action: onUndo)
-                .buttonStyle(.plain)
-                .pickyFont(size: 10.5, weight: .semibold, design: .rounded)
-                .foregroundColor(DS.Colors.accentText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(DS.Colors.accentText.opacity(0.12))
-                        .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.accentText.opacity(0.24), lineWidth: 0.7))
-                )
-                .hoverAffordance()
+            // Padding and capsule live inside the label so the whole visible
+            // pill is the hit target, not only the text glyphs.
+            Button(action: onUndo) {
+                Text("hud.archiveToast.undo")
+                    .pickyFont(size: 10.5, weight: .semibold, design: .rounded)
+                    .foregroundColor(DS.Colors.accentText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(DS.Colors.accentText.opacity(0.12))
+                            .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.accentText.opacity(0.24), lineWidth: 0.7))
+                    )
+                    .contentShape(Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .hoverAffordance()
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

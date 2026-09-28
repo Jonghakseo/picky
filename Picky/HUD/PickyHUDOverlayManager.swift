@@ -1093,20 +1093,7 @@ final class PickyHUDOverlayManager {
     }
 
     private func makeArchiveUndoToastEntry() -> ArchiveUndoToastEntry {
-        let panel = PickyHUDPanel(
-            contentRect: NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.panelSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.level = .statusBar
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.isExcludedFromWindowsMenu = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        return ArchiveUndoToastEntry(panel: panel, dismissTask: nil, toast: nil)
+        ArchiveUndoToastEntry(panel: PickyHUDArchiveUndoToastPanelFactory.makePanel(), dismissTask: nil, toast: nil)
     }
 
     private func makeArchiveUndoToastHostingView(displayID: CGDirectDisplayID, toast: PickyHUDArchiveUndoToast) -> NSView {

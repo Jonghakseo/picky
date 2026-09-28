@@ -30,6 +30,12 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     var visibleChromeFrames: [CGRect] = [] {
         didSet { updateDockPointer(NSEvent.mouseLocation) }
     }
+    /// Standalone surfaces (the archive undo toast) are opaque chrome edge to
+    /// edge and never report `visibleChromeFrames`; they must not pass clicks
+    /// through the way the dock's transparent layout reserve does.
+    var ownsEntireFrameForPointer = false {
+        didSet { updateDockPointer(NSEvent.mouseLocation) }
+    }
     private var dockPointerMonitors: [Any] = []
     private var acceptsMouseMovedEventsBeforeMinimizing = false
     private var hasMinimizedPointerCapture = false
@@ -59,7 +65,8 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     /// Keep the whole press/drag sequence with this panel, even when a drag
     /// moves outside the visible rail or card before mouse-up.
     func updateDockPointer(_ point: CGPoint) {
-        ignoresMouseEvents = !hasExpandedPointerCapture
+        ignoresMouseEvents = !ownsEntireFrameForPointer
+            && !hasExpandedPointerCapture
             && !hasMinimizedPointerCapture
             && !PickyHUDInkPassThroughPolicy.contains(
                 point, swiftUIFrames: visibleChromeFrames, panelFrame: frame

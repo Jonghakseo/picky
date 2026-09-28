@@ -74,7 +74,8 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
         for monitor in dockPointerMonitors { NSEvent.removeMonitor(monitor) }
         dockPointerMonitors = []
         updateDockPointer(NSEvent.mouseLocation)
-        guard isVisible, PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
+        guard isVisible else { return }
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
             self?.updateDockPointer(NSEvent.mouseLocation)

@@ -40,7 +40,7 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "src/file.swift", workingDirectory: model.workingDirectory)?.path == "/tmp/other/src/file.swift")
     }
 
-    @Test func metadataUpdatesReorderBothGroupSurfacesWithoutPersistingManualOrder() throws {
+    @Test func assistantRepliesReorderBothGroupSurfacesWithoutPersistingManualOrder() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let layoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
             .group(PickyDockGroup(id: "group", name: "Work", color: .blue,
@@ -51,7 +51,7 @@ struct PickySessionProjectionV2ApplicationTests {
         apply(snapshot(sessionID: "newer", title: "Newer", status: .completed, revision: 1), to: viewModel)
         apply(snapshot(sessionID: "archived", title: "Archived", status: .completed, revision: 1, archived: true), to: viewModel)
         apply(transaction(sessionID: "newer", baseRevision: 1, revision: 2,
-                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:02.000Z"}}]"#), to: viewModel)
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:02.000Z"}},{"type":"messageAppend","message":{"id":"newer-reply","kind":"agent_text","createdAt":"2026-08-25T00:00:02.000Z","text":"Reply"}}]"#), to: viewModel)
         viewModel.flushDockStateForTesting()
         let persisted = viewModel.dockLayout
         let savedCount = layoutStore.savedLayouts.count
@@ -64,7 +64,7 @@ struct PickySessionProjectionV2ApplicationTests {
                 memberSessionIDs: snapshot.memberIDsByRecency(in: group),
                 activeSessionsByID: sessions,
                 assistantMessageAt: {
-                    viewModel.sessionCard(sessionID: $0)?.messages.last(where: { $0.kind == .agentText })?.createdAt
+                    viewModel.sessionCard(sessionID: $0).flatMap(PickyDockGroupRecencyPolicy.assistantMessageAt)
                 },
                 makeRow: { PickyHUDDockGroupListRowModel(session: $0, assistantMessageAt: $1) }
             )
@@ -76,10 +76,17 @@ struct PickySessionProjectionV2ApplicationTests {
 
         #expect(try visibleIDs() == ["newer", "older"])
         let originalSnapshot = viewModel.dockState.snapshot
-        // Both updates are inside the same 20-second preview bucket. Exact
-        // metadata time, not the hover-preview refresh clock, determines order.
+        // Non-conversational activity (an extension setStatus during runtime
+        // resume) moves updatedAt but must not lift a Pickle above one that
+        // replied more recently.
         apply(transaction(sessionID: "older", baseRevision: 1, revision: 2,
-                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:03.000Z"}}]"#), to: viewModel)
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:05.000Z"}}]"#), to: viewModel)
+        viewModel.flushDockStateForTesting()
+        #expect(try visibleIDs() == ["newer", "older"])
+        // Both replies are inside the same 20-second preview bucket. Exact
+        // reply time, not the hover-preview refresh clock, determines order.
+        apply(transaction(sessionID: "older", baseRevision: 2, revision: 3,
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:03.000Z"}},{"type":"messageAppend","message":{"id":"older-reply","kind":"agent_text","createdAt":"2026-08-25T00:00:03.000Z","text":"Reply"}}]"#), to: viewModel)
         viewModel.flushDockStateForTesting()
         #expect(try visibleIDs() == ["older", "newer"])
         #expect(originalSnapshot.groupMemberIDsByRecency["group"] == ["newer", "older", "archived"])
@@ -87,8 +94,8 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(layoutStore.savedLayouts.count == savedCount)
 
         let sameOrderSnapshot = viewModel.dockState.snapshot
-        apply(transaction(sessionID: "older", baseRevision: 2, revision: 3,
-                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:04.000Z"}}]"#), to: viewModel)
+        apply(transaction(sessionID: "older", baseRevision: 3, revision: 4,
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:06.000Z"}}]"#), to: viewModel)
         viewModel.flushDockStateForTesting()
         #expect(viewModel.dockState.snapshot == sameOrderSnapshot)
     }

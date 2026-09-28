@@ -471,7 +471,7 @@ extension PickyHUDOverlayManager {
             memberSessionIDs: snapshot.memberIDsByRecency(in: group),
             activeSessionsByID: sessionsByID,
             assistantMessageAt: { [weak self] sessionID in
-                self?.viewModel.sessionCard(sessionID: sessionID)?.messages.last(where: { $0.kind == .agentText })?.createdAt
+                self?.viewModel.sessionCard(sessionID: sessionID).flatMap(PickyDockGroupRecencyPolicy.assistantMessageAt)
             },
             makeRow: { session, assistantMessageAt in
                 PickyHUDDockGroupListRowModel(session: session, assistantMessageAt: assistantMessageAt)

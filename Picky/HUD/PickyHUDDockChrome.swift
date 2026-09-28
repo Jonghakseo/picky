@@ -110,13 +110,13 @@ struct PickyHUDDockCollapseNotch: View {
                     .frame(width: horizontal ? metrics.notchDepth : metrics.collapseNotchWidth,
                            height: horizontal ? metrics.collapseNotchWidth : metrics.notchDepth)
                 Image(systemName: horizontal ? "chevron.left" : "chevron.up")
-                    .font(.system(size: 9, weight: .semibold)) // design-token-exception: optical glyph inside the 11pt notch; hit area remains 24pt.
+                    .font(.system(size: 9, weight: .semibold)) // design-token-exception: optical glyph inside the 11pt notch; hit area is collapseHitDepth.
                     .foregroundStyle(active ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                     .frame(width: horizontal ? metrics.notchDepth : metrics.collapseNotchWidth,
                            height: horizontal ? metrics.collapseNotchWidth : metrics.notchDepth)
             }
-            .frame(width: horizontal ? metrics.utilityButtonSide : metrics.collapseNotchWidth,
-                   height: horizontal ? metrics.collapseNotchWidth : metrics.utilityButtonSide)
+            .frame(width: horizontal ? metrics.collapseHitDepth : metrics.collapseNotchWidth,
+                   height: horizontal ? metrics.collapseNotchWidth : metrics.collapseHitDepth)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

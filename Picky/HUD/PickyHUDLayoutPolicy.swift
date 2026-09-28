@@ -140,7 +140,10 @@ struct PickyHUDDockMetrics: Equatable {
     var utilitySpacing: CGFloat { 2 }
     var chromeSpacing: CGFloat { 6 }
     var handleInset: CGFloat { 20 }
-    var collapseInset: CGFloat { 28 }
+    var collapseInset: CGFloat { 20 }
+    /// Edge-pinned notch keeps a shallower hit depth so it never overlaps the
+    /// utilities inside `collapseInset`.
+    var collapseHitDepth: CGFloat { 18 }
     var handleNotchWidth: CGFloat { 34 }
     var collapseNotchWidth: CGFloat { 28 }
     var notchDepth: CGFloat { 11 }

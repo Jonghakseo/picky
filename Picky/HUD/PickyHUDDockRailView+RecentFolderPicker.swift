@@ -207,7 +207,6 @@ extension PickyHUDDockRailView {
         )
         .accessibilityLabel(L10n.t("dock.startPickle"))
         .accessibilityHint(L10n.t("dock.startPickle.hint"))
-        .hoverAffordance()
     }
 
     /// Accent color the next group will adopt. Surfaced to the creator

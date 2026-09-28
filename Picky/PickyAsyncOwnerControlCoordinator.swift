@@ -217,7 +217,11 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
         let target = try await router.connectedClient(for: sessionID)
         let envelope = asyncControlState.restores[sessionID] ?? PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archived: false)
         asyncControlState.restores[sessionID] = envelope
-        if let rejection = try await router.sendAwaitingError(envelope, requireAcknowledgement: true, on: target) {
+        // Unarchiving a released owner resumes the Pi runtime before the ACK,
+        // which routinely exceeds the default one-second wait.
+        let timeout = TimeInterval(asyncControlTransport.timeoutNanoseconds) / 1_000_000_000
+        if let rejection = try await router.sendAwaitingError(envelope, timeout: timeout,
+                                                              requireAcknowledgement: true, on: target) {
             throw PickyAgentClientRouterError.bridgeCommandRejected(rejection.message)
         }
         asyncControlState.restores[sessionID] = nil

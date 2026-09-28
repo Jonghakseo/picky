@@ -3241,8 +3241,12 @@ extension PickyAgentClientRouterTests {
         let unarchive = try #require(primary.sentCommands.last { $0.type == .setSessionArchived })
         #expect(unarchive.archived == false)
         #expect(!primary.sentCommands.contains { $0.command?.type == .cancelRuntimeRelease })
+        // Resuming the released Pi runtime delays the owner's ACK past one second.
+        try await Task.sleep(nanoseconds: 1_500_000_000)
         primary.emit(.protocolEvent(makeAckEnvelope(commandId: unarchive.id)))
         try await restoring.value
+        try await router.send(PickyCommandEnvelope(type: .followUp, sessionId: "tracked", text: "after restore"))
+        #expect(primary.sentCommands.contains { $0.type == .followUp })
     }
 
     @Test func pendingArchiveReleaseCannotTerminateChildDuringExplicitDeletion() async throws {

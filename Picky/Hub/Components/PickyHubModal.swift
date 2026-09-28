@@ -239,7 +239,7 @@ struct PickyHubModalCloseButton: View {
 struct PickyHubConfirmDialog: View {
     let title: String
     let message: String
-    var confirmTitle: LocalizedStringKey
+    var confirmTitle: String
     var confirmRole: PickyHubButtonRole = .danger
     var isBusy = false
     let onCancel: () -> Void

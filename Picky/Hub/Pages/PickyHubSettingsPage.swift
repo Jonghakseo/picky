@@ -887,7 +887,7 @@ private struct PickyHubPermissionRows: View {
         let action = PickyHubPermissionAction.resolve(target: target, isGranted: granted)
         return PickyHubSettingsRow(title: title, detail: LocalizedStringKey(action.detailKey)) {
             PickyHubButton(
-                title: granted ? "hub.settings.permission.granted" : LocalizedStringKey(action.buttonTitleKey),
+                title: granted ? "hub.settings.permission.granted" : action.buttonTitleKey,
                 role: .secondary,
                 systemImage: granted ? "checkmark.circle" : action.systemImage,
                 isBusy: isBusy,

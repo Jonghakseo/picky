@@ -33,6 +33,23 @@ struct PickyHUDUtilityPanelPolicyTests {
         #expect(!PickySessionExtendedTerminalFocusPolicy.terminalOwnsFirstResponder(panel.firstResponder, terminalView: terminal))
     }
 
+    /// Heights saved by the former `@AppStorage` (a Double under the same key)
+    /// must survive the move to explicit persistence.
+    @Test func storedPanelHeightKeepsExistingDefaultsFormat() throws {
+        let suiteName = "PickyHUDUtilityPanelPolicyTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        #expect(PickyHUDUtilityPanelPolicy.storedHeight(in: defaults) == PickyHUDUtilityPanelPolicy.defaultHeight)
+
+        defaults.set(Double(312), forKey: "pickyHUD.utilityPanel.height")
+        #expect(PickyHUDUtilityPanelPolicy.storedHeight(in: defaults) == 312)
+
+        PickyHUDUtilityPanelPolicy.storeHeight(180, in: defaults)
+        #expect(defaults.double(forKey: "pickyHUD.utilityPanel.height") == 180)
+        #expect(PickyHUDUtilityPanelPolicy.storedHeight(in: defaults) == 180)
+    }
+
     @Test func panelHeightClampsToMinimumAndAvailableHeightFraction() {
         #expect(PickyHUDUtilityPanelPolicy.clampedHeight(20, availableCardHeight: 1_000) == 120)
         #expect(PickyHUDUtilityPanelPolicy.clampedHeight(400, availableCardHeight: 500) == 300)

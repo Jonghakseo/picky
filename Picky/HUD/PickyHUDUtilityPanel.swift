@@ -16,6 +16,19 @@ enum PickyHUDUtilityPanelPolicy {
     static let resizeGripHeight: CGFloat = 12
     static let minimumConversationCardHeight: CGFloat = 320
 
+    /// Read once and written only when a resize ends. `@AppStorage` is avoided
+    /// on purpose: it invalidates the owning view on writes to *any* key in the
+    /// same defaults domain, and the composer persists its draft there on every
+    /// keystroke, which re-rendered the whole HUD tree per key.
+    static func storedHeight(in defaults: UserDefaults) -> CGFloat {
+        guard let value = defaults.object(forKey: heightStorageKey) as? Double else { return defaultHeight }
+        return CGFloat(value)
+    }
+
+    static func storeHeight(_ height: CGFloat, in defaults: UserDefaults) {
+        defaults.set(Double(height), forKey: heightStorageKey)
+    }
+
     static func openSessionIDsAfterToggling(
         sessionID: String,
         openSessionIDs: Set<String>

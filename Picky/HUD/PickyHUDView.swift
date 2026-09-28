@@ -96,10 +96,9 @@ struct PickyHUDView: View {
     @State private var utilityPanelOpenSessionIDs: Set<String> = []
     @State private var utilityPanelResizeStartHeight: CGFloat?
     @State private var utilityPanelHeightOverride: CGFloat?
-    @AppStorage(
-        PickyHUDUtilityPanelPolicy.heightStorageKey,
-        store: PickyRuntimeEnvironment.userDefaults
-    ) private var storedUtilityPanelHeight = PickyHUDUtilityPanelPolicy.defaultHeight
+    @State private var storedUtilityPanelHeight = PickyHUDUtilityPanelPolicy.storedHeight(
+        in: PickyRuntimeEnvironment.userDefaults
+    )
     @State private var isDockAddSlotExpanded = false
     /// One-shot relay from a child group-list panel to the matching rail tile,
     /// which owns the shared recent-folders popover anchor.
@@ -616,6 +615,10 @@ struct PickyHUDView: View {
     private func finishUtilityPanelResize() {
         if let utilityPanelHeightOverride {
             storedUtilityPanelHeight = utilityPanelHeightOverride
+            PickyHUDUtilityPanelPolicy.storeHeight(
+                utilityPanelHeightOverride,
+                in: PickyRuntimeEnvironment.userDefaults
+            )
         }
         utilityPanelHeightOverride = nil
         utilityPanelResizeStartHeight = nil

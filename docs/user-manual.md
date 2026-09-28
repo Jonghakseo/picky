@@ -299,9 +299,9 @@ Manage membership:
 The member list:
 
 - Opens as a small panel next to the folder tile. It never changes the dock's own size, and it stays on screen if the folder sits near a screen edge. Hover-opened lists are transient; keyboard-opened lists remain pinned until dismissed.
-- Each row shows the Pickle's status glyph, its title, and a second line with the last activity followed by the working folder. A trailing relative timestamp labels updates from the last minute as **Just now**. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
+- Each row shows the Pickle's status glyph, its title, and a second line with the time of the Pickle's last reply followed by the working folder. A trailing relative timestamp labels updates from the last minute as **Just now**. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
 - Drag a row out of the panel and onto the dock rail to move that Pickle straight to the top level or into another group. The dock previews the landing slot while you drag and commits only when you release; releasing anywhere else leaves the Pickle where it was.
-- The folder preview and member list share the same order: most recently updated Pickles first, regardless of status. Equal update times keep the existing member order. Number shortcuts follow the displayed list order.
+- The folder preview and member list share the same order: Pickles with the most recent reply first, regardless of status. Background activity such as a runtime resume does not move a Pickle up. Pickles with no reply yet sit at the bottom, and equal reply times keep the existing member order. Number shortcuts follow the displayed list order.
 - Only one folder's list is open at a time, and each display keeps its own.
 - Lists longer than eight Pickles scroll inside the panel.
 - The list closes when you pick a row, press `Esc`, click elsewhere, move the dock, or its final visible Pickle is removed, moved, or archived.

@@ -115,7 +115,25 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
         _ = try await archiveSession(sessionID: sessionID, mode: mode)
     }
 
+    /// A user's continue/stop choice does not depend on the exact work revision.
+    /// A running Pickle advances that revision while the dialog is open, so a
+    /// stale owner reply refreshes the context and retries the same choice.
     private func archiveSession(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws -> PickyAsyncTaskCommandResult {
+        var attempt = 0
+        while true {
+            do { return try await archiveSessionOnce(sessionID: sessionID, mode: mode) }
+            catch PickyAsyncControlError.outcome(.stale, let reason) where mode != nil {
+                attempt += 1
+                guard attempt < Self.staleArchiveChoiceAttempts else {
+                    throw PickyAsyncControlError.outcome(.stale, reason: reason)
+                }
+            }
+        }
+    }
+
+    static let staleArchiveChoiceAttempts = 3
+
+    private func archiveSessionOnce(sessionID: String, mode: PickyAsyncTaskCommand.ArchiveMode?) async throws -> PickyAsyncTaskCommandResult {
         let generation = asyncControlState.intentGenerations[sessionID, default: 0]
         let intent = asyncControlState.archiveIntents[sessionID] ?? UUID().uuidString
         asyncControlState.archiveIntents[sessionID] = intent
@@ -140,9 +158,8 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
             prepare = pending
             archiveMode = retainedMode
         } else {
-            // A user choice must execute against the revision originally shown to
-            // the user. A changed owner/revision is rejected by the daemon, not
-            // silently recaptured while the dialog is open.
+            // The first attempt uses the context shown with the dialog; a stale
+            // reply drops it, so retries capture the owner's current revision.
             let context: PickyAsyncControlContext
             if mode != nil, let choice = asyncControlState.archiveChoices.removeValue(forKey: sessionID) {
                 context = choice

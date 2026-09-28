@@ -2904,7 +2904,43 @@ extension PickyAgentClientRouterTests {
         #expect(retries.allSatisfy { $0 == first })
     }
 
-    @Test func archiveChoiceKeepsCapturedOwnerRevisionAndRejectsStalePreparation() async throws {
+    /// Regression: a running Pickle advances its work revision while the archive
+    /// choice dialog is open. The chosen mode must still archive at the current revision.
+    @Test func archiveChoiceRetriesStalePreparationAtCurrentRevision() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        await router.connect()
+        let control = try #require(router.asyncTaskControl)
+        var ownerRevision = 4
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id)
+                context.workRevision = ownerRevision
+                context.requiresArchiveChoice = true
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command {
+                var result = asyncControlResult(command, outcome: command.workRevision == ownerRevision ? .settled : .stale)
+                result.workRevision = ownerRevision
+                if command.type == .prepareSessionArchive { result.preparationId = "prep" }
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(result))))
+            }
+        }
+        await #expect(throws: PickyAsyncControlError.archiveChoiceRequired) {
+            try await control.archiveAsyncSession(sessionID: "tracked", mode: nil)
+        }
+        ownerRevision = 9 // tool activity while the dialog is open
+        try await control.archiveAsyncSession(sessionID: "tracked", mode: .continue)
+
+        let prepares = primary.sentCommands.compactMap(\.command).filter { $0.type == .prepareSessionArchive }
+        #expect(prepares.map(\.workRevision) == [4, 9])
+        let execute = try #require(primary.sentCommands.last { $0.command?.type == .executeSessionArchive }?.command)
+        #expect(execute.workRevision == 9)
+        #expect(execute.mode == .continue)
+    }
+
+    @Test func archiveChoiceStopsRetryingWhenOwnerStaysStale() async throws {
         let primary = StubAgentClient(id: "primary")
         let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
@@ -2913,25 +2949,16 @@ extension PickyAgentClientRouterTests {
         let control = try #require(router.asyncTaskControl)
         primary.onSendInject = { envelope in
             if envelope.type == .getAsyncControlContext {
-                var context = asyncControlContext(requestID: envelope.id)
-                context.workRevision = 4
-                context.requiresArchiveChoice = true
-                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
-            } else if let command = envelope.command, command.type == .prepareSessionArchive {
-                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(
-                    asyncControlResult(command, outcome: .stale)))))
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(asyncControlContext(requestID: envelope.id)))))
+            } else if let command = envelope.command {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command, outcome: .stale)))))
             }
-        }
-        await #expect(throws: PickyAsyncControlError.archiveChoiceRequired) {
-            try await control.archiveAsyncSession(sessionID: "tracked", mode: nil)
         }
         await #expect(throws: (any Error).self) {
             try await control.archiveAsyncSession(sessionID: "tracked", mode: .continue)
         }
-        let command = try #require(primary.sentCommands.last { $0.command?.type == .prepareSessionArchive }?.command)
-        #expect(command.workRevision == 4)
-        #expect(command.mode == nil)
-        #expect(primary.sentCommands.filter { $0.type == .getAsyncControlContext }.count == 1)
+        #expect(primary.sentCommands.filter { $0.command?.type == .prepareSessionArchive }.count
+            == PickyAsyncOwnerControlCoordinator.staleArchiveChoiceAttempts)
         #expect(!primary.sentCommands.contains { $0.command?.type == .executeSessionArchive })
     }
 

@@ -1062,7 +1062,33 @@ function checkInstantPopoverBoundary() {
   }
 }
 
+// @AppStorage invalidates its view on a write to *any* key in the same
+// UserDefaults domain, not just its own. The composer persists drafts there,
+// so one @AppStorage in the HUD re-rendered every turn card per keystroke.
+// Read defaults once into @State and write explicitly when an edit ends.
+function hasAppStorage(source) {
+  return /@AppStorage\b/.test(stripSwiftCommentsAndStrings(source));
+}
+
+function checkAppStorageBoundary() {
+  for (const file of walk("Picky", (candidate) => candidate.endsWith(".swift"))) {
+    if (hasAppStorage(fs.readFileSync(file, "utf8"))) {
+      addError(`${rel(file)}: @AppStorage re-renders on unrelated defaults writes; read into @State and persist explicitly.`);
+    }
+  }
+  const blocked = ["@AppStorage(\"k\") var v = 0", "@AppStorage(key, store: d) private var v = 1.0"];
+  const allowed = ["// @AppStorage(\"k\")", "Text(\"@AppStorage\")", "@State private var v = 0"];
+  if (blocked.some((sample) => !hasAppStorage(sample)) || allowed.some(hasAppStorage)) {
+    addError("AppStorage boundary self-test failed.");
+  }
+}
+
 function main() {
+  if (process.argv.includes("--self-test=app-storage")) {
+    checkAppStorageBoundary();
+    finish();
+    return;
+  }
   if (process.argv.includes("--self-test=popover")) {
     checkInstantPopoverBoundary();
     finish();
@@ -1103,6 +1129,7 @@ function main() {
     checkTestWindowReleasePolicy();
     checkHubSettingsMenuBoundary();
     checkInstantPopoverBoundary();
+    checkAppStorageBoundary();
     checkFileSizeRatchet();
   }
 

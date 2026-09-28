@@ -187,6 +187,74 @@ policy. Never bucket or round the width independently: even an adjacent width
 can cross a line-wrap boundary and produce a different height. Cache eviction
 must always fall back to the original measurement path with identical output.
 
+## Contract: typing re-renders only the composer
+
+A keystroke in a Pickle composer may re-evaluate `composer_body` and
+`ime_text_view_update`. It must not fan out to the conversation or the dock.
+If `turn_card_body`, `conversation_list_body`, `hud_root_body`, or
+`dock_rail_body` grows while you only type, something outside the composer
+observes a value that typing changes, and each keystroke pays for the whole
+HUD tree.
+
+Two rules keep that true:
+
+- No `@AppStorage` anywhere under `Picky/`. It invalidates its view on a
+  write to *any* key in the same UserDefaults domain, not only its own key.
+  Read defaults once into `@State` and write explicitly when an edit ends.
+  `scripts/check-architecture-rules.js` enforces this
+  (`--self-test=app-storage` for the guard alone).
+- Keystroke-rate state is not persisted per keystroke.
+  `PickySessionComposerDraftController` keeps typed drafts in memory, writes
+  them once after typing pauses, and flushes on quit.
+
+Check the contract against a Debug build with two measurements. First, the
+same counts while you type into the composer for about 10 seconds:
+
+```bash
+log show --last 10s --signpost --style compact \
+  --predicate 'subsystem == "com.jonghakseo.picky" AND category == "hud-perf"' \
+  | grep -oE 'composer_body|turn_card_body|conversation_list_body|hud_root_body|dock_rail_body' \
+  | sort | uniq -c | sort -rn
+```
+
+Second, the defaults-write probe. It fires the invalidation path that
+isolates UserDefaults fan-out without any typing. Use the bundle identifier
+of the running build (`com.jonghakseo.picky.dev` for dev-signed builds):
+
+```bash
+for i in $(seq 1 10); do defaults write com.jonghakseo.picky.dev PickyPerfProbeKey -int "$i"; sleep 0.8; done
+defaults delete com.jonghakseo.picky.dev PickyPerfProbeKey
+```
+
+Then run the same `log show --last 8s` count. With an idle HUD the non-composer
+counts should stay near their idle baseline. Before the 2026-09 fix, ten probe
+writes produced 348 `turn_card_body` and 30 `hud_root_body` evaluations.
+
+## Case study: 2026-09 composer typing latency
+
+**Symptom:** typing into a Pickle composer lagged, most visibly with the
+Korean input method.
+
+**Evidence:** a 30 s `sample` while typing showed about 40% of main-thread
+time in SwiftUI updates driven from `PickyIMENSTextView.keyDown`. Most of it
+was `PickyTurnCardView.body`, where every collapsed chapter re-ran
+`AttributedString(markdown:)` through `PickyFocusStackPriorChapterPresentation`.
+The Korean IME makes a synchronous XPC round trip per key and the run loop
+drains SwiftUI observers while it waits, so the render cost lands inside the
+keystroke.
+
+**Root cause:** `PickyHUDView` held the utility panel height in
+`@AppStorage`. The composer saved its draft to `UserDefaults.standard` on
+every keystroke, and that unrelated write invalidated the HUD root.
+
+**Fix:** `b55201060` moved the height to explicit persistence. The
+follow-up added the architecture guard and debounced draft persistence
+described above.
+
+**Lesson:** when a local interaction is slow, count the body events of views
+*outside* the interaction first. Fan-out from a shared notification source
+does not show up as a slow function of its own.
+
 ## When the cleanup decision is "keep" vs "remove"
 
 - **Keep** signposts on functions whose perf you want to track over time

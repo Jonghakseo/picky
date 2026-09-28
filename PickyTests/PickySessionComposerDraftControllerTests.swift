@@ -28,19 +28,89 @@ final class PickySessionComposerDraftControllerTests: XCTestCase {
         XCTAssertEqual(controller.persistedAttachmentPaths(for: "session-1"), ["/tmp/exists.png"])
     }
 
-    func testUpdateDraftAndAttachmentPathsWriteThroughStores() {
+    func testUpdateDraftDefersStoreWriteButReadsBackImmediately() {
         let draftStore = FakeControllerComposerDraftStore()
         let attachmentStore = FakeControllerComposerAttachmentDraftStore()
         let controller = PickySessionComposerDraftController(
             draftStore: draftStore,
-            attachmentStore: attachmentStore
+            attachmentStore: attachmentStore,
+            draftPersistDelay: .seconds(60)
         )
 
+        controller.updateDraft("h", sessionID: "session-1")
         controller.updateDraft("hello", sessionID: "session-1")
         controller.updateAttachmentPaths(["/tmp/a.png", " /tmp/b.png "], sessionID: "session-1")
 
-        XCTAssertEqual(draftStore.drafts["session-1"], "hello")
+        // Keystrokes stay in memory; readers still see the latest text.
+        XCTAssertEqual(draftStore.setDraftCallCount, 0)
+        XCTAssertEqual(controller.persistedDraft(for: "session-1"), "hello")
         XCTAssertEqual(attachmentStore.attachments["session-1"], ["/tmp/a.png", " /tmp/b.png "])
+
+        controller.flushPendingDrafts()
+
+        XCTAssertEqual(draftStore.drafts["session-1"], "hello")
+        XCTAssertEqual(draftStore.setDraftCallCount, 1)
+    }
+
+    func testUpdateDraftPersistsOnceAfterTypingPauses() async throws {
+        let draftStore = FakeControllerComposerDraftStore()
+        let controller = PickySessionComposerDraftController(
+            draftStore: draftStore,
+            attachmentStore: FakeControllerComposerAttachmentDraftStore(),
+            draftPersistDelay: .milliseconds(20)
+        )
+
+        for text in ["a", "ab", "abc"] {
+            controller.updateDraft(text, sessionID: "session-1")
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while draftStore.drafts["session-1"] == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(draftStore.drafts["session-1"], "abc")
+        XCTAssertEqual(draftStore.setDraftCallCount, 1)
+    }
+
+    func testExplicitDraftWritesSupersedePendingTypedDraft() {
+        let draftStore = FakeControllerComposerDraftStore()
+        let controller = PickySessionComposerDraftController(
+            draftStore: draftStore,
+            attachmentStore: FakeControllerComposerAttachmentDraftStore(),
+            makeRequestID: { kind in "\(kind.rawValue)-id" },
+            draftPersistDelay: .seconds(60)
+        )
+
+        // Append merges with the not-yet-persisted typed text.
+        controller.updateDraft("typed", sessionID: "session-1")
+        XCTAssertTrue(controller.appendText("added", sessionID: "session-1"))
+        XCTAssertEqual(draftStore.drafts["session-1"], "typed\n\nadded")
+
+        // A sent/cleared draft must not come back when the debounce fires.
+        controller.updateDraft("about to send", sessionID: "session-2")
+        controller.clearDraft(sessionID: "session-2")
+        controller.flushPendingDrafts()
+
+        XCTAssertEqual(draftStore.drafts["session-1"], "typed\n\nadded")
+        XCTAssertNil(draftStore.drafts["session-2"])
+        XCTAssertEqual(controller.persistedDraft(for: "session-2"), "")
+    }
+
+    func testPruneDropsPendingDraftsForRemovedSessions() {
+        let draftStore = FakeControllerComposerDraftStore()
+        let controller = PickySessionComposerDraftController(
+            draftStore: draftStore,
+            attachmentStore: FakeControllerComposerAttachmentDraftStore(),
+            draftPersistDelay: .seconds(60)
+        )
+
+        controller.updateDraft("keep", sessionID: "live")
+        controller.updateDraft("gone", sessionID: "removed")
+        controller.prune(knownSessionIDs: ["live"])
+        controller.flushPendingDrafts()
+
+        XCTAssertEqual(draftStore.drafts["live"], "keep")
+        XCTAssertNil(draftStore.drafts["removed"])
     }
 
     func testAppendTextTrimsMergesExistingDraftCreatesRequestAndPersists() {
@@ -180,6 +250,7 @@ final class PickySessionComposerDraftControllerTests: XCTestCase {
 private final class FakeControllerComposerDraftStore: PickyComposerDraftStoring {
     var drafts: [String: String]
     var prunedKnownSessionIDs: Set<String>?
+    private(set) var setDraftCallCount = 0
 
     init(drafts: [String: String] = [:]) {
         self.drafts = drafts
@@ -190,6 +261,7 @@ private final class FakeControllerComposerDraftStore: PickyComposerDraftStoring 
     }
 
     func setDraft(_ draft: String?, for sessionID: String) {
+        setDraftCallCount += 1
         if let draft, !draft.isEmpty {
             drafts[sessionID] = draft
         } else {

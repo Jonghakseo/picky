@@ -87,6 +87,15 @@ final class PickySessionComposerDraftController {
     private let attachmentStore: PickyComposerAttachmentDraftStoring
     private let fileExists: (String) -> Bool
     private let makeRequestID: (RequestKind) -> String
+    private let draftPersistDelay: Duration
+
+    /// Typed drafts awaiting a coalesced store write. Reads consult this first,
+    /// so deferring the write never changes what callers observe. The store is
+    /// UserDefaults-backed and each write re-encodes every session's draft, so
+    /// writing per keystroke is both wasteful and a re-render trigger for any
+    /// view watching the defaults domain.
+    private var pendingDrafts: [String: String] = [:]
+    private var draftFlushTask: Task<Void, Never>?
 
     @Published private(set) var requestsBySessionID: [String: PickyComposerDraftRequest] = [:]
 
@@ -94,12 +103,14 @@ final class PickySessionComposerDraftController {
         draftStore: PickyComposerDraftStoring,
         attachmentStore: PickyComposerAttachmentDraftStoring,
         fileExists: @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
-        makeRequestID: @escaping (RequestKind) -> String = { kind in "draft-\(kind.rawValue)-\(UUID().uuidString)" }
+        makeRequestID: @escaping (RequestKind) -> String = { kind in "draft-\(kind.rawValue)-\(UUID().uuidString)" },
+        draftPersistDelay: Duration = .milliseconds(500)
     ) {
         self.draftStore = draftStore
         self.attachmentStore = attachmentStore
         self.fileExists = fileExists
         self.makeRequestID = makeRequestID
+        self.draftPersistDelay = draftPersistDelay
     }
 
     func request(for sessionID: String) -> PickyComposerDraftRequest? {
@@ -119,10 +130,36 @@ final class PickySessionComposerDraftController {
     }
 
     func persistedDraft(for sessionID: String) -> String {
-        draftStore.draft(for: sessionID) ?? ""
+        pendingDrafts[sessionID] ?? draftStore.draft(for: sessionID) ?? ""
     }
 
+    /// Coalesces keystroke-rate updates into one store write after typing
+    /// pauses. Call `flushPendingDrafts()` before the process exits.
     func updateDraft(_ draft: String, sessionID: String) {
+        pendingDrafts[sessionID] = draft
+        draftFlushTask?.cancel()
+        let delay = draftPersistDelay
+        draftFlushTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            self?.flushPendingDrafts()
+        }
+    }
+
+    func flushPendingDrafts() {
+        draftFlushTask?.cancel()
+        draftFlushTask = nil
+        let pending = pendingDrafts
+        pendingDrafts = [:]
+        for (sessionID, draft) in pending {
+            draftStore.setDraft(draft, for: sessionID)
+        }
+    }
+
+    /// Direct writes supersede a pending typed draft; dropping it prevents a
+    /// later flush from resurrecting stale text over the explicit value.
+    private func writeDraftNow(_ draft: String?, sessionID: String) {
+        pendingDrafts[sessionID] = nil
         draftStore.setDraft(draft, for: sessionID)
     }
 
@@ -136,7 +173,7 @@ final class PickySessionComposerDraftController {
 
     func clearDraft(sessionID: String) {
         requestsBySessionID[sessionID] = nil
-        draftStore.setDraft(nil, for: sessionID)
+        writeDraftNow(nil, sessionID: sessionID)
         attachmentStore.setAttachmentPaths([], for: sessionID)
     }
 
@@ -144,7 +181,7 @@ final class PickySessionComposerDraftController {
     func appendText(_ text: String, sessionID: String) -> Bool {
         let incoming = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !incoming.isEmpty else { return false }
-        let existing = draftStore.draft(for: sessionID) ?? ""
+        let existing = persistedDraft(for: sessionID)
         let merged: String
         if existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             merged = incoming
@@ -152,7 +189,7 @@ final class PickySessionComposerDraftController {
             merged = existing + "\n\n" + incoming
         }
         requestsBySessionID[sessionID] = PickyComposerDraftRequest(id: makeRequestID(.append), text: merged)
-        draftStore.setDraft(merged, for: sessionID)
+        writeDraftNow(merged, sessionID: sessionID)
         return true
     }
 
@@ -161,13 +198,13 @@ final class PickySessionComposerDraftController {
         let incoming = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !incoming.isEmpty else { return false }
         requestsBySessionID[sessionID] = PickyComposerDraftRequest(id: makeRequestID(.replace), text: incoming)
-        draftStore.setDraft(incoming, for: sessionID)
+        writeDraftNow(incoming, sessionID: sessionID)
         return true
     }
 
     func primeRequest(sessionID: String, requestID: String, text: String) {
         requestsBySessionID[sessionID] = PickyComposerDraftRequest(id: requestID, text: text)
-        draftStore.setDraft(text, for: sessionID)
+        writeDraftNow(text, sessionID: sessionID)
     }
 
     func prune(knownSessionIDs: Set<String>) {
@@ -176,6 +213,7 @@ final class PickySessionComposerDraftController {
         // them as non-authoritative for persisted composer data so unsent user drafts do
         // not disappear before the next real snapshot rehydrates the Pickle list.
         guard !knownSessionIDs.isEmpty else { return }
+        pendingDrafts = pendingDrafts.filter { knownSessionIDs.contains($0.key) }
         draftStore.prune(knownSessionIDs: knownSessionIDs)
         attachmentStore.prune(knownSessionIDs: knownSessionIDs)
     }

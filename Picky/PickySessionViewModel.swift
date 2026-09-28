@@ -838,6 +838,11 @@ final class PickySessionListViewModel: ObservableObject {
         composerDraftController.updateDraft(draft, sessionID: sessionID)
     }
 
+    /// Writes typed drafts that are still inside the persistence debounce.
+    func flushPendingComposerDrafts() {
+        composerDraftController.flushPendingDrafts()
+    }
+
     /// Returns previously-persisted composer attachment paths for the session,
     /// filtered to those that still exist on disk. Dropped images live in the
     /// temp directory and may be reaped by the system between launches; the

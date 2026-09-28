@@ -34,6 +34,7 @@ branchTranscriptFromEntries
 } from "./pi-sdk-runtime-helpers.js";
 import { writeFilePathFromRawArgs } from "./write-file-path.js";
 import { PiSdkRuntimeSession } from "./pi-sdk-runtime-session.js";
+import { keepPickyImageInputEnabled } from "./picky-image-input-policy.js";
 
 // Re-exported so existing importers keep working.
 export { branchTranscriptFromEntries, writeFilePathFromRawArgs };
@@ -223,6 +224,7 @@ export class PiSdkRuntime implements AgentRuntime {
         services.settingsManager = SettingsManager.create(runtimeCwd, agentDir);
         services.diagnostics.push(...ownedServices.diagnostics);
       }
+      keepPickyImageInputEnabled(services.settingsManager);
       await refreshModelCatalog(services);
       // Picky defaults establish only a brand-new Pickle. Pi transcript restoration
       // is authoritative when resuming, including its model and thinking level.

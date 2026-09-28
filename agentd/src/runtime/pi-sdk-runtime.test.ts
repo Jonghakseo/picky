@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
+import { type AgentSessionServices, createAgentSessionFromServices, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { SessionStore } from "../session-store.js";
 import { SessionSupervisor } from "../session-supervisor.js";
@@ -559,6 +560,45 @@ describe("PiSdkRuntime", () => {
     expect(disposeRuntime).toHaveBeenCalledOnce();
     expect(events).toEqual([]);
     await expect(handle.followUp({ text: "must not reach disposed extensions", imagePaths: [] })).rejects.toThrow(/disposed/);
+  });
+
+  it("sends screenshots to the model even when the user's Pi settings block images", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-pi-runtime-block-images-"));
+    const agentDir = join(dir, "agent");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ images: { blockImages: true } }));
+    vi.stubEnv("PI_OFFLINE", "1");
+    const fakeSession = new FakeSession();
+    let sessionServices: AgentSessionServices | undefined;
+    const runtime = new PiSdkRuntime({
+      agentDir,
+      resourceLoaderOptions: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true },
+      createSessionFromServices: vi.fn(async (options: { services: AgentSessionServices }) => {
+        sessionServices = options.services;
+        return { session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } };
+      }) as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn(), cwd: options.cwd };
+      }) as never,
+    });
+
+    try {
+      await runtime.create({ text: "what is on screen?", imagePaths: [] }, { cwd: dir, sessionId: "session-1" });
+      // Build a real Pi session from the services Picky prepared and run Pi's own LLM conversion.
+      const { session } = await createAgentSessionFromServices({ services: sessionServices!, sessionManager: SessionManager.inMemory(dir) });
+      const converted = await session.agent.convertToLlm([{
+        role: "user",
+        content: [{ type: "text", text: "screen" }, { type: "image", data: "AAAA", mimeType: "image/jpeg" }],
+        timestamp: 0,
+      }]);
+
+      expect(converted[0]!.content).toContainEqual({ type: "image", data: "AAAA", mimeType: "image/jpeg" });
+      expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8"))).toEqual({ images: { blockImages: true } });
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("marks an initial handle opened from a persisted JSONL as a documented Pi resume", async () => {

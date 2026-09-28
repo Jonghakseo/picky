@@ -16,7 +16,7 @@ enum PickyHUDUtilityPanelPolicy {
     static let resizeGripHeight: CGFloat = 12
     static let minimumConversationCardHeight: CGFloat = 320
 
-    /// Read once and written only when a resize ends. `@AppStorage` is avoided
+    /// Read once and written only when a resize ends. The storage wrapper is avoided
     /// on purpose: it invalidates the owning view on writes to *any* key in the
     /// same defaults domain, and the composer persists its draft there on every
     /// keystroke, which re-rendered the whole HUD tree per key.

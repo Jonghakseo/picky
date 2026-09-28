@@ -11,8 +11,8 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     override var canBecomeKey: Bool { !isDockMinimized }
     override var canBecomeMain: Bool { false }
 
-    /// Retained layout space does not imply input ownership. Only the visible
-    /// restore button accepts pointer input while this panel is minimized.
+    /// Retained layout space does not imply input ownership. Only reported
+    /// visible chrome accepts pointer input, including while minimized.
     var isDockMinimized = false {
         didSet {
             guard oldValue != isDockMinimized else { return }
@@ -24,63 +24,70 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
             } else {
                 acceptsMouseMovedEvents = acceptsMouseMovedEventsBeforeMinimizing
             }
-            synchronizeMinimizedPointerMonitoring()
+            synchronizeDockPointerMonitoring()
         }
     }
-    var minimizedVisibleChromeFrames: [CGRect] = [] {
-        didSet { updateMinimizedDockPointer(NSEvent.mouseLocation) }
+    var visibleChromeFrames: [CGRect] = [] {
+        didSet { updateDockPointer(NSEvent.mouseLocation) }
     }
-    private var minimizedPointerMonitors: [Any] = []
+    private var dockPointerMonitors: [Any] = []
     private var acceptsMouseMovedEventsBeforeMinimizing = false
     private var hasMinimizedPointerCapture = false
+    private var hasExpandedPointerCapture = false
 
     deinit {
-        for monitor in minimizedPointerMonitors { NSEvent.removeMonitor(monitor) }
+        for monitor in dockPointerMonitors { NSEvent.removeMonitor(monitor) }
     }
 
     func minimizeDockInput() {
-        minimizedVisibleChromeFrames = []
+        visibleChromeFrames = []
         isDockMinimized = true
     }
 
     func updateDockInput(isMinimized: Bool, visibleChromeFrames: [CGRect]) {
         isDockMinimized = isMinimized
-        minimizedVisibleChromeFrames = visibleChromeFrames
+        self.visibleChromeFrames = visibleChromeFrames
     }
 
     /// AppKit owns the entire press/drag sequence even if the pointer briefly
     /// leaves the restore control while the panel is repositioned or snaps edges.
     func setMinimizedPointerCapture(_ captured: Bool) {
         hasMinimizedPointerCapture = captured
-        updateMinimizedDockPointer(NSEvent.mouseLocation)
+        updateDockPointer(NSEvent.mouseLocation)
     }
 
-    /// Real pointer monitors and unshown-panel tests use the same AppKit boundary.
+    /// Keep the whole press/drag sequence with this panel, even when a drag
+    /// moves outside the visible rail or card before mouse-up.
+    func updateDockPointer(_ point: CGPoint) {
+        ignoresMouseEvents = !hasExpandedPointerCapture
+            && !hasMinimizedPointerCapture
+            && !PickyHUDInkPassThroughPolicy.contains(
+                point, swiftUIFrames: visibleChromeFrames, panelFrame: frame
+            )
+    }
+
     func updateMinimizedDockPointer(_ point: CGPoint) {
-        ignoresMouseEvents = isDockMinimized && !hasMinimizedPointerCapture && !PickyHUDInkPassThroughPolicy.contains(
-            point, swiftUIFrames: minimizedVisibleChromeFrames, panelFrame: frame
-        )
+        updateDockPointer(point)
     }
 
-    private func synchronizeMinimizedPointerMonitoring() {
-        for monitor in minimizedPointerMonitors { NSEvent.removeMonitor(monitor) }
-        minimizedPointerMonitors = []
-        updateMinimizedDockPointer(NSEvent.mouseLocation)
-        guard isDockMinimized, isVisible else { return }
-        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
+    private func synchronizeDockPointerMonitoring() {
+        for monitor in dockPointerMonitors { NSEvent.removeMonitor(monitor) }
+        dockPointerMonitors = []
+        updateDockPointer(NSEvent.mouseLocation)
+        guard isVisible, PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
-            self?.updateMinimizedDockPointer(NSEvent.mouseLocation)
-        }) { minimizedPointerMonitors.append(global) }
+            self?.updateDockPointer(NSEvent.mouseLocation)
+        }) { dockPointerMonitors.append(global) }
         if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            self?.updateMinimizedDockPointer(NSEvent.mouseLocation)
+            self?.updateDockPointer(NSEvent.mouseLocation)
             return event
-        }) { minimizedPointerMonitors.append(local) }
+        }) { dockPointerMonitors.append(local) }
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
         super.setFrame(frameRect, display: flag)
-        if isDockMinimized { updateMinimizedDockPointer(NSEvent.mouseLocation) }
+        updateDockPointer(NSEvent.mouseLocation)
     }
 
     /// Bridges AppKit's window-close command into the display-local SwiftUI
@@ -144,6 +151,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     override func sendEvent(_ event: NSEvent) {
         if !isDockMinimized && handlePickyCloseWindowShortcut(event) { return }
         if !isDockMinimized && (event.type == .leftMouseDown || event.type == .rightMouseDown) {
+            hasExpandedPointerCapture = true
             PickyPerf.event("hud_panel_mouse_down")
             PickyPerf.interval("hud_panel_make_key") { makeKey() }
             if !clickHitsFocusedControl(event) {
@@ -158,6 +166,10 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
             }
         }
         super.sendEvent(event)
+        if event.type == .leftMouseUp || event.type == .rightMouseUp {
+            hasExpandedPointerCapture = false
+            updateDockPointer(NSEvent.mouseLocation)
+        }
     }
 
     var isFirstResponderFallback: Bool {
@@ -224,7 +236,7 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     }
 
     private func reportActualVisibility() {
-        synchronizeMinimizedPointerMonitoring()
+        synchronizeDockPointerMonitoring()
         onActualVisibilityChanged?(isVisible)
     }
 }

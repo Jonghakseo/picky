@@ -73,6 +73,27 @@ struct PickyPanelKeyboardShortcutTests {
         #expect(closeRequestCount == 1)
     }
 
+    @Test func expandedDockLetsClicksThroughTransparentCardReserve() {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 100, y: 200, width: 600, height: 500),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
+        )
+        let rail = CGRect(x: 540, y: 20, width: 40, height: 300)
+        panel.updateDockInput(isMinimized: false, visibleChromeFrames: [rail])
+
+        panel.updateDockPointer(CGPoint(x: 350, y: 500))
+        #expect(panel.ignoresMouseEvents)
+        panel.updateDockPointer(CGPoint(x: 650, y: 500))
+        #expect(!panel.ignoresMouseEvents)
+
+        let card = CGRect(x: 10, y: 20, width: 510, height: 300)
+        panel.updateDockInput(isMinimized: false, visibleChromeFrames: [rail, card])
+        panel.updateDockPointer(CGPoint(x: 350, y: 500))
+        #expect(!panel.ignoresMouseEvents)
+        panel.updateDockInput(isMinimized: false, visibleChromeFrames: [rail])
+        #expect(panel.ignoresMouseEvents)
+    }
+
     @Test func minimizedDockOnlyAcceptsPointerOverRestoreChromeAndDoesNotClaimCommandW() throws {
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 100, y: 200, width: 600, height: 500),
@@ -81,7 +102,7 @@ struct PickyPanelKeyboardShortcutTests {
         var closes = 0
         panel.onCloseRequested = { closes += 1 }
         panel.acceptsMouseMovedEvents = false
-        panel.minimizedVisibleChromeFrames = [CGRect(x: 20, y: 30, width: 32, height: 32)]
+        panel.visibleChromeFrames = [CGRect(x: 20, y: 30, width: 32, height: 32)]
         panel.isDockMinimized = true
         #expect(panel.acceptsMouseMovedEvents)
 
@@ -104,12 +125,17 @@ struct PickyPanelKeyboardShortcutTests {
         panel.updateMinimizedDockPointer(CGPoint(x: 136, y: 654))
         #expect(!panel.ignoresMouseEvents)
         #expect(!panel.canBecomeKey)
-        panel.minimizedVisibleChromeFrames = []
+        panel.visibleChromeFrames = []
         panel.updateMinimizedDockPointer(CGPoint(x: 136, y: 654))
         #expect(panel.ignoresMouseEvents)
 
         panel.prepareForSessionFocus()
         #expect(!panel.acceptsMouseMovedEvents)
+        // Restoring key focus must not reclaim the transparent reserve before
+        // SwiftUI reports the expanded rail's actual visible frame.
+        #expect(panel.ignoresMouseEvents)
+        panel.updateDockInput(isMinimized: false, visibleChromeFrames: [CGRect(x: 540, y: 20, width: 40, height: 300)])
+        panel.updateDockPointer(CGPoint(x: 650, y: 500))
         #expect(!panel.ignoresMouseEvents)
         #expect(panel.canBecomeKey)
         #expect(panel.performKeyEquivalent(with: try Self.keyEvent(characters: "w", keyCode: 13)))

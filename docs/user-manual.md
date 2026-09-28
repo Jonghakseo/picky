@@ -232,7 +232,7 @@ Turn **Screen pointing & drawing** off under **Hub → Settings → Accounts and
 
 Pickles are independent Pi sessions shown in the Picky HUD dock. They are useful for long-running work that should continue in the background.
 
-The dock can be vertical or horizontal and can attach to the screen edge. Its handle sits at the top in vertical mode (left in horizontal mode); the compact action controls and collapse notch sit at the opposite end.
+The dock can be vertical or horizontal and can attach to the screen edge. Its handle sits at the top in vertical mode (left in horizontal mode); the compact action controls and collapse notch sit at the opposite end. When no conversation card is open, the transparent space reserved beside the dock passes clicks to the app underneath.
 
 ### 7.1 Dock states
 
@@ -363,9 +363,7 @@ The card contains:
 - Header with title, status badge, and menu.
 - Context line with working folder, Git/PR/link badges.
 - Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; full-text reply and system bubbles longer than 50 lines collapse behind a **Show more** toggle, while older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
-- Subagent activity bubbles when the Pickle delegates work to Pi subagents (see 8.11).
-- Extension message bubbles when a Pi extension posts tagged output such as `bash_async` job completions (see 8.12).
-- A **Background tasks** shelf when the runtime reports tracked work. It shows active tasks and items needing attention; expand a row for details or use its **Stop** action when available. A background job may keep running after the current response ends. Some runtimes cannot track or stop background work, and the shelf identifies that limitation instead of claiming a task has stopped.
+- A running-work footer when the runtime reports active background tasks. Expand it to see task names and elapsed times; subagent work shows agent types when available. The footer can open as a popover in a compact card. Background jobs may keep running after the current response ends. Completed subagent launches and `bash_async` notifications are not duplicated in the conversation.
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
 - A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel. As progress advances, the drawer scrolls the current task into view.
@@ -535,21 +533,13 @@ Supported controls:
 
 Answered or cancelled question bubbles collapse but can be expanded for review.
 
-### 8.11 Subagent activity bubbles
+### 8.11 Background work
 
-When a Pickle launches Pi subagents (single `run`, parallel `batch`, or sequential `chain`), the conversation shows a dedicated bubble for each subagent invocation instead of a global overlay.
-
-While running, the bubble lists one row per agent with its status icon, agent name, run number, task preview, and elapsed time; chain invocations also show the step order. When available, a context-usage ring and percentage appear before the elapsed time, calculated as used context tokens divided by that subagent model's context window. The ring progresses from green through informational blue and warning amber to destructive red as usage approaches the limit. A second line shows the current activity once, with the cumulative tool-call count kept as separate right-aligned metadata; the count remains visible even when no activity text is available. The bubble collapses to a one-line summary once every run settles, and can be expanded again at any time.
-
-Continuing a subagent run creates a separate invocation bubble under the same agent name. Earlier invocation results remain available, and successful completion cleanup does not count as a failed or cancelled run.
-
-After a run completes, its row keeps the latest context-usage reading and swaps the task preview for a preview of the subagent's response. Click a completed row to open the full response in the Markdown report viewer (the row tooltip still shows the original task). Full response text is kept for the most recent runs; older runs keep only the short preview.
+The footer above the composer shows the number of running tasks. Expand it to see their names and elapsed times; when the card is compact, the list opens in a popover. Subagent work shows agent types when available. The conversation does not repeat subagent launches or `bash_async` completion notifications. Use **Tool History** to inspect the recorded calls and results.
 
 ### 8.12 Extension message bubbles
 
-Pi extensions can post their own messages into a session, and Pi tags each one with a `customType` such as `bash-async-completion`, `web-search-content-ready`, or `prompt-suggest-lite-status`. Picky shows these as a labeled bubble carrying the tag, so extension output is distinguishable from Picky's own system messages.
-
-Long extension output starts collapsed. The collapsed bubble keeps the first line of each blank-line separated block, up to ten lines, and shows how many lines are hidden. That keeps every entry of a batched notification visible: when `bash_async` reports several finished jobs at once, each job's status header stays readable while collapsed, so a failure is never buried under an earlier job's output. Click the header to expand the full payload, or right-click the bubble to copy the whole text or open it in the report viewer. Output short enough to fit the preview stays fully visible with no toggle.
+Other Pi extension messages, such as `web-search-content-ready` or `prompt-suggest-lite-status`, can appear in the conversation with their `customType` label. Long messages start collapsed with a preview of each blank-line separated block, up to ten lines. Click the header to expand the full output, or right-click to copy it or open it in the report viewer.
 
 ### 8.13 Tool History viewer
 

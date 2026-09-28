@@ -66,8 +66,8 @@ struct PickyHUDDockIconView: View {
             // make the Pickle rail appear to shift vertically. Keep animations scoped
             // to drawing-only subviews such as `dockIconBackground` and badges.
             .overlay(alignment: .bottomTrailing) {
-                if session.asyncActiveCount > 0 || session.asyncAttentionCount > 0 || session.asyncRetainsWork {
-                    Text(session.asyncActiveCount > 0 ? "\(session.asyncActiveCount)" : "!")
+                if session.asyncActiveCount > 0 {
+                    Text("\(session.asyncActiveCount)")
                         .pickyFont(size: 10, weight: .semibold)
                         .foregroundStyle(session.asyncAttentionCount > 0 ? DS.Colors.warningText : DS.Colors.info)
                         .padding(.horizontal, DS.Spacing.space1)

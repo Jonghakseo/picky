@@ -3175,6 +3175,76 @@ extension PickyAgentClientRouterTests {
         }
     }
 
+    /// A released owner resumes without a runtime; restore must still reach the daemon,
+    /// which resumes a fresh runtime and cancels the release token itself.
+    @Test func restoreAfterCompletedReleaseSendsUnarchiveWithoutRuntime() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-released-restore-\(UUID().uuidString)")
+        try makeStubAgentdPackage(at: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = StubAgentClient(id: "primary")
+        let launchers = StubLauncherFactoryForRouter(agentdRoot: root)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: root), factory: launchers)
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect(); pool.terminateAllChildren() }
+        await router.connect()
+        let spawning = Task { try await router.spawnChildClient(sessionId: "tracked", cwd: root.path) }
+        _ = try await launchers.waitForRunner(sessionId: "tracked")
+        launchers.emitReady(for: "tracked")
+        let child = try #require(try await spawning.value as? StubAgentClient)
+        child.emit(.protocolEvent(trackedSessionEvent(archived: true)))
+        child.onSendInject = { envelope in
+            guard envelope.type == .getAsyncControlContext else { return }
+            var context = asyncControlContext(requestID: envelope.id)
+            context.runtimeInstanceId = nil
+            context.tracking = .unsupported
+            context.admissionState = .closed
+            context.releasePrepared = .init(operationId: "op", releaseToken: "token", sessionId: "tracked",
+                daemonInstanceId: "old-daemon", runtimeInstanceId: "old-runtime", childGeneration: 1,
+                archiveIntentId: "archive", workRevision: 4, controlGeneration: 1)
+            child.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+        }
+        let control = try #require(router.asyncTaskControl)
+        control.invalidateAsyncArchiveIntent(sessionID: "tracked")
+        let restoring = Task { try await control.restoreAsyncSession(sessionID: "tracked") }
+        try await waitUntil { child.sentCommands.contains { $0.type == .setSessionArchived } }
+        let unarchive = try #require(child.sentCommands.last { $0.type == .setSessionArchived })
+        #expect(unarchive.archived == false)
+        #expect(!child.sentCommands.contains { $0.command?.type == .cancelRuntimeRelease })
+        child.emit(.protocolEvent(makeAckEnvelope(commandId: unarchive.id)))
+        try await restoring.value
+    }
+
+    /// After an app restart the released Pickle has no child; the primary owner
+    /// answers with the daemon's real released-owner context shape.
+    @Test func restoreReleasedPickleAfterAppRestartReachesPrimaryOwner() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-restart-restore-\(UUID().uuidString)")
+        try makeStubAgentdPackage(at: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: root),
+            factory: StubLauncherFactoryForRouter(agentdRoot: root))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect(); pool.terminateAllChildren() }
+        await router.connect()
+        primary.onSendInject = { envelope in
+            guard envelope.type == .getAsyncControlContext else { return }
+            let json = #"{"id":"e","protocolVersion":"\#(pickyAgentProtocolVersion)","timestamp":"2026-09-28T09:01:09.027Z","type":"asyncControlContext","requestId":"\#(envelope.id)","sessionId":"tracked","requiresArchiveChoice":true,"archiveIntentId":"archive","releasePrepared":{"operationId":"op","releaseToken":"token","sessionId":"tracked","daemonInstanceId":"old-daemon","runtimeInstanceId":"old-runtime","childGeneration":2,"archiveIntentId":"archive","workRevision":60,"controlGeneration":8},"daemonInstanceId":"daemon","workRevision":60,"controlGeneration":8,"admissionState":"closed","tracking":"unsupported","expectedProviders":[],"readyProviders":[]}"#
+            if let event = try? JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8)) {
+                primary.emit(.protocolEvent(event))
+            }
+        }
+        primary.emit(.protocolEvent(trackedSessionEvent(archived: true)))
+        let control = try #require(router.asyncTaskControl)
+        control.invalidateAsyncArchiveIntent(sessionID: "tracked")
+        let restoring = Task { try await control.restoreAsyncSession(sessionID: "tracked") }
+        try await waitUntil { primary.sentCommands.contains { $0.type == .setSessionArchived } }
+        let unarchive = try #require(primary.sentCommands.last { $0.type == .setSessionArchived })
+        #expect(unarchive.archived == false)
+        #expect(!primary.sentCommands.contains { $0.command?.type == .cancelRuntimeRelease })
+        primary.emit(.protocolEvent(makeAckEnvelope(commandId: unarchive.id)))
+        try await restoring.value
+    }
+
     @Test func pendingArchiveReleaseCannotTerminateChildDuringExplicitDeletion() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-release-delete-\(UUID().uuidString)")
         try makeStubAgentdPackage(at: root)

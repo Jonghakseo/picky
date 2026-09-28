@@ -206,7 +206,9 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
         let key = "release-cancel:\(sessionID)"
         if let pending = asyncControlState.commands[key] {
             _ = try await performRetained(pending, key: key)
-        } else if let approval = context.releasePrepared {
+        } else if let approval = context.releasePrepared, context.runtimeInstanceId?.isEmpty == false {
+            // With no runtime, the owner was already released. The daemon's
+            // unarchive resumes a fresh runtime and cancels this token itself.
             var cancel = try context.command(.cancelRuntimeRelease)
             cancel.releaseToken = approval.releaseToken
             _ = try await performRetained(cancel, key: key)

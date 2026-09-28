@@ -554,7 +554,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             settingsSaveObserver = nil
         }
         // Drafts are persisted on a debounce; keep the last keystrokes on quit.
-        hudSessionViewModel.flushPendingComposerDrafts()
+        hudSessionViewModel.composerDraftController.flushPendingDrafts()
         stopMainThreadWatchdog()
         secureSurfaceWindowCoordinator.stop()
         companionManager.stop()

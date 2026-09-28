@@ -153,7 +153,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
     var pendingDockGroupAssignments: [String: PendingDockGroupAssignment] = [:]
     internal var dockLayoutReconciliationSuspensionDepth = 0
-    private let composerDraftController: PickySessionComposerDraftController
+    let composerDraftController: PickySessionComposerDraftController
     private var slashCommandController: PickySessionSlashCommandController!
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
     private let artifactPathValidator: PickyArtifactPathValidator
@@ -836,11 +836,6 @@ final class PickySessionListViewModel: ObservableObject {
 
     func updateComposerDraft(_ draft: String, sessionID: String) {
         composerDraftController.updateDraft(draft, sessionID: sessionID)
-    }
-
-    /// Writes typed drafts that are still inside the persistence debounce.
-    func flushPendingComposerDrafts() {
-        composerDraftController.flushPendingDrafts()
     }
 
     /// Returns previously-persisted composer attachment paths for the session,

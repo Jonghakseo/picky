@@ -2,12 +2,7 @@
 //  CompanionPanelSettingsView.swift
 //  Picky
 //
-//  Friendly settings surface for the menu bar panel.
-//
-//  Minimal redesign: every section is just a label + body, separated by hairline
-//  dividers — no card chrome. Toggle changes autosave immediately because they
-//  cannot fail validation; text fields (which validate as directories) keep an
-//  explicit save path that surfaces only when the user has unsaved edits.
+//  Settings controls shared by the companion panel and Hub.
 //
 
 import AppKit
@@ -36,7 +31,6 @@ struct CompanionPanelSettingsView: View {
     @State private var azureTTSAPIKeyDraft: String = ""
     @State private var azureTTSVoiceDraft: String = ""
     @State private var azureLanguageDraft: String = ""
-    // OpenAI direct provider drafts (Task 5/6 — base URL is shared via OPENAI_BASE_URL fallback at runtime).
     @State private var openAITTSAPIKeyDraft: String = ""
     @State private var openAITTSVoiceDraft: String = ""
     @State private var openAITTSModelDraft: String = ""

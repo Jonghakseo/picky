@@ -1,6 +1,73 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "hub.plugins.duplicate.remove": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove duplicates"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중복 제거"
+          }
+        }
+      }
+    },
+    "hub.plugins.duplicate.remove.accessibility": {
+      "comment": "Accessibility label. Arg is the plugin title.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove duplicates of %1$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 중복 항목 제거"
+          }
+        }
+      }
+    },
+    "hub.plugins.feedback.duplicatesRemoved": {
+      "comment": "Arg is the plugin title.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removed duplicates of %1$@. Local folders were moved to the Trash."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@의 중복 항목을 지웠어요. 로컬 폴더는 휴지통에서 되살릴 수 있어요."
+          }
+        }
+      }
+    },
+    "hub.plugins.duplicate.manualRemaining": {
+      "comment": "Arg is one or more absolute paths, one per line.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These couldn't be removed automatically. Remove them yourself:\n%1$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래 항목은 자동으로 지울 수 없어서 남겨 뒀어요. 직접 지워 주세요.\n%1$@"
+          }
+        }
+      }
+    },
     "extensions.curated.vccKo.title": {
       "localizations": {
         "en": {

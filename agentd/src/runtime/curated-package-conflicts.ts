@@ -1,12 +1,15 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { DefaultPackageManager, parseFrontmatter, SettingsManager, type ResolvedResource } from "@earendil-works/pi-coding-agent";
-import { curatedPackageResources, npmPackageName, type CuratedPackageConflict } from "../domain/curated-package-resources.js";
+import { curatedPackageResources, npmPackageName, type CuratedConflictRemoval, type CuratedPackageConflict } from "../domain/curated-package-resources.js";
 
 export interface CuratedConflictInspectionInput {
   cwd: string;
   agentDir: string;
   sources: readonly string[];
+  /** Home used for `~/.agents/skills`; defaults to the process home. */
+  homeDir?: string;
 }
 
 type ResolvedPiResources = { extensions: ResolvedResource[]; skills: ResolvedResource[] };
@@ -47,6 +50,7 @@ export async function inspectCuratedPackageConflicts(
     conflicts.push(conflict);
   };
 
+  const roots = removableRoots(input);
   const skillOwners = collectSkillOwners(resolved.skills);
   const toolScanCache = new Map<string, string[]>();
   for (const target of targets) {
@@ -55,7 +59,8 @@ export async function inspectCuratedPackageConflicts(
 
     for (const skill of target.resources.skills) {
       for (const owner of skillOwners.get(skill) ?? []) {
-        if (!ownedBy(owner.resource)) add({ source: target.source, kind: "skill", name: skill, ownerPath: owner.filePath });
+        if (ownedBy(owner.resource)) continue;
+        add({ source: target.source, kind: "skill", name: skill, ownerPath: owner.filePath, removal: skillRemoval(owner.resource, owner.filePath, roots) });
       }
     }
 
@@ -69,11 +74,47 @@ export async function inspectCuratedPackageConflicts(
         toolScanCache.set(root, texts);
       }
       for (const tool of target.resources.tools) {
-        if (texts.some((text) => registersTool(text, tool))) add({ source: target.source, kind: "tool", name: tool, ownerPath: root });
+        if (texts.some((text) => registersTool(text, tool))) {
+          add({ source: target.source, kind: "tool", name: tool, ownerPath: root, removal: extensionRemoval(extension, root, roots) });
+        }
       }
     }
   }
   return conflicts;
+}
+
+interface RemovableRoots {
+  skills: Set<string>;
+  extensions: Set<string>;
+}
+
+function removableRoots(input: CuratedConflictInspectionInput): RemovableRoots {
+  const home = input.homeDir ?? homedir();
+  return {
+    skills: new Set([join(input.agentDir, "skills"), join(home, ".agents", "skills"), join(input.cwd, ".pi", "skills"), join(input.cwd, ".agents", "skills")].map((path) => resolve(path))),
+    extensions: new Set([join(input.agentDir, "extensions"), join(input.cwd, ".pi", "extensions")].map((path) => resolve(path))),
+  };
+}
+
+function packageRemoval(resource: ResolvedResource): CuratedConflictRemoval | undefined {
+  if (resource.metadata.origin !== "package") return undefined;
+  // Project packages belong to the repository's settings; leave that decision to the user.
+  return resource.metadata.scope === "user" ? { kind: "package", source: resource.metadata.source } : { kind: "manual" };
+}
+
+/** Only auto-discovered entries sit directly under a root; trashing them leaves no dangling settings path. */
+function trashRemoval(resource: ResolvedResource, target: string, roots: Set<string>): CuratedConflictRemoval {
+  const path = resolve(target);
+  return resource.metadata.source === "auto" && roots.has(dirname(path)) ? { kind: "trash", path } : { kind: "manual" };
+}
+
+function skillRemoval(resource: ResolvedResource, filePath: string, roots: RemovableRoots): CuratedConflictRemoval {
+  return packageRemoval(resource)
+    ?? trashRemoval(resource, basename(filePath) === "SKILL.md" ? dirname(filePath) : filePath, roots.skills);
+}
+
+function extensionRemoval(resource: ResolvedResource, scanRoot: string, roots: RemovableRoots): CuratedConflictRemoval {
+  return packageRemoval(resource) ?? trashRemoval(resource, scanRoot, roots.extensions);
 }
 
 async function resolvePiResources(cwd: string, agentDir: string): Promise<ResolvedPiResources> {

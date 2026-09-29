@@ -91,8 +91,8 @@ describe("curated package duplicate protection", () => {
       type: "packageConflicts",
       commandId: "inspect",
       conflicts: [
-        { source: WEB_ACCESS, kind: "tool", name: "web_search", ownerPath: extensionDir },
-        { source: EXCALIDRAW, kind: "skill", name: "excalidraw", ownerPath: skillFile },
+        { source: WEB_ACCESS, kind: "tool", name: "web_search", ownerPath: extensionDir, removal: { kind: "trash", path: extensionDir } },
+        { source: EXCALIDRAW, kind: "skill", name: "excalidraw", ownerPath: skillFile, removal: { kind: "trash", path: join(skillFile, "..") } },
       ],
     });
   });
@@ -121,8 +121,31 @@ describe("curated package duplicate protection", () => {
     expect(events.at(-1)).toEqual({
       type: "packageConflicts",
       commandId: "inspect",
-      conflicts: [{ source: EXCALIDRAW, kind: "skill", name: "excalidraw", ownerPath: localSkill }],
+      conflicts: [{ source: EXCALIDRAW, kind: "skill", name: "excalidraw", ownerPath: localSkill, removal: { kind: "trash", path: join(localSkill, "..") } }],
     });
+  });
+
+  it("offers package removal for another user package and leaves explicit settings paths to the user", async () => {
+    const otherPackage = join(agentDir, "npm", "node_modules", "pi-web-access");
+    await mkdir(otherPackage, { recursive: true });
+    await writeFile(join(otherPackage, "package.json"), JSON.stringify({ name: "pi-web-access", version: "0.33.0", pi: { extensions: ["./index.ts"] } }));
+    await writeFile(join(otherPackage, "index.ts"), `pi.registerTool({ name: "fetch_content", execute() {} });`);
+    const explicitSkillDir = join(root, "shared-skills", "a4");
+    await mkdir(explicitSkillDir, { recursive: true });
+    await writeFile(join(explicitSkillDir, "SKILL.md"), "---\nname: a4\ndescription: shared\n---\n");
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:pi-web-access"], skills: [explicitSkillDir] }));
+
+    const { operations, events } = subject();
+    await operations.runConflictInspection({} as WebSocket, "inspect", [WEB_ACCESS, "npm:@ryan_nookpi/pi-skill-a4"]);
+    expect(events.at(-1)).toEqual({
+      type: "packageConflicts",
+      commandId: "inspect",
+      conflicts: expect.arrayContaining([
+        { source: "npm:@ryan_nookpi/pi-skill-a4", kind: "skill", name: "a4", ownerPath: join(explicitSkillDir, "SKILL.md"), removal: { kind: "manual" } },
+        { source: WEB_ACCESS, kind: "tool", name: "fetch_content", ownerPath: otherPackage, removal: { kind: "package", source: "npm:pi-web-access" } },
+      ]),
+    });
+    expect((events.at(-1) as { conflicts: unknown[] }).conflicts).toHaveLength(2);
   });
 
   it("fails closed when the duplicate check itself fails", async () => {

@@ -275,6 +275,7 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
     private let plugins: [PickyCuratedPlugin]
     private let statusForSource: (String) -> PickyCuratedPluginInstaller.Status
     private let installedVersionForSource: (String) -> String?
+    private let trashItem: (URL) throws -> Void
     private var availableUpdateSources: Set<String> = []
     private var hasCheckedForUpdates = false
     private var isCheckingForUpdates = false
@@ -288,11 +289,13 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         installedVersionForSource: @escaping (String) -> String? = { source in
             guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return nil }
             return PickyCuratedPluginInstaller.installedVersion(source: source)
-        }
+        },
+        trashItem: @escaping (URL) throws -> Void = PickyDuplicateResourceTrash.moveToTrash
     ) {
         self.plugins = plugins
         self.statusForSource = statusForSource
         self.installedVersionForSource = installedVersionForSource
+        self.trashItem = trashItem
         refresh()
     }
 
@@ -347,6 +350,65 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
                 self.hasCheckedForUpdates = false
             }
         }
+    }
+
+    /// Removes every other copy agentd marked as removable: other user packages
+    /// through Pi's package manager, local folders by moving them to the Trash.
+    /// Copies that need a human decision stay listed and are reported as remaining.
+    @discardableResult
+    func removeDuplicates(_ plugin: PickyCuratedPlugin, pluginReloadController: PickyPluginReloadController) -> Bool {
+        let pluginID = plugin.id
+        guard let index = rows.firstIndex(where: { $0.plugin.id == pluginID }), !rows[index].isBusy else { return false }
+        let conflicts = rows[index].conflicts
+        guard conflicts.contains(where: \.isRemovable) else { return false }
+        rows[index].isBusy = true
+        lastError = nil
+
+        Task { [weak self] in
+            var changed = false
+            var failures: [String] = []
+            var remaining: [String] = []
+            var handled = Set<PickyPackageConflict.Removal>()
+            for conflict in conflicts {
+                let removal = conflict.removal ?? .manual
+                guard handled.insert(removal).inserted || removal == .manual else { continue }
+                switch removal {
+                case .package(let source):
+                    switch await pluginReloadController.removeCuratedPackage(source: source) {
+                    case .success:
+                        changed = true
+                    case .failure(let error):
+                        changed = changed || error.packageChanged
+                        failures.append("\(source): \(error.localizedDescription)")
+                    }
+                case .trash(let path):
+                    do {
+                        try self?.trashItem(URL(fileURLWithPath: path))
+                        changed = true
+                    } catch {
+                        failures.append("\(path): \(error.localizedDescription)")
+                    }
+                case .manual:
+                    remaining.append(conflict.ownerPath)
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            if changed { self.onPluginStateChanged?() }
+            if let index = self.rows.firstIndex(where: { $0.plugin.id == pluginID }) {
+                self.rows[index].isBusy = false
+            }
+            self.inspectConflicts(pluginReloadController: pluginReloadController)
+            var messages = failures
+            if !remaining.isEmpty {
+                messages.append(L10n.t("hub.plugins.duplicate.manualRemaining", Array(Set(remaining)).sorted().joined(separator: "\n")))
+            }
+            let result: Result<Void, PickyCuratedPluginInstaller.CommandError> = messages.isEmpty
+                ? .success(())
+                : .failure(.failed(messages.joined(separator: "\n")))
+            if case .failure(let error) = result { self.lastError = error.localizedDescription }
+            self.mutationOutcome = MutationOutcome(pluginID: pluginID, result: result)
+        }
+        return true
     }
 
     /// Re-reads duplicate owners from disk. A failed lookup keeps the previous

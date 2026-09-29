@@ -20,12 +20,25 @@ const resourcesByPackage: Readonly<Record<string, CuratedPackageResources>> = {
   "@ryan_nookpi/pi-skill-a4": { tools: [], skills: ["a4"] },
 };
 
+/**
+ * How the other copy can be removed without guessing:
+ * - `package`: another user-scope Pi package; remove it through Pi's package manager.
+ * - `trash`: an auto-discovered local skill/extension folder (or single file) directly
+ *   under a Pi resource root; the app moves `path` to the Trash so it stays recoverable.
+ * - `manual`: anything else (project packages, explicit settings paths); the user decides.
+ */
+export type CuratedConflictRemoval =
+  | { kind: "package"; source: string }
+  | { kind: "trash"; path: string }
+  | { kind: "manual" };
+
 export interface CuratedPackageConflict {
   source: string;
   kind: "tool" | "skill";
   name: string;
   /** Absolute path of the resource that already provides `name`. */
   ownerPath: string;
+  removal: CuratedConflictRemoval;
 }
 
 /** `npm:@scope/name@1.2.3` and `npm:@scope/name` identify the same package. */

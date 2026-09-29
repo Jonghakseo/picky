@@ -70,6 +70,7 @@ struct PickyHubPluginsPage: View {
                                 onUpdate: { update(item) },
                                 onViewCronJobs: { presentCronJobs(for: item) },
                                 onSetupCronDaemon: { setup(item) },
+                                onRemoveDuplicates: { catalog.removeDuplicates(item) },
                                 focusedControl: $focusedPluginControl
                             )
                         }

@@ -9,13 +9,30 @@
       "source": "npm:@ryan_nookpi/pi-extension-web-access",
       "kind": "tool",
       "name": "web_search",
-      "ownerPath": "/Users/example/.pi/agent/extensions/web-access"
+      "ownerPath": "/Users/example/.pi/agent/extensions/web-access",
+      "removal": {
+        "kind": "trash",
+        "path": "/Users/example/.pi/agent/extensions/web-access"
+      }
     },
     {
       "source": "npm:@ryan_nookpi/pi-skill-excalidraw",
       "kind": "skill",
       "name": "excalidraw",
-      "ownerPath": "/Users/example/.pi/agent/skills/excalidraw/SKILL.md"
+      "ownerPath": "/Users/example/.pi/agent/skills/excalidraw/SKILL.md",
+      "removal": {
+        "kind": "package",
+        "source": "npm:pi-excalidraw"
+      }
+    },
+    {
+      "source": "npm:@ryan_nookpi/pi-skill-a4",
+      "kind": "skill",
+      "name": "a4",
+      "ownerPath": "/Users/example/shared-skills/a4/SKILL.md",
+      "removal": {
+        "kind": "manual"
+      }
     }
   ],
   "failed": false

@@ -340,6 +340,75 @@ struct PickyCuratedPluginInstallerTests {
         try await waitUntil { sentTypes.contains(.installPackage) }
     }
 
+    @Test @MainActor func removeDuplicatesClearsRemovableCopiesAndKeepsManualOnesReported() async throws {
+        let plugin = PickyCuratedPlugin.webAccess
+        let localCopy = "/Users/example/.pi/agent/extensions/web-access"
+        let sharedCopy = "/Users/example/shared/web-tools"
+        let client = FakeCuratedPluginAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        var reportedConflicts = [
+            PickyPackageConflict(source: plugin.source, kind: .tool, name: "web_search", ownerPath: localCopy, removal: .trash(path: localCopy)),
+            PickyPackageConflict(source: plugin.source, kind: .tool, name: "fetch_content", ownerPath: localCopy, removal: .trash(path: localCopy)),
+            PickyPackageConflict(source: plugin.source, kind: .tool, name: "web_search", ownerPath: "/pkg/pi-web-access", removal: .package(source: "npm:pi-web-access")),
+            PickyPackageConflict(source: plugin.source, kind: .tool, name: "get_search_content", ownerPath: sharedCopy, removal: .manual)
+        ]
+        var removedSources: [String] = []
+        var trashed: [URL] = []
+        var changeCount = 0
+        client.sendHandler = { command in
+            switch command.type {
+            case .inspectPackageConflicts:
+                client.conflicts(commandId: command.id, conflicts: reportedConflicts)
+            case .removePackage:
+                removedSources.append(command.source ?? "")
+                client.complete(requestId: command.id, operation: .remove, source: command.source ?? "", ok: true)
+            default:
+                break
+            }
+        }
+        let viewModel = PickyCuratedPluginsViewModel(
+            plugins: [plugin],
+            statusForSource: { _ in .notInstalled },
+            installedVersionForSource: { _ in nil },
+            trashItem: { trashed.append($0) }
+        )
+        viewModel.onPluginStateChanged = { changeCount += 1 }
+        viewModel.inspectConflicts(pluginReloadController: controller)
+        try await waitUntil { viewModel.rows.first?.conflicts.count == 4 }
+
+        reportedConflicts = [reportedConflicts[3]]
+        #expect(viewModel.removeDuplicates(plugin, pluginReloadController: controller))
+        try await waitUntil { viewModel.mutationOutcome != nil && viewModel.rows.first?.conflicts.count == 1 }
+
+        #expect(removedSources == ["npm:pi-web-access"])
+        #expect(trashed == [URL(fileURLWithPath: localCopy)])
+        #expect(changeCount == 1)
+        #expect(viewModel.rows.first?.isBusy == false)
+        guard case .failure(let error)? = viewModel.mutationOutcome?.result else {
+            Issue.record("Expected the manual copy to be reported as remaining")
+            return
+        }
+        #expect(error.localizedDescription.contains(sharedCopy))
+        #expect(viewModel.removeDuplicates(plugin, pluginReloadController: controller) == false)
+    }
+
+    @Test func duplicateTrashOnlyAcceptsEntriesDirectlyUnderResourceRoots() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-dup-trash-\(UUID().uuidString)", isDirectory: true)
+        let skillEntry = root.appendingPathComponent("skills/a4", isDirectory: true)
+        let otherEntry = root.appendingPathComponent("notes/a4", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillEntry, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: otherEntry, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(throws: Never.self) { try PickyDuplicateResourceTrash.validate(skillEntry) }
+        for rejected in [root.appendingPathComponent("skills"), otherEntry, FileManager.default.homeDirectoryForCurrentUser, URL(fileURLWithPath: "/")] {
+            #expect(throws: PickyDuplicateResourceTrash.TrashError.self) { try PickyDuplicateResourceTrash.validate(rejected) }
+        }
+        #expect(throws: PickyDuplicateResourceTrash.TrashError.missing(root.appendingPathComponent("skills/gone").path)) {
+            try PickyDuplicateResourceTrash.validate(root.appendingPathComponent("skills/gone"))
+        }
+    }
+
     @Test @MainActor func partialInstallRefreshesInstalledStatusAndNotesReload() async throws {
         let plugin = PickyCuratedPlugin.cron
         let client = FakeCuratedPluginAgentClient()

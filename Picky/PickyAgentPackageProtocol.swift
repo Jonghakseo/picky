@@ -28,11 +28,49 @@ struct PickyPackageConflict: Decodable, Equatable, Hashable {
         case skill
     }
 
+    /// How the other copy can be removed, decided by agentd from Pi's resource metadata.
+    enum Removal: Decodable, Equatable, Hashable {
+        /// Another user-scope Pi package; remove it with the package manager.
+        case package(source: String)
+        /// An auto-discovered local folder or file directly under a Pi resource root.
+        case trash(path: String)
+        /// Anything else; the user removes it.
+        case manual
+
+        private enum CodingKeys: String, CodingKey { case kind, source, path }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            switch try container.decode(String.self, forKey: .kind) {
+            case "package": self = .package(source: try container.decode(String.self, forKey: .source))
+            case "trash": self = .trash(path: try container.decode(String.self, forKey: .path))
+            default: self = .manual
+            }
+        }
+    }
+
     let source: String
     let kind: Kind
     let name: String
     /// Absolute path of the resource that already provides `name`.
     let ownerPath: String
+    /// Older daemons omit this; treat it as manual removal.
+    let removal: Removal?
+
+    init(source: String, kind: Kind, name: String, ownerPath: String, removal: Removal? = nil) {
+        self.source = source
+        self.kind = kind
+        self.name = name
+        self.ownerPath = ownerPath
+        self.removal = removal
+    }
+
+    var isRemovable: Bool {
+        switch removal {
+        case .package, .trash: true
+        case .manual, nil: false
+        }
+    }
 }
 
 struct PickyPackageConflictsEvent: Decodable, Equatable {

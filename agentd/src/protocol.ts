@@ -994,6 +994,11 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
       kind: z.enum(["tool", "skill"]),
       name: z.string().min(1),
       ownerPath: z.string().min(1),
+      removal: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("package"), source: z.string().min(1) }),
+        z.object({ kind: z.literal("trash"), path: z.string().min(1) }),
+        z.object({ kind: z.literal("manual") }),
+      ]).optional(),
     })),
     failed: z.boolean().optional(),
   }),

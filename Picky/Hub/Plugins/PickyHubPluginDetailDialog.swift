@@ -138,6 +138,12 @@ struct PickyHubPluginDetailDialog: View {
 
     @ViewBuilder
     private var mutationButton: some View {
+        if item.canRemoveDuplicates {
+            PickyHubButton(title: "hub.plugins.duplicate.remove", role: .danger, isBusy: item.isBusy) {
+                pluginCatalog.removeDuplicates(item)
+            }
+            .accessibilityLabel(Text(L10n.t("hub.plugins.duplicate.remove.accessibility", item.title)))
+        }
         if item.hasUpdate {
             PickyHubButton(title: "hub.plugins.card.update", role: .secondary, isBusy: item.isBusy) {
                 pluginCatalog.update(item)

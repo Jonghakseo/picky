@@ -13,6 +13,7 @@ struct PickyHubPluginCardView: View {
     let onUpdate: () -> Void
     let onViewCronJobs: () -> Void
     let onSetupCronDaemon: () -> Void
+    var onRemoveDuplicates: () -> Void = {}
     @FocusState.Binding var focusedControl: String?
 
     private var detailControlID: String { "\(item.id).detail" }
@@ -117,6 +118,7 @@ struct PickyHubPluginCardView: View {
         if isVertical {
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 detailButton
+                removeDuplicatesButton
                 if item.canRemove {
                     if item.hasUpdate {
                         PickyHubButton(title: "hub.plugins.card.update", role: .secondary, isBusy: item.isBusy, action: onUpdate)
@@ -130,6 +132,7 @@ struct PickyHubPluginCardView: View {
         } else {
             HStack(spacing: PickyHubTheme.Spacing.related) {
                 detailButton
+                removeDuplicatesButton
                 if item.canRemove {
                     if item.hasUpdate {
                         PickyHubButton(title: "hub.plugins.card.update", role: .secondary, isBusy: item.isBusy, action: onUpdate)
@@ -146,6 +149,14 @@ struct PickyHubPluginCardView: View {
     private var detailButton: some View {
         PickyHubButton(title: "hub.plugins.card.detail", role: .secondary, action: onDetail)
             .focused($focusedControl, equals: detailControlID)
+    }
+
+    @ViewBuilder
+    private var removeDuplicatesButton: some View {
+        if item.canRemoveDuplicates {
+            PickyHubButton(title: "hub.plugins.duplicate.remove", role: .danger, isBusy: item.isBusy, action: onRemoveDuplicates)
+                .accessibilityLabel(Text(L10n.t("hub.plugins.duplicate.remove.accessibility", item.title)))
+        }
     }
 
     private var installedAction: some View {

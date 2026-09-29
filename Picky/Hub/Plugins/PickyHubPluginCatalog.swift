@@ -139,6 +139,8 @@ struct PickyHubPluginItem: Identifiable, Equatable {
     var summary: String { L10n.t(plugin.descriptionKey) }
     var useCases: [String] { metadata.useCaseKeys.map { L10n.t($0) } }
     var setupInstructions: String? { plugin.setupKey.map { L10n.t($0) } }
+    /// At least one other copy can be removed without a manual step.
+    var canRemoveDuplicates: Bool { bundledStatus == nil && conflicts.contains(where: \.isRemovable) }
     var isInstalled: Bool { status.isInstalled }
     /// "카테고리 · 제공자" (version is appended by the page when known).
     var metaLine: String { "\(metadata.category.title) · \(metadata.provider)" }
@@ -340,6 +342,17 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
             retry: { [weak self] in self?.setup(item) }
         ) {
             curated.setup(item.plugin, pluginReloadController: pluginReloadController)
+        }
+    }
+
+    func removeDuplicates(_ item: PickyHubPluginItem) {
+        guard self.item(id: item.id)?.canRemoveDuplicates == true else { return }
+        beginMutation(
+            item,
+            successKey: "hub.plugins.feedback.duplicatesRemoved",
+            retry: { [weak self] in self?.removeDuplicates(item) }
+        ) {
+            curated.removeDuplicates(item.plugin, pluginReloadController: pluginReloadController)
         }
     }
 

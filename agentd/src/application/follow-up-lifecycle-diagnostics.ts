@@ -1,3 +1,4 @@
+import { isAsyncTracked } from "../domain/async-work-aggregate.js";
 import { isTerminalStatus } from "../domain/session-status.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import { logAgentd, logLifecycleEvent, type LogField } from "../local-log.js";
@@ -18,6 +19,7 @@ export interface FollowUpLifecycleDiagnosticsDeps {
   markCommandReceiptFailed(sessionId: string, commandReceiptId: string | undefined, message: string): Promise<void>;
   appendLog(sessionId: string, line: string): Promise<void>;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+  recordError?(sessionId: string, message: string): Promise<void>;
   lifecycleEventLogger?: (event: string, fields: Record<string, LogField>) => void;
   followUpStallDelayMs?: number;
   scheduleFollowUpStall?: (callback: () => void, delayMs: number) => unknown;
@@ -76,6 +78,7 @@ export class FollowUpLifecycleDiagnostics {
     rawText: string,
     commandReceiptId: string | undefined,
     runtimeActiveWhileTerminal: boolean,
+    onSettled?: () => Promise<void>,
   ): void {
     // Pi SDK followUp may resolve only after an idle session finishes its whole next turn.
     // Picky follow-ups are enqueue semantics, so do not hold the caller/Picky tool open.
@@ -105,7 +108,9 @@ export class FollowUpLifecycleDiagnostics {
         }
         this.armFollowUpStall(sessionId, rawText, runtimeActiveWhileTerminal);
       })
-      .catch((error) => void this.handleDeliveryError(sessionId, rawText, error, commandReceiptId));
+      .catch((error) => this.handleDeliveryError(sessionId, rawText, error, commandReceiptId))
+      .finally(() => onSettled?.())
+      .catch((error) => logAgentd("follow-up settle failed", { sessionId, error: error instanceof Error ? error.message : String(error) }));
   }
 
   armFollowUpStall(sessionId: string, text: string, runtimeActiveWhileTerminal: boolean): void {
@@ -179,7 +184,14 @@ export class FollowUpLifecycleDiagnostics {
       return;
     }
     const current = this.deps.getSession(sessionId);
-    if (!current || ["completed", "cancelled"].includes(current.status)) return;
+    if (!current || current.status === "cancelled") return;
+    // An untracked Pickle is `completed` here only when a later turn already superseded this
+    // input. An async-tracked Pickle folds its status back to the settled episode as soon as the
+    // pending delivery is discarded, so `completed` says nothing about this failure and the
+    // status patch below cannot carry it either; record a visible error instead of dropping it.
+    const asyncTracked = isAsyncTracked(current);
+    if (current.status === "completed" && !asyncTracked) return;
+    if (asyncTracked) await this.deps.recordError?.(sessionId, `Follow-up failed: ${message}`);
     await this.deps.patchSession(sessionId, { status: "failed", lastSummary: `Follow-up failed: ${message}` });
   }
 

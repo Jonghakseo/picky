@@ -2924,6 +2924,21 @@ describe("SessionSupervisor", () => {
     expect((updated.messages ?? []).some((message) => message.kind === "agent_question" && message.question?.id === "ui-select")).toBe(true);
   });
 
+  it("applies the context usage snapshot Pi emits right after a Pickle completes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "context_usage", usage: { tokens: 1000, contextWindow: 200000, percent: 0.5 } });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    runtime.handle?.emit({ type: "context_usage", usage: { tokens: 1500, contextWindow: 200000, percent: 0.75 } });
+
+    await waitUntil(() => supervisor.get(pickle.id)?.contextUsage?.tokens === 1500);
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+  });
+
   it("restores the previous terminal state when /name is sent as a follow-up", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -9554,3 +9569,4 @@ async function makeSupervisor(): Promise<SessionSupervisor> {
   await supervisor.load();
   return supervisor;
 }
+

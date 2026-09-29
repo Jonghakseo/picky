@@ -185,6 +185,10 @@ export class RuntimeEventHandler {
     // run without a turn, and async-task Pickles aggregate that no-turn follow-up straight back
     // to a terminal status, so the late-turn-event guard below must not drop it.
     if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
+    // Context usage is a snapshot of Pi's current transcript, not turn output. Pi emits it right
+    // after the terminal status and after no-turn work such as `!bash`, so the late-turn guard
+    // below would otherwise freeze the header on a stale value.
+    if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     const current = this.dependencies.getSession(sessionId);
     // Extension UI is not turn output. A no-turn extension command (e.g. `/delay-list`) on an
     // async-task Pickle runs while the session is aggregated back to `completed`; dropping its
@@ -240,7 +244,6 @@ export class RuntimeEventHandler {
       }
       return;
     }
-    if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     if (event.type === "session_replaced") return;
     if (event.type === "input_delivery") return;
     // turn_text_complete is a main-runtime-only signal used by SessionSupervisor.applyMainRuntimeEvent

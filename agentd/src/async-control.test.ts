@@ -637,3 +637,55 @@ it("retains implicit preparation intent when legacy archive resumes with explici
     expect(JSON.parse(execute!.fingerprint)).toMatchObject({ requireQuiescence: true });
   } finally { resume(); await input; }
 });
+
+async function settledAsyncPickle() {
+  const f = await fixture();
+  f.handle.emit({ type: "status", status: "completed", summary: "Finished" });
+  await vi.waitFor(() => expect(f.supervisor.get("session-1")?.status).toBe("completed"));
+  // Mirror a live Pickle whose response cycle and work episode have both settled.
+  const cycleId = "cycle-1";
+  await (f.supervisor as unknown as { commitSession(id: string, build: (current: PickyAgentSession) => PickyAgentSession): Promise<unknown> }).commitSession("session-1", (current) => ({ ...current,
+    agentCycle: { cycleId, runtimeInstanceId: f.owner.runtimeInstanceId, phase: "settled", controlGeneration: 0, outcome: "completed" },
+    asyncWorkSummary: { ...current.asyncWorkSummary!, episode: { id: cycleId, settled: true, finalizedCycleId: cycleId, outcome: "completed" } } }));
+  expect(f.supervisor.get("session-1")?.status).toBe("completed");
+  return { ...f, session: () => f.supervisor.get("session-1")! };
+}
+
+it("keeps a settled async Pickle running while user bash executes and applies its context usage", async () => {
+  const f = await settledAsyncPickle();
+  let statusDuringBash: string | undefined;
+  Object.assign(f.handle, { executeUserBash: async () => {
+    statusDuringBash = f.session().status;
+    f.handle.emit({ type: "context_usage", usage: { tokens: 4242, contextWindow: 200000, percent: 2.1 } });
+    return { output: "ok\n", exitCode: 0, cancelled: false, truncated: false };
+  } });
+
+  await f.supervisor.followUp("session-1", "!echo ok");
+
+  expect(statusDuringBash).toBe("running");
+  await vi.waitFor(() => expect(f.session().status).toBe("completed"));
+  expect(f.session().contextUsage).toEqual({ tokens: 4242, contextWindow: 200000, percent: 2.1 });
+});
+
+it("keeps a settled async Pickle running until a no-turn slash command finishes", async () => {
+  const f = await settledAsyncPickle();
+  let finishCommand!: () => void;
+  Object.assign(f.handle, { followUp: () => new Promise<void>((resolve) => { finishCommand = resolve; }) });
+
+  await f.supervisor.followUp("session-1", "/long-extension-command");
+  await vi.waitFor(() => expect(finishCommand).toBeDefined());
+  expect(f.session().status).toBe("running");
+
+  finishCommand();
+  await vi.waitFor(() => expect(f.session().status).toBe("completed"));
+});
+
+it("surfaces a follow-up delivery failure on a settled async Pickle", async () => {
+  const f = await settledAsyncPickle();
+  Object.assign(f.handle, { followUp: async () => { throw new Error("No API key for provider"); } });
+
+  await f.supervisor.followUp("session-1", "continue");
+
+  await vi.waitFor(() => expect(f.session().messages?.at(-1)).toMatchObject({ kind: "agent_error", errorMessage: "Follow-up failed: No API key for provider" }));
+  expect(f.session().lastSummary).toBe("Follow-up failed: No API key for provider");
+});

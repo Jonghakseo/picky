@@ -35,6 +35,8 @@ import { ToolHistoryDetailService, type ToolHistoryDetailRequest } from "./appli
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
 import { KeyedSerialQueue } from "./domain/keyed-serial-queue.js";
 import { executeUserBash as runUserBash, type UserBashDeps } from "./application/user-bash-execution.js";
+import { UserOperationTracker } from "./application/user-operation-tracker.js";
+import { cancelPendingExtensionUiForUserInput } from "./application/pending-extension-ui-cancellation.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import {
   cycleModel as cycleRuntimeModel,
@@ -104,7 +106,7 @@ export class SessionSupervisor extends EventEmitter {
    * through the normal follow-up path. Cleared on session removal too.
    */
   private pendingPostCompactionReloadIds = new Set<string>();
-  private readonly inFlightUserOperations = new Map<string, number>();
+  private readonly userOperations = new UserOperationTracker(async (id) => { if (this.sessions.has(id)) await this.commitSession(id, (current) => current); });
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
   private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
   // Track follow-up/steer prompts that Pi has queued but not yet started processing. We defer the
@@ -1142,7 +1144,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
       throw new Error(reason);
     }
-    if (await this.executeCompactCommandIfSupported(sessionId, text, handle)) return this.mustGet(sessionId);
+    if (await this.terminalManualCompactionCoordinator.execute(sessionId, text, handle)) return this.mustGet(sessionId);
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     if (isNoTurnStateRestoringSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId);
@@ -1165,7 +1167,7 @@ export class SessionSupervisor extends EventEmitter {
   private async queueFollowUpDelivery(sessionId: string, handle: RuntimeSessionHandle, text: string, prompt: BuiltPrompt, visualDslLease: PickleVisualDslLease | undefined, runtimeActiveWhileTerminal: boolean): Promise<void> {
     // Non-skill slash commands never enter the pending queue, so track them until Pi finishes
     // the command handler (the follow-up delivery settles) to keep the card visibly running.
-    const releaseCommand = isNonSkillSlashCommand(text) ? this.beginUserOperation(sessionId) : undefined;
+    const releaseCommand = isNonSkillSlashCommand(text) ? this.userOperations.begin(sessionId) : undefined;
     try {
       const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
       await this.patch(sessionId, { status: "running", lastSummary: queueSubmissionSummary(handle.isCompacting, "Follow-up queued"), finalAnswer: undefined, thinkingPreview: undefined });
@@ -1184,11 +1186,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async executeUserBash(sessionId: string, input: UserBashInput, context?: PickyContextPacket): Promise<PickyAgentSession> {
-    return this.withUserOperation(sessionId, true, () => this.runUserBash(sessionId, input, context));
-  }
-
-  private async runUserBash(sessionId: string, input: UserBashInput, context?: PickyContextPacket): Promise<PickyAgentSession> {
-    return runUserBash(this.userBashDeps(), sessionId, input, context);
+    return this.userOperations.track(sessionId, true, () => runUserBash(this.userBashDeps(), sessionId, input, context));
   }
 
   private userBashDeps(): UserBashDeps {
@@ -1207,28 +1205,8 @@ export class SessionSupervisor extends EventEmitter {
     };
   }
 
-  private async executeCompactCommandIfSupported(sessionId: string, text: string, handle: RuntimeSessionHandle): Promise<boolean> {
-    return await this.terminalManualCompactionCoordinator.execute(sessionId, text, handle);
-  }
-
   private async cancelPendingExtensionUiForUserInput(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
-    const pending = this.mustGet(sessionId).pendingExtensionUiRequest;
-    if (!pending) return;
-    // Best-effort cancel of the runtime-side dialog. The bridge may have already
-    // discarded this id (turn completed, runtime resume, timeout, etc.) and would
-    // throw "Unknown extension UI request"; previously that failure propagated out
-    // of supervisor.followUp and got reported to the HUD as `command failed`,
-    // which made the user's next message look like it had been silently dropped.
-    // Use ignoreUnknown so stale cleanup never blocks new user input, and always
-    // run the supervisor-side state reconciliation below.
-    if (handle.answerExtensionUi) {
-      await handle.answerExtensionUi(pending.id, { cancelled: true }, { ignoreUnknown: true });
-    }
-    await this.messageBuilder.cancelExtensionQuestion(sessionId, pending.id);
-    const current = this.mustGet(sessionId);
-    if (current.pendingExtensionUiRequest?.id === pending.id) {
-      await this.patch(sessionId, { pendingExtensionUiRequest: undefined, thinkingPreview: undefined });
-    }
+    await cancelPendingExtensionUiForUserInput({ session: (id) => this.mustGet(id), cancelExtensionQuestion: (id, requestId) => this.messageBuilder.cancelExtensionQuestion(id, requestId), patch: (id, patch) => this.patch(id, patch) }, sessionId, handle);
   }
 
   private clearPendingQueueDeliveries(sessionId: string): void {
@@ -1633,7 +1611,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
     // Pi runs a steered slash command inline, so the whole steer call covers the command's lifetime.
-    return this.asyncControls.input(sessionId, () => this.withUserOperation(sessionId, isNonSkillSlashCommand(text), () => this.performSteer(sessionId, text, context, visualDslEnabled)));
+    return this.asyncControls.input(sessionId, () => this.userOperations.track(sessionId, isNonSkillSlashCommand(text), () => this.performSteer(sessionId, text, context, visualDslEnabled)));
   }
   // eslint-disable-next-line complexity -- Steer owns one transactional flow across runtime attachment, rollback, queue journaling, and synchronous slash handling.
   private async performSteer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
@@ -1660,7 +1638,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `steer rejected: ${reason}`);
       throw new Error(reason);
     }
-    if (await this.executeCompactCommandIfSupported(sessionId, text, handle)) return this.mustGet(sessionId);
+    if (await this.terminalManualCompactionCoordinator.execute(sessionId, text, handle)) return this.mustGet(sessionId);
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const visualDslLease = this.makePickleVisualDslLease(sessionId, text, context, visualDslEnabled);
@@ -1986,39 +1964,11 @@ export class SessionSupervisor extends EventEmitter {
     };
   }
   private aggregateSession(before: PickyAgentSession, proposed: PickyAgentSession): PickyAgentSession {
-    const pendingInput = (this.pendingQueueDeliveries.get(proposed.id)?.length ?? 0) > 0 || (this.inFlightUserOperations.get(proposed.id) ?? 0) > 0;
+    const pendingInput = (this.pendingQueueDeliveries.get(proposed.id)?.length ?? 0) > 0 || this.userOperations.isActive(proposed.id);
     return aggregateAsyncSession(before, proposed, this.options.enableAsyncTasksForSession?.(proposed.id) === true,
       this.runtimeHandles.get(proposed.id), pendingInput);
   }
 
-  /**
-   * Marks user work that runs without a Pi turn or a queued delivery: `!bash` and non-skill
-   * slash commands (extension commands such as `/delay-list`). Async-task Pickles otherwise
-   * aggregate straight back to the settled episode while that work runs, hiding the running
-   * state and the Stop control. The returned release re-aggregates once the work ends.
-   */
-  private beginUserOperation(sessionId: string): () => Promise<void> {
-    this.inFlightUserOperations.set(sessionId, (this.inFlightUserOperations.get(sessionId) ?? 0) + 1);
-    let released = false;
-    return async () => {
-      if (released) return;
-      released = true;
-      const remaining = (this.inFlightUserOperations.get(sessionId) ?? 1) - 1;
-      if (remaining > 0) this.inFlightUserOperations.set(sessionId, remaining);
-      else this.inFlightUserOperations.delete(sessionId);
-      if (remaining === 0 && this.sessions.has(sessionId)) await this.commitSession(sessionId, (current) => current);
-    };
-  }
-
-  private async withUserOperation<T>(sessionId: string, tracked: boolean, work: () => Promise<T>): Promise<T> {
-    if (!tracked) return work();
-    const release = this.beginUserOperation(sessionId);
-    try {
-      return await work();
-    } finally {
-      await release();
-    }
-  }
   private async runSessionWrite(sessionId: string, work: () => Promise<void>): Promise<void> {
     await this.patchChains.run(sessionId, work);
   }

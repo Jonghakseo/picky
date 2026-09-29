@@ -15,7 +15,7 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage,subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeCompactionResult,RuntimeEvent,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
+import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
@@ -70,6 +70,7 @@ textFromPiMessageContent,
 import { createBaseAutocompleteProvider,PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
 import { isRegisteredExtensionCommand,PiPromptQueue,type PiQueueSnapshot } from "./pi-prompt-queue.js";
 import { writeFilePathFromRawArgs } from "./write-file-path.js";
+import { compactionResultFromPiEvent } from "./pi-compaction-result.js";
 
 // Soft cap for the per-session `slashExpansions` map. A long-lived Pi session can submit many
 // slash commands; in pathological cases Pi may never emit the matching role="custom" echo (e.g.
@@ -1495,13 +1496,3 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 }
 
-/** Pi's `CompactionResult` numbers and summary, or undefined when the payload is missing. */
-function compactionResultFromPiEvent(result: unknown): RuntimeCompactionResult | undefined {
-  if (!result || typeof result !== "object") return undefined;
-  const record = result as Record<string, unknown>;
-  const tokensBefore = numberValue(record.tokensBefore);
-  if (tokensBefore === undefined) return undefined;
-  const tokensAfter = numberValue(record.estimatedTokensAfter);
-  const summary = stringValue(record.summary)?.trim();
-  return { tokensBefore, ...(tokensAfter === undefined ? {} : { tokensAfter }), ...(summary ? { summary } : {}) };
-}

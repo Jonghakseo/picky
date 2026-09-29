@@ -1,0 +1,13 @@
+{
+  "id": "event-package-failed-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-09-29T00:00:01.000Z",
+  "type": "packageOperationCompleted",
+  "requestId": "cmd-package-install-001",
+  "operation": "install",
+  "source": "npm:@ryan_nookpi/pi-extension-web-access",
+  "ok": false,
+  "errorMessage": "Another installed resource already provides the same name: tool \"web_search\" from /Users/example/.pi/agent/extensions/web-access. Remove it before installing this package so Pi does not load two copies.",
+  "errorCode": "duplicate",
+  "packageChanged": false
+}

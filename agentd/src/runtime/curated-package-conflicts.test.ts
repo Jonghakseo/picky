@@ -82,7 +82,7 @@ describe("curated package duplicate protection", () => {
 
     expect(manager.installAndPersist).not.toHaveBeenCalled();
     const web = events.find((event) => event.requestId === "install-web");
-    expect(web).toMatchObject({ type: "packageOperationCompleted", ok: false, packageChanged: false });
+    expect(web).toMatchObject({ type: "packageOperationCompleted", ok: false, errorCode: "duplicate", packageChanged: false });
     expect(web?.errorMessage).toContain(extensionDir);
     expect(events.find((event) => event.requestId === "install-excal")?.errorMessage).toContain(skillFile);
 
@@ -161,5 +161,7 @@ describe("curated package duplicate protection", () => {
     await operations.runOperation({} as WebSocket, "install", "install", WEB_ACCESS);
     expect(installAndPersist).not.toHaveBeenCalled();
     expect(events.at(-1)).toMatchObject({ ok: false, packageChanged: false, errorMessage: expect.stringContaining("settings unreadable") });
+    // A failed check is not a known duplicate; the app shows its generic failure copy.
+    expect(events.at(-1)).not.toHaveProperty("errorCode");
   });
 });

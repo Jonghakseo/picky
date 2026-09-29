@@ -68,7 +68,7 @@ describe("PackageOperations Cron lifecycle sequencing", () => {
       for (const operation of ["install", "update"] as const) {
         const requestId = `${operation}-${source}`;
         await operations.runOperation({} as WebSocket, requestId, operation, source);
-        expect(events).toContainEqual(expect.objectContaining({ requestId, ok: false, errorMessage: expect.stringContaining("temporarily held") }));
+        expect(events).toContainEqual(expect.objectContaining({ requestId, ok: false, errorCode: "held", errorMessage: expect.stringContaining("temporarily held") }));
         expect(events.find((event) => event.requestId === requestId && event.type === "packageOperationCompleted")?.packageChanged).not.toBe(true);
       }
     }
@@ -276,6 +276,29 @@ describe("PackageOperations Cron lifecycle sequencing", () => {
       "lifecycle:end",
       "install:npm:@example/plugin",
     ]);
+  });
+
+  it("reports a stuck package install as a timeout and cancels it", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    let release: () => void = () => {};
+    const cancel = vi.fn(async () => release());
+    const manager = packageManager({
+      installAndPersist: vi.fn(() => new Promise<void>((resolve) => { release = resolve; })),
+      cancel,
+    });
+    const operations = new PackageOperations({
+      createPackageManager: () => manager,
+      getAgentDir: () => "/tmp/picky-agent",
+      inspectConflicts: async () => [],
+      packageOperationTimeoutMs: 20,
+      send: (_ws, event) => events.push(event),
+    });
+    operations.start();
+
+    await operations.runOperation({} as WebSocket, "slow", "install", "npm:@example/plugin");
+
+    expect(events).toContainEqual(expect.objectContaining({ requestId: "slow", ok: false, errorCode: "timeout" }));
+    expect(cancel).toHaveBeenCalled();
   });
 
   it("keeps non-Cron package completion compatible with the existing event shape", async () => {

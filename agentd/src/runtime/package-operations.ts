@@ -12,6 +12,19 @@ import { logAgentd } from "../local-log.js";
 import { CronPackageLifecycle, isCronPackageSource, type CronLifecycleResult } from "../application/cron-package-lifecycle.js";
 import { CancellablePackageProcessController, installCancellablePackageCommands } from "../application/package-process-controller.js";
 
+/**
+ * Failure kinds the app turns into its own wording. The raw `errorMessage` stays
+ * in the event for logs; anything without a code is shown as a generic failure.
+ */
+export type PackageOperationErrorCode = "duplicate" | "held" | "timeout";
+
+export class PackageOperationError extends Error {
+  constructor(readonly code: PackageOperationErrorCode, message: string) {
+    super(message);
+    this.name = "PackageOperationError";
+  }
+}
+
 export interface PackageManager {
   installAndPersist(source: string): Promise<void>;
   removeAndPersist(source: string): Promise<boolean>;
@@ -79,7 +92,7 @@ export function createDefaultPackageManager(
   return {
     installAndPersist: async (packageSource) => {
       const safetyError = curatedPackageSafetyError(packageSource);
-      if (safetyError) throw new Error(safetyError);
+      if (safetyError) throw new PackageOperationError("held", safetyError);
       await packageManager.installAndPersist(packageSource);
     },
     removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
@@ -87,7 +100,7 @@ export function createDefaultPackageManager(
       .filter(({ source }) => !curatedPackageSafetyError(source)),
     update: async (packageSource) => {
       const safetyError = curatedPackageSafetyError(packageSource);
-      if (safetyError) throw new Error(safetyError);
+      if (safetyError) throw new PackageOperationError("held", safetyError);
       await (packageManager as DefaultPackageManager).update(packageSource);
     },
     resolveInstalledExtension: (source) => resolveInstalledExtensionPath(packageManager as DefaultPackageManager, source),
@@ -108,7 +121,7 @@ type PackageOperationEvent =
   | { type: "packageUpdatesAvailable"; commandId: string; sources: string[]; failed?: boolean }
   | { type: "packageConflicts"; commandId: string; conflicts: CuratedPackageConflict[]; failed?: boolean }
   | { type: "packageOperationProgress"; requestId: string; operation: Exclude<PackageOperation, "setup">; source: string; message: string }
-  | { type: "packageOperationCompleted"; requestId: string; operation: PackageOperation; source: string; ok: boolean; errorMessage?: string; packageChanged?: boolean };
+  | { type: "packageOperationCompleted"; requestId: string; operation: PackageOperation; source: string; ok: boolean; errorMessage?: string; errorCode?: PackageOperationErrorCode; packageChanged?: boolean };
 
 type PackageMutationOutcome =
   | { kind: "completed" }
@@ -261,10 +274,16 @@ export class PackageOperations {
     try {
       if (operation === "install") {
         // Fail closed: an inspection error must not let a second copy of a tool or skill load.
-        const conflictError = await this.inspectConflicts({ cwd: (this.dependencies.getCwd ?? process.cwd)(), agentDir, sources: [source] })
-          .then(curatedPackageConflictError, (error: unknown) => `Could not check for duplicate tools or skills: ${error instanceof Error ? error.message : String(error)}`);
-        if (conflictError) {
-          this.complete(ws, { requestId, operation, source, ok: false, errorMessage: conflictError, packageChanged: false });
+        const blocked = await this.inspectConflicts({ cwd: (this.dependencies.getCwd ?? process.cwd)(), agentDir, sources: [source] })
+          .then(
+            (conflicts) => {
+              const errorMessage = curatedPackageConflictError(conflicts);
+              return errorMessage ? { errorMessage, errorCode: "duplicate" as const } : undefined;
+            },
+            (error: unknown) => ({ errorMessage: `Could not check for duplicate tools or skills: ${error instanceof Error ? error.message : String(error)}` }),
+          );
+        if (blocked) {
+          this.complete(ws, { requestId, operation, source, ok: false, ...blocked, packageChanged: false });
           return;
         }
       }
@@ -307,6 +326,7 @@ export class PackageOperations {
           operation,
           source,
           ok: false,
+          errorCode: "timeout",
           errorMessage: `Cron daemon was removed, but the package remains installed: ${errorMessage}`,
           packageChanged: false,
         });
@@ -335,7 +355,7 @@ export class PackageOperations {
     }
 
     const mutationSucceeded = await this.runPackageMutation(operation, source, packageManager, (errorMessage) => {
-      this.complete(ws, { requestId, operation, source, ok: false, errorMessage });
+      this.complete(ws, { requestId, operation, source, ok: false, errorMessage, errorCode: "timeout" });
     });
     if (!mutationSucceeded.ok) {
       if (!mutationSucceeded.reported) {
@@ -345,6 +365,7 @@ export class PackageOperations {
           source,
           ok: false,
           errorMessage: mutationSucceeded.errorMessage,
+          ...(mutationSucceeded.errorCode ? { errorCode: mutationSucceeded.errorCode } : {}),
           ...(mutationSucceeded.mutationCompleted ? { packageChanged: true } : {}),
         });
       }
@@ -381,6 +402,7 @@ export class PackageOperations {
         source,
         ok: false,
         errorMessage,
+        errorCode: "timeout",
         ...(includePackageChanged === undefined ? {} : { packageChanged: false }),
       });
     });
@@ -391,6 +413,7 @@ export class PackageOperations {
       source,
       ok: result.ok,
       errorMessage: result.errorMessage,
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
       ...(includePackageChanged === undefined ? {} : { packageChanged: result.ok && includePackageChanged }),
     });
   }
@@ -400,7 +423,7 @@ export class PackageOperations {
     source: string,
     packageManager: PackageManager,
     onTimedOut?: (errorMessage: string) => void,
-  ): Promise<{ ok: boolean; errorMessage?: string; reported?: boolean; mutationCompleted?: boolean }> {
+  ): Promise<{ ok: boolean; errorMessage?: string; errorCode?: PackageOperationErrorCode; reported?: boolean; mutationCompleted?: boolean }> {
     const mutation = operation === "install"
       ? packageManager.installAndPersist(source)
       : operation === "remove"
@@ -414,11 +437,15 @@ export class PackageOperations {
         logAgentd("package operation cancellation failed", { operation, source, error: error instanceof Error ? error.message : String(error) });
       });
       await mutation.catch(() => {});
-      return { ok: false, errorMessage, reported: onTimedOut !== undefined };
+      return { ok: false, errorMessage, errorCode: "timeout", reported: onTimedOut !== undefined };
     }
     if (outcome.kind === "failed") {
       const error = outcome.error;
-      return { ok: false, errorMessage: error instanceof Error ? error.message : String(error) };
+      return {
+        ok: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        ...(error instanceof PackageOperationError ? { errorCode: error.code } : {}),
+      };
     }
     try {
       await packageManager.flush?.();
@@ -433,6 +460,15 @@ export class PackageOperations {
   }
 
   private complete(ws: WebSocket, event: Omit<Extract<PackageOperationEvent, { type: "packageOperationCompleted" }>, "type">): void {
+    // The app shows its own wording; keep the raw npm/lifecycle detail here for diagnosis.
+    if (!event.ok) {
+      logAgentd("package operation failed", {
+        operation: event.operation,
+        source: event.source,
+        errorCode: event.errorCode ?? "none",
+        error: event.errorMessage ?? "unknown",
+      });
+    }
     this.dependencies.send(ws, {
       type: "packageOperationCompleted",
       ...event,

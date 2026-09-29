@@ -87,13 +87,24 @@ struct PickyPackageOperationProgressEvent: Decodable, Equatable {
     let message: String
 }
 
+/// Failure kinds agentd classifies; anything else is a generic failure.
+enum PickyPackageErrorCode: String, Equatable {
+    case duplicate
+    case held
+    case timeout
+}
+
 struct PickyPackageOperationCompletedEvent: Decodable, Equatable {
     let requestId: String
     let operation: PickyPackageOperation
     let source: String
     let ok: Bool
     let errorMessage: String?
+    /// Raw string so a newer daemon's unknown code decodes as a generic failure.
+    let errorCode: String?
     let packageChanged: Bool?
+
+    var code: PickyPackageErrorCode? { errorCode.flatMap(PickyPackageErrorCode.init(rawValue:)) }
 
     init(
         requestId: String,
@@ -101,6 +112,7 @@ struct PickyPackageOperationCompletedEvent: Decodable, Equatable {
         source: String,
         ok: Bool,
         errorMessage: String?,
+        errorCode: String? = nil,
         packageChanged: Bool? = nil
     ) {
         self.requestId = requestId
@@ -108,6 +120,7 @@ struct PickyPackageOperationCompletedEvent: Decodable, Equatable {
         self.source = source
         self.ok = ok
         self.errorMessage = errorMessage
+        self.errorCode = errorCode
         self.packageChanged = packageChanged
     }
 }

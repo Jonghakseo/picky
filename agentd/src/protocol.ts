@@ -1015,6 +1015,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     operation: z.enum(["install", "remove", "update", "setup"]),
     source: z.string().min(1),
     ok: z.boolean(),
+    errorCode: z.enum(["duplicate", "held", "timeout"]).optional(),
     errorMessage: z.string().min(1).optional(),
     packageChanged: z.boolean().optional(),
   }),

@@ -183,8 +183,10 @@ struct PickyCuratedPluginInstallerTests {
 
         let result = await PickyCuratedPluginInstaller.install(source: source, client: client)
 
-        if case .failure(.partialFailure(let message)) = result {
-            #expect(message == "LaunchAgent did not load")
+        if case .failure(.rejected(let rejection)) = result {
+            #expect(rejection.detail == "LaunchAgent did not load")
+            #expect(rejection.packageChanged)
+            #expect(result.failureMessage == L10n.t("hub.plugins.error.partial"))
         } else {
             Issue.record("Expected structured partial failure")
         }
@@ -204,11 +206,32 @@ struct PickyCuratedPluginInstallerTests {
 
         let result = await PickyCuratedPluginInstaller.install(source: source, client: client)
 
-        if case .failure(.failed(let message)) = result {
-            #expect(message == "Package operation failed")
+        if case .failure(.rejected(let rejection)) = result {
+            #expect(rejection.detail == "Package operation failed")
+            #expect(rejection.code == nil)
+            #expect(result.failureMessage == L10n.t("hub.plugins.error.failed.install"))
         } else {
             Issue.record("Expected generic legacy failure")
         }
+    }
+
+    @Test(arguments: [
+        ("duplicate", "hub.plugins.error.duplicate"),
+        ("held", "hub.plugins.error.held"),
+        ("timeout", "hub.plugins.error.timeout"),
+        ("some-future-code", "hub.plugins.error.failed.install"),
+    ])
+    func classifiedDaemonFailuresShowUserWordingInsteadOfRawOutput(code: String, messageKey: String) async {
+        let rawOutput = "/Applications/Picky.app/Contents/Resources/agentd-runtime/bin/node npm-command-runner.js -- npm install failed with code 1"
+        let client = FakeCuratedPluginAgentClient()
+        client.sendHandler = { command in
+            client.complete(requestId: command.id, operation: .install, source: command.source ?? "", ok: false, errorMessage: rawOutput, errorCode: code)
+        }
+
+        let result = await PickyCuratedPluginInstaller.install(source: source, client: client)
+
+        #expect(result.failureMessage == L10n.t(messageKey))
+        #expect(result.failureMessage?.contains("npm-command-runner") == false)
     }
 
     @Test func checkUpdatesReturnsSourcesFromMatchingDaemonResponse() async {
@@ -436,7 +459,7 @@ struct PickyCuratedPluginInstallerTests {
         try await waitUntil { viewModel.rows.first?.isBusy == false }
 
         #expect(viewModel.rows.first?.status == .installed(isPinned: false))
-        #expect(viewModel.lastError == "LaunchAgent did not load")
+        #expect(viewModel.lastError == L10n.t("hub.plugins.error.partial"))
         #expect(changeCount == 1)
     }
 
@@ -518,8 +541,9 @@ struct PickyCuratedPluginInstallerTests {
 
         let result = await PickyCuratedPluginInstaller.remove(source: source, client: client)
 
-        if case .failure(.failed(let message)) = result {
-            #expect(message == "npm was not found")
+        if case .failure(.rejected(let rejection)) = result {
+            #expect(rejection.detail == "npm was not found")
+            #expect(result.failureMessage == L10n.t("hub.plugins.error.failed.remove"))
         } else {
             Issue.record("Expected daemon package failure")
         }
@@ -552,6 +576,13 @@ struct PickyCuratedPluginInstallerTests {
             }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
+    }
+}
+
+private extension Result where Failure == PickyCuratedPluginInstaller.CommandError {
+    var failureMessage: String? {
+        if case .failure(let error) = self { return error.localizedDescription }
+        return nil
     }
 }
 
@@ -608,6 +639,7 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
         source: String,
         ok: Bool,
         errorMessage: String? = nil,
+        errorCode: String? = nil,
         packageChanged: Bool? = nil
     ) {
         emit(.protocolEvent(PickyEventEnvelope(
@@ -620,6 +652,7 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
                 source: source,
                 ok: ok,
                 errorMessage: errorMessage,
+                errorCode: errorCode,
                 packageChanged: packageChanged
             ))
         )))

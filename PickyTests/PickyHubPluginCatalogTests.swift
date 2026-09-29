@@ -112,9 +112,9 @@ struct PickyHubPluginCatalogTests {
         try await waitUntil { catalog.error(for: second.id) != nil }
 
         #expect(catalog.error(for: first.id) == nil)
-        #expect(catalog.error(for: second.id) == "Second package failed")
-        #expect(catalog.item(id: second.id)?.errorMessage == "Second package failed")
-        #expect(catalog.feedback == L10n.t("hub.plugins.feedback.failed", secondItem.title, "Second package failed"))
+        #expect(catalog.error(for: second.id) == L10n.t("hub.plugins.error.failed.install"))
+        #expect(catalog.item(id: second.id)?.errorMessage == L10n.t("hub.plugins.error.failed.install"))
+        #expect(catalog.feedback == L10n.t("hub.plugins.feedback.failed", secondItem.title, L10n.t("hub.plugins.error.failed.install")))
         #expect(catalog.feedbackIsError)
     }
 
@@ -139,8 +139,8 @@ struct PickyHubPluginCatalogTests {
         try await waitUntil { catalog.feedback == L10n.t("hub.plugins.feedback.installed", firstItem.title) }
 
         #expect(catalog.error(for: first.id) == nil)
-        #expect(catalog.error(for: second.id) == "Second package failed")
-        #expect(catalog.item(id: second.id)?.errorMessage == "Second package failed")
+        #expect(catalog.error(for: second.id) == L10n.t("hub.plugins.error.failed.install"))
+        #expect(catalog.item(id: second.id)?.errorMessage == L10n.t("hub.plugins.error.failed.install"))
         #expect(catalog.feedbackIsError == false)
     }
 
@@ -211,8 +211,8 @@ struct PickyHubPluginCatalogTests {
         client.complete(command, operation: .setup, ok: false, errorMessage: "Cron daemon unavailable")
         try await waitUntil { catalog.error(for: plugin.id) != nil }
 
-        #expect(catalog.error(for: plugin.id) == "Cron daemon unavailable")
-        #expect(catalog.feedback == L10n.t("hub.plugins.feedback.failed", item.title, "Cron daemon unavailable"))
+        #expect(catalog.error(for: plugin.id) == L10n.t("hub.plugins.error.failed.setup"))
+        #expect(catalog.feedback == L10n.t("hub.plugins.feedback.failed", item.title, L10n.t("hub.plugins.error.failed.setup")))
         #expect(catalog.feedbackIsError)
     }
 
@@ -259,7 +259,7 @@ struct PickyHubPluginCatalogTests {
             try #require(client.sentCommands.first), operation: .setup, ok: false, errorMessage: "Daemon unavailable"
         )
         try await waitUntil { catalog.feedbackIsError }
-        #expect(catalog.item(id: cron.id)?.errorMessage == "Daemon unavailable")
+        #expect(catalog.item(id: cron.id)?.errorMessage == L10n.t("hub.plugins.error.failed.setup"))
         #expect(catalog.item(id: cron.id)?.progressMessage == nil)
         #expect(catalog.item(id: cron.id)?.successMessage == nil)
 
@@ -285,7 +285,7 @@ struct PickyHubPluginCatalogTests {
             try #require(client.sentCommands.first), operation: .setup, ok: false, errorMessage: "Daemon unavailable"
         )
         try await waitUntil { catalog.feedbackIsError }
-        try renderCronCard(catalog, state: "failed", expectedText: "Daemon unavailable")
+        try renderCronCard(catalog, state: "failed", expectedText: L10n.t("hub.plugins.error.failed.setup"))
 
         catalog.retryFeedback()
         try await waitUntil { client.sentCommands.count == 2 }

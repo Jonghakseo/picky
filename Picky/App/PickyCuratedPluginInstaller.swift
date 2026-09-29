@@ -25,25 +25,50 @@ enum PickyCuratedPluginInstaller {
         }
     }
 
+    /// A package operation agentd finished without success. `detail` is the raw
+    /// daemon/npm text; agentd already logs it, so the UI never shows it.
+    struct Rejection: Equatable {
+        let operation: PickyPackageOperation
+        let code: PickyPackageErrorCode?
+        let detail: String
+        let packageChanged: Bool
+    }
+
     enum CommandError: LocalizedError, Equatable {
+        /// App-authored text that is already written for people.
         case failed(String)
-        case partialFailure(String)
+        case rejected(Rejection)
         case timedOut
         case disconnected
 
+        /// User-facing wording. Raw daemon output stays in `Rejection.detail` and the agentd log.
         var errorDescription: String? {
             switch self {
-            case .failed(let message), .partialFailure(let message):
+            case .failed(let message):
                 return message
+            case .rejected(let rejection):
+                switch rejection.code {
+                case .duplicate: return L10n.t("hub.plugins.error.duplicate")
+                case .held: return L10n.t("hub.plugins.error.held")
+                case .timeout: return L10n.t("hub.plugins.error.timeout")
+                case nil:
+                    if rejection.packageChanged { return L10n.t("hub.plugins.error.partial") }
+                    switch rejection.operation {
+                    case .install: return L10n.t("hub.plugins.error.failed.install")
+                    case .remove: return L10n.t("hub.plugins.error.failed.remove")
+                    case .update: return L10n.t("hub.plugins.error.failed.update")
+                    case .setup: return L10n.t("hub.plugins.error.failed.setup")
+                    }
+                }
             case .timedOut:
-                return "Timed out waiting for package operation to finish."
+                return L10n.t("hub.plugins.error.timeout")
             case .disconnected:
-                return "picky-agentd disconnected while performing the package operation."
+                return L10n.t("hub.plugins.error.disconnected")
             }
         }
 
         var packageChanged: Bool {
-            if case .partialFailure = self { return true }
+            if case .rejected(let rejection) = self { return rejection.packageChanged }
             return false
         }
     }
@@ -277,11 +302,12 @@ enum PickyCuratedPluginInstaller {
                                 continue
                             }
                             guard result.ok else {
-                                let message = result.errorMessage ?? "Package operation failed."
-                                if result.packageChanged == true {
-                                    throw CommandError.partialFailure(message)
-                                }
-                                throw CommandError.failed(message)
+                                throw CommandError.rejected(Rejection(
+                                    operation: operation,
+                                    code: result.code,
+                                    detail: result.errorMessage ?? "Package operation failed.",
+                                    packageChanged: result.packageChanged == true
+                                ))
                             }
                             return
                         case .disconnected:
@@ -303,7 +329,8 @@ enum PickyCuratedPluginInstaller {
         } catch let error as CommandError {
             return .failure(error)
         } catch {
-            return .failure(.failed(error.localizedDescription))
+            // Sending failed before agentd saw the request; nothing changed.
+            return .failure(.rejected(Rejection(operation: operation, code: nil, detail: error.localizedDescription, packageChanged: false)))
         }
     }
 

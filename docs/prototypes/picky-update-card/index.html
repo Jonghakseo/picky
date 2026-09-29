@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>기획 · 대시보드 원버튼 업데이트</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="proto-bar">
+  <b>기획 문서</b>
+  <a href="dashboard.html">대시보드 시안 →</a> <a href="states.html" style="margin-left:12px">상태 모음 →</a>
+</div>
+<div class="doc">
+  <h1>대시보드 원버튼 업데이트</h1>
+  <p>새 버전이 나오면 Hub 대시보드 맨 위에 알려주고, 버튼 한 번으로 설치와 재시작까지 끝낸다.</p>
+
+  <div id="preview" style="margin:20px 0"></div>
+
+  <h2>지금 문제</h2>
+  <ul>
+    <li>Picky는 <code>LSUIElement</code> 앱이다. Sparkle이 4시간마다 새 버전을 찾으면 기본 알림 창을 띄우는데, Dock 아이콘이 없어서 다른 창 뒤에 묻히기 쉽다.</li>
+    <li>Info.plist에 <code>SUAutomaticallyUpdate</code>가 없어서 자동 다운로드가 꺼져 있다. 업데이트하려면 알림 창 → 설치 → 다운로드 대기 → 재시작까지 여러 단계를 거친다.</li>
+    <li>Hub에서 업데이트 관련 UI는 설정의 <code>업데이트 확인</code> 버튼뿐이다. 새 버전이 있는지는 눌러봐야 안다.</li>
+  </ul>
+
+  <h2>제안 흐름</h2>
+  <div class="flow">
+    <span>예약 확인 (4시간)</span><i>→</i>
+    <span>백그라운드 다운로드</span><i>→</i>
+    <span>대시보드 카드 “업데이트 준비됨”</span><i>→</i>
+    <span>[업데이트하고 재시작]</span><i>→</i>
+    <span>진행 중 Pickle 있으면 확인 창</span><i>→</i>
+    <span>agentd 정지 · 설치 · 재실행</span>
+  </div>
+  <p>카드를 무시해도 손해가 없다. 다운로드가 끝난 업데이트는 다음에 Picky를 종료할 때 Sparkle이 설치한다. 그래서 설명 문구에 “다음에 종료할 때 설치돼요”를 적어 “나중에”를 눌러도 안심하게 한다.</p>
+
+  <h2>배치</h2>
+  <p>인사 카드 바로 아래, 권한 안내 카드보다 위에 둔다. 권한 카드는 “해야 Picky가 동작하는 일”이고 업데이트 카드는 “하면 좋은 일”이라 우선순위를 고민했는데, 권한 카드는 첫 설치 직후에만 뜨고 업데이트 카드는 수주마다 뜬다. 둘이 동시에 보일 일이 거의 없어서 시선 위치를 우선했다. 동시에 뜨면 권한 카드를 위로 올리는 쪽도 괜찮다.</p>
+  <p>색은 Action Blue 틴트 한 가지만 쓴다. 경고색(노랑)을 쓰면 “문제가 생겼다”로 읽히는데, 업데이트는 문제가 아니다. 실패 상태에서만 danger 틴트로 바꾼다.</p>
+
+  <h2>상태 정의</h2>
+  <table>
+    <tr><th>상태</th><th>진입 조건 (Sparkle)</th><th>카드</th><th>주 버튼 동작</th></tr>
+    <tr><td>숨김</td><td>업데이트 없음, alpha 빌드, 이 버전을 “나중에”로 숨김</td><td>표시 안 함</td><td>-</td></tr>
+    <tr><td>준비됨</td><td><code>updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)</code> 호출됨</td><td>파랑 틴트</td><td>진행 중 Pickle 확인 후 <code>immediateInstallationBlock()</code></td></tr>
+    <tr><td>재시작 중</td><td>버튼 누른 직후</td><td>스피너, 나중에 숨김</td><td>-</td></tr>
+    <tr><td>수동 (fallback)</td><td><code>didFindValidUpdate</code>는 왔지만 자동 다운로드가 꺼져 있음</td><td>파랑 틴트</td><td><code>updater.checkForUpdates()</code>로 Sparkle 기본 창</td></tr>
+    <tr><td>실패</td><td><code>failedToDownloadUpdate</code> / <code>didAbortWithError</code></td><td>빨강 틴트</td><td>Sparkle 기본 창으로 재시도</td></tr>
+  </table>
+
+  <h2>구현 메모</h2>
+  <ul>
+    <li><b>진짜 원버튼의 전제</b>: <code>Info.plist</code>에 <code>SUAutomaticallyUpdate = YES</code>를 넣어 기본값을 자동 다운로드로 바꾼다. 그래야 카드가 뜰 때 이미 파일이 받아져 있고, 버튼이 곧바로 설치 + 재시작이 된다. Sparkle 2.9.1 헤더에서 <code>SPUUpdaterDelegate</code>의 <code>willInstallUpdateOnQuit:immediateInstallationBlock:</code>를 확인했다.</li>
+    <li><code>PickyUpdaterController</code>에 <code>@Published var dashboardUpdate: DashboardUpdateState</code>를 추가한다. 델리게이트 콜백은 nonisolated이므로 기존 <code>updaterWillRelaunchApplication</code>처럼 MainActor로 넘긴다. <code>immediateInstallationBlock</code>은 상태 안에 보관한다.</li>
+    <li>Sparkle 팝업 중복을 막기 위해 <code>SPUStandardUserDriverDelegate</code>를 달고 <code>supportsGentleScheduledUpdateReminders = true</code>, 예약 확인에서 찾은 업데이트는 <code>standardUserDriverShouldHandleShowingScheduledUpdate</code>에서 <code>false</code>를 돌려 카드로만 알린다. 메뉴·설정의 “업데이트 확인”처럼 사용자가 직접 누른 경우는 지금처럼 Sparkle 창을 쓴다.</li>
+    <li>재시작 직전에는 기존 <code>willRelaunchApplication</code> 훅이 agentd를 멈춘다. 이 흐름은 그대로 탄다.</li>
+    <li>진행 중 Pickle 판단은 세션 상태가 running / tool 실행 / 입력 대기인 것만 센다. 확인 창은 기존 <code>PickyHubModalHost</code>로 띄운다.</li>
+    <li>“나중에”는 버전 문자열을 <code>PickySettings</code>에 저장해 같은 버전 카드만 숨긴다. 더 새 버전이 나오면 다시 뜬다.</li>
+    <li>“새 기능 보기”는 appcast 항목의 <code>releaseNotesURL</code>/<code>fullReleaseNotesURL</code>이 있을 때만 보인다.</li>
+    <li>Hub를 열 때 마지막 확인이 1시간 넘게 지났으면 <code>checkForUpdatesInBackground()</code>를 한 번 호출해 카드가 늦게 뜨는 일을 줄인다(선택).</li>
+  </ul>
+
+  <h2>문구</h2>
+  <table>
+    <tr><th>위치</th><th>한국어</th><th>English</th></tr>
+    <tr><td>제목 (준비됨)</td><td>Picky 0.9.0 업데이트가 준비됐어요</td><td>Picky 0.9.0 is ready to install</td></tr>
+    <tr><td>설명 (준비됨)</td><td>지금 재시작하거나, 다음에 Picky를 종료할 때 설치돼요.</td><td>Restart now, or it installs the next time you quit Picky.</td></tr>
+    <tr><td>버전 배지</td><td colspan="2">0.8.3 → 0.9.0 (현재 → 새 버전)</td></tr>
+    <tr><td>주 버튼</td><td>업데이트하고 재시작</td><td>Update and Restart</td></tr>
+    <tr><td>보조 버튼</td><td>새 기능 보기 · 나중에</td><td>What's New · Later</td></tr>
+    <tr><td>확인 창 제목</td><td>진행 중인 Pickle이 2개 있어요</td><td>2 Pickles are still working</td></tr>
+    <tr><td>확인 창 본문</td><td>재시작하면 진행 중인 응답이 멈춰요. 대화 기록은 그대로 남아요.</td><td>Restarting stops their current responses. Conversations stay as they are.</td></tr>
+    <tr><td>실패</td><td>Picky 업데이트를 준비하지 못했어요 / 다시 시도하면 업데이트 창에서 이어서 진행해요.</td><td>Couldn't prepare the Picky update / Try again to continue in the update window.</td></tr>
+  </table>
+  <p>버전 뒤 조사 문제(“0.9.0을/를”)를 피하려고 “Picky 0.9.0 업데이트가”로 썼다. “대화 기록은 그대로 남아요”는 세션 persistence를 근거로 했지만, 구현할 때 재실행 후 진행 중이던 Pickle이 어떤 상태로 복원되는지 한 번 확인해야 한다.</p>
+
+  <h2>정해야 할 것</h2>
+  <div class="callout">
+    <p style="margin:0 0 6px"><b>자동 다운로드를 기본으로 켤지.</b> 켜면 진짜 원버튼이 되고, 끄면 “수동” 상태가 기본이 되어 버튼을 눌러도 Sparkle 창을 한 번 더 거친다. 저는 켜는 쪽을 추천한다. 설정의 “자동 업데이트 확인” 토글 옆에 “업데이트 자동으로 받기” 토글을 추가해 끌 수 있게 하면 된다.</p>
+    <p style="margin:0"><b>범위 밖:</b> 메뉴 막대 패널과 HUD 도크의 업데이트 배지는 이번 범위에서 뺐다. 대시보드 카드가 자리 잡은 뒤 필요하면 추가한다.</p>
+  </div>
+</div>
+<script src="update-card.js"></script>
+<script>document.getElementById('preview').innerHTML = renderUpdateCard({ state: 'ready' });</script>
+</body>
+</html>

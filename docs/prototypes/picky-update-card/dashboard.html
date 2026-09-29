@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Picky 대시보드 · 업데이트 카드 시안</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="proto-bar">
+  <b>시안 조작</b>
+  <select id="state">
+    <option value="ready">업데이트 준비됨 (기본)</option>
+    <option value="manual">자동 다운로드 꺼짐</option>
+    <option value="failed">준비 실패</option>
+    <option value="installing">재시작 중</option>
+    <option value="hidden">업데이트 없음</option>
+  </select>
+  <button id="running" aria-pressed="true">진행 중 Pickle 2개</button>
+  <span class="sep"></span>
+  <button id="lang" aria-pressed="false">English</button>
+  <button id="theme" aria-pressed="false">Dark</button>
+  <a href="index.html">← 기획 문서</a> <a href="states.html" style="margin-left:12px">상태 모음 →</a>
+</div>
+
+<div class="window" id="win">
+  <div class="traffic"><i></i><i></i><i></i></div>
+  <nav class="sidebar">
+    <div class="nav active"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span data-ko="대시보드" data-en="Dashboard"></span></div>
+    <div class="nav"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 12l4-4 3 3 5-6"/></svg><span data-ko="통계" data-en="Statistics"></span></div>
+    <div class="nav"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3h4a2 2 0 0 1 2 2v8a2 2 0 0 0-2-2H3zM13 3H9"/></svg><span data-ko="가이드 및 업데이트" data-en="Guides & Updates"></span></div>
+    <div class="nav"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 2 4 9h4l-1 5 5-7H8z"/></svg><span data-ko="빠른 시작" data-en="Quick Start"></span></div>
+    <div class="nav"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 7h12"/></svg><span data-ko="예약 캘린더" data-en="Scheduled jobs"></span></div>
+    <div class="nav"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 2v4M10 2v4M4 6h8v3a4 4 0 0 1-8 0zM8 13v2"/></svg><span data-ko="플러그인" data-en="Plugins"></span></div>
+    <div class="nav"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3h10v7H7l-4 3z"/></svg><span data-ko="최근 대화" data-en="Recent Conversation"></span></div>
+    <div class="nav"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 5h12M2 11h12"/><circle cx="6" cy="5" r="1.6" fill="var(--surface)"/><circle cx="10" cy="11" r="1.6" fill="var(--surface)"/></svg><span data-ko="설정" data-en="Settings"></span></div>
+  </nav>
+  <main class="content">
+    <div class="page">
+      <div class="card greeting">
+        <div class="logo">P</div>
+        <div>
+          <h1 data-ko="좋은 오후예요, 종학님" data-en="Good afternoon, Jonghak"></h1>
+          <p data-ko="오늘은 어떤 일을 맡겨볼까요?" data-en="What would you like to hand off today?"></p>
+        </div>
+      </div>
+
+      <!-- Proposed: update card sits right under the greeting, above everything else -->
+      <div id="slot" style="margin-top:16px"></div>
+
+      <div class="section">
+        <div class="heading"><span data-ko="Picky와 한 일" data-en="Work with Picky"></span><span class="link" data-ko="모두 보기" data-en="View all"></span></div>
+        <div class="grid3">
+          <div class="card insight"><small data-ko="가장 많이 맡긴 일" data-en="Most delegated work"></small><strong data-ko="코드 리뷰" data-en="Code review"></strong><span data-ko="이번 기간 작업의 38%" data-en="38% of this period"></span></div>
+          <div class="card insight"><small data-ko="후속 지시·위임이 가장 많은 Pickle" data-en="Most follow-ups and delegations"></small><strong data-ko="결제 API 리팩터링" data-en="Payment API refactor"></strong><span data-ko="후속 지시 14회" data-en="14 follow-ups"></span></div>
+          <div class="card insight"><small data-ko="Pickle이 가장 많은 프로젝트" data-en="Project with the most Pickles"></small><strong>picky</strong><span data-ko="이번 기간 23개 Pickle" data-en="23 Pickles this period"></span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="heading"><span data-ko="가이드 및 업데이트" data-en="Guides and updates"></span><span class="link" data-ko="모두 보기" data-en="View all"></span></div>
+        <div class="ghost"></div>
+      </div>
+      <div class="section">
+        <div class="heading"><span data-ko="빠른 시작" data-en="Quick start"></span><span class="link" data-ko="모두 보기" data-en="View all"></span></div>
+        <div class="grid3"><div class="ghost" style="height:110px"></div><div class="ghost" style="height:110px"></div><div class="ghost" style="height:110px"></div></div>
+      </div>
+    </div>
+  </main>
+  <div id="modal"></div>
+</div>
+
+<script src="update-card.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const ui = { state: 'ready', lang: 'ko', running: true };
+
+function render() {
+  document.documentElement.lang = ui.lang;
+  document.querySelectorAll('[data-ko]').forEach(el => el.textContent = el.dataset[ui.lang]);
+  $('#slot').innerHTML = renderUpdateCard({ state: ui.state, lang: ui.lang });
+  $('#slot').style.display = ui.state === 'hidden' ? 'none' : '';
+  $('#state').value = ui.state;
+}
+
+function startInstall() {
+  ui.state = 'installing'; $('#modal').innerHTML = ''; render();
+  // Real app: call Sparkle's immediateInstallationBlock -> agentd stops -> app relaunches.
+  setTimeout(() => { ui.state = 'hidden'; render(); }, 2200);
+}
+
+document.addEventListener('click', e => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (!act) return;
+  if (act === 'install') {
+    if (ui.running) $('#modal').innerHTML = renderRunningModal({ lang: ui.lang,
+      pickles: ui.lang === 'ko' ? ['결제 API 리팩터링', '릴리즈 노트 초안'] : ['Payment API refactor', 'Release notes draft'] });
+    else startInstall();
+  }
+  if (act === 'confirm') startInstall();
+  if (act === 'cancel' || (act === 'cancel-backdrop' && e.target.classList.contains('backdrop'))) $('#modal').innerHTML = '';
+  if (act === 'later') { ui.state = 'hidden'; render(); }
+  if (act === 'notes') alert(ui.lang === 'ko' ? '릴리즈 노트(appcast releaseNotesLink)를 브라우저로 엽니다.' : 'Opens the release notes link in the browser.');
+  if (act === 'manual' || act === 'retry') alert(ui.lang === 'ko' ? 'Sparkle 기본 업데이트 창을 엽니다 (updater.checkForUpdates).' : 'Opens the standard Sparkle update window.');
+});
+
+$('#state').onchange = e => { ui.state = e.target.value; render(); };
+$('#running').onclick = e => { ui.running = !ui.running; e.target.setAttribute('aria-pressed', ui.running); };
+$('#lang').onclick = e => { ui.lang = ui.lang === 'ko' ? 'en' : 'ko'; e.target.setAttribute('aria-pressed', ui.lang === 'en'); render(); };
+$('#theme').onclick = e => {
+  const dark = document.documentElement.dataset.theme !== 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : ''; e.target.setAttribute('aria-pressed', dark);
+};
+render();
+</script>
+</body>
+</html>

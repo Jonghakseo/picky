@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>업데이트 카드 · 상태 모음</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="proto-bar">
+  <b>상태 모음</b>
+  <button id="theme" aria-pressed="false">Dark</button>
+  <a href="index.html">← 기획 문서</a> <a href="dashboard.html" style="margin-left:12px">대시보드 시안 →</a>
+</div>
+<div class="doc" id="doc"></div>
+<script src="update-card.js"></script>
+<script>
+const STATES = [
+  ['ready', '1. 업데이트 준비됨 (기본)', '백그라운드 다운로드가 끝난 상태. 버튼 한 번으로 설치 후 재시작한다. "나중에"는 이 버전 카드만 숨기고, 종료 시 설치는 그대로 진행된다.'],
+  ['installing', '2. 재시작 중', '버튼을 누른 직후. agentd를 먼저 멈추고 Sparkle이 번들을 교체한다. 나중에 버튼은 숨긴다.'],
+  ['manual', '3. 자동 다운로드 꺼짐 (fallback)', '사용자가 Sparkle 창에서 자동 설치를 끈 경우. 원버튼 재시작은 불가하므로 Sparkle 기본 창을 연다.'],
+  ['failed', '4. 준비 실패', 'failedToDownloadUpdate / didAbortWithError. 다시 시도는 Sparkle 기본 창으로 넘겨 원인을 거기서 보여준다.'],
+];
+let html = '<h1>업데이트 카드 상태</h1><p>한국어·영어를 함께 둔다. 긴 영어 문구에서도 버튼이 줄바꿈되지 않는지 확인하는 용도.</p>';
+for (const [s, h, note] of STATES) {
+  html += `<div class="state-block"><h3>${h}</h3><div class="pair">
+    ${renderUpdateCard({ state: s, lang: 'ko' })}
+    ${renderUpdateCard({ state: s, lang: 'en' })}
+  </div><div class="note">${note}</div></div>`;
+}
+html += `<h2>진행 중 Pickle이 있을 때 확인 창</h2>
+  <p>진행 중(응답 생성·도구 실행·입력 대기) Pickle이 1개 이상이면 재시작 전에 한 번 묻는다. 0개면 묻지 않고 바로 재시작한다.</p>
+  <div style="position:relative;height:330px;border-radius:12px;overflow:hidden;margin-bottom:16px">${renderRunningModal({ lang: 'ko' })}</div>
+  <div style="position:relative;height:330px;border-radius:12px;overflow:hidden">${renderRunningModal({ lang: 'en', pickles: ['Payment API refactor', 'Release notes draft'] })}</div>`;
+document.getElementById('doc').innerHTML = html;
+document.getElementById('theme').onclick = e => {
+  const dark = document.documentElement.dataset.theme !== 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : ''; e.target.setAttribute('aria-pressed', dark);
+};
+</script>
+</body>
+</html>

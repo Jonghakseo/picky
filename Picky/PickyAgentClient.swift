@@ -585,6 +585,8 @@ private extension PickyEventEnvelope {
             return "type=hubStatisticsResult id=\(id) command=\(result.commandId) ok=\(result.ok ? 1 : 0) records=\(result.snapshot?.records.count ?? 0) samples=\(result.snapshot?.usageSamples.count ?? 0)"
         case .packageUpdatesAvailable(let updates):
             return "type=packageUpdatesAvailable id=\(id) command=\(updates.commandId) sources=\(updates.sources.count)"
+        case .packageConflicts(let result):
+            return "type=packageConflicts id=\(id) command=\(result.commandId) conflicts=\(result.conflicts.count)"
         case .packageOperationProgress(let progress):
             return "type=packageOperationProgress id=\(id) request=\(progress.requestId) operation=\(progress.operation.rawValue) sourceChars=\(progress.source.count) messageChars=\(progress.message.count)"
         case .packageOperationCompleted(let result):

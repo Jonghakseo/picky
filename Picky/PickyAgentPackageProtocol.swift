@@ -21,6 +21,27 @@ struct PickyPackageUpdatesAvailableEvent: Decodable, Equatable {
     let failed: Bool?
 }
 
+/// Another installed tool or skill with the same name as one a curated package provides.
+struct PickyPackageConflict: Decodable, Equatable, Hashable {
+    enum Kind: String, Decodable, Equatable, Hashable {
+        case tool
+        case skill
+    }
+
+    let source: String
+    let kind: Kind
+    let name: String
+    /// Absolute path of the resource that already provides `name`.
+    let ownerPath: String
+}
+
+struct PickyPackageConflictsEvent: Decodable, Equatable {
+    let commandId: String
+    let conflicts: [PickyPackageConflict]
+    /// `true` means agentd could not inspect Pi resources; callers keep the previous state.
+    let failed: Bool?
+}
+
 struct PickyPackageOperationProgressEvent: Decodable, Equatable {
     let requestId: String
     let operation: PickyPackageOperation

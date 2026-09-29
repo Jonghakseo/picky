@@ -964,7 +964,7 @@ final class PickyHubRenderGalleryClient: PickyAgentClient, @unchecked Sendable {
     }
 
     @MainActor var usedOnlyGalleryCommands: Bool {
-        sentCommandTypes.allSatisfy { [.getHubStatistics, .checkPackageUpdates].contains($0) }
+        sentCommandTypes.allSatisfy { [.getHubStatistics, .checkPackageUpdates, .inspectPackageConflicts].contains($0) }
     }
 
     func connect() async { emit(.connected) }

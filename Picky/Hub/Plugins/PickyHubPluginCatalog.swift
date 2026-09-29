@@ -63,6 +63,13 @@ struct PickyHubPluginMetadata: Equatable {
         "claude-mcp-bridge": .init(category: .development, provider: "@ryan_nookpi", systemImage: "point.3.connected.trianglepath.dotted", useCaseKeys: ["hub.plugins.useCase.claudeMcpBridge.1", "hub.plugins.useCase.claudeMcpBridge.2"]),
         "cross-agent": .init(category: .development, provider: "@ryan_nookpi", systemImage: "arrow.triangle.branch", useCaseKeys: ["hub.plugins.useCase.crossAgent.1", "hub.plugins.useCase.crossAgent.2"]),
         "claude-hooks-bridge": .init(category: .development, provider: "@ryan_nookpi", systemImage: "link", useCaseKeys: ["hub.plugins.useCase.claudeHooksBridge.1", "hub.plugins.useCase.claudeHooksBridge.2"]),
+        "web-access": .init(category: .research, provider: "@ryan_nookpi", systemImage: "globe", useCaseKeys: ["hub.plugins.useCase.webAccess.1", "hub.plugins.useCase.webAccess.2"]),
+        "vcc-ko": .init(category: .taskManagement, provider: "@ryan_nookpi", systemImage: "archivebox", useCaseKeys: ["hub.plugins.useCase.vccKo.1", "hub.plugins.useCase.vccKo.2"]),
+        "skill-creator": .init(category: .development, provider: "@ryan_nookpi", systemImage: "wand.and.stars", useCaseKeys: ["hub.plugins.useCase.skillCreator.1", "hub.plugins.useCase.skillCreator.2"]),
+        "excalidraw": .init(category: .content, provider: "@ryan_nookpi", systemImage: "scribble.variable", useCaseKeys: ["hub.plugins.useCase.excalidraw.1", "hub.plugins.useCase.excalidraw.2"]),
+        "tmux-terminal": .init(category: .development, provider: "@ryan_nookpi", systemImage: "apple.terminal", useCaseKeys: ["hub.plugins.useCase.tmuxTerminal.1", "hub.plugins.useCase.tmuxTerminal.2"]),
+        "chrome-cdp": .init(category: .development, provider: "@ryan_nookpi", systemImage: "safari", useCaseKeys: ["hub.plugins.useCase.chromeCDP.1", "hub.plugins.useCase.chromeCDP.2"]),
+        "a4": .init(category: .content, provider: "@ryan_nookpi", systemImage: "doc.richtext", useCaseKeys: ["hub.plugins.useCase.a4.1", "hub.plugins.useCase.a4.2"]),
     ]
 
     static let fallback = PickyHubPluginMetadata(category: .development, provider: "npm", systemImage: "puzzlepiece.extension", useCaseKeys: [])
@@ -84,9 +91,11 @@ struct PickyHubPluginItem: Identifiable, Equatable {
     let hasUpdate: Bool
     let isBusy: Bool
     var bundledStatus: PickyBundledPluginStatus?
+    /// Other installed copies of this plugin's tools or skills (curated packages only).
+    var conflicts: [PickyPackageConflict] = []
 
     var canInstall: Bool {
-        guard let bundledStatus else { return !isInstalled }
+        guard let bundledStatus else { return !isInstalled && conflicts.isEmpty }
         return bundledStatus == .notInstalled || bundledStatus == .legacySymlink
     }
     var canRemove: Bool {
@@ -94,6 +103,7 @@ struct PickyHubPluginItem: Identifiable, Equatable {
         return bundledStatus == .installed || bundledStatus == .outdated
     }
     var statusLabel: String {
+        if !conflicts.isEmpty { return L10n.t("hub.plugins.duplicate.badge") }
         switch bundledStatus {
         case .outdated: return L10n.t("status.extensions.state.outdated")
         case .legacySymlink: return L10n.t("status.extensions.badge.legacySymlink")
@@ -103,6 +113,7 @@ struct PickyHubPluginItem: Identifiable, Equatable {
         }
     }
     var statusTone: PickyHubInlineStatusTone {
+        if !conflicts.isEmpty { return .warning }
         switch bundledStatus {
         case .conflict: return .error
         case .legacySymlink, .outdated: return .warning
@@ -110,6 +121,11 @@ struct PickyHubPluginItem: Identifiable, Equatable {
         }
     }
     var statusExplanation: String? {
+        if !conflicts.isEmpty {
+            // Owners are paths, not translatable text; one line per other copy.
+            let owners = Array(Set(conflicts.map(\.ownerPath))).sorted().joined(separator: "\n")
+            return L10n.t(isInstalled ? "hub.plugins.duplicate.installed" : "hub.plugins.duplicate.blocked", owners)
+        }
         switch bundledStatus {
         case .developerOverride(let target): return L10n.t("status.extensions.state.developerOverride", target)
         case .conflict(let reason): return L10n.t("status.extensions.state.conflict", reason)
@@ -122,6 +138,7 @@ struct PickyHubPluginItem: Identifiable, Equatable {
     var title: String { L10n.t(plugin.titleKey) }
     var summary: String { L10n.t(plugin.descriptionKey) }
     var useCases: [String] { metadata.useCaseKeys.map { L10n.t($0) } }
+    var setupInstructions: String? { plugin.setupKey.map { L10n.t($0) } }
     var isInstalled: Bool { status.isInstalled }
     /// "카테고리 · 제공자" (version is appended by the page when known).
     var metaLine: String { "\(metadata.category.title) · \(metadata.provider)" }
@@ -136,6 +153,7 @@ struct PickyHubPluginItem: Identifiable, Equatable {
             && lhs.hasUpdate == rhs.hasUpdate
             && lhs.isBusy == rhs.isBusy
             && lhs.bundledStatus == rhs.bundledStatus
+            && lhs.conflicts == rhs.conflicts
     }
 }
 
@@ -208,7 +226,8 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
                 successMessage: successesByPluginID[row.id],
                 progressMessage: pendingFeedbackByPluginID[row.id]?.progressMessage,
                 hasUpdate: row.hasUpdate,
-                isBusy: row.isBusy
+                isBusy: row.isBusy,
+                conflicts: row.conflicts
             )
         }
     }
@@ -261,6 +280,7 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
         bundled?.refresh()
         curated.refresh()
         curated.checkUpdatesIfNeeded(pluginReloadController: pluginReloadController)
+        curated.inspectConflicts(pluginReloadController: pluginReloadController)
     }
 
     func install(_ item: PickyHubPluginItem) {
@@ -273,7 +293,7 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
             )
             return
         }
-        guard item.bundledStatus == nil else { return }
+        guard item.bundledStatus == nil, self.item(id: item.id)?.canInstall == true else { return }
         beginMutation(item, successKey: "hub.plugins.feedback.installed", retry: { [weak self] in self?.install(item) }) {
             curated.install(item.plugin, pluginReloadController: pluginReloadController)
         }

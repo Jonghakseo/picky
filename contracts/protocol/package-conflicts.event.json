@@ -1,0 +1,22 @@
+{
+  "id": "event-package-conflicts-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-09-29T00:00:01.000Z",
+  "type": "packageConflicts",
+  "commandId": "cmd-package-inspect-conflicts-001",
+  "conflicts": [
+    {
+      "source": "npm:@ryan_nookpi/pi-extension-web-access",
+      "kind": "tool",
+      "name": "web_search",
+      "ownerPath": "/Users/example/.pi/agent/extensions/web-access"
+    },
+    {
+      "source": "npm:@ryan_nookpi/pi-skill-excalidraw",
+      "kind": "skill",
+      "name": "excalidraw",
+      "ownerPath": "/Users/example/.pi/agent/skills/excalidraw/SKILL.md"
+    }
+  ],
+  "failed": false
+}

@@ -91,6 +91,10 @@ final class PickyPluginReloadController: ObservableObject {
         await PickyCuratedPluginInstaller.checkUpdates(client: client)
     }
 
+    func inspectCuratedPackageConflicts(sources: [String]) async -> Result<[PickyPackageConflict], PickyCuratedPluginInstaller.CommandError> {
+        await PickyCuratedPluginInstaller.inspectConflicts(sources: sources, client: client)
+    }
+
     func updateCuratedPackage(source: String) async -> Result<Void, PickyCuratedPluginInstaller.CommandError> {
         await PickyCuratedPluginInstaller.update(source: source, client: client)
     }

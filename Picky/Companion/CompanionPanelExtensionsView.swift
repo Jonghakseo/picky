@@ -24,6 +24,10 @@ struct PickyCuratedPlugin: Identifiable {
     let commandName: String
     let source: String
     let kind: Kind
+    /// Localized one-time setup for external tools the plugin needs, if any.
+    let setupKey: String?
+    /// agentd knows which tools/skills this package provides and can detect other copies.
+    let checksDuplicates: Bool
 
     init(
         id: String,
@@ -31,7 +35,9 @@ struct PickyCuratedPlugin: Identifiable {
         descriptionKey: String,
         commandName: String,
         source: String,
-        kind: Kind = .standard
+        kind: Kind = .standard,
+        setupKey: String? = nil,
+        checksDuplicates: Bool = false
     ) {
         self.id = id
         self.titleKey = titleKey
@@ -39,6 +45,8 @@ struct PickyCuratedPlugin: Identifiable {
         self.commandName = commandName
         self.source = source
         self.kind = kind
+        self.setupKey = setupKey
+        self.checksDuplicates = checksDuplicates
     }
 
     static let diffReview = PickyCuratedPlugin(
@@ -146,6 +154,75 @@ struct PickyCuratedPlugin: Identifiable {
         source: "npm:@ryan_nookpi/pi-extension-claude-hooks-bridge"
     )
 
+    static let webAccess = PickyCuratedPlugin(
+        id: "web-access",
+        titleKey: "extensions.curated.webAccess.title",
+        descriptionKey: "extensions.curated.webAccess.description",
+        commandName: "web_search",
+        source: "npm:@ryan_nookpi/pi-extension-web-access",
+        setupKey: "extensions.curated.webAccess.setup",
+        checksDuplicates: true
+    )
+
+    static let vccKo = PickyCuratedPlugin(
+        id: "vcc-ko",
+        titleKey: "extensions.curated.vccKo.title",
+        descriptionKey: "extensions.curated.vccKo.description",
+        commandName: "vcc_recall",
+        source: "npm:@ryan_nookpi/pi-extension-vcc-ko",
+        checksDuplicates: true
+    )
+
+    static let skillCreator = PickyCuratedPlugin(
+        id: "skill-creator",
+        titleKey: "extensions.curated.skillCreator.title",
+        descriptionKey: "extensions.curated.skillCreator.description",
+        commandName: "/skill:skill-creator",
+        source: "npm:@ryan_nookpi/pi-skill-skill-creator",
+        setupKey: "extensions.curated.skillCreator.setup",
+        checksDuplicates: true
+    )
+
+    static let excalidraw = PickyCuratedPlugin(
+        id: "excalidraw",
+        titleKey: "extensions.curated.excalidraw.title",
+        descriptionKey: "extensions.curated.excalidraw.description",
+        commandName: "/skill:excalidraw",
+        source: "npm:@ryan_nookpi/pi-skill-excalidraw",
+        setupKey: "extensions.curated.excalidraw.setup",
+        checksDuplicates: true
+    )
+
+    static let tmuxTerminal = PickyCuratedPlugin(
+        id: "tmux-terminal",
+        titleKey: "extensions.curated.tmuxTerminal.title",
+        descriptionKey: "extensions.curated.tmuxTerminal.description",
+        commandName: "/skill:tmux-terminal",
+        source: "npm:@ryan_nookpi/pi-skill-tmux-terminal",
+        setupKey: "extensions.curated.tmuxTerminal.setup",
+        checksDuplicates: true
+    )
+
+    static let chromeCDP = PickyCuratedPlugin(
+        id: "chrome-cdp",
+        titleKey: "extensions.curated.chromeCDP.title",
+        descriptionKey: "extensions.curated.chromeCDP.description",
+        commandName: "/skill:chrome-cdp",
+        source: "npm:@ryan_nookpi/pi-skill-chrome-cdp",
+        setupKey: "extensions.curated.chromeCDP.setup",
+        checksDuplicates: true
+    )
+
+    static let a4 = PickyCuratedPlugin(
+        id: "a4",
+        titleKey: "extensions.curated.a4.title",
+        descriptionKey: "extensions.curated.a4.description",
+        commandName: "/skill:a4",
+        source: "npm:@ryan_nookpi/pi-skill-a4",
+        setupKey: "extensions.curated.a4.setup",
+        checksDuplicates: true
+    )
+
     static let curatedDefaults: [PickyCuratedPlugin] = [
         .diffReview,
         .askUserQuestion,
@@ -159,7 +236,14 @@ struct PickyCuratedPlugin: Identifiable {
         .clipboard,
         .claudeMcpBridge,
         .crossAgent,
-        .claudeHooksBridge
+        .claudeHooksBridge,
+        .webAccess,
+        .vccKo,
+        .skillCreator,
+        .excalidraw,
+        .tmuxTerminal,
+        .chromeCDP,
+        .a4
     ]
 }
 
@@ -171,6 +255,8 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         var installedVersion: String?
         var hasUpdate: Bool
         var isBusy: Bool
+        /// Other installed tools or skills with the same names. Blocks install; warns when installed.
+        var conflicts: [PickyPackageConflict] = []
 
         var id: String { plugin.id }
     }
@@ -192,6 +278,8 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
     private var availableUpdateSources: Set<String> = []
     private var hasCheckedForUpdates = false
     private var isCheckingForUpdates = false
+    private var conflictsBySource: [String: [PickyPackageConflict]] = [:]
+    private var conflictInspectionGeneration = 0
     var onPluginStateChanged: (() -> Void)?
 
     init(
@@ -217,7 +305,8 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
                 status: status,
                 installedVersion: status.isInstalled ? installedVersionForSource(plugin.source) : nil,
                 hasUpdate: status.isInstalled && !status.isPinned && availableUpdateSources.contains(plugin.source),
-                isBusy: busyIDs.contains(plugin.id)
+                isBusy: busyIDs.contains(plugin.id),
+                conflicts: conflictsBySource[plugin.source] ?? []
             )
         }
     }
@@ -260,6 +349,29 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         }
     }
 
+    /// Re-reads duplicate owners from disk. A failed lookup keeps the previous
+    /// state; agentd still refuses conflicting installs on its own.
+    func inspectConflicts(pluginReloadController: PickyPluginReloadController) {
+        let sources = plugins.filter(\.checksDuplicates).map(\.source)
+        guard !sources.isEmpty else { return }
+        conflictInspectionGeneration += 1
+        let generation = conflictInspectionGeneration
+        Task { [weak self] in
+            let result = await pluginReloadController.inspectCuratedPackageConflicts(sources: sources)
+            guard let self, !Task.isCancelled, generation == self.conflictInspectionGeneration,
+                  case .success(let conflicts) = result else { return }
+            self.applyConflicts(conflicts, inspectedSources: sources)
+        }
+    }
+
+    func applyConflicts(_ conflicts: [PickyPackageConflict], inspectedSources: [String]) {
+        for source in inspectedSources { conflictsBySource[source] = [] }
+        for conflict in conflicts { conflictsBySource[conflict.source, default: []].append(conflict) }
+        for index in rows.indices {
+            rows[index].conflicts = conflictsBySource[rows[index].plugin.source] ?? []
+        }
+    }
+
     private enum Operation {
         case install
         case remove
@@ -282,6 +394,8 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         let pluginID = plugin.id
         let source = plugin.source
         guard let index = rows.firstIndex(where: { $0.plugin.id == pluginID }), !rows[index].isBusy else { return false }
+        // agentd refuses these installs too; stopping here keeps the row from flashing busy.
+        if operation == .install, !rows[index].conflicts.isEmpty { return false }
         rows[index].isBusy = true
         lastError = nil
 
@@ -299,6 +413,9 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
             }
             guard !Task.isCancelled else { return }
             self?.applyMutationResult(pluginID: pluginID, source: source, operation: operation, result: result)
+            if plugin.checksDuplicates {
+                self?.inspectConflicts(pluginReloadController: pluginReloadController)
+            }
         }
         return true
     }
@@ -736,7 +853,7 @@ struct CompanionPanelExtensionsView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .disabled(row.isBusy)
+            .disabled(row.isBusy || !row.conflicts.isEmpty)
         }
     }
 

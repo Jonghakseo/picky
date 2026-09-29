@@ -168,25 +168,55 @@ enum PickyCuratedPluginInstaller {
         client: any PickyAgentClient,
         timeoutNanoseconds: UInt64 = 30_000_000_000
     ) async -> Result<Set<String>, CommandError> {
-        let command = PickyCommandEnvelope(type: .checkPackageUpdates)
-        let stream = await client.events
+        await query(
+            PickyCommandEnvelope(type: .checkPackageUpdates),
+            client: client,
+            timeoutNanoseconds: timeoutNanoseconds
+        ) { event, commandID in
+            guard case .packageUpdatesAvailable(let result) = event, result.commandId == commandID else { return nil }
+            if result.failed == true { throw CommandError.failed("Package update check failed.") }
+            return Set(result.sources)
+        }
+    }
 
+    /// Asks agentd which other installed tools or skills share a name with
+    /// what these curated packages provide. agentd refuses such installs too;
+    /// this lookup only lets the catalog explain the block before a click.
+    static func inspectConflicts(
+        sources: [String],
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64 = 30_000_000_000
+    ) async -> Result<[PickyPackageConflict], CommandError> {
+        guard !sources.isEmpty else { return .success([]) }
+        return await query(
+            PickyCommandEnvelope(type: .inspectPackageConflicts, sources: sources),
+            client: client,
+            timeoutNanoseconds: timeoutNanoseconds
+        ) { event, commandID in
+            guard case .packageConflicts(let result) = event, result.commandId == commandID else { return nil }
+            if result.failed == true { throw CommandError.failed("Package conflict check failed.") }
+            return result.conflicts
+        }
+    }
+
+    /// Sends one read-only command and waits for the event whose `match` returns a value.
+    private static func query<Value: Sendable>(
+        _ command: PickyCommandEnvelope,
+        client: any PickyAgentClient,
+        timeoutNanoseconds: UInt64,
+        match: @escaping @Sendable (PickyEvent, String) throws -> Value?
+    ) async -> Result<Value, CommandError> {
+        let stream = await client.events
+        let commandID = command.id
         do {
             try await client.send(command)
-            let sources = try await withThrowingTaskGroup(of: Set<String>.self) { group in
+            let value = try await withThrowingTaskGroup(of: Value.self) { group in
                 defer { group.cancelAll() }
                 group.addTask {
                     for await clientEvent in stream {
                         switch clientEvent {
                         case .protocolEvent(let envelope):
-                            guard case .packageUpdatesAvailable(let result) = envelope.event,
-                                  result.commandId == command.id else {
-                                continue
-                            }
-                            if result.failed == true {
-                                throw CommandError.failed("Package update check failed.")
-                            }
-                            return Set(result.sources)
+                            if let value = try match(envelope.event, commandID) { return value }
                         case .disconnected:
                             throw CommandError.disconnected
                         case .connected, .sessionProjectionBootstrapCompletion, .recoverableError:
@@ -200,9 +230,10 @@ enum PickyCuratedPluginInstaller {
                     try Task.checkCancellation()
                     throw CommandError.timedOut
                 }
-                return try await group.next() ?? []
+                guard let value = try await group.next() else { throw CommandError.disconnected }
+                return value
             }
-            return .success(sources)
+            return .success(value)
         } catch let error as CommandError {
             return .failure(error)
         } catch {

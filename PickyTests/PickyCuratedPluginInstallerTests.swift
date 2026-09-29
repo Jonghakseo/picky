@@ -290,6 +290,56 @@ struct PickyCuratedPluginInstallerTests {
         #expect(viewModel.rows.first?.hasUpdate == false)
     }
 
+    @Test @MainActor func duplicateOwnersBlockCatalogInstallUntilTheOtherCopyIsGone() async throws {
+        let plugin = PickyCuratedPlugin.excalidraw
+        let localCopy = "/Users/example/.pi/agent/skills/excalidraw/SKILL.md"
+        let client = FakeCuratedPluginAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        var reportedConflicts = [PickyPackageConflict(source: plugin.source, kind: .skill, name: "excalidraw", ownerPath: localCopy)]
+        var sentTypes: [PickyCommandType] = []
+        var inspectedSources: [String] = []
+        client.sendHandler = { command in
+            sentTypes.append(command.type)
+            switch command.type {
+            case .inspectPackageConflicts:
+                inspectedSources = command.sources ?? []
+                client.conflicts(commandId: command.id, conflicts: reportedConflicts)
+            case .checkPackageUpdates:
+                client.availableUpdates(commandId: command.id, sources: [])
+            case .installPackage:
+                client.complete(requestId: command.id, operation: .install, source: command.source ?? "", ok: true)
+            default:
+                break
+            }
+        }
+        let curated = PickyCuratedPluginsViewModel(
+            plugins: [.diffReview, plugin],
+            statusForSource: { _ in .notInstalled },
+            installedVersionForSource: { _ in nil }
+        )
+        let catalog = PickyHubPluginCatalogViewModel(curated: curated, pluginReloadController: controller)
+
+        catalog.refresh()
+        try await waitUntil { catalog.item(id: plugin.id)?.conflicts.isEmpty == false }
+
+        #expect(inspectedSources == [plugin.source])
+        let blocked = try #require(catalog.item(id: plugin.id))
+        #expect(blocked.canInstall == false)
+        #expect(blocked.statusExplanation?.contains(localCopy) == true)
+        #expect(catalog.item(id: "diff-review")?.canInstall == true)
+
+        catalog.install(blocked)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(!sentTypes.contains(.installPackage))
+        #expect(catalog.item(id: plugin.id)?.isBusy == false)
+
+        reportedConflicts = []
+        catalog.refresh()
+        try await waitUntil { catalog.item(id: plugin.id)?.canInstall == true }
+        catalog.install(try #require(catalog.item(id: plugin.id)))
+        try await waitUntil { sentTypes.contains(.installPackage) }
+    }
+
     @Test @MainActor func partialInstallRefreshesInstalledStatusAndNotesReload() async throws {
         let plugin = PickyCuratedPlugin.cron
         let client = FakeCuratedPluginAgentClient()
@@ -471,6 +521,15 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
                 sources: sources,
                 failed: failed
             ))
+        )))
+    }
+
+    func conflicts(commandId: String, conflicts: [PickyPackageConflict], failed: Bool? = nil) {
+        emit(.protocolEvent(PickyEventEnvelope(
+            id: "event-package-conflicts-\(commandId)",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: Date(),
+            event: .packageConflicts(PickyPackageConflictsEvent(commandId: commandId, conflicts: conflicts, failed: failed))
         )))
     }
 

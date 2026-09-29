@@ -6,6 +6,8 @@ import { DefaultPackageManager, getAgentDir, SettingsManager, type ProgressEvent
 import type { WebSocket } from "ws";
 import { resolveNpmCommand } from "../domain/npm-command.js";
 import { curatedPackageSafetyError } from "../domain/curated-package-safety.js";
+import { curatedPackageConflictError, type CuratedPackageConflict } from "../domain/curated-package-resources.js";
+import { inspectCuratedPackageConflicts, type CuratedConflictInspectionInput } from "./curated-package-conflicts.js";
 import { logAgentd } from "../local-log.js";
 import { CronPackageLifecycle, isCronPackageSource, type CronLifecycleResult } from "../application/cron-package-lifecycle.js";
 import { CancellablePackageProcessController, installCancellablePackageCommands } from "../application/package-process-controller.js";
@@ -104,6 +106,7 @@ export function createDefaultPackageManager(
 type PackageOperation = "install" | "remove" | "update" | "setup";
 type PackageOperationEvent =
   | { type: "packageUpdatesAvailable"; commandId: string; sources: string[]; failed?: boolean }
+  | { type: "packageConflicts"; commandId: string; conflicts: CuratedPackageConflict[]; failed?: boolean }
   | { type: "packageOperationProgress"; requestId: string; operation: Exclude<PackageOperation, "setup">; source: string; message: string }
   | { type: "packageOperationCompleted"; requestId: string; operation: PackageOperation; source: string; ok: boolean; errorMessage?: string; packageChanged?: boolean };
 
@@ -125,6 +128,10 @@ export interface PackageOperationsDependencies {
   createPackageManager?: (options: PackageManagerFactoryOptions) => PackageManager;
   createCronLifecycle?: (packageManager: PackageManager) => CronPackageLifecycleLike;
   getAgentDir?: () => string;
+  /** Defaults to the static Pi resource inspection; tests inject resolved owners. */
+  inspectConflicts?: (input: CuratedConflictInspectionInput) => Promise<CuratedPackageConflict[]>;
+  /** Project scope used for duplicate detection; Pi resolves project skills relative to it. */
+  getCwd?: () => string;
   packageOperationTimeoutMs?: number;
   send(ws: WebSocket, event: PackageOperationEvent): void;
 }
@@ -175,6 +182,24 @@ export class PackageOperations {
         this.activeManagers.delete(packageManager);
       }
     });
+  }
+
+  /** Reports other owners of the tools/skills that the given curated packages provide. */
+  async runConflictInspection(ws: WebSocket, commandId: string, sources: readonly string[]): Promise<void> {
+    const agentDir = (this.dependencies.getAgentDir ?? getAgentDir)();
+    await this.enqueue(agentDir, async () => {
+      try {
+        const conflicts = await this.inspectConflicts({ cwd: (this.dependencies.getCwd ?? process.cwd)(), agentDir, sources });
+        this.dependencies.send(ws, { type: "packageConflicts", commandId, conflicts });
+      } catch (error) {
+        logAgentd("package conflict inspection failed", { error: error instanceof Error ? error.message : String(error) });
+        this.dependencies.send(ws, { type: "packageConflicts", commandId, conflicts: [], failed: true });
+      }
+    });
+  }
+
+  private inspectConflicts(input: CuratedConflictInspectionInput): Promise<CuratedPackageConflict[]> {
+    return (this.dependencies.inspectConflicts ?? inspectCuratedPackageConflicts)(input);
   }
 
   async runOperation(ws: WebSocket, requestId: string, operation: Exclude<PackageOperation, "setup">, source: string): Promise<void> {
@@ -234,6 +259,15 @@ export class PackageOperations {
       });
     }
     try {
+      if (operation === "install") {
+        // Fail closed: an inspection error must not let a second copy of a tool or skill load.
+        const conflictError = await this.inspectConflicts({ cwd: (this.dependencies.getCwd ?? process.cwd)(), agentDir, sources: [source] })
+          .then(curatedPackageConflictError, (error: unknown) => `Could not check for duplicate tools or skills: ${error instanceof Error ? error.message : String(error)}`);
+        if (conflictError) {
+          this.complete(ws, { requestId, operation, source, ok: false, errorMessage: conflictError, packageChanged: false });
+          return;
+        }
+      }
       if (isCronPackageSource(source)) {
         await this.executeCron(ws, requestId, operation, source, agentDir, packageManager);
       } else if (operation === "setup") {
@@ -414,6 +448,7 @@ export function packageOperationHandlers(operations: PackageOperations, ws: WebS
     setupPackage: (command: { id: string; source: string }) => operations.runSetup(ws, command.id, command.source),
     removePackage: (command: { id: string; source: string }) => operations.runOperation(ws, command.id, "remove", command.source),
     checkPackageUpdates: (command: { id: string }) => operations.runUpdateCheck(ws, command.id),
+    inspectPackageConflicts: (command: { id: string; sources: string[] }) => operations.runConflictInspection(ws, command.id, command.sources),
     updatePackage: (command: { id: string; source: string }) => operations.runOperation(ws, command.id, "update", command.source),
   };
 }

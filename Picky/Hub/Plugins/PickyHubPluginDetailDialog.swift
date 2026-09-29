@@ -60,6 +60,20 @@ struct PickyHubPluginDetailDialog: View {
                 .padding(.top, PickyHubTheme.Spacing.related)
             }
 
+            if let setup = item.setupInstructions {
+                Text("hub.plugins.detail.setup")
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .semibold)
+                    .foregroundColor(PickyHubTheme.Colors.textPrimary)
+                    .padding(.top, PickyHubTheme.Spacing.group)
+
+                Text(setup)
+                    .pickyFont(size: PickyHubTheme.Typography.bodySmall, weight: .regular)
+                    .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .pickyHubSelectableText()
+                    .padding(.top, PickyHubTheme.Spacing.related)
+            }
+
             HStack(spacing: PickyHubTheme.Spacing.related) {
                 PickyHubBadgePill(text: item.statusLabel)
                 if item.isBusy {

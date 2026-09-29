@@ -1,0 +1,6 @@
+{
+  "id": "cmd-package-inspect-conflicts-001",
+  "protocolVersion": "2026-08-25",
+  "type": "inspectPackageConflicts",
+  "sources": ["npm:@ryan_nookpi/pi-extension-web-access", "npm:@ryan_nookpi/pi-skill-excalidraw"]
+}

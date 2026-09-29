@@ -1219,8 +1219,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "removePackage":
     case "updatePackage":
       return { commandId: command.id, type: command.type, sourceChars: command.source.length };
-    case "checkPackageUpdates":
-      return { commandId: command.id, type: command.type };
+    case "checkPackageUpdates": return { commandId: command.id, type: command.type };
+    case "inspectPackageConflicts": return { commandId: command.id, type: command.type, sources: command.sources.length };
     case "setDefaultCwd":
       return { commandId: command.id, type: command.type, cwdChars: command.defaultCwd.length };
     case "setMainAgentModel":
@@ -1297,8 +1297,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
     case "hubStatisticsResult":
       return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, records: event.snapshot?.records.length, samples: event.snapshot?.usageSamples.length, errorChars: event.errorMessage?.length };
-    case "packageUpdatesAvailable":
-      return { eventId: event.id, type: event.type, commandId: event.commandId, sources: event.sources.length };
+    case "packageUpdatesAvailable": return { eventId: event.id, type: event.type, commandId: event.commandId, sources: event.sources.length };
+    case "packageConflicts": return { eventId: event.id, type: event.type, commandId: event.commandId, conflicts: event.conflicts.length, failed: event.failed ? 1 : 0 };
     case "packageOperationProgress":
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, sourceChars: event.source.length, messageChars: event.message.length };
     case "packageOperationCompleted":

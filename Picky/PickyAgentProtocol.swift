@@ -81,6 +81,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     /// active Pi transcript messages after this id when syncing the terminal session back.
     var baselinePiMessageId: String?
     var disabledBuiltinTools: [String]?
+    /// Curated package sources for `inspectPackageConflicts`.
+    var sources: [String]?
     var action: PickyPushToTalkControlAction?
     var groupAction: PickyDockGroupManagementAction?
     var pickleAction: PickyPickleCLIAction?
@@ -153,6 +155,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         kind: PickyQueueClearKind? = nil,
         baselinePiMessageId: String? = nil,
         disabledBuiltinTools: [String]? = nil,
+        sources: [String]? = nil,
         action: PickyPushToTalkControlAction? = nil,
         groupAction: PickyDockGroupManagementAction? = nil,
         pickleAction: PickyPickleCLIAction? = nil,
@@ -228,6 +231,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.sessionIds = sessionIds
         self.entryId = entryId
         self.disabledBuiltinTools = disabledBuiltinTools
+        self.sources = sources
         self.generation = generation
         self.lines = lines
         self.cursorLine = cursorLine
@@ -329,6 +333,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case installPackage
     case removePackage
     case checkPackageUpdates
+    case inspectPackageConflicts
     case updatePackage
     case setupPackage
     case reloadPlugins
@@ -405,6 +410,7 @@ enum PickyEvent: Equatable {
     case pluginsReloaded(PickyPluginsReloadedEvent)
     case hubStatisticsResult(PickyHubStatisticsResultEvent)
     case packageUpdatesAvailable(PickyPackageUpdatesAvailableEvent)
+    case packageConflicts(PickyPackageConflictsEvent)
     case packageOperationProgress(PickyPackageOperationProgressEvent)
     case packageOperationCompleted(PickyPackageOperationCompletedEvent)
     case sessionLogAppended(sessionId: String, line: String)
@@ -595,6 +601,8 @@ enum PickyEvent: Equatable {
             return .hubStatisticsResult(try PickyHubStatisticsResultEvent(from: decoder))
         case "packageUpdatesAvailable":
             return .packageUpdatesAvailable(try PickyPackageUpdatesAvailableEvent(from: decoder))
+        case "packageConflicts":
+            return .packageConflicts(try PickyPackageConflictsEvent(from: decoder))
         case "packageOperationProgress":
             return .packageOperationProgress(try PickyPackageOperationProgressEvent(from: decoder))
         case "packageOperationCompleted":

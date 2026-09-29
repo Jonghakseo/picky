@@ -772,6 +772,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("setupPackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("removePackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("checkPackageUpdates") }),
+  CommandBaseSchema.extend({ type: z.literal("inspectPackageConflicts"), sources: z.array(z.string().min(1)).max(100) }),
   CommandBaseSchema.extend({ type: z.literal("updatePackage"), source: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
   CommandBaseSchema.extend({ type: z.literal("getHubStatistics") }),
@@ -983,6 +984,17 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     type: z.literal("packageUpdatesAvailable"),
     commandId: z.string().min(1),
     sources: z.array(z.string().min(1)),
+    failed: z.boolean().optional(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("packageConflicts"),
+    commandId: z.string().min(1),
+    conflicts: z.array(z.object({
+      source: z.string().min(1),
+      kind: z.enum(["tool", "skill"]),
+      name: z.string().min(1),
+      ownerPath: z.string().min(1),
+    })),
     failed: z.boolean().optional(),
   }),
   EventBaseSchema.extend({

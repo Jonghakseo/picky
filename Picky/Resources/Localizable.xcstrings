@@ -1,6 +1,616 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "extensions.curated.vccKo.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VCC Compaction"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VCC Compaction"
+          }
+        }
+      }
+    },
+    "extensions.curated.vccKo.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact long conversations with a rule-based summary instead of a model call. Once installed, conversation compaction in both Picky and Pi terminals uses this method, and earlier content stays searchable with vcc_recall."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "긴 대화를 압축할 때 모델을 부르지 않고 규칙으로 요약해요. 설치하면 Picky와 Pi 터미널의 대화 압축이 모두 이 방식으로 바뀌고, 압축 전 내용은 vcc_recall로 다시 찾을 수 있어요."
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.vccKo.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cutting compaction cost and time in long conversations"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오래 이어지는 대화에서 압축 비용과 시간을 줄일 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.vccKo.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finding decisions or paths from before compaction"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "압축 전에 나눈 결정이나 경로를 다시 찾을 때"
+          }
+        }
+      }
+    },
+    "extensions.curated.webAccess.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web Access"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web Access"
+          }
+        }
+      }
+    },
+    "extensions.curated.webAccess.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let Pi search the web and read web pages, PDFs, GitHub repositories, and YouTube videos. Search works without an API key."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi가 웹을 검색하고 웹 페이지·PDF·GitHub 저장소·YouTube 영상의 내용을 가져와 읽을 수 있어요. API 키 없이도 검색돼요."
+          }
+        }
+      }
+    },
+    "extensions.curated.webAccess.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search and page reading work right away. Install these only if you need them:\n• GitHub repositories: brew install gh, then gh auth login\n• YouTube and video frames: brew install yt-dlp ffmpeg\n• If you exceed the free search limit, add an Exa API key to the EXA_API_KEY environment variable or ~/.pi/web-search.json."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색과 웹 페이지 읽기는 바로 쓸 수 있어요. 아래 기능은 쓸 때만 따로 설치하면 돼요.\n• GitHub 저장소: brew install gh 후 gh auth login\n• YouTube·영상 프레임: brew install yt-dlp ffmpeg\n• 무료 검색 한도를 넘으면 EXA_API_KEY 환경 변수나 ~/.pi/web-search.json에 Exa API 키를 넣어 주세요."
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.webAccess.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answering with current docs or release notes"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 문서나 릴리스 노트를 찾아 답할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.webAccess.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarizing a linked page or PDF"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "링크 속 페이지나 PDF를 요약할 때"
+          }
+        }
+      }
+    },
+    "extensions.curated.skillCreator.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skill Creator"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skill Creator"
+          }
+        }
+      }
+    },
+    "extensions.curated.skillCreator.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create or edit Pi skills (SKILL.md) and check their format."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 스킬(SKILL.md)을 새로 만들거나 고치고, 형식을 검사해요."
+          }
+        }
+      }
+    },
+    "extensions.curated.skillCreator.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Format checks need python3. If python3 --version fails in Terminal, install it once:\n• xcode-select --install\n• or brew install python"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "형식 검사에 python3가 필요해요. 터미널에서 python3 --version이 실패하면 한 번만 설치해 주세요.\n• xcode-select --install\n• 또는 brew install python"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.skillCreator.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turning a repeated workflow into a skill"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복하는 작업 방식을 스킬로 만들 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.skillCreator.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refining a skill's description and triggers"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스킬 설명과 호출 조건을 다듬을 때"
+          }
+        }
+      }
+    },
+    "extensions.curated.excalidraw.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excalidraw"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Excalidraw"
+          }
+        }
+      }
+    },
+    "extensions.curated.excalidraw.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draw diagrams such as flowcharts and architecture maps as .excalidraw files and open them in an editor window on this Mac. Edits in the window are saved to the same file."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플로우차트·아키텍처도 같은 다이어그램을 .excalidraw 파일로 그리고, 이 Mac에서 편집 창으로 열어요. 창에서 고친 내용은 같은 파일에 저장돼요."
+          }
+        }
+      }
+    },
+    "extensions.curated.excalidraw.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The editor window needs Google Chrome. If it isn't installed, install it once:\n• brew install --cask google-chrome\n• or download it from google.com/chrome\nThe window opens in a separate profile, not your existing Chrome profile."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "편집 창을 열려면 Google Chrome이 필요해요. 설치되어 있지 않다면 한 번만 설치해 주세요.\n• brew install --cask google-chrome\n• 또는 google.com/chrome에서 내려받기\n창은 Chrome의 기존 프로필과 분리된 전용 프로필로 열려요."
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.excalidraw.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explaining a structure or flow as a diagram"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구조나 흐름을 그림으로 설명할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.excalidraw.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjusting a diagram Pi drew"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi가 그린 다이어그램을 직접 손볼 때"
+          }
+        }
+      }
+    },
+    "extensions.curated.tmuxTerminal.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux Terminal"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux Terminal"
+          }
+        }
+      }
+    },
+    "extensions.curated.tmuxTerminal.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let Pi read the screen and type into terminal programs that wait for input, such as REPLs, interactive installers, and selection menus."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "REPL, 대화형 설치 프로그램, 선택 메뉴처럼 입력을 기다리는 터미널 프로그램을 Pi가 화면을 보며 조작해요."
+          }
+        }
+      }
+    },
+    "extensions.curated.tmuxTerminal.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires tmux. If it isn't installed, run this once in Terminal:\n• brew install tmux\nIf you don't have Homebrew, follow the steps at brew.sh first. Your existing tmux sessions stay separate."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tmux가 필요해요. 설치되어 있지 않다면 터미널에서 한 번만 실행해 주세요.\n• brew install tmux\nHomebrew가 없다면 brew.sh의 안내를 먼저 따라 주세요. 기존 tmux 세션과는 섞이지 않아요."
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.tmuxTerminal.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running setup commands that ask questions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "질문에 답해야 진행되는 설치 명령을 실행할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.tmuxTerminal.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking values in a Python or Node REPL"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Python·Node REPL에서 값을 확인할 때"
+          }
+        }
+      }
+    },
+    "extensions.curated.chromeCDP.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chrome DevTools"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chrome DevTools"
+          }
+        }
+      }
+    },
+    "extensions.curated.chromeCDP.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let Pi inspect and operate open tabs in your signed-in Chrome. It connects only when you ask, and Chrome asks you to allow each connection."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인된 내 Chrome의 열린 탭을 Pi가 살펴보고 조작해요. 요청했을 때만 연결하고, 연결할 때마다 Chrome에서 허용해야 해요."
+          }
+        }
+      }
+    },
+    "extensions.curated.chromeCDP.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One-time setup:\n• Chrome 144 or later: update at chrome://settings/help\n• Allow remote debugging: turn on the toggle at chrome://inspect/#remote-debugging\n• Command-line tool: npm install -g chrome-devtools-mcp@latest"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처음 한 번 준비가 필요해요.\n• Chrome 144 이상: chrome://settings/help에서 업데이트\n• 원격 디버깅 허용: chrome://inspect/#remote-debugging에서 토글 켜기\n• 명령줄 도구: npm install -g chrome-devtools-mcp@latest"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.chromeCDP.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking errors on pages that need sign-in"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인해야 보이는 화면의 오류를 확인할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.chromeCDP.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reviewing console and network logs of an open tab"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "열린 탭의 콘솔·네트워크 기록을 볼 때"
+          }
+        }
+      }
+    },
+    "extensions.curated.a4.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A4 Word"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A4 Word"
+          }
+        }
+      }
+    },
+    "extensions.curated.a4.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Convert a Markdown document into an A4 print-ready Word (.docx) file without changing its content."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 문서를 내용은 그대로 두고 A4 인쇄용 Word(.docx) 파일로 바꿔요."
+          }
+        }
+      }
+    },
+    "extensions.curated.a4.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires python3 and python-docx. Install them once in Terminal:\n• python3 -m pip install --user python-docx\n• If you see an externally-managed-environment error: python3 -m pip install --user --break-system-packages python-docx"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "python3와 python-docx가 필요해요. 터미널에서 한 번만 설치해 주세요.\n• python3 -m pip install --user python-docx\n• externally-managed-environment 오류가 나면: python3 -m pip install --user --break-system-packages python-docx"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.a4.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turning a report or proposal into a printable document"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보고서·제안서를 인쇄용 문서로 만들 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.a4.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Producing a Word file with specific fonts and sizes"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "글꼴·크기 조건에 맞춘 Word 파일이 필요할 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.duplicate.badge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duplicate"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중복"
+          }
+        }
+      }
+    },
+    "hub.plugins.detail.setup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One-time setup"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처음 한 번 준비"
+          }
+        }
+      }
+    },
+    "hub.plugins.duplicate.blocked": {
+      "comment": "Shown when a curated plugin can't be installed. Arg is one or more absolute paths of the other copies, one per line.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A tool or skill with the same name already exists, so this can't be installed. Remove the item below, then try again.\n%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 이름의 도구나 스킬이 이미 있어서 설치할 수 없어요. 아래 위치의 항목을 지운 뒤 다시 시도해 주세요.\n%@"
+          }
+        }
+      }
+    },
+    "hub.plugins.duplicate.installed": {
+      "comment": "Shown on an installed curated plugin. Arg is one or more absolute paths of the other copies, one per line.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A tool or skill with the same name also exists below, so Pi may use only one copy or load both. Remove one of them.\n%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래 위치에도 같은 이름의 도구나 스킬이 있어서 Pi가 두 곳 중 한쪽만 쓰거나 둘 다 불러올 수 있어요. 한쪽을 지워 주세요.\n%@"
+          }
+        }
+      }
+    },
     "hud.asyncTasks.archiveChoice.cancel": {
       "localizations": {
         "en": {

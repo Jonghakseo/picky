@@ -159,57 +159,47 @@ a4의 `md-to-a4-html.mjs`가 Pi 설치 레이아웃(`<agentDir>/npm/node_modules
 
 ## 5. 단계 1: 설치 안전장치
 
-### 5.1 충돌 검사 계약
+### 5.1 충돌 검사 계약 (구현됨)
 
-카탈로그 항목이 제공 리소스를 선언한다.
+> 설계를 구현하면서 판정 근거를 "떠 있는 메인 런타임"에서 "Pi 리소스 정적 해석"으로 바꿨다. 메인 에이전트는 플러그인 재로드 때 다시 로드되지 않고 Pickle은 child 데몬에서 돌기 때문에, 런타임 도구 목록은 설치 직후 상태를 반영하지 못한다.
 
-```swift
-struct PickyCuratedPlugin {
-    …
-    let providedTools: [String]   // web-access: ["web_search","fetch_content","get_search_content"], vcc-ko: ["vcc_recall"]
-    let providedSkills: [String]  // excalidraw: ["excalidraw"]
-}
-```
+패키지별 제공 리소스는 agentd가 소유한다(`agentd/src/domain/curated-package-resources.ts`). Swift 카탈로그는 `checksDuplicates: true`만 표시하고 이름 목록을 복제하지 않는다.
 
-설치 요청 전에 Picky가 agentd에 `inspectCuratedConflicts { source, tools, skills }`를 보낸다. agentd의 응답:
+| 패키지 | 도구 | 스킬 |
+|---|---|---|
+| `pi-extension-web-access` | `web_search`, `fetch_content`, `get_search_content` | |
+| `pi-extension-vcc-ko` | `vcc_recall` | |
+| `pi-skill-<name>` 5종 | | `<name>` |
 
-```ts
-{ type: "curatedConflicts", source, conflicts: Array<
-  | { kind: "tool"; name: string; ownerPath: string }
-  | { kind: "skill"; name: string; ownerPath: string }
-> }
-```
+판정(`agentd/src/runtime/curated-package-conflicts.ts`):
 
-판정 기준:
+- Pi `DefaultPackageManager.resolve(() => "skip")`로 Pi가 로드할 확장·스킬 경로를 계산한다. 설치하지 않고, 확장 코드를 실행하지 않는다. 자동 발견 디렉터리, `~/.agents/skills`, 설정 패키지, cwd 기준 프로젝트 리소스가 모두 포함된다.
+- **스킬**: 활성 스킬의 `SKILL.md` frontmatter `name`(없으면 디렉터리명)이 같고, 그 리소스가 설치하려는 npm 패키지 소유가 아니면 충돌이다.
+- **도구**: 활성 확장의 소스에서 `name: "<tool>"` 등록 형태를 찾는다. 로컬 확장은 `<agentDir>/extensions/<이름>` 디렉터리만, 패키지는 가장 가까운 `package.json` 루트를 본다. `node_modules`, 테스트 파일, 중첩 심볼릭 링크는 건너뛰고 파일 400개·2MB로 제한한다. 설명 문장에 도구 이름이 나오는 것만으로는 걸리지 않는다.
+- 소유 판정은 리소스 메타데이터가 `origin: package`이고 npm 패키지 이름이 같은지로 한다. 같은 패키지가 이미 설치돼 있으면 충돌이 아니다.
 
-- **도구**: 항상 떠 있는 메인 런타임의 등록 도구 중 이름이 같고, `sourceInfo.path`가 설치하려는 패키지 경로(`<agentDir>/npm/node_modules/<name>`) 밖이면 충돌이다. Pi 내장 도구와 Picky 커스텀 도구(`ask_user_question` 등)도 충돌로 본다.
-- **스킬**: 메인 런타임 `resourceLoader.getSkills()`에서 이름이 같고 파일 경로가 패키지 밖이면 충돌이다.
-- 메인 런타임이 없으면(모의 런타임 등) 파일 시스템 fallback을 쓴다. 스킬은 `<agentDir>/skills/<name>`, `~/.agents/skills/<name>`, cwd의 `.pi/skills`·`.agents/skills`를 보고, 확장은 `<agentDir>/extensions/<id>`와 `settings.json` `packages`의 알려진 동명 패키지(web-access의 경우 `pi-web-access`)를 본다.
-- 이미 같은 패키지가 설치돼 있으면 충돌이 아니다(업데이트 대상).
+프로토콜:
 
-`@earendil-works/*` 접근은 `runtime/` 안에 두고, 애플리케이션 코드는 `runtime/types.ts`의 인터페이스(`listRegisteredToolOwners()`, `listSkillOwners()`)만 쓴다.
+- 명령 `inspectPackageConflicts { sources: string[] }` → 이벤트 `packageConflicts { commandId, conflicts: [{ source, kind: "tool"|"skill", name, ownerPath }], failed? }`
+- 계약 fixture: `contracts/protocol/inspect-package-conflicts.request.json`, `package-conflicts.event.json`
+- 설치 명령(`installPackage`)도 실행 전에 같은 판정을 돌린다. 충돌이 있거나 **판정 자체가 실패하면** 패키지를 바꾸지 않고 `ok: false, packageChanged: false`로 끝낸다(fail closed).
 
-### 5.2 사용자 흐름
+### 5.2 사용자 흐름 (구현됨)
 
-- 충돌이 있으면 설치 버튼 대신 "같은 기능이 이미 설치되어 있음" 상태를 보여주고, 상세에서 충돌 출처 경로를 보여준다. Picky는 그 파일을 지우지 않는다. 사용자 소유이기 때문이다.
-- 강제 설치 옵션은 두지 않는다. 두 벌 로드는 결과가 예측되지 않으므로 사용자가 한쪽을 치운 뒤 다시 시도하게 한다.
-- 설치된 뒤 새로 충돌이 생긴 경우(사용자가 나중에 로컬 스킬을 추가함)는 카드에 경고만 표시한다. 자동 제거는 하지 않는다.
-- 문구는 `picky-ux-writing` 절차로 ko/en 함께 작성한다.
+- Hub가 열리거나 새로고침될 때, 그리고 대상 플러그인의 설치·제거·업데이트가 끝날 때마다 조회한다. 조회가 실패하면 이전 상태를 유지한다. agentd가 설치를 따로 막으므로 표시가 늦어도 두 벌 설치는 생기지 않는다.
+- 설치 전 충돌: 설치 버튼이 사라지고 `중복` 배지와 함께 "같은 이름의 도구나 스킬이 이미 있어서 설치할 수 없어요" 안내와 다른 복사본 경로를 보여준다. Hub `install()`과 뷰모델도 같은 조건에서 설치 요청을 보내지 않는다.
+- 설치 후 충돌(나중에 로컬 복사본이 생김): 같은 배지와 "한쪽을 지워 주세요" 안내를 보여준다. 이것이 재로드 뒤 "실제로 쓰이는 쪽" 확인을 대신한다. 자동 삭제는 하지 않는다.
+- 강제 설치 옵션은 두지 않는다.
 
 ### 5.3 설치 후 확인
 
-설치 성공 후 reload가 끝나면 agentd가 해당 패키지의 로드 결과를 확인한다.
-
-- 확장: `resourceLoader.getExtensions().errors`에 이 패키지 경로의 로드 오류나 충돌 진단이 있으면 `pluginsReloaded` 결과에 실어 카드에 "로드 실패"로 표시한다.
-- 스킬: `getSkills()`에 이름이 없거나 winner 경로가 패키지 밖이면 같은 방식으로 표시한다.
-
-이 확인이 없으면 설치는 성공했는데 실제로는 다른 출처가 쓰이는 상태를 사용자가 알 수 없다.
+별도 `pluginsReloaded` 확장은 하지 않았다. 5.2의 설치 후 충돌 표시가 같은 위험(다른 출처가 대신 쓰임)을 디스크 기준으로 보여준다. 확장 로드 오류(코드 예외) 표시는 이번 범위에서 제외했다.
 
 ### 5.4 버전 정책
 
 - 카탈로그 소스는 기존과 같이 버전 없는 `npm:<name>`으로 둔다. 업데이트 제안이 동작하고 기존 13개와 규칙이 같다.
 - 문제 배포본은 `heldPackages`로 막는다. 보류 항목은 설치·업데이트가 닫히고 제거만 열린다.
-- **구현 중 증명**: Pi 패키지 매니저의 `checkAvailableUpdates`가 스킬 전용 패키지에도 동작하는지 확인한다.
+- **남은 확인**: Pi 패키지 매니저의 `checkAvailableUpdates`가 스킬 전용 패키지에도 동작하는지 0.1.1 배포 때 확인한다.
 
 ## 6. 단계 2: Picky 카탈로그 추가
 
@@ -237,6 +227,7 @@ struct PickyCuratedPlugin {
 - 메인 에이전트의 상시 규칙은 시스템 프롬프트에 붙으므로(`picky-runtime-contract-extension.ts`) 압축으로 잃지 않는다. `compactSummary`는 HUD에 문자열로 보이므로 형식이 바뀌어도 표시만 달라진다.
 - 압축 후 자동 계속(`continueAfterThresholdCompact`)은 Pi ≥ 0.84.4에서 스스로 침묵한다(`PI_SELF_RESUME_VERSION`). Picky 번들 Pi는 0.87.1이다.
 - **카탈로그 추가 전 필수 증명**: `extension-safety.integration.test.ts`와 같은 방식(HOME·agentDir 격리, 실제 Picky 어댑터, 오프라인 provider)으로 vcc-ko를 로드한다. 이어서 (a) 메인 idle compaction 성공과 `compactionCompleted` 수신, (b) Pickle 임계치 압축 뒤 예상 밖 follow-up 0건, (c) 압축 중 들어온 입력이 버퍼 후 전달되는지를 확인한다.
+  - **결과(2026-09-29)**: `agentd/src/runtime/vcc-ko-compaction.integration.test.ts`가 설치된 0.1.0 패키지로 (a) `compact()` 요약 생성·모델 호출 0회, (b) 임계치 압축(`compactionReason: threshold`) 뒤 추가 모델 호출 0회, 압축 뒤 다음 요청 정상 응답, 설정 파일이 격리 HOME에만 생성됨을 확인했다. (c) 입력 버퍼는 vcc-ko와 무관한 `MainAgentCoordinator` 동작이라 이 테스트에 넣지 않았다. 실행: `PICKY_TEST_VCC_KO_ROOT=<패키지 경로> pnpm --dir agentd exec vitest run src/runtime/vcc-ko-compaction.integration.test.ts`
 
 ### web-access: 네트워크 도구 추가
 
@@ -288,19 +279,19 @@ struct PickyCuratedPlugin {
 ## 10. 작업 체크리스트
 
 **단계 0: npm (pi-extension 모노레포, my-pi)**
-- [ ] `packages/web-access` 이전, LICENSE·README, `publish:web-access`
-- [ ] `check-workspace.mjs`에 스킬 패키지 분기
-- [ ] `packages/skill-*` 5개, excalidraw `prepack` 빌드, a4 `dependencies`, 스킬 문서 경로 수정, 스킬별 `references/setup.md`
+- [x] `packages/web-access` 이전, LICENSE·README, `publish:web-access`
+- [x] `check-workspace.mjs`에 스킬 패키지 분기
+- [x] `packages/skill-*` 5개, excalidraw `prepack` 빌드, a4 `dependencies`, 스킬 문서 경로 수정, 스킬별 `references/setup.md`
 - [ ] `verify:strict` → 패키지별 `pnpm run deploy`
-- [ ] 임시 `PI_CODING_AGENT_DIR`에 설치해 레이아웃 스모크
+- [x] 임시 `PI_CODING_AGENT_DIR`에 설치해 레이아웃 스모크
 - [ ] my-pi 로컬 원본 삭제(별도 커밋)
 
 **단계 1: 안전장치 (Picky)**
-- [ ] runtime 인터페이스 `listRegisteredToolOwners`/`listSkillOwners`, 파일 시스템 fallback
-- [ ] `inspectCuratedConflicts` 프로토콜(TS·Swift) + 테스트
-- [ ] 설치 후 winner 확인을 `pluginsReloaded` 결과에 포함
-- [ ] 뷰모델 `conflict` 상태, 카드·상세 UI, 문구(ko/en)
+- [x] 정적 판정기 `curated-package-conflicts.ts` + 제공 리소스 목록
+- [x] `inspectPackageConflicts`/`packageConflicts` 프로토콜(TS·Swift·fixture) + 테스트
+- [x] 설치 명령 fail-closed 차단
+- [x] 뷰모델·Hub 중복 상태, 카드·상세 UI, 문구(ko/en)
 
 **단계 2: 카탈로그 (Picky)**
-- [ ] web-access, 스킬 5종 추가(배포 완료 후)
-- [ ] vcc-ko 통합 테스트 → 통과 시 추가
+- [x] web-access, 스킬 5종 추가, 상세 화면 "처음 한 번 준비"
+- [x] vcc-ko 통합 테스트(`vcc-ko-compaction.integration.test.ts`) 통과 후 추가

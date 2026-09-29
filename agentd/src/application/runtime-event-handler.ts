@@ -94,6 +94,8 @@ export class RuntimeEventHandler {
   private readonly seenToolCallIds = new Map<string, Set<string>>();
   private readonly failedTerminalEvents = new Map<string, Extract<RuntimeEvent, { type: "status" }>>();
   private readonly processedTerminalRuns = new Set<string>();
+  /** First drop per session/status/event type since the last status event; keeps late delta floods to one line. */
+  private readonly loggedTerminalDrops = new Map<string, Set<string>>();
   private readonly manualTerminalCompactionStatuses = new Map<string, "cancelled" | "failed">();
   private readonly suppressedManualTerminalCompactions = new Set<string>();
 
@@ -112,6 +114,7 @@ export class RuntimeEventHandler {
     this.assertTerminalPersistenceReady(sessionId);
     this.assistantDrafts.set(sessionId, "");
     this.processedTerminalRuns.delete(sessionId);
+    this.loggedTerminalDrops.delete(sessionId);
     this.thinkingDrafts.set(sessionId, "");
     this.thinkingActive.set(sessionId, false);
     this.clearPendingThinkingFlush(sessionId);
@@ -168,16 +171,17 @@ export class RuntimeEventHandler {
     if (event.type === "todo_state") return this.dependencies.updateTodoState(sessionId, event.todoState);
     if (event.type === "subagent_invocation") return this.dependencies.messageBuilder.recordSubagentInvocation?.(sessionId, event.invocation);
     if (event.type === "subagent_run_update") return this.dependencies.updateSubagentRuns?.(sessionId, event.update);
+    if (event.type === "status") this.loggedTerminalDrops.delete(sessionId);
     if (event.type === "assistant_turn_start") {
       const session = this.dependencies.getSession(sessionId);
-      if (session.status !== "completed" && !(session.asyncWorkSummary && this.processedTerminalRuns.has(sessionId))) return;
+      if (session.status !== "completed" && !(session.asyncWorkSummary && this.processedTerminalRuns.has(sessionId))) return this.logTerminalDrop(sessionId, event.type, session.status);
       if (session.status === "completed") await this.dependencies.onAssistantTurnStart?.(sessionId);
       this.resetAssistantDraft(sessionId);
       return this.dependencies.patchSession(sessionId, { status: "running", lastSummary: "Assistant turn started", finalAnswer: undefined, thinkingPreview: undefined });
     }
     if (event.type === "input_message") {
       const session = this.dependencies.getSession(sessionId);
-      if (isTerminalStatus(session.status) && session.status !== "completed" && !hasUnsettledAsyncWork(session)) return;
+      if (isTerminalStatus(session.status) && session.status !== "completed" && !hasUnsettledAsyncWork(session)) return this.logTerminalDrop(sessionId, event.type, session.status);
       await this.drainPendingThinkingFlush(sessionId);
       return this.applyInputMessageEvent(sessionId, event);
     }
@@ -195,7 +199,7 @@ export class RuntimeEventHandler {
     // dialog would leave the command awaiting an answer the HUD never shows. Late UI after an
     // abort or failure still belongs to the dead turn and stays ignored.
     const acceptsIdleExtensionUi = current.status === "completed" && (event.type === "extension_ui" || event.type === "extension_ui_cancelled");
-    if (event.type !== "status" && !acceptsIdleExtensionUi && isTerminalStatus(current.status) && !hasUnsettledAsyncWork(current)) return;
+    if (event.type !== "status" && !acceptsIdleExtensionUi && isTerminalStatus(current.status) && !hasUnsettledAsyncWork(current)) return this.logTerminalDrop(sessionId, event.type, current.status);
     if (event.type === "extension_ui") {
       if (isIgnoredFireAndForgetExtensionUi(event)) return;
       await this.drainPendingThinkingFlush(sessionId);
@@ -291,6 +295,20 @@ export class RuntimeEventHandler {
     );
   }
 
+  /**
+   * Terminal guards drop late turn output on purpose, but a wrong guard is otherwise invisible
+   * (see the /delay-list dialog that never reached the HUD). Record what was dropped so a missing
+   * UI can be traced from agentd.stdout.log.
+   */
+  private logTerminalDrop(sessionId: string, eventType: string, status: string): void {
+    const logged = this.loggedTerminalDrops.get(sessionId) ?? new Set<string>();
+    const key = `${status}:${eventType}`;
+    if (logged.has(key)) return;
+    logged.add(key);
+    this.loggedTerminalDrops.set(sessionId, logged);
+    logAgentd("runtime event dropped after terminal", { sessionId, eventType, status });
+  }
+
   private async applyContextUsageEvent(sessionId: string, usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined): Promise<void> {
     const current = this.dependencies.getSession(sessionId).contextUsage;
     if (sameContextUsage(current, usage)) return;
@@ -363,7 +381,7 @@ export class RuntimeEventHandler {
     if (terminal && shouldIgnoreAsyncCycleTerminal(currentSession, event.cycleId)) return;
     if (isTerminalStatus(currentSession.status) && !hasUnsettledAsyncWork(currentSession) && !terminalCompactionUpdate && !precompletedRuntimeTerminal) {
       if (event.noTurnRan) this.dependencies.consumeNoTurnRanSessionStateRestore?.(sessionId);
-      return;
+      return this.logTerminalDrop(sessionId, `status:${event.status}`, currentSession.status);
     }
     if (event.noTurnRan && event.preserveSessionState) {
       const restore = this.dependencies.consumeNoTurnRanSessionStateRestore?.(sessionId);

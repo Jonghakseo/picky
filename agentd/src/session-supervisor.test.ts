@@ -2901,44 +2901,6 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
   });
 
-  it("shows extension UI from a no-turn command sent to a completed Pickle", async () => {
-    // Async-task Pickles aggregate a no-turn follow-up such as `/delay-list` straight back to
-    // `completed`, so the extension's dialog and notify arrive on a terminal session. Dropping
-    // them left the command awaiting an answer the HUD could never show.
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
-
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed");
-
-    runtime.handle?.emit({ type: "extension_ui", waitsForInput: false, request: { id: "ui-notify", sessionId: pickle.id, method: "notify", prompt: "예약된 delay가 없어요.", notifyType: "info", createdAt: "2026-05-01T00:00:00.000Z" } });
-    runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "ui-select", sessionId: pickle.id, method: "select", title: "예약된 delay를 선택하세요", options: ["delay-1"], createdAt: "2026-05-01T00:00:01.000Z" } });
-    await waitUntil(() => supervisor.get(pickle.id)?.pendingExtensionUiRequest?.id === "ui-select");
-
-    const updated = supervisor.get(pickle.id)!;
-    expect(updated.status).toBe("waiting_for_input");
-    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "예약된 delay가 없어요.")).toBe(true);
-    expect((updated.messages ?? []).some((message) => message.kind === "agent_question" && message.question?.id === "ui-select")).toBe(true);
-  });
-
-  it("applies the context usage snapshot Pi emits right after a Pickle completes", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
-
-    runtime.handle?.emit({ type: "context_usage", usage: { tokens: 1000, contextWindow: 200000, percent: 0.5 } });
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    runtime.handle?.emit({ type: "context_usage", usage: { tokens: 1500, contextWindow: 200000, percent: 0.75 } });
-
-    await waitUntil(() => supervisor.get(pickle.id)?.contextUsage?.tokens === 1500);
-    expect(supervisor.get(pickle.id)?.status).toBe("completed");
-  });
-
   it("restores the previous terminal state when /name is sent as a follow-up", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

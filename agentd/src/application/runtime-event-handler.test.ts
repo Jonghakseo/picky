@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { PickyAgentSession } from "../protocol.js";
 import { RuntimeEventHandler } from "./runtime-event-handler.js";
 
+const { logAgentd } = vi.hoisted(() => ({ logAgentd: vi.fn() }));
+vi.mock("../local-log.js", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), logAgentd }));
+
 function session(): PickyAgentSession {
   return {
     id: "pickle-1",
@@ -18,6 +21,22 @@ function session(): PickyAgentSession {
 }
 
 describe("RuntimeEventHandler", () => {
+  it("logs each runtime event type dropped after a terminal status once until the next status", async () => {
+    const harness = inputHarness({ status: "cancelled" });
+    const dropped = () => logAgentd.mock.calls
+      .filter(([event]) => event === "runtime event dropped after terminal")
+      .map(([, fields]) => (fields as { eventType: string }).eventType);
+    logAgentd.mockClear();
+
+    for (const delta of ["late ", "assistant ", "text"]) await harness.handler.handle("pickle-1", { type: "assistant_delta", delta });
+    await harness.handler.handle("pickle-1", { type: "tool", toolCallId: "late-tool", name: "bash", status: "running" });
+    expect(dropped()).toEqual(["assistant_delta", "tool"]);
+
+    await harness.handler.handle("pickle-1", { type: "status", status: "completed", summary: "late completion" });
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "after status" });
+    expect(dropped()).toEqual(["assistant_delta", "tool", "status:completed", "assistant_delta"]);
+  });
+
   it("commits the first runtime completion after terminal tail pre-completed the session", async () => {
     let current = session();
     let assistantDraft = "";

@@ -6,7 +6,7 @@ import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEventBus } from "@earendil-works/pi-coding-agent";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ASYNC_TASK_CONTRACT, AsyncTaskHostMessageSchema, type AsyncTask, type AsyncTaskCommand, type AsyncTaskHostMessage } from "./domain/async-task-contract.js";
 import { AsyncTaskHostBridge } from "./runtime/async-task-host-bridge.js";
 import { MockRuntime, MockRuntimeSession } from "./runtime/mock-runtime.js";
@@ -651,33 +651,137 @@ async function settledAsyncPickle() {
   return { ...f, session: () => f.supervisor.get("session-1")! };
 }
 
-it("keeps a settled async Pickle running while user bash executes and applies its context usage", async () => {
-  const f = await settledAsyncPickle();
-  let statusDuringBash: string | undefined;
-  Object.assign(f.handle, { executeUserBash: async () => {
-    statusDuringBash = f.session().status;
-    f.handle.emit({ type: "context_usage", usage: { tokens: 4242, contextWindow: 200000, percent: 2.1 } });
-    return { output: "ok\n", exitCode: 0, cancelled: false, truncated: false };
+async function plainCompletedPickle() {
+  const root = await mkdtemp(join(tmpdir(), "picky-plain-")); roots.push(root);
+  const handle = new MockRuntimeSession("session-1");
+  const runtime: AgentRuntime = { create: new MockRuntime().create, prewarm: async () => handle };
+  const supervisor = new SessionSupervisor(runtime, new SessionStore(root), { sessionIdFactory: () => "session-1" });
+  await supervisor.load();
+  await supervisor.createEmptyPickleSession({ id: "context-1", source: "text", capturedAt: new Date().toISOString(), cwd: root, screenshots: [], inkMarks: [], warnings: [] });
+  handle.emit({ type: "status", status: "completed", summary: "Finished" });
+  await vi.waitFor(() => expect(supervisor.get("session-1")?.status).toBe("completed"));
+  return { supervisor, handle, session: () => supervisor.get("session-1")! };
+}
+
+type CompletedPickle = Awaited<ReturnType<typeof plainCompletedPickle>>;
+const completedPickleKinds: [string, () => Promise<CompletedPickle>][] = [
+  ["plain Pickle", plainCompletedPickle],
+  ["settled async Pickle", settledAsyncPickle],
+];
+const receivedAt = "2026-05-01T00:00:00.000Z";
+
+/** Mirrors PiSdkRuntimeSession: an inline extension command emits its effects, then a no-turn completion. */
+function runsWithoutTurn(f: CompletedPickle, effects: (handle: MockRuntimeSession) => void): void {
+  Object.assign(f.handle, { followUp: async () => {
+    effects(f.handle);
+    f.handle.emit({ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true });
   } });
+}
 
-  await f.supervisor.followUp("session-1", "!echo ok");
+// Work that reaches a completed Pickle without starting a Pi turn. Each row asserts what the user
+// sees, for a plain Pickle and for an async-task Pickle whose status folds back to its settled
+// episode. Add a row whenever a new no-turn command, extension UI surface, or runtime snapshot
+// event is introduced; a terminal guard that treats it as late turn output fails here.
+const noTurnWorkContract: { name: string; run(f: CompletedPickle): Promise<void>; expectVisible(f: CompletedPickle): Promise<void> }[] = [
+  {
+    name: "/name renames the Pickle",
+    async run(f) {
+      runsWithoutTurn(f, (handle) => handle.emit({ type: "session_info", name: "새 이름" }));
+      await f.supervisor.followUp("session-1", "/name 새 이름");
+    },
+    async expectVisible(f) {
+      await vi.waitFor(() => expect(f.session().title).toBe("새 이름"));
+      await vi.waitFor(() => expect(f.session().status).toBe("completed"));
+    },
+  },
+  {
+    name: "an extension command notify becomes a visible message",
+    async run(f) {
+      runsWithoutTurn(f, (handle) => handle.emit({ type: "extension_ui", waitsForInput: false, request: { id: "ui-notify", sessionId: "session-1", method: "notify", prompt: "✓ delay-1 예약됨", notifyType: "info", createdAt: receivedAt } }));
+      await f.supervisor.followUp("session-1", "/delay 1h 확인");
+    },
+    async expectVisible(f) {
+      await vi.waitFor(() => expect(f.session().messages?.some((message) => message.kind === "system" && message.text === "✓ delay-1 예약됨")).toBe(true));
+      await vi.waitFor(() => expect(f.session().status).toBe("completed"));
+    },
+  },
+  {
+    name: "an extension command dialog waits for the user",
+    async run(f) {
+      // Pi keeps the command handler pending until the dialog is answered.
+      Object.assign(f.handle, { followUp: () => new Promise<void>(() => {
+        f.handle.emit({ type: "extension_ui", waitsForInput: true, request: { id: "ui-select", sessionId: "session-1", method: "select", title: "예약된 delay를 선택하세요", options: ["delay-1"], createdAt: receivedAt } });
+      }) });
+      await f.supervisor.followUp("session-1", "/delay-list");
+    },
+    async expectVisible(f) {
+      await vi.waitFor(() => expect(f.session().pendingExtensionUiRequest?.id).toBe("ui-select"));
+      expect(f.session().status).toBe("waiting_for_input");
+      expect(f.session().messages?.some((message) => message.kind === "agent_question" && message.question?.id === "ui-select")).toBe(true);
+    },
+  },
+  {
+    name: "a long extension command stays running until it finishes",
+    async run(f) {
+      let finish!: () => void;
+      Object.assign(f.handle, { followUp: () => new Promise<void>((resolve) => { finish = () => {
+        f.handle.emit({ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true });
+        resolve();
+      }; }) });
+      await f.supervisor.followUp("session-1", "/long-extension-command");
+      await vi.waitFor(() => expect(finish).toBeDefined());
+      expect(f.session().status).toBe("running");
+      finish();
+    },
+    async expectVisible(f) {
+      await vi.waitFor(() => expect(f.session().status).toBe("completed"));
+    },
+  },
+  {
+    name: "user bash stays running while it executes and applies its context usage",
+    async run(f) {
+      let statusDuringBash: string | undefined;
+      Object.assign(f.handle, { executeUserBash: async () => {
+        statusDuringBash = f.session().status;
+        f.handle.emit({ type: "context_usage", usage: { tokens: 4242, contextWindow: 200000, percent: 2.1 } });
+        return { output: "ok\n", exitCode: 0, cancelled: false, truncated: false };
+      } });
+      await f.supervisor.followUp("session-1", "!echo ok");
+      expect(statusDuringBash).toBe("running");
+    },
+    async expectVisible(f) {
+      await vi.waitFor(() => expect(f.session().status).toBe("completed"));
+      expect(f.session().contextUsage).toEqual({ tokens: 4242, contextWindow: 200000, percent: 2.1 });
+    },
+  },
+  {
+    name: "a follow-up delivery failure is reported",
+    async run(f) {
+      Object.assign(f.handle, { followUp: async () => { throw new Error("No API key for provider"); } });
+      await f.supervisor.followUp("session-1", "continue");
+    },
+    async expectVisible(f) {
+      await vi.waitFor(() => expect(f.session().lastSummary).toBe("Follow-up failed: No API key for provider"));
+    },
+  },
+  {
+    name: "a context usage snapshot after completion updates the header",
+    async run(f) {
+      f.handle.emit({ type: "context_usage", usage: { tokens: 1500, contextWindow: 200000, percent: 0.75 } });
+    },
+    async expectVisible(f) {
+      await vi.waitFor(() => expect(f.session().contextUsage?.tokens).toBe(1500));
+      expect(f.session().status).toBe("completed");
+    },
+  },
+];
 
-  expect(statusDuringBash).toBe("running");
-  await vi.waitFor(() => expect(f.session().status).toBe("completed"));
-  expect(f.session().contextUsage).toEqual({ tokens: 4242, contextWindow: 200000, percent: 2.1 });
-});
-
-it("keeps a settled async Pickle running until a no-turn slash command finishes", async () => {
-  const f = await settledAsyncPickle();
-  let finishCommand!: () => void;
-  Object.assign(f.handle, { followUp: () => new Promise<void>((resolve) => { finishCommand = resolve; }) });
-
-  await f.supervisor.followUp("session-1", "/long-extension-command");
-  await vi.waitFor(() => expect(finishCommand).toBeDefined());
-  expect(f.session().status).toBe("running");
-
-  finishCommand();
-  await vi.waitFor(() => expect(f.session().status).toBe("completed"));
+describe.each(completedPickleKinds)("no-turn work on a completed %s", (_kind, completedPickle) => {
+  it.each(noTurnWorkContract)("$name", async (scenario) => {
+    const f = await completedPickle();
+    await scenario.run(f);
+    await scenario.expectVisible(f);
+  });
 });
 
 it("surfaces a follow-up delivery failure on a settled async Pickle", async () => {

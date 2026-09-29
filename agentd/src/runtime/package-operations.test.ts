@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,6 +37,24 @@ function subject(input: {
   operations.start();
   return { operations, events, manager, reconcile };
 }
+
+describe("default npm command", () => {
+  it("wraps npm in a timeout runner module that exists next to the compiled package operations", () => {
+    let captured: { settingsManager: { getNpmCommand(): string[] | undefined } } | undefined;
+    createDefaultPackageManager({ cwd: "/tmp", agentDir: "/tmp/unused-runner-agent" }, {
+      createSettingsManager: () => SettingsManager.inMemory({}),
+      createPackageManager: (options) => {
+        captured = options as unknown as typeof captured;
+        return packageManager();
+      },
+    });
+    const command = captured?.settingsManager.getNpmCommand() ?? [];
+    const runner = command[1] ?? "";
+    expect(command[2]).toBe("--timeout-ms");
+    // Source runs as .ts under vitest; the packaged app runs the compiled .js sibling.
+    expect(existsSync(runner) || existsSync(runner.replace(/\.js$/, ".ts"))).toBe(true);
+  });
+});
 
 describe("PackageOperations Cron lifecycle sequencing", () => {
   it("rejects held curated installs and updates before mutation and reports unchanged files", async () => {

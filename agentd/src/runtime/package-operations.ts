@@ -43,7 +43,7 @@ export interface DefaultPackageManagerDependencies {
 
 const DEFAULT_NPM_COMMAND_TIMEOUT_MS = 90_000;
 const DEFAULT_PACKAGE_OPERATION_TIMEOUT_MS = 110_000;
-const DEFAULT_NPM_COMMAND_RUNNER_PATH = fileURLToPath(new URL("./npm-command-runner.js", import.meta.url));
+const DEFAULT_NPM_COMMAND_RUNNER_PATH = fileURLToPath(new URL("../application/npm-command-runner.js", import.meta.url));
 
 /** Creates the Pi package manager with a runtime-only bundled npm fallback. */
 export function createDefaultPackageManager(

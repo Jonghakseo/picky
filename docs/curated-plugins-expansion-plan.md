@@ -116,27 +116,39 @@ flowchart LR
 ```json
 {
   "name": "@ryan_nookpi/pi-skill-excalidraw",
-  "keywords": ["pi-package"],
-  "pi": { "skills": ["./skills"] },
-  "files": ["skills/"]
+  "keywords": ["pi-package", "pi-skill"],
+  "pi": { "skills": ["./skills/excalidraw"] },
+  "files": ["skills/excalidraw/SKILL.md", "skills/excalidraw/scripts/", "…"]
 }
 ```
 
 구조는 `skills/<name>/SKILL.md`와 기존 `scripts/`, `references/`, `assets/`를 그대로 둔다. 스킬은 `SKILL.md` 절대 경로 기준으로 스크립트를 찾으므로 설치 위치가 바뀌어도 된다.
 
-모노레포 규칙 수정: `check-workspace.mjs`는 `pi.extensions[0] === "./index.ts"`를 강제한다. `pi.skills`만 있는 패키지는 이 검사 대신 "`pi.skills` 경로마다 `SKILL.md`가 있고 frontmatter `name`이 디렉터리명과 같은지"를 검사하도록 분기한다.
+모노레포 규칙 수정: `check-workspace.mjs`는 `pi.extensions[0] === "./index.ts"`를 강제한다. `pi.skills`만 있는 패키지는 이 검사 대신 "`pi.skills` 경로마다 `SKILL.md`가 있고 frontmatter `name`이 디렉터리명과 같은지"를 검사하도록 분기한다. 같은 검사에서 `skills/<name>/references/setup.md`가 없으면 실패시킨다.
+
+**최초 설정 안내(필수)**: 외부 도구가 필요한 스킬은 `references/setup.md`에 확인 명령과 1회 설치 방법을 적는다. `SKILL.md`는 전제 확인이 실패하면 이 문서를 근거로 사용자에게 설치 명령을 안내하도록 링크한다. 에이전트가 설치 방법을 추측하지 않게 하려는 장치다. Picky 카드 설명도 같은 문서를 기준으로 쓴다(6장).
+
+| 스킬 | 확인 명령 | 1회 설치 |
+|---|---|---|
+| skill-creator | `python3 --version` | `xcode-select --install` 또는 `brew install python` |
+| excalidraw | `open -Ra "Google Chrome"` | `brew install --cask google-chrome` |
+| tmux-terminal | helper `doctor` | `brew install tmux` |
+| chrome-cdp | `command -v chrome-devtools`, `chrome://version` | `npm install -g chrome-devtools-mcp@latest`, Chrome 144+, `chrome://inspect/#remote-debugging` 토글 |
+| a4 | `python3 -c "import docx"` | `python3 -m pip install --user python-docx` (Homebrew Python은 `--break-system-packages` 추가) |
 
 스킬별 이전 작업:
 
 | 스킬 | 작업 |
 |---|---|
 | skill-creator | 하드코딩 `python3 ~/.pi/agent/skills/skill-creator/scripts/validate_skill.py`를 스킬 디렉터리 기준 경로로 바꾼다. 스킬 위치 안내는 유지 |
-| excalidraw | `app/dist`는 git에서 무시되므로 `prepack`에서 `vite build`를 실행하고 `files`에 `skills/excalidraw/app/dist/`만 넣는다. `app/src`, `node_modules`, lockfile은 제외. 배포 크기 약 21MB |
+| excalidraw | `app/dist`는 git에서 무시되므로 `prepack`에서 `vite build`를 실행해 `files`에 넣는다. `excal build`로 재빌드할 수 있게 `app/src`·`package.json`·lockfile도 넣고 `node_modules`는 뺀다. tarball 약 16MB. 첫 실행 자동 빌드 안내는 "빌드된 앱 포함"으로 바꾼다 |
 | tmux-terminal | 변경 없음. 테스트(`tmux-terminal.test.mjs`)는 `files`에서 제외 |
 | chrome-cdp | `browser 에이전트(playwright-cli)` 언급 삭제(설치 대상 환경에 없을 수 있음). `chrome-devtools` CLI 설치 안내는 mise 전용에서 `npm i -g chrome-devtools-mcp`도 허용하도록 넓힌다. 동의 게이트 문단은 그대로 |
 | a4 | `markdown-it`을 패키지 `dependencies`로 옮긴다. `__pycache__`, `test-a4-regressions.py` 제외. python-docx 안내 유지 |
 
-**구현 중 증명**: a4의 `md-to-a4-html.mjs`가 Pi 설치 레이아웃(`<agentDir>/npm/node_modules/@ryan_nookpi/pi-skill-a4/…`)에서 `markdown-it`을 해석하는지 실제 설치로 확인한다.
+**증명 완료(2026-09-29)**: 임시 agentDir에 tarball 6개를 npm 설치한 뒤 Pi `DefaultResourceLoader`가 확장 1개(도구 3개, `/search`)와 스킬 5개를 진단 0건으로 로드했다. 설치 위치에서 a4 HTML·DOCX 변환과 검사, skill-creator 검증, tmux `doctor`, excalidraw `lint`와 번들 앱 HTTP 200(빌드 없이)을 확인했다. 아래 항목도 여기서 확인됐다.
+
+a4의 `md-to-a4-html.mjs`가 Pi 설치 레이아웃(`<agentDir>/npm/node_modules/@ryan_nookpi/pi-skill-a4/…`)에서 `markdown-it`을 해석하는지 실제 설치로 확인한다.
 
 ### 4.3 작성자 PC 전환(my-pi)
 
@@ -201,19 +213,20 @@ struct PickyCuratedPlugin {
 
 ## 6. 단계 2: Picky 카탈로그 추가
 
-| ID | category | commandName 표시 | 카드 설명에 적을 전제 |
+| ID | category | commandName 표시 | 카드 설명에 적을 전제(1회 설치 포함) |
 |---|---|---|---|
 | web-access | research | `web_search` | 없음. 키 없이 Exa MCP로 동작하며 `EXA_API_KEY`가 있으면 사용 |
 | vcc-ko | taskManagement | `vcc_recall` | 기본 압축을 대체한다는 사실 |
-| skill-creator | development | `/skill:skill-creator` | python3 |
-| excalidraw | content | `/skill:excalidraw` | Google Chrome |
-| tmux-terminal | development | `/skill:tmux-terminal` | tmux |
-| chrome-cdp | development | `/skill:chrome-cdp` | Chrome 144+, 원격 디버깅 허용, `chrome-devtools` CLI |
-| a4 | content | `/skill:a4` | python3, python-docx |
+| skill-creator | development | `/skill:skill-creator` | python3 (검증 스크립트만). `xcode-select --install` |
+| excalidraw | content | `/skill:excalidraw` | Google Chrome. `brew install --cask google-chrome` |
+| tmux-terminal | development | `/skill:tmux-terminal` | tmux. `brew install tmux` |
+| chrome-cdp | development | `/skill:chrome-cdp` | Chrome 144+, 원격 디버깅 허용, `npm install -g chrome-devtools-mcp@latest` |
+| a4 | content | `/skill:a4` | python3, python-docx. `python3 -m pip install --user python-docx` |
 
 - `PickyCuratedPlugin`에 7개 static과 `providedTools`/`providedSkills`를 추가하고 `curatedDefaults`에 넣는다.
 - `PickyHubPluginCatalog` 메타데이터와 useCase 문구를 추가한다. provider는 `@ryan_nookpi`.
-- 외부 전제는 1차에서 설명 문구로만 알린다. 동적 준비 상태 검사는 하지 않는다. 각 스킬이 실행 시 스스로 확인하고 안내한다(tmux-terminal `doctor`, a4의 import 오류 안내).
+- 외부 전제는 1차에서 설명 문구로만 알린다. 카드 설명에는 필요한 것과 대표 1회 설치 명령을 적고, 상세 화면에는 해당 스킬 `references/setup.md`의 확인·설치 절차(예외 경우 포함)를 요약한다. 문구 원본은 setup.md이며 둘이 어긋나면 setup.md를 기준으로 고친다.
+- 동적 준비 상태 검사는 하지 않는다. 각 스킬이 실행 시 스스로 확인하고 setup.md로 안내한다(tmux-terminal `doctor`, a4의 import 확인, chrome-cdp CLI 확인).
 - 카탈로그 추가는 **npm 배포가 끝난 패키지만** 한다. 배포 전 패키지를 넣으면 설치 버튼이 실패한다.
 
 ## 7. 플러그인별 위험과 대응
@@ -277,7 +290,7 @@ struct PickyCuratedPlugin {
 **단계 0: npm (pi-extension 모노레포, my-pi)**
 - [ ] `packages/web-access` 이전, LICENSE·README, `publish:web-access`
 - [ ] `check-workspace.mjs`에 스킬 패키지 분기
-- [ ] `packages/skill-*` 5개, excalidraw `prepack` 빌드, a4 `dependencies`, 스킬 문서 경로 수정
+- [ ] `packages/skill-*` 5개, excalidraw `prepack` 빌드, a4 `dependencies`, 스킬 문서 경로 수정, 스킬별 `references/setup.md`
 - [ ] `verify:strict` → 패키지별 `pnpm run deploy`
 - [ ] 임시 `PI_CODING_AGENT_DIR`에 설치해 레이아웃 스모크
 - [ ] my-pi 로컬 원본 삭제(별도 커밋)

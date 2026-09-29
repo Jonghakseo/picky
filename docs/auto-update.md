@@ -16,7 +16,8 @@ single appcast that splits stable and beta into channels.
 | stable on appcast | Items with `<sparkle:channel>stable</sparkle:channel>` only                        |
 | beta on appcast   | Items with `<sparkle:channel>beta</sparkle:channel>` only                          |
 | Auto check        | ON, every 4 hours (`SUEnableAutomaticChecks`, `SUScheduledCheckInterval=14400`)    |
-| UX                | Sparkle's standard user driver (prompt on update available)                        |
+| Auto download     | ON by default (`SUAutomaticallyUpdate`); Hub setting "Download updates automatically" |
+| UX                | Hub dashboard update card with one-click install and relaunch; Sparkle's standard window for manual checks and fallback |
 | alpha builds      | `SPUUpdater` is **not** started — trusted sideload testers update manually via the next internal alpha zip/package |
 | Settings entry    | `CompanionPanelStatusView` adds an **Updates** section with a read-only channel    |
 | Menu entry        | `Check for Updates…` in the app menu commands                                      |
@@ -46,6 +47,30 @@ stable updates and beta apps on beta updates.
 
 `alpha` is **not** a Sparkle channel. Builds with `releaseChannel == "alpha"`
 in `PickyBuildInfo.json` skip starting the updater entirely.
+
+## Dashboard update card
+
+`PickyUpdaterController` feeds Sparkle callbacks into
+`PickyDashboardUpdateState`, and `PickyHubDashboardUpdateCard` renders it
+under the dashboard greeting. UX draft: `docs/prototypes/picky-update-card/`.
+
+| Sparkle callback | Card | Primary action |
+| ---------------- | ---- | -------------- |
+| `updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)` (returns YES) | Ready | `immediateInstallationBlock()` installs and relaunches |
+| `standardUserDriverWillHandleShowingUpdate(false, …)` (auto download off) | Available | `checkForUpdates()` opens Sparkle's window |
+| `updater(_:failedToDownloadUpdate:error:)` | Failed | Retry through Sparkle's window |
+
+- Gentle reminders: scheduled finds show Sparkle's alert only when Sparkle
+  proposes immediate focus; otherwise the card is the reminder.
+- Returning YES from `willInstallUpdateOnQuit` stalls further update cycles,
+  and Sparkle still installs on quit, so ignoring the card is safe.
+- Before relaunching, the card asks for confirmation when any Pickle is
+  `running` or `queued`. On restart agentd reloads saved conversations and
+  reattaches or blocks interrupted Pickles.
+- "Later" stores the version in `PickyDashboardDismissedUpdateVersion`; a
+  newer version shows the card again.
+- `SUAutomaticallyUpdate` is only the initial value. Users who already
+  answered Sparkle's automatic-install prompt keep their saved choice.
 
 ## One-time setup
 

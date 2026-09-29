@@ -54,7 +54,7 @@
     <li><code>PickyUpdaterController</code>에 <code>@Published var dashboardUpdate: DashboardUpdateState</code>를 추가한다. 델리게이트 콜백은 nonisolated이므로 기존 <code>updaterWillRelaunchApplication</code>처럼 MainActor로 넘긴다. <code>immediateInstallationBlock</code>은 상태 안에 보관한다.</li>
     <li>Sparkle 팝업 중복을 막기 위해 <code>SPUStandardUserDriverDelegate</code>를 달고 <code>supportsGentleScheduledUpdateReminders = true</code>, 예약 확인에서 찾은 업데이트는 <code>standardUserDriverShouldHandleShowingScheduledUpdate</code>에서 <code>false</code>를 돌려 카드로만 알린다. 메뉴·설정의 “업데이트 확인”처럼 사용자가 직접 누른 경우는 지금처럼 Sparkle 창을 쓴다.</li>
     <li>재시작 직전에는 기존 <code>willRelaunchApplication</code> 훅이 agentd를 멈춘다. 이 흐름은 그대로 탄다.</li>
-    <li>진행 중 Pickle 판단은 세션 상태가 running / tool 실행 / 입력 대기인 것만 센다. 확인 창은 기존 <code>PickyHubModalHost</code>로 띄운다.</li>
+    <li>진행 중 Pickle 판단은 세션 상태가 <code>running</code> / <code>queued</code>인 것만 센다. 입력 대기 Pickle은 응답이 진행 중이 아니므로 제외했다. 확인 창은 기존 <code>PickyHubModalHost</code>로 띄운다.</li>
     <li>“나중에”는 버전 문자열을 <code>PickySettings</code>에 저장해 같은 버전 카드만 숨긴다. 더 새 버전이 나오면 다시 뜬다.</li>
     <li>“새 기능 보기”는 appcast 항목의 <code>releaseNotesURL</code>/<code>fullReleaseNotesURL</code>이 있을 때만 보인다.</li>
     <li>Hub를 열 때 마지막 확인이 1시간 넘게 지났으면 <code>checkForUpdatesInBackground()</code>를 한 번 호출해 카드가 늦게 뜨는 일을 줄인다(선택).</li>

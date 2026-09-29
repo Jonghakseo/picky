@@ -711,6 +711,14 @@ private struct PickyHubGeneralControls: View {
                 ))
                 .labelsHidden().toggleStyle(.switch).tint(PickyHubTheme.Colors.action)
             }
+            PickyHubSettingsRow(title: "hub.settings.autoDownloadUpdates", detail: "hub.settings.autoDownloadUpdates.detail") {
+                Toggle("hub.settings.autoDownloadUpdates", isOn: Binding(
+                    get: { updaterController.automaticallyDownloadsUpdates },
+                    set: { updaterController.setAutomaticallyDownloadsUpdates($0) }
+                ))
+                .labelsHidden().toggleStyle(.switch).tint(PickyHubTheme.Colors.action)
+                .disabled(!updaterController.isAvailable || !updaterController.allowsAutomaticUpdates)
+            }
             PickyHubSettingsRow(title: "hub.settings.checkUpdates", detail: "hub.settings.checkUpdates.detail") {
                 PickyHubButton(title: "hub.settings.checkUpdates.action", role: .secondary, isEnabled: updaterController.isAvailable && updaterController.canCheckForUpdates, action: updaterController.checkForUpdates)
             }

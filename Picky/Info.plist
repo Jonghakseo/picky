@@ -16,6 +16,8 @@
 	<string>https://github.com/Jonghakseo/picky/releases/download/auto-update/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>2uvHqgzUGmmkNqQ+BWcySWRHCL4GeHQB7HgZKlvgBgE=</string>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUScheduledCheckInterval</key>

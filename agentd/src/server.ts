@@ -351,7 +351,10 @@ export class AgentdServer {
   // eslint-disable-next-line max-lines-per-function -- The exhaustive typed command registry stays centralized so protocol commands cannot be registered without dispatch behavior.
   private async dispatchCommand(ws: WebSocket, command: ParsedCommand): Promise<void> {
     const handlers: CommandHandlerMap = {
-      getAsyncControlContext: (cmd) => this.send(ws, { type: "asyncControlContext", requestId: cmd.id, ...this.options.supervisor.asyncControls.context(cmd.sessionId) }),
+      getAsyncControlContext: async (cmd) => {
+        await this.options.supervisor.asyncControls.attachDetachedOwner(cmd.sessionId);
+        this.send(ws, { type: "asyncControlContext", requestId: cmd.id, ...this.options.supervisor.asyncControls.context(cmd.sessionId) });
+      },
       asyncTaskCommand: async (cmd) => this.send(ws, { type: "asyncTaskCommandResult", result: await this.options.supervisor.executeAsyncTaskCommand(cmd.command) }),
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),

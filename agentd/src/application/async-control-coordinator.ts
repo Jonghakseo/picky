@@ -22,6 +22,7 @@ interface Dependencies {
   drain(id: string): Promise<void>;
   archived(id: string, archived: boolean): void;
   resumeReleased(id: string): Promise<RuntimeSessionHandle | undefined>;
+  resumeDetached(id: string): Promise<RuntimeSessionHandle | undefined>;
   pendingRuntimeHandle(id: string, action: string): Promise<RuntimeSessionHandle | undefined>;
 }
 function hasUnsettledAttachedAsyncWork(handle: RuntimeSessionHandle, session: PickyAgentSession): boolean {
@@ -52,9 +53,31 @@ export class AsyncControlCoordinator {
       tracking: coverage?.tracking ?? "unsupported" as const, expectedProviders: coverage?.expectedProviders ?? [], readyProviders: coverage?.readyProviders ?? [] };
   }
 
-  async input<T>(sessionId: string, effect: () => Promise<T>): Promise<T> {
+  /**
+   * A tracked Pickle can lose its owner while visible and idle (e.g. terminal sync
+   * invalidated a stale branch). User actions reattach a fresh owner from the Pi
+   * session file, mirroring startup resume, instead of failing closed forever.
+   * Archived and released owners keep their explicit restore path.
+   */
+  async attachDetachedOwner(sessionId: string, coverageWaitMs = 5_000): Promise<void> {
     const session = this.deps.read(sessionId);
-    if (!isAsyncTracked(session)) return effect();
+    if (!isAsyncTracked(session) || session.archived === true || session.asyncControl?.releasePrepared) return;
+    if (this.deps.handle(sessionId) || this.deps.runtimeBlocked(sessionId)) return;
+    const handle = await this.deps.resumeDetached(sessionId).catch(() => undefined);
+    const control = handle?.asyncTasks;
+    if (!control) return;
+    // Provider readiness arrives shortly after resume; callers need a settled coverage answer.
+    const deadline = Date.now() + coverageWaitMs;
+    while (control.coverage().tracking === "reconciling" && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await this.deps.drain(sessionId);
+  }
+
+  async input<T>(sessionId: string, effect: () => Promise<T>): Promise<T> {
+    if (!isAsyncTracked(this.deps.read(sessionId))) return effect();
+    await this.attachDetachedOwner(sessionId);
+    const session = this.deps.read(sessionId);
     if (this.deps.runtimeBlocked(sessionId)) throw new Error("Runtime teardown outcome unknown; input remains fenced");
     if (session.archived) throw new Error("Cannot send input to an archived session");
     const control = session.asyncControl;
@@ -141,6 +164,7 @@ export class AsyncControlCoordinator {
       this.deps.archived(sessionId, archived); return this.deps.read(sessionId);
     }
     if (!archived) return this.unarchive(sessionId, requestId);
+    await this.attachDetachedOwner(sessionId);
     const prior = session.asyncControlJournal?.find((entry) => entry.result.requestId === `${requestId}:execute`);
     if (prior) { const result = await this.execute(JSON.parse(prior.fingerprint) as AsyncTaskCommand); if (result.outcome !== "settled") throw new Error(result.reason ?? result.outcome); return this.deps.read(sessionId); }
     if (!mode && this.requiresArchiveChoice(sessionId)) throw new ControlFailure("rejected", "Archive choice required: set archiveMode to continue or stopThenArchive");

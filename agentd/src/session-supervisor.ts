@@ -70,7 +70,7 @@ export class SessionSupervisor extends EventEmitter {
   readonly asyncControls = new AsyncControlCoordinator({
     read: (id) => this.mustGet(id), patch: (id, patch) => this.patch(id, patch), handle: (id) => this.runtimeHandles.get(id), runtimeBlocked: (id) => this.runtimeDisposalGate.isBlocked(id), pendingInput: (id) => (this.pendingQueueDeliveries.get(id)?.length ?? 0) > 0, commit: (id, build) => this.commitSession(id, build),
     abortModel: async (id, handle) => { await this.clearQueue(id, "all"); if (handle.isStreaming || handle.isCompacting || handle.hasPendingAsyncWork) await handle.abort(); await this.waitForRuntimeEvents(id); },
-    drain: (id) => this.waitForRuntimeEvents(id), archived: (id, archived) => this.emit("sessionArchivedAuthoritative", id, archived), resumeReleased: (id) => this.tryResumeRuntimeHandle(this.mustGet(id)), pendingRuntimeHandle: (id, action) => this.pendingRuntimeHandle(id, action),
+    drain: (id) => this.waitForRuntimeEvents(id), archived: (id, archived) => this.emit("sessionArchivedAuthoritative", id, archived), resumeReleased: (id) => this.tryResumeRuntimeHandle(this.mustGet(id)), resumeDetached: (id) => this.tryResumeRuntimeHandle(this.mustGet(id)), pendingRuntimeHandle: (id, action) => this.pendingRuntimeHandle(id, action),
   });
   executeAsyncTaskCommand(command: AsyncTaskCommand) { return this.asyncControls.execute(command); }
   private sessions = new Map<string, PickyAgentSession>();

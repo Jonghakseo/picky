@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter, once } from "node:events";
@@ -414,7 +414,7 @@ it("keeps an unfinished archived owner fenced after a fresh daemon generation", 
   expect(restarted.get("session-sdk")?.asyncTasks?.[0]?.presence).toBe("unknown");
   expect(restarted.get("session-sdk")?.asyncWorkSummary).toMatchObject({ tracking: "reconciling", canReleaseRuntime: false });
   await restarted.setSessionArchived("session-sdk", false);
-  await expect(restarted.followUp("session-sdk", "Must not execute unknown work")).rejects.toThrow(/Async owner unavailable|reconciliation|coverage|cleanup/);
+  await expect(restarted.followUp("session-sdk", "Must not execute unknown work")).rejects.toThrow(/Async owner unavailable|Async work still has execution|reconciliation|coverage|cleanup/);
   expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.[0]?.presence).toBe("unknown");
   expect(f.requests).toHaveLength(0);
 }, 20_000);
@@ -1066,3 +1066,35 @@ it("records one explicit stop cancellation and no second bubble when follow-up r
   expect(f.projections.slice(v2Start).every(s => (s.messages?.filter(m => m.kind === "system" && m.text === "Cancelled by user").length ?? 0) === 1)).toBe(true);
   console.log("BUSY_STOP_REOPEN_PERSISTED_V2", JSON.stringify({ saved: f.saved.slice(start).map(s => [s.status, s.messages?.filter(m => m.text === "Cancelled by user").length]), v2: f.projections.slice(v2Start).map(s => [s.status, s.messages?.filter(m => m.text === "Cancelled by user").length]) }));
 }, 15_000);
+
+it("reattaches a tracked Pickle whose idle owner was detached by terminal sync so archive and follow-up proceed", async () => {
+  const f = await fixture({ readyOnDiscovery: true });
+  await f.supervisor.followUp("session-sdk", "Finish before terminal use");
+  await f.session.waitForIdle(); await f.drainEvents();
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.status).toBe("completed"));
+  const file = f.supervisor.get("session-sdk")!.piSessionFilePath!;
+  const lines = (await readFile(file, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { id?: string });
+  await appendFile(file, JSON.stringify({ type: "message", id: "external-tui", parentId: lines.at(-1)?.id ?? null, timestamp: new Date().toISOString(),
+    message: { role: "assistant", content: [{ type: "text", text: "External terminal reply" }], api: "w3-offline", provider: "w3-offline", model: "finite",
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() } }) + "\n");
+  await f.supervisor.syncTerminalSession("session-sdk");
+  await vi.waitFor(() => expect(f.supervisor.asyncControls.context("session-sdk")).toMatchObject({ runtimeInstanceId: undefined, tracking: "unsupported" }));
+
+  const server = new AgentdServer({ port: 0, token: "detached-owner", supervisor: f.supervisor });
+  const port = await server.start();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=detached-owner`);
+  const wire: EventEnvelope[] = [];
+  ws.on("message", (data) => wire.push(JSON.parse(String(data)) as EventEnvelope));
+  cleanups.push(async () => { ws.close(); await server.stop(); });
+  await once(ws, "open");
+  ws.send(JSON.stringify({ id: "detached-context", protocolVersion: PROTOCOL_VERSION, type: "getAsyncControlContext", sessionId: "session-sdk" }));
+  await vi.waitFor(() => expect(wire.some((event) => event.type === "asyncControlContext" && event.requestId === "detached-context")).toBe(true), { timeout: 10_000 });
+  const context = wire.find((event) => event.type === "asyncControlContext" && event.requestId === "detached-context");
+  expect(context).toMatchObject({ tracking: "ready", runtimeInstanceId: expect.any(String) });
+
+  await f.supervisor.followUp("session-sdk", "Continue after terminal");
+  await f.currentSession().waitForIdle(); await f.drainEvents();
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.status).toBe("completed"));
+  await f.supervisor.setSessionArchived("session-sdk", true, undefined, "after-terminal-archive");
+  expect(await f.store.loadReadOnly("session-sdk")).toMatchObject({ archived: true, status: "completed" });
+}, 30_000);

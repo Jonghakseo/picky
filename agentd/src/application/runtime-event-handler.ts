@@ -186,7 +186,20 @@ export class RuntimeEventHandler {
     // to a terminal status, so the late-turn-event guard below must not drop it.
     if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     const current = this.dependencies.getSession(sessionId);
-    if (event.type !== "status" && isTerminalStatus(current.status) && !hasUnsettledAsyncWork(current)) return;
+    // Extension UI is not turn output. A no-turn extension command (e.g. `/delay-list`) on an
+    // async-task Pickle runs while the session is aggregated back to `completed`; dropping its
+    // dialog would leave the command awaiting an answer the HUD never shows. Late UI after an
+    // abort or failure still belongs to the dead turn and stays ignored.
+    const acceptsIdleExtensionUi = current.status === "completed" && (event.type === "extension_ui" || event.type === "extension_ui_cancelled");
+    if (event.type !== "status" && !acceptsIdleExtensionUi && isTerminalStatus(current.status) && !hasUnsettledAsyncWork(current)) return;
+    if (event.type === "extension_ui") {
+      if (isIgnoredFireAndForgetExtensionUi(event)) return;
+      await this.drainPendingThinkingFlush(sessionId);
+      this.thinkingActive.set(sessionId, false);
+      logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
+      return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
+    }
+    if (event.type === "extension_ui_cancelled") return this.applyExtensionUiCancelledEvent(sessionId, event.requestId);
     if (event.type === "assistant_delta") {
       await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
@@ -227,14 +240,6 @@ export class RuntimeEventHandler {
       }
       return;
     }
-    if (event.type === "extension_ui") {
-      if (isIgnoredFireAndForgetExtensionUi(event)) return;
-      await this.drainPendingThinkingFlush(sessionId);
-      this.thinkingActive.set(sessionId, false);
-      logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
-      return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
-    }
-    if (event.type === "extension_ui_cancelled") return this.applyExtensionUiCancelledEvent(sessionId, event.requestId);
     if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     if (event.type === "session_replaced") return;
     if (event.type === "input_delivery") return;

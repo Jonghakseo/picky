@@ -902,7 +902,7 @@ Before는 기존 코드에 직접 적힌 문구다. 기존 지역화가 없던 �
 | `dock.group.create.empty` | No Pickles to include yet. You can create the group now and drag Pickles in later. | 추가할 Pickle이 없어요. 그룹을 먼저 만들고 나중에 Pickle을 끌어다 놓을 수 있어요. | No Pickles to add yet. Create the group now and drag Pickles into it later. |
 | `dock.group.create.members` | Include Pickles | 추가할 Pickle | Include Pickles |
 | `dock.group.create.name` | Name | 이름 | Name |
-| `dock.group.create.placeholder` | e.g. creatrip-web | 예: 웹사이트 작업 | e.g. Website project |
+| `dock.group.create.placeholder` | e.g. my-web-app | 예: 웹사이트 작업 | e.g. Website project |
 | `dock.group.create.selected` | \(selectedMemberIDs.count) selected | %lld개 선택됨 | %lld selected |
 | `dock.group.create.submit` | Create | 만들기 | Create |
 | `dock.group.create.title` | New group | 새 그룹 | New Group |

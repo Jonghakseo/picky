@@ -78,7 +78,7 @@ _작성일: 2026-09-06 · 기준 커밋: `a739298ad`_
 
 - `agentd/src/application/socket-dialect.ts`가 소켓마다 `negotiating | v1 | v2`를 잠그고, `server.ts`는 이벤트 브로드캐스트마다 dialect를 검사한다(`server.ts:1018`, `:1042`).
 - Swift `PickySessionListViewModel`은 여전히 `.sessionSnapshot`/`.sessionUpdated`(v1) 분기를 유지한다(`PickySessionViewModel.swift:1943`, `:1952`). `PickyAgentClientRouter`는 "v1 compatibility mirror" `sessionCache`와 v2용 `projectionOwnerKeys`를 따로 들고 있다(`PickyAgentClientRouter.swift:94-100`).
-- v1을 실제로 쓰는 소비자는 `agentd/src/cli.ts`(`sessionSnapshot`/`sessionUpdated` 매칭, `cli.ts:678-688`, `:987-993`)뿐이다. `docs/known-issues/cross-daemon-session-ownership.md`는 v1 전체 목록 교체 방식이 ghost card 버그의 뿌리였다고 기록하고 있다.
+- v1을 실제로 쓰는 소비자는 `agentd/src/cli.ts`(`sessionSnapshot`/`sessionUpdated` 매칭, `cli.ts:678-688`, `:987-993`)뿐이다. `docs/archive/cross-daemon-session-ownership.md`는 v1 전체 목록 교체 방식이 ghost card 버그의 뿌리였다고 기록하고 있다.
 
 **왜 문제인가**
 
@@ -113,7 +113,7 @@ _작성일: 2026-09-06 · 기준 커밋: `a739298ad`_
 
 - `PickyAgentDaemonPool.swift`와 `PickyAgentClientRouter.swift` 헤더는 "Phase 2 of the per-Pickle agentd plan"을 언급하지만, 그 plan 문서는 `docs/`에 없다. `ARCHITECTURE.md`는 "picky-agentd runs as a child process"만 말하고 pool/child/primary 토폴로지, `PICKY_AGENTD_MODE`·`PICKY_AGENTD_PRIMARY_URL`·`PICKY_AGENTD_SESSION_ID/CWD` 환경 계약을 설명하지 않는다.
 - 라우터가 소유하는 상태 집합만 15개 이상: `knownChildSessionIds`, `bootingChildSessionIds`, `retiredChildSessionIds`, `childGenerations`, `retiredChildGenerations`, `sessionCache`, `sessionOwnerKeys`, `projectionOwnerKeys`, `projectionConnectionGenerations`, `projectionBootstrapExpectations`, `knownPrimaryProjectionEpoch`, `retiredChildPrimaryOwnerships`, `sessionProducingProjectionConnections`, `acceptedProjectionBootstrapCompletions`, `sessionProjectionWaiters`, `pendingChildCommands`, `activeDrainingChildCommands`(`PickyAgentClientRouter.swift:80-130`).
-- `docs/known-issues/cross-daemon-session-ownership.md`가 기록한 실패 시도 5건이 모두 이 상태 집합 간 경합이다.
+- `docs/archive/cross-daemon-session-ownership.md`가 기록한 실패 시도 5건이 모두 이 상태 집합 간 경합이다.
 
 **왜 문제인가**
 
@@ -219,7 +219,7 @@ _2026-09-06 진행 상황:_
 
 - `cli.ts`가 `sessionProjectionV2`를 등록하고 `sessionProjectionSnapshot/Transaction`으로 세션을 읽도록 바꾼다.
 - 그 후 `socket-dialect.ts`, `server.ts`의 dialect 분기, `PickySessionListViewModel`의 `.sessionSnapshot/.sessionUpdated` 분기, 라우터의 `sessionCache`, 프로토콜의 v1 이벤트 16종을 제거한다.
-- `known-issues/cross-daemon-session-ownership.md`가 "v1은 historical debugging 용"이라고 이미 선언했으므로 제품 리스크는 낮다.
+- `archive/cross-daemon-session-ownership.md`가 "v1은 historical debugging 용"이라고 이미 선언했으므로 제품 리스크는 낮다.
 
 ### P1-3. 로그 접두어 파싱을 typed 필드로 대체한다 (F4)
 

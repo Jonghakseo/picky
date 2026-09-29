@@ -176,9 +176,9 @@ python3 -m unittest discover -s scripts/tests -p test_hub_focus_perf_runner.py
 
 ## CI 전용 예산 조정 (2026-09-10)
 
-사용자가 GitHub CI의 더 제한된 환경을 고려한 기준 완화를 요청해, `github-hosted` 프로필의 **렌더 준비 p95만 100ms → 250ms**로 분리했다. 로컬 기준은 100ms 그대로이며, key 중앙값/p95/최대(100/150/250ms), 7회 측정, 300ms 지연 대조군은 바꾸지 않는다. 250ms는 아래 184ms 관측에 약 36% 여유를 둔 잠정 운영 예산이며, 통계적으로 보정된 하드웨어 계수나 성능 개선을 뜻하지 않는다.
+GitHub CI의 더 제한된 환경을 고려해 `github-hosted` 프로필의 **렌더 준비 p95만 100ms → 250ms**로 분리했다. 로컬 기준은 100ms 그대로이며, key 중앙값/p95/최대(100/150/250ms), 7회 측정, 300ms 지연 대조군은 바꾸지 않는다. 250ms는 아래 184ms 관측에 약 36% 여유를 둔 잠정 운영 예산이며, 통계적으로 보정된 하드웨어 계수나 성능 개선을 뜻하지 않는다.
 
-근거는 [CI run 34457932278](https://github.com/Jonghakseo/picky/actions/runs/34457932278)의 원본 JSON·PNG다. macOS 15.7.9, Xcode 16.3, 논리 CPU 3개, RAM 7GiB, 디스플레이 1개에서 측정했다. 비교 대상 로컬 환경은 CPU 14개, RAM 48GiB였지만 CPU 프로파일이 없어 환경 차이만을 병목 원인으로 확정하지 않는다.
+근거는 [CI run 34457932278](https://github.com/Jonghakseo/picky/actions/runs/34457932278)의 원본 JSON·PNG다. macOS 15.7.9, Xcode 16.3, 논리 CPU 3개, RAM 7GiB, 디스플레이 1개에서 측정했다. 일반적인 로컬 개발 환경보다 자원이 적지만, CPU 프로파일이 없어 환경 차이만을 병목 원인으로 확정하지 않는다.
 
 | 전환 | key 획득(ms) | 렌더 준비(ms) | 전체 구간 메인 스레드 CPU(ms) |
 | --- | ---: | ---: | ---: |

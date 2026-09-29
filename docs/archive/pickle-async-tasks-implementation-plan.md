@@ -78,10 +78,10 @@ W2와 W3는 W1 고정 뒤 서로 다른 저장소/파일에서 병렬 작업할 
 
 ### 확인한 재사용 지점
 
-- [extension-safety.integration.test.ts](../agentd/src/runtime/extension-safety.integration.test.ts)는 격리 HOME/agentDir와 offline provider, 실제 `PiSdkRuntime`를 사용한다.
+- [extension-safety.integration.test.ts](../../agentd/src/runtime/extension-safety.integration.test.ts)는 격리 HOME/agentDir와 offline provider, 실제 `PiSdkRuntime`를 사용한다.
 - 해당 테스트는 memory/cron용이고 checkout 환경변수 없이는 주요 케이스가 skip된다. 테스트 이름에 남은 이전 SDK 버전은 현재 검증 버전의 증거가 아니다.
-- [pi-sdk-runtime.ts](../agentd/src/runtime/pi-sdk-runtime.ts)의 `createHandle`은 세션별 EventBus를 services에 전달한다.
-- [bootstrap.ts](../agentd/src/bootstrap.ts)는 Pickle runtime과 primary main runtime을 별도로 생성한다. 새 capability는 Pickle constructor 옵션으로 제한할 수 있다.
+- [pi-sdk-runtime.ts](../../agentd/src/runtime/pi-sdk-runtime.ts)의 `createHandle`은 세션별 EventBus를 services에 전달한다.
+- [bootstrap.ts](../../agentd/src/bootstrap.ts)는 Pickle runtime과 primary main runtime을 별도로 생성한다. 새 capability는 Pickle constructor 옵션으로 제한할 수 있다.
 
 ### 구현 절차
 
@@ -116,10 +116,10 @@ PICKY_TEST_EXTENSION_ROOT="$HOME/Documents/pi-extension" \
 
 ### 수정 위치
 
-- [agentd/src/protocol.ts](../agentd/src/protocol.ts), [Picky/PickyAgentProtocol.swift](../Picky/PickyAgentProtocol.swift).
-- [contracts/protocol](../contracts/protocol), [session-field-ownership.json](../contracts/projection/session-field-ownership.json), [session-transient-ownership.json](../contracts/projection/session-transient-ownership.json).
-- [terminal-session-finalization.ts](../agentd/src/domain/terminal-session-finalization.ts)의 mutation planner와 meta field 목록.
-- [app-session-snapshot-policy.ts](../agentd/src/application/app-session-snapshot-policy.ts), [session-projection-v2-broadcaster.ts](../agentd/src/application/session-projection-v2-broadcaster.ts), v1 compatibility publisher.
+- [agentd/src/protocol.ts](../../agentd/src/protocol.ts), [Picky/PickyAgentProtocol.swift](../../Picky/PickyAgentProtocol.swift).
+- [contracts/protocol](../../contracts/protocol), [session-field-ownership.json](../../contracts/projection/session-field-ownership.json), [session-transient-ownership.json](../../contracts/projection/session-transient-ownership.json).
+- [terminal-session-finalization.ts](../../agentd/src/domain/terminal-session-finalization.ts)의 mutation planner와 meta field 목록.
+- [app-session-snapshot-policy.ts](../../agentd/src/application/app-session-snapshot-policy.ts), [session-projection-v2-broadcaster.ts](../../agentd/src/application/session-projection-v2-broadcaster.ts), v1 compatibility publisher.
 
 ### 구현 절차
 
@@ -195,8 +195,8 @@ pnpm --dir "$HOME/Documents/pi-extension" run typecheck
 
 ### 수정 위치
 
-- [pi-sdk-runtime.ts](../agentd/src/runtime/pi-sdk-runtime.ts), [pi-sdk-runtime-session.ts](../agentd/src/runtime/pi-sdk-runtime-session.ts), [runtime/types.ts](../agentd/src/runtime/types.ts), [bootstrap.ts](../agentd/src/bootstrap.ts).
-- [pi-event-normalizer.ts](../agentd/src/domain/pi-event-normalizer.ts), [subagent-invocation-tracker.ts](../agentd/src/runtime/subagent-invocation-tracker.ts).
+- [pi-sdk-runtime.ts](../../agentd/src/runtime/pi-sdk-runtime.ts), [pi-sdk-runtime-session.ts](../../agentd/src/runtime/pi-sdk-runtime-session.ts), [runtime/types.ts](../../agentd/src/runtime/types.ts), [bootstrap.ts](../../agentd/src/bootstrap.ts).
+- [pi-event-normalizer.ts](../../agentd/src/domain/pi-event-normalizer.ts), [subagent-invocation-tracker.ts](../../agentd/src/runtime/subagent-invocation-tracker.ts).
 - 신규 후보 `runtime/async-task-host-bridge.ts`, `domain/async-task-state.ts`.
 
 ### 구현 절차
@@ -220,9 +220,9 @@ pnpm run check:architecture
 
 ### 수정 위치
 
-- [runtime-event-handler.ts](../agentd/src/application/runtime-event-handler.ts), [session-supervisor.ts](../agentd/src/session-supervisor.ts).
-- [terminal-durable-commit.ts](../agentd/src/application/terminal-durable-commit.ts), [terminal-session-finalization.ts](../agentd/src/domain/terminal-session-finalization.ts), [session-message-builder.ts](../agentd/src/session-message-builder.ts).
-- [pickle-completion-coordinator.ts](../agentd/src/application/pickle-completion-coordinator.ts), [pickle-terminal-waiter.ts](../agentd/src/application/pickle-terminal-waiter.ts).
+- [runtime-event-handler.ts](../../agentd/src/application/runtime-event-handler.ts), [session-supervisor.ts](../../agentd/src/session-supervisor.ts).
+- [terminal-durable-commit.ts](../../agentd/src/application/terminal-durable-commit.ts), [terminal-session-finalization.ts](../../agentd/src/domain/terminal-session-finalization.ts), [session-message-builder.ts](../../agentd/src/session-message-builder.ts).
+- [pickle-completion-coordinator.ts](../../agentd/src/application/pickle-completion-coordinator.ts), [pickle-terminal-waiter.ts](../../agentd/src/application/pickle-terminal-waiter.ts).
 - 신규 후보 `domain/pickle-work-state.ts`, `application/async-task-coordinator.ts`.
 
 ### 구현 절차
@@ -287,10 +287,10 @@ pnpm --dir agentd exec vitest run \
 
 ### 수정 위치
 
-- [PickySessionStore.swift](../Picky/Sessions/Projection/PickySessionStore.swift), [PickySessionProjectionChildStores.swift](../Picky/Sessions/Projection/PickySessionProjectionChildStores.swift), [PickySessionDockStore.swift](../Picky/Sessions/Projection/PickySessionDockStore.swift).
-- [PickyRegistrySessionProjectionStorage+V2.swift](../Picky/Sessions/PickyRegistrySessionProjectionStorage+V2.swift), [PickySessionViewModel+SessionProjectionV2.swift](../Picky/PickySessionViewModel+SessionProjectionV2.swift).
-- [PickySessionCommands.swift](../Picky/HUD/Conversation/PickySessionCommands.swift), [PickyConversationCardView.swift](../Picky/HUD/Conversation/PickyConversationCardView.swift), [PickyConversationComposerView.swift](../Picky/HUD/Conversation/PickyConversationComposerView.swift).
-- [PickyHUDDockRailView.swift](../Picky/HUD/PickyHUDDockRailView.swift), [PickyHUDArchivedSessionsListView.swift](../Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift), [Localizable.xcstrings](../Picky/Resources/Localizable.xcstrings).
+- [PickySessionStore.swift](../../Picky/Sessions/Projection/PickySessionStore.swift), [PickySessionProjectionChildStores.swift](../../Picky/Sessions/Projection/PickySessionProjectionChildStores.swift), [PickySessionDockStore.swift](../../Picky/Sessions/Projection/PickySessionDockStore.swift).
+- [PickyRegistrySessionProjectionStorage+V2.swift](../../Picky/Sessions/PickyRegistrySessionProjectionStorage+V2.swift), [PickySessionViewModel+SessionProjectionV2.swift](../../Picky/PickySessionViewModel+SessionProjectionV2.swift).
+- [PickySessionCommands.swift](../../Picky/HUD/Conversation/PickySessionCommands.swift), [PickyConversationCardView.swift](../../Picky/HUD/Conversation/PickyConversationCardView.swift), [PickyConversationComposerView.swift](../../Picky/HUD/Conversation/PickyConversationComposerView.swift).
+- [PickyHUDDockRailView.swift](../../Picky/HUD/PickyHUDDockRailView.swift), [PickyHUDArchivedSessionsListView.swift](../../Picky/HUD/Conversation/PickyHUDArchivedSessionsListView.swift), [Localizable.xcstrings](../../Picky/Resources/Localizable.xcstrings).
 - 신규 후보 `Picky/Sessions/Projection/PickySessionAsyncTaskStore.swift`, `Picky/HUD/Conversation/PickyAsyncTaskShelfView.swift`, 타입별 row와 presentation policy.
 
 ### 구현 절차
@@ -324,7 +324,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 각 구현 묶음에서 바뀐 경계에 맞춰 위 suite 또는 명시한 인접 suite만 고른다. 실제 실행된 테스트 수/identifier를 확인한다. IDELaunchErrorDomain Code 20이면 테스트 미실행이며 signing을 바꿔 재시도하지 않는다. compile-only fallback을 테스트 pass로 표현하지 않는다.
 
-WindowServer 의존 focus/IME/mounted interaction 검증은 [격리 UI CI](test-desktop-isolation.md)를 사용한다. 로컬에서 `TEST_RUNNER_` opt-in이나 UI-effect mode를 켜지 않는다. 성능은 [PickyPerf](perf-profiling.md)의 변경 전후 body/layout signpost로 측정하고, running app 교체는 명시 허가 없이 하지 않는다.
+WindowServer 의존 focus/IME/mounted interaction 검증은 [격리 UI CI](../test-desktop-isolation.md)를 사용한다. 로컬에서 `TEST_RUNNER_` opt-in이나 UI-effect mode를 켜지 않는다. 성능은 [PickyPerf](../perf-profiling.md)의 변경 전후 body/layout signpost로 측정하고, running app 교체는 명시 허가 없이 하지 않는다.
 
 ## 10. W7 실제 경로 통합과 W8 배포
 

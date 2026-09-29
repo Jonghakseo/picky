@@ -438,7 +438,7 @@ a value type with `recordSnapshot` / `acceptCompletion` / `releaseChildToPrimary
 fact the rules need (`childIsLive`) and applies the returned decision.
 
 `PickyProjectionOwnershipLedgerTests` pins each historical race from
-`docs/known-issues/cross-daemon-session-ownership.md` directly, and
+`docs/archive/cross-daemon-session-ownership.md` directly, and
 `PickyAgentClientRouterTests` (2.6k lines) passed unchanged, which is the
 characterization gate 2.3 asks for. The topology itself is now documented in
 `docs/per-pickle-daemon-topology.md`.

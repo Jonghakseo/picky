@@ -1439,7 +1439,7 @@ Residual risk:
 ## Reference map
 
 - Product and architecture constraints: `AGENTS.md`, `ARCHITECTURE.md`
-- Superseded utility-panel history: `docs/utility-panel-activity-artifacts-plan.md`
+- Superseded utility-panel history: `docs/archive/utility-panel-activity-artifacts-plan.md`
 - Design direction: `design/DESIGN.md`, `design/PRINCIPLES.md`, `design/COMPONENTS.md`
 - Refactoring ownership and protocol rules: `docs/refactoring-principles.md`
 - Swift async ownership: `docs/swift-concurrency.md`

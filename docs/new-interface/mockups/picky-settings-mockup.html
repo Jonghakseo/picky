@@ -82,8 +82,8 @@
           <div class="setting-row"><div class="setting-copy"><span class="row-label">도구 표시 방식</span><p>기본 제공 도구를 대화 중에 얼마나 표시할지 정합니다.</p></div><div class="control"><select aria-label="도구 표시 방식"><option>간단히</option><option selected>필요할 때</option><option>항상 표시</option></select></div></div>
         </div>
         <details><summary>경로와 도구 고급 설정</summary><div class="details-content">
-          <div class="setting-row"><div class="setting-copy"><label for="default-workspace">기본 작업 공간</label><p>새 요청의 기본 현재 작업 폴더입니다.</p></div><div class="control"><input id="default-workspace" value="~/Documents" /></div></div>
-          <div class="setting-row"><div class="setting-copy"><label for="agent-workspace">메인 에이전트 작업 공간</label><p>메인 에이전트의 기본 폴더입니다.</p></div><div class="control"><input id="agent-workspace" value="~/Documents" /></div></div>
+          <div class="setting-row"><div class="setting-copy"><label for="default-workspace">기본 작업 공간</label><p>새 요청의 기본 현재 작업 폴더입니다.</p></div><div class="control"><input id="default-workspace" value="~/Projects" /></div></div>
+          <div class="setting-row"><div class="setting-copy"><label for="agent-workspace">메인 에이전트 작업 공간</label><p>메인 에이전트의 기본 폴더입니다.</p></div><div class="control"><input id="agent-workspace" value="~/Projects" /></div></div>
           <div class="setting-row"><div class="setting-copy"><label for="pi-path">Pi 실행 경로</label><p>에이전트 실행에 사용할 Pi 경로입니다.</p></div><div class="control"><input id="pi-path" value="/usr/local/bin/pi" /></div></div>
           <div class="setting-row"><div class="setting-copy"><label for="pi-coding-agent-dir">Pi 코딩 에이전트 디렉터리</label><p>Pi 코딩 에이전트가 사용할 설치 디렉터리입니다.</p></div><div class="control"><input id="pi-coding-agent-dir" value="Picky 기본 디렉터리" /></div></div>
           <div class="setting-row"><div class="setting-copy"><label for="daemon-path">데몬 실행 경로</label><p>백그라운드 Picky 데몬의 경로입니다.</p></div><div class="control"><input id="daemon-path" value="Picky 기본 경로" /></div></div>
@@ -148,13 +148,13 @@
 
         <section id="workspace" class="settings-section" aria-labelledby="workspace-title"><header class="section-head"><h2 id="workspace-title">Pickle 및 작업 공간</h2><p>작업 시작 위치와 저장 기록</p></header><fieldset><legend class="sr-only">Pickle 및 작업 공간 설정</legend><div class="settings-list">
           <div class="setting-row"><div class="setting-copy"><label for="dispatch-mode">Pickle 준비 후 실행 방식</label><p>작업이 준비된 뒤 자동 실행할지 확인할지 정합니다.</p></div><div class="control"><select id="dispatch-mode"><option selected>실행 전 확인</option><option>즉시 실행</option><option>초안만 만들기</option></select></div></div>
-          <div class="setting-row"><div class="setting-copy"><label for="default-cwd">기본 현재 작업 폴더</label><p>새 Pickle이 제안하는 시작 폴더입니다.</p></div><div class="control"><input id="default-cwd" value="~/Documents" /></div></div>
-          <div class="setting-row"><div class="setting-copy"><label for="main-agent-cwd">메인 에이전트 현재 작업 폴더</label><p>일반 대화의 기본 시작 폴더입니다.</p></div><div class="control"><input id="main-agent-cwd" value="~/Documents" /></div></div>
-          <div class="setting-row"><div class="setting-copy"><span class="row-label">고정한 작업 폴더</span><p>자주 쓰는 폴더 목록입니다.</p></div><span class="path-value">~/Documents · ~/Projects</span></div>
-          <div class="setting-row"><div class="setting-copy"><span class="row-label">최근 작업 폴더</span><p>최근에 사용한 폴더 목록입니다.</p></div><span class="path-value">~/Documents/picky</span></div>
+          <div class="setting-row"><div class="setting-copy"><label for="default-cwd">기본 현재 작업 폴더</label><p>새 Pickle이 제안하는 시작 폴더입니다.</p></div><div class="control"><input id="default-cwd" value="~/Projects" /></div></div>
+          <div class="setting-row"><div class="setting-copy"><label for="main-agent-cwd">메인 에이전트 현재 작업 폴더</label><p>일반 대화의 기본 시작 폴더입니다.</p></div><div class="control"><input id="main-agent-cwd" value="~/Projects" /></div></div>
+          <div class="setting-row"><div class="setting-copy"><span class="row-label">고정한 작업 폴더</span><p>자주 쓰는 폴더 목록입니다.</p></div><span class="path-value">~/Projects · ~/Work</span></div>
+          <div class="setting-row"><div class="setting-copy"><span class="row-label">최근 작업 폴더</span><p>최근에 사용한 폴더 목록입니다.</p></div><span class="path-value">~/Projects/picky</span></div>
         </div>
         <details><summary>Git 및 워크트리 고급 설정</summary><div class="details-content">
-          <div class="setting-row"><div class="setting-copy"><label for="worktree-parent">워크트리 상위 폴더</label><p>별도 Git 워크트리를 만들 기본 위치입니다.</p></div><div class="control"><input id="worktree-parent" value="~/Documents/worktrees" /></div></div>
+          <div class="setting-row"><div class="setting-copy"><label for="worktree-parent">워크트리 상위 폴더</label><p>별도 Git 워크트리를 만들 기본 위치입니다.</p></div><div class="control"><input id="worktree-parent" value="~/Projects/worktrees" /></div></div>
           <div class="setting-row"><div class="setting-copy"><label for="git-chip-command">Git 상태 칩 명령</label><p>작업 공간의 Git 상태를 표시할 명령입니다.</p></div><div class="control"><input id="git-chip-command" value="git status --short" /></div></div>
         </div></details></fieldset></section>
 

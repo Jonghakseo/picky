@@ -53,8 +53,8 @@ localized_source	dock.group.create.members	ko	Include Pickles	추가할 Pickle	H
 localized_source	dock.group.create.members	en	Include Pickles	Include Pickles	Hardcoded UI copy bypassed the selected app language.	Picky/HUD/PickyDockGroupCreatorView.swift
 localized_source	dock.group.create.name	ko	Name	이름	Hardcoded UI copy bypassed the selected app language.	Picky/HUD/PickyDockGroupCreatorView.swift
 localized_source	dock.group.create.name	en	Name	Name	Hardcoded UI copy bypassed the selected app language.	Picky/HUD/PickyDockGroupCreatorView.swift
-localized_source	dock.group.create.placeholder	ko	e.g. creatrip-web	예: 웹사이트 작업	Localize hardcoded user-visible copy.	Picky/HUD/PickyDockGroupCreatorView.swift
-localized_source	dock.group.create.placeholder	en	e.g. creatrip-web	e.g. Website project	Localize hardcoded user-visible copy.	Picky/HUD/PickyDockGroupCreatorView.swift
+localized_source	dock.group.create.placeholder	ko	e.g. my-web-app	예: 웹사이트 작업	Localize hardcoded user-visible copy.	Picky/HUD/PickyDockGroupCreatorView.swift
+localized_source	dock.group.create.placeholder	en	e.g. my-web-app	e.g. Website project	Localize hardcoded user-visible copy.	Picky/HUD/PickyDockGroupCreatorView.swift
 localized_source	dock.group.create.selected	ko	\(selectedMemberIDs.count) selected	%lld개 선택됨	Localize hardcoded user-visible copy.	Picky/HUD/PickyDockGroupCreatorView.swift
 localized_source	dock.group.create.selected	en	\(selectedMemberIDs.count) selected	%lld selected	Localize hardcoded user-visible copy.	Picky/HUD/PickyDockGroupCreatorView.swift
 localized_source	dock.group.create.submit	ko	Create	만들기	Hardcoded UI copy bypassed the selected app language.	Picky/HUD/PickyDockGroupCreatorView.swift

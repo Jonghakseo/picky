@@ -90,7 +90,7 @@ The ledger decides how those overlapping views combine:
   reassign records to the wrong owner.
 
 The five failed approaches that led to these rules are recorded in
-`docs/known-issues/cross-daemon-session-ownership.md`.
+`docs/archive/cross-daemon-session-ownership.md`.
 
 ## 4. Where to look
 

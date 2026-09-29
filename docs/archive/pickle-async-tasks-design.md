@@ -6,7 +6,7 @@
 
 ---
 
-> 이 문서는 구현할 계약을 정의한다. challenger 재검토는 문서 계약에 한정해 PASS이며, 지금 착수할 단계는 W0의 실제 SDK 증명이다. 기능 구현이나 런타임 검증 완료를 뜻하지 않는다. 현재 코드에서 확인한 사실, 새로 정한 설계, 구현 중 증명할 조건을 구분한다. 단계별 수정 위치와 검증은 [구현 계획](pickle-async-tasks-implementation-plan.md)에 기록한다.
+> Status: implemented (W8 활성화 완료, 2026-09-26). 결과는 [런타임 검증](pickle-async-tasks-runtime-verification.md)에 있다. 이 문서는 구현 전 계약을 보존하므로 미래형 서술은 설계 당시 기준이다. 현재 코드에서 확인한 사실, 새로 정한 설계, 구현 중 증명할 조건을 구분한다. 단계별 수정 위치와 검증은 [구현 계획](pickle-async-tasks-implementation-plan.md)에 기록한다.
 
 ## 목차
 
@@ -48,19 +48,19 @@ UI의 짧은 이름은 `백그라운드 작업`, 코드 이름은 `AsyncTask`를
 
 | 확인한 사실 | 근거 | 필요한 변경 |
 |---|---|---|
-| Picky Pi SDK는 0.87.1, extension 저장소 override는 0.85.0 | [agentd/package.json](../agentd/package.json), extension 루트 `package.json` | 저장소 테스트만으로 Picky 호환을 판정하지 않는다. |
+| Picky Pi SDK는 0.87.1, extension 저장소 override는 0.85.0 | [agentd/package.json](../../agentd/package.json), extension 루트 `package.json` | 저장소 테스트만으로 Picky 호환을 판정하지 않는다. |
 | subagent tool의 async 선택은 UI와 stdin/stdout TTY 여부에 종속된다 | extension `packages/subagent/tool-execute.ts`, `isInteractiveTuiContext` | TUI 렌더 가능 여부와 호스트 async 수명 지원을 분리한다. |
 | bash는 headless에서도 async, 완료 메시지는 500ms 배치 | extension `packages/bash-async/index.ts`, `notification-batcher.ts` | 실행 종료와 결과 처리 의무를 같은 이벤트에서 넘긴다. |
 | extension API의 `sendMessage`는 void이며 내부 비동기 오류는 별도 extension error가 된다 | 설치 SDK `dist/core/agent-session.js`, extension `packages/bash-async/index.ts` | `Promise.resolve(sendMessage(...))`를 전달 확인으로 사용하지 않는다. |
 | 로컬 bash의 status/output은 poll guard만 해제하며 완료 알림을 억제하지 않는다 | extension `packages/bash-async/index.ts:175–213` | 수동 조회를 ticket 처리 완료나 알림 취소로 간주하지 않는다. |
 | subagent 비동기는 부모 tool AbortSignal과 독립이고 shutdown은 정착을 기다리지 않는다 | extension `tool-execute.ts`, `lifecycle.ts` | 개별/전체 중지와 실제 종료 확인 계약을 추가한다. |
-| subagent 호출은 tool 종료에 `completed: true`가 된다 | [SubagentInvocationTracker](../agentd/src/runtime/subagent-invocation-tracker.ts) | tool 접수 완료와 비동기 invocation 완료를 분리한다. |
-| terminal 커밋은 메시지·상태·알림을 함께 처리한다 | [terminal-durable-commit.ts](../agentd/src/application/terminal-durable-commit.ts), [terminal-session-finalization.ts](../agentd/src/domain/terminal-session-finalization.ts) | 응답 확정과 전체 피클 정착을 분리한다. |
-| 보관된 terminal 피클은 앱이 child daemon을 해제한다 | [PickySessionViewModel.swift](../Picky/PickySessionViewModel.swift), `scheduleArchiveCommit` | 진행 여부와 해제 권한을 owner daemon에서 확인한다. |
-| terminal sync는 `isStreaming == false`인 handle을 무효화할 수 있다 | [terminal-session-coordinator.ts](../agentd/src/application/terminal-session-coordinator.ts) | SDK streaming과 runtime 보존 조건을 분리한다. |
-| v2는 작은 metadata와 독립 child store를 사용한다 | [PickySessionStore.swift](../Picky/Sessions/Projection/PickySessionStore.swift) | 기존 도구 활동 `activityStore`와 별도 `asyncTaskStore`를 추가한다. |
+| subagent 호출은 tool 종료에 `completed: true`가 된다 | [SubagentInvocationTracker](../../agentd/src/runtime/subagent-invocation-tracker.ts) | tool 접수 완료와 비동기 invocation 완료를 분리한다. |
+| terminal 커밋은 메시지·상태·알림을 함께 처리한다 | [terminal-durable-commit.ts](../../agentd/src/application/terminal-durable-commit.ts), [terminal-session-finalization.ts](../../agentd/src/domain/terminal-session-finalization.ts) | 응답 확정과 전체 피클 정착을 분리한다. |
+| 보관된 terminal 피클은 앱이 child daemon을 해제한다 | [PickySessionViewModel.swift](../../Picky/PickySessionViewModel.swift), `scheduleArchiveCommit` | 진행 여부와 해제 권한을 owner daemon에서 확인한다. |
+| terminal sync는 `isStreaming == false`인 handle을 무효화할 수 있다 | [terminal-session-coordinator.ts](../../agentd/src/application/terminal-session-coordinator.ts) | SDK streaming과 runtime 보존 조건을 분리한다. |
+| v2는 작은 metadata와 독립 child store를 사용한다 | [PickySessionStore.swift](../../Picky/Sessions/Projection/PickySessionStore.swift) | 기존 도구 활동 `activityStore`와 별도 `asyncTaskStore`를 추가한다. |
 
-extension 경로는 로컬 `~/Documents/pi-extension` 기준이다. 공개 소스의 고정 기준은 [pi-extension 886ef38](https://github.com/Jonghakseo/pi-extension/tree/886ef383fd709446c2357c360364414e0132eddf)다. package.json 버전 일치는 실제 Picky가 로드한 코드의 일치를 증명하지 않는다.
+extension 경로는 pi-extension 저장소 루트 기준이다. 공개 소스의 고정 기준은 [pi-extension 886ef38](https://github.com/Jonghakseo/pi-extension/tree/886ef383fd709446c2357c360364414e0132eddf)다. package.json 버전 일치는 실제 Picky가 로드한 코드의 일치를 증명하지 않는다.
 
 ## 3. 소유권과 불변조건
 
@@ -411,8 +411,8 @@ node scripts/set-async-task-rollout.mjs "$HOME/Library/Application Support/Picky
 
 - [Pi 공식 extension 문서](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)
 - [Pi 공식 SDK 문서](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)
-- [per-Pickle daemon 소유권](per-pickle-daemon-topology.md)
-- [extension 수명 안전 선례](extension-safety-cutover.md)
-- [리팩터 원칙](refactoring-principles.md)
-- [디자인 원칙](../design/PRINCIPLES.md), [컴포넌트](../design/COMPONENTS.md), [토큰](../design/TOKENS.md)
-- [UI gallery](render-gallery.md), [HUD 성능 검증](perf-profiling.md), [desktop 테스트 격리](test-desktop-isolation.md)
+- [per-Pickle daemon 소유권](../per-pickle-daemon-topology.md)
+- [extension 수명 안전 선례](../extension-safety-cutover.md)
+- [리팩터 원칙](../refactoring-principles.md)
+- [디자인 원칙](../../design/PRINCIPLES.md), [컴포넌트](../../design/COMPONENTS.md), [토큰](../../design/TOKENS.md)
+- [UI gallery](../render-gallery.md), [HUD 성능 검증](../perf-profiling.md), [desktop 테스트 격리](../test-desktop-isolation.md)

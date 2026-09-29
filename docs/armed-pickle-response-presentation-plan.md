@@ -671,7 +671,7 @@ Residual validation risk:
 - State and motion principles: `design/PRINCIPLES.md`
 - Cursor response component contract: `design/COMPONENTS.md`
 - Reducer ownership and protocol rules: `docs/refactoring-principles.md`
-- Existing narration pipeline plan: `docs/visual-narration-segment-plan.md`
+- Existing narration pipeline plan: `docs/archive/visual-narration-segment-plan.md`
 - Armed routing orchestration: `Picky/CompanionManager.swift`
 - Canonical interaction state: `Picky/Interaction/PickyInteractionState.swift`
 - Presentation reducer: `Picky/Interaction/PickyInteractionReducer.swift`

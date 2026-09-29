@@ -875,7 +875,7 @@ The seeded `AGENTS.md` instructs the main agent to keep itself in sync with how 
 - Pickle execution guidance (default cwd or repo path for a kind of task, fixed procedures/checklists, preferred skills/MCPs, naming conventions, what to include in `instructions`) — written into a dedicated `## Pickle execution` section so it is loaded on every main-agent turn instead of stashed in memory.
 - One-off facts and scratch notes — routed to the built-in memory tool when one is available; otherwise the agent creates a sibling file next to `AGENTS.md` (for example `NOTES.md` or `notes/<topic>.md`) and adds a short pointer under a `## Notes` section in `AGENTS.md`.
 
-In practice you can shape Picky just by talking to it ("always start Pickles for the picky repo from `~/Documents/picky` and follow the AGENTS guide there") and let Picky persist the rule. You can still hand-edit `AGENTS.md` whenever you want full control.
+In practice you can shape Picky just by talking to it ("always start Pickles for the picky repo from `~/Projects/picky` and follow the AGENTS guide there") and let Picky persist the rule. You can still hand-edit `AGENTS.md` whenever you want full control.
 
 To run Picky with a completely different persona or workflow set, change **Hub → Settings → Accounts and agents → Main Agent → Picky cwd** to any folder that contains its own `AGENTS.md` and `.pi/*` subdirectories.
 
@@ -1065,7 +1065,7 @@ You can customize Picky in two complementary ways:
 
 **By talking to Picky** (no editor required):
 
-1. Send a persistent instruction to the Picky main agent — for example, "from now on, when I ask about the picky repo, start the Pickle in `~/Documents/picky` and follow that AGENTS.md."
+1. Send a persistent instruction to the Picky main agent — for example, "from now on, when I ask about the picky repo, start the Pickle in `~/Projects/picky` and follow that AGENTS.md."
 2. Picky follows it for the current turn and edits `AGENTS.md` to record the rule. Pickle-specific guidance lands under `## Pickle execution`; other persistent rules land under the most relevant section.
 3. Picky tells you which section was changed. The next main session loads the updated rules automatically.
 

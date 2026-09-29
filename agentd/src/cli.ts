@@ -1,4 +1,6 @@
 import { Command, Option } from "commander";
+import { resolve as resolvePath } from "node:path";
+import { workingDirectoryProblem } from "./application/working-directory.js";
 import type { DockGroup, EventEnvelope, PickyAgentSession } from "./protocol.js";
 import { loadCliConnection, PickyCliDaemonNotRunningError } from "./cli/connection-loader.js";
 import { sendCommand, sendCommandAndWaitForReply, PickyCliConnectionError, PickyCliServerError, PickyCliTimeoutError } from "./cli/ws-client.js";
@@ -139,12 +141,13 @@ Examples:
   .action(async (text: string, options: SharedOptions & { context?: boolean; cwd?: string; wait?: boolean }) => {
     await runWithErrorHandling(async () => {
       rejectForMainAgent("submit");
+      const cwd = await resolveCwdOption(options.cwd);
       const connection = await loadCliConnection();
       const command = {
         type: "submitMainFromExternal",
         text,
         captureContext: options.context !== false,
-        ...(options.cwd ? { cwd: options.cwd } : {}),
+        ...(cwd ? { cwd } : {}),
       } as const;
       if (!options.wait) {
         const ack = await sendCommand(connection, command, { matchEvent: matchExternalEntryAck("submitMain") });
@@ -195,6 +198,7 @@ async function runPickleCreate(title: string | undefined, options: PickleCreateO
   if (isMainAgentCaller && options.empty) fail("--empty is not available from the Picky main agent", 64);
   const group = options.group?.trim();
   if (options.group !== undefined && !group) fail("--group cannot be empty", 64);
+  options.cwd = await resolveCwdOption(options.cwd);
   const connection = await loadCliConnection();
   if (options.empty) return await createEmptyPickle(connection, title, options, group);
   return await createNamedPickle(connection, title, options, group);
@@ -856,6 +860,20 @@ async function runWithErrorHandling(action: () => Promise<void>): Promise<void> 
     process.stderr.write(`picky: ${(error as Error).message ?? String(error)}\n`);
     process.exit(1);
   }
+}
+
+/**
+ * Resolves `--cwd` against the caller's directory (the daemon runs elsewhere, so
+ * a relative path must not reach it) and rejects missing folders before any
+ * session is created.
+ */
+async function resolveCwdOption(raw: string | undefined): Promise<string | undefined> {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const cwd = resolvePath(trimmed);
+  const problem = await workingDirectoryProblem(cwd);
+  if (problem) fail(`--cwd: ${problem}`, 66);
+  return cwd;
 }
 
 function fail(message: string, code: number): never {

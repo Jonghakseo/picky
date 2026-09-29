@@ -139,11 +139,11 @@ describe("picky cli", () => {
       });
     });
 
-    const result = await runCli(["submit", "hello", "--no-context", "--cwd", "/tmp/x"]);
+    const result = await runCli(["submit", "hello", "--no-context", "--cwd", appSupportDir]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Submitted to main session (session=main-1)");
     expect(server.received).toHaveLength(1);
-    expect(server.received[0]).toMatchObject({ type: "submitMainFromExternal", text: "hello", captureContext: false, cwd: "/tmp/x" });
+    expect(server.received[0]).toMatchObject({ type: "submitMainFromExternal", text: "hello", captureContext: false, cwd: appSupportDir });
   });
 
   it("submit defaults captureContext to true when --no-context not passed", async () => {
@@ -199,7 +199,7 @@ describe("picky cli", () => {
       "--instructions",
       "Check things",
       "--cwd",
-      "/tmp/audit",
+      appSupportDir,
       "--group",
       "  Research  ",
       "--no-context",
@@ -209,10 +209,30 @@ describe("picky cli", () => {
       type: "createPickleFromExternal",
       title: "Audit",
       instructions: "Check things",
-      cwd: "/tmp/audit",
+      cwd: appSupportDir,
       group: "Research",
       captureContext: false,
     });
+  });
+
+  it.each([
+    ["pickle-create", "Audit", "--instructions", "Check things"],
+    ["pickle-create", "--empty"],
+    ["submit", "hello"],
+  ])("%s rejects a missing --cwd before contacting the daemon", async (...args) => {
+    const result = await runCli([...args, "--cwd", "/nonexistent/picky-missing-cwd", "--no-context"]);
+    expect(result.code).toBe(66);
+    expect(result.stderr).toContain("--cwd: Working directory does not exist or is not a folder: /nonexistent/picky-missing-cwd");
+    expect(server.received).toHaveLength(0);
+  });
+
+  it("pickle-create sends a relative --cwd as an absolute path from the caller's directory", async () => {
+    server.onCommand("createPickleFromExternal", (command, send) => {
+      send({ type: "externalEntryAck", commandId: (command as { id: string }).id, kind: "createPickle", sessionId: "pickle-rel" });
+    });
+    const result = await runCli(["pickle-create", "Audit", "--instructions", "Check things", "--cwd", ".", "--no-context"]);
+    expect(result.code).toBe(0);
+    expect(server.received[0]).toMatchObject({ type: "createPickleFromExternal", cwd: process.cwd() });
   });
 
   it("pickle-create rejects a blank --group", async () => {
@@ -588,7 +608,7 @@ describe("picky cli", () => {
     });
 
     const result = await runCli([
-      "pickle-create", "Audit", "--instructions", "Inspect the release", "--cwd", "/tmp/product", "--from-main",
+      "pickle-create", "Audit", "--instructions", "Inspect the release", "--cwd", appSupportDir, "--from-main",
     ]);
 
     expect(result.code).toBe(0);
@@ -597,7 +617,7 @@ describe("picky cli", () => {
       caller: "mainAgent",
       title: "Audit",
       instructions: "Inspect the release",
-      cwd: "/tmp/product",
+      cwd: appSupportDir,
     });
     expect(server.received[0]).not.toHaveProperty("captureContext");
   });

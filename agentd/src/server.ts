@@ -18,6 +18,7 @@ import { sanitizeForJson } from "./domain/sanitize-for-json.js";
 import { logAgentd } from "./local-log.js";
 import { awaitPickleSessionTerminal } from "./application/pickle-terminal-waiter.js";
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
+import { workingDirectoryProblem } from "./application/working-directory.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
 import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./runtime/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./runtime/package-operations.js";
@@ -741,7 +742,10 @@ export class AgentdServer {
       if (command.caller !== "mainAgent") throw new Error("createPickleFromMain is available only to the Picky main agent CLI");
       const context = this.options.supervisor.currentMainContext();
       if (!context) throw new Error("No active Picky main context to hand off");
-      const cwd = command.cwd?.trim() || this.options.getDefaultCwd?.() || context.cwd?.trim() || process.cwd();
+      const explicitCwd = command.cwd?.trim();
+      const cwdProblem = explicitCwd ? await workingDirectoryProblem(explicitCwd) : undefined;
+      if (cwdProblem) throw new Error(cwdProblem);
+      const cwd = explicitCwd || this.options.getDefaultCwd?.() || context.cwd?.trim() || process.cwd();
       const session = await this.requestPickleHandoffFromApp({
         context,
         title: command.title,
@@ -809,6 +813,13 @@ export class AgentdServer {
     kind: "submitMain" | "createPickle",
     payload: { text?: string; title?: string; instructions?: string; captureContext: boolean; cwd?: string; group?: string },
   ): Promise<void> {
+    // Reject a bad explicit cwd before context capture or session creation, so the
+    // CLI gets a clear error and no failed Pickle is left in the dock.
+    const cwdProblem = payload.cwd ? await workingDirectoryProblem(payload.cwd) : undefined;
+    if (cwdProblem) {
+      this.send(ws, { type: "externalEntryAck", commandId, kind, errorMessage: cwdProblem });
+      return;
+    }
     let context: PickyContextPacket;
     if (payload.captureContext) {
       try {

@@ -2012,6 +2012,26 @@ describe("AgentdServer", () => {
     cli.ws.close();
   });
 
+  it("rejects a main-agent Pickle with a missing explicit cwd without asking the app", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({ id: "cmd-register-main-bad-cwd", protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities", capabilities: ["pickleHandoff"] }));
+    await waitForRegisteredCapability("pickleHandoff");
+    trackEvents(app.ws);
+    vi.spyOn(supervisor, "currentMainContext").mockReturnValue(context("delegate"));
+
+    const cli = await connectWithHello();
+    cli.ws.send(JSON.stringify({ id: "cmd-main-bad-cwd", protocolVersion: PROTOCOL_VERSION, type: "createPickleFromMain",
+      caller: "mainAgent", title: "Audit", instructions: "Inspect", cwd: "/nonexistent/picky-missing-cwd" }));
+
+    const ack = await waitForEvent(cli.ws, "externalEntryAck");
+    expect(ack).toMatchObject({ commandId: "cmd-main-bad-cwd", errorMessage: expect.stringContaining("does not exist") });
+    expect(ack).not.toHaveProperty("sessionId");
+    expect(eventBuffers.get(app.ws)?.some((event) => event.type === "pickleHandoffRequested")).toBe(false);
+    app.ws.close();
+    cli.ws.close();
+  });
+
   it("requests child-aware Pickle bridge operations from a capable app client", async () => {
     const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
@@ -2307,7 +2327,7 @@ describe("AgentdServer", () => {
       type: "submitMainFromExternal",
       text: "hello from cli",
       captureContext: false,
-      cwd: "/tmp/cli-cwd",
+      cwd: tmpdir(),
     }));
     const ack = await waitForEvent(ws, "externalEntryAck");
     expect(ack).toMatchObject({ commandId: "cmd-cli-submit", kind: "submitMain" });
@@ -2316,7 +2336,7 @@ describe("AgentdServer", () => {
       expect.objectContaining({
         source: "cli",
         transcript: "hello from cli",
-        cwd: "/tmp/cli-cwd",
+        cwd: tmpdir(),
       }),
     );
     ws.close();
@@ -2365,16 +2385,57 @@ describe("AgentdServer", () => {
       title: "CLI pickle",
       instructions: "do the thing",
       captureContext: false,
-      cwd: "/tmp/cli-pickle-cwd",
+      cwd: tmpdir(),
     }));
     const ack = await waitForEvent(ws, "externalEntryAck");
     expect(ack).toMatchObject({ commandId: "cmd-cli-pickle", kind: "createPickle" });
     if (ack.type === "externalEntryAck") expect(ack.sessionId).toBeDefined();
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ source: "cli", cwd: "/tmp/cli-pickle-cwd" }),
-      expect.objectContaining({ title: "CLI pickle", instructions: "do the thing", cwd: "/tmp/cli-pickle-cwd", notifyMainOnCompletion: false, notifyMacOSOnCompletion: false }),
+      expect.objectContaining({ source: "cli", cwd: tmpdir() }),
+      expect.objectContaining({ title: "CLI pickle", instructions: "do the thing", cwd: tmpdir(), notifyMainOnCompletion: false, notifyMacOSOnCompletion: false }),
     );
-    expect(runtimeCreate).toHaveBeenCalledWith(expect.anything(), { cwd: "/tmp/cli-pickle-cwd", sessionId: expect.any(String) });
+    expect(runtimeCreate).toHaveBeenCalledWith(expect.anything(), { cwd: tmpdir(), sessionId: expect.any(String) });
+    ws.close();
+  });
+
+  it.each([
+    { label: "missing folder", cwd: "/nonexistent/picky-missing-cwd", message: "Working directory does not exist or is not a folder: /nonexistent/picky-missing-cwd" },
+    { label: "relative path", cwd: "relative/dir", message: "Working directory must be an absolute path: relative/dir" },
+  ])("createPickleFromExternal rejects a $label cwd without creating a Pickle", async ({ cwd, message }) => {
+    const runtimeCreate = vi.spyOn(runtime, "create");
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-cli-bad-cwd",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "createPickleFromExternal",
+      title: "CLI pickle",
+      instructions: "do the thing",
+      captureContext: true,
+      cwd,
+    }));
+    const ack = await waitForEvent(ws, "externalEntryAck");
+    expect(ack).toMatchObject({ commandId: "cmd-cli-bad-cwd", kind: "createPickle", errorMessage: message });
+    expect(ack).not.toHaveProperty("sessionId");
+    expect(runtimeCreate).not.toHaveBeenCalled();
+    expect(supervisor.list()).toEqual([]);
+    expect(await store.loadAll()).toEqual([]);
+    ws.close();
+  });
+
+  it("submitMainFromExternal rejects a missing cwd before routing", async () => {
+    const route = vi.spyOn(supervisor, "route");
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({
+      id: "cmd-cli-submit-bad-cwd",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "submitMainFromExternal",
+      text: "hello",
+      captureContext: false,
+      cwd: "/nonexistent/picky-missing-cwd",
+    }));
+    const ack = await waitForEvent(ws, "externalEntryAck");
+    expect(ack).toMatchObject({ commandId: "cmd-cli-submit-bad-cwd", errorMessage: expect.stringContaining("does not exist") });
+    expect(route).not.toHaveBeenCalled();
     ws.close();
   });
 

@@ -53,7 +53,7 @@ Hub behavior:
 
 The sidebar contains these eight destinations:
 
-- **Dashboard**: setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
+- **Dashboard**: an update card when a new Picky version is ready, setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
 - **Statistics**: local work and AI-usage summaries. Filter by period and project, then switch between Work and Usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
 - **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
 - **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.
@@ -761,6 +761,7 @@ Hub Settings is one scrollable page with jump links for seven groups. The catego
 | Hub font scale | 90%–130% | Changes Hub controls and text. Report and terminal font scales are separate. |
 | Update channel preference | Stable or Beta | Kept for settings-file compatibility. The installed app bundle determines which updates are eligible, so this setting does not move an installed app between release channels. |
 | Check automatically / Check now | Toggle / button | Controls Sparkle update checks where the installed build supports them. |
+| Download updates automatically | Toggle | Downloads new versions in the background for the Dashboard's one-click **Update and Restart**. |
 | Replay onboarding | Button | Shows the guided introduction again after confirmation. |
 
 #### Pi accounts (Accounts and agents)
@@ -1000,7 +1001,10 @@ The two completion defaults are independent and do not modify existing Pickles. 
 | --- | --- |
 | Update channel preference | Stable or Beta. This legacy saved preference does not change the installed build's release channel or update eligibility. Install the matching release artifact to move between Stable, Beta, or Alpha. |
 | Check automatically every 4 hours | Toggle that enables Sparkle automatic checks where the installed build supports them. |
+| Download updates automatically | On by default. Downloads a new version in the background so the Dashboard can install it in one click. Requires automatic checks. If you already chose an automatic-install option in Sparkle's update window, that choice is kept. |
 | Check Now | Manual update check when available. |
+
+When a downloaded update is ready, the Dashboard shows **Update and Restart** under the greeting. If any Pickle is still responding, Picky asks first; restarting stops those responses, and conversations are kept. If you choose **Later**, the card stays hidden for that version and the update installs the next time you quit Picky. With automatic download off, the card's **Update** button opens Sparkle's update window instead.
 
 Alpha builds do not expose Sparkle updates; install the next trusted alpha package manually.
 

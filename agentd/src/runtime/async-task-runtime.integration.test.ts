@@ -402,6 +402,22 @@ it("refuses resumed input until the fresh provider has negotiated its snapshot",
   expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks ?? []).toHaveLength(0);
 }, 20_000);
 
+it("archives a Pickle with incomplete coverage without settling or discarding its result", async () => {
+  const f = await fixture({ readyOnDiscovery: true });
+  await f.completion("unconfirmed");
+  const control = f.handle.asyncTasks!;
+  const coverage = control.coverage();
+  const spy = vi.spyOn(control, "coverage").mockReturnValue({ ...coverage, tracking: "unsupported", readyProviders: [] });
+  try {
+    await f.emitRuntime({ type: "async_task_coverage", coverage: control.coverage() });
+    await f.supervisor.setSessionArchived("session-sdk", true, "continue", "unconfirmed-archive");
+    const disk = await f.store.loadReadOnly("session-sdk");
+    expect(disk).toMatchObject({ archived: true, completionTickets: [{ state: "submitted" }], asyncWorkSummary: { canReleaseRuntime: false } });
+    expect(f.frames.filter((frame) => frame.type === "completion-observed")).toEqual([]);
+    expect(f.requests).toEqual([]);
+  } finally { spy.mockRestore(); }
+}, 15_000);
+
 it("keeps an unfinished archived owner fenced after a fresh daemon generation", async () => {
   const f = await fixture({ readyOnDiscovery: true });
   await f.completion("unfinished", { execution: "running", presence: "active" });
@@ -511,6 +527,45 @@ it.each(["held", "failed"] as const)("cancels compaction admission while the clo
   await f.session.waitForIdle();
   expect(f.requests).toHaveLength(1);
   expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).not.toBe("handled");
+}, 15_000);
+
+it("settles a delivered result after the model finishes before a later tool abort, without replay on restart", async () => {
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const f = await fixture({ readyOnDiscovery: true, onTool: async () => { enter(); await held; } });
+  const message = await f.completion("consumed-before-abort");
+  const delivery = f.session.sendCustomMessage(message, { triggerTurn: true });
+  await entered;
+  const abort = f.supervisor.abort("session-sdk");
+  release();
+  await abort;
+  await delivery;
+  await f.session.waitForIdle(); await f.drainEvents();
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.agentCycle?.outcome).not.toBe("completed");
+  expect(disk?.completionTickets?.[0]?.state).toBe("handled");
+  expect(f.requests).toHaveLength(1);
+  expect(f.frames.filter((frame) => frame.type === "completion-observed")).toHaveLength(1);
+  const journal = (await readFile(disk!.piSessionFilePath!, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line) as { message?: { role?: string; stopReason?: string } });
+  expect(journal.some(entry => entry.message?.role === "assistant" && entry.message.stopReason === "toolUse")).toBe(true);
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled");
+  await restarted.followUp("session-sdk", "Continue after confirmed result");
+  await vi.waitFor(() => expect(f.requests.filter(request => JSON.stringify(request).includes("Continue after confirmed result"))).toHaveLength(1));
+  await f.currentSession().waitForIdle(); await f.drainEvents();
+  expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("handled");
+  expect(f.frames.filter((frame) => frame.type === "completion-observed")).toHaveLength(1);
+}, 15_000);
+
+it("does not settle a result when the model fails before completing its response", async () => {
+  const f = await fixture({ failModel: true });
+  const message = await f.completion("unconsumed");
+  await f.session.sendCustomMessage(message, { triggerTurn: true });
+  await f.session.waitForIdle(); await f.drainEvents();
+  expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("pending");
+  expect(f.frames.filter((frame) => frame.type === "completion-observed")).toEqual([]);
 }, 15_000);
 
 it("persists late task exit despite the old-turn abort guard and ignores a replayed pending ticket after handling", async () => {

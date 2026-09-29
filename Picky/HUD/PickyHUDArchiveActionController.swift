@@ -84,6 +84,7 @@ final class PickyHUDArchiveActionController: ObservableObject {
 
     private func presentArchiveError(_ error: Error) {
         errorTitleKey = "hud.asyncTasks.archiveError.title"
-        self.error = error.localizedDescription
+        self.error = (error as? PickyAsyncControlError) == .unsupported
+            ? L10n.t("hud.asyncTasks.archiveError.coverage") : error.localizedDescription
     }
 }

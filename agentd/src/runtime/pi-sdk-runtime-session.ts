@@ -759,7 +759,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const record = asRecord(event);
       if (record.type === "agent_start" || record.type === "compaction_start") this.asyncSettled = false;
       const cycleId = this.asyncFence?.currentCycleId;
-      this.asyncFence?.onEvent({ type: String(record.type), ...(Array.isArray(record.messages) ? { messages: record.messages } : {}) });
+      this.asyncFence?.onEvent({ type: String(record.type), ...(record.message ? { message: record.message } : {}), ...(Array.isArray(record.messages) ? { messages: record.messages } : {}) });
       const runtimeEvent = this.runtimeEventFromPiEvent(event);
       if (runtimeEvent) this.emit(runtimeEvent.type === "status" && cycleId ? { ...runtimeEvent, cycleId } : runtimeEvent);
       if ((record.type === "agent_settled" || record.type === "compaction_end") && this.asyncFence) {

@@ -17,6 +17,8 @@ export class AsyncTaskModelFence {
   private cycle?: AgentCycle;
   private settlingCycleId?: string;
   private deliveries: AsyncCompletionDelivery[] = [];
+  private requestDeliveries: AsyncCompletionDelivery[] = [];
+  private consumedDeliveries = new Set<string>();
   private settled: Promise<void> = Promise.resolve();
   private pendingPersistence: Array<() => Promise<void>> = [];
   private recovery?: Promise<void>;
@@ -80,11 +82,13 @@ export class AsyncTaskModelFence {
       });
       this.observation = undefined;
       this.cycle = cycle;
-      this.deliveries = [...new Map([...this.deliveries, ...observed.deliveries].map((delivery) => [delivery.deliveryId, delivery])).values()];
+      this.deliveries = [...new Map([...this.deliveries, ...observed.deliveries].map((delivery) => [asyncIdentity(delivery, delivery.deliveryId), delivery])).values()];
+      this.requestDeliveries = observed.deliveries;
       this.bridge.publish(state);
       this.emit({ type: "async_task_cycle", cycle, deliveries: observed.deliveries });
       // The durable processing intent is recoverable even if stop wins during save.
-      // SDK agent_end reports rejection and returns its tickets to pending, never handled.
+      // SDK agent_end leaves tickets pending unless a completed model response
+      // later proves that this request already consumed the delivery.
       if (options?.signal?.aborted || admissionSignal.aborted || !this.bridge.admissionOpen || observed.generation !== this.bridge.generation || session.isCompacting) throw new Error("Async model admission invalidated before dispatch");
       return original(model, context, options);
     };
@@ -131,25 +135,37 @@ export class AsyncTaskModelFence {
       else if (!session.isCompacting) finish();
     });
   }
-  onEvent(event: { type: string; messages?: unknown[] }): void {
+  onEvent(event: { type: string; message?: unknown; messages?: unknown[] }): void {
     if (event.type === "compaction_start" || event.type === "compaction_end") { this.recordCompaction(event.type === "compaction_start"); return; }
+    if (event.type === "message_end") { this.recordAssistantMessageEnd(event.message); return; }
     if (event.type !== "agent_end" || !this.cycle || this.settlingCycleId === this.cycle.cycleId) return;
     const cycle = this.cycle;
     this.settlingCycleId = cycle.cycleId;
     const deliveries = this.deliveries;
+    const consumed = this.consumedDeliveries;
     const last = event.messages?.slice().reverse().find((message) => typeof message === "object" && message !== null && "role" in message && message.role === "assistant") as { stopReason?: string } | undefined;
     const outcome = last?.stopReason === "aborted" ? "cancelled" : last?.stopReason === "error" ? "failed" : "completed";
     const settledCycle: AgentCycle = { ...cycle, phase: "settled", outcome };
-    this.enqueuePersistence(() => this.bridge.owner.transact((current) => ({ ...current, cycle: settledCycle, tickets: current.tickets.map((ticket) => ticket.cycleId === cycle.cycleId && ticket.state === "processing" ? { ...ticket, state: outcome === "completed" ? "handled" : "pending" } : ticket) })).then((state) => {
-      if (this.cycle === cycle) { this.cycle = undefined; this.deliveries = []; this.settlingCycleId = undefined; }
+    this.enqueuePersistence(() => this.bridge.owner.transact((current) => ({ ...current, cycle: settledCycle, tickets: current.tickets.map((ticket) => ticket.cycleId === cycle.cycleId && ticket.state === "processing" ? { ...ticket, state: (outcome === "completed" || (ticket.deliveryId !== undefined && consumed.has(asyncIdentity(ticket, ticket.deliveryId)))) ? "handled" : "pending" } : ticket) })).then((state) => {
+      if (this.cycle === cycle) { this.cycle = undefined; this.deliveries = []; this.requestDeliveries = []; this.consumedDeliveries = new Set(); this.settlingCycleId = undefined; }
       this.bridge.publish(state);
       this.emit({ type: "async_task_cycle", cycle: settledCycle, deliveries });
-      if (outcome === "completed") for (const delivery of deliveries) {
+      for (const delivery of deliveries.filter((item) => outcome === "completed" || consumed.has(asyncIdentity(item, item.deliveryId)))) {
         const { taskIds: _taskIds, ...observed } = delivery;
         this.send({ ...observed, contract: ASYNC_TASK_CONTRACT, type: "completion-observed", requestId: randomUUID(), providerRevision: 0 });
       }
     }));
   }
+  private recordAssistantMessageEnd(value: unknown): void {
+    if (!this.cycle) return;
+    const message = value as { role?: string; stopReason?: string } | undefined;
+    if (message?.role !== "assistant") return;
+    if (message.stopReason === "stop" || message.stopReason === "toolUse") {
+      for (const delivery of this.requestDeliveries) this.consumedDeliveries.add(asyncIdentity(delivery, delivery.deliveryId));
+    }
+    this.requestDeliveries = [];
+  }
+
   private recordCompaction(started: boolean): void {
     this.enqueuePersistence(() => this.bridge.owner.transact((current) => {
       if (!current.cycle) return current;

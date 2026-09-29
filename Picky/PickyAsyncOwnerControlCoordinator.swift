@@ -169,12 +169,17 @@ final class PickyAsyncOwnerControlCoordinator: PickyAsyncTaskControlling {
             guard generation == asyncControlState.intentGenerations[sessionID, default: 0] else {
                 throw CancellationError()
             }
-            if let mode { archiveMode = mode } else {
-                guard context.hasCompleteCoverage else { throw PickyAsyncControlError.unsupported }
+            if let mode {
+                // A stop without provider coverage can close admission but cannot prove
+                // cleanup, leaving the Pickle fenced. Retained archive is still safe.
+                guard mode != .stopThenArchive || context.hasCompleteCoverage else { throw PickyAsyncControlError.unsupported }
+                archiveMode = mode
+            } else {
                 guard context.requiresArchiveChoice == false else {
                     asyncControlState.archiveChoices[sessionID] = context
                     throw PickyAsyncControlError.archiveChoiceRequired
                 }
+                guard context.hasCompleteCoverage else { throw PickyAsyncControlError.unsupported }
                 archiveMode = .continue
             }
             prepare = try context.command(.prepareSessionArchive)

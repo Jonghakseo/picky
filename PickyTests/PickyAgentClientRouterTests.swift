@@ -2940,6 +2940,38 @@ extension PickyAgentClientRouterTests {
         #expect(execute.mode == .continue)
     }
 
+    @Test func incompleteAsyncCoverageOffersRetainedArchiveAndMovesDockOnlyAfterSettlement() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        defer { router.disconnect() }
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000)
+        viewModel.apply(.protocolEvent(trackedSessionEvent()))
+        primary.onSendInject = { envelope in
+            if envelope.type == .getAsyncControlContext {
+                var context = asyncControlContext(requestID: envelope.id, ready: false)
+                context.requiresArchiveChoice = true
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
+            } else if let command = envelope.command {
+                primary.emit(.protocolEvent(asyncControlEnvelope(.asyncTaskCommandResult(asyncControlResult(command)))))
+            }
+        }
+        await router.connect()
+        viewModel.archive(sessionID: "tracked")
+        try await waitUntil { viewModel.archiveCoordinator.states["tracked"] == .choosingMode }
+        #expect(viewModel.sessions.map(\.id) == ["tracked"])
+        await #expect(throws: PickyAsyncControlError.unsupported) {
+            try await viewModel.archiveSessionConfirmed(sessionID: "tracked", mode: .stopThenArchive)
+        }
+        #expect(!primary.sentCommands.contains { $0.type == .asyncTaskCommand })
+        #expect(viewModel.sessions.map(\.id) == ["tracked"])
+        try await viewModel.archiveSessionConfirmed(sessionID: "tracked", mode: .continue)
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.archivedSessions.map(\.id) == ["tracked"])
+        #expect(primary.sentCommands.contains { $0.command?.type == .executeSessionArchive && $0.command?.mode == .continue })
+    }
+
     @Test func archiveChoiceStopsRetryingWhenOwnerStaysStale() async throws {
         let primary = StubAgentClient(id: "primary")
         let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))

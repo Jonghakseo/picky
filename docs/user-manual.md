@@ -340,7 +340,7 @@ Archive methods:
 - Use the dock right-click menu → **Archive**.
 - Use the conversation card menu → **Archive**.
 
-If a Pickle still has tracked background work, archiving it asks whether to **Keep running and archive**, **Stop and archive**, or **Cancel**. The choice applies to that Pickle's running work; simply hiding its card does not stop it. If stopping fails, Picky shows an error instead of silently treating the work as stopped.
+If a Pickle has unfinished background work or its status cannot be verified, archiving asks whether to **Archive without stopping**, **Stop and archive**, or **Cancel**. Archiving without stopping hides the Pickle but retains its pending work and any unresolved results; it does not guarantee that work is still running or make the Pickle ready for new input. If stopping or cleanup cannot be confirmed, Picky leaves the Pickle in the dock and shows an error.
 
 After archiving:
 

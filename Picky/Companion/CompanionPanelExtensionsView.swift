@@ -173,6 +173,15 @@ struct PickyCuratedPlugin: Identifiable {
         checksDuplicates: true
     )
 
+    static let bashAsync = PickyCuratedPlugin(
+        id: "bash-async",
+        titleKey: "extensions.curated.bashAsync.title",
+        descriptionKey: "extensions.curated.bashAsync.description",
+        commandName: "bash_async",
+        source: "npm:@ryan_nookpi/pi-extension-bash-async",
+        checksDuplicates: true
+    )
+
     static let skillCreator = PickyCuratedPlugin(
         id: "skill-creator",
         titleKey: "extensions.curated.skillCreator.title",
@@ -239,6 +248,7 @@ struct PickyCuratedPlugin: Identifiable {
         .claudeHooksBridge,
         .webAccess,
         .vccKo,
+        .bashAsync,
         .skillCreator,
         .excalidraw,
         .tmuxTerminal,

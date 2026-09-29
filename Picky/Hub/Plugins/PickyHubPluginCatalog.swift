@@ -65,6 +65,7 @@ struct PickyHubPluginMetadata: Equatable {
         "claude-hooks-bridge": .init(category: .development, provider: "@ryan_nookpi", systemImage: "link", useCaseKeys: ["hub.plugins.useCase.claudeHooksBridge.1", "hub.plugins.useCase.claudeHooksBridge.2"]),
         "web-access": .init(category: .research, provider: "@ryan_nookpi", systemImage: "globe", useCaseKeys: ["hub.plugins.useCase.webAccess.1", "hub.plugins.useCase.webAccess.2"]),
         "vcc-ko": .init(category: .taskManagement, provider: "@ryan_nookpi", systemImage: "archivebox", useCaseKeys: ["hub.plugins.useCase.vccKo.1", "hub.plugins.useCase.vccKo.2"]),
+        "bash-async": .init(category: .development, provider: "@ryan_nookpi", systemImage: "hourglass", useCaseKeys: ["hub.plugins.useCase.bashAsync.1", "hub.plugins.useCase.bashAsync.2"]),
         "skill-creator": .init(category: .development, provider: "@ryan_nookpi", systemImage: "wand.and.stars", useCaseKeys: ["hub.plugins.useCase.skillCreator.1", "hub.plugins.useCase.skillCreator.2"]),
         "excalidraw": .init(category: .content, provider: "@ryan_nookpi", systemImage: "scribble.variable", useCaseKeys: ["hub.plugins.useCase.excalidraw.1", "hub.plugins.useCase.excalidraw.2"]),
         "tmux-terminal": .init(category: .development, provider: "@ryan_nookpi", systemImage: "apple.terminal", useCaseKeys: ["hub.plugins.useCase.tmuxTerminal.1", "hub.plugins.useCase.tmuxTerminal.2"]),

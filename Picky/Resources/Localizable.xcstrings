@@ -1,6 +1,70 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "extensions.curated.bashAsync.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bash Async"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bash Async"
+          }
+        }
+      }
+    },
+    "extensions.curated.bashAsync.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run long shell commands such as builds and tests in the background, and get the result in the conversation when they finish. Pickles use the version built into Picky; installing adds it to main Picky and Pi terminals."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드·테스트처럼 오래 걸리는 셸 명령을 백그라운드에서 실행하고, 끝나면 결과를 대화로 알려줘요. Pickle에는 Picky에 들어 있는 버전이 쓰이고, 설치하면 메인 Picky와 Pi 터미널에서도 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.bashAsync.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting a build or test run and moving on to other work"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드나 테스트를 돌려 두고 다른 일을 이어갈 때"
+          }
+        }
+      }
+    },
+    "hub.plugins.useCase.bashAsync.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting the result of a long command without checking back"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오래 걸리는 명령의 결과를 놓치지 않고 받을 때"
+          }
+        }
+      }
+    },
     "hub.plugins.error.failed.install": {
       "localizations": {
         "en": {

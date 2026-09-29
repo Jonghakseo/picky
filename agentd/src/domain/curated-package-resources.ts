@@ -13,6 +13,7 @@ export interface CuratedPackageResources {
 const resourcesByPackage: Readonly<Record<string, CuratedPackageResources>> = {
   "@ryan_nookpi/pi-extension-web-access": { tools: ["web_search", "fetch_content", "get_search_content"], skills: [] },
   "@ryan_nookpi/pi-extension-vcc-ko": { tools: ["vcc_recall"], skills: [] },
+  "@ryan_nookpi/pi-extension-bash-async": { tools: ["bash_async"], skills: [] },
   "@ryan_nookpi/pi-skill-skill-creator": { tools: [], skills: ["skill-creator"] },
   "@ryan_nookpi/pi-skill-excalidraw": { tools: [], skills: ["excalidraw"] },
   "@ryan_nookpi/pi-skill-tmux-terminal": { tools: [], skills: ["tmux-terminal"] },

@@ -397,6 +397,15 @@ it("protects automatic replacement while explicitly deleting archived connected 
   expect(await f.store.loadReadOnly("session-1")).toBeUndefined();
 });
 
+it("does not count async-tracked Pickles without a live runtime as deferred plugin reloads", async () => {
+  const f = await fixture(); await f.addTask(false);
+  // An app restart leaves persisted async state but no runtime handle; there is nothing to reload.
+  const restarted = new SessionSupervisor(new MockRuntime(), f.store, { sessionIdFactory: () => "session-2", enableAsyncTasksForSession: () => true });
+  await restarted.load();
+  expect(await restarted.reloadPlugins()).toMatchObject({ pickleReloadedCount: 0, pickleDeferredCount: 0 });
+  expect((await f.store.loadReadOnly("session-1"))?.logs).not.toContain("plugins reload blocked by outstanding async work or coverage");
+});
+
 it("keeps an archived Pickle when explicit deletion cannot confirm connected task cleanup", async () => {
   const f = await fixture({ fail: "cancel" }); await f.addTask(false);
   await f.supervisor.setSessionArchived("session-1", true, "continue");

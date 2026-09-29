@@ -14082,13 +14082,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld waiting for history compaction"
+            "value": "%lld Pickle(s) skipped while work is in progress"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pickle %lld개는 대화 기록 정리 후 적용"
+            "value": "Pickle %lld개는 진행 중인 작업 때문에 건너뜀"
           }
         }
       }

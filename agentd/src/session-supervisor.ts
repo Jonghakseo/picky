@@ -527,10 +527,12 @@ export class SessionSupervisor extends EventEmitter {
     // Pickle sessions. Iterate a snapshot because abort() mutates session state.
     const pickles = this.listPickleSessions();
     for (const session of pickles) {
-      if (this.asyncControls.retained(session.id)) { pickleDeferredCount++; await this.appendLog(session.id, "plugins reload blocked by outstanding async work or coverage"); continue; }
+      // Finished or runtime-less Pickles have nothing to reload. Check them before async
+      // retention, which also reports true when no live runtime exists (e.g. after restart).
       if (isTerminalStatus(session.status)) continue;
       const handle = this.runtimeHandles.get(session.id);
       if (!handle) continue;
+      if (this.asyncControls.retained(session.id)) { pickleDeferredCount++; await this.appendLog(session.id, "plugins reload blocked by outstanding async work or coverage"); continue; }
 
       if (handle.isCompacting === true) {
         // Compaction can't be cleanly aborted on the Pi side. Defer the reload

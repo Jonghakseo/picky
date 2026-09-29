@@ -183,7 +183,9 @@ struct PickyHUDView: View {
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
         hudContent
-            .confirmationDialog(
+            // Use a native alert: confirmationDialog dims the transparent HUD window,
+            // including the desktop visible around the conversation card.
+            .alert(
                 Text(archiveActions.choiceSessionID.map { sessionID in
                     L10n.t("hud.asyncTasks.archiveChoice.namedTitle",
                         viewModel.sessionCard(sessionID: sessionID)?.title ?? sessionID)

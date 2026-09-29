@@ -470,6 +470,8 @@ Safety behavior:
 
 Type `/` in the composer to show slash command suggestions supplied by Pi's built-in and extension autocomplete providers. Picky also adds local HUD commands where useful; for example, `/tree` opens the Pickle message rewind picker instead of sending the text to Pi.
 
+A submitted slash command appears in the conversation with the command name as a header and its arguments as the body. A command that fails is marked **Failed**.
+
 Suggestions follow the caret: they appear whenever the caret sits inside the leading command token, even when more draft text follows. Accepting a suggestion replaces only the typed command part and keeps the rest of your draft, so you can place the caret at the start of an existing message and prepend a command without losing your text.
 
 Controls:
@@ -547,7 +549,7 @@ Click a tool/activity summary in a Pickle card to open **Tool History** in a sep
 
 It can show:
 
-- Tool calls grouped by category, such as read, bash, edit, write, and other.
+- Tool calls grouped by category, such as read, bash, edit, write, and other. Known tools show their key argument as the title, such as a `bash_async` command, a `grep` pattern and path, or a `web_search` query; unknown tools show their tool name.
 - Tool status and duration.
 - Full tool results inline, without extra metadata wrapping.
 - Edit diffs for file changes where available.
@@ -612,7 +614,7 @@ What you will see:
 - While compaction is running, the card shows a **Compacting…** overlay. The composer remains editable and accepts steer or follow-up messages; submitted messages appear in the queue and run in submission order after compaction finishes.
 - Use `Option + Up` if you want to pull those queued messages back into the composer and clear the queue before they run.
 - A queued message that carried screen context shows a `🖥️ N attached` marker, so you can tell which pending messages already have screenshots. The marker is display-only: the screenshots cannot be restored into the composer, so Picky blocks the `Option + Up` restore rather than silently dropping them.
-- On success, a **Session compacted** system bubble appears in the conversation.
+- On success, a **Session compacted** system row appears in the conversation with the token change (for example `128k → ~21k`; the after value is Pi's estimate). Expand the row to preview Pi's compaction summary, and use **Open as Report** to read the full summary.
 - On failure, an error bubble explains the reason; queued messages are still released so they are not stranded.
 
 ### 9.4 Message rewind

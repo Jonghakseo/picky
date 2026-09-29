@@ -5117,6 +5117,22 @@
         }
       }
     },
+    "hud.command.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      }
+    },
     "hud.compact.done.body": {
       "localizations": {
         "en": {

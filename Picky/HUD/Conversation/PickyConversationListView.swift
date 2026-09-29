@@ -538,7 +538,7 @@ struct PickyConversationListView: View {
         case .hiddenActivity:
             EmptyView()
         case .compactCompletion:
-            PickyCompactCompletionBubbleView()
+            PickyCompactCompletionBubbleView(message: message, onOpenAsReport: openMessageReportAction(for: message))
         case .compactFailure:
             PickyCompactFailureBubbleView(message: message)
         case .notify:

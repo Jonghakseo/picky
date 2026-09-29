@@ -12,7 +12,7 @@ import SwiftUI
 
 struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     let markdown: String
-    let skillName: String?
+    let header: PickyUserBubbleHeader?
     let attachedImagesLabel: String?
     let originLabel: String?
     let isPiExtensionMessage: Bool
@@ -39,7 +39,7 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
         _ = appFontScale
         view.configure(
             markdown: markdown,
-            skillName: skillName,
+            header: header,
             attachedImagesLabel: attachedImagesLabel,
             originLabel: originLabel,
             isPiExtensionMessage: isPiExtensionMessage,
@@ -90,10 +90,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     private let expansionButton = NSButton(title: "", target: nil, action: nil)
     private let skillIconView = NSImageView()
     private let skillNameField = NSTextField(labelWithString: "")
-    private let skillMetaField = NSTextField(labelWithString: "Skill")
+    private let skillMetaField = NSTextField(labelWithString: "")
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
-    private var skillName: String?
+    private var header: PickyUserBubbleHeader?
     private var hasBodyText = false
     private var attachedImagesLabel: String?
     private var originLabel: String?
@@ -156,7 +156,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
     func configure(
         markdown: String,
-        skillName: String?,
+        header: PickyUserBubbleHeader?,
         attachedImagesLabel: String?,
         originLabel: String?,
         isPiExtensionMessage: Bool,
@@ -175,7 +175,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
             onEditText: { [weak self] in self?.editTextClicked() }
         )
 
-        self.skillName = skillName
+        self.header = header
         self.hasBodyText = !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         self.attachedImagesLabel = attachedImagesLabel
         self.originLabel = originLabel
@@ -193,8 +193,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         configureExpansionButton(title: expansionTitle, systemImageName: expansionSystemImageName)
         setLabel(attachedImagesField, text: attachedImagesLabel)
         setLabel(originField, text: originLabel)
-        skillNameField.stringValue = skillName ?? ""
-        let hasSkillHeader = skillName != nil
+        skillNameField.stringValue = header?.title ?? ""
+        skillMetaField.stringValue = header?.kind.metaText ?? ""
+        applyHeaderStyle(header?.kind)
+        let hasSkillHeader = header != nil
         skillIconView.isHidden = !hasSkillHeader
         skillNameField.isHidden = !hasSkillHeader
         skillMetaField.isHidden = !hasSkillHeader
@@ -223,7 +225,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
         let textWidth = max(0, bubbleRect.width - 2 * Metrics.horizontalPadding)
         var y = bubbleRect.minY + Metrics.verticalPadding
-        if skillName != nil {
+        if header != nil {
             layoutSkillHeader(in: bubbleRect, y: &y, textWidth: textWidth)
             if hasBodyText { y += Metrics.headerBodySpacing }
         }
@@ -237,7 +239,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
         layoutLabel(attachedImagesField, in: bubbleRect, y: &y, textWidth: textWidth)
         layoutLabel(originField, in: bubbleRect, y: &y, textWidth: textWidth)
-        if skillName == nil {
+        if header == nil {
             layoutExpansionButton(in: bubbleRect, y: &y, textWidth: textWidth)
         }
         needsDisplay = true
@@ -289,7 +291,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     private func bubbleMetrics(rootWidth: CGFloat) -> (bubbleWidth: CGFloat, bubbleHeight: CGFloat, textHeight: CGFloat) {
         let bubbleCap = min(maxBubbleWidth, rootWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
-        let hasSkillHeader = skillName != nil
+        let hasSkillHeader = header != nil
         let textSize = hasBodyText ? measuredTextContentSize(forWidth: interiorCap) : .zero
         let labelWidth = max(labelWidth(attachedImagesField), labelWidth(originField))
         let expansionWidth = hasSkillHeader ? 0 : expansionButtonWidth()
@@ -383,12 +385,17 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         markdownView.measuredSize(forWidth: width)
     }
 
-    private func configureSkillHeaderViews() {
+    private func applyHeaderStyle(_ kind: PickyUserBubbleHeader.Kind?) {
+        guard let kind else { return }
         skillIconView.image = NSImage(
-            systemSymbolName: "bolt.fill",
-            accessibilityDescription: "Skill"
+            systemSymbolName: kind.symbolName,
+            accessibilityDescription: kind.metaText
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
-        skillIconView.contentTintColor = NSColor(DS.Colors.info)
+        skillIconView.contentTintColor = NSColor(kind.iconColor)
+        skillMetaField.textColor = NSColor(kind == .failedCommand ? DS.Colors.destructiveText : DS.Colors.textTertiary)
+    }
+
+    private func configureSkillHeaderViews() {
         skillIconView.imageScaling = .scaleProportionallyUpOrDown
         skillIconView.isHidden = true
         if skillIconView.superview == nil { addSubview(skillIconView) }
@@ -437,7 +444,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     }
 
     private func configureExpansionButton(title: String?, systemImageName: String?) {
-        expansionButton.title = skillName == nil ? (title ?? "") : ""
+        expansionButton.title = header == nil ? (title ?? "") : ""
         if let systemImageName {
             let symbolConfig = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
             expansionButton.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: title)?

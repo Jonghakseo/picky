@@ -41,6 +41,8 @@ struct PickyCompactingOverlayView: View {
 }
 
 struct PickyCompactCompletionBubbleView: View {
+    var message: PickySessionMessage? = nil
+    var onOpenAsReport: (() -> Void)? = nil
     @State private var isExpanded = false
 
     var body: some View {
@@ -51,6 +53,11 @@ struct PickyCompactCompletionBubbleView: View {
                         .font(PickyHUDTypography.statusSemibold)
                     Text("hud.compact.done.title")
                         .font(PickyHUDTypography.statusSemibold)
+                    if let tokenChangeText {
+                        Text(tokenChangeText)
+                            .font(PickyHUDTypography.statusMonospacedMedium)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 0)
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .pickyFont(size: 9, weight: .semibold)
@@ -60,7 +67,7 @@ struct PickyCompactCompletionBubbleView: View {
             }
             .buttonStyle(.plain)
             .help(L10n.t(isExpanded ? "hud.compact.done.collapse" : "hud.compact.done.expand"))
-            .accessibilityLabel(L10n.t("hud.compact.done.title"))
+            .accessibilityLabel(accessibilityTitle)
             .accessibilityValue(L10n.t(
                 isExpanded ? "hud.conversation.turn.expanded" : "hud.conversation.turn.collapsed"
             ))
@@ -68,15 +75,65 @@ struct PickyCompactCompletionBubbleView: View {
             .hoverAffordance()
 
             if isExpanded {
-                Text("hud.compact.done.body")
-                    .font(PickyHUDTypography.status)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, DS.Spacing.space4)
+                VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+                    Text("hud.compact.done.body")
+                        .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let summaryPreview {
+                        Text(summaryPreview)
+                            .font(PickyHUDTypography.status)
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .lineLimit(Self.summaryPreviewLineLimit)
+                            .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if summaryPreview != nil, let onOpenAsReport {
+                        Button(action: onOpenAsReport) {
+                            Text("hud.extensionMessage.openAsReport")
+                                .font(PickyHUDTypography.statusSemibold)
+                                .foregroundColor(DS.Colors.accentText)
+                        }
+                        .buttonStyle(.plain)
+                        .hoverAffordance()
+                    }
+                }
+                .padding(.leading, DS.Spacing.space4)
             }
         }
         .padding(.vertical, DS.Spacing.space1)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    static let summaryPreviewLineLimit = 6
+
+    /// `128k → ~21k`; the after value is Pi's estimate of the kept context.
+    var tokenChangeText: String? {
+        guard let compaction = message?.compaction else { return nil }
+        let before = Self.abbreviatedTokenCount(compaction.tokensBefore)
+        guard let after = compaction.tokensAfter else { return before }
+        return "\(before) → ~\(Self.abbreviatedTokenCount(after))"
+    }
+
+    var summaryPreview: String? {
+        let summary = message?.compaction?.summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return summary.isEmpty ? nil : summary
+    }
+
+    private var accessibilityTitle: String {
+        let title = L10n.t("hud.compact.done.title")
+        guard let tokenChangeText else { return title }
+        return "\(title), \(tokenChangeText)"
+    }
+
+    static func abbreviatedTokenCount(_ count: Double) -> String {
+        let value = max(0, count)
+        if value < 1_000 { return String(Int(value.rounded())) }
+        if value < 10_000 {
+            let thousands = (value / 100).rounded() / 10
+            return thousands == thousands.rounded() ? "\(Int(thousands))k" : "\(thousands)k"
+        }
+        return "\(Int((value / 1_000).rounded()))k"
     }
 }
 
@@ -125,6 +182,13 @@ private var compactBubbleShape: UnevenRoundedRectangle {
 }
 
 extension PickySessionMessage {
+    /// Report body for a compaction row: Pi's summary when the daemon recorded one.
+    var compactSummaryReportMarkdown: String? {
+        guard isCompactCompletionMessage else { return nil }
+        let summary = compaction?.summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return summary.isEmpty ? nil : summary
+    }
+
     var isCompactCompletionMessage: Bool {
         guard kind == .system else { return false }
         let normalized = text?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""

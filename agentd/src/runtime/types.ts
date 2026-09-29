@@ -13,6 +13,13 @@ import type { ModelCycleDirection, PickyQueueMode, PickySubagentInvocation, Pick
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
+/** Pi compaction outcome; `tokensAfter` is Pi's estimate of the kept context. */
+export interface RuntimeCompactionResult {
+  tokensBefore: number;
+  tokensAfter?: number;
+  summary?: string;
+}
+
 export interface RuntimeSlashCommand {
   name: string;
   description?: string;
@@ -149,7 +156,7 @@ export type RuntimeEvent =
    */
   | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string; turnActive?: boolean; asyncTasks?: AsyncCompletionDelivery }
   | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
-  | { type: "status"; status: RuntimeSessionStatus; cycleId?: string; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
+  | { type: "status"; status: RuntimeSessionStatus; cycleId?: string; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string; compaction?: RuntimeCompactionResult }
   /**
    * Per-turn assistant text flush. Emitted when a turn ends with both assistant
    * text and tool calls so the supervisor can speak the text-so-far through TTS

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hasActivity } from "./domain/activity-summary.js";
 import { stripAnsiEscapeSequences } from "./domain/ansi.js";
-import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyExtensionUiRequest, PickySessionMessage, PickySubagentInvocation } from "./protocol.js";
+import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyCompactionResult, PickyExtensionUiRequest, PickySessionMessage, PickySubagentInvocation } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -164,12 +164,13 @@ export class SessionMessageBuilder {
     });
   }
 
-  async recordSystemMessage(sessionId: string, text: string): Promise<void> {
+  async recordSystemMessage(sessionId: string, text: string, options: { compaction?: PickyCompactionResult } = {}): Promise<void> {
     await this.appendInternal(sessionId, {
       id: `msg-system-${randomUUID()}`,
       kind: "system",
       createdAt: this.deps.now(),
       text,
+      ...(options.compaction ? { compaction: options.compaction } : {}),
     });
   }
 

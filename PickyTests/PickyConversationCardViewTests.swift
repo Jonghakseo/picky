@@ -746,26 +746,71 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.compactCompletionBubbleCount == 1)
     }
 
-    @Test func commandReceiptRendersThroughUserBubbleSurface() {
-        let receipt = PickyCommandReceipt(command: "/c", status: .submitted, detail: nil)
-        let commandMessage = message("m-command", kind: .commandReceipt, text: "/c", commandReceipt: receipt)
+    @Test func compactCompletionShowsPiTokenCountsAndOpensSummaryReport() throws {
+        let json = #"{"id":"m-compact","kind":"system","createdAt":"2026-05-01T00:00:04.000Z","text":"Session compacted","compaction":{"tokensBefore":128400,"tokensAfter":20950,"summary":"Goal\nFix OAuth refresh race"}}"#
+        let compactMessage = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionMessage.self, from: Data(json.utf8))
+        let bubble = PickyCompactCompletionBubbleView(message: compactMessage)
+
+        #expect(compactMessage.isCompactCompletionMessage)
+        #expect(bubble.tokenChangeText == "128k → ~21k")
+        #expect(bubble.summaryPreview == "Goal\nFix OAuth refresh race")
+        #expect(compactMessage.openAsReportMarkdown == "Goal\nFix OAuth refresh race")
+    }
+
+    @Test func compactCompletionWithoutPiResultKeepsPlainRow() {
+        let compactMessage = message("m-compact", kind: .system, text: "Session compacted")
+        let bubble = PickyCompactCompletionBubbleView(message: compactMessage)
+
+        #expect(bubble.tokenChangeText == nil)
+        #expect(bubble.summaryPreview == nil)
+        #expect(compactMessage.openAsReportMarkdown == "Session compacted")
+    }
+
+    @Test func compactTokenCountsAbbreviateToThousands() {
+        #expect(PickyCompactCompletionBubbleView.abbreviatedTokenCount(812) == "812")
+        #expect(PickyCompactCompletionBubbleView.abbreviatedTokenCount(4_000) == "4k")
+        #expect(PickyCompactCompletionBubbleView.abbreviatedTokenCount(4_260) == "4.3k")
+        #expect(PickyCompactCompletionBubbleView.abbreviatedTokenCount(200_000) == "200k")
+    }
+
+    @Test func commandReceiptRendersCommandHeaderWithArgumentsAsBody() {
+        let receipt = PickyCommandReceipt(command: "/name OAuth 버그 조사", status: .submitted, detail: nil)
+        let commandMessage = message("m-command", kind: .commandReceipt, text: "/name OAuth 버그 조사", commandReceipt: receipt)
         let session = makeConversationSession(status: .completed, messages: [commandMessage])
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
         let bubble = PickyUserBubbleView(message: commandMessage)
 
         #expect(snapshot.commandReceiptBubbleCount == 1)
-        #expect(bubble.displayedMarkdownPreview == "/c")
+        #expect(bubble.displayedHeader == PickyUserBubbleHeader(kind: .command, title: "name"))
+        #expect(bubble.displayedMarkdownPreview == "OAuth 버그 조사")
         #expect(bubble.displayedOriginLabel == nil)
+        #expect(!bubble.shouldOfferExpansion)
     }
 
-    @Test func failedCommandReceiptStillUsesUserBubbleTextOnly() {
+    @Test func commandReceiptWithoutArgumentsRendersHeaderOnly() {
+        let receipt = PickyCommandReceipt(command: "/compact", status: .submitted, detail: nil)
+        let bubble = PickyUserBubbleView(message: message("m-command", kind: .commandReceipt, text: "/compact", commandReceipt: receipt))
+
+        #expect(bubble.displayedHeader == PickyUserBubbleHeader(kind: .command, title: "compact"))
+        #expect(bubble.displayedMarkdownPreview.isEmpty)
+    }
+
+    @Test func failedCommandReceiptMarksHeaderAsFailed() {
         let receipt = PickyCommandReceipt(command: "/c", status: .failed, detail: "unmerged paths")
         let commandMessage = message("m-command", kind: .commandReceipt, text: "/c", commandReceipt: receipt)
         let bubble = PickyUserBubbleView(message: commandMessage)
 
-        #expect(bubble.displayedMarkdownPreview == "/c")
+        #expect(bubble.displayedHeader == PickyUserBubbleHeader(kind: .failedCommand, title: "c"))
+        #expect(bubble.displayedMarkdownPreview.isEmpty)
         #expect(bubble.displayedOriginLabel == nil)
+    }
+
+    @Test func slashTextInUserMessageDoesNotRenderCommandHeader() {
+        let bubble = PickyUserBubbleView(message: message("m-user", kind: .userText, text: "/Users/me/project 확인해줘"))
+
+        #expect(bubble.displayedHeader == nil)
+        #expect(bubble.displayedMarkdownPreview == "/Users/me/project 확인해줘")
     }
 
     @Test func extensionNotifySystemMessageRendersSeverityBubbleAndReportGate() {

@@ -41,6 +41,14 @@ struct PickyCommandReceipt: Codable, Equatable {
     let detail: String?
 }
 
+/// Pi compaction outcome attached to the "Session compacted" system message.
+/// `tokensAfter` is Pi's estimate of the context that survived compaction.
+struct PickyCompactionResult: Codable, Equatable {
+    let tokensBefore: Double
+    var tokensAfter: Double? = nil
+    var summary: String? = nil
+}
+
 struct PickyAssistantRunMetadata: Codable, Equatable {
     var model: String?
     var thinkingLevel: PickyMainAgentThinkingLevel?
@@ -82,6 +90,7 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     /// system one. Nil for every message Pi did not tag.
     var customType: String? = nil
     var commandReceipt: PickyCommandReceipt? = nil
+    var compaction: PickyCompactionResult? = nil
     var subagentInvocation: PickySubagentInvocation? = nil
     /// Count of image attachments that travelled with this user_text via the
     /// structured context channel (PTT / QuickInput screenshots). Nil for
@@ -97,6 +106,7 @@ extension PickySessionMessage {
     var openAsReportMarkdown: String? {
         switch kind {
         case .agentText, .userText, .system:
+            if let compactSummaryReportMarkdown { return compactSummaryReportMarkdown }
             let source = text ?? ""
             let reportText = notifyType == nil ? source : PickyAnsiEscapeSanitizer.stripped(source)
             let trimmed = reportText.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -10,7 +10,7 @@ import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js"
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyExtensionUiRequest, PickySubagentInvocation, PickyToolActivity } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyCompactionResult, PickyExtensionUiRequest, PickySubagentInvocation, PickyToolActivity } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -19,7 +19,7 @@ interface RuntimeMessageJournal {
   recordExtensionNotification(sessionId: string, request: PickyExtensionUiRequest): Promise<void>;
   cancelExtensionQuestion(sessionId: string, requestId: string): Promise<void>;
   recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void>;
-  recordSystemMessage(sessionId: string, text: string): Promise<void>;
+  recordSystemMessage(sessionId: string, text: string, options?: { compaction?: PickyCompactionResult }): Promise<void>;
   recordExtensionText(sessionId: string, text: string, customType?: string): Promise<void>;
   recordUserText(sessionId: string, text: string, originatedBy: "user" | "main_agent" | "pi_extension"): Promise<void>;
   appendAssistantDelta(sessionId: string, delta: string): void;
@@ -375,7 +375,11 @@ export class RuntimeEventHandler {
     if (terminal) this.processedTerminalRuns.add(sessionId);
 
     if (event.compactionCompleted && !hasLatestCompactCompletionMessage(currentSession)) {
-      await this.dependencies.messageBuilder.recordSystemMessage(sessionId, event.compactionReason === "overflow" ? "Session compacted after context overflow" : "Session compacted");
+      await this.dependencies.messageBuilder.recordSystemMessage(
+        sessionId,
+        event.compactionReason === "overflow" ? "Session compacted after context overflow" : "Session compacted",
+        event.compaction ? { compaction: event.compaction } : {},
+      );
     }
     if (event.compactionFailed && !hasLatestCompactFailureMessage(currentSession)) {
       await this.dependencies.messageBuilder.recordSystemMessage(sessionId, compactFailureMessage(event.summary, currentSession.contextUsage));

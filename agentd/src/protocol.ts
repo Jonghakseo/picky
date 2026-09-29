@@ -280,6 +280,13 @@ export const PickyCommandReceiptSchema = z.object({
   detail: z.string().optional(),
 });
 export type PickyCommandReceipt = z.infer<typeof PickyCommandReceiptSchema>;
+/** Pi compaction outcome attached to the "Session compacted" system message. */
+export const PickyCompactionResultSchema = z.object({
+  tokensBefore: z.number().nonnegative(),
+  tokensAfter: z.number().nonnegative().optional(),
+  summary: z.string().optional(),
+});
+export type PickyCompactionResult = z.infer<typeof PickyCompactionResultSchema>;
 export const PickyMainAgentModelOptionSchema = z.object({
   provider: z.string().min(1),
   modelId: z.string().min(1),
@@ -335,6 +342,7 @@ export const PickySessionMessageSchema = z.object({
   // labeled/collapsible treatment to any extension, present or future.
   customType: z.string().optional(),
   commandReceipt: PickyCommandReceiptSchema.optional(),
+  compaction: PickyCompactionResultSchema.optional(),
   subagentInvocation: PickySubagentInvocationSchema.optional(),
   // Count of image attachments that travelled with this user_text via the
   // structured context channel (PTT / QuickInput screenshots). HUD renders a

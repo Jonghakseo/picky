@@ -23,7 +23,7 @@ struct PickyUserBubbleView: View {
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
             PickyUserBubbleSurfaceView(
                 markdown: displayedMarkdown,
-                skillName: displayedSkillName,
+                header: displayedHeader,
                 attachedImagesLabel: displayedAttachedImagesLabel,
                 originLabel: originLabel,
                 isPiExtensionMessage: isPiExtensionMessage,
@@ -44,17 +44,35 @@ struct PickyUserBubbleView: View {
     var displayedSkillName: String? {
         PickySkillInvocationPresentation.invocation(for: message)?.name
     }
+    var displayedCommandInvocation: PickyCommandInvocation? {
+        PickyCommandInvocationPresentation.invocation(for: message)
+    }
+    var displayedHeader: PickyUserBubbleHeader? {
+        if let command = displayedCommandInvocation {
+            return PickyUserBubbleHeader(kind: command.failed ? .failedCommand : .command, title: command.name)
+        }
+        return displayedSkillName.map { PickyUserBubbleHeader(kind: .skill, title: $0) }
+    }
     var displayedMarkdownPreview: String {
+        if let command = displayedCommandInvocation {
+            return PickyAgentResponsePreview.truncatedMarkdown(command.arguments)
+        }
         if let invocation = PickySkillInvocationPresentation.invocation(for: message) {
             return PickyAgentResponsePreview.truncatedMarkdown(invocation.instruction)
         }
         return PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
     }
     var displayedMarkdown: String {
-        isExpanded ? message.text ?? "" : displayedMarkdownPreview
+        guard isExpanded else { return displayedMarkdownPreview }
+        // A command's raw text only repeats the header, so expansion reveals the full arguments.
+        if let command = displayedCommandInvocation { return command.arguments }
+        return message.text ?? ""
     }
     var shouldOfferExpansion: Bool {
-        PickySkillInvocationPresentation.invocation(for: message) != nil
+        if let command = displayedCommandInvocation {
+            return PickyAgentResponsePreview.isTruncated(command.arguments)
+        }
+        return PickySkillInvocationPresentation.invocation(for: message) != nil
             || PickyAgentResponsePreview.isTruncated(message.text ?? "")
     }
 
@@ -119,6 +137,70 @@ struct PickyUserBubbleView: View {
     var displayedAttachedImagesLabel: String? {
         guard let count = message.attachedImagesCount, count > 0 else { return nil }
         return "🖥️ \(count) attached"
+    }
+}
+
+/// Header row drawn above a user bubble body: the invoked skill or slash command.
+struct PickyUserBubbleHeader: Equatable {
+    enum Kind: Equatable {
+        case skill
+        case command
+        case failedCommand
+
+        var symbolName: String {
+            switch self {
+            case .skill: "bolt.fill"
+            case .command: "slash.circle"
+            case .failedCommand: "exclamationmark.circle"
+            }
+        }
+
+        var iconColor: Color {
+            switch self {
+            case .skill: DS.Colors.info
+            case .command: DS.Colors.textSecondary
+            case .failedCommand: DS.Colors.destructiveText
+            }
+        }
+
+        var metaText: String {
+            switch self {
+            case .skill: "Skill"
+            case .command: "Command"
+            case .failedCommand: L10n.t("hud.command.failed")
+            }
+        }
+    }
+
+    let kind: Kind
+    let title: String
+}
+
+struct PickyCommandInvocation: Equatable {
+    let name: String
+    let arguments: String
+    let failed: Bool
+}
+
+/// Splits a recorded slash-command receipt (`/name OAuth bug`) into the command
+/// name shown in the header and the arguments shown as the bubble body.
+enum PickyCommandInvocationPresentation {
+    private static let pattern = try? NSRegularExpression(pattern: #"\A/(\S+)(?:\s+([\s\S]*))?\z"#)
+
+    static func invocation(for message: PickySessionMessage) -> PickyCommandInvocation? {
+        guard message.kind == .commandReceipt, let pattern else { return nil }
+        let raw = (message.commandReceipt?.command ?? message.text ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let range = NSRange(raw.startIndex..<raw.endIndex, in: raw)
+        guard let match = pattern.firstMatch(in: raw, range: range),
+              let nameRange = Range(match.range(at: 1), in: raw)
+        else { return nil }
+        let arguments = Range(match.range(at: 2), in: raw).map { String(raw[$0]) } ?? ""
+        return PickyCommandInvocation(
+            name: String(raw[nameRange]),
+            arguments: arguments.trimmingCharacters(in: .whitespacesAndNewlines),
+            failed: message.commandReceipt?.status == .failed
+        )
     }
 }
 

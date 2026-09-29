@@ -15,7 +15,7 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage,subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
+import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeCompactionResult,RuntimeEvent,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
@@ -1122,6 +1122,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     if (event.type === "compaction_end") {
       const reason = stringValue(event.reason);
+      const compaction = compactionResultFromPiEvent(event.result);
       const errorMessage = stringValue(event.errorMessage);
       const hasQueuedCompactionPrompts = this.promptQueue.hasCompactionPrompts;
       if (!errorMessage && event.aborted !== true && event.result != null) {
@@ -1142,7 +1143,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       }
       if (event.willRetry === true) {
         this.cancelDeferredTerminalError();
-        return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
+        return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(compaction ? { compaction } : {}), ...(reason ? { compactionReason: reason } : {}) };
       }
       // Pi can compact before accepting a newly submitted prompt or midway through an active
       // ReAct turn after a tool result. The latter continues emitting assistant deltas without a
@@ -1153,7 +1154,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         || this.pendingPromptPreflightDeliveryIds.size > 0
         || hasQueuedCompactionPrompts;
       if (!errorMessage && event.aborted !== true && activeTurnContinues) {
-        return { type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
+        return { type: "status", status: "running", summary: "Session compacted; continuing…", compactionCompleted: true, ...(compaction ? { compaction } : {}), ...(reason ? { compactionReason: reason } : {}) };
       }
       if (reason === "overflow" && errorMessage) {
         this.cancelDeferredTerminalError();
@@ -1166,7 +1167,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       if (event.aborted === true) {
         return { type: "status", status: "completed", summary: "Compaction cancelled", noTurnRan: true, ...(reason ? { compactionReason: reason } : {}) };
       }
-      return { type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
+      return { type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, ...(compaction ? { compaction } : {}), ...(reason ? { compactionReason: reason } : {}) };
     }
     return undefined;
   }
@@ -1492,4 +1493,15 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+/** Pi's `CompactionResult` numbers and summary, or undefined when the payload is missing. */
+function compactionResultFromPiEvent(result: unknown): RuntimeCompactionResult | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const record = result as Record<string, unknown>;
+  const tokensBefore = numberValue(record.tokensBefore);
+  if (tokensBefore === undefined) return undefined;
+  const tokensAfter = numberValue(record.estimatedTokensAfter);
+  const summary = stringValue(record.summary)?.trim();
+  return { tokensBefore, ...(tokensAfter === undefined ? {} : { tokensAfter }), ...(summary ? { summary } : {}) };
 }

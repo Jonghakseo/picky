@@ -2134,6 +2134,36 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events).some((event) => event.summary === "Session compacted; continuing…")).toBe(false);
   });
 
+  it("persists Pi's compaction token counts and summary on the compacted system message", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-compaction-result-"));
+    const fakeSession = new FakeSession();
+    const store = new SessionStore(dir);
+    const supervisor = new SessionSupervisor(makeRuntime(fakeSession), store);
+    await supervisor.load();
+    const session = await supervisor.createPickleFromHandoff({
+      id: "compaction-result", source: "text", capturedAt: new Date().toISOString(),
+      cwd: dir, transcript: "Investigate", screenshots: [], inkMarks: [], warnings: [],
+    }, { title: "Compaction", instructions: "Investigate" });
+    await vi.waitFor(() => expect(fakeSession.prompts.length).toBe(1));
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Done" }] }] });
+    await vi.waitFor(async () => expect((await store.loadReadOnly(session.id))?.status).toBe("completed"));
+
+    fakeSession.emit("event", { type: "compaction_start", reason: "threshold" });
+    fakeSession.emit("event", {
+      type: "compaction_end", reason: "threshold", willRetry: false, aborted: false,
+      result: { summary: "## Goal\nFix refresh race", firstKeptEntryId: "entry-9", tokensBefore: 128400, estimatedTokensAfter: 20950 },
+    });
+
+    await vi.waitFor(async () => {
+      const messages = (await store.loadReadOnly(session.id))?.messages ?? [];
+      expect(messages).toContainEqual(expect.objectContaining({
+        kind: "system",
+        text: "Session compacted",
+        compaction: { tokensBefore: 128400, tokensAfter: 20950, summary: "## Goal\nFix refresh race" },
+      }));
+    });
+  });
+
   it("emits completion for non-retry automatic threshold compaction", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

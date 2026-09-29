@@ -51,6 +51,11 @@ function providerPackageRoot(): string {
   return root;
 }
 
+// bash_async (0.2.3+) delivers a completion inside the same agent run when the job finishes
+// before the run's final turn. Scenarios that need a completion still pending after the run
+// goes idle must finish the job after the offline model's immediate final turn.
+const AFTER_IDLE = "sleep 0.3; ";
+
 type ToolInput = { name: string; arguments: ToolCall["arguments"] };
 async function fixture(tool: ToolInput | ToolInput[]) {
   expect(VERSION).toBe("0.87.1");
@@ -337,7 +342,7 @@ it("keeps the real 500ms zero-execution gap retained and merges two completion I
 }, 15000);
 
 it.each(["before", "after"] as const)("does not revive actual provider completion payloads when admission closes and reopens (%s old continuation)", async ordering => {
-  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_OLD_GENERATION", timeout: 5 } });
+  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: `${AFTER_IDLE}printf W0B_OLD_GENERATION`, timeout: 5 } });
   const entered = deferred<void>(), release = deferred<void>();
   let contexts = 0;
   f.api.on("context_with_system", async () => {
@@ -376,7 +381,7 @@ it.each(["before", "after"] as const)("does not revive actual provider completio
 }, 15000);
 
 it.each([0, 31_000])("automatically consumes an actual result after held compaction without new input (hold %ims)", async holdMs => {
-  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_COMPACTION_RESULT; printf spawn >> compact-spawns", timeout: 5 } });
+  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: `${AFTER_IDLE}printf W0B_COMPACTION_RESULT; printf spawn >> compact-spawns`, timeout: 5 } });
   const entered = deferred<void>(), release = deferred<void>();
   f.api.on("session_before_compact", async event => {
     entered.resolve(); await release.promise;
@@ -415,7 +420,7 @@ it.each([0, 31_000])("automatically consumes an actual result after held compact
 }, 45000);
 
 it.each(["abort", "close-reopen"])("prevents a later model call when %s wins during held compaction", async action => {
-  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_STOPPED_RESULT", timeout: 5 } });
+  const f = await fixture({ name: "bash_async", arguments: { action: "start", command: `${AFTER_IDLE}printf W0B_STOPPED_RESULT`, timeout: 5 } });
   const entered = deferred<void>(), release = deferred<void>();
   f.api.on("session_before_compact", async event => {
     entered.resolve(); await release.promise;

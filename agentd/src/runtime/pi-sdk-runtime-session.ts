@@ -633,6 +633,12 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     };
   }
 
+  /** Runs on every Pi event, so a session without an agent queue must not fail the turn. */
+  private agentHasQueuedMessages(): boolean {
+    const agent = (this.runtime.session as { agent?: { hasQueuedMessages?: () => boolean } }).agent;
+    return agent?.hasQueuedMessages?.() === true;
+  }
+
   private combinedQueueSnapshot(): { steering: string[]; followUp: string[] } {
     return this.promptQueue.combinedSnapshot(this.piQueueSnapshot());
   }
@@ -924,7 +930,10 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
     let runtimeEvent = runtimeEventFromPiEvent(event, {
       hasQueuedSteering: this.queuedSteeringCount > 0,
-      hasQueuedFollowUp: this.queuedFollowUpCount > 0,
+      // Extensions queue follow-ups mid-run through sendMessage (for example bash_async
+      // completions flushed from turn_end). Pi puts those straight on the agent queue without
+      // a queue_update, so ask the agent too; otherwise that turn_end reads as the final one.
+      hasQueuedFollowUp: this.queuedFollowUpCount > 0 || this.agentHasQueuedMessages(),
       hasPendingExtensionUiRequest: this.pendingExtensionUiRequestIds.size > 0,
       // Let the supervisor veto a runtime-only "pending" signal so an
       // unanswered request that Pi revives during resume (before the host had

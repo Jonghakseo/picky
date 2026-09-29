@@ -2001,6 +2001,21 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "최종 답변", assistantRun: { model: "claude-fake" } });
   });
 
+  it("keeps the run open when an extension queued a follow-up from turn_end without a queue_update", async () => {
+    const fakeSession = new FakeSession();
+    // Pi routes an extension's mid-run sendMessage(followUp) straight to the agent queue.
+    (fakeSession as unknown as { agent: { hasQueuedMessages: () => boolean } }).agent = { hasQueuedMessages: () => true };
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-extension-follow-up" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "중간 답변" }] }, toolResults: [] });
+
+    expect(statusEvents(events).map((event) => (event as { status?: string }).status)).not.toContain("completed");
+    expect(statusEvents(events)).toContainEqual(expect.objectContaining({ status: "running", summary: "Queued input pending" }));
+  });
+
   it("refreshes context usage at intermediate message boundaries", async () => {
     const fakeSession = new FakeSession();
     (fakeSession as unknown as { getContextUsage: () => { tokens: number; contextWindow: number; percent: number } }).getContextUsage = () => ({ tokens: 88_000, contextWindow: 200_000, percent: 44 });

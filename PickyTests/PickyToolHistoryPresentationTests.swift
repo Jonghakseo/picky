@@ -89,6 +89,8 @@ struct PickyToolHistoryPresentationTests {
         #expect(Presentation.title(for: entry("bash", preview: #"{"command":"git status","title":"Check files"}"#)) == "Check files")
         #expect(Presentation.title(for: entry("bash", preview: #"{"command":"git status"}"#)) == "git status")
         #expect(Presentation.title(for: entry("custom_tool", preview: #"{"title":"Invented label"}"#)) == "custom_tool")
+        #expect(Presentation.title(for: entry("bash_async", preview: #"{"action":"start","command":"pnpm test"}"#)) == "pnpm test")
+        #expect(Presentation.title(for: entry("grep", preview: #"{"pattern":"TODO","path":"src"}"#)) == "TODO in src")
         #expect(Presentation.title(for: entry("edit")) == "edit")
         #expect(Presentation.title(for: entry("ask_user_question", preview: #"{"title":"Choose layout"}"#)) == "Choose layout")
         #expect(Presentation.title(for: entry("ask_user_question", preview: #"{"questions":[{"prompt":"Which layout?"}]}"#)) == "Which layout?")

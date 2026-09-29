@@ -77,11 +77,24 @@ struct PickyToolCallInlineRow: View {
         PickyToolHistoryRenderer.entry(from: tool, index: 0)
     }
 
+    /// Display rules for registered tools without a structured detail case.
+    private var descriptor: PickyToolDescriptor? {
+        guard case .generic = entry.detail else { return nil }
+        return PickyToolDescriptorRegistry.descriptor(forToolNamed: tool.name, argsJSON: tool.argsPreview)
+    }
+
     private var icon: String {
         switch entry.detail {
         case .subagent: return "◇"
         case .todo: return "☑"
         default:
+            switch descriptor?.glyph {
+            case .shell: return "⌨"
+            case .search: return "⌕"
+            case .web: return "⊕"
+            case .memory: return "◈"
+            case nil: break
+            }
             switch entry.category {
             case .read: return "📖"
             case .bash: return "⌨"
@@ -97,6 +110,12 @@ struct PickyToolCallInlineRow: View {
         case .subagent: return DS.Colors.floatingGradientPurple
         case .todo: return DS.Colors.info
         default:
+            switch descriptor?.glyph {
+            case .shell: return DS.Colors.warningText
+            case .search, .web: return DS.Colors.info
+            case .memory: return DS.Colors.floatingGradientPurple
+            case nil: break
+            }
             switch entry.category {
             case .read: return DS.Colors.info
             case .bash: return DS.Colors.warningText
@@ -112,6 +131,7 @@ struct PickyToolCallInlineRow: View {
         case .subagent: return "subagent"
         case .todo: return "todo"
         default:
+            if let descriptor { return descriptor.displayName }
             return PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) == nil
                 ? tool.name
                 : "skill"
@@ -121,8 +141,8 @@ struct PickyToolCallInlineRow: View {
     /// Compact second column. Pulls the most informative slice out of the
     /// parsed detail — skill name for skill invocation, file path for
     /// read/edit/write, `title` (falling back to the command head) for bash,
-    /// truncated args preview for
-    /// generic tools. Falls back to recovering the `path` field directly from
+    /// the `PickyToolDescriptorRegistry` summary for registered tools, and a
+    /// neutral `key: value` pair for unknown tools. Falls back to recovering the `path` field directly from
     /// the raw args preview so a truncated JSON payload still surfaces the file
     /// path the model called the tool with.
     var displayedDetail: String? {
@@ -156,8 +176,10 @@ struct PickyToolCallInlineRow: View {
             return resolved.map(shortenPath)
         case .subagent, .todo:
             return nil
-        case let .generic(argsJSON):
-            return argsJSON.map(firstLine)
+        case .generic:
+            // Never show the first line of pretty-printed JSON (`{`).
+            if let descriptor { return descriptor.summary }
+            return PickyToolDescriptorRegistry.genericSummary(argsJSON: tool.argsPreview)
         }
     }
 
@@ -190,10 +212,6 @@ struct PickyToolCallInlineRow: View {
         let head = components[0]
         let tail = components.suffix(2).joined(separator: "/")
         return "\(head)/…/\(tail)"
-    }
-
-    private func firstLine(_ text: String) -> String {
-        text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
     }
 }
 

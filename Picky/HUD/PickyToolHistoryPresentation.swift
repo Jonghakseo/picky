@@ -38,7 +38,9 @@ enum PickyToolHistoryPresentation {
                     return prompt
                 }
             }
-            return entry.name
+            // Registered tools have a known argument meaning; unknown tools
+            // keep their name so a free-form argument is never promoted to a label.
+            return PickyToolDescriptorRegistry.descriptor(forToolNamed: entry.name, argsJSON: argsJSON)?.summary ?? entry.name
         }
     }
 

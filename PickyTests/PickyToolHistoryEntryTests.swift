@@ -211,6 +211,32 @@ struct PickyToolHistoryEntryTests {
         #expect(entry.result?.text == "{\"key\":\"COM-123\"}")
     }
 
+    @Test func inlineRowSummarizesRegisteredToolsInsteadOfJsonBrace() {
+        func row(_ name: String, _ args: String) -> PickyToolCallInlineRow {
+            PickyToolCallInlineRow(tool: PickyToolActivity(toolCallId: "c", name: name, status: "running", argsPreview: args), onTap: {})
+        }
+        let cases: [(name: String, args: String, toolName: String, detail: String?)] = [
+            ("bash_async", #"{"action":"start","command":"pnpm test\nmore","title":"agentd 테스트"}"#, "bash_async", "agentd 테스트"),
+            ("bash_async", #"{"action":"start","command":"pnpm run build"}"#, "bash_async", "pnpm run build"),
+            ("bash_async", #"{"action":"output","jobId":"job-3","lines":50}"#, "bash_async", "output · job-3"),
+            ("grep", #"{"pattern":"firstLine","path":"Picky/HUD"}"#, "grep", "firstLine in Picky/HUD"),
+            ("web_search", #"{"queries":["swift regex","swiftui list","xcode"]}"#, "web_search", "swift regex +2"),
+            ("fetch_content", #"{"url":"https://example.com/docs"}"#, "fetch_content", "example.com/docs"),
+            ("vcc_recall", #"{"query":"redis cache decision"}"#, "vcc_recall", "redis cache decision"),
+            ("subagent", #"{"command":"subagent help"}"#, "subagent", "help"),
+            ("mcp__creatrip__jira_getissue", #"{"fields":"summary","issue_key":"COM-123"}"#, "jira_getissue", "COM-123"),
+            // Truncated preview: regex recovery still finds the command head.
+            ("bash_async", #"{"action":"start","command":"xcodebuild -project Picky.xcodeproj test"#, "bash_async", "xcodebuild -project Picky.xcodeproj test"),
+            // Unknown tool: neutral key/value, never a promoted label or `{`.
+            ("custom_tool", #"{"title":"Invented label","count":3}"#, "custom_tool", "count: 3"),
+        ]
+        for testCase in cases {
+            let row = row(testCase.name, testCase.args)
+            #expect(row.displayedToolName == testCase.toolName, "\(testCase.args)")
+            #expect(row.displayedDetail == testCase.detail, "\(testCase.args)")
+        }
+    }
+
     @Test func resultProjectionPreservesOptionalRepairMetadata() {
         let entry = PickyToolHistoryRenderer.entry(
             from: PickyToolActivity(

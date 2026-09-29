@@ -181,6 +181,10 @@ export class RuntimeEventHandler {
       await this.drainPendingThinkingFlush(sessionId);
       return this.applyInputMessageEvent(sessionId, event);
     }
+    // The Pi session name is persisted metadata, not turn output. `/name` and extension renames
+    // run without a turn, and async-task Pickles aggregate that no-turn follow-up straight back
+    // to a terminal status, so the late-turn-event guard below must not drop it.
+    if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     const current = this.dependencies.getSession(sessionId);
     if (event.type !== "status" && isTerminalStatus(current.status) && !hasUnsettledAsyncWork(current)) return;
     if (event.type === "assistant_delta") {
@@ -231,7 +235,6 @@ export class RuntimeEventHandler {
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
     if (event.type === "extension_ui_cancelled") return this.applyExtensionUiCancelledEvent(sessionId, event.requestId);
-    if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     if (event.type === "session_replaced") return;
     if (event.type === "input_delivery") return;

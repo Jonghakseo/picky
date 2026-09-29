@@ -2881,6 +2881,26 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Session compacted");
   });
 
+  it("applies a Pi session rename that arrives while the Pickle is already completed", async () => {
+    // Async-task Pickles aggregate a no-turn `/name` follow-up straight back to `completed`
+    // before Pi's session_info_changed is handled, and Pi extensions may rename an idle
+    // session at any time. The title must still follow Pi's session name.
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed");
+
+    runtime.handle?.emit({ type: "session_info", name: "유휴 중 바꾼 이름" });
+    await waitUntil(() => supervisor.get(pickle.id)?.title === "유휴 중 바꾼 이름");
+
+    expect(supervisor.get(pickle.id)?.title).toBe("유휴 중 바꾼 이름");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+  });
+
   it("restores the previous terminal state when /name is sent as a follow-up", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

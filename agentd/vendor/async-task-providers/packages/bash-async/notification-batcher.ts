@@ -1,6 +1,8 @@
 import type { BashAsyncJob } from "./types.js";
 
 export const COMPLETION_DELAY_MS = 500;
+export const IDLE_POLL_INTERVAL_MS = 50;
+export const IDLE_POLL_TIMEOUT_MS = 10_000;
 export const MAX_COMPLETION_MESSAGE_BYTES = 8 * 1024;
 export const MAX_COMPLETION_TAIL_BYTES = 2 * 1024;
 export const MAX_COMPLETION_TAIL_LINES = 20;
@@ -15,6 +17,8 @@ export interface CompletionNotification {
 export interface CompletionBatcherOptions {
 	send: (message: CompletionNotification, options: { triggerTurn: true; deliverAs: "followUp" }) => void;
 	delayMs?: number;
+	/** Completions stay pending while the agent is busy so a later status/output read can acknowledge them. */
+	isAgentIdle?: () => boolean;
 	deliveryState?: (jobId: string) => "send" | "hold" | "discard";
 }
 
@@ -56,10 +60,19 @@ export class NotificationBatcher {
 	private readonly delayMs: number;
 	private readonly pending = new Map<string, CompletedJob>();
 	private timer: ReturnType<typeof setTimeout> | undefined;
+	private idleTimer: ReturnType<typeof setTimeout> | undefined;
 	private suppressed = false;
 
 	constructor(private readonly options: CompletionBatcherOptions) {
 		this.delayMs = options.delayMs ?? COMPLETION_DELAY_MS;
+	}
+
+	private agentIdle(): boolean {
+		try {
+			return this.options.isAgentIdle?.() ?? true;
+		} catch {
+			return true;
+		}
 	}
 
 	enqueue(job: CompletedJob): void {
@@ -69,11 +82,42 @@ export class NotificationBatcher {
 		this.timer.unref?.();
 	}
 
-	flush(): void {
+	/** Drops a completion the agent already learned about through status, output, or kill. */
+	acknowledge(jobId: string): void {
+		this.pending.delete(jobId);
+	}
+
+	/** Delivers held completions once the agent becomes idle, or after a bounded wait. */
+	flushWhenIdle(): void {
+		if (this.idleTimer) clearTimeout(this.idleTimer);
+		this.idleTimer = undefined;
+		if (this.suppressed || this.pending.size === 0) return;
+		const deadline = Date.now() + IDLE_POLL_TIMEOUT_MS;
+		const poll = () => {
+			this.idleTimer = undefined;
+			if (this.suppressed || this.pending.size === 0) return;
+			if (this.agentIdle() || Date.now() >= deadline) {
+				this.flush({ force: true });
+				return;
+			}
+			this.idleTimer = setTimeout(poll, IDLE_POLL_INTERVAL_MS);
+			this.idleTimer.unref?.();
+		};
+		poll();
+	}
+
+	flush(options?: { force?: boolean }): void {
 		if (this.timer) clearTimeout(this.timer);
 		this.timer = undefined;
 		if (this.suppressed || this.pending.size === 0) {
 			this.pending.clear();
+			return;
+		}
+		if (!options?.force && !this.agentIdle()) {
+			// Busy without a turn boundary ahead (for example, compaction) would otherwise strand
+			// the completion. Keep holding, and deliver as soon as the agent is idle again.
+			this.timer = setTimeout(() => this.flush(), this.delayMs);
+			this.timer.unref?.();
 			return;
 		}
 
@@ -105,7 +149,7 @@ export class NotificationBatcher {
 			!this.suppressed &&
 			[...this.pending.keys()].some((id) => (this.options.deliveryState?.(id) ?? "send") === "send")
 		) {
-			this.timer = setTimeout(() => this.flush(), this.delayMs);
+			this.timer = setTimeout(() => this.flush({ force: true }), this.delayMs);
 			this.timer.unref?.();
 		}
 	}
@@ -117,7 +161,9 @@ export class NotificationBatcher {
 	suppress(): void {
 		this.suppressed = true;
 		if (this.timer) clearTimeout(this.timer);
+		if (this.idleTimer) clearTimeout(this.idleTimer);
 		this.timer = undefined;
+		this.idleTimer = undefined;
 		this.pending.clear();
 	}
 }

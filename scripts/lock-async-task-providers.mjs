@@ -10,8 +10,8 @@ const root = resolve(process.argv[2] ?? "");
 if (!process.argv[2]) throw new Error("Usage: lock-async-task-providers.mjs <qualified-extracted-root>");
 const packages = {};
 for (const [id, expectedName, expectedVersion] of [
-  ["bash-async", "@ryan_nookpi/pi-extension-bash-async", "0.2.1"],
-  ["subagent", "@ryan_nookpi/pi-extension-subagent", "0.5.7"],
+  ["bash-async", "@ryan_nookpi/pi-extension-bash-async", "0.2.4"],
+  ["subagent", "@ryan_nookpi/pi-extension-subagent", "0.5.9"],
 ]) {
   const dir = join(root, "packages", id);
   const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));

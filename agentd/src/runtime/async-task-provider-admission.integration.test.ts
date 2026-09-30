@@ -57,7 +57,9 @@ function providerPackageRoot(): string {
 const AFTER_IDLE = "sleep 0.3; ";
 
 type ToolInput = { name: string; arguments: ToolCall["arguments"] };
-async function fixture(tool: ToolInput | ToolInput[]) {
+// A function receives the 1-based model request number and returns that request's tool calls.
+type ToolPlan = ToolInput | ToolInput[] | ((request: number) => ToolInput[]);
+async function fixture(tool: ToolPlan) {
   expect(VERSION).toBe("0.87.1");
   const extensionRoot = providerPackageRoot();
   const root = await mkdtemp(join(tmpdir(), "picky-w0b-provider-"));
@@ -116,8 +118,9 @@ setTimeout(() => process.exit(70), 15000);
       pi.registerProvider("w0b-offline", { baseUrl: "http://127.0.0.1:1", apiKey: "offline", api: "w0b-offline", models: [{ id: "finite", name: "Finite", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }], streamSimple(model, context) {
         requests.push(JSON.parse(JSON.stringify(context)));
         const stream = createAssistantMessageEventStream();
-        const toolCall = requests.length === 1;
-        const message: AssistantMessage = { role: "assistant", content: toolCall ? (Array.isArray(tool) ? tool : [tool]).map((item, index) => ({ type: "toolCall" as const, id: `actual-provider-call-${index}`, name: item.name, arguments: item.arguments })) : [{ type: "text", text: "W0B acknowledged actual result" }], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: toolCall ? "toolUse" : "stop", timestamp: Date.now() };
+        const calls = typeof tool === "function" ? tool(requests.length) : requests.length === 1 ? (Array.isArray(tool) ? tool : [tool]) : [];
+        const toolCall = calls.length > 0;
+        const message: AssistantMessage = { role: "assistant", content: toolCall ? calls.map((item, index) => ({ type: "toolCall" as const, id: `actual-provider-call-${index}`, name: item.name, arguments: item.arguments })) : [{ type: "text", text: "W0B acknowledged actual result" }], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: toolCall ? "toolUse" : "stop", timestamp: Date.now() };
         stream.push({ type: "start", partial: message });
         stream.push({ type: "done", reason: toolCall ? "toolUse" : "stop", message });
         stream.end(); return stream;
@@ -841,6 +844,34 @@ it("records real subagent v2 result retention through native child exit and ordi
   expect(await readFile(join(f.root, "spawns"), "utf8")).toBe("spawn\n");
   expect(f.notifications).toHaveLength(1);
 }, 20000);
+
+it("delivers a subagent run started by the turn that a finished batch completion triggered", async () => {
+  const f = await fixture(request =>
+    request === 1 ? [{ name: "subagent", arguments: { command: 'subagent batch --isolated --agent finite --task "verify" --agent finite --task "review"' } }]
+      : request === 3 ? [{ name: "subagent", arguments: { command: "subagent run finite --isolated -- fix it" } }]
+        : []);
+  const finishChildren = async (count: number) => {
+    await vi.waitFor(() => expect(f.childSockets).toHaveLength(count), { timeout: 10000 });
+    for (const socket of f.childSockets.slice(count === 2 ? 0 : 2)) { socket.write("result\n"); socket.end("exit\n"); }
+  };
+  await f.supervisor.followUp("session-sdk", "Review with a batch, then fix with a worker");
+  await vi.waitFor(() => expect(f.requests).toHaveLength(2), { timeout: 10000 });
+  await f.session.waitForIdle();
+  await finishChildren(2);
+  // The idle batch completion opens a new turn (request 3) that starts the worker.
+  // Its completion must open another turn (request 5) instead of being dropped.
+  await vi.waitFor(() => expect(f.requests.length).toBeGreaterThanOrEqual(4), { timeout: 10000 });
+  await f.session.waitForIdle();
+  await finishChildren(3);
+  await vi.waitFor(() => expect(f.requests.length).toBeGreaterThanOrEqual(5), { timeout: 10000 });
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.every(task => task.presence === "settled")).toBe(true), { timeout: 10000 });
+  await f.session.waitForIdle(); await f.drainEvents();
+  const disk = await f.store.loadReadOnly("session-sdk");
+  const roots = disk?.asyncTasks?.filter(task => task.taskId === task.rootTaskId) ?? [];
+  expect(roots.map(root => root.title)).toEqual([expect.stringContaining("subagent batch"), expect.stringContaining("subagent run finite")]);
+  expect(disk?.completionTickets?.map(ticket => ticket.state)).toEqual(["handled", "handled"]);
+  expect(userTexts(f.requests.at(-1)).join("\n")).toContain("[subagent:finite#3] completed");
+}, 30000);
 
 function checkpointsActive(disk: PickyAgentSession | undefined): boolean {
   return disk?.asyncTasks?.[0]?.presence === "active" && disk.asyncWorkSummary?.canReleaseRuntime === false;

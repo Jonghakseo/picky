@@ -120,6 +120,7 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
         self.assertEqual(result.returncode, 0, result.stdout)
         calls = self.xcode_calls()
         expected_suites = {
+            "PickyHUDUnreadFocusRoutingTests": 1,
             "PickyHubFocusPerformanceTests": 1, "PickyHubNativeFocusTests": 1,
             "PickyHubWindowLifecycleTests": 2, "PickyIMETextViewTests": 1,
             "PickySecureSurfaceWindowCoordinatorTests": 1, "PickyVoiceInputTargetTests": 1,

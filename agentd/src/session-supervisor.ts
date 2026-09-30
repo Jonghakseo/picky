@@ -56,7 +56,7 @@ import { nextRevision } from "./domain/session-revision-policy.js";
 import { ARCHIVED_SESSION_RETENTION_DAYS, hasQuiescentReleasedAsyncOwner, recoverAsyncSession, shouldResumeIdleAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldRestoreInterruptedRuntime, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
-import { titleFromContext } from "./domain/session-title.js";
+import { titleFromContext, withExplicitSessionName } from "./domain/session-title.js";
 import { normalizeOptionalString } from "./domain/strings.js";
 import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBashRunningSystemMessage, formatUserBashSystemMessage, parseUserBashInput, userBashSummary, type UserBashInput } from "./domain/user-bash-format.js";
 import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
@@ -653,9 +653,8 @@ export class SessionSupervisor extends EventEmitter {
     if (sourceSessionFilePath && this.runtime.resume) {
       return this.createPickleFromResumedHandoff(handoffContext, handoff, sourceSessionFilePath);
     }
-    const explicitTitle = handoff.title.trim();
-    const session = await this.createVisibleSession(handoffContext, explicitTitle || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), {
-      runtimeDefaults: { ...handoff.runtimeDefaults, ...(explicitTitle ? { sessionName: explicitTitle } : {}) }, notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), {
+      runtimeDefaults: withExplicitSessionName(handoff.runtimeDefaults, handoff.title), notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
       notifyMacOSOnCompletion: handoff.notifyMacOSOnCompletion ?? false,
     });
     this.pickleSessionIds.add(session.id);

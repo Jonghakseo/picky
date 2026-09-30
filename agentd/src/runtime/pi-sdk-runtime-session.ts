@@ -3,7 +3,6 @@ import type { AsyncTaskHostBridge } from "./async-task-host-bridge.js";
 import type { AsyncTaskModelFence } from "./async-task-model-fence.js";
 import type { RuntimeAsyncTaskEvent } from "./async-task-types.js";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import {
 type AgentSession,
 type AgentSessionRuntime
@@ -69,7 +68,7 @@ textFromPiMessageContent,
 } from "./pi-sdk-runtime-helpers.js";
 import { createBaseAutocompleteProvider,PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
 import { isRegisteredExtensionCommand,PiPromptQueue,type PiQueueSnapshot } from "./pi-prompt-queue.js";
-import { writeFilePathFromRawArgs } from "./write-file-path.js";
+import { WriteFileMetadataTracker } from "./write-file-path.js";
 import { compactionResultFromPiEvent } from "./pi-compaction-result.js";
 
 // Soft cap for the per-session `slashExpansions` map. A long-lived Pi session can submit many
@@ -87,11 +86,6 @@ interface ExpectedInputDelivery {
   suppress: boolean;
   queueKind?: "steering" | "followUp";
   aliases?: Set<string>;
-}
-
-interface WriteFileMetadata {
-  filePath: string;
-  fileExistedBefore: boolean;
 }
 
 export class PiSdkRuntimeSession implements RuntimeSessionHandle {
@@ -123,7 +117,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private autocompleteGeneration = 0;
   private autocompleteQueryController: AbortController | undefined;
   private readonly subagentInvocationTracker = new SubagentInvocationTracker();
-  private readonly writeFileMetadataByToolCallId = new Map<string, WriteFileMetadata>();
+  private readonly writeFileMetadata = new WriteFileMetadataTracker();
   private asyncSettled = true;
   private disposed = false;
   private disposePromise?: Promise<void>;
@@ -950,7 +944,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     });
 
     if (runtimeEvent?.type === "tool") {
-      const writeFileMetadata = this.writeFileMetadataForToolEvent(record, runtimeEvent);
+      const writeFileMetadata = this.writeFileMetadata.forToolEvent(record, runtimeEvent, this.runtime.cwd);
       if (writeFileMetadata) runtimeEvent = { ...runtimeEvent, ...writeFileMetadata };
     }
 
@@ -976,25 +970,6 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
 
     return runtimeEvent;
-  }
-
-  private writeFileMetadataForToolEvent(
-    event: Record<string, unknown>,
-    runtimeEvent: Extract<RuntimeEvent, { type: "tool" }>,
-  ): WriteFileMetadata | undefined {
-    if (runtimeEvent.name !== "write") return undefined;
-    if (runtimeEvent.status === "running") {
-      const existing = this.writeFileMetadataByToolCallId.get(runtimeEvent.toolCallId);
-      if (event.type !== "tool_execution_start") return existing;
-      const filePath = writeFilePathFromRawArgs(event.args, this.runtime.cwd);
-      if (!filePath) return undefined;
-      const metadata = { filePath, fileExistedBefore: existsSync(filePath) };
-      this.writeFileMetadataByToolCallId.set(runtimeEvent.toolCallId, metadata);
-      return metadata;
-    }
-    const metadata = this.writeFileMetadataByToolCallId.get(runtimeEvent.toolCallId);
-    this.writeFileMetadataByToolCallId.delete(runtimeEvent.toolCallId);
-    return metadata;
   }
 
   private runtimeEventFromInputMessagePiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {

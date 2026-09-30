@@ -12,6 +12,7 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
     let availableRailLength: CGFloat
     let hasArchiveAccess: Bool
     let activeSessionID: String?
+    var unreadCount: Int = 0
     let onRestore: () -> Void
     var onDragChanged: (CGPoint) -> Void = { _ in }
     var onDragEnded: () -> Void = {}
@@ -37,7 +38,7 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
                     .frame(width: size.width, height: size.height)
                     .allowsHitTesting(false)
                     .overlay(alignment: .topLeading) {
-                        PickyHUDDockMinimizedButton(onRestore: onRestore,
+                        PickyHUDDockMinimizedButton(onRestore: onRestore, unreadCount: unreadCount,
                             onDragChanged: onDragChanged, onDragEnded: onDragEnded)
                             .background(PickyHUDVisibleChromeFrameReporter())
                             .offset(x: origin.x, y: origin.y)

@@ -53,7 +53,7 @@ struct PickyHUDDockMinimizedPresentationTests {
             let view = PickyHUDDockMinimizedPresentation(
                 isLoading: false, isMinimized: true, dockSide: side, metrics: .medium,
                 projection: projection, availableRailLength: 400, hasArchiveAccess: true,
-                activeSessionID: "first", onRestore: {}
+                activeSessionID: "first", unreadCount: 3, onRestore: {}
             ) { Color.red.frame(width: 400, height: 400) }
                 .padding(20)
                 .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
@@ -66,6 +66,13 @@ struct PickyHUDDockMinimizedPresentationTests {
             #expect(only.size == CGSize(width: 32, height: 32))
             #expect(only.width < size.width && only.height < size.height)
         }
+    }
+
+    @Test func minimizedUnreadBadgeShowsCountOnlyWhenPicklesAreUnread() {
+        #expect(PickyHUDDockMinimizedUnreadBadge.label(unreadCount: 0) == nil)
+        #expect(PickyHUDDockMinimizedUnreadBadge.label(unreadCount: 3) == "3")
+        #expect(PickyHUDDockMinimizedUnreadBadge.label(unreadCount: 99) == "99")
+        #expect(PickyHUDDockMinimizedUnreadBadge.label(unreadCount: 120) == "99+")
     }
 
     @Test func minimizedLogoRestoresOnClickButMovesWithoutRestoringAfterDrag() throws {

@@ -145,8 +145,18 @@ struct PickyHUDDockUtilityButtonStyle: ButtonStyle {
     }
 }
 
+/// Count shown on the minimized dock for Pickles the user has not opened since they
+/// completed, failed, or started waiting for input. Mirrors the expanded dock's unread dots.
+enum PickyHUDDockMinimizedUnreadBadge {
+    static func label(unreadCount: Int) -> String? {
+        guard unreadCount > 0 else { return nil }
+        return unreadCount > 99 ? "99+" : "\(unreadCount)"
+    }
+}
+
 struct PickyHUDDockMinimizedButton: View {
     let onRestore: () -> Void
+    var unreadCount: Int = 0
     var onDragChanged: (CGPoint) -> Void = { _ in }
     var onDragEnded: () -> Void = {}
     private let metrics = PickyHUDDockMetrics.medium
@@ -179,9 +189,31 @@ struct PickyHUDDockMinimizedButton: View {
         .onDisappear {
             if dragging { dragging = false; onDragEnded() }
         }
-        .help(L10n.t("dock.restore.help"))
+        .overlay(alignment: .bottomTrailing) {
+            if let label = PickyHUDDockMinimizedUnreadBadge.label(unreadCount: unreadCount) {
+                Text(label)
+                    .pickyFont(size: 10, weight: .semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.Colors.notificationText)
+                    .padding(.horizontal, DS.Spacing.space1)
+                    .frame(minWidth: 14, minHeight: 14) // design-token-exception: compact count badge on the fixed 32pt minimized dock.
+                    .background(DS.Colors.notification, in: Capsule())
+                    .overlay(Capsule().stroke(DS.Colors.background, lineWidth: 1.2))
+                    .offset(x: 5, y: 5)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .help(unreadHelp)
         .accessibilityLabel(L10n.t("dock.restore"))
+        .accessibilityValue(unreadCount > 0 ? L10n.t("dock.restore.unreadCount", unreadCount) : "")
         .accessibilityHint(L10n.t("dock.restore.help"))
+    }
+
+    private var unreadHelp: String {
+        let help = L10n.t("dock.restore.help")
+        guard unreadCount > 0 else { return help }
+        return L10n.t("dock.restore.unreadCount", unreadCount) + "\n" + help
     }
 }
 

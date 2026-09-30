@@ -2740,6 +2740,22 @@
         }
       }
     },
+    "dock.restore.unreadCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unread Pickles: %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽지 않은 Pickle %lld개"
+          }
+        }
+      }
+    },
     "dock.startPickle": {
       "localizations": {
         "en": {

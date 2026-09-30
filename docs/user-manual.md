@@ -267,7 +267,7 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
-| Click the notch at the bottom (right in horizontal mode) | Minimize the dock to a Picky logo button at the handle end. Click that button to expand the dock, or drag it to move the minimized dock without expanding it. |
+| Click the notch at the bottom (right in horizontal mode) | Minimize the dock to a Picky logo button at the handle end. Click that button to expand the dock, or drag it to move the minimized dock without expanding it. While minimized, a badge on the button counts unread Pickles (the same Pickles that show an unread dot in the expanded dock). |
 
 Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 top-level dock slots, top to bottom. A group always counts as one slot. If it has one visible Pickle, pressing its number opens that Pickle directly; larger groups open their member list, and empty groups open the recent-folder picker. While `Cmd` is held, every numbered slot shows its badge.
 

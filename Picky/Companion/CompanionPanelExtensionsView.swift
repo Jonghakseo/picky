@@ -130,14 +130,6 @@ struct PickyCuratedPlugin: Identifiable {
         source: "npm:@ryan_nookpi/pi-extension-clipboard"
     )
 
-    static let claudeMcpBridge = PickyCuratedPlugin(
-        id: "claude-mcp-bridge",
-        titleKey: "extensions.curated.claudeMcpBridge.title",
-        descriptionKey: "extensions.curated.claudeMcpBridge.description",
-        commandName: "/mcp-status",
-        source: "npm:@ryan_nookpi/pi-extension-claude-mcp-bridge"
-    )
-
     static let crossAgent = PickyCuratedPlugin(
         id: "cross-agent",
         titleKey: "extensions.curated.crossAgent.title",
@@ -243,7 +235,6 @@ struct PickyCuratedPlugin: Identifiable {
         .todoWriteOverlay,
         .subagent,
         .clipboard,
-        .claudeMcpBridge,
         .crossAgent,
         .claudeHooksBridge,
         .webAccess,

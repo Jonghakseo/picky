@@ -13,8 +13,8 @@ enum PickyAgentDaemonRole: Equatable {
     case primary
     /// Per-Pickle child daemon (Phase 2 of the per-Pickle agentd plan). Hosts a single Pickle
     /// session keyed by sessionId, binds on a random port (env PICKY_AGENTD_PORT is omitted), and
-    /// uses sessionCwd as the workspace cwd so `pi-extension-claude-mcp-bridge` walks up from
-    /// the correct directory. `primaryUrl` is reserved for Phase 3 RPC mirroring.
+    /// uses sessionCwd as the workspace cwd so cwd-relative project config resolves from the
+    /// correct directory. `primaryUrl` is reserved for Phase 3 RPC mirroring.
     case child(sessionId: String, sessionCwd: String, primaryUrl: String?)
 }
 

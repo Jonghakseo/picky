@@ -60,7 +60,6 @@ struct PickyHubPluginMetadata: Equatable {
         "todo-write-overlay": .init(category: .taskManagement, provider: "@ryan_nookpi", systemImage: "checklist", useCaseKeys: ["hub.plugins.useCase.todoWriteOverlay.1", "hub.plugins.useCase.todoWriteOverlay.2"]),
         "subagent": .init(category: .development, provider: "@ryan_nookpi", systemImage: "person.2", useCaseKeys: ["hub.plugins.useCase.subagent.1", "hub.plugins.useCase.subagent.2"]),
         "clipboard": .init(category: .content, provider: "@ryan_nookpi", systemImage: "doc.on.clipboard", useCaseKeys: ["hub.plugins.useCase.clipboard.1", "hub.plugins.useCase.clipboard.2"]),
-        "claude-mcp-bridge": .init(category: .development, provider: "@ryan_nookpi", systemImage: "point.3.connected.trianglepath.dotted", useCaseKeys: ["hub.plugins.useCase.claudeMcpBridge.1", "hub.plugins.useCase.claudeMcpBridge.2"]),
         "cross-agent": .init(category: .development, provider: "@ryan_nookpi", systemImage: "arrow.triangle.branch", useCaseKeys: ["hub.plugins.useCase.crossAgent.1", "hub.plugins.useCase.crossAgent.2"]),
         "claude-hooks-bridge": .init(category: .development, provider: "@ryan_nookpi", systemImage: "link", useCaseKeys: ["hub.plugins.useCase.claudeHooksBridge.1", "hub.plugins.useCase.claudeHooksBridge.2"]),
         "web-access": .init(category: .research, provider: "@ryan_nookpi", systemImage: "globe", useCaseKeys: ["hub.plugins.useCase.webAccess.1", "hub.plugins.useCase.webAccess.2"]),

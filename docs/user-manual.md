@@ -299,7 +299,7 @@ Manage membership:
 - Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group with active Pickles asks for confirmation before archiving them; an empty group or one whose members are already archived is removed immediately.
 - A group with one visible Pickle behaves like a normal Pickle tile when clicked: clicking it opens or closes that conversation card directly. Hovering it still shows the group's member list, including the group actions used to add another Pickle.
 - Hover any group with visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the group-panel corridor. Clicking a multi-Pickle folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
-- For a group with two or more visible Pickles, `Cmd + 1`…`9` or accessibility activation pins its member list for keyboard navigation. Opening a member list never changes the open conversation card; selecting a member opens its card and closes the list.
+- For a group with two or more visible Pickles, `Cmd + 1`…`9` or accessibility activation pins its member list for keyboard navigation. Opening a member list never changes the open conversation card; selecting a member opens its card and closes the list. The card receives keyboard focus on that display, so `Cmd + W` closes it without another click. Closing the card leaves the Pickle and dock running.
 
 The member list:
 

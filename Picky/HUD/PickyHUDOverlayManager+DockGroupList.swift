@@ -689,13 +689,15 @@ extension PickyHUDOverlayManager {
             openedSessionID: child?.openedSessionID,
             openGroupID: child?.openGroupID
         )
+        // Detach the list before handing keyboard input to the conversation.
+        // Opening a card alone leaves Cmd+W routed to the previously key window.
+        hideDockGroupListChild(displayID: displayID)
         switch result.sessionAction {
         case .open(let sessionID):
-            viewModel.requestOpenSession(sessionID: sessionID, targetDisplayID: displayID)
+            focusSession(id: sessionID, targetDisplayID: displayID, persistVisibility: false)
         case .close(let sessionID):
             viewModel.requestCloseSession(sessionID: sessionID, targetDisplayID: displayID)
         }
-        hideDockGroupListChild(displayID: displayID)
     }
 
     private func archiveDockGroupListSession(displayID: CGDirectDisplayID, sessionID: String) {

@@ -15,18 +15,28 @@ struct PickyHubPluginsPage: View {
     @FocusState private var searchFocused: Bool
     @FocusState private var focusedPluginControl: String?
     @State private var commandFMonitor: Any?
-    @State private var section: Section = .plugins
+    @State private var section: Section = .extensions
     @StateObject private var mcpServers: PickyHubMcpServersViewModel
 
-    /// Pi packages from the curated catalog, or MCP servers from Pi's `mcp.json`.
+    /// Extensions and skills from the curated catalog, or MCP servers from Pi's `mcp.json`.
     private enum Section: CaseIterable {
-        case plugins
+        case extensions
+        case skills
         case mcpServers
 
         var titleKey: LocalizedStringKey {
             switch self {
-            case .plugins: "hub.plugins.section.plugins"
+            case .extensions: "hub.plugins.section.extensions"
+            case .skills: "hub.plugins.section.skills"
             case .mcpServers: "hub.plugins.section.mcp"
+            }
+        }
+
+        var resourceKind: PickyCuratedPlugin.ResourceKind? {
+            switch self {
+            case .extensions: .extension
+            case .skills: .skill
+            case .mcpServers: nil
             }
         }
     }
@@ -63,12 +73,13 @@ struct PickyHubPluginsPage: View {
                     .padding(.bottom, PickyHubTheme.Spacing.field)
 
                 switch section {
-                case .plugins: pluginsSection
+                case .extensions, .skills: pluginsSection
                 case .mcpServers: PickyHubMcpServersSection(model: mcpServers)
                 }
             }
         }
         .onAppear {
+            catalog.selectResourceKind(section.resourceKind)
             catalog.refresh()
             installCommandFMonitor()
         }
@@ -80,6 +91,7 @@ struct PickyHubPluginsPage: View {
             ForEach(Section.allCases, id: \.self) { candidate in
                 PickyHubPluginCategoryChip(title: candidate.titleKey, isSelected: section == candidate) {
                     section = candidate
+                    if let kind = candidate.resourceKind { catalog.selectResourceKind(kind) }
                 }
             }
         }
@@ -161,7 +173,7 @@ struct PickyHubPluginsPage: View {
                     PickyHubPluginCategoryChip(title: "hub.plugins.category.all", isSelected: catalog.category == nil) {
                         catalog.category = nil
                     }
-                    ForEach(PickyHubPluginCategory.allCases) { category in
+                    ForEach(catalog.availableCategories) { category in
                         PickyHubPluginCategoryChip(title: category.titleKey, isSelected: catalog.category == category) {
                             catalog.category = category
                         }
@@ -309,7 +321,7 @@ struct PickyHubPluginsPage: View {
         guard commandFMonitor == nil else { return }
         commandFMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard dependencies.navigator.selectedPage == .plugins,
-                  section == .plugins,
+                  section != .mcpServers,
                   !modalHost.isPresenting,
                   event.modifierFlags.contains(.command),
                   event.charactersIgnoringModifiers?.lowercased() == "f" else {

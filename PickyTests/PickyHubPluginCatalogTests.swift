@@ -312,6 +312,25 @@ struct PickyHubPluginCatalogTests {
         #expect(catalog.filtered.count == 3)
     }
 
+    @Test func tabsSplitExtensionsAndSkillsIncludingBundledEntries() throws {
+        let fixture = try BundledCatalogFixture(plugins: [.diffReview, .webAccess, .excalidraw])
+        defer { fixture.cleanUp() }
+        let catalog = fixture.catalog
+
+        catalog.selectResourceKind(.extension)
+        #expect(catalog.filtered.map(\.id) == ["picky-handoff", "diff-review", "web-access"])
+
+        catalog.category = .research
+        catalog.selectResourceKind(.skill)
+        // No skill is a research tool, so the category filter would hide the whole tab.
+        #expect(catalog.category == nil)
+        #expect(catalog.availableCategories == [.taskManagement, .content])
+        #expect(catalog.filtered.map(\.id) == ["picky-cli", "excalidraw"])
+
+        catalog.query = "diff"
+        #expect(catalog.filtered.isEmpty)
+    }
+
     @Test(arguments: ["picky-handoff", "picky-cli"])
     func bundledActionsPersistInstallUpdateAndRemovalWithoutDaemonPackages(id: String) async throws {
         let fixture = try BundledCatalogFixture()
@@ -586,7 +605,7 @@ private struct BundledCatalogFixture {
     let bundled: PickyExtensionsSectionViewModel
     let catalog: PickyHubPluginCatalogViewModel
 
-    init() throws {
+    init(plugins: [PickyCuratedPlugin] = [.diffReview]) throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-catalog-\(UUID().uuidString)")
         let resources = root.appendingPathComponent("Resources")
         for path in ["pi-extensions/picky-handoff/index.ts", "pi-skills/picky-cli/SKILL.md"] {
@@ -602,7 +621,7 @@ private struct BundledCatalogFixture {
             bundleResourceURL: resources, homeURL: root.appendingPathComponent("home")
         )
         catalog = PickyHubPluginCatalogViewModel(
-            curated: PickyCuratedPluginsViewModel(plugins: [.diffReview], statusForSource: { _ in .notInstalled }),
+            curated: PickyCuratedPluginsViewModel(plugins: plugins, statusForSource: { _ in .notInstalled }),
             pluginReloadController: reload, bundled: bundled
         )
     }

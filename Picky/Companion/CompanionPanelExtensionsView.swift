@@ -18,12 +18,21 @@ struct PickyCuratedPlugin: Identifiable {
         case cron
     }
 
+    /// What the package adds to Pi. Hub lists extensions and skills on separate tabs.
+    enum ResourceKind: Equatable, CaseIterable {
+        /// Tools, commands, or event hooks loaded as code.
+        case `extension`
+        /// Instructions loaded on demand with `/skill:<name>`.
+        case skill
+    }
+
     let id: String
     let titleKey: String
     let descriptionKey: String
     let commandName: String
     let source: String
     let kind: Kind
+    let resourceKind: ResourceKind
     /// Localized one-time setup for external tools the plugin needs, if any.
     let setupKey: String?
     /// agentd knows which tools/skills this package provides and can detect other copies.
@@ -36,6 +45,7 @@ struct PickyCuratedPlugin: Identifiable {
         commandName: String,
         source: String,
         kind: Kind = .standard,
+        resourceKind: ResourceKind? = nil,
         setupKey: String? = nil,
         checksDuplicates: Bool = false
     ) {
@@ -45,6 +55,8 @@ struct PickyCuratedPlugin: Identifiable {
         self.commandName = commandName
         self.source = source
         self.kind = kind
+        // Curated npm packages follow the `pi-skill-*` / `pi-extension-*` naming.
+        self.resourceKind = resourceKind ?? (source.contains("/pi-skill-") ? .skill : .extension)
         self.setupKey = setupKey
         self.checksDuplicates = checksDuplicates
     }

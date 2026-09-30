@@ -27591,22 +27591,6 @@
         }
       }
     },
-    "hub.plugins.section.plugins": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Plugins"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "플러그인"
-          }
-        }
-      }
-    },
     "hub.plugins.section.mcp": {
       "localizations": {
         "en": {
@@ -28339,6 +28323,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ 설정을 확인해 주세요. %2$@"
+          }
+        }
+      }
+    },
+    "hub.plugins.section.extensions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extensions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "익스텐션"
+          }
+        }
+      }
+    },
+    "hub.plugins.section.skills": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skills"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스킬"
           }
         }
       }

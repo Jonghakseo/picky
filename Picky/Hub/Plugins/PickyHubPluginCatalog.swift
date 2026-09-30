@@ -163,6 +163,8 @@ struct PickyHubPluginItem: Identifiable, Equatable {
 final class PickyHubPluginCatalogViewModel: ObservableObject {
     @Published var query = ""
     @Published var category: PickyHubPluginCategory?
+    /// The Plugins page tab. `nil` lists extensions and skills together.
+    @Published var resourceKind: PickyCuratedPlugin.ResourceKind?
     /// Human-readable outcome of the latest completed action, for the live region.
     @Published private(set) var feedback: String?
     @Published private(set) var feedbackIsError = false
@@ -241,7 +243,8 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
                 id: row.name, titleKey: "status.extensions.\(key).title",
                 descriptionKey: "status.extensions.\(key).description",
                 commandName: row.kind == .extension ? "/handoff-to-picky" : "/skill:picky-cli",
-                source: "bundled:\(row.id)"
+                source: "bundled:\(row.id)",
+                resourceKind: row.kind == .extension ? .extension : .skill
             )
             let installed = row.status == .installed || row.status == .outdated
             return PickyHubPluginItem(
@@ -262,6 +265,7 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     var filtered: [PickyHubPluginItem] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return items.filter { item in
+            if let resourceKind, item.plugin.resourceKind != resourceKind { return false }
             if let category, item.metadata.category != category { return false }
             guard !needle.isEmpty else { return true }
             let haystack = [
@@ -272,6 +276,18 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
                 .lowercased()
             return haystack.contains(needle)
         }
+    }
+
+    /// Categories that have at least one item on the current tab, in declaration order.
+    var availableCategories: [PickyHubPluginCategory] {
+        let present = Set(items.filter { resourceKind == nil || $0.plugin.resourceKind == resourceKind }.map(\.metadata.category))
+        return PickyHubPluginCategory.allCases.filter(present.contains)
+    }
+
+    /// Switches the tab and drops a category filter the new tab has no items for.
+    func selectResourceKind(_ kind: PickyCuratedPlugin.ResourceKind?) {
+        resourceKind = kind
+        if let category, !availableCategories.contains(category) { self.category = nil }
     }
 
     func item(id: String) -> PickyHubPluginItem? {

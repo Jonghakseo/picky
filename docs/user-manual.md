@@ -58,7 +58,7 @@ The sidebar contains these eight destinations:
 - **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
 - **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.
 - **Scheduled jobs**: a read-only calendar of schedules registered with the Cron plugin. Week or month view shows recorded runs and dashed projections for recurring jobs, with an agenda list and filters; click a day entry to read or copy the instructions of that run. Create or manage schedules on the Plugins page by talking to Picky.
-- **Plugins**: search or filter the curated Pi plugin catalog by category, view details, then install, update, remove, or set up supported plugins. The **MCP servers** tab manages MCP servers. Changes that require Pi to reload are surfaced in Hub, with confirmation when work is active.
+- **Plugins**: three tabs. **Extensions** and **Skills** list the curated Pi plugin catalog by type; search or filter by category, view details, then install, update, remove, or set up supported plugins. **MCP servers** manages MCP servers. Changes that require Pi to reload are surfaced in Hub, with confirmation when work is active.
 - **Recent Conversation**: the Picky main-agent timeline and composer.
 - **Settings**: grouped controls for Picky's behavior, accounts, local data, and diagnostics.
 

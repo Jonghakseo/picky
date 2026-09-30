@@ -1,0 +1,5 @@
+{
+  "id": "cmd-mcp-list-001",
+  "protocolVersion": "2026-08-25",
+  "type": "listMcpServers"
+}

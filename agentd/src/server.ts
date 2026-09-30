@@ -20,6 +20,7 @@ import { awaitPickleSessionTerminal } from "./application/pickle-terminal-waiter
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import { workingDirectoryProblem } from "./application/working-directory.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
+import { McpServerAdmin, McpServerOperationError } from "./runtime/mcp-server-admin.js";
 import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./runtime/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./runtime/package-operations.js";
 import type { PiOAuthHandling } from "./runtime/pi-oauth-service.js";
@@ -37,6 +38,7 @@ export interface AgentdServerOptions {
   createPackageManager?: (options: PackageManagerFactoryOptions) => PackageManager;
   /** Overrides Pi's agent directory for package-manager isolation in tests. */
   getAgentDir?: () => string;
+  mcpServerAdmin?: McpServerAdmin;
   /** Provides a hermetic Cron lifecycle seam for package-operation tests. */
   createCronLifecycle?: (packageManager: PackageManager) => CronPackageLifecycleLike;
   /** Bounds client-visible package operations; the queue remains held until underlying mutation exits. */
@@ -85,6 +87,7 @@ export class AgentdServer {
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
   private readonly settingsControl: SettingsControlBroker;
   private readonly packageOperations: PackageOperations;
+  private readonly mcpServers: McpServerAdmin;
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
    * `submitMainFromExternal` / `createPickleFromExternal` is processed at a time;
@@ -100,6 +103,7 @@ export class AgentdServer {
   private externalEntryStopping = false;
 
   constructor(private readonly options: AgentdServerOptions) {
+    this.mcpServers = options.mcpServerAdmin ?? new McpServerAdmin({ getAgentDir: options.getAgentDir });
     this.packageOperations = new PackageOperations({
       createPackageManager: options.createPackageManager,
       createCronLifecycle: options.createCronLifecycle,
@@ -645,6 +649,15 @@ export class AgentdServer {
           pickleDeferredCount: summary.pickleDeferredCount,
         });
       },
+      listMcpServers: async (cmd) => this.sendMcpServerList(ws, cmd.id),
+      addMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "add", cmd.name, () => this.mcpServers.add(cmd.name, cmd.configJson, cmd.pickyScope)),
+      updateMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "update", cmd.name, () => this.mcpServers.update(cmd.name, {
+        ...(cmd.enabled === undefined ? {} : { enabled: cmd.enabled }),
+        ...(cmd.pickyScope === undefined ? {} : { pickyScope: cmd.pickyScope }),
+      })),
+      removeMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "remove", cmd.name, () => this.mcpServers.remove(cmd.name)),
+      signInMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "signIn", cmd.name, () => this.mcpServers.signIn(cmd.name)),
+      signOutMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "signOut", cmd.name, () => this.mcpServers.signOut(cmd.name)),
       getHubStatistics: async (cmd) => this.sendHubStatistics(ws, cmd.id, false),
       resetHubStatistics: async (cmd) => this.sendHubStatistics(ws, cmd.id, true),
       configureHubStatistics: async (cmd) => this.configureHubStatistics(ws, cmd.id, cmd.classificationEnabled),
@@ -653,6 +666,37 @@ export class AgentdServer {
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
     await handler(command);
   }
+  private async sendMcpServerList(ws: WebSocket, commandId: string): Promise<void> {
+    try {
+      const listing = await this.mcpServers.list();
+      this.send(ws, { type: "mcpServerList", commandId, ok: true, ...listing });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logAgentd("mcp server list failed", { error: message });
+      this.send(ws, { type: "mcpServerList", commandId, ok: false, servers: [], configErrors: [], errorMessage: message });
+    }
+  }
+
+  private async runMcpServerOperation(
+    ws: WebSocket,
+    requestId: string,
+    operation: "add" | "update" | "remove" | "signIn" | "signOut",
+    name: string,
+    run: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await run();
+      this.send(ws, { type: "mcpServerOperationCompleted", requestId, operation, name, ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logAgentd("mcp server operation failed", { operation, name, error: message });
+      this.send(ws, {
+        type: "mcpServerOperationCompleted", requestId, operation, name, ok: false, errorMessage: message,
+        ...(error instanceof McpServerOperationError && error.code ? { errorCode: error.code } : {}),
+      });
+    }
+  }
+
   private async sendHubStatistics(ws: WebSocket, commandId: string, reset: boolean): Promise<void> {
     const statistics = this.options.hubStatistics;
     if (!statistics) {
@@ -1139,7 +1183,7 @@ function buildNeutralCliContext(payload: { cwd?: string; transcript?: string }):
   };
 }
 
-// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every command variant without executing behavior.
+// eslint-disable-next-line complexity, max-lines-per-function -- This exhaustive protocol projection intentionally mirrors every command variant without executing behavior.
 export function commandLogFields(command: ReturnType<typeof parseCommand>): Record<string, string | number | undefined> {
   switch (command.type) {
     case "getAsyncControlContext": return { commandId: command.id, type: command.type, sessionId: command.sessionId };
@@ -1234,6 +1278,12 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "updatePackage":
       return { commandId: command.id, type: command.type, sourceChars: command.source.length };
     case "checkPackageUpdates": return { commandId: command.id, type: command.type };
+    case "listMcpServers": return { commandId: command.id, type: command.type };
+    case "addMcpServer": return { commandId: command.id, type: command.type, name: command.name, pickyScope: command.pickyScope, configChars: command.configJson.length };
+    case "updateMcpServer":
+      return { commandId: command.id, type: command.type, name: command.name, enabled: command.enabled === undefined ? undefined : (command.enabled ? 1 : 0), pickyScope: command.pickyScope };
+    case "removeMcpServer": case "signInMcpServer": case "signOutMcpServer":
+      return { commandId: command.id, type: command.type, name: command.name };
     case "inspectPackageConflicts": return { commandId: command.id, type: command.type, sources: command.sources.length };
     case "setDefaultCwd":
       return { commandId: command.id, type: command.type, cwdChars: command.defaultCwd.length };
@@ -1261,7 +1311,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
   }
 }
 
-// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior.
+// eslint-disable-next-line complexity, max-lines-per-function -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior.
 function eventLogFields(event: EventEnvelope): Record<string, string | number | undefined> {
   switch (event.type) {
     case "asyncControlContext": return { eventId: event.id, type: event.type, requestId: event.requestId, sessionId: event.sessionId };
@@ -1311,6 +1361,9 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
     case "hubStatisticsResult":
       return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, records: event.snapshot?.records.length, samples: event.snapshot?.usageSamples.length, errorChars: event.errorMessage?.length };
+    case "mcpServerList": return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, servers: event.servers.length, configErrors: event.configErrors.length };
+    case "mcpServerOperationCompleted":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, name: event.name, ok: event.ok ? 1 : 0, errorCode: event.errorCode };
     case "packageUpdatesAvailable": return { eventId: event.id, type: event.type, commandId: event.commandId, sources: event.sources.length };
     case "packageConflicts": return { eventId: event.id, type: event.type, commandId: event.commandId, conflicts: event.conflicts.length, failed: event.failed ? 1 : 0 };
     case "packageOperationProgress":

@@ -1,0 +1,8 @@
+{
+  "id": "cmd-mcp-add-001",
+  "protocolVersion": "2026-08-25",
+  "type": "addMcpServer",
+  "name": "sentry",
+  "configJson": "{\"url\":\"https://mcp.sentry.dev/mcp\"}",
+  "pickyScope": "main"
+}

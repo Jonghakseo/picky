@@ -1,0 +1,6 @@
+{
+  "id": "cmd-mcp-sign-out-001",
+  "protocolVersion": "2026-08-25",
+  "type": "signOutMcpServer",
+  "name": "sentry"
+}

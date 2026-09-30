@@ -1,0 +1,6 @@
+{
+  "id": "cmd-mcp-remove-001",
+  "protocolVersion": "2026-08-25",
+  "type": "removeMcpServer",
+  "name": "sentry"
+}

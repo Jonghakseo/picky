@@ -2290,7 +2290,7 @@ final class CompanionManager: ObservableObject {
         case .sessionProjectionBootstrapComplete:
             break
         case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionSubagentRunsUpdated, .sessionArchivedAuthoritative, .pluginsReloaded,
-             .hubStatisticsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted:
+             .hubStatisticsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted:
             // Progress events are already represented in the HUD. They should not
             // replace a cursor bubble that is currently speaking/showing a real
             // response, otherwise generic text like "작업 진행 중…" hides the answer.

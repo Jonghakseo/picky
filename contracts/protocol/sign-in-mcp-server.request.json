@@ -1,0 +1,6 @@
+{
+  "id": "cmd-mcp-sign-in-001",
+  "protocolVersion": "2026-08-25",
+  "type": "signInMcpServer",
+  "name": "sentry"
+}

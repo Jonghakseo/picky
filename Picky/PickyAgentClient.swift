@@ -591,6 +591,10 @@ private extension PickyEventEnvelope {
             return "type=packageOperationProgress id=\(id) request=\(progress.requestId) operation=\(progress.operation.rawValue) sourceChars=\(progress.source.count) messageChars=\(progress.message.count)"
         case .packageOperationCompleted(let result):
             return "type=packageOperationCompleted id=\(id) request=\(result.requestId) operation=\(result.operation.rawValue) sourceChars=\(result.source.count) ok=\(result.ok ? 1 : 0) errorChars=\(result.errorMessage?.count ?? 0)"
+        case .mcpServerList(let result):
+            return "type=mcpServerList id=\(id) command=\(result.commandId) ok=\(result.ok ? 1 : 0) servers=\(result.servers.count) configErrors=\(result.configErrors.count)"
+        case .mcpServerOperationCompleted(let result):
+            return "type=mcpServerOperationCompleted id=\(id) request=\(result.requestId) operation=\(result.operation.rawValue) ok=\(result.ok ? 1 : 0) code=\(result.errorCode ?? "none")"
         case .sessionLogAppended(let sessionId, let line):
             return "type=sessionLogAppended id=\(id) session=\(sessionId) lineChars=\(line.count)"
         case .toolActivityUpdated(let sessionId, let tool):

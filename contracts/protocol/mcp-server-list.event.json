@@ -1,0 +1,38 @@
+{
+  "id": "event-mcp-list-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-01T00:00:01.000Z",
+  "type": "mcpServerList",
+  "commandId": "cmd-mcp-list-001",
+  "ok": true,
+  "configPath": "/Users/example/.pi/agent/mcp.json",
+  "servers": [
+    {
+      "name": "filesystem",
+      "pickyScope": "all",
+      "enabled": true,
+      "exposure": "codemode",
+      "transport": "npx -y @modelcontextprotocol/server-filesystem .",
+      "state": "connected",
+      "tools": [
+        "read_file",
+        "list_directory"
+      ],
+      "usesOAuth": false
+    },
+    {
+      "name": "sentry",
+      "pickyScope": "main",
+      "enabled": true,
+      "exposure": "codemode",
+      "transport": "https://mcp.sentry.dev/mcp",
+      "state": "needs-auth",
+      "tools": [],
+      "error": "Sign-in required",
+      "usesOAuth": true
+    }
+  ],
+  "configErrors": [
+    "/Users/example/.pi/agent/mcp.json: server \"old\": legacy SSE transport is not supported; use the streamable HTTP URL"
+  ]
+}

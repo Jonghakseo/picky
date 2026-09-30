@@ -114,6 +114,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var summary: String?
     /// Explicit opt-in for sending bounded Pickle metadata to the configured model provider.
     var classificationEnabled: Bool?
+    /// `addMcpServer`: one `mcpServers` entry as JSON text; agentd validates it with Pi's rules.
+    var configJson: String?
+    var pickyScope: PickyMcpScope?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -182,7 +185,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         completionId: String? = nil,
         status: PickySessionStatus? = nil,
         summary: String? = nil,
-        classificationEnabled: Bool? = nil
+        classificationEnabled: Bool? = nil,
+        configJson: String? = nil,
+        pickyScope: PickyMcpScope? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -252,6 +257,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.status = status
         self.summary = summary
         self.classificationEnabled = classificationEnabled
+        self.configJson = configJson
+        self.pickyScope = pickyScope
     }
 }
 
@@ -337,6 +344,12 @@ enum PickyCommandType: String, Codable, Equatable {
     case updatePackage
     case setupPackage
     case reloadPlugins
+    case listMcpServers
+    case addMcpServer
+    case updateMcpServer
+    case removeMcpServer
+    case signInMcpServer
+    case signOutMcpServer
     case getHubStatistics
     case resetHubStatistics
     case configureHubStatistics
@@ -413,6 +426,8 @@ enum PickyEvent: Equatable {
     case packageConflicts(PickyPackageConflictsEvent)
     case packageOperationProgress(PickyPackageOperationProgressEvent)
     case packageOperationCompleted(PickyPackageOperationCompletedEvent)
+    case mcpServerList(PickyMcpServerListEvent)
+    case mcpServerOperationCompleted(PickyMcpServerOperationCompletedEvent)
     case sessionLogAppended(sessionId: String, line: String)
     case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
     case sessionTodoStateUpdated(sessionId: String, todoState: PickyTodoState?, seq: Int)
@@ -607,6 +622,10 @@ enum PickyEvent: Equatable {
             return .packageOperationProgress(try PickyPackageOperationProgressEvent(from: decoder))
         case "packageOperationCompleted":
             return .packageOperationCompleted(try PickyPackageOperationCompletedEvent(from: decoder))
+        case "mcpServerList":
+            return .mcpServerList(try PickyMcpServerListEvent(from: decoder))
+        case "mcpServerOperationCompleted":
+            return .mcpServerOperationCompleted(try PickyMcpServerOperationCompletedEvent(from: decoder))
         case "extensionUiRequest":
             let payload = try PickyExtensionUiRequestPayload(from: decoder)
             return .extensionUiRequest(payload.request)

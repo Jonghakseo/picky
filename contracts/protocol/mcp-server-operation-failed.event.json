@@ -1,0 +1,12 @@
+{
+  "id": "event-mcp-operation-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-01T00:00:02.000Z",
+  "type": "mcpServerOperationCompleted",
+  "requestId": "cmd-mcp-add-001",
+  "operation": "add",
+  "name": "sentry",
+  "ok": false,
+  "errorCode": "duplicate",
+  "errorMessage": "MCP server \"sentry\" already exists"
+}

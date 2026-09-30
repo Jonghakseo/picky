@@ -1,0 +1,8 @@
+{
+  "id": "cmd-mcp-update-001",
+  "protocolVersion": "2026-08-25",
+  "type": "updateMcpServer",
+  "name": "sentry",
+  "enabled": false,
+  "pickyScope": "all"
+}

@@ -58,7 +58,7 @@ The sidebar contains these eight destinations:
 - **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
 - **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.
 - **Scheduled jobs**: a read-only calendar of schedules registered with the Cron plugin. Week or month view shows recorded runs and dashed projections for recurring jobs, with an agenda list and filters; click a day entry to read or copy the instructions of that run. Create or manage schedules on the Plugins page by talking to Picky.
-- **Plugins**: search or filter the curated Pi plugin catalog by category, view details, then install, update, remove, or set up supported plugins. Changes that require Pi to reload are surfaced in Hub, with confirmation when work is active.
+- **Plugins**: search or filter the curated Pi plugin catalog by category, view details, then install, update, remove, or set up supported plugins. The **MCP servers** tab manages MCP servers. Changes that require Pi to reload are surfaced in Hub, with confirmation when work is active.
 - **Recent Conversation**: the Picky main-agent timeline and composer.
 - **Settings**: grouped controls for Picky's behavior, accounts, local data, and diagnostics.
 
@@ -91,6 +91,17 @@ Hub checks npm for newer versions of installed curated plugins. When an installe
 Memory Layer and Cron installs and updates are temporarily blocked while the safe migration is validated; their update offers are hidden. Existing installations are not automatically changed. Plugin reload alone does not replace every Picky or external Pi runtime. Before upgrading these packages outside Hub, stop old writers and active scheduled work, back up memory/session/cron data, and follow the [extension safety cutover](extension-safety-cutover.md). Do not assume restarting Picky also stops external Pi terminals.
 
 With the patched Cron extension, PTT pauses delivery to the main session until replacement input is accepted. If recording is cancelled without sending input, delivery remains paused until the next input or session replacement. Duplicated or handed-off Pickles get independent Pi session identities; existing session files are not rewritten automatically.
+
+#### MCP servers
+
+The **MCP servers** tab on the Plugins page connects [Model Context Protocol](https://modelcontextprotocol.io) servers through Pi's built-in MCP support. Servers are stored in Pi's global `mcp.json` (`~/.pi/agent/mcp.json` by default), so a server added in Hub is also available to Pi terminals, and servers added with `pi mcp add` appear in Hub.
+
+- **Add server** accepts one server entry (`{"command": ..., "args": [...]}` for stdio or `{"url": ...}` for streamable HTTP) plus a name, or a whole `mcpServers` block pasted from Claude Desktop, Cursor, or VS Code.
+- **Available to** chooses which agents connect: **Main Picky and Pickles** (default) or **Main Picky only**. Picky stores the second choice as `"pickyScope": "main"` in the server entry; Pi ignores this key.
+- Each row shows the connection state and tool count. HTTP servers that use OAuth show **Sign in**, which opens the authorization page in the browser; Pi stores the tokens in `~/.pi/agent/mcp-auth.json`.
+- The **Enabled** switch and **Remove** edit the shared `mcp.json`, so they affect Pi terminals too.
+
+Adding, removing, enabling, or changing a server's scope applies after the plugin reload that Hub offers, or in new sessions. MCP tools are reached through Pi's `codemode` tool by default; a server's `exposure` setting in `mcp.json` changes that. Every Pickle starts its own connections to the stdio servers in its scope.
 
 ### 2.4 Settings
 

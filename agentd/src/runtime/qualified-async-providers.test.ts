@@ -185,3 +185,18 @@ it("never installs missing or version-mismatched packages on initial SDK load or
     expect(invocations).not.toMatch(/\b(?:install|clone|fetch|pull|ls-remote)\b/);
   } finally { unsubscribe(); await handle.dispose?.(); }
 });
+
+it("binds settings and the MCP registry for ordinary extensions on the composed Pickle loader", async () => {
+  const f = await capsule();
+  let api!: { getSettings(): unknown; getMcpServers(): unknown[]; registerMcpServer(name: string, config: object): void };
+  const runtime = new PiSdkRuntime({ agentDir: f.agentDir, asyncProviderPaths: [], asyncProvidersQualified: false,
+    resourceLoaderOptions: { extensionFactories: [pi => { api = pi as unknown as typeof api; }] },
+  });
+  const handle = await runtime.prewarm({ cwd: f.root, sessionId: "composed-settings" });
+  try {
+    // codemode reads its mode from settings whenever it builds the model's tool declarations.
+    expect(() => api.getSettings()).not.toThrow();
+    api.registerMcpServer("registered", { url: "https://example.com/mcp", enabled: false });
+    expect(api.getMcpServers()).toEqual([expect.objectContaining({ name: "registered" })]);
+  } finally { await handle.dispose?.(); }
+});

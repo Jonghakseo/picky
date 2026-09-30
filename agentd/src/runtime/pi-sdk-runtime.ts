@@ -35,6 +35,7 @@ branchTranscriptFromEntries
 import { writeFilePathFromRawArgs } from "./write-file-path.js";
 import { PiSdkRuntimeSession } from "./pi-sdk-runtime-session.js";
 import { keepPickyImageInputEnabled } from "./picky-image-input-policy.js";
+import { pickyMcpExtensions, type PickyMcpRuntimeTarget } from "./picky-mcp.js";
 
 // Re-exported so existing importers keep working.
 export { branchTranscriptFromEntries, writeFilePathFromRawArgs };
@@ -59,6 +60,8 @@ interface PiSdkRuntimeOptions {
   modelPattern?: string;
   disableBlockingDialogs?: boolean;
   allowedBlockingDialogMethods?: readonly DialogMethod[];
+  /** Connects the MCP servers from Pi's `mcp.json` that this runtime is in scope for. */
+  mcpTarget?: PickyMcpRuntimeTarget;
 }
 
 function requiredAsyncProviders(paths: string[] | undefined): string[] { return paths ? ["bash-async", "subagent"] : []; }
@@ -187,7 +190,8 @@ export class PiSdkRuntime implements AgentRuntime {
       const resourceLoaderOptions = this.options.resourceLoaderOptions;
       const { settingsManager, providerOptions, refresh } = await prepareAsyncProviderResources(this.options.asyncProviderPaths, resourceLoaderOptions, runtimeCwd, agentDir);
       const ordinaryBus = this.options.asyncProviderPaths ? ordinaryExtensionBus(externalDeliveryEventBus) : externalDeliveryEventBus;
-      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), inputRewriteObserver.inlineExtension];
+      const mcpFactories = this.options.mcpTarget ? await pickyMcpExtensions(this.options.mcpTarget, agentDir) : [];
+      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), ...mcpFactories, inputRewriteObserver.inlineExtension];
       const normalOptions = {
         ...resourceLoaderOptions, ...providerOptions,
         eventBus: ordinaryBus,

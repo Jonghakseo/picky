@@ -154,7 +154,7 @@ export function ordinaryExtensionBus(bus: EventBus): EventBus {
 
 const runtimeActions = [
   "sendMessage", "sendUserMessage", "appendEntry", "setSessionName", "getSessionName",
-  "setLabel", "getActiveTools", "getAllTools", "setActiveTools", "refreshTools",
+  "setLabel", "getActiveTools", "getAllTools", "getSettings", "setActiveTools", "refreshTools",
   "getCommands", "setModel", "getThinkingLevel", "setThinkingLevel",
   "registerProvider", "registerNativeProvider", "unregisterProvider",
 ] as const;
@@ -184,6 +184,9 @@ function composeExtensionRuntime(runtimes: ExtensionRuntime[]): ExtensionRuntime
     get: () => runtimes.flatMap(runtime => runtime.pendingNativeProviderRegistrations),
     set: () => { for (const runtime of runtimes) runtime.pendingNativeProviderRegistrations = []; },
   });
+  // `pi.registerMcpServer()` and the MCP extension share one registry, and the runner listens
+  // to it for `mcp_servers_change`. Ordinary extensions (runtimes[0]) own MCP.
+  combined.mcpServers = runtimes[0]!.mcpServers;
   combined.assertActive = () => { for (const runtime of runtimes) runtime.assertActive(); };
   combined.invalidate = message => { for (const runtime of runtimes) runtime.invalidate(message); };
   return combined;

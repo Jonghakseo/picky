@@ -1066,14 +1066,34 @@
     },
     "hud.asyncTasks.controlUnresolved": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Could not complete the background work request." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "백그라운드 작업 요청을 완료하지 못했어요." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not complete the background work request."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 작업 요청을 완료하지 못했어요."
+          }
+        }
       }
     },
     "hud.asyncTasks.attentionUnknown": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Background work needs attention. Check its status before continuing." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "백그라운드 작업을 확인해야 해요. 계속하기 전에 상태를 확인해 주세요." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background work needs attention. Check its status before continuing."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 작업을 확인해야 해요. 계속하기 전에 상태를 확인해 주세요."
+          }
+        }
       }
     },
     "hud.asyncTasks.counts": {
@@ -27567,6 +27587,758 @@
           "stringUnit": {
             "state": "translated",
             "value": "새 버전을 미리 받아 두고, 대시보드에서 버튼 한 번으로 업데이트해요. 자동 업데이트 확인이 켜져 있어야 해요."
+          }
+        }
+      }
+    },
+    "hub.plugins.section.plugins": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plugins"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플러그인"
+          }
+        }
+      }
+    },
+    "hub.plugins.section.mcp": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP servers"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 서버"
+          }
+        }
+      }
+    },
+    "hub.mcp.intro": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect MCP servers so Picky and Pickles can use external tools and data. Settings are saved in the same mcp.json that Pi uses."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 서버를 연결하면 Picky와 Pickle이 외부 도구와 데이터를 쓸 수 있어요. 설정은 Pi와 같은 mcp.json에 저장돼요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add server"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버 추가"
+          }
+        }
+      }
+    },
+    "hub.mcp.openConfig": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open mcp.json"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mcp.json 열기"
+          }
+        }
+      }
+    },
+    "hub.mcp.loading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to MCP servers…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 서버에 연결하고 있어요…"
+          }
+        }
+      }
+    },
+    "hub.mcp.loadError": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't load MCP servers. %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 서버 목록을 불러오지 못했어요. %@"
+          }
+        }
+      }
+    },
+    "hub.mcp.configError": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mcp.json error: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mcp.json 오류: %@"
+          }
+        }
+      }
+    },
+    "hub.mcp.empty.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No MCP servers yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 MCP 서버가 없어요"
+          }
+        }
+      }
+    },
+    "hub.mcp.empty.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Add server to paste an mcpServers entry from apps like Claude Desktop or Cursor."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버 추가에서 Claude Desktop이나 Cursor 같은 앱의 mcpServers 설정을 그대로 붙여 넣을 수 있어요."
+          }
+        }
+      }
+    },
+    "hub.mcp.scope.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available to"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용 범위"
+          }
+        }
+      }
+    },
+    "hub.mcp.scope.all": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Main Picky and Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 Picky와 Pickle"
+          }
+        }
+      }
+    },
+    "hub.mcp.scope.main": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Main Picky only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 Picky만"
+          }
+        }
+      }
+    },
+    "hub.mcp.enabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enabled"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용"
+          }
+        }
+      }
+    },
+    "hub.mcp.enabled.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When off, neither Picky nor Pi connects to this server."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끄면 Picky와 Pi 모두 이 서버에 연결하지 않아요."
+          }
+        }
+      }
+    },
+    "hub.mcp.enabled.accessibility": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 사용"
+          }
+        }
+      }
+    },
+    "hub.mcp.state.connected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected · %lld tools"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결됨 · 도구 %lld개"
+          }
+        }
+      }
+    },
+    "hub.mcp.state.connecting": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 중"
+          }
+        }
+      }
+    },
+    "hub.mcp.state.needsAuth": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in required"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 필요"
+          }
+        }
+      }
+    },
+    "hub.mcp.state.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 실패"
+          }
+        }
+      }
+    },
+    "hub.mcp.state.disconnected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnected"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 끊김"
+          }
+        }
+      }
+    },
+    "hub.mcp.state.disabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "꺼짐"
+          }
+        }
+      }
+    },
+    "hub.mcp.needsAuth": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to use this server. Sign in opens an authorization page in your browser."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 서버를 쓰려면 로그인해야 해요. 로그인을 누르면 브라우저에서 권한 승인 화면이 열려요."
+          }
+        }
+      }
+    },
+    "hub.mcp.signingIn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve access in your browser. Sign-in is cancelled if it isn't finished within 5 minutes."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브라우저에서 권한을 승인해 주세요. 5분 안에 끝내지 않으면 로그인이 취소돼요."
+          }
+        }
+      }
+    },
+    "hub.mcp.signOut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign out"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그아웃"
+          }
+        }
+      }
+    },
+    "hub.mcp.tools.view": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View tools"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구 보기"
+          }
+        }
+      }
+    },
+    "hub.mcp.tools.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ tools"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 도구"
+          }
+        }
+      }
+    },
+    "hub.mcp.remove.accessibility": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 삭제"
+          }
+        }
+      }
+    },
+    "hub.mcp.remove.confirm.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove MCP server?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 서버를 삭제할까요?"
+          }
+        }
+      }
+    },
+    "hub.mcp.remove.confirm.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This removes %@ from mcp.json. Pi can't use this server anymore either."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mcp.json에서 %@을(를) 삭제해요. Pi에서도 더 이상 이 서버를 쓸 수 없어요."
+          }
+        }
+      }
+    },
+    "hub.mcp.feedback.removed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removed %@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 서버를 삭제했어요."
+          }
+        }
+      }
+    },
+    "hub.mcp.feedback.signedIn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signed in to %@. It applies from the next request."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 로그인했어요. 다음 요청부터 적용돼요."
+          }
+        }
+      }
+    },
+    "hub.mcp.feedback.signedOut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signed out of %@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 로그아웃했어요."
+          }
+        }
+      }
+    },
+    "hub.mcp.error.operation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't change %1$@. %2$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 설정을 바꾸지 못했어요. %2$@"
+          }
+        }
+      }
+    },
+    "hub.mcp.error.signIn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't sign in to %1$@. %2$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에 로그인하지 못했어요. %2$@"
+          }
+        }
+      }
+    },
+    "hub.mcp.add.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add MCP server"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 서버 추가"
+          }
+        }
+      }
+    },
+    "hub.mcp.add.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름"
+          }
+        }
+      }
+    },
+    "hub.mcp.add.name.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letters, digits, _ and - only. Leave empty if the pasted configuration includes names."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영문, 숫자, _, -만 쓸 수 있어요. 붙여 넣은 설정에 이름이 있으면 비워 두세요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add.config": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuration (JSON)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정(JSON)"
+          }
+        }
+      }
+    },
+    "hub.mcp.add.config.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use command and args for a stdio server, or url for an HTTP server. You can also paste a whole mcpServers block."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stdio 서버는 command와 args를, HTTP 서버는 url을 넣어 주세요. mcpServers 블록을 통째로 붙여 넣어도 돼요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add.confirm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가"
+          }
+        }
+      }
+    },
+    "hub.mcp.add.error.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a configuration."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정을 입력해 주세요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add.error.json": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This isn't valid JSON."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON 형식이 올바르지 않아요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add.error.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a server name."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버 이름을 입력해 주세요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add.error.noServer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't find a server configuration with command or url."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "command나 url이 있는 서버 설정을 찾지 못했어요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add.error.duplicate": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ already exists. Use another name or remove the existing server first."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 서버가 이미 있어요. 다른 이름을 쓰거나 기존 서버를 먼저 삭제해 주세요."
+          }
+        }
+      }
+    },
+    "hub.mcp.add.error.invalid": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check the configuration for %1$@. %2$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 설정을 확인해 주세요. %2$@"
           }
         }
       }

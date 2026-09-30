@@ -121,6 +121,7 @@ When the user asks about a feature, start here before broad searching:
 - Pickle interactive input bridge: `agentd/src/runtime/ask-user-question-tool.ts`, `agentd/src/runtime/extension-ui-bridge.ts`
 - Pi SDK adapters (tools, extension UI, OAuth, package manager, RPC runner): `agentd/src/runtime/`. Only `runtime/` and `bootstrap.ts` may import `@earendil-works/*`; application code depends on `agentd/src/runtime/types.ts` (guard-enforced)
 - Pi session sync: `agentd/src/application/pi-session-syncer.ts`
+- MCP servers (Pi built-in MCP, per-server `pickyScope`, Hub management): `agentd/src/runtime/picky-mcp.ts`, `agentd/src/runtime/mcp-server-admin.ts`, `Picky/Hub/Plugins/PickyHubMcpServers*.swift`, `Picky/Hub/Plugins/PickyMcpServerClient.swift`
 - Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/PickyArtifactReporter.swift`, `Picky/HUD/PickyReportViewer.swift`
 - Pi extension handoff command: `pi-extensions/picky-handoff/`
 - HUD perf instrumentation / profiling playbook: `Picky/Feedback/PickyPerf.swift`, `docs/perf-profiling.md` (use this before guessing at HUD lag root causes)

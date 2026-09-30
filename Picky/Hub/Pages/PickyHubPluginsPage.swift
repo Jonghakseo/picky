@@ -15,10 +15,30 @@ struct PickyHubPluginsPage: View {
     @FocusState private var searchFocused: Bool
     @FocusState private var focusedPluginControl: String?
     @State private var commandFMonitor: Any?
+    @State private var section: Section = .plugins
+    @StateObject private var mcpServers: PickyHubMcpServersViewModel
+
+    /// Pi packages from the curated catalog, or MCP servers from Pi's `mcp.json`.
+    private enum Section: CaseIterable {
+        case plugins
+        case mcpServers
+
+        var titleKey: LocalizedStringKey {
+            switch self {
+            case .plugins: "hub.plugins.section.plugins"
+            case .mcpServers: "hub.plugins.section.mcp"
+            }
+        }
+    }
 
     init(dependencies: PickyHubDependencies) {
         self.dependencies = dependencies
         _catalog = ObservedObject(wrappedValue: dependencies.pluginCatalog)
+        let reloadController = dependencies.pluginReloadController
+        _mcpServers = StateObject(wrappedValue: PickyHubMcpServersViewModel(
+            client: dependencies.agentClient,
+            onSessionConfigChanged: { reloadController.notePluginsChanged() }
+        ))
     }
 
     private var gridColumns: [GridItem] {
@@ -39,47 +59,13 @@ struct PickyHubPluginsPage: View {
                 )
                 .padding(.bottom, dependencies.pluginReloadController.hasPendingChanges || dependencies.pluginReloadController.lastResult != nil ? PickyHubTheme.Spacing.field : 0)
 
-                searchAndFilters
+                sectionPicker
+                    .padding(.bottom, PickyHubTheme.Spacing.field)
 
-                Text(statusMessage)
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
-                    .foregroundColor(PickyHubTheme.Colors.textTertiary)
-                    .padding(.top, PickyHubTheme.Spacing.related)
-                    .pickyHubSelectableText()
-                    .accessibilityAddTraits(.updatesFrequently)
-                    .accessibilityLabel(Text(statusMessage))
-
-                if catalog.filtered.isEmpty {
-                    PickyHubEmptyState(
-                        systemImage: "magnifyingglass",
-                        title: "hub.plugins.empty.title",
-                        message: "hub.plugins.empty.message",
-                        actionTitle: "hub.plugins.empty.clear",
-                        actionSystemImage: "xmark.circle",
-                        action: clearFilters
-                    )
-                    .padding(.top, PickyHubTheme.Spacing.field)
-                } else {
-                    LazyVGrid(columns: gridColumns, alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
-                        ForEach(catalog.filtered) { item in
-                            PickyHubPluginCardView(
-                                item: item,
-                                onDetail: { presentDetail(for: item) },
-                                onInstall: { install(item) },
-                                onRemove: { presentRemovalConfirmation(for: item) },
-                                onUpdate: { update(item) },
-                                onViewCronJobs: { presentCronJobs(for: item) },
-                                onSetupCronDaemon: { setup(item) },
-                                onRemoveDuplicates: { catalog.removeDuplicates(item) },
-                                focusedControl: $focusedPluginControl
-                            )
-                        }
-                    }
-                    .padding(.top, PickyHubTheme.Spacing.field)
+                switch section {
+                case .plugins: pluginsSection
+                case .mcpServers: PickyHubMcpServersSection(model: mcpServers)
                 }
-
-                feedback
-                    .padding(.top, PickyHubTheme.Spacing.field)
             }
         }
         .onAppear {
@@ -87,6 +73,64 @@ struct PickyHubPluginsPage: View {
             installCommandFMonitor()
         }
         .onDisappear { removeCommandFMonitor() }
+    }
+
+    private var sectionPicker: some View {
+        HStack(spacing: PickyHubTheme.Spacing.related) {
+            ForEach(Section.allCases, id: \.self) { candidate in
+                PickyHubPluginCategoryChip(title: candidate.titleKey, isSelected: section == candidate) {
+                    section = candidate
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var pluginsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            searchAndFilters
+
+            Text(statusMessage)
+                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
+                .foregroundColor(PickyHubTheme.Colors.textTertiary)
+                .padding(.top, PickyHubTheme.Spacing.related)
+                .pickyHubSelectableText()
+                .accessibilityAddTraits(.updatesFrequently)
+                .accessibilityLabel(Text(statusMessage))
+
+            if catalog.filtered.isEmpty {
+                PickyHubEmptyState(
+                    systemImage: "magnifyingglass",
+                    title: "hub.plugins.empty.title",
+                    message: "hub.plugins.empty.message",
+                    actionTitle: "hub.plugins.empty.clear",
+                    actionSystemImage: "xmark.circle",
+                    action: clearFilters
+                )
+                .padding(.top, PickyHubTheme.Spacing.field)
+            } else {
+                LazyVGrid(columns: gridColumns, alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
+                    ForEach(catalog.filtered) { item in
+                        PickyHubPluginCardView(
+                            item: item,
+                            onDetail: { presentDetail(for: item) },
+                            onInstall: { install(item) },
+                            onRemove: { presentRemovalConfirmation(for: item) },
+                            onUpdate: { update(item) },
+                            onViewCronJobs: { presentCronJobs(for: item) },
+                            onSetupCronDaemon: { setup(item) },
+                            onRemoveDuplicates: { catalog.removeDuplicates(item) },
+                            focusedControl: $focusedPluginControl
+                        )
+                    }
+                }
+                .padding(.top, PickyHubTheme.Spacing.field)
+            }
+
+            feedback
+                .padding(.top, PickyHubTheme.Spacing.field)
+        }
     }
 
     private var searchAndFilters: some View {
@@ -265,6 +309,7 @@ struct PickyHubPluginsPage: View {
         guard commandFMonitor == nil else { return }
         commandFMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard dependencies.navigator.selectedPage == .plugins,
+                  section == .plugins,
                   !modalHost.isPresenting,
                   event.modifierFlags.contains(.command),
                   event.charactersIgnoringModifiers?.lowercased() == "f" else {

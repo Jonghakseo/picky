@@ -292,6 +292,7 @@ function createPickleRuntime(config: AgentdConfig, overrides: ComposeOverrides):
     asyncProviderPaths: capsule?.paths ?? [],
     asyncAdmissionDrain: () => asyncAdmissionDraining(config),
     asyncProvidersQualified: hostedAsync,
+    mcpTarget: "pickle",
   }), hostedAsync };
 }
 
@@ -349,6 +350,7 @@ function buildPrimaryMainRuntime(
     disableBlockingDialogs: true,
     allowedBlockingDialogMethods: ["askUserQuestion"],
     customTools: toolsBuilder(new Set()),
+    mcpTarget: "main",
     // Standing rules ride the system prompt instead of a transcript message, so compaction,
     // resume, and stale session files cannot drop them. Pi appends inline extensions after
     // discovered user extensions, so this runs as a late `before_agent_start` modifier.

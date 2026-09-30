@@ -137,6 +137,8 @@ export class PiSdkRuntime implements AgentRuntime {
   async create(prompt: BuiltPrompt, options: RuntimeCreateOptions): Promise<RuntimeSessionHandle> {
     logAgentd("pi runtime create", { sessionId: options.sessionId, cwd: options.cwd, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     const handle = await this.createHandle(options);
+    const sessionName = options.sessionName?.trim();
+    if (sessionName) handle.setInitialSessionName(sessionName);
     handle.scheduleInitialPrompt(prompt);
     return handle;
   }

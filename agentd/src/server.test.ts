@@ -2394,7 +2394,7 @@ describe("AgentdServer", () => {
       expect.objectContaining({ source: "cli", cwd: tmpdir() }),
       expect.objectContaining({ title: "CLI pickle", instructions: "do the thing", cwd: tmpdir(), notifyMainOnCompletion: false, notifyMacOSOnCompletion: false }),
     );
-    expect(runtimeCreate).toHaveBeenCalledWith(expect.anything(), { cwd: tmpdir(), sessionId: expect.any(String) });
+    expect(runtimeCreate).toHaveBeenCalledWith(expect.anything(), { cwd: tmpdir(), sessionId: expect.any(String), sessionName: "CLI pickle" });
     ws.close();
   });
 
@@ -2470,7 +2470,7 @@ describe("AgentdServer", () => {
       const ack = await waitForEvent(cli.ws, "externalEntryAck");
       expect(ack).toMatchObject({ commandId: `create-${index}`, kind: "createPickle", sessionId: expect.any(String) });
       if (ack.type !== "externalEntryAck") throw new Error("expected external ack");
-      expect((create.mock.calls as unknown[][])[index]?.[1]).toEqual({ ...scenario.expected, sessionId: ack.sessionId });
+      expect((create.mock.calls as unknown[][])[index]?.[1]).toEqual({ ...scenario.expected, sessionId: ack.sessionId, sessionName: `Configured ${index}` });
       expect((await store.loadAll()).find((session) => session.id === ack.sessionId)).toMatchObject({
         id: ack.sessionId, title: `Configured ${index}`, notifyMainOnCompletion: true, notifyMacOSOnCompletion: false,
       });

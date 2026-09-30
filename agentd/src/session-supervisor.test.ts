@@ -1887,6 +1887,19 @@ describe("SessionSupervisor", () => {
     expect(runtime.creates[0].options.cwd).toBe("/tmp/override-project");
   });
 
+  it("names the Pi session with an explicit handoff title but leaves context-derived titles to Pi", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new RecordingRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+
+    await supervisor.createPickleFromHandoff(context("pickle request"), { title: "  어필리에이트 핫픽스  ", instructions: "Investigate", runtimeDefaults: { modelPattern: "openai-codex/gpt-6-astra" } });
+    await supervisor.create(context("direct task"));
+
+    expect(runtime.creates[0].options).toMatchObject({ sessionName: "어필리에이트 핫픽스", modelPattern: "openai-codex/gpt-6-astra" });
+    expect(runtime.creates[1].options).not.toHaveProperty("sessionName");
+  });
+
   it("routes Pickle-session follow-ups through the follow-up queue", async () => {
     const supervisor = await makeSupervisor();
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });

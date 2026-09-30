@@ -153,6 +153,19 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
   }
 
+  /**
+   * Persists the host-chosen title as Pi's session name before the first prompt. Without it the
+   * session stays unnamed whenever the first auto-name attempt fails, and every later idle prompt
+   * re-runs name generation and overwrites the Pickle title.
+   */
+  setInitialSessionName(name: string): void {
+    try {
+      this.runtime.session.setSessionName(name);
+    } catch (error) {
+      logAgentd("initial session name failed", { sessionId: this.id, error: messageOf(error) });
+    }
+  }
+
   scheduleInitialPrompt(prompt: BuiltPrompt): void {
     if (this.initialPromptTimer) clearTimeout(this.initialPromptTimer);
     this.initialPromptTimer = setTimeout(() => {

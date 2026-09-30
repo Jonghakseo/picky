@@ -653,8 +653,9 @@ export class SessionSupervisor extends EventEmitter {
     if (sourceSessionFilePath && this.runtime.resume) {
       return this.createPickleFromResumedHandoff(handoffContext, handoff, sourceSessionFilePath);
     }
-    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), {
-      runtimeDefaults: handoff.runtimeDefaults, notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
+    const explicitTitle = handoff.title.trim();
+    const session = await this.createVisibleSession(handoffContext, explicitTitle || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), {
+      runtimeDefaults: { ...handoff.runtimeDefaults, ...(explicitTitle ? { sessionName: explicitTitle } : {}) }, notifyMainOnCompletion: handoff.notifyMainOnCompletion ?? false,
       notifyMacOSOnCompletion: handoff.notifyMacOSOnCompletion ?? false,
     });
     this.pickleSessionIds.add(session.id);

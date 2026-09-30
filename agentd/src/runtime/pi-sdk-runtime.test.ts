@@ -2718,6 +2718,19 @@ describe("PiSdkRuntime", () => {
     expect(events.some((event) => event.type === "status" && event.status === "completed" && event.noTurnRan === true && event.preserveSessionState === true)).toBe(true);
   });
 
+  it("names a new session before its first prompt so auto-name extensions see an explicit title", async () => {
+    const fakeSession = new FakeSession();
+    const order: string[] = [];
+    (fakeSession as unknown as { setSessionName: (name: string) => void }).setSessionName = (name: string) => { order.push(`name:${name}`); };
+    const originalPrompt = fakeSession.prompt.bind(fakeSession);
+    fakeSession.prompt = async (text: string, options?: unknown) => { order.push("prompt"); await originalPrompt(text, options); };
+
+    await makeRuntime(fakeSession).create({ text: "hello", imagePaths: [] }, { cwd: "/tmp/project", sessionId: "session-named", sessionName: "  핫픽스 조사  " });
+    await vi.waitFor(() => expect(fakeSession.prompts).toEqual(["hello"]));
+
+    expect(order).toEqual(["name:핫픽스 조사", "prompt"]);
+  });
+
   it("intercepts /compact, forwards optional instructions, and resets context usage", async () => {
     const fakeSession = new FakeSession();
     (fakeSession as unknown as { getContextUsage: () => { tokens: number; contextWindow: number; percent: number } }).getContextUsage = () => ({ tokens: 123_456, contextWindow: 200_000, percent: 62 });

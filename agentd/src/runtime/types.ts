@@ -293,6 +293,11 @@ export interface RuntimeCreateOptions {
   asyncTaskHost?: RuntimeAsyncTaskOwner;
   cwd?: string;
   sessionId?: string;
+  /**
+   * Explicit Pi session name for a brand-new session, written before the first prompt so
+   * name-generating extensions (e.g. auto-name) see a named session and keep this title.
+   */
+  sessionName?: string;
   /** Undefined preserves startup defaults; null explicitly uses Pi defaults. */
   modelPattern?: string | null;
   thinkingLevel?: ThinkingLevel | null;

@@ -10,7 +10,7 @@ import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 
 const root = process.env.PICKY_W0_ROOT;
 assert.ok(root, 'isolated root is required');
-assert.ok(['0.87.1', '0.85.0'].includes(VERSION), 'review characterization before changing SDK versions');
+assert.ok(['0.99.1', '0.85.0'].includes(VERSION), 'review characterization before changing SDK versions');
 const trace = [];
 const record = (event, data = {}) => trace.push({ event, ...data });
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -128,7 +128,7 @@ async function settlement(fenced) {
     await f.session.prompt('INITIAL'); await f.session.waitForIdle(); await stop;
     assert.equal(f.requests.length, fenced || VERSION === '0.85.0' ? 1 : 2);
     assert.equal(f.state.blocked, fenced ? 1 : 0);
-    if (!fenced && VERSION === '0.87.1') assert.ok(f.observations.some(m => m.details?.deliveryId === 'delivery-settled'));
+    if (!fenced && VERSION === '0.99.1') assert.ok(f.observations.some(m => m.details?.deliveryId === 'delivery-settled'));
     record('settlement', { fenced, externalRequests: f.requests.length, admissionRejections: f.state.blocked });
   } finally { await f.close(); }
 }
@@ -143,7 +143,9 @@ async function providers() {
     assert.ok(names.includes('bash_async'));
     assert.ok(names.includes('subagent'));
     const bash = f.session.getToolDefinition('bash_async');
-    const context = f.session.extensionRunner.createContext();
+    const context = VERSION === '0.85.0'
+      ? f.session.extensionRunner.createContext()
+      : f.session.extensionRunner.createToolContext('w0-provider', undefined);
     const marker = join(root, 'must-not-start-' + VERSION);
     const cancelled = await bash.execute('cancelled', { action: 'start', command: `touch '${marker}'` }, AbortSignal.abort(), undefined, context);
     assert.ok(cancelled.details.error?.includes('cancelled'));
@@ -267,7 +269,9 @@ socket.on('data', data => {
     // The real package registers its tool lazily from before_agent_start.
     await f.session.prompt('LOAD FINITE SUBAGENT; no tools');
     const tool = f.session.getToolDefinition('subagent');
-    const context = f.session.extensionRunner.createContext();
+    const context = VERSION === '0.85.0'
+      ? f.session.extensionRunner.createContext()
+      : f.session.extensionRunner.createToolContext('w0-provider', undefined);
     assert.equal(context.hasUI, false);
     let resolved = false;
     const run = tool.execute('finite-child', { command: 'subagent run finite --isolated -- finite fixture' }, undefined, undefined, context)

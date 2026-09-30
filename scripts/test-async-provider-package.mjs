@@ -35,13 +35,16 @@ try {
   run(process.execPath, args, { PICKY_ASYNC_PROVIDER_PREINSTALL_ONLY: "1" });
   run(pnpm, ["--dir", join(runtime, "async-task-providers"), "install", "--ignore-workspace", "--prod", "--frozen-lockfile", "--ignore-scripts"]);
   run(process.execPath, args, { PICKY_ASYNC_PROVIDER_VERIFY_ONLY: "1" });
-  const { qualifyAsyncProviders, asyncProviderLoaderOptions } = await import(pathToFileURL(join(runtime, "dist/runtime/qualified-async-providers.js")).href);
+  const { qualifyAsyncProviders } = await import(pathToFileURL(join(runtime, "dist/runtime/qualified-async-providers.js")).href);
   assert.equal(qualifyAsyncProviders(join(runtime, "async-task-providers"), join(runtime, "async-task-providers.lock.json"))?.paths.length, 2);
   const sdk = await import(pathToFileURL(join(runtime, "node_modules/@earendil-works/pi-coding-agent/dist/index.js")).href);
   const agentDir = join(root, "home/.pi/agent");
-  const options = await asyncProviderLoaderOptions(qualifyAsyncProviders(join(runtime, "async-task-providers"), join(runtime, "async-task-providers.lock.json")).paths, root, agentDir, sdk.SettingsManager.inMemory({ packages: [] }));
-  const services = await sdk.createAgentSessionServices({ cwd: root, agentDir, settingsManager: sdk.SettingsManager.inMemory({ packages: [] }), resourceLoaderOptions: { ...options, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true } });
-  assert.deepEqual(services.resourceLoader.getExtensions().extensions.flatMap((extension) => [...extension.tools.keys()]).sort(), ["bash_async", "subagent"]);
+  // Match PiSdkRuntime's owned loader, not its ordinary loader that filters these tools out.
+  const paths = qualifyAsyncProviders(join(runtime, "async-task-providers"), join(runtime, "async-task-providers.lock.json")).paths;
+  const services = await sdk.createAgentSessionServices({ cwd: root, agentDir, settingsManager: sdk.SettingsManager.inMemory({ packages: [] }), resourceLoaderOptions: { noExtensions: true, additionalExtensionPaths: paths, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true } });
+  const loaded = services.resourceLoader.getExtensions();
+  assert.deepEqual(loaded.errors, [], "Standalone provider extensions must load without errors");
+  assert.deepEqual(loaded.extensions.flatMap((extension) => [...extension.tools.keys()]).sort(), ["bash_async", "subagent"]);
   for (const dep of ["yaml", "@anthropic-ai/claude-agent-sdk"]) {
     const path = await realpath(join(runtime, "async-task-providers/node_modules", dep));
     assert.ok(path.startsWith(runtime), `Dependency escaped standalone runtime: ${path}`);

@@ -13,7 +13,7 @@ the **pre-upgrade checklist for every pi version bump**.
 |------|----------|---------------------|---------------------|
 | **T1 — Public API** | `defineTool`, `createAgentSessionServices`, `ModelRuntime` provider auth/status/login, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions`, `AgentSession.messages`, `AgentSession.setScopedModels` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
 | **T2 — Capability sniffs** | `setThinkingLevel`, `cycleThinkingLevel`, `cycleModel`, `getContextUsage`, `compact`, `reload`, `executeBash`, `recordBashResult`, `isCompacting`, `extensionRunner.emitUserBash` | One pi runtime feature silently no-ops (e.g. `/compact` becomes "not supported", thinking level cycling does nothing) | `src/runtime/pi-capabilities.ts` wraps each sniff, logs `pi capability absent` per session; `pi-contract.test.ts` warns (not fails) on absence so back-compat builds keep passing |
-| **T3 — Internal shapes** | `session.state.messages` array layout, `ModelRuntime.credentials.store.reload` compatibility bridge, `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.model.{api,provider,id}` with `state.model` fallback, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, stale live credentials, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts`; credential reload and state shape are hard-gated in `pi-contract.test.ts` |
+| **T3 — Internal shapes** | `session.state.messages` array layout, `ModelRuntime.credentials.store.reload` compatibility bridge, `PromptOptions.preflightResult` (`started` / `queued` / `handled` are accepted; rejection throws), `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.model.{api,provider,id}` with `state.model` fallback, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, stale live credentials, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts`; credential reload and state shape are hard-gated in `pi-contract.test.ts` |
 | **T4 — Lifecycle assumptions** | `runtime.session.sessionFile` exposed synchronously after `createHandle()`, `reportDiagnostics()` scheduled via `setTimeout(0)`, `setRebindSession` invoked when pi swaps the inner session | Race conditions that drop events between handle creation and subscription | Documented inline in `pi-sdk-runtime.ts` (`bindCurrentSession` race guard, `createPrewarmedMainHandle` early-attach comment); fragile, no automated guard |
 
 ## File-by-file inventory
@@ -133,7 +133,7 @@ checklist.
 
 When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 
-1. **Run the contract tests first**: `cd agentd && pnpm exec vitest run src/__tests__/pi-contract.test.ts src/application/pi-oauth-service.test.ts`.
+1. **Run the contract tests first**: `cd agentd && pnpm exec vitest run src/__tests__/pi-contract.test.ts src/runtime/pi-oauth-service.test.ts`.
    - Hard-tier failures: investigate immediately. The bump is unsafe.
    - Soft-tier warnings: capture in the upgrade notes; verify the affected
      `pi-capabilities.ts` wrapper still has a sensible fallback. If the
@@ -443,6 +443,77 @@ Official source: [Pi coding-agent CHANGELOG 0.84.4](https://github.com/earendil-
 Xcode 16.3 앱 빌드도 통과했지만 SDK 실행 검증을 대체하지 않는다.
 실행 중인 앱을 재시작하지 않았으므로 main-agent 응답, 터미널 재개 버튼, Pickle handoff의
 실제 앱 수동 smoke는 미실행이다.
+
+### 0.87.1 -> 0.99.1
+
+공식 근거: [Pi CHANGELOG](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md),
+[extension 도구 문맥](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md#tool-exposure).
+이 범위의 공식 릴리즈는 `0.99.0`과 `0.99.1`이다. 전역 CLI는 이미 `0.99.1`이며,
+저장소의 직접 의존성 `pi-ai`, `pi-coding-agent`, `pi-tui`만 함께 올린다.
+`agentd/vendor/async-task-providers`의 선택적 `*` peer 정책은 변경하지 않는다.
+
+- `AgentSession.prompt()`의 `preflightResult`는 boolean 대신
+  `PromptDisposition` (`started`, `queued`, `handled`)을 받는다. 거절된 입력에는
+  호출되지 않는다. `promptUntilAccepted`는 새 결과를 접수 로그에 기록하고,
+  거절 정리는 기존 promise rejection 경로에서 수행한다. 기존 시작·큐·무응답
+  slash-command 회귀 테스트의 대역도 공개 `PromptOptions` 계약을 따른다.
+- 도구 실행 문맥은 `ExtensionToolContext`이며 `tools`, `executeTool()`을 포함한다.
+  실제 subagent 도구를 직접 실행하는 통합 테스트는 공개
+  `ExtensionRunner.createToolContext()`를 사용한다. 과거 `0.85.0` 비교 하네스는
+  기존 `createContext()` 경로를 유지한다.
+- MCP, codemode, tool search가 CLI의 built-in extension으로 추가된다. Pi CLI는
+  factory를 주입하지만 Picky의 `createAgentSessionServices`는 이를 주입하지 않는다.
+  따라서 SDK bump만으로 `mcp.json` 로드나 새 MCP 서버 실행이 활성화되지 않는다.
+  기존 curated MCP plugin을 자동 삭제하거나 새 설정으로 이관하지 않는다.
+- 사용자 확장이 `ctx.executeTool()`을 쓰면 `parentToolCallId`가 있는 중첩 도구
+  이벤트를 보낼 수 있다. 기존 normalizer는 도구별 ID로 모두 활동을 표시한다.
+  부모·자식 그룹 표시나 집계 정책 변경은 이번 업데이트에 포함하지 않는다.
+- 카탈로그 요청에 `types=chat,image,classifier` 쿼리가 추가된다. 테스트 HTTP 서버는
+  `request.url` 전체 대신 URL pathname으로 provider 경로를 판별한다. 변경 전
+  원격 모델 선택·목록·캐시 테스트 4개가 404로 실패했고, 수정 후 해당 8개가 통과했다.
+  production catalog refresh adapter는 변경하지 않는다.
+- virtual models, classifier, image generation이 `ModelRuntime`에 추가되지만 Picky의
+  모델 선택은 기존 chat accessor 계약을 유지한다. GPT-6.1 Sol 카탈로그와 Codex 기본
+  모델 변경, 기존 OAuth 및 RPC listener 수정은 upstream에서 상속한다. 새 `openai`
+  ChatGPT 로그인은 Picky의 OAuth provider 목록에 추가하지 않는다. 기존
+  `openai-codex` / `anthropic` 로그인 계약은 유지한다. TUI system theme은
+  native SwiftUI HUD를 대체하지 않는다.
+- 새 세션 파일을 첫 사용자 메시지에서 만드는 수정은 세션 파일 발견 경로의 개선이다.
+  bootstrap 영속성, 재연결, `bindCurrentSession` 구독 경쟁 방어를 제거할 근거는 아니다.
+- 공개 credential reload API는 여전히 없어 `reloadModelRuntimeCredentials`를 유지한다.
+  T2 soft fallback과 `repairDanglingToolCalls` 역시 다른 계약을 보호하므로 유지한다.
+  별도 선택적 단순화·대체·삭제는 적용하지 않는다.
+- `createLocalShellOperations`는 여전히 cwd 접근 검사 후 abort 재검사 없이 spawn한다.
+  취소 이후 외부 프로세스를 시작하지 않는 기존 패치를
+  `patches/pi-coding-agent@0.99.1.patch`로 옮긴다. spawn-fence 회귀 테스트가
+  취소 직후 spawn 0회와 정상 실행·실행 중 취소·timeout 보존을 검증한다.
+  격리 SDK 사본에서 패치만 되돌린 비교 실행은 취소 후 spawn 1회를 재현했다.
+- lockfile의 새 `pi-mcp`, `pi-codemode`, `quickjs-wasi`와 OpenAI SDK 갱신은 Pi의
+  전이 의존성 변경이다. 기존 `ws@8.20.0`은 새 OpenAI SDK의 선택적
+  `ws@^8.21.0` peer 경고를 남긴다. 이 업데이트는 범위 밖 직접 의존성을 올리지 않는다.
+
+패키지 smoke의 기존 경로는 owned provider를 일반 extension 필터에 넘겨 도구를
+모두 제거하고 있었다. `scripts/test-async-provider-package.mjs`는 production의
+owned loader와 같이 검증된 절대 경로를 `additionalExtensionPaths`에 직접 전달한다.
+확장 로딩 오류도 빈 배열임을 검사해 도구 누락 원인이 숨지 않도록 한다.
+SDK 변경 때문에 production 필터를 제거하거나 provider bus 격리를 약화하지 않는다.
+
+검증 결과:
+
+- 필수 SDK/OAuth 계약 16개 통과, 변경된 runtime와 spawn-fence 집중 검증 114개 통과
+  (기존 선택적 테스트 1개 건너뜀).
+- 전체 `test:ci` 첫 단계는 카탈로그 테스트 4개 실패와 1,132개 통과였다. HTTP fixture를
+  수정한 뒤 해당 파일 8개를 재검증했고 모두 통과했다. 나머지 server/supervisor 단계는
+  446개 통과했다. 전체 범위의 고유 테스트는 1,582개 통과, 기존 선택적 테스트 6개
+  건너뜀이며, 첫 단계에서 실제 packed bash/subagent admission 테스트 26개도 실행됐다.
+- `pnpm --dir agentd run typecheck`, `pnpm --dir agentd run build`, 변경 TypeScript 파일
+  ESLint, `pnpm run check:architecture` (기존 경고 4개), `git diff --check` 통과.
+- `node scripts/test-async-provider-package.mjs`가 standalone 의존성, 확장 도구 로드,
+  provider 파일 변조 차단을 검증했다. Xcode 16.3과 공유 `PickyAgentDD` 앱 빌드 통과.
+- 외부 extension checkout을 요구하는 과거 `0.85.0` 비교 하네스는 이번에 실행하지 않았다.
+
+실행 중인 앱을 재시작하는 수동 smoke는 별도 명시 허가 없이는 수행하지 않는다.
+격리 SDK/provider 통합 테스트와 standalone package smoke는 실제 앱 수동 검증과 구분한다.
 
 ## Backward-compatibility policy
 

@@ -1378,17 +1378,10 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const skillEchoSuppression = this.skillEchoSuppressions.register(text);
     const promptPromise = this.inputRewriteObserver.runWithDelivery(expected.id, () => this.runAuthorizedPrompt(() => this.runtime.session.prompt(text, {
       ...options,
-      preflightResult: (success: boolean) => {
+      preflightResult: (disposition) => {
         this.pendingPromptPreflightDeliveryIds.delete(expected.id);
-        if (!success) {
-          logLifecycleEvent("piPromptPreflightRejected", { sessionId: this.id, ...this.lifecycleFields() });
-          this.cancelExpectedInputDelivery(expected.id);
-          this.promptQueue.cancelSlashSubmission(pendingSlashSubmission);
-          this.skillEchoSuppressions.remove(skillEchoSuppression);
-          return;
-        }
         accepted = true;
-        logLifecycleEvent("piPromptPreflightAccepted", { sessionId: this.id, ...this.lifecycleFields() });
+        logLifecycleEvent("piPromptPreflightAccepted", { sessionId: this.id, disposition, ...this.lifecycleFields() });
         resolveOnce();
       },
     })));
@@ -1417,7 +1410,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     await acceptedPromise;
     // Microtask ordering race: when Pi handles `/slash` extension commands, `session.prompt()`
     // suspends at its internal `await _tryExecuteExtensionCommand` and then synchronously runs
-    // `preflightResult(true)` -> `return` upon resume. That order schedules our awaiting
+    // `preflightResult("handled")` -> `return` upon resume. That order schedules our awaiting
     // `acceptedPromise` continuation BEFORE the `.then` handler that sets `promptResolved`, so
     // a naive check here would always observe `promptResolved === false` for synchronously
     // handled prompts under the real Pi runtime (the silent-slash test happens to pass because

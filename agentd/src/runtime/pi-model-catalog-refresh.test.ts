@@ -26,10 +26,11 @@ async function fixture(options: { offline?: boolean; fail?: boolean; hang?: bool
   let openaiRequests = 0;
   const server: Server = createServer((request, response) => {
     requests++;
-    if (request.url === "/api/models/providers/openai") openaiRequests++;
+    const { pathname } = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (pathname === "/api/models/providers/openai") openaiRequests++;
     if (options.hang) return;
     if (options.fail) { response.writeHead(400).end(); return; }
-    if (request.url !== "/api/models/providers/openai") { response.writeHead(404).end(); return; }
+    if (pathname !== "/api/models/providers/openai") { response.writeHead(404).end(); return; }
     response.writeHead(200, { "content-type": "application/json", "last-modified": "Tue, 01 Jan 2030 00:00:00 GMT" });
     response.end(JSON.stringify([remoteModel]));
   });

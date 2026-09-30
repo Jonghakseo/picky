@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAssistantMessageEventStream, type AssistantMessage, type ToolCall } from "@earendil-works/pi-ai";
-import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager, VERSION, type AgentSession, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager, VERSION, type AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vitest";
 import { ASYNC_TASK_CONTRACT, type AsyncTaskCommand, type AsyncTaskHostMessage } from "../domain/async-task-contract.js";
 import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession, type PickySessionProjectionMutation } from "../protocol.js";
@@ -60,7 +60,7 @@ type ToolInput = { name: string; arguments: ToolCall["arguments"] };
 // A function receives the 1-based model request number and returns that request's tool calls.
 type ToolPlan = ToolInput | ToolInput[] | ((request: number) => ToolInput[]);
 async function fixture(tool: ToolPlan) {
-  expect(VERSION).toBe("0.87.1");
+  expect(VERSION).toBe("0.99.1");
   const extensionRoot = providerPackageRoot();
   const root = await mkdtemp(join(tmpdir(), "picky-w0b-provider-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
@@ -911,14 +911,10 @@ async function verifyQueuedRegistration(mode: "continue" | undefined, f: Awaited
 
 it.each([undefined, "continue"] as const)("commits %s archive before queued actual provider registration resolves", async mode => {
   const f = await fixture({ name: "bash_async", arguments: { action: "list" } });
-  let context: ExtensionContext | undefined;
-  const unsubscribe = f.api.on("context_with_system", (_event, ctx) => { context = ctx; });
-  cleanups.push(async () => { unsubscribe(); });
   await f.supervisor.followUp("session-sdk", "Complete a list-only turn");
   await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.status).toBe("completed"));
   await f.session.waitForIdle(); await f.drainEvents();
   expect(f.frames.filter(frame => frame.type === "task-register")).toHaveLength(0);
-  expect(context).toBeDefined();
 
   const server = new AgentdServer({ port: 0, token: "w5-archive-test", supervisor: f.supervisor });
   const port = await server.start();
@@ -954,7 +950,7 @@ it.each([undefined, "continue"] as const)("commits %s archive before queued actu
     await expect(f.supervisor.followUp("session-sdk", "Normal input during accepted archive")).rejects.toThrow(/fenced|archived/);
     const definition = f.session.getToolDefinition("subagent");
     expect(definition).toBeDefined();
-    direct = definition!.execute("w5-direct-subagent", { command: "subagent run finite --isolated -- finite" }, undefined, undefined, context!);
+    direct = definition!.execute("w5-direct-subagent", { command: "subagent run finite --isolated -- finite" }, undefined, undefined, f.session.extensionRunner.createToolContext("w5-direct-subagent", undefined));
     await vi.waitFor(() => expect(f.frames.some(frame => frame.type === "task-register")).toBe(true), { timeout: 5000 });
     expect(f.frames.filter(frame => frame.type === "task-register-result" && frame.outcome === "accepted")).toHaveLength(0);
     expect(existsSync(join(f.root, "spawns"))).toBe(false);

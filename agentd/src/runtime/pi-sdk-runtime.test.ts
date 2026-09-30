@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
-import { type AgentSessionServices, createAgentSessionFromServices, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSessionServices, type PromptOptions, createAgentSessionFromServices, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { SessionStore } from "../session-store.js";
 import { SessionSupervisor } from "../session-supervisor.js";
@@ -99,7 +99,7 @@ class FakeSession extends EventEmitter {
   async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
     this.promptOptions.push(options);
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
     this.emit("event", { type: "agent_start" });
     this.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "ok" } });
   }
@@ -212,7 +212,7 @@ class SilentSlashCommandSession extends FakeSession {
   override async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
     this.promptOptions.push(options);
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("handled");
     // No events emitted - simulates Pi handling /slash extension commands or input handlers
     // that return action: "handled" without starting an agent turn.
   }
@@ -220,7 +220,7 @@ class SilentSlashCommandSession extends FakeSession {
 
 // Mirrors the real Pi runtime more closely than `SilentSlashCommandSession`: `session.prompt()`
 // suspends at an internal `await` (Pi awaits `_tryExecuteExtensionCommand`) before resuming and
-// running `preflightResult(true)` -> `return` synchronously. That microtask ordering reverses
+// running `preflightResult("handled")` -> `return` synchronously. That microtask ordering reverses
 // the queue-up order of the awaiting-acceptance continuation vs the prompt-resolution `.then`
 // handler in PiSdkRuntimeSession.promptUntilAccepted, which used to leak through as a missing
 // `Handled without agent turn` synthetic completion (`/diff-review` HUD spinner regression).
@@ -232,7 +232,7 @@ class AsyncSilentSlashCommandSession extends FakeSession {
     // `promptPromise.then` handler. This reproduces the real Pi flow where `_tryExecuteExtensionCommand`
     // suspends `prompt()` until the slash handler resolves.
     await Promise.resolve();
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("handled");
   }
 }
 
@@ -253,7 +253,7 @@ class SkillExpansionFakeSession extends FakeSession {
     if (this.isStreaming && text.startsWith("/skill:")) {
       this.followUpQueue.push(this.expansionFor(text));
     }
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.(this.isStreaming ? "queued" : "started");
   }
 }
 
@@ -270,7 +270,7 @@ class QueuedPromptStartSession extends FakeSession {
       this.followUpQueue.push(text);
       this.emit("event", { type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
     }
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.(this.isStreaming ? "queued" : "started");
     await new Promise<void>(() => undefined);
   }
 }
@@ -290,7 +290,7 @@ class CompactionFlushSession extends FakeSession {
     this.promptOptions.push(options);
     this.isStreaming = true;
     this.emit("event", { type: "agent_start" });
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
   }
 
   override async followUp(text: string): Promise<void> {
@@ -341,7 +341,7 @@ class SkillRewriteEchoSession extends SkillExpansionFakeSession {
       await this.finalInputHandler?.({ type: "input", text: this.expansionFor(text), source: "rpc" });
       this.emit("event", { type: "message_start", message: { role: "user", content: this.expansionFor(text) } });
     }
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
   }
 }
 
@@ -354,7 +354,7 @@ class RewriteInterleaveSession extends QueuedPromptStartSession {
     await this.finalInputHandler?.({ type: "input", text: "delegate subagent:worker now", source: "rpc" });
     this.emit("event", { type: "message_start", message: { role: "user", content: "extension injected follow-up" } });
     this.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
     await new Promise<void>(() => undefined);
   }
 }
@@ -369,7 +369,7 @@ class SameTextRewriteInterleaveSession extends RewriteInterleaveSession {
     this.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
     await this.finalInputHandler?.({ type: "input", text: "delegate subagent:worker now", source: "rpc" });
     this.emit("event", { type: "message_start", message: { role: "user", content: "delegate subagent:worker now" } });
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
     await new Promise<void>(() => undefined);
   }
 }
@@ -383,7 +383,7 @@ class RaceSkillExpansionFakeSession extends SkillExpansionFakeSession {
       this.followUpQueue.push(expansion);
       this.emit("event", { type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
     }
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.(this.isStreaming ? "queued" : "started");
   }
 }
 
@@ -395,7 +395,7 @@ class PreflightCompactionSession extends FakeSession {
     this.emit("event", { type: "compaction_start", reason: "threshold" });
     this.isCompacting = false;
     this.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: false, result: { summary: "요약" } });
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
     this.isStreaming = true;
     this.emit("event", { type: "agent_start" });
     this.emit("event", { type: "message_start", message: { role: "user", content: text } });
@@ -417,7 +417,7 @@ class BlockingPromptSession extends FakeSession {
   override async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
     this.promptOptions.push(options);
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
     this.emit("event", { type: "agent_start" });
     await this.promptFinished;
   }
@@ -431,7 +431,7 @@ class BusyRejectAfterAcceptedSession extends FakeSession {
   override async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
     this.promptOptions.push(options);
-    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    (options as PromptOptions | undefined)?.preflightResult?.("started");
     throw new Error("Agent is already processing. Wait for completion before continuing.");
   }
 }

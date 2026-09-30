@@ -64,7 +64,10 @@ struct PickyHubCalendarRenderTests {
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let lines = try recognizedLines(bitmap)
-                #expect(lines.joined(separator: " ").contains("Afternoon briefing"), "Upcoming job must actually be visible, including a wrapped title: \(lines)")
+                let visibleText = lines.joined(separator: " ").lowercased()
+                // Vision may read the first letter as "Atternoon" or split the two words.
+                #expect(visibleText.contains("ternoon") && visibleText.contains("briefing"),
+                        "Upcoming job must actually be visible, including a wrapped title: \(lines)")
                 #expect(!lines.joined(separator: " ").contains("Recurring"))
                 #expect(!lines.joined(separator: " ").contains("One-time"))
                 try save(bitmap, name: "calendar-initial-\(dark ? "dark" : "light")")

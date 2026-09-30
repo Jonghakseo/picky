@@ -2370,6 +2370,11 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        let errorRecorder = RouterErrorRecorder()
+        let eventStream = router.events
+        let errorObserver = Task {
+            for await event in eventStream { errorRecorder.record(event) }
+        }
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-exit", cwd: "/tmp/ws")
         let runner = try await poolFactory.waitForRunner(sessionId: "pickle-exit")
@@ -2377,14 +2382,17 @@ struct PickyAgentClientRouterTests {
         let child = try #require(try await spawned as? StubAgentClient)
 
         let command = PickyCommandEnvelope(id: "cmd-dropped-on-exit", type: .followUp, sessionId: "pickle-exit", text: "continue")
-        async let awaitingError: PickyErrorEvent? = router.sendAwaitingError(command, timeout: 0.5)
-        await Task.yield()
+        // Await admission to the boot queue before terminating the child.
+        // Task.yield() never guaranteed that an async let had started sending.
+        try await router.send(command)
         runner.emitTermination(exitCode: 9)
 
-        let error = try await awaitingError
-        #expect(error?.commandId == command.id)
-        #expect(error?.code == "child_unavailable")
+        try await waitUntil { errorRecorder.error(for: command.id) != nil }
+        #expect(errorRecorder.error(for: command.id)?.commandId == command.id)
+        #expect(errorRecorder.error(for: command.id)?.code == "child_unavailable")
         #expect(!child.sentCommands.contains { $0.id == command.id })
+        router.disconnect()
+        await errorObserver.value
     }
 
     @Test func sendAwaitingErrorReturnsRejectionWhenDaemonEmitsMatchingError() async throws {

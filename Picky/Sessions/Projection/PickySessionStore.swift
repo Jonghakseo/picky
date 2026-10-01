@@ -140,7 +140,8 @@ final class PickySessionStore {
             notifyMainOnCompletion: metadata.notifyMainOnCompletion,
             notifyMacOSOnCompletion: metadata.notifyMacOSOnCompletion,
             pinned: metadata.pinned ?? false,
-            archived: metadata.archived ?? false
+            archived: metadata.archived ?? false,
+            archivedAt: metadata.archivedAt
         )
     }
 

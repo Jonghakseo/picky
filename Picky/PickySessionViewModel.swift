@@ -2103,7 +2103,7 @@ final class PickySessionListViewModel: ObservableObject {
         PickyPerf.interval("vm_snapshot_publish_session_lists") {
             replaceAllSessions(
                 active: cards.filter { !archivedIDs.contains($0.id) },
-                archived: cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
+                archived: cards.filter { archivedIDs.contains($0.id) }.sortedForArchiveList()
             )
         }
         PickyPerf.interval("vm_snapshot_apply_manual_order") {

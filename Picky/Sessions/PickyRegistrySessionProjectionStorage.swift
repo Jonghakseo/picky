@@ -81,13 +81,14 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
     func archiveSession(id: String) -> PickySessionListViewModel.SessionCard? {
         let before = snapshot()
         guard let index = before.activeSessions.firstIndex(where: { $0.id == id }) else { return nil }
-        let card = before.activeSessions[index]
+        var card = before.activeSessions[index]
+        card.archivedAt = Date()
         let active = before.activeSessions.filter { $0.id != id }
         var appendedArchived = before.archivedSessions
         if !appendedArchived.contains(where: { $0.id == id }) {
             appendedArchived.append(card)
         }
-        let archived = appendedArchived.sortedForHUD()
+        let archived = appendedArchived.sortedForArchiveList()
         install(active: active, archived: archived)
         let final = snapshot()
         publish([
@@ -102,7 +103,8 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
     func unarchiveSession(id: String) -> PickySessionListViewModel.SessionCard? {
         let before = snapshot()
         guard let index = before.archivedSessions.firstIndex(where: { $0.id == id }) else { return nil }
-        let card = before.archivedSessions[index]
+        var card = before.archivedSessions[index]
+        card.archivedAt = nil
         let archived = before.archivedSessions.filter { $0.id != id }
         var active = before.activeSessions
         if !active.contains(where: { $0.id == id }) {
@@ -123,7 +125,7 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         let withoutArchived = before.archivedSessions.filter { $0.id != card.id }
         let appendedActive = shouldArchive ? withoutActive : withoutActive + [card]
         let appendedArchived = shouldArchive ? withoutArchived + [card] : withoutArchived
-        let archived = appendedArchived.sortedForHUD()
+        let archived = appendedArchived.sortedForArchiveList()
         install(active: appendedActive, archived: archived)
         let final = snapshot()
         publish([
@@ -162,7 +164,7 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         mutate(&card)
         var updatedArchived = before.archivedSessions
         updatedArchived[index] = card
-        let archived = updatedArchived.sortedForHUD()
+        let archived = updatedArchived.sortedForArchiveList()
         install(active: before.activeSessions, archived: archived)
         let final = snapshot()
         publish([

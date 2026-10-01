@@ -89,7 +89,7 @@ struct PickySessionMetadata: Equatable {
         notifyMainOnCompletion = card.notifyMainOnCompletion
         notifyMacOSOnCompletion = card.notifyMacOSOnCompletion
         archived = card.archived
-        self.archivedAt = archivedAt
+        self.archivedAt = card.archivedAt ?? archivedAt
         pinned = card.pinned
         lastRequest = card.lastRequestText.map { PickySessionLastRequest(source: .followUp, text: $0) }
     }

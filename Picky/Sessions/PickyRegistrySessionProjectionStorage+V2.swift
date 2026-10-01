@@ -106,18 +106,18 @@ extension PickyRegistrySessionProjectionStorage {
         let wasArchived = registry.archivedSessionIDs.contains(sessionID)
         guard archived ? wasActive : wasArchived else { return nil }
 
+        // Stamp the archive time locally so the list orders immediately; the
+        // daemon's authoritative `archivedAt` replaces it when it arrives.
+        if case .loaded(var metadata) = store.metaStore.metadataState {
+            metadata.archivedAt = archived ? Date() : nil
+            store.metaStore.replace(metadata)
+        }
         var activeIDs = registry.activeSessionIDs
         var archivedIDs = registry.archivedSessionIDs
         if archived {
             activeIDs.removeAll { $0 == sessionID }
             archivedIDs.append(sessionID)
-            archivedIDs = archivedIDs.sorted { lhs, rhs in
-                guard let left = registry.existingSessionStore(sessionID: lhs)?.materializedSessionCard(),
-                      let right = registry.existingSessionStore(sessionID: rhs)?.materializedSessionCard()
-                else { return lhs < rhs }
-                if left.createdAt != right.createdAt { return left.createdAt > right.createdAt }
-                return left.id < right.id
-            }
+            archivedIDs = sortedArchivedSessionIDs(archivedIDs)
         } else {
             archivedIDs.removeAll { $0 == sessionID }
             activeIDs.append(sessionID)
@@ -345,6 +345,8 @@ extension PickyRegistrySessionProjectionStorage {
         if shouldArchive {
             activeIDs.removeAll { $0 == card.id }
             if !archivedIDs.contains(card.id) { archivedIDs.append(card.id) }
+            // A projection can carry the authoritative `archivedAt`.
+            archivedIDs = sortedArchivedSessionIDs(archivedIDs)
         } else {
             archivedIDs.removeAll { $0 == card.id }
             if !activeIDs.contains(card.id) { activeIDs.append(card.id) }
@@ -357,6 +359,30 @@ extension PickyRegistrySessionProjectionStorage {
             activeChanged: !shouldArchive || wasActive,
             archivedChanged: shouldArchive || wasArchived
         )], final: final)
+    }
+}
+
+@MainActor
+private extension PickyRegistrySessionProjectionStorage {
+    /// Orders archived membership from scalar metadata only, so a sort never
+    /// materializes full session cards (messages, tools) for every archive.
+    func sortedArchivedSessionIDs(_ ids: [String]) -> [String] {
+        let keys: [String: PickyArchivedSessionOrder.Key] = Dictionary(
+            ids.compactMap { id in
+                guard case .loaded(let metadata) = registry.existingSessionStore(sessionID: id)?.metaStore.metadataState
+                else { return nil }
+                return (id, PickyArchivedSessionOrder.Key(id: id, archivedAt: metadata.archivedAt, createdAt: metadata.createdAt))
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return ids.sorted { lhs, rhs in
+            switch (keys[lhs], keys[rhs]) {
+            case let (left?, right?): return PickyArchivedSessionOrder.precedes(left, right)
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil): return lhs < rhs
+            }
+        }
     }
 }
 

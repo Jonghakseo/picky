@@ -53,6 +53,9 @@ struct PickySessionCard: Equatable, Identifiable {
     /// archived Pickles correctly. Live `sessionUpdated` events keep using the
     /// local intent set to avoid mid-flight unarchive flicker.
     var archived: Bool
+    /// When the session was archived. Orders the archived list (most recently
+    /// archived first); nil for active sessions and legacy archives.
+    var archivedAt: Date? = nil
 
     var activeTool: PickyToolActivity? {
         tools.last { $0.isActive }
@@ -255,6 +258,7 @@ extension PickySessionCard {
         self.notifyMacOSOnCompletion = session.notifyMacOSOnCompletion
         self.pinned = session.pinned ?? false
         self.archived = session.archived ?? false
+        self.archivedAt = session.archivedAt
     }
 
     func merged(with incoming: Self, preserveConversationState: Bool = false) -> Self {
@@ -386,6 +390,17 @@ extension Array where Element == PickySessionCard {
         }
     }
 
+    /// Archived list ordering: most recently archived first. See
+    /// `PickyArchivedSessionOrder`.
+    func sortedForArchiveList() -> [Element] {
+        sorted {
+            PickyArchivedSessionOrder.precedes(
+                .init(id: $0.id, archivedAt: $0.archivedAt, createdAt: $0.createdAt),
+                .init(id: $1.id, archivedAt: $1.archivedAt, createdAt: $1.createdAt)
+            )
+        }
+    }
+
     /// Order according to `manualOrder` (lower index = newer = visually-end
     /// slot after `sessions.reversed()`). IDs absent from `manualOrder` are
     /// appended after manually-ordered entries, sorted by `sortedForHUD()`.
@@ -397,5 +412,31 @@ extension Array where Element == PickySessionCard {
         }.sorted { $0.0 < $1.0 }.map { $0.1 }
         let leftovers = filter { positionByID[$0.id] == nil }.sortedForHUD()
         return manual + leftovers
+    }
+}
+
+/// Archived Pickles are listed most recently archived first. Sessions without
+/// an `archivedAt` (archived before the timestamp existed) sort after dated
+/// ones, newest created first, with id as the final tie-breaker.
+enum PickyArchivedSessionOrder {
+    struct Key {
+        let id: String
+        let archivedAt: Date?
+        let createdAt: Date
+    }
+
+    static func precedes(_ lhs: Key, _ rhs: Key) -> Bool {
+        switch (lhs.archivedAt, rhs.archivedAt) {
+        case let (left?, right?) where left != right:
+            return left > right
+        case (.some, nil):
+            return true
+        case (nil, .some):
+            return false
+        default:
+            break
+        }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+        return lhs.id < rhs.id
     }
 }

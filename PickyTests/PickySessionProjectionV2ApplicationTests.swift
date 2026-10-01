@@ -279,6 +279,34 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.dockState.snapshot.activeSessions.map(\.id) == ["session-b"])
     }
 
+    @Test func archivedListShowsMostRecentlyArchivedFirst() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
+        for id in ["session-a", "session-b", "session-c"] {
+            apply(snapshot(sessionID: id, title: id, status: .completed, revision: 1), to: viewModel)
+        }
+
+        // Same createdAt for all, so creation order cannot explain the result.
+        apply(transaction(
+            sessionID: "session-a",
+            baseRevision: 1,
+            revision: 2,
+            mutations: #"[{"type":"metaPatch","patch":{"archived":true,"archivedAt":"2000-01-01T00:00:01.000Z"}}]"#
+        ), to: viewModel)
+        apply(transaction(
+            sessionID: "session-b",
+            baseRevision: 1,
+            revision: 2,
+            mutations: #"[{"type":"metaPatch","patch":{"archived":true,"archivedAt":"2000-01-01T00:00:02.000Z"}}]"#
+        ), to: viewModel)
+        #expect(viewModel.archivedSessions.map(\.id) == ["session-b", "session-a"])
+
+        // A local archive lands on top before the daemon confirms it.
+        viewModel.archive(sessionID: "session-c")
+        #expect(storage.registry.archivedSessionIDs == ["session-c", "session-b", "session-a"])
+        #expect(viewModel.archivedSessions.map(\.id) == ["session-c", "session-b", "session-a"])
+    }
+
     @Test func unarchiveTransactionUpdatesBothActiveAndArchivedFacades() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)

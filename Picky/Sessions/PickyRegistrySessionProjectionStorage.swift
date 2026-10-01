@@ -16,6 +16,11 @@ import Foundation
 final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage {
     let registry: PickySessionRegistry
     let changesSubject = PassthroughSubject<PickySessionProjectionStoragePublication, Never>()
+    /// Archived cards from the most recent publication, keyed by the archived
+    /// membership they were materialized for. Live Pickles stream many
+    /// transactions per second; re-materializing every archived card for each
+    /// one dominated main-thread work while the archive itself was unchanged.
+    private var publishedArchive: (ids: [String], cards: [PickySessionListViewModel.SessionCard])?
 
     var activeSessions: [PickySessionListViewModel.SessionCard] { cards(for: registry.activeSessionIDs) }
     var archivedSessions: [PickySessionListViewModel.SessionCard] { cards(for: registry.archivedSessionIDs) }
@@ -202,6 +207,16 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         PickySessionProjectionStorageSnapshot(activeSessions: activeSessions, archivedSessions: archivedSessions)
     }
 
+    /// Snapshot for an operation that touched only non-archived stores. Reuses
+    /// the last published archived cards when archived membership is unchanged.
+    func snapshotReusingPublishedArchive() -> PickySessionProjectionStorageSnapshot {
+        guard let publishedArchive, publishedArchive.ids == registry.archivedSessionIDs else { return snapshot() }
+        return PickySessionProjectionStorageSnapshot(
+            activeSessions: activeSessions,
+            archivedSessions: publishedArchive.cards
+        )
+    }
+
     func step(
         active: [PickySessionListViewModel.SessionCard],
         archived: [PickySessionListViewModel.SessionCard],
@@ -216,6 +231,7 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
     }
 
     func publish(_ steps: [PickySessionProjectionStoragePublicationStep], final: PickySessionProjectionStorageSnapshot) {
+        publishedArchive = (registry.archivedSessionIDs, final.archivedSessions)
         changesSubject.send(PickySessionProjectionStoragePublication(finalSnapshot: final, steps: steps))
     }
 }

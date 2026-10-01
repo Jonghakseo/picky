@@ -331,7 +331,6 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
     private let configuration: Configuration
     private let factory: PickyWebSocketTaskMaking
     private let encoder = JSONEncoder.pickyAgentProtocolEncoder()
-    private let decoder = JSONDecoder.pickyAgentProtocolDecoder()
     private var task: PickyWebSocketTask?
     private var receiveLoop: Task<Void, Never>?
     private var connected = false
@@ -425,7 +424,11 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
             while !Task.isCancelled {
                 do {
                     let message = try await socket.receive()
-                    try self.handle(message)
+                    // JSON decoding runs off the main actor; frames are still
+                    // handled one at a time, so event order is unchanged.
+                    let frame = try await Self.decodeFrame(message)
+                    guard !Task.isCancelled else { return }
+                    self.handle(frame)
                 } catch is CancellationError {
                     return
                 } catch {
@@ -442,20 +445,31 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
         }
     }
 
-    private func handle(_ message: URLSessionWebSocketTask.Message) throws {
+    private struct DecodedFrame {
+        var bytes: Int
+        var result: Result<PickyEventEnvelope, Error>
+    }
+
+    nonisolated private static func decodeFrame(
+        _ message: URLSessionWebSocketTask.Message
+    ) async throws -> DecodedFrame {
         let data: Data
-        let messageBytes: Int
         switch message {
         case .string(let text):
             data = Data(text.utf8)
-            messageBytes = data.count
         case .data(let messageData):
             data = messageData
-            messageBytes = messageData.count
         @unknown default:
             throw PickyAgentClientError.malformedEvent("unsupported message kind")
         }
+        let result = Result {
+            try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
+        }
+        return DecodedFrame(bytes: data.count, result: result)
+    }
 
+    private func handle(_ frame: DecodedFrame) {
+        let messageBytes = frame.bytes
         if !hasReceivedFirstFrame {
             hasReceivedFirstFrame = true
             let elapsedMs = connectStartedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1
@@ -463,7 +477,7 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
         }
 
         do {
-            let event = try decoder.decode(PickyEventEnvelope.self, from: data)
+            let event = try frame.result.get()
             if !connected, case .hello = event.event {
                 connected = true
                 let elapsedMs = connectStartedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1

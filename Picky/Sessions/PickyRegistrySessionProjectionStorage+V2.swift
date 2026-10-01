@@ -144,10 +144,10 @@ extension PickyRegistrySessionProjectionStorage {
         guard let store = registry.existingSessionStore(sessionID: sessionID) else { return nil }
         update(store)
         guard let card = store.materializedSessionCard() else { return nil }
-        let final = snapshot()
         let isActive = registry.activeSessionIDs.contains(sessionID)
         let isArchived = registry.archivedSessionIDs.contains(sessionID)
         guard isActive || isArchived else { return nil }
+        let final = isArchived ? snapshot() : snapshotReusingPublishedArchive()
         publish([step(
             active: final.activeSessions,
             archived: final.archivedSessions,
@@ -352,12 +352,13 @@ extension PickyRegistrySessionProjectionStorage {
             if !activeIDs.contains(card.id) { activeIDs.append(card.id) }
         }
         registry.replaceMembership(active: activeIDs, archived: archivedIDs)
-        let final = snapshot()
+        let archivedChanged = shouldArchive || wasArchived
+        let final = archivedChanged ? snapshot() : snapshotReusingPublishedArchive()
         publish([step(
             active: final.activeSessions,
             archived: final.archivedSessions,
             activeChanged: !shouldArchive || wasActive,
-            archivedChanged: shouldArchive || wasArchived
+            archivedChanged: archivedChanged
         )], final: final)
     }
 }

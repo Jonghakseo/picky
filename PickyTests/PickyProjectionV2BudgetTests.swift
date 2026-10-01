@@ -189,6 +189,42 @@ struct PickyProjectionV2BudgetTests {
         withExtendedLifetime(cancellable) {}
     }
 
+    /// Live-Pickle transactions reuse the previously published archive instead
+    /// of re-materializing every archived card. That reuse must never surface an
+    /// archived card older than the archived session's own latest transaction.
+    @Test func liveTransactionPublishesTheLatestArchivedCards() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
+        let live = PickyProjectionReplayFixtures.bootstrapSession(
+            id: "live-session", index: 1, status: .running, archived: false, messages: [], messageJournalAvailable: true
+        )
+        let archived = PickyProjectionReplayFixtures.bootstrapSession(
+            id: "archived-session", index: 2, status: .completed, archived: true, messages: [], messageJournalAvailable: true
+        )
+        try apply(snapshot(for: live, revision: 1), to: viewModel)
+        try apply(snapshot(for: archived, revision: 1), to: viewModel)
+        try #require(storage.registry.archivedSessionIDs == [archived.id])
+
+        var publications: [PickySessionProjectionStoragePublication] = []
+        let cancellable = storage.changes.sink { publications.append($0) }
+        try apply(summaryTransaction(sessionID: archived.id, summary: "Archived summary v2"), to: viewModel)
+        try apply(messageOnlyTransaction(sessionID: live.id), to: viewModel)
+
+        let livePublication = try #require(publications.last)
+        #expect(livePublication.finalSnapshot.activeSessions.map(\.id) == [live.id])
+        #expect(livePublication.finalSnapshot.archivedSessions == storage.archivedSessions)
+        #expect(livePublication.finalSnapshot.session(id: archived.id)?.lastSummary == "Archived summary v2")
+        #expect(viewModel.archivedSessions.first?.lastSummary == "Archived summary v2")
+        withExtendedLifetime(cancellable) {}
+    }
+
+    private func summaryTransaction(sessionID: String, summary: String) throws -> PickySessionProjectionTransaction {
+        let json = """
+        {"sessionId":"\(sessionID)","epoch":"w7-epoch","baseRevision":1,"revision":2,"mutations":[{"type":"metaPatch","patch":{"lastSummary":"\(summary)"}}]}
+        """
+        return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionTransaction.self, from: Data(json.utf8))
+    }
+
     private func apply(_ snapshot: PickySessionProjectionSnapshot, to viewModel: PickySessionListViewModel) {
         viewModel.apply(.protocolEvent(PickyEventEnvelope(
             id: "snapshot-\(snapshot.sessionId)-\(snapshot.revision)",

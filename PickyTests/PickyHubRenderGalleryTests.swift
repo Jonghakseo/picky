@@ -95,9 +95,9 @@ struct PickyHubRenderGalleryTests {
                 request.recognitionLanguages = ["en-US"]
                 try VNImageRequestHandler(cgImage: #require(rendered.bitmap.cgImage)).perform([request])
                 let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-                for key in ["status.extensions.pickyHandoff.title", "status.extensions.pickyCLI.title"] {
-                    #expect(text.localizedCaseInsensitiveContains(L10n.t(key)), "Bundled plugin card must be visible: \(text)")
-                }
+                // Plugins opens on the Extensions tab; the bundled skill lives on the Skills tab.
+                #expect(text.localizedCaseInsensitiveContains(L10n.t("status.extensions.pickyHandoff.title")), "Bundled extension card must be visible: \(text)")
+                #expect(!text.localizedCaseInsensitiveContains(L10n.t("status.extensions.pickyCLI.title")), "Bundled skill must stay on the Skills tab: \(text)")
                 #expect(text.contains("Diff review"), "Bundled entries must share the page with catalog cards: \(text)")
                 #expect(text.contains("Update"), "Outdated bundled extension must offer an update: \(text)")
                 if let output, !output.isEmpty {

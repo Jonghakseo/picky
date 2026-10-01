@@ -89,7 +89,8 @@ export class AsyncControlCoordinator {
   async reopenAfterRestart(sessionId: string, coverageWaitMs = 5_000): Promise<boolean> {
     try {
       const handle = this.deps.handle(sessionId);
-      if (!handle?.asyncTasks) return false;
+      // Only idle re-entry candidates; a session with a turn in flight reopens through its input.
+      if (!handle?.asyncTasks || !["completed", "waiting_for_input"].includes(this.deps.read(sessionId).status)) return false;
       await this.awaitCoverage(sessionId, handle, coverageWaitMs);
       const session = this.deps.read(sessionId);
       if (!isAsyncTracked(session) || session.archived || session.asyncControl?.admissionState !== "closed") return false;

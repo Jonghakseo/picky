@@ -1535,3 +1535,50 @@ private func makeAgentdPackage(at url: URL, source: Bool = false, compiled: Bool
         try "console.log('compiled');\n".write(to: dist.appendingPathComponent("index.js"), atomically: true, encoding: .utf8)
     }
 }
+
+/// Real-process contract for daemon shutdown. Archiving a Pickle stops its
+/// child daemon on the main actor; a Node process that ignores SIGTERM used to
+/// freeze the whole app for the 2-second grace period.
+struct PickyProcessRunnerTerminationTests {
+    private func launchTermIgnoringProcess() throws -> (FoundationPickyProcessRunner, pid_t) {
+        let temp = FileManager.default.temporaryDirectory
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 0,
+            token: "token",
+            appSupportRoot: temp,
+            defaultCwd: temp.path,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "trap '' TERM; while :; do sleep 0.1; done"]
+        )
+        let runner = FoundationPickyProcessRunner()
+        try runner.launch(configuration: configuration, stdout: { _ in }, stderr: { _ in })
+        let pid = try #require(runner.processIdentifier)
+        // Give the shell time to install its trap before we signal it.
+        Thread.sleep(forTimeInterval: 0.2)
+        return (runner, pid)
+    }
+
+    private func isAlive(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
+
+    @Test func terminateReturnsImmediatelyAndStillKillsStubbornProcess() throws {
+        let (runner, pid) = try launchTermIgnoringProcess()
+
+        let started = Date()
+        runner.terminate()
+        #expect(Date().timeIntervalSince(started) < 0.5)
+        #expect(isAlive(pid))
+
+        let deadline = Date().addingTimeInterval(5)
+        while isAlive(pid) && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        #expect(!isAlive(pid))
+    }
+
+    @Test func terminateAndWaitForExitReturnsOnlyAfterProcessIsGone() throws {
+        let (runner, pid) = try launchTermIgnoringProcess()
+
+        runner.terminateAndWaitForExit()
+
+        #expect(!isAlive(pid))
+    }
+}

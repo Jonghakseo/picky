@@ -309,11 +309,15 @@ final class PickyAgentDaemonPool: ObservableObject {
 
     /// Gracefully terminate a child daemon. Safe to call regardless of whether the child is
     /// currently spawning, running, or already exited; subsequent calls are no-ops.
-    func terminateChild(sessionId: String) {
+    func terminateChild(sessionId: String, waitForExit: Bool = false) {
         guard let child = children[sessionId] else { return }
         child.resolve(.failure(CancellationError()))
         child.observerTask?.cancel()
-        child.launcher.stop()
+        if waitForExit {
+            child.launcher.stopAndWaitForExit()
+        } else {
+            child.launcher.stop()
+        }
         spawnTimeoutTasks[sessionId]?.cancel()
         spawnTimeoutTasks.removeValue(forKey: sessionId)
         children.removeValue(forKey: sessionId)
@@ -327,8 +331,12 @@ final class PickyAgentDaemonPool: ObservableObject {
     }
 
     /// Terminate every child. Called when the primary daemon shuts down.
-    func terminateAllChildren() {
-        for sessionId in Array(children.keys) { terminateChild(sessionId: sessionId) }
+    /// `waitForExit` blocks until each Node process is gone; only app quit and
+    /// update relaunch need that guarantee.
+    func terminateAllChildren(waitForExit: Bool = false) {
+        for sessionId in Array(children.keys) {
+            terminateChild(sessionId: sessionId, waitForExit: waitForExit)
+        }
     }
 
     // MARK: - Internal

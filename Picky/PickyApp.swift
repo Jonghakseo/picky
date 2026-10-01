@@ -103,8 +103,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         controller.willRelaunchApplication = { [weak self] in
             // Sparkle is about to swap the .app bundle. Stop bundled/child
             // picky-agentd processes first so their Node children don't crash on cwd.
-            self?.agentDaemonPool.terminateAllChildren()
-            self?.daemonLauncher.stop()
+            self?.agentDaemonPool.terminateAllChildren(waitForExit: true)
+            self?.daemonLauncher.stopAndWaitForExit()
             self?.lifecycleDiagnosticsStore.markCurrentRunClean(reason: .update)
         }
         return controller
@@ -559,8 +559,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         secureSurfaceWindowCoordinator.stop()
         companionManager.stop()
         hudOverlayManager.stop()
-        agentDaemonPool.terminateAllChildren()
-        daemonLauncher.stop()
+        agentDaemonPool.terminateAllChildren(waitForExit: true)
+        daemonLauncher.stopAndWaitForExit()
         _ = lifecycleDiagnosticsStore.markCurrentRunClean(reason: .normal)
     }
 

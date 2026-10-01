@@ -620,11 +620,18 @@ protocol PickyProcessRunning: AnyObject {
     /// implementation below.
     var processIdentifier: Int32? { get }
     func launch(configuration: PickyAgentDaemonConfiguration, stdout: @escaping (Data) -> Void, stderr: @escaping (Data) -> Void) throws
+    /// Requests termination and returns immediately. Escalation to SIGKILL
+    /// happens off the caller's thread, so stopping a Pickle daemon never
+    /// freezes the main thread while Node finishes its shutdown.
     func terminate()
+    /// Blocks until the process has exited. Reserved for app quit and update
+    /// relaunch, where the caller must not continue while Node is still alive.
+    func terminateAndWaitForExit()
 }
 
 extension PickyProcessRunning {
     var processIdentifier: Int32? { nil }
+    func terminateAndWaitForExit() { terminate() }
 }
 
 protocol PickyExecutableChecking {
@@ -740,27 +747,39 @@ final class FoundationPickyProcessRunner: PickyProcessRunning {
     }
 
     func terminate() {
+        guard let process = detachProcess(), process.isRunning else { return }
+        process.terminate()
+        DispatchQueue.global(qos: .utility).async {
+            Self.escalateTermination(of: process)
+        }
+    }
+
+    func terminateAndWaitForExit() {
+        guard let process = detachProcess(), process.isRunning else { return }
+        process.terminate()
+        Self.escalateTermination(of: process)
+    }
+
+    private func detachProcess() -> Process? {
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
-        guard let process else {
-            stdoutPipe = nil
-            stderrPipe = nil
-            return
-        }
-        if process.isRunning {
-            process.terminate()
-            let deadline = Date().addingTimeInterval(Self.terminationGracePeriod)
-            while process.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: Self.terminationPollInterval)
-            }
-            if process.isRunning {
-                Darwin.kill(process.processIdentifier, SIGKILL)
-                process.waitUntilExit()
-            }
-        }
+        let process = self.process
         self.process = nil
         stdoutPipe = nil
         stderrPipe = nil
+        return process
+    }
+
+    /// Waits up to the grace period for a SIGTERM'd process, then SIGKILLs it.
+    /// Blocks the calling thread, so the non-waiting path runs it off-main.
+    private static func escalateTermination(of process: Process) {
+        let deadline = Date().addingTimeInterval(terminationGracePeriod)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: terminationPollInterval)
+        }
+        guard process.isRunning else { return }
+        Darwin.kill(process.processIdentifier, SIGKILL)
+        process.waitUntilExit()
     }
 }
 
@@ -888,13 +907,27 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         launch()
     }
 
+    /// Stops without waiting for Node to exit, so callers on the main actor
+    /// stay responsive. Use `stopAndWaitForExit()` when the process must be gone
+    /// before the caller continues (app quit, bundle replacement).
     func stop() {
         pickyDaemonLog("stop requested")
+        prepareForIntentionalStop()
+        runner.terminate()
+        updateState(.stopped)
+    }
+
+    func stopAndWaitForExit() {
+        pickyDaemonLog("stop requested wait=1")
+        prepareForIntentionalStop()
+        runner.terminateAndWaitForExit()
+        updateState(.stopped)
+    }
+
+    private func prepareForIntentionalStop() {
         intentionallyStopped = true
         restartTask?.cancel()
         restartTask = nil
-        runner.terminate()
-        updateState(.stopped)
     }
 
     private func launch() {

@@ -1667,6 +1667,21 @@ describe("PiSdkRuntime", () => {
     await expect(answerPromise).resolves.toEqual({ choice: "B" });
   });
 
+  it("does not synthesize a no-turn completion after the initial prompt ran a full agent turn", async () => {
+    // Pi resolves `session.prompt()` only after the run settles, so `isStreaming` is false again by then.
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const events: unknown[] = [];
+
+    const handle = await runtime.create({ text: "initial", imagePaths: [] }, { cwd: "/tmp/project", sessionId: "session-initial-turn" });
+    handle.subscribe((event) => events.push(event));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fakeSession.prompts).toEqual(["initial"]);
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Agent started" });
+    expect(statusEvents(events)).not.toContainEqual(expect.objectContaining({ summary: "Handled without agent turn" }));
+  });
+
   it("synthesizes completed status when Pi handles a slash extension command without emitting any events", async () => {
     const fakeSession = new SilentSlashCommandSession();
     const runtime = makeRuntime(fakeSession);

@@ -114,6 +114,10 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // clear the counter when Pi opens a fresh agent cycle (agent_start) so a real cancellation
   // of the new turn still surfaces.
   private pendingAbortAcknowledgements = 0;
+  // Counts Pi agent_start events so prompt paths can tell whether an awaited `session.prompt()`
+  // actually ran a turn before it resolved. The initial prompt resolves only after the whole run
+  // settles, when `isStreaming` is already false again.
+  private agentStartCount = 0;
   private autocompleteGeneration = 0;
   private autocompleteQueryController: AbortController | undefined;
   private readonly subagentInvocationTracker = new SubagentInvocationTracker();
@@ -174,6 +178,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     logAgentd("pi prompt", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     if (await this.handleBuiltinSlashCommand(prompt.text)) return;
     const wasStreaming = this.runtime.session.isStreaming;
+    const agentStartsBefore = this.agentStartCount;
     const expected = this.expectInputDelivery(prompt.text);
     const skillEchoSuppression = this.skillEchoSuppressions.register(prompt.text);
     try {
@@ -188,7 +193,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       this.emitPromptFailureStatus(error);
       return;
     }
-    if (this.maybeEmitImmediateCompletion(wasStreaming)) this.cancelExpectedInputDelivery(expected.id);
+    if (this.maybeEmitImmediateCompletion(wasStreaming, agentStartsBefore)) this.cancelExpectedInputDelivery(expected.id);
   }
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
@@ -865,7 +870,10 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     // A new agent cycle starts: stop absorbing aborted drains from prior abort cycles so a
     // real cancellation of the freshly-started turn still surfaces as `cancelled`.
-    if (record.type === "agent_start") this.pendingAbortAcknowledgements = 0;
+    if (record.type === "agent_start") {
+      this.agentStartCount += 1;
+      this.pendingAbortAcknowledgements = 0;
+    }
     // `abort()` emits a synthetic cancellation immediately. Pi may still flush arbitrary
     // old-turn events while it settles, and none may be attributed to the next prompt. Do
     // not leak those deltas, tool updates, or terminals into a handle Picky is about to reuse.
@@ -1333,6 +1341,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     options: { images?: Awaited<ReturnType<typeof imageOptions>>; source: "rpc"; streamingBehavior?: "steer" | "followUp" },
   ): Promise<boolean> {
     const wasStreaming = this.runtime.session.isStreaming;
+    const agentStartsBefore = this.agentStartCount;
     logLifecycleEvent("piPromptPreflight", {
       sessionId: this.id,
       wasStreaming,
@@ -1411,7 +1420,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // resulting map is what lets the rest of this class translate Pi's queue snapshot back to
     // the raw text the user typed.
     this.promptQueue.completeSlashSubmission(pendingSlashSubmission, this.piQueueSnapshot());
-    const handledSynchronously = promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
+    const handledSynchronously = promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming, agentStartsBefore) : false;
     if (handledSynchronously || (promptResolved && !this.isExpectedInputQueued(text))) this.cancelExpectedInputDelivery(expected.id);
     logLifecycleEvent("piPromptAccepted", {
       sessionId: this.id,
@@ -1432,8 +1441,11 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // The `noTurnRan: true` marker tells RuntimeEventHandler to release the loading state without
   // running terminal side effects (notifying Picky, re-materializing artifacts), since
   // no real agent turn produced any new state to report.
-  private maybeEmitImmediateCompletion(wasStreaming: boolean): boolean {
+  // A prompt that started a turn (agent_start observed since `agentStartsBefore`) already owns its
+  // real terminal status; a synthetic marker there would overwrite the committed summary.
+  private maybeEmitImmediateCompletion(wasStreaming: boolean, agentStartsBefore: number): boolean {
     if (wasStreaming) return false;
+    if (this.agentStartCount !== agentStartsBefore) return false;
     if (this.runtime.session.isStreaming) return false;
     this.emit({ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true });
     return true;

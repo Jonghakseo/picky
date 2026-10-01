@@ -901,6 +901,16 @@ struct PickyConversationCardViewTests {
         }
     }
 
+    @Test func stopErrorStaysWhileTheRunIsStoppableOrBlockedAndExpiresWhenItEnds() {
+        // Feedback 0.11.1: the stop error stayed after the run ended, with no stop button left.
+        for status in [PickySessionStatus.running, .queued, .waiting_for_input, .blocked] {
+            #expect(!PickyComposerStopPolicy.stopErrorExpires(at: status))
+        }
+        for status in [PickySessionStatus.completed, .failed, .cancelled] {
+            #expect(PickyComposerStopPolicy.stopErrorExpires(at: status))
+        }
+    }
+
     @Test func headerTitleTooltipMentionsNameCommand() {
         let header = PickyConversationHeaderView(
             viewModel: makeViewModel(),

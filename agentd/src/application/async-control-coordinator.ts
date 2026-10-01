@@ -33,6 +33,16 @@ function hasUnsettledAttachedAsyncWork(handle: RuntimeSessionHandle, session: Pi
     || session.asyncTasks?.some(unsettled) === true || handle.asyncTasks?.snapshot().tasks.some(unsettled) === true;
 }
 
+/**
+ * Fences a command against the work the user saw. A stop is built by the daemon from
+ * its own context and means "stop whatever runs now", so a running Pickle or a
+ * concurrent clearQueue advancing the work revision must not reject it. Owner and
+ * control-generation (archive cut) checks still apply.
+ */
+function sameControlWork(command: Command, workRevision: number | undefined, controlGeneration: number | undefined): boolean {
+  return (command.type === "stopAsyncTasks" || command.workRevision === workRevision) && command.controlGeneration === controlGeneration;
+}
+
 export class ControlFailure extends Error {
   readonly code = "async_control_blocked";
   constructor(readonly outcome: Outcome, message: string) { super(message); }
@@ -284,7 +294,7 @@ export class AsyncControlCoordinator {
     }
     this.assertOwner(command);
     const context = this.context(command.sessionId);
-    if (context.workRevision !== command.workRevision || context.controlGeneration !== command.controlGeneration) {
+    if (!sameControlWork(command, context.workRevision, context.controlGeneration)) {
       return this.result(command, "stale", "Async work changed; refresh control context");
     }
     if (command.type === "asyncTaskDetail") return this.detail(command);
@@ -348,7 +358,7 @@ export class AsyncControlCoordinator {
 
   private validateCommit(command: Command, result: AsyncTaskCommandResult, session: PickyAgentSession): void {
     const handle = this.assertOwner(command);
-    if (result.outcome === "accepted" && (session.asyncWorkSummary?.workRevision !== command.workRevision || session.asyncControl?.controlGeneration !== command.controlGeneration)) throw new ControlFailure("stale", "Async work changed before operation commit");
+    if (result.outcome === "accepted" && !sameControlWork(command, session.asyncWorkSummary?.workRevision, session.asyncControl?.controlGeneration)) throw new ControlFailure("stale", "Async work changed before operation commit");
     if (result.outcome !== "settled") return;
     if (["stopAsyncTasks", "reconcileAsyncControl", "prepareAsyncReplacement"].includes(command.type)) this.assertQuiescent(command, handle);
     this.assertArchiveQuiescence(command, handle, session);

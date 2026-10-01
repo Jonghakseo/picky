@@ -1191,3 +1191,27 @@ it("reattaches a tracked Pickle whose idle owner was detached by terminal sync s
   await f.supervisor.setSessionArchived("session-sdk", true, undefined, "after-terminal-archive");
   expect(await f.store.loadReadOnly("session-sdk")).toMatchObject({ archived: true, status: "completed" });
 }, 30_000);
+
+it("stops a running tracked Pickle when the app clears its queue right before the stop", async () => {
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const f = await fixture({ readyOnDiscovery: true, onTool: async () => { enter(); await held; } });
+  const work = f.supervisor.followUp("session-sdk", "Long running work");
+  await entered;
+  await f.supervisor.steer("session-sdk", "Queued while the tool runs");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.queuedSteers?.length).toBe(1));
+  // The stop button sends clearQueue and abort back to back without waiting for the first ack;
+  // the server answers an async-controlled abort through asyncControls.stop with the command ID.
+  const cleared = f.supervisor.clearQueue("session-sdk", "all");
+  const stopped = f.supervisor.asyncControls.stop("session-sdk", "cmd-stop-button");
+  release();
+  const [clearOutcome, stopOutcome] = await Promise.allSettled([cleared, stopped]);
+  await work.catch(() => undefined);
+  await f.session.waitForIdle(); await f.drainEvents();
+  expect(clearOutcome.status).toBe("fulfilled");
+  expect(stopOutcome.status === "fulfilled" ? stopOutcome.value.outcome : String(stopOutcome.reason)).toBe("settled");
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.status).not.toBe("running");
+  expect(disk?.asyncControlJournal?.filter((entry) => entry.result.requestId === "cmd-stop-button").map((entry) => entry.result.outcome)).toEqual(["settled"]);
+}, 15_000);

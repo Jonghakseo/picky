@@ -336,6 +336,9 @@ struct PickyConversationCardView: View {
             transientComposerHeightGrowth = 0
             backgroundStopError = nil
         }
+        .onChange(of: plan.status) { _, status in
+            if PickyComposerStopPolicy.stopErrorExpires(at: status) { backgroundStopError = nil }
+        }
     }
 
     private func synchronizePlanExpansion(_ plan: PickyConversationPlanProjection) {

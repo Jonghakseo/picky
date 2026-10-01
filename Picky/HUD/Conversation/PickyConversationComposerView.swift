@@ -1488,12 +1488,12 @@ struct PickyConversationComposerView: View {
     private static let autocompleteDebounceNanoseconds: UInt64 = 80_000_000
 
     private func stopIfPossible() {
-        guard [.running, .queued, .waiting_for_input].contains(session.status), !isStopping else { return }
+        guard PickyComposerStopPolicy.canStop(session.status), !isStopping else { return }
         isStopping = true
         stopError = nil
         Task { @MainActor in
             defer { isStopping = false }
-            do { try await commands.abortRestoringQueuedInputs(sessionID: session.id) } catch { stopError = error.localizedDescription }
+            do { try await commands.abortRestoringQueuedInputs(sessionID: session.id) } catch { stopError = PickyComposerStopPolicy.message(for: error, at: session.status) }
         }
     }
 }

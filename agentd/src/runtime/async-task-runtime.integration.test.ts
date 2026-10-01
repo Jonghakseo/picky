@@ -145,7 +145,7 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
     while (pending.size) await Promise.allSettled([...pending]);
     await supervisor.withSessionProjectionBarrier("session-sdk", async () => {});
   }
-  return { root, runtime, handle, session, currentHandle: () => handle, currentSession: () => session, supervisor, store, saved, requests, completion, frames, api, send, ready, acknowledgeClose, events, projections, snapshots, transactions, notifications,
+  return { root, runtime, handle, session, currentHandle: () => handle, currentSession: () => session, currentApi: () => api, supervisor, store, saved, requests, completion, frames, api, send, ready, acknowledgeClose, events, projections, snapshots, transactions, notifications,
     drainEvents, emitRuntime: (event: RuntimeEvent) => eventTarget.applyRuntimeEvent("session-sdk", event) };
 }
 
@@ -335,9 +335,47 @@ it.each(["waiting_for_input", "blocked", "completed", "blocked-completed"] as co
   await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
   expect(JSON.stringify(f.requests.at(-1))).toContain("First input after restart");
   console.log("EMPTY_REENTRY_AFTER", JSON.stringify({ persistedStatus, status: (await f.store.loadReadOnly("session-sdk"))?.status, requests: f.requests.length }));
-  expect(disk).toMatchObject({ status: expectedStatus, asyncControl: { admissionState: "closed" }, asyncWorkSummary: { tracking: "ready", canReleaseRuntime: true } });
+  expect(disk).toMatchObject({ status: expectedStatus, asyncWorkSummary: { tracking: "ready", canReleaseRuntime: true } });
   expect(disk?.lastSummary).toBe(expectedStatus === "completed" ? "Earlier answer" : "Ready for instructions");
   expect(snapshot).toMatchObject({ type: "sessionProjectionSnapshot", projection: { status: expectedStatus } });
+}, 20_000);
+
+it.each(["waiting_for_input", "completed"] as const)("reopens admission for an idle %s Pickle after restart so an extension-injected prompt reaches the model", async persistedStatus => {
+  const f = await fixture({ readyOnDiscovery: true });
+  await f.drainEvents();
+  await f.handle.dispose?.();
+  const original = (await f.store.loadReadOnly("session-sdk"))!;
+  if (persistedStatus === "completed") await f.store.save({ ...original, status: "completed", lastSummary: "Earlier answer", finalAnswer: "Earlier answer" });
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncControl?.admissionState).toBe("open"), { timeout: 5_000 });
+  await restarted.setSessionModel("session-sdk", "w3-offline", "finite");
+  // Pi extensions (e.g. scheduled session delivery) inject prompts without any Picky input command.
+  f.currentApi().sendUserMessage("Scheduled delivery after restart");
+  await vi.waitFor(() => expect(JSON.stringify(f.requests.at(-1))).toContain("Scheduled delivery after restart"));
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncControl?.admissionState).toBe("open");
+}, 20_000);
+
+it("keeps admission closed after restart while async work from the previous owner remains unresolved", async () => {
+  const f = await fixture({ readyOnDiscovery: true });
+  await f.completion("left-running", { execution: "running", presence: "active" });
+  await f.drainEvents();
+  await f.handle.dispose?.();
+  const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
+  await restarted.load();
+  await vi.waitFor(() => expect(restarted.asyncControls.context("session-sdk").tracking).toBe("ready"));
+  await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
+  await restarted.setSessionModel("session-sdk", "w3-offline", "finite");
+  const requestsBefore = f.requests.length;
+  f.currentApi().sendUserMessage("Scheduled delivery while work is unknown");
+  // The model fence still rejects the injected prompt; the rejection is persisted instead of reaching the model.
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.messages?.at(-1)).toMatchObject({ kind: "agent_error", errorMessage: "Async model admission aborted" }));
+  await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
+  expect(f.requests).toHaveLength(requestsBefore);
+  const disk = await f.store.loadReadOnly("session-sdk");
+  expect(disk?.asyncControl?.admissionState).toBe("closed");
+  expect(disk?.asyncTasks?.find((task) => task.taskId === "left-running")).toMatchObject({ presence: "unknown" });
 }, 20_000);
 
 it("keeps an empty resumed Pickle fenced until its new provider snapshot is ready", async () => {

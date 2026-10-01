@@ -291,6 +291,7 @@ export class SessionSupervisor extends EventEmitter {
         }
 
         const resumedHandle = await this.tryResumeRuntimeHandle(session);
+        this.reopenIdleAsyncAdmissionAfterRestart(session.id, resumedHandle);
         if (!resumedHandle) {
           const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
           const current = this.mustGet(session.id);
@@ -304,12 +305,25 @@ export class SessionSupervisor extends EventEmitter {
         }
       } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))
         || shouldResumeIdleAsyncSession(session, releasedOwner, Boolean(piSessionFilePathForSession(session)))) {
-        await this.tryResumeRuntimeHandle(session);
+        this.reopenIdleAsyncAdmissionAfterRestart(session.id, await this.tryResumeRuntimeHandle(session));
       }
     }
     // Run after Pickle sessions are hydrated so the carried summary can reference them.
     await this.mainAgent.rolloverMainAgentForRestart();
     await this.purgeStaleArchivedSessions();
+  }
+
+  /**
+   * Recovery closes async admission for every restarted owner, and only Picky input
+   * reopens it. Prompts injected by Pi extensions (e.g. scheduled session delivery)
+   * would hit the closed model fence, so idle re-entry candidates reopen in the
+   * background once their fresh provider coverage proves quiescence.
+   */
+  private reopenIdleAsyncAdmissionAfterRestart(sessionId: string, resumedHandle: RuntimeSessionHandle | undefined): void {
+    if (!resumedHandle) return;
+    const session = this.mustGet(sessionId);
+    if (!isAsyncTracked(session) || session.archived === true || !["completed", "waiting_for_input"].includes(session.status)) return;
+    void this.asyncControls.reopenAfterRestart(sessionId);
   }
 
   private async purgeStaleArchivedSessions(now: number = Date.now()): Promise<void> {

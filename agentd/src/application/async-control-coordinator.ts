@@ -6,6 +6,7 @@ import type { RuntimeSessionHandle } from "../runtime/types.js";
 import { sameAsyncOwner } from "../runtime/async-task-state.js";
 import { KeyedSerialQueue } from "../domain/keyed-serial-queue.js";
 import { hasQuiescentReleasedAsyncOwner } from "../domain/session-supervisor-projection-policy.js";
+import { logAgentd } from "../local-log.js";
 
 type StopCommand = Omit<Extract<AsyncTaskCommand, { type: "prepareSessionArchive" }>, "type" | "archiveIntentId" | "requireQuiescence"> & { type: "stopAsyncTasks" };
 type LifecycleCommand = Omit<StopCommand, "type"> & { type: "prepareAsyncReplacement" | "reconcileAsyncControl"; inputLease?: boolean };
@@ -64,14 +65,63 @@ export class AsyncControlCoordinator {
     if (!isAsyncTracked(session) || session.archived === true || session.asyncControl?.releasePrepared) return;
     if (this.deps.handle(sessionId) || this.deps.runtimeBlocked(sessionId)) return;
     const handle = await this.deps.resumeDetached(sessionId).catch(() => undefined);
-    const control = handle?.asyncTasks;
-    if (!control) return;
+    if (!handle?.asyncTasks) return;
+    await this.awaitCoverage(sessionId, handle, coverageWaitMs);
+  }
+
+  /**
+   * Startup resume closes admission for every recovered owner. Input that does not
+   * pass through `input()` (for example a Pi extension injecting a user message)
+   * would otherwise be rejected by the model fence until the next Picky input.
+   * Reopen only when the fresh owner is already provably quiescent; the precheck
+   * keeps a failed attempt out of the durable control journal.
+   */
+  async reopenAfterRestart(sessionId: string, coverageWaitMs = 5_000): Promise<boolean> {
+    try {
+      const handle = this.deps.handle(sessionId);
+      if (!handle?.asyncTasks) return false;
+      await this.awaitCoverage(sessionId, handle, coverageWaitMs);
+      const session = this.deps.read(sessionId);
+      if (!isAsyncTracked(session) || session.archived || session.asyncControl?.admissionState !== "closed") return false;
+      if (session.asyncControl.releasePrepared || session.asyncControl.operations.some((operation) => operation.outcome === "accepted")) return false;
+      const probe = this.internalCommand(sessionId, "reconcileAsyncControl");
+      this.assertPhysicalQuiescence(probe, this.assertOwner(probe));
+      return await this.reopenIfQuiescent(sessionId, false);
+    } catch (error) {
+      logAgentd("async admission stays closed after restart", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      return false;
+    }
+  }
+
+  private async awaitCoverage(sessionId: string, handle: RuntimeSessionHandle, coverageWaitMs: number): Promise<void> {
+    const control = handle.asyncTasks!;
     // Provider readiness arrives shortly after resume; callers need a settled coverage answer.
     const deadline = Date.now() + coverageWaitMs;
     while (control.coverage().tracking === "reconciling" && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     await this.deps.drain(sessionId);
+  }
+
+  /** Runs the journaled reconcile, then reopens admission only if the owner is still quiescent. */
+  private async reopenIfQuiescent(sessionId: string, lease: boolean): Promise<boolean> {
+    const recovered = await this.execute(this.internalCommand(sessionId, "reconcileAsyncControl"));
+    if (recovered.outcome !== "settled") throw new Error(recovered.reason ?? recovered.outcome);
+    let reopened = false;
+    await this.queue.run(sessionId, async () => {
+      const current = this.deps.read(sessionId);
+      if (current.asyncControl?.releasePrepared) throw new Error("Cancel prepared runtime release before input");
+      // Startup reopen and a user input can race; whoever loses joins the already open admission.
+      if (current.asyncControl?.admissionState !== "open") {
+        const command = this.internalCommand(sessionId, "reconcileAsyncControl");
+        const handle = this.assertOwner(command);
+        this.assertQuiescent(command, handle);
+        await handle.asyncTasks!.reopenAdmission();
+      } else if (!lease) return;
+      if (lease) this.inputLeases.set(sessionId, (this.inputLeases.get(sessionId) ?? 0) + 1);
+      reopened = true;
+    });
+    return reopened;
   }
 
   async input<T>(sessionId: string, effect: () => Promise<T>): Promise<T> {
@@ -84,19 +134,7 @@ export class AsyncControlCoordinator {
     if (isAsyncTracked(session) && !control) throw new Error("Async control state requires owner reconciliation");
     if (control?.releasePrepared || control?.operations.some((operation) => operation.outcome === "accepted")) throw new Error("Async input admission is fenced; await the operation result");
     let leased = false;
-    if (control && control.admissionState !== "open") {
-      const recovered = await this.execute(this.internalCommand(sessionId, "reconcileAsyncControl"));
-      if (recovered.outcome !== "settled") throw new Error(recovered.reason ?? recovered.outcome);
-      await this.queue.run(sessionId, async () => {
-        const current = this.deps.read(sessionId);
-        if (current.asyncControl?.releasePrepared) throw new Error("Cancel prepared runtime release before input");
-        const command = this.internalCommand(sessionId, "reconcileAsyncControl");
-        const handle = this.assertOwner(command);
-        this.assertQuiescent(command, handle);
-        await handle.asyncTasks!.reopenAdmission();
-        this.inputLeases.set(sessionId, (this.inputLeases.get(sessionId) ?? 0) + 1); leased = true;
-      });
-    }
+    if (control && control.admissionState !== "open") leased = await this.reopenIfQuiescent(sessionId, true);
     if (!leased) this.inputLeases.set(sessionId, (this.inputLeases.get(sessionId) ?? 0) + 1);
     try { return await effect(); }
     finally {

@@ -139,11 +139,11 @@ struct PickyHUDDockMetrics: Equatable {
     var utilityButtonSide: CGFloat { 24 }
     var utilitySpacing: CGFloat { 2 }
     var chromeSpacing: CGFloat { 6 }
-    var handleInset: CGFloat { 20 }
-    var collapseInset: CGFloat { 20 }
+    var handleInset: CGFloat { 12 }
+    var collapseInset: CGFloat { 16 }
     /// Edge-pinned notch keeps a shallower hit depth so it never overlaps the
     /// utilities inside `collapseInset`.
-    var collapseHitDepth: CGFloat { 18 }
+    var collapseHitDepth: CGFloat { 14 }
     var handleNotchWidth: CGFloat { 34 }
     var collapseNotchWidth: CGFloat { 28 }
     var notchDepth: CGFloat { 11 }
@@ -159,8 +159,8 @@ struct PickyHUDDockMetrics: Equatable {
     var emptyGroupSlotHeight: CGFloat { sessionTileHeight }
     var sessionTileCornerRadius: CGFloat { 9 }
     var sessionLogoSide: CGFloat { max(17, scaled(24)) }
-    var sessionSpacing: CGFloat { max(7, scaled(9)) }
-    var horizontalPadding: CGFloat { 5 }
+    var sessionSpacing: CGFloat { max(4, scaled(5)) }
+    var horizontalPadding: CGFloat { 2 }
     var topPadding: CGFloat { max(3, scaled(4)) }
     var bottomPadding: CGFloat { max(8, scaled(10)) }
     var addSlotTopPadding: CGFloat { max(5, scaled(7)) }

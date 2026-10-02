@@ -75,10 +75,10 @@ struct PickyHUDDockExternalDragPolicyTests {
         #expect(snapshot.folderDropFrames["target"] == CGRect(x: -800, y: 526, width: 40, height: 40))
         #expect(snapshot.slotCandidates == [.init(container: .topLevel(index: 0), center: -848)])
         #expect(snapshot.topLevelInsertionCandidates == [
-            .init(topLevelIndex: 0, center: -902),
+            .init(topLevelIndex: 0, center: -898),
             .init(topLevelIndex: 1, center: -829),
             .init(topLevelIndex: 2, center: -795),
-            .init(topLevelIndex: 3, center: -726),
+            .init(topLevelIndex: 3, center: -730),
         ])
         #expect(snapshot.layoutFingerprint == PickyHUDDockLayoutFingerprint(
             layout: layout,
@@ -128,20 +128,20 @@ struct PickyHUDDockExternalDragPolicyTests {
         ))
 
         #expect(snapshot.topLevelInsertionCandidates == [
-            .init(topLevelIndex: 0, center: -834),
-            .init(topLevelIndex: 1, center: -726),
+            .init(topLevelIndex: 0, center: -830),
+            .init(topLevelIndex: 1, center: -730),
         ])
         #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
             draggedSessionID: "dragged",
             sourceGroupID: "source",
-            screenPoint: CGPoint(x: -834, y: 540),
+            screenPoint: CGPoint(x: -830, y: 540),
             geometry: snapshot,
             layout: sourceOnly
         ) == .topLevel(index: 0))
         #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
             draggedSessionID: "dragged",
             sourceGroupID: "source",
-            screenPoint: CGPoint(x: -726, y: 540),
+            screenPoint: CGPoint(x: -730, y: 540),
             geometry: snapshot,
             layout: sourceOnly
         ) == .topLevel(index: 1))
@@ -171,20 +171,20 @@ struct PickyHUDDockExternalDragPolicyTests {
         ))
 
         #expect(snapshot.topLevelInsertionCandidates == [
-            .init(topLevelIndex: 0, center: -524),
-            .init(topLevelIndex: 1, center: -416),
+            .init(topLevelIndex: 0, center: -520),
+            .init(topLevelIndex: 1, center: -420),
         ])
         #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
             draggedSessionID: "dragged",
             sourceGroupID: "source",
-            screenPoint: CGPoint(x: -850, y: 524),
+            screenPoint: CGPoint(x: -850, y: 520),
             geometry: snapshot,
             layout: sourceOnly
         ) == .topLevel(index: 0))
         #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
             draggedSessionID: "dragged",
             sourceGroupID: "source",
-            screenPoint: CGPoint(x: -850, y: 416),
+            screenPoint: CGPoint(x: -850, y: 420),
             geometry: snapshot,
             layout: sourceOnly
         ) == .topLevel(index: 1))
@@ -221,21 +221,21 @@ struct PickyHUDDockExternalDragPolicyTests {
 
             #expect(snapshot.slotCandidates == [.init(container: .topLevel(index: 0), center: -610)])
             #expect(snapshot.topLevelInsertionCandidates == [
-                .init(topLevelIndex: 0, center: -664),
+                .init(topLevelIndex: 0, center: -660),
                 .init(topLevelIndex: 1, center: -560),
-                .init(topLevelIndex: 2, center: -456),
+                .init(topLevelIndex: 2, center: -460),
             ])
             #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
                 draggedSessionID: "dragged",
                 sourceGroupID: "source",
-                screenPoint: CGPoint(x: -850, y: 456),
+                screenPoint: CGPoint(x: -850, y: 460),
                 geometry: snapshot,
                 layout: mixedLayout
             ) == .topLevel(index: 2))
             #expect(PickyHUDDockExternalDragDestinationResolver.resolve(
                 draggedSessionID: "dragged",
                 sourceGroupID: "source",
-                screenPoint: CGPoint(x: -850, y: 664),
+                screenPoint: CGPoint(x: -850, y: 660),
                 geometry: snapshot,
                 layout: mixedLayout
             ) == .topLevel(index: 0))

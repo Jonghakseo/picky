@@ -136,6 +136,7 @@ struct PickyConversationPresenceRow: View {
     let presentation: PickyConversationPresencePresentation
     var onTap: (() -> Void)? = nil
     @State private var stabilizer = PickyConversationPresenceStabilizer()
+    @State private var isHovered = false
 
     /// The stabilized value; the first frame shows the live value directly.
     private var shown: PickyConversationPresencePresentation {
@@ -165,19 +166,24 @@ struct PickyConversationPresenceRow: View {
                             .truncationMode(.tail)
                     }
                 }
-                Spacer(minLength: DS.Spacing.space2)
+                // Elapsed time sits right after the status, like a bubble's send
+                // time, and only shows on hover. It keeps its slot while hidden so
+                // the status text never shifts.
                 if let startedAt = presentation.startedAt {
                     Text(startedAt, style: .timer)
                         .font(PickyHUDTypography.metaMonospacedMedium)
                         .monospacedDigit()
                         .foregroundStyle(DS.Colors.textTertiary)
                         .fixedSize()
+                        .opacity(isHovered ? 1 : 0)
                         .accessibilityHidden(true)
                 }
+                Spacer(minLength: 0)
             }
             .padding(.trailing, DS.Spacing.space1)
             .frame(minHeight: 28)
             .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
         }
         .buttonStyle(.plain)
         .disabled(onTap == nil)

@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -795,6 +796,34 @@ struct PickyAgentAnnotationOverlayTests {
                 #expect(!frame.intersects(other.rect), "Callout \(item.id) covers the text of \(other.id)")
             }
         }
+    }
+
+    @Test func calloutShowsWholeTextAndWidensWithinTheCap() {
+        let font = PickyAnnotationTextLayoutPolicy.calloutFont
+        let padding = PickyAnnotationTextLayoutPolicy.calloutHorizontalPadding
+        let vertical = PickyAnnotationTextLayoutPolicy.calloutVerticalPadding
+        func fullHeight(_ text: String, bubbleWidth: CGFloat) -> CGFloat {
+            PickyAnnotationTextLayoutPolicy.measure(
+                text, font: font, width: bubbleWidth - padding * 2 - PickyAnnotationTextLayoutPolicy.calloutWrapSlack
+            ).height
+        }
+
+        // 500 characters, the TEXT limit, on a wide screen under a wide paragraph.
+        let long = String(repeating: "캐시된 문서를 다시 검사해서 바뀐 스키마를 반영해요. ", count: 17).prefix(500)
+        let wide = PickyAnnotationTextLayoutPolicy.calloutBodySize(text: String(long), anchorWidth: 900, screenWidth: 1440)
+        #expect(wide.width <= PickyAnnotationTextLayoutPolicy.calloutMaxWidth)
+        #expect(wide.width > 500, "a long translation uses the width cap instead of a narrow column")
+        #expect(wide.height >= fullHeight(String(long), bubbleWidth: wide.width) + vertical * 2, "no line is cut off")
+
+        // Same text under a narrow label still widens rather than growing past six lines first.
+        let narrowAnchor = PickyAnnotationTextLayoutPolicy.calloutBodySize(text: String(long), anchorWidth: 80, screenWidth: 1440)
+        #expect(narrowAnchor.width > PickyAnnotationTextLayoutPolicy.calloutMinWrapWidth)
+
+        // Short text hugs its content; small screens cap the width.
+        let short = PickyAnnotationTextLayoutPolicy.calloutBodySize(text: "로그인", anchorWidth: 600, screenWidth: 1440)
+        #expect(short.width < 120)
+        let small = PickyAnnotationTextLayoutPolicy.calloutBodySize(text: String(long), anchorWidth: 900, screenWidth: 400)
+        #expect(small.width <= 400 - PickyAnnotationTextLayoutPolicy.calloutScreenMargin * 2)
     }
 
     /// Mirrors the marketing-page fixture rendered by the messenger-UX gallery

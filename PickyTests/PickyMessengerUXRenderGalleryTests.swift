@@ -351,7 +351,7 @@ private struct TranslationBackdrop: View {
               size: 11, weight: .regular, color: ink.opacity(0.6)),
         Block(id: "billing", rect: CGRect(x: 60, y: 288, width: 300, height: 18),
               source: "Billing cycle: annual, prorated on upgrade",
-              translation: "결제 주기: 연간. 중간에 상위 요금제로 바꾸면 남은 기간만큼 일할 계산해서 차액만 청구해요.",
+              translation: "결제 주기: 연간. 중간에 상위 요금제로 바꾸면 남은 기간만큼 일할 계산해서 차액만 청구해요. 하위 요금제로 내리면 다음 결제일부터 적용되고, 이미 낸 금액은 크레딧으로 남아 다음 청구에서 먼저 차감돼요. 연간 결제를 취소하면 남은 기간은 그대로 쓸 수 있지만 환불은 되지 않아요.",
               size: 13, weight: .medium, color: ink),
     ]
 

@@ -22,8 +22,16 @@ struct PickyAnnotationTextItem: Equatable, Identifiable {
 
 enum PickyAnnotationTextLayoutPolicy {
     static let markerHeight: CGFloat = 1.5
-    static let calloutMaxWidth: CGFloat = 280
-    static let calloutMaxLines = 8
+    /// Bubble width floor for wrapped text; short text still hugs its content.
+    static let calloutMinWrapWidth: CGFloat = 280
+    /// Absolute width cap, further limited by the screen width.
+    static let calloutMaxWidth: CGFloat = 560
+    /// Above this many lines the bubble widens toward the cap before growing taller.
+    static let calloutPreferredMaxLines = 4
+    static let calloutWidthStep: CGFloat = 40
+    static let calloutScreenMargin: CGFloat = DS.Spacing.space4
+    /// Rounding headroom between the measured and rendered text width.
+    static let calloutWrapSlack: CGFloat = 1
     static let calloutHorizontalPadding: CGFloat = DS.Spacing.space3
     static let calloutVerticalPadding: CGFloat = DS.Spacing.space2
     static let calloutTailSize = CGSize(width: 12, height: 6)
@@ -44,20 +52,75 @@ enum PickyAnnotationTextLayoutPolicy {
         .systemFont(ofSize: PickyHUDTypography.Size.bodyCompact, weight: .regular)
     }
 
-    static func calloutBodySize(text: String) -> CGSize {
+    static func maximumBubbleWidth(screenWidth: CGFloat) -> CGFloat {
+        max(calloutMinWrapWidth, min(calloutMaxWidth, screenWidth - calloutScreenMargin * 2))
+    }
+
+    /// Full, untruncated bubble size. The wrap width starts at the original
+    /// text's width (a translated paragraph reads best about as wide as its
+    /// source) within [`calloutMinWrapWidth`, cap], then widens in steps while
+    /// the text still needs more than `calloutPreferredMaxLines` lines.
+    static func calloutBodySize(text: String, anchorWidth: CGFloat, screenWidth: CGFloat) -> CGSize {
         let font = calloutFont
-        let maxTextWidth = calloutMaxWidth - calloutHorizontalPadding * 2
-        let bounds = (text as NSString).boundingRect(
-            with: CGSize(width: maxTextWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font]
-        )
         let lineHeight = ceil(font.ascender - font.descender + font.leading)
-        let height = min(ceil(bounds.height), lineHeight * CGFloat(calloutMaxLines))
+        let cap = maximumBubbleWidth(screenWidth: screenWidth)
+        var bubbleWidth = min(cap, max(calloutMinWrapWidth, anchorWidth))
+        let wrapWidth = { (bubble: CGFloat) in bubble - calloutHorizontalPadding * 2 - calloutWrapSlack }
+        var bounds = measure(text, font: font, width: wrapWidth(bubbleWidth))
+        while bounds.height > lineHeight * CGFloat(calloutPreferredMaxLines) + 0.5, bubbleWidth < cap {
+            bubbleWidth = min(cap, bubbleWidth + calloutWidthStep)
+            bounds = measure(text, font: font, width: wrapWidth(bubbleWidth))
+        }
+        // Only single-line text hugs its content. Narrowing a wrapped block to
+        // its widest line lets SwiftUI re-break it into one more line than measured.
+        let isSingleLine = bounds.height < lineHeight * 1.5
         return CGSize(
-            width: ceil(bounds.width) + calloutHorizontalPadding * 2,
-            height: ceil(height) + calloutVerticalPadding * 2
+            width: isSingleLine
+                ? min(bubbleWidth, bounds.width + calloutWrapSlack + calloutHorizontalPadding * 2)
+                : bubbleWidth,
+            height: bounds.height + calloutVerticalPadding * 2
         )
+    }
+
+    /// Greedy word-wrap measurement. SwiftUI draws Korean wrapped at spaces,
+    /// but every AppKit/CoreText/SwiftUI size API breaks it between any two
+    /// syllables and reports fewer lines than are drawn. Filling lines word by
+    /// word matches the drawn result; where text really does break by syllable
+    /// it only over-estimates, so the bubble errs wider, never cut off.
+    static func measure(_ text: String, font: NSFont, width: CGFloat) -> CGSize {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let wordWidth = { (word: Substring) in ceil((String(word) as NSString).size(withAttributes: attributes).width) }
+        let spaceWidth = (" " as NSString).size(withAttributes: attributes).width
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let limit = max(1, width)
+        var lines = 0
+        var widest: CGFloat = 0
+        for paragraph in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            var current: CGFloat = 0
+            var gap = spaceWidth
+            lines += 1
+            for word in paragraph.split(separator: " ", omittingEmptySubsequences: false) {
+                // Consecutive spaces stay in the text and take room on the line.
+                guard !word.isEmpty else {
+                    gap += spaceWidth
+                    continue
+                }
+                let w = wordWidth(word)
+                defer { gap = spaceWidth }
+                if current > 0, current + gap + w <= limit {
+                    current += gap + w
+                } else {
+                    if current > 0 { lines += 1 }
+                    // A word wider than the line breaks across extra lines.
+                    let extra = max(0, Int(ceil(w / limit)) - 1)
+                    lines += extra
+                    current = extra > 0 ? w - CGFloat(extra) * limit : w
+                    if extra > 0 { widest = limit }
+                }
+                widest = max(widest, min(current, limit))
+            }
+        }
+        return CGSize(width: ceil(widest), height: CGFloat(lines) * lineHeight)
     }
 
     /// Places bubbles in reading order. Each bubble tries below, above,
@@ -70,7 +133,7 @@ enum PickyAnnotationTextLayoutPolicy {
         var placed: [CGRect] = []
         var result: [String: CalloutLayout] = [:]
         for item in items {
-            let body = calloutBodySize(text: item.text)
+            let body = calloutBodySize(text: item.text, anchorWidth: item.rect.width, screenWidth: screenSize.width)
             let otherRects = items.filter { $0.id != item.id }.map(\.rect)
             let bubbles = placed.map { $0.insetBy(dx: -calloutSpacing, dy: -calloutSpacing) }
             let candidates = candidateFrames(anchor: item.rect, body: body).map { edge, frame in
@@ -198,12 +261,13 @@ struct PickyAnnotationTextOverlayView: View {
         Text(item.text)
             .font(Font(PickyAnnotationTextLayoutPolicy.calloutFont))
             .foregroundStyle(DS.Colors.textPrimary)
-            .lineLimit(PickyAnnotationTextLayoutPolicy.calloutMaxLines)
-            .truncationMode(.tail)
             .multilineTextAlignment(.leading)
+            // Never truncate: the text sets its own height so the bubble always
+            // holds the whole translation, even if wrapping differs by a line.
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, PickyAnnotationTextLayoutPolicy.calloutHorizontalPadding)
             .padding(.vertical, PickyAnnotationTextLayoutPolicy.calloutVerticalPadding)
-            .frame(width: layout.frame.width, height: layout.frame.height, alignment: .leading)
+            .frame(width: layout.frame.width, alignment: .leading)
             .background {
                 let shape = PickyAnnotationCalloutShape(
                     tailEdge: layout.tailEdge,
@@ -218,7 +282,7 @@ struct PickyAnnotationTextOverlayView: View {
                         y: 2
                     )
             }
-            .position(x: layout.frame.midX, y: layout.frame.midY)
+            .offset(x: layout.frame.minX, y: layout.frame.minY)
     }
 }
 

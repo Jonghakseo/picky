@@ -13,37 +13,21 @@ struct PickyConversationMenu: View {
     var onArchive: (() -> Void)?
     var onRewind: (() -> Void)?
 
-    var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
-    var canShowInlinePiTerminal: Bool { session.piSessionFilePath != nil }
-    var isShowingInlinePiTerminal: Bool { viewModel.isInlineTerminalMode(sessionID: session.id) }
     var canCopyResumeCommand: Bool { session.piSessionFilePath != nil }
-    /// `syncTerminalSession` reads the on-disk Pi JSONL, so we gate the action on the same
-    /// condition as the terminal overlay. Useful when the user is iterating the same session in
-    /// an external `pi --session` and the HUD card has gone stale (the daemon has no automatic
-    /// JSONL watcher).
+    /// `syncTerminalSession` reads the on-disk Pi JSONL, so the action needs a session file.
+    /// Useful when the user is iterating the same session in an external `pi --session` and
+    /// the HUD card has gone stale (the daemon has no automatic JSONL watcher).
     var canSyncFromPiSession: Bool { session.piSessionFilePath != nil }
     var canDuplicate: Bool { session.piSessionFilePath != nil }
-    // Requires a Pi session file AND a wired sheet host. The shared menu is also hosted by
-    // PickyInlineTerminalCardView, which does not present the rewind picker, so without the
-    // `onRewind` check the item would render enabled there and tap to a silent no-op.
+    // Requires a Pi session file AND a wired sheet host. Hosts that do not present the
+    // rewind picker pass no `onRewind`; without that check the item would render enabled
+    // there and tap to a silent no-op.
     var canRewind: Bool { session.piSessionFilePath != nil && onRewind != nil }
     var canStop: Bool { !session.status.isTerminal }
     var canCompact: Bool { session.canRequestDockCompaction }
 
     var body: some View {
         Section("hud.menu.section.quick") {
-            Button("hud.menu.openTerminal") {
-                viewModel.openTerminalOverlay(sessionID: session.id)
-            }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(!canOpenPiTerminal)
-
-            Button(isShowingInlinePiTerminal ? "hud.menu.showChatUI" : "hud.menu.showTerminalInline") {
-                viewModel.toggleInlineTerminalMode(sessionID: session.id)
-            }
-            .keyboardShortcut("t", modifiers: .command)
-            .disabled(!canShowInlinePiTerminal)
-
             Button("hud.menu.copyResume") {
                 viewModel.copyTerminalResumeCommand(sessionID: session.id)
             }
@@ -51,10 +35,9 @@ struct PickyConversationMenu: View {
 
             // Manual escape hatch for when the user has been iterating the session in an
             // external `pi --session` shell. The daemon does not watch JSONL files, so this is
-            // the only way (short of opening the in-app terminal overlay) to reconcile the HUD
-            // card with the latest on-disk transcript.
+            // the only way to reconcile the HUD card with the latest on-disk transcript.
             Button("hud.menu.syncFromPi") {
-                viewModel.syncTerminalSessionOnce(sessionID: session.id, baselineSnapshot: nil)
+                viewModel.syncTerminalSessionOnce(sessionID: session.id)
             }
             .disabled(!canSyncFromPiSession)
         }
@@ -108,8 +91,8 @@ struct PickyConversationMenu: View {
         self.onRewind = onRewind
     }
 
-    /// Compatibility entry point for terminal-mode callers that still carry
-    /// the legacy card projection until the W9 terminal slice.
+    /// Compatibility entry point for callers that still carry the legacy card
+    /// projection.
     init(
         session: PickyConversationSessionCard,
         viewModel: any PickySessionCommands,

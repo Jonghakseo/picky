@@ -240,7 +240,7 @@ final class OnboardingFlowController {
         // Speak the same line. Markdown markers (the `**bold**` we add for the
         // amber highlight) are stripped first so the synthesiser doesn't read
         // the asterisks aloud, and parenthetical hints (keyboard shortcuts like
-        // `(Control+Option)` or `(⌘T)`) are removed too — those are visual
+        // `(Control+Option)`) are removed too — those are visual
         // aids meant for the eye, not the ear. Skip if the same line is
         // already speaking — some beats re-enter (e.g. the 'Try the long-press'
         // fallback) and we don't want a stutter.
@@ -284,7 +284,7 @@ final class OnboardingFlowController {
     }
 
     /// Convert a raw bubble string (with markdown and visual asides like
-    /// `(Control+Option)` or `(⌘T)`) into the version we hand to the
+    /// `(Control+Option)`) into the version we hand to the
     /// narration player. Onboarding TTS never speaks parenthetical shortcut
     /// hints aloud because the user can already see them on screen — reading
     /// 'open paren control plus option close paren' is just noise. We strip

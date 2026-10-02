@@ -16,7 +16,7 @@ final class PickyMainAgentConversationStore: ObservableObject {
 
     @Published private(set) var messages: [PickyMainAgentMessage] = []
     /// Both fields are nil until the daemon has started a real Pi session for
-    /// the main agent. Drives "Open in Pi" / "Copy resume command".
+    /// the main agent. Drives "Copy resume command".
     @Published private(set) var sessionInfo = PickyMainAgentSessionInfo()
     @Published private(set) var modelOptions: [PickyMainAgentModelOption] = []
     @Published private(set) var isLoadingModelOptions = false

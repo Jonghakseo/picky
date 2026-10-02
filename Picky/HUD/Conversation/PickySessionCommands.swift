@@ -68,19 +68,10 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func dismissTerminalSyncOutcome(sessionID: String)
     func answerExtensionUi(sessionID: String, requestID: String, value: JSONValue) async throws
     func cancelExtensionUi(sessionID: String, requestID: String) async throws
-    func isInlineTerminalMode(sessionID: String) -> Bool
-    var inlineTerminalAttachmentStore: PickyTerminalAttachmentStore { get }
-    func inlineTerminalSession(for session: PickyConversationSessionCard) -> PickyInlineTerminalSession?
-    func disableInlineTerminalMode(sessionID: String)
-    func isInlineTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool
-    func activateInlineTerminalAttachment(sessionID: String, attachmentID: String)
-    func releaseInlineTerminalAttachment(sessionID: String, attachmentID: String)
     func loadRewindTargets(sessionID: String) async throws -> [PickyRewindTarget]
     func rewind(sessionID: String, toEntry entryID: String) async
-    func openTerminalOverlay(sessionID: String)
-    func toggleInlineTerminalMode(sessionID: String)
     func copyTerminalResumeCommand(sessionID: String)
-    func syncTerminalSessionOnce(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot?)
+    func syncTerminalSessionOnce(sessionID: String)
     func duplicate(sessionID: String) async throws
     func requestCompaction(sessionID: String) async
     func cancelAsyncTask(owner: PickyAsyncTaskOwner, taskID: String) async throws

@@ -242,65 +242,6 @@ private final class FakeClipboardWriter: PickyClipboardWriting {
     }
 }
 
-private final class FakeTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
-    struct Call: Equatable {
-        let sessionID: String
-        let title: String
-        let sessionFilePath: String
-        let cwd: String?
-    }
-
-    private struct CloseHandler {
-        let sessionID: String
-        let handle: PickyTerminalOverlayHandle
-        let callback: @MainActor (PickyTerminalOverlayHandle) -> Void
-    }
-
-    private(set) var calls: [Call] = []
-    private var closeHandlers: [CloseHandler] = []
-    private var activeCloseHandlerIndexBySessionID: [String: Int] = [:]
-    var error: Error?
-
-    func openTerminal(
-        sessionID: String,
-        title: String,
-        sessionFilePath: String,
-        cwd: String?,
-        onClose: @escaping @MainActor (PickyTerminalOverlayHandle) -> Void
-    ) throws -> PickyTerminalOverlayHandle {
-        if let error { throw error }
-        calls.append(Call(sessionID: sessionID, title: title, sessionFilePath: sessionFilePath, cwd: cwd))
-        if let activeIndex = activeCloseHandlerIndexBySessionID[sessionID] {
-            return closeHandlers[activeIndex].handle
-        }
-        let handle = PickyTerminalOverlayHandle()
-        closeHandlers.append(CloseHandler(sessionID: sessionID, handle: handle, callback: onClose))
-        activeCloseHandlerIndexBySessionID[sessionID] = closeHandlers.indices.last
-        return handle
-    }
-
-    @discardableResult
-    func beginClose(sessionID: String) -> Int? {
-        activeCloseHandlerIndexBySessionID.removeValue(forKey: sessionID)
-    }
-
-    func closeTerminal(handle: PickyTerminalOverlayHandle) {
-        guard let closeHandlerIndex = closeHandlers.firstIndex(where: { $0.handle == handle }) else { return }
-        activeCloseHandlerIndexBySessionID.removeValue(forKey: closeHandlers[closeHandlerIndex].sessionID)
-        closeCall(at: closeHandlerIndex)
-    }
-
-    func close(sessionID: String) {
-        guard let closeHandlerIndex = beginClose(sessionID: sessionID) else { return }
-        closeCall(at: closeHandlerIndex)
-    }
-
-    func closeCall(at index: Int) {
-        let closeHandler = closeHandlers[index]
-        closeHandler.callback(closeHandler.handle)
-    }
-}
-
 private final class FakeReportPresenter: PickyReportPresenting {
     struct Call: Equatable {
         let sessionID: String
@@ -315,22 +256,6 @@ private final class FakeReportPresenter: PickyReportPresenting {
     func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws {
         if let error { throw error }
         calls.append(Call(sessionID: sessionID, title: title, fileURL: fileURL, markdown: markdown))
-    }
-}
-
-private final class FakeTerminalSessionSyncer: PickyTerminalSessionSyncing {
-    var snapshots: [String: PickyTerminalSessionSnapshot] = [:]
-    var snapshotSequences: [String: [PickyTerminalSessionSnapshot]] = [:]
-    private(set) var paths: [String] = []
-
-    func snapshot(sessionFilePath: String) throws -> PickyTerminalSessionSnapshot {
-        paths.append(sessionFilePath)
-        if var sequence = snapshotSequences[sessionFilePath], !sequence.isEmpty {
-            let snapshot = sequence.removeFirst()
-            snapshotSequences[sessionFilePath] = sequence
-            return snapshot
-        }
-        return snapshots[sessionFilePath] ?? PickyTerminalSessionSnapshot()
     }
 }
 
@@ -1797,7 +1722,8 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: .command) == false)
         // While a terminal is focused, HUD shell controls stay owned by the HUD;
         // ordinary terminal input shortcuts still pass through to Pi/the shell.
-        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
+        // ⌘T no longer belongs to the HUD, so a focused terminal keeps it.
+        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 0, charactersIgnoringModifiers: "E", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 13, charactersIgnoringModifiers: "w", modifiers: .command) == true)
@@ -1810,12 +1736,6 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 15, charactersIgnoringModifiers: "r", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 15, charactersIgnoringModifiers: "r", modifiers: [.command, .shift]) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 0, charactersIgnoringModifiers: "R", modifiers: .command) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalOverlayShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: [.command, .shift]) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalOverlayShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalOverlayShortcut(keyCode: 0, charactersIgnoringModifiers: "T", modifiers: [.command, .shift]) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isInlineTerminalToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isInlineTerminalToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: [.command, .shift]) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isInlineTerminalToggleShortcut(keyCode: 0, charactersIgnoringModifiers: "T", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 45, charactersIgnoringModifiers: "n", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 45, charactersIgnoringModifiers: "n", modifiers: .control) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 0, charactersIgnoringModifiers: "N", modifiers: .command) == true)
@@ -3815,86 +3735,6 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == nil)
     }
 
-    @MainActor @Test func openTerminalOverlayUsesCapturedPiSessionFileAndCwd() {
-        let presenter = FakeTerminalOverlayPresenter()
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter
-        )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "completed",
-            logs: ["pi session: /tmp/pi-session.jsonl"]
-        ))))
-
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-
-        #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
-            sessionID: "pickle-1",
-            title: "Pickle",
-            sessionFilePath: "/tmp/pi-session.jsonl",
-            cwd: testProjectCwd
-        )])
-        #expect(viewModel.lastError == nil)
-    }
-
-    @MainActor @Test func openTerminalOverlayUsesExplicitPiSessionFileWhenLogsAreCompacted() {
-        let presenter = FakeTerminalOverlayPresenter()
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter
-        )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-explicit",
-            title: "Pickle",
-            status: "completed",
-            logs: ["recent compacted log without session path"],
-            piSessionFilePath: "/tmp/explicit-pi-session.jsonl"
-        ))))
-
-        viewModel.openTerminalOverlay(sessionID: "pickle-explicit")
-
-        #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
-            sessionID: "pickle-explicit",
-            title: "Pickle",
-            sessionFilePath: "/tmp/explicit-pi-session.jsonl",
-            cwd: testProjectCwd
-        )])
-        #expect(viewModel.lastError == nil)
-    }
-
-    @MainActor @Test func openTerminalOverlayWorksWhileSessionIsActive() {
-        // Terminal overlay should stay clickable even while the Pickle is still working
-        // (running, queued, waiting_for_input). The overlay launches its own `pi --session` process
-        // pointed at the on-disk session file, so the user gets a transcript view of the live run
-        // even though the daemon is still writing to it.
-        let presenter = FakeTerminalOverlayPresenter()
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter
-        )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "running",
-            logs: ["pi session: /tmp/pi-session.jsonl"]
-        ))))
-
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-
-        #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
-            sessionID: "pickle-1",
-            title: "Pickle",
-            sessionFilePath: "/tmp/pi-session.jsonl",
-            cwd: testProjectCwd
-        )])
-        #expect(viewModel.lastError == nil)
-    }
-
     @MainActor @Test func sessionCardExtractsPiSessionFileFromHandoffTranscript() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
@@ -3907,62 +3747,15 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.piSessionFilePath == "/tmp/from-handoff.jsonl")
     }
 
-    @Test func inlineTerminalModeCapturesBaselineAndSyncsOnClose() async throws {
+    @Test func authoritativeMembershipRemovalDiscardsStateOfRecreatedSessionID() async throws {
         let client = FakePickyAgentClient()
-        let syncer = FakeTerminalSessionSyncer()
-        syncer.snapshots["/tmp/pi-session.jsonl"] = PickyTerminalSessionSnapshot(
-            lastUserText: "old question",
-            lastAssistantText: "Old terminal answer",
-            lastMessageId: "a1"
-        )
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalSessionSyncer: syncer
-        )
-        viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "completed",
-            logs: ["pi session: /tmp/pi-session.jsonl"]
-        ))))
-        try await settle()
-
-        viewModel.enableInlineTerminalMode(sessionID: "pickle-1")
-        #expect(viewModel.isInlineTerminalMode(sessionID: "pickle-1"))
-        let session = try #require(viewModel.sessions.first)
-        let firstInlineSession = try #require(viewModel.inlineTerminalSession(for: session))
-        let secondInlineSession = try #require(viewModel.inlineTerminalSession(for: session))
-        #expect(firstInlineSession === secondInlineSession)
-        #expect(!client.sentCommands.contains(where: { $0.type == .syncTerminalSession }))
-
-        viewModel.disableInlineTerminalMode(sessionID: "pickle-1")
-        #expect(!viewModel.isInlineTerminalMode(sessionID: "pickle-1"))
-        // syncTerminalSession 명령 송신이 Task로 분리돼 syncer 업데이트보다
-        // 늦게 도착함. 가장 늦은 효과를 predicate로.
-        try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
-
-        #expect(syncer.paths == ["/tmp/pi-session.jsonl"])
-        let command = try #require(client.sentCommands.last)
-        #expect(command.type == .syncTerminalSession)
-        #expect(command.sessionId == "pickle-1")
-        #expect(command.baselinePiMessageId == "a1")
-    }
-
-    @Test func authoritativeMembershipRemovalClosesInlineTerminalWithoutSyncingRecreatedID() async throws {
-        let client = FakePickyAgentClient()
-        let syncer = FakeTerminalSessionSyncer()
-        let presenter = FakeTerminalOverlayPresenter()
         let draftStore = FakeComposerDraftStore()
         let attachmentStore = FakeComposerAttachmentDraftStore()
         let viewModel = PickySessionListViewModel(
             client: client,
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore,
-            composerAttachmentDraftStore: attachmentStore,
-            terminalPresenter: presenter,
-            terminalSessionSyncer: syncer
+            composerAttachmentDraftStore: attachmentStore
         )
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "recreated", title: "Old", status: "completed", logs: ["pi session: /tmp/recreated.jsonl"]
@@ -3970,10 +3763,6 @@ struct PickySessionViewModelTests {
         viewModel.updateComposerDraft("discard me", sessionID: "recreated")
         viewModel.updateComposerAttachmentPaths(["/tmp/attachment.png"], sessionID: "recreated")
         viewModel.requestOpenSession(sessionID: "recreated")
-        viewModel.enableInlineTerminalMode(sessionID: "recreated")
-        let oldSession = try #require(viewModel.sessions.first)
-        _ = try #require(viewModel.inlineTerminalSession(for: oldSession))
-        viewModel.openTerminalOverlay(sessionID: "recreated")
 
         viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["recreated"], isPrimary: true)
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
@@ -3985,265 +3774,30 @@ struct PickySessionViewModelTests {
         #expect(viewModel.persistedComposerDraft(for: "recreated").isEmpty)
         #expect(viewModel.persistedComposerAttachmentPaths(for: "recreated").isEmpty)
         #expect(viewModel.openSessionRequest == nil)
-        #expect(!client.sentCommands.contains { $0.type == .syncTerminalSession })
     }
 
-    @Test func authoritativeMembershipRemovalRevokesAlreadyClosingInlineTerminalSync() async throws {
+    @Test func manualPiSessionSyncRequestsDaemonReconcileForTheSelectedSession() async throws {
+        // The card menu's "Sync from Pi session" is the only remaining way to pull an
+        // externally driven `pi --session` transcript back into the HUD card.
         let client = FakePickyAgentClient()
-        let syncer = FakeTerminalSessionSyncer()
         let viewModel = PickySessionListViewModel(
             client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalSessionSyncer: syncer
+            notificationCenter: PickyNoopNotificationCenter()
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "recreated", title: "Old", status: "completed", logs: ["pi session: /tmp/recreated.jsonl"]
-        ))))
-        viewModel.enableInlineTerminalMode(sessionID: "recreated")
-        let oldSession = try #require(viewModel.sessions.first)
-        _ = try #require(viewModel.inlineTerminalSession(for: oldSession))
-
-        // Begin a normal close first. Its callback is allowed to sync until
-        // authoritative membership removal revokes that pending permission.
-        viewModel.disableInlineTerminalMode(sessionID: "recreated")
-        viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["recreated"], isPrimary: true)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "recreated", title: "New", status: "running", logs: ["pi session: /tmp/recreated.jsonl"]
-        ))))
-        for _ in 0..<8 { await Task.yield() }
-
-        #expect(viewModel.sessions.first?.title == "New")
-        #expect(!client.sentCommands.contains { $0.type == .syncTerminalSession })
-    }
-
-    @MainActor @Test func inlineTerminalAttachmentAllowsOnlyOneVisibleTerminalAndRestoresPrevious() {
-        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle 1",
-            status: "completed",
-            logs: ["pi session: /tmp/pi-session-1.jsonl"]
-        ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-2",
-            title: "Pickle 2",
-            status: "completed",
-            logs: ["pi session: /tmp/pi-session-2.jsonl"]
-        ))))
-
-        viewModel.enableInlineTerminalMode(sessionID: "pickle-1")
-        viewModel.activateInlineTerminalAttachment(sessionID: "pickle-1", attachmentID: "screen-a")
-        #expect(viewModel.isInlineTerminalAttachmentActive(sessionID: "pickle-1", attachmentID: "screen-a"))
-
-        viewModel.enableInlineTerminalMode(sessionID: "pickle-2")
-        viewModel.activateInlineTerminalAttachment(sessionID: "pickle-2", attachmentID: "screen-b")
-        #expect(!viewModel.isInlineTerminalAttachmentActive(sessionID: "pickle-1", attachmentID: "screen-a"))
-        #expect(viewModel.isInlineTerminalAttachmentActive(sessionID: "pickle-2", attachmentID: "screen-b"))
-        #expect(viewModel.activeInlineTerminalAttachmentSessionID == "pickle-2")
-
-        viewModel.releaseInlineTerminalAttachment(sessionID: "pickle-2", attachmentID: "screen-b")
-        #expect(viewModel.isInlineTerminalAttachmentActive(sessionID: "pickle-1", attachmentID: "screen-a"))
-        #expect(viewModel.activeInlineTerminalAttachmentSessionID == "pickle-1")
-    }
-
-    @MainActor @Test func inlineTerminalModeRequiresPiSessionFile() {
-        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "pickle-1",
             title: "Pickle",
             status: "completed",
-            logs: ["no session path here"]
-        ))))
-
-        viewModel.enableInlineTerminalMode(sessionID: "pickle-1")
-
-        #expect(!viewModel.isInlineTerminalMode(sessionID: "pickle-1"))
-        #expect(viewModel.lastError == PickySessionListViewModelError.missingPiSessionFile.localizedDescription)
-    }
-
-    @Test func terminalOverlayCloseRequestsCanonicalDaemonSyncWithBaselinePiMessage() async throws {
-        let client = FakePickyAgentClient()
-        let presenter = FakeTerminalOverlayPresenter()
-        let syncer = FakeTerminalSessionSyncer()
-        syncer.snapshots["/tmp/pi-session.jsonl"] = PickyTerminalSessionSnapshot(
-            lastUserText: "old question",
-            lastAssistantText: "Old terminal answer",
-            lastMessageId: "a1"
-        )
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter,
-            terminalSessionSyncer: syncer
-        )
-        viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "completed",
-            summary: "Old summary",
             logs: ["pi session: /tmp/pi-session.jsonl"]
         ))))
-        try await settle()
 
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-        presenter.close(sessionID: "pickle-1")
-        // 같은 이유 — client.sentCommands(← 가장 늦은 효과)를 predicate로.
+        viewModel.syncTerminalSessionOnce(sessionID: "unknown-pickle")
+        viewModel.syncTerminalSessionOnce(sessionID: "pickle-1")
         try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
 
-        #expect(syncer.paths == ["/tmp/pi-session.jsonl"])
-        let command = try #require(client.sentCommands.last)
-        #expect(command.type == .syncTerminalSession)
-        #expect(command.sessionId == "pickle-1")
-        #expect(command.baselinePiMessageId == "a1")
-        #expect(viewModel.sessions.first?.lastSummary == "Old summary")
-    }
-
-    @Test func terminalOverlayCloseSerializesTailDisableBeforeCanonicalSync() async throws {
-        let client = FakePickyAgentClient()
-        client.beforeSend = { command in
-            if command.type == .setTerminalSessionTailEnabled, command.enabled == false {
-                try? await Task.sleep(nanoseconds: 50_000_000)
-            }
-        }
-        let presenter = FakeTerminalOverlayPresenter()
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter
-        )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "completed",
-            logs: ["pi session: /tmp/pi-session.jsonl"]
-        ))))
-
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-        presenter.close(sessionID: "pickle-1")
-        try await wait {
-            client.sentCommands.filter { $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession }.count == 3
-        }
-
-        let terminalCommands = client.sentCommands.filter { $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession }
-        #expect(terminalCommands.map(\.type) == [.setTerminalSessionTailEnabled, .setTerminalSessionTailEnabled, .syncTerminalSession])
-        #expect(terminalCommands.map(\.enabled) == [true, false, nil])
-    }
-
-    @Test func duplicateTerminalOverlayOpenReusesCloseGeneration() async throws {
-        let client = FakePickyAgentClient()
-        let presenter = FakeTerminalOverlayPresenter()
-        let syncer = FakeTerminalSessionSyncer()
-        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [
-            PickyTerminalSessionSnapshot(lastMessageId: "original-baseline"),
-            PickyTerminalSessionSnapshot(lastMessageId: "duplicate-open-baseline"),
-        ]
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter,
-            terminalSessionSyncer: syncer
-        )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "completed",
-            logs: ["pi session: /tmp/pi-session.jsonl"]
-        ))))
-
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-        presenter.close(sessionID: "pickle-1")
-
-        try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
-
-        let terminalCommands = client.sentCommands.filter {
-            $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession
-        }
-        #expect(terminalCommands.map(\.type) == [
-            .setTerminalSessionTailEnabled,
-            .setTerminalSessionTailEnabled,
-            .setTerminalSessionTailEnabled,
-            .syncTerminalSession,
-        ])
-        #expect(terminalCommands.map(\.enabled) == [true, true, false, nil])
-        #expect(terminalCommands.last?.baselinePiMessageId == "original-baseline")
-    }
-
-    @Test func staleTerminalOverlayCloseDoesNotDisableReplacementTail() async throws {
-        let client = FakePickyAgentClient()
-        let presenter = FakeTerminalOverlayPresenter()
-        let syncer = FakeTerminalSessionSyncer()
-        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [
-            PickyTerminalSessionSnapshot(lastMessageId: "old-baseline"),
-            PickyTerminalSessionSnapshot(lastMessageId: "replacement-baseline"),
-        ]
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter,
-            terminalSessionSyncer: syncer
-        )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "completed",
-            logs: ["pi session: /tmp/pi-session.jsonl"]
-        ))))
-
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-        let staleCloseIndex = try #require(presenter.beginClose(sessionID: "pickle-1"))
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-        presenter.closeCall(at: staleCloseIndex)
-        presenter.close(sessionID: "pickle-1")
-
-        try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
-
-        let terminalCommands = client.sentCommands.filter {
-            $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession
-        }
-        #expect(terminalCommands.map(\.type) == [
-            .setTerminalSessionTailEnabled,
-            .setTerminalSessionTailEnabled,
-            .setTerminalSessionTailEnabled,
-            .syncTerminalSession,
-        ])
-        #expect(terminalCommands.map(\.enabled) == [true, true, false, nil])
-        #expect(terminalCommands.last?.baselinePiMessageId == "replacement-baseline")
-    }
-
-    @Test func terminalOverlayCloseRequestsCanonicalDaemonSyncWithoutBaselineWhenSnapshotUnavailable() async throws {
-        let client = FakePickyAgentClient()
-        let presenter = FakeTerminalOverlayPresenter()
-        let syncer = FakeTerminalSessionSyncer()
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            terminalPresenter: presenter,
-            terminalSessionSyncer: syncer
-        )
-        viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1",
-            title: "Pickle",
-            status: "completed",
-            summary: "Stored summary",
-            logs: ["pi session: /tmp/pi-session.jsonl"]
-        ))))
-        try await settle()
-
-        viewModel.openTerminalOverlay(sessionID: "pickle-1")
-        presenter.close(sessionID: "pickle-1")
-        // sentCommands is the latest effect in the close -> Task -> client.send chain;
-        // poll for it instead of a fixed settle() to stay deterministic under the
-        // parallel full-suite MainActor contention that previously made this flaky.
-        try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
-
-        let command = try #require(client.sentCommands.last)
-        #expect(command.type == .syncTerminalSession)
-        #expect(command.sessionId == "pickle-1")
-        #expect(command.baselinePiMessageId == nil)
-        #expect(viewModel.sessions.first?.lastSummary == "Stored summary")
+        let syncCommands = client.sentCommands.filter { $0.type == .syncTerminalSession }
+        #expect(syncCommands.map(\.sessionId) == ["pickle-1"])
+        #expect(viewModel.lastError == nil)
     }
 
     @MainActor @Test func terminalSyncOutcomeWithImportsSetsBannerState() {
@@ -4360,14 +3914,8 @@ struct PickySessionViewModelTests {
             sessionFilePath: "/tmp/pi session's.jsonl",
             cwd: "/Users/example/Project Folder"
         )
-        let overlayCommand = PickyPiTerminalCommand.makeOverlayCommand(
-            sessionFilePath: "/tmp/pi session's.jsonl",
-            cwd: "/Users/example/Project Folder"
-        )
 
         #expect(cliCommand == "cd '/Users/example/Project Folder' && pi --session '/tmp/pi session'\\''s.jsonl'")
-        #expect(overlayCommand.contains("cd '/Users/example/Project Folder' && exec pi --session '/tmp/pi session'\\''s.jsonl'"))
-        #expect(overlayCommand.contains("export PATH="))
     }
 
     @Test func terminalCommandDefaultsBlankCwdToHomeDirectory() throws {
@@ -4396,78 +3944,6 @@ struct PickySessionViewModelTests {
         #expect(environment.contains("COLORTERM=truecolor"))
         #expect(environment.contains("LANG=ko_KR.UTF-8"))
         #expect(environment.contains("LC_CTYPE=en_US.UTF-8"))
-    }
-
-    @Test func terminalCommandEnvironmentPrependsFinderSafePath() throws {
-        let environment = PickyPiTerminalCommand.makeOverlayEnvironment([
-            "PATH": "/custom/bin",
-            "LANG": "ko_KR.UTF-8",
-        ])
-
-        #expect(environment.contains("PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/custom/bin"))
-        #expect(environment.contains("TERM=xterm-256color"))
-        #expect(environment.contains("COLORTERM=truecolor"))
-        #expect(environment.contains("LANG=ko_KR.UTF-8"))
-        #expect(environment.contains("LC_CTYPE=en_US.UTF-8"))
-    }
-
-    @Test func piSessionFileSyncerReadsLastActiveUserAndAssistantMessages() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-sync-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("session.jsonl")
-        try """
-        {"type":"session","version":3,"id":"s","timestamp":"2026-05-01T00:00:00.000Z","cwd":"/tmp"}
-        {"type":"message","id":"u1","parentId":null,"timestamp":"2026-05-01T00:00:01.000Z","message":{"role":"user","content":"old prompt","timestamp":0}}
-        {"type":"message","id":"a1","parentId":"u1","timestamp":"2026-05-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"old answer"}],"timestamp":0,"api":"x","provider":"x","model":"x","usage":{},"stopReason":"stop"}}
-        {"type":"message","id":"u2","parentId":"a1","timestamp":"2026-05-01T00:00:03.000Z","message":{"role":"user","content":[{"type":"text","text":"new prompt"}],"timestamp":0}}
-        {"type":"message","id":"a2","parentId":"u2","timestamp":"2026-05-01T00:00:04.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"new answer"}],"timestamp":0,"api":"x","provider":"x","model":"x","usage":{},"stopReason":"stop"}}
-        """.write(to: file, atomically: true, encoding: .utf8)
-
-        let snapshot = try PickyPiSessionFileSyncer().snapshot(sessionFilePath: file.path)
-
-        #expect(snapshot.lastUserText == "new prompt")
-        #expect(snapshot.lastAssistantText == "new answer")
-        #expect(snapshot.lastMessageId == "a2")
-    }
-
-    @Test func piSessionFileSyncerUsesLastTextMessageAsBaselineWhenLatestEntryIsToolOnly() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-sync-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("session.jsonl")
-        try """
-        {"type":"session","version":3,"id":"s","timestamp":"2026-05-01T00:00:00.000Z","cwd":"/tmp"}
-        {"type":"message","id":"u1","parentId":null,"timestamp":"2026-05-01T00:00:01.000Z","message":{"role":"user","content":"old prompt","timestamp":0}}
-        {"type":"message","id":"a1","parentId":"u1","timestamp":"2026-05-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"old answer"}],"timestamp":0,"api":"x","provider":"x","model":"x","usage":{},"stopReason":"stop"}}
-        {"type":"message","id":"a2","parentId":"a1","timestamp":"2026-05-01T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"checking"},{"type":"toolCall","name":"bash","arguments":{"command":"echo hi"}}],"timestamp":0}}
-        {"type":"message","id":"t1","parentId":"a2","timestamp":"2026-05-01T00:00:04.000Z","message":{"role":"toolResult","content":[{"type":"text","text":"tool output"}],"timestamp":0}}
-        """.write(to: file, atomically: true, encoding: .utf8)
-
-        let snapshot = try PickyPiSessionFileSyncer().snapshot(sessionFilePath: file.path)
-
-        #expect(snapshot.lastUserText == "old prompt")
-        #expect(snapshot.lastAssistantText == "old answer")
-        #expect(snapshot.lastMessageId == "a1")
-    }
-
-    @Test func piSessionFileSyncerKeepsActivePathConnectedThroughCustomEntries() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-sync-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("session.jsonl")
-        try """
-        {"type":"session","version":3,"id":"s","timestamp":"2026-05-01T00:00:00.000Z","cwd":"/tmp"}
-        {"type":"message","id":"u1","parentId":null,"timestamp":"2026-05-01T00:00:01.000Z","message":{"role":"user","content":"old prompt","timestamp":0}}
-        {"type":"custom_message","customType":"todo-write-context","id":"custom1","parentId":"u1","timestamp":"2026-05-01T00:00:01.500Z","content":"hidden context"}
-        {"type":"message","id":"a1","parentId":"custom1","timestamp":"2026-05-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"old answer"}],"timestamp":0,"api":"x","provider":"x","model":"x","usage":{},"stopReason":"stop"}}
-        {"type":"custom","customType":"todo-write-overlay-state","id":"custom2","parentId":"a1","timestamp":"2026-05-01T00:00:02.500Z","content":"hidden overlay"}
-        {"type":"message","id":"u2","parentId":"custom2","timestamp":"2026-05-01T00:00:03.000Z","message":{"role":"user","content":[{"type":"text","text":"new prompt"}],"timestamp":0}}
-        {"type":"message","id":"a2","parentId":"u2","timestamp":"2026-05-01T00:00:04.000Z","message":{"role":"assistant","content":[{"type":"text","text":"new answer"}],"timestamp":0,"api":"x","provider":"x","model":"x","usage":{},"stopReason":"stop"}}
-        """.write(to: file, atomically: true, encoding: .utf8)
-
-        let snapshot = try PickyPiSessionFileSyncer().snapshot(sessionFilePath: file.path)
-
-        #expect(snapshot.lastUserText == "new prompt")
-        #expect(snapshot.lastAssistantText == "new answer")
-        #expect(snapshot.lastMessageId == "a2")
     }
 
     @MainActor @Test func extensionUiLogsAreHiddenFromRecentLogPreview() {

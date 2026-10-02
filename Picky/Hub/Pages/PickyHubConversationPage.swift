@@ -153,7 +153,6 @@ private struct PickyHubConversationTimeline: View {
     @ViewBuilder
     private var sessionActionButtons: some View {
         if conversation.sessionInfo.canOpenInPi {
-            PickyHubPillButton(title: "hub.conversation.openInPi", systemImage: "terminal", action: openInPi)
             PickyHubPillButton(
                 title: didCopyResumeCommand ? "hub.conversation.copied" : "hub.conversation.copyResume",
                 systemImage: didCopyResumeCommand ? "checkmark" : "doc.on.doc",
@@ -252,18 +251,6 @@ private struct PickyHubConversationTimeline: View {
 
     private func resetSession() {
         Task { @MainActor in _ = await companionManager.resetMainAgentSession() }
-    }
-
-    private func openInPi() {
-        let info = conversation.sessionInfo
-        guard let path = info.sessionFilePath, !path.isEmpty else { return }
-        do {
-            _ = try PickyTerminalOverlayPresenter.shared.openTerminal(
-                sessionID: "picky-main", title: "Picky", sessionFilePath: path, cwd: info.cwd, onClose: { _ in }
-            )
-        } catch {
-            NSSound.beep()
-        }
     }
 
     private func copyResumeCommand() {

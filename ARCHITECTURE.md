@@ -133,7 +133,7 @@ Picky/
   Sessions/
     PickySessionSelectionStore.swift     selected/voice-target/archive stores
     PickySessionArchive.swift            archive helpers
-    PickyTerminalOverlay.swift           in-app Pi terminal overlay and resume command builder
+    PickyTerminalOverlay.swift           shared SwiftTerm view/process adapters and resume command builder
 ```
 
 ## 6. picky-agentd responsibility map
@@ -225,7 +225,7 @@ Important prompt builders:
 
 Picky app support root stores daemon metadata, screenshots, artifacts, reports, logs, and session metadata under `~/Library/Application Support/Picky/`.
 
-Pi session JSONL/history remains in normal Pi storage. Picky metadata points to Pi session files where available so the in-app Pi terminal overlay, copied `pi --session ...` command, or Pi itself can resume or inspect sessions.
+Pi session JSONL/history remains in normal Pi storage. Picky metadata points to Pi session files where available so the copied `pi --session ...` command, the card's Sync from Pi session action, or Pi itself can resume or inspect sessions.
 
 ## 10. Build, test, and packaging
 

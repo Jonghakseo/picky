@@ -257,33 +257,3 @@ struct PickyQueueDockPresentation: Equatable {
         kinds.map(\.accessibilityValue).joined(separator: "; ")
     }
 }
-
-struct PickyInlineTerminalContinuityPresentation: Equatable {
-    let statusText: String
-    let toolText: String?
-    let todoText: String?
-    let elapsedText: String?
-
-    init(session: PickyConversationSessionCard, now: Date = .now) {
-        statusText = PickyConversationStatusPresentation(status: session.status).label
-        toolText = session.activeTool?.name
-        todoText = PickyTodoProgressPresentation(state: session.todoState)?.countText
-        let start = session.activeTool?.startedAt ?? PickyTodoProgressPresentation(state: session.todoState)?.updatedAt
-        if session.status == .running, let start {
-            elapsedText = PickyTurnSummary(
-                stepCount: 0,
-                toolCount: 0,
-                elapsedSeconds: max(0, Int(now.timeIntervalSince(start))),
-                showsStepCount: false
-            ).elapsedDisplayText
-        } else {
-            elapsedText = nil
-        }
-    }
-
-    var accessibilityValue: String {
-        [statusText, toolText, todoText, elapsedText]
-            .compactMap { $0 }
-            .joined(separator: " · ")
-    }
-}

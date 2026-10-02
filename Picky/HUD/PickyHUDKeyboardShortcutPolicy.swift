@@ -12,7 +12,6 @@ enum PickyHUDKeyboardShortcutPolicy {
     private static let leftBracketKeyCode: UInt16 = 33
     private static let rightBracketKeyCode: UInt16 = 30
     private static let rKeyCode: UInt16 = 15
-    private static let tKeyCode: UInt16 = 17
     private static let eKeyCode: UInt16 = 14
     private static let nKeyCode: UInt16 = 45
     private static let kKeyCode: UInt16 = 40
@@ -50,24 +49,17 @@ enum PickyHUDKeyboardShortcutPolicy {
         return false
     }
 
-    /// While a Pi TUI terminal is focused, the HUD forwards virtually every key to
-    /// the terminal so cmd-based TUI shortcuts (⌘C, ⌘V, ⌘arrows, etc.) reach Pi.
-    /// Cmd+T (toggle back to chat), Cmd+E (hide the local extended terminal),
-    /// and Cmd+W (close the held card) stay owned by the HUD because they control
-    /// the Picky shell around the terminal instead of terminal input.
+    /// While a terminal is focused, the HUD forwards virtually every key to the
+    /// terminal so cmd-based TUI shortcuts (⌘C, ⌘V, ⌘arrows, etc.) reach the shell.
+    /// Cmd+E (hide the local extended terminal) and Cmd+W (close the held card)
+    /// stay owned by the HUD because they control the Picky shell around the
+    /// terminal instead of terminal input.
     static func shouldInterceptWhileTerminalFocused(
         keyCode: UInt16,
         charactersIgnoringModifiers: String?,
         modifiers: NSEvent.ModifierFlags
     ) -> Bool {
         guard modifiers == .command else { return false }
-        if isInlineTerminalToggleShortcut(
-            keyCode: keyCode,
-            charactersIgnoringModifiers: charactersIgnoringModifiers,
-            modifiers: modifiers
-        ) {
-            return true
-        }
         if isExtendedTerminalShortcut(
             keyCode: keyCode,
             charactersIgnoringModifiers: charactersIgnoringModifiers,
@@ -87,26 +79,6 @@ enum PickyHUDKeyboardShortcutPolicy {
         guard modifiers == .command else { return false }
         if keyCode == rKeyCode { return true }
         return charactersIgnoringModifiers?.lowercased() == "r"
-    }
-
-    static func isTerminalOverlayShortcut(
-        keyCode: UInt16,
-        charactersIgnoringModifiers: String?,
-        modifiers: NSEvent.ModifierFlags
-    ) -> Bool {
-        guard modifiers == [.command, .shift] else { return false }
-        if keyCode == tKeyCode { return true }
-        return charactersIgnoringModifiers?.lowercased() == "t"
-    }
-
-    static func isInlineTerminalToggleShortcut(
-        keyCode: UInt16,
-        charactersIgnoringModifiers: String?,
-        modifiers: NSEvent.ModifierFlags
-    ) -> Bool {
-        guard modifiers == .command else { return false }
-        if keyCode == tKeyCode { return true }
-        return charactersIgnoringModifiers?.lowercased() == "t"
     }
 
     static func isNotifyOnCompletionShortcut(

@@ -3,7 +3,7 @@
 //  Picky
 //
 //  Per-panel-kind frame persistence for Picky's detached AppKit panels
-//  (markdown report viewer, tool history viewer, Pi terminal overlay).
+//  (markdown report viewer, tool history viewer, Hub window).
 //
 //  AppKit's `setFrameAutosaveName(_:)` is single-instance: when several
 //  panels of the same kind coexist (e.g. one report viewer per opened
@@ -25,7 +25,6 @@ import Foundation
 enum PickyDetachedPanelKind: String {
     case reportViewer = "PickyReportViewer"
     case toolHistoryViewer = "PickyToolHistoryViewer"
-    case terminalOverlay = "PickyTerminalOverlay"
     case hubWindow = "PickyHubWindow"
 }
 

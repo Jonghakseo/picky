@@ -24,7 +24,7 @@ struct CompanionPanelMessagesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header sits outside the ScrollView so the title, "새 세션", and the
-            // Pi terminal/resume command row stay pinned while only the message
+            // resume command row stay pinned while only the message
             // list scrolls.
             header
 
@@ -127,21 +127,13 @@ struct CompanionPanelMessagesView: View {
         }
     }
 
-    /// Two understated text-link buttons that let the user pop the always-on
-    /// Picky main agent's Pi session into the in-app terminal overlay or copy
-    /// the equivalent `pi --session ...` resume command. Hidden when the
-    /// daemon hasn't reported a session file yet (e.g. before the first turn,
-    /// after a `/new`, or while a model/runtime switch is in flight).
+    /// One understated text-link button that copies the `pi --session ...`
+    /// resume command for the always-on Picky main agent, so the user can
+    /// continue the same session in their own terminal. Hidden when the daemon
+    /// hasn't reported a session file yet (e.g. before the first turn, after a
+    /// `/new`, or while a model/runtime switch is in flight).
     private var mainAgentEscapeRow: some View {
         HStack(spacing: 12) {
-            Button(action: openMainAgentInPi) {
-                Label("messages.mainAgent.openInPi", systemImage: "terminal")
-                    .pickyFont(size: 10.5, weight: .medium)
-                    .foregroundColor(DS.Colors.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .hoverAffordance()
-
             Button(action: copyMainAgentResumeCommand) {
                 Label(copyButtonLabelKey, systemImage: copyButtonIconName)
                     .pickyFont(size: 10.5, weight: .medium)
@@ -219,23 +211,6 @@ struct CompanionPanelMessagesView: View {
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-    }
-
-    private func openMainAgentInPi() {
-        let info = conversation.sessionInfo
-        guard let path = info.sessionFilePath, !path.isEmpty else { return }
-        do {
-            _ = try PickyTerminalOverlayPresenter.shared.openTerminal(
-                sessionID: "picky-main",
-                title: "Picky",
-                sessionFilePath: path,
-                cwd: info.cwd,
-                onClose: { _ in }
-            )
-        } catch {
-            NSSound.beep()
-            print("⚠️ Picky main agent terminal open failed: \(error.localizedDescription)")
         }
     }
 

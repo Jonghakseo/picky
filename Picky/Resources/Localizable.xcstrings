@@ -6578,118 +6578,6 @@
         }
       }
     },
-    "hud.inlineTerminal.failed.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi terminal could not start"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널을 시작할 수 없어요"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.singleton.body": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose “Show This Terminal” to move it here."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이곳에서 보려면 ‘이 터미널 보기’를 선택하세요."
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.singleton.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi terminal can only be shown in one Pickle at a time."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널은 한 번에 하나의 Pickle에서만 볼 수 있어요."
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.tab.chat": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chat"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "채팅"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.tab.tui": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Terminal"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "터미널"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.unavailable.body": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This Pickle does not have a Pi session file yet."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 Pickle에는 아직 Pi 세션 파일이 없어요."
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.unavailable.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi terminal is unavailable"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널을 사용할 수 없어요"
-          }
-        }
-      }
-    },
     "hud.menu.archive": {
       "localizations": {
         "en": {
@@ -6754,22 +6642,6 @@
         }
       }
     },
-    "hud.menu.openTerminal": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Pi terminal"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널 열기"
-          }
-        }
-      }
-    },
     "hud.menu.rewind": {
       "localizations": {
         "en": {
@@ -6798,38 +6670,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "대화 정보"
-          }
-        }
-      }
-    },
-    "hud.menu.showChatUI": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show chat"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "채팅 보기"
-          }
-        }
-      }
-    },
-    "hud.menu.showTerminalInline": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show Pi terminal inline"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널을 카드 안에서 보기"
           }
         }
       }
@@ -9000,22 +8840,6 @@
         }
       }
     },
-    "messages.mainAgent.openInPi": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open in Pi"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널 열기"
-          }
-        }
-      }
-    },
     "messages.newSession": {
       "localizations": {
         "en": {
@@ -9321,13 +9145,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Inside a Pickle, send more messages or **switch to the terminal (⌘T)** to keep working."
+            "value": "Inside a Pickle, send more messages to keep the work going."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pickle 안에서 메시지를 더 보내거나 **터미널로 전환(⌘T)**해 작업을 이어갈 수 있어요."
+            "value": "Pickle 안에서 메시지를 더 보내 작업을 이어갈 수 있어요."
           }
         }
       }
@@ -14939,13 +14763,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send another request or open Pi terminal"
+            "value": "Send another request…"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 요청하거나 Pi 터미널 열기"
+            "value": "다시 요청하기…"
           }
         }
       }
@@ -16514,86 +16338,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "이름을 바꾸려면 두 번 클릭 · 또는 /name <새 이름> 사용"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.backToChat": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Back to Chat"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "채팅으로 돌아가기"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.backToChat.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Return to chat and message input (⌘T)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "채팅과 메시지 입력으로 돌아가기 (⌘T)"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.continuity.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Session continuity"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "세션 연속성"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.menu.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Terminal mode menu"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "터미널 모드 메뉴"
-          }
-        }
-      }
-    },
-    "hud.inlineTerminal.showThisTUI": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show This Terminal"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 터미널 보기"
           }
         }
       }
@@ -20887,22 +20631,6 @@
         }
       }
     },
-    "hub.conversation.openInPi": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open in Pi"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi에서 열기"
-          }
-        }
-      }
-    },
     "hub.conversation.copyResume": {
       "localizations": {
         "en": {
@@ -23703,214 +23431,6 @@
         }
       }
     },
-    "terminal.alreadyOpen": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Pi terminal is already open for this conversation."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 대화의 Pi 터미널이 이미 열려 있어요."
-          }
-        }
-      }
-    },
-    "terminal.openFailed": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not open the Pi terminal: %1$@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널을 열지 못했어요: %1$@"
-          }
-        }
-      }
-    },
-    "terminal.starting": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Opening Pi terminal…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널 여는 중…"
-          }
-        }
-      }
-    },
-    "terminal.sessionFileMissing": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conversation file not found: %1$@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대화 파일을 찾을 수 없어요: %1$@"
-          }
-        }
-      }
-    },
-    "terminal.attached": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conversation file: %1$@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대화 파일: %1$@"
-          }
-        }
-      }
-    },
-    "terminal.exitedWithCode": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi terminal exited (code %1$lld). Close this window to try syncing the conversation."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널이 종료됐어요(코드 %1$lld). 창을 닫으면 대화 동기화를 시도해요."
-          }
-        }
-      }
-    },
-    "terminal.exited": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi terminal exited. Close this window to try syncing the conversation."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널이 종료됐어요. 창을 닫으면 대화 동기화를 시도해요."
-          }
-        }
-      }
-    },
-    "terminal.waitingForPrevious": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for the previous Pi terminal to close…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이전 Pi 터미널이 종료되기를 기다리는 중…"
-          }
-        }
-      }
-    },
-    "terminal.startFailed": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not start the Pi terminal. Close this window and open it again."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 터미널을 시작하지 못했어요. 창을 닫고 다시 열어 주세요."
-          }
-        }
-      }
-    },
-    "terminal.closeHint": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Close to try syncing · ⌘W"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "닫으면 동기화 시도 · ⌘W"
-          }
-        }
-      }
-    },
-    "terminal.zoomIn": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zoom In"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "확대"
-          }
-        }
-      }
-    },
-    "terminal.zoomOut": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zoom Out"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "축소"
-          }
-        }
-      }
-    },
-    "terminal.resetZoom": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset Zoom"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "기본 크기"
-          }
-        }
-      }
-    },
     "quickInput.placeholder.main": {
       "localizations": {
         "en": {
@@ -25660,13 +25180,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The terminal conversation could not be merged, so this card was not updated. Reopen the terminal or copy the resume command to see the latest answer."
+            "value": "The terminal conversation could not be merged, so this card was not updated. Copy the resume command and run it in your terminal to see the latest answer."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 대화를 합칠 수 없어 카드를 업데이트하지 못했어요. 최신 답변은 터미널을 다시 열거나 재개 명령을 복사해 확인하세요."
+            "value": "터미널 대화를 합칠 수 없어 카드를 업데이트하지 못했어요. 재개 명령을 복사해 외부 터미널에서 실행하면 최신 답변을 확인할 수 있어요."
           }
         }
       }

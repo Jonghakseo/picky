@@ -231,41 +231,6 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(PickyQueueDockLayout(cardWidth: 560, heightTier: .constrained) == .constrained)
     }
 
-    @Test func inlineTUIContinuitySummarizesCurrentStatusToolTodoAndElapsed() {
-        let now = Date(timeIntervalSince1970: 1_000)
-        let session = PickySessionCard(session: PickyAgentSession(
-            id: "session-1",
-            title: "Build Focus Stack",
-            status: .running,
-            createdAt: now.addingTimeInterval(-120),
-            updatedAt: now,
-            logs: [],
-            tools: [PickyToolActivity(
-                toolCallId: "tool-1",
-                name: "bash",
-                status: "running",
-                startedAt: now.addingTimeInterval(-65)
-            )],
-            todoState: PickyTodoState(
-                tasks: [
-                    PickyTodoTask(id: "done", content: "Inspect", status: .completed),
-                    PickyTodoTask(id: "active", content: "Implement", status: .inProgress),
-                ],
-                updatedAt: now.addingTimeInterval(-65)
-            ),
-            artifacts: [],
-            changedFiles: []
-        ))
-
-        let presentation = PickyInlineTerminalContinuityPresentation(session: session, now: now)
-
-        #expect(presentation.statusText == PickyConversationStatusPresentation(status: .running).label)
-        #expect(presentation.toolText == "bash")
-        #expect(presentation.todoText == "2/2")
-        #expect(presentation.elapsedText == L10n.t("hud.conversation.duration.minutes", Int64(1)))
-        #expect(presentation.accessibilityValue.contains("bash"))
-    }
-
     private func queueItem(_ text: String) -> PickyQueueItem {
         PickyQueueItem(text: text, enqueuedAt: Date(timeIntervalSince1970: 0))
     }

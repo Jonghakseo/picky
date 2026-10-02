@@ -103,7 +103,7 @@ When the user asks about a feature, start here before broad searching:
 - Conversation card UI: `Picky/HUD/Conversation/`, particularly `PickyConversationCardView`, `PickyConversationListView`, `PickyConversationComposerView`, `PickyConversationMenu`
 - Conversation bubble components: `Picky/HUD/Conversation/Bubbles/`
 - Session selection/archive state: `Picky/Sessions/PickySessionSelectionStore.swift`, `Picky/Sessions/`
-- Pi terminal overlay / resume command: `Picky/Sessions/PickyTerminalOverlay.swift`, `Picky/PickySessionViewModel.swift`, search `openTerminalOverlay` or `copyTerminalResumeCommand`
+- Shared SwiftTerm plumbing / resume command / Pi session sync: `Picky/Sessions/PickyTerminalOverlay.swift`, `Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift`, `Picky/PickySessionViewModel.swift`, search `copyTerminalResumeCommand` or `syncTerminalSessionOnce`
 - Interaction state/effects: `Picky/Interaction/`
 - Per-Pickle daemon topology and session ownership rules: `docs/per-pickle-daemon-topology.md`, `Picky/Sessions/Projection/PickyProjectionOwnershipLedger.swift`, `Picky/PickyAgentDaemonPool.swift`
 - Pointer overlay validation/resolution: `Picky/PointerOverlay/`, `agentd/src/application/pointer-overlay-request.ts`, `agentd/src/application/overlay-context-resolver.ts`, `agentd/src/domain/pointer-validation.ts`

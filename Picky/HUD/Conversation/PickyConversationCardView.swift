@@ -149,24 +149,10 @@ struct PickyConversationCardView: View {
         )
         let focusStackHeightTier = PickyConversationFocusStackHeightTier(availableHeight: resolvedHeight)
 
-        Group {
-            if isInlineTerminalMode {
-                PickyInlineTerminalCardView(
-                    commands: viewModel,
-                    session: session,
-                    contentWidth: PickyHUDDockLayout.detailContentWidth(for: width),
-                    isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                    onArchiveSession: onArchiveSession,
-                    onRewindSession: { _ in showingRewindPicker = true },
-                    onClose: onClose
-                )
-            } else {
-                chatContent(
-                    fillsAvailableHeight: true,
-                    heightTier: focusStackHeightTier
-                )
-            }
-        }
+        chatContent(
+            fillsAvailableHeight: true,
+            heightTier: focusStackHeightTier
+        )
         .frame(width: PickyHUDDockLayout.detailContentWidth(for: width), alignment: .topLeading)
         .padding(.horizontal, PickyHUDDockLayout.detailHorizontalPadding)
         .padding(.vertical, 12)
@@ -196,20 +182,11 @@ struct PickyConversationCardView: View {
         .background(cardBackground)
         .contentShape(Rectangle())
         .environment(\.pickyHUDDetailWidth, width)
-        .onAppear {
-            if isInlineTerminalMode {
-                onInitialContentReady()
-            }
-        }
         .onDrop(of: PickyConversationFileDrop.acceptedTypeIdentifiers, isTargeted: $isFileDropTargeted, perform: handleFileDrop)
         .onHover(perform: updateVoiceFollowUpHover)
         .sheet(isPresented: $showingRewindPicker) {
             PickyRewindPickerView(session: session, commands: viewModel)
         }
-    }
-
-    private var isInlineTerminalMode: Bool {
-        session.piSessionFilePath != nil && viewModel.isInlineTerminalMode(sessionID: session.id)
     }
 
     private func chatContent(
@@ -396,10 +373,6 @@ struct PickyConversationCardView: View {
     }
 
     func updateVoiceFollowUpHover(_ hovering: Bool) {
-        guard !isInlineTerminalMode else {
-            if !hovering { viewModel.endHoveredVoiceFollowUp(sessionID: session.id) }
-            return
-        }
         if hovering {
             viewModel.beginHoveredVoiceFollowUp(sessionID: session.id)
         } else {

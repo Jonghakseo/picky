@@ -448,7 +448,6 @@ struct PickyHUDView: View {
         store: PickySessionStore
     ) -> some View {
             let utilityPanelIsOpen = isUtilityPanelOpen(sessionID: activeSession.id)
-                && !viewModel.isInlineTerminalMode(sessionID: activeSession.id)
             let utilityPanelHeight = resolvedUtilityPanelHeight
             let openAttemptToken = openPerformanceTracker?.activeToken(sessionID: activeSession.id)
             VStack(alignment: .leading, spacing: 0) {
@@ -480,7 +479,7 @@ struct PickyHUDView: View {
                     if let voiceTargetHitTestRegistry {
                         PickyVoiceTargetHitRegionHost(
                             sessionID: activeSession.id,
-                            isEligible: !viewModel.isInlineTerminalMode(sessionID: activeSession.id),
+                            isEligible: true,
                             registry: voiceTargetHitTestRegistry
                         )
                     }
@@ -1126,8 +1125,7 @@ struct PickyHUDView: View {
                 highlightedRowID: dockGroupListFocus.highlightedRowID,
                 isTextInputFocused: isTextInputFocused,
                 isHUDFallbackResponder: keyWindow.isFirstResponderFallback,
-                hasActiveCard: activeCard != nil,
-                isInlineTerminalMode: activeCard.map { viewModel.isInlineTerminalMode(sessionID: $0.id) } ?? false
+                hasActiveCard: activeCard != nil
             )
         )
         switch returnOutcome {
@@ -1204,26 +1202,6 @@ struct PickyHUDView: View {
             return true
         }
 
-        if PickyHUDKeyboardShortcutPolicy.isInlineTerminalToggleShortcut(
-            keyCode: event.keyCode,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
-            modifiers: flags
-        ), let activeCard,
-           activeCard.piSessionFilePath != nil {
-            viewModel.toggleInlineTerminalMode(sessionID: activeCard.id)
-            return true
-        }
-
-        if PickyHUDKeyboardShortcutPolicy.isTerminalOverlayShortcut(
-            keyCode: event.keyCode,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
-            modifiers: flags
-        ), let activeCard,
-           activeCard.piSessionFilePath != nil {
-            viewModel.openTerminalOverlay(sessionID: activeCard.id)
-            return true
-        }
-
         if PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
@@ -1237,8 +1215,7 @@ struct PickyHUDView: View {
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeCard,
-           !viewModel.isInlineTerminalMode(sessionID: activeCard.id) {
+        ), let activeCard {
             toggleUtilityPanel(sessionID: activeCard.id)
             return true
         }

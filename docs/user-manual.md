@@ -68,7 +68,7 @@ Closing a guide, plugin detail, or settings confirmation returns keyboard focus 
 
 **Recent Conversation** is the Picky main-agent chat. You can review Markdown-rendered prompts and replies, send a direct message from the bottom composer, or start a **New session**. Direct messages capture current desktop context through the same local-first flow as voice and Quick Input.
 
-Once the daemon reports a session file, Hub also shows **Open in Pi** and **Copy resume command**. The first opens the in-app terminal against the same `pi` session; the second copies `cd <cwd> && pi --session <file>` for an external shell.
+Once the daemon reports a session file, Hub also shows **Copy resume command**, which copies `cd <cwd> && pi --session <file>` so you can continue the same session in your own shell.
 
 ### 2.3 Plugins
 
@@ -381,12 +381,11 @@ The card contains:
 - Header with title, status badge, and menu.
 - Context line with working folder, Git/PR/link badges.
 - Conversation history as a messenger thread with Markdown-rendered replies and day dividers (**Today**, **Yesterday**, then dates). Hover a bubble to see its send time. Thinking is not shown in the thread; while a Pickle is replying, a line under the last bubble shows **Thinking** or **Working · <step>** (the current checklist step, shell command title, skill, or delegated agent), with the elapsed time on hover. The line disappears once the reply finishes, even if background work keeps running.
-- The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; full-text reply and system bubbles longer than 50 lines collapse behind a **Show more** toggle. Older replies start as a preview and expand in place with **Show more**; they can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
+- The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; full-text reply and system bubbles longer than 50 lines collapse behind a **Show more** toggle. Older replies start as a preview and expand in place with **Show more**; they can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays in the Pi session file).
 - A running-work footer when the runtime reports active background tasks. Expand it to see task names and elapsed times; subagent work shows agent types when available. The footer can open as a popover in a compact card. Background jobs may keep running after the current response ends. Completed subagent launches and `bash_async` notifications are not duplicated in the conversation.
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
 - A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel. As progress advances, the drawer scrolls the current task into view.
-- Optional inline Pi terminal mode.
 - Optional local-shell utility panel below the composer. It opens directly to a terminal in the Pickle cwd and does not replace or sync the Pi session.
 - Optional private note add-on.
 
@@ -442,7 +441,7 @@ A control stays disabled while its change is in flight, and a failed change show
 | cancelled | Resume with a steer. |
 | failed | Use **Retry** to continue the failed request in the same Pickle. |
 
-When a runtime request fails, its error bubble shows **Retry**. Retry keeps the existing Pickle transcript and resumes it with a short continuation, so it does not re-send the original request or intentionally repeat completed work. If Pi rejected the original request before it was delivered, Retry safely sends that original request again instead. The Pi terminal remains available from the card menu for diagnosis or manual control.
+When a runtime request fails, its error bubble shows **Retry**. Retry keeps the existing Pickle transcript and resumes it with a short continuation, so it does not re-send the original request or intentionally repeat completed work. If Pi rejected the original request before it was delivered, Retry safely sends that original request again instead. For manual diagnosis, the card menu's **Copy resume command** reopens the same session in your own terminal.
 
 Keyboard behavior inside the composer:
 
@@ -588,8 +587,6 @@ The Pickle card menu contains:
 
 | Menu item | Shortcut | Description |
 | --- | --- | --- |
-| Open Pi terminal | Cmd + Shift + T | Open a separate Pi terminal overlay. |
-| Show Pi terminal inline / Show chat UI | Cmd + T | Toggle inline terminal/chat mode. |
 | Copy resume command | — | Copy a `pi --session ...` resume command. |
 | Sync from Pi session | — | Refresh the HUD card from the on-disk Pi session file. |
 
@@ -644,7 +641,7 @@ Pick an earlier message and confirm to rewind the conversation to that point:
 
 - The chosen message and everything after it are removed from the card.
 - The chosen message's text is restored into the composer so you can edit it and continue from there.
-- The earlier branch is preserved in the on-disk Pi session file (recover it with **Sync from Pi session** or the terminal overlay).
+- The earlier branch is preserved in the on-disk Pi session file (recover it with **Sync from Pi session**).
 
 Rewind requires a Pi session file, so it is unavailable for sessions that have not produced one yet. If the Pickle is mid-turn, the active turn is stopped before rewinding.
 
@@ -662,42 +659,28 @@ These work when a Pickle card/HUD panel is active.
 | Cmd + Shift + `[` | Cycle to previous Pickle. |
 | Cmd + Shift + `]` | Cycle to next Pickle. |
 | Cmd + R | Open latest agent response as a report. |
-| Cmd + T | Toggle inline Pi terminal. |
-| Cmd + Shift + T | Open separate Pi terminal overlay. |
 | Cmd + N | Toggle the Pickle's macOS completion notification only. |
-| Cmd + E | Toggle the **local-shell utility panel** below the card composer while the conversation stays visible above. It opens directly to a terminal in the Pickle cwd. Distinct from `Cmd + T`, which swaps the entire card body into a Pi terminal. |
+| Cmd + E | Toggle the **local-shell utility panel** below the card composer while the conversation stays visible above. It opens directly to a terminal in the Pickle cwd. It is not the Pi session; use it for ad-hoc commands. |
 | Cmd + K | Toggle screen-context target for the active Pickle. |
 | Cmd + Delete | Archive the focused Pickle. |
 
 Holding Command can reveal shortcut badges on relevant HUD controls.
 
-## 11. Pi terminal overlay and inline terminal
+## 11. Resume a Pi session in your own terminal
 
-Picky can open a Pi terminal for Pickles or for the always-on Picky main agent, whenever a Pi session file is available.
+Picky no longer embeds a Pi terminal. When you want the raw Pi TUI, Picky hands you the command and keeps the HUD card in sync afterwards.
 
-Ways to open from a Pickle card:
+From a Pickle card:
 
-- Card menu → **Open Pi terminal**.
-- `Cmd + Shift + T`.
-- Card menu → **Show Pi terminal inline**.
-- `Cmd + T`.
+1. Card menu → **Copy resume command** copies `cd <cwd> && pi --session <file>`.
+2. Paste it into your own terminal and work in the Pi TUI.
+3. Card menu → **Sync from Pi session** pulls the new transcript back into the HUD card. Picky reports how many messages were imported, and the card status updates with them.
 
-Ways to open from the always-on Picky main agent:
+From the always-on Picky main agent, use **Hub → Recent Conversation → Copy resume command**.
 
-- **Hub → Recent Conversation → Open in Pi**.
-- **Hub → Recent Conversation → Copy resume command** to paste `pi --session ...` into your own shell.
+Both actions need a Pi session file, so they stay disabled until the daemon reports one.
 
-Throughout this section "terminal overlay" means Picky's in-app Pi terminal panel (`PickyTerminalOverlay`), not an external Terminal.app window.
-
-Terminal zoom shortcuts:
-
-| Shortcut | Action |
-| --- | --- |
-| Cmd + `=` | Zoom in. |
-| Cmd + `-` | Zoom out. |
-| Cmd + `0` | Reset zoom. |
-
-While the Pi terminal is open, new prompts, thinking, tool activity, and responses are reflected in the session card as Pi writes them. Closing the terminal performs a final sync from the Pi session file when possible.
+The `Cmd + E` local-shell utility panel is a plain shell in the Pickle cwd. It never attaches to the Pi session and never triggers a sync.
 
 ## 12. Report viewer
 
@@ -1070,10 +1053,8 @@ To continue a longer conversation through voice or Quick Input, right-click / Co
 
 1. Open the Pickle card.
 2. Pick the surface that fits the task:
-   - `Cmd + T` swaps the card body itself into the Pi terminal (chat is hidden while the terminal owns the card). Closing it syncs the HUD card from the Pi session file.
-   - `Cmd + Shift + T` opens the full Pi terminal overlay as a separate Picky window. Same Pi session, same sync behavior.
+   - Card menu → **Copy resume command**, then paste it into your own terminal to continue the same Pi session. Afterwards, card menu → **Sync from Pi session** imports what you did back into the HUD card.
    - `Cmd + E` toggles the **local-shell utility panel** below the card composer. It opens directly to a terminal in the Pickle cwd and is **not** the Pi session; use it for ad-hoc commands. Closing it does not affect the Pi session or trigger any sync.
-3. For `Cmd + T` / `Cmd + Shift + T`, work in the Pi TUI and close the terminal to sync back into the HUD card.
 
 ### 14.6 Clean up finished Pickles
 
@@ -1104,5 +1085,5 @@ To experiment without touching the default, point **Hub → Settings → Account
 ### 14.8 Resume the main Picky session in a real Pi terminal
 
 1. Open **Hub → Recent Conversation**.
-2. Click **Open in Pi** to launch the in-app Pi terminal overlay, or **Copy resume command** to paste `pi --session ...` into an external shell.
-3. Work directly in the Pi TUI. Closing the overlay syncs the visible state back into Hub.
+2. Click **Copy resume command** and paste `pi --session ...` into your own shell.
+3. Work directly in the Pi TUI. Hub keeps following the same session file.

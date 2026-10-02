@@ -48,7 +48,6 @@ struct PickyHUDDockGroupListReturnContext {
     let isTextInputFocused: Bool
     let isHUDFallbackResponder: Bool
     let hasActiveCard: Bool
-    let isInlineTerminalMode: Bool
 }
 
 /// The first owner of plain Return. A highlighted group-list row wins before
@@ -121,7 +120,7 @@ enum PickyHUDDockGroupListKeyboardPolicy {
         if context.isListOpen, let highlightedRowID = context.highlightedRowID {
             return .selectHighlightedRow(highlightedRowID)
         }
-        if context.isHUDFallbackResponder, context.hasActiveCard, !context.isInlineTerminalMode {
+        if context.isHUDFallbackResponder, context.hasActiveCard {
             return .focusComposer
         }
         return .passThrough

@@ -45,25 +45,6 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = [] {
         didSet { publishDockStateImmediately() }
     }
-    /// Sessions whose detail card is currently presented as an inline Pi TUI instead of
-    /// the SwiftUI chat/composer. This is intentionally UI-only state: the daemon and
-    /// existing terminal overlay keep their current behavior.
-    @Published private(set) var inlineTerminalSessionIDs: Set<String> = []
-    /// The one inline terminal attachment that is allowed to render its SwiftTerm NSView.
-    /// Other visible inline terminal cards stay in TUI mode but show an explanatory
-    /// placeholder so AppKit never has to attach one terminal view to multiple parents.
-    let inlineTerminalAttachmentStore = PickyTerminalAttachmentStore()
-    var activeInlineTerminalAttachmentSessionID: String? { inlineTerminalAttachmentStore.activeSessionID }
-    /// Long-lived inline terminal sessions keyed by Pickle session ID. The terminal
-    /// NSView/process is retained here so collapsing/reopening the HUD card reuses
-    /// the same TUI instead of launching a fresh `pi --session` process.
-    private var inlineTerminalSessionsBySessionID: [String: PickyInlineTerminalSession] = [:]
-    private struct ClosingInlineTerminalSession {
-        let session: PickyInlineTerminalSession
-        let sessionID: String
-        var syncAllowed: Bool
-    }
-    private var closingInlineTerminalSessionsByCloseID: [UUID: ClosingInlineTerminalSession] = [:]
     /// The one local shell terminal add-on attachment that may render its AppKit
     /// terminal view. Multiple HUD panels can exist, but a single NSView cannot be
     /// attached to multiple parents at the same time.
@@ -157,8 +138,6 @@ final class PickySessionListViewModel: ObservableObject {
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
     private let artifactPathValidator: PickyArtifactPathValidator
     private let clipboardWriter: PickyClipboardWriting
-    private let terminalPresenter: PickyTerminalOverlayPresenting
-    private let terminalSessionSyncer: PickyTerminalSessionSyncing
     private let reportPresenter: PickyReportPresenting
     private let toolHistoryPresenter: PickyToolHistoryPresenting
     private let generatedReportDirectory: URL
@@ -171,7 +150,6 @@ final class PickySessionListViewModel: ObservableObject {
     var releasedArchivedChildSessionIDs = Set<String>()
     private let manualPickleSessionIdFactory: () -> String
     private var terminalSessionCommandChains: [String: Task<Void, Never>] = [:]
-    private var terminalOverlayHandlesBySessionID: [String: PickyTerminalOverlayHandle] = [:]
     private var terminalSessionCommandChainIDs: [String: UUID] = [:]
     private var eventTask: Task<Void, Never>?
     /// Safety watchdog that flips `isLoadingInitialSessionSnapshot` to `false`
@@ -224,8 +202,6 @@ final class PickySessionListViewModel: ObservableObject {
         dockLayoutStore: PickyDockLayoutStoring = PickyNoopDockLayoutStore(),
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
         clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
-        terminalPresenter: PickyTerminalOverlayPresenting? = nil,
-        terminalSessionSyncer: PickyTerminalSessionSyncing = PickyPiSessionFileSyncer(),
         reportPresenter: PickyReportPresenting? = nil,
         toolHistoryPresenter: PickyToolHistoryPresenting? = nil,
         generatedReportDirectory: URL = PickyAppSupport.defaultRoot().appendingPathComponent("GeneratedReports", isDirectory: true),
@@ -264,8 +240,6 @@ final class PickySessionListViewModel: ObservableObject {
         self.dockLayout = dockLayoutController.layout
         self.artifactPathValidator = artifactPathValidator
         self.clipboardWriter = clipboardWriter
-        self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
-        self.terminalSessionSyncer = terminalSessionSyncer
         self.reportPresenter = reportPresenter ?? PickyReportViewerPresenter.shared
         self.toolHistoryPresenter = toolHistoryPresenter ?? PickyToolHistoryPresenter.shared
         self.generatedReportDirectory = generatedReportDirectory
@@ -1293,47 +1267,6 @@ final class PickySessionListViewModel: ObservableObject {
         lastError = nil
     }
 
-    func isInlineTerminalMode(sessionID: String) -> Bool {
-        inlineTerminalSessionIDs.contains(sessionID)
-    }
-
-    func enableInlineTerminalMode(sessionID: String) {
-        pickySessionLog("enable inline terminal session=\(sessionID)")
-        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
-              session.piSessionFilePath != nil else {
-            lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
-            return
-        }
-        inlineTerminalSessionIDs.insert(sessionID)
-        _ = inlineTerminalSession(for: session)
-        endHoveredVoiceFollowUp(sessionID: sessionID)
-        setTerminalSessionTailEnabled(sessionID: sessionID, enabled: true)
-        lastError = nil
-    }
-
-    func disableInlineTerminalMode(sessionID: String) {
-        pickySessionLog("disable inline terminal session=\(sessionID)")
-        // Stop the daemon-side tail before draining the inline terminal so the final
-        // `syncTerminalSession` reconcile (scheduled inside `closeInlineTerminalSession`)
-        // doesn't race the tail watcher for the same JSONL entries.
-        setTerminalSessionTailEnabled(sessionID: sessionID, enabled: false)
-        inlineTerminalSessionIDs.remove(sessionID)
-        removeVisibleInlineTerminalAttachments(sessionID: sessionID)
-        endHoveredVoiceFollowUp(sessionID: sessionID)
-        closeInlineTerminalSession(sessionID: sessionID)
-    }
-
-    /// Asks the daemon to start/stop tailing the Pi JSONL file for `sessionID`. Called whenever
-    /// the user enters or leaves an inline TUI / Pi terminal overlay so the HUD dock icon keeps
-    /// transitioning (`running` -> `completed`) even though agentd's own runtime is idle. Fire and
-    /// forget: failures are logged at the daemon side and the HUD just degrades to the previous
-    /// "frozen status until overlay close" behaviour.
-    private func setTerminalSessionTailEnabled(sessionID: String, enabled: Bool) {
-        enqueueTerminalSessionCommand(sessionID: sessionID) { [weak self] in
-            await self?.sendTerminalSessionTailEnabled(sessionID: sessionID, enabled: enabled)
-        }
-    }
-
     private func enqueueTerminalSessionCommand(sessionID: String, operation: @escaping @MainActor () async -> Void) {
         let previous = terminalSessionCommandChains[sessionID]
         let chainID = UUID()
@@ -1351,104 +1284,6 @@ final class PickySessionListViewModel: ObservableObject {
             }
         }
         terminalSessionCommandChains[sessionID] = task
-    }
-
-    private func sendTerminalSessionTailEnabled(sessionID: String, enabled: Bool) async {
-        let command = PickyCommandEnvelope(
-            type: .setTerminalSessionTailEnabled,
-            sessionId: sessionID,
-            enabled: enabled
-        )
-        do {
-            try await client.send(command)
-        } catch {
-            pickySessionLog("terminal tail toggle failed session=\(sessionID) enabled=\(enabled) error=\(error.localizedDescription)")
-        }
-    }
-
-    func toggleInlineTerminalMode(sessionID: String) {
-        if isInlineTerminalMode(sessionID: sessionID) {
-            disableInlineTerminalMode(sessionID: sessionID)
-        } else {
-            enableInlineTerminalMode(sessionID: sessionID)
-        }
-    }
-
-    func inlineTerminalSession(for session: SessionCard) -> PickyInlineTerminalSession? {
-        guard inlineTerminalSessionIDs.contains(session.id) else { return nil }
-        if let existing = inlineTerminalSessionsBySessionID[session.id] {
-            return existing
-        }
-        guard let piSessionFilePath = session.piSessionFilePath else {
-            lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
-            return nil
-        }
-        let baselineSnapshot = terminalSessionSnapshotIfAvailable(sessionFilePath: piSessionFilePath)
-        let inlineSession = PickyInlineTerminalSession(
-            sessionID: session.id,
-            title: session.title,
-            sessionFilePath: piSessionFilePath,
-            cwd: session.cwd,
-            baselineSnapshot: baselineSnapshot,
-            fontScalePersister: PickyTerminalFontScalePersister.defaultSettings()
-        )
-        inlineTerminalSessionsBySessionID[session.id] = inlineSession
-        return inlineSession
-    }
-
-    func isInlineTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool {
-        inlineTerminalAttachmentStore.isActive(sessionID: sessionID, attachmentID: attachmentID)
-    }
-
-    func activateInlineTerminalAttachment(sessionID: String, attachmentID: String) {
-        inlineTerminalAttachmentStore.activate(
-            sessionID: sessionID,
-            attachmentID: attachmentID,
-            eligibleSessionIDs: inlineTerminalSessionIDs
-        )
-    }
-
-    func releaseInlineTerminalAttachment(sessionID: String, attachmentID: String) {
-        inlineTerminalAttachmentStore.release(
-            sessionID: sessionID,
-            attachmentID: attachmentID,
-            eligibleSessionIDs: inlineTerminalSessionIDs
-        )
-    }
-
-    private func removeVisibleInlineTerminalAttachments(sessionID: String) {
-        inlineTerminalAttachmentStore.removeSession(
-            sessionID: sessionID,
-            eligibleSessionIDs: inlineTerminalSessionIDs
-        )
-    }
-
-    private func closeInlineTerminalSession(sessionID: String, schedulesSync: Bool = true) {
-        guard let inlineSession = inlineTerminalSessionsBySessionID.removeValue(forKey: sessionID) else { return }
-        let closeID = UUID()
-        closingInlineTerminalSessionsByCloseID[closeID] = ClosingInlineTerminalSession(
-            session: inlineSession,
-            sessionID: sessionID,
-            syncAllowed: schedulesSync
-        )
-        inlineSession.closeAndScheduleSync { [weak self] baselineSnapshot in
-            guard let self,
-                  let closing = self.closingInlineTerminalSessionsByCloseID.removeValue(forKey: closeID)
-            else { return }
-            if closing.syncAllowed {
-                self.syncTerminalSessionOnce(sessionID: closing.sessionID, baselineSnapshot: baselineSnapshot)
-            }
-        }
-    }
-
-    /// A membership completion makes an old session incarnation permanently
-    /// invalid. Revoke both a new close and a close already waiting on process
-    /// exit, so its callback cannot sync into a recreated same-ID session.
-    private func invalidatePendingInlineTerminalSync(sessionID: String) {
-        for closeID in Array(closingInlineTerminalSessionsByCloseID.keys) {
-            guard closingInlineTerminalSessionsByCloseID[closeID]?.sessionID == sessionID else { continue }
-            closingInlineTerminalSessionsByCloseID[closeID]?.syncAllowed = false
-        }
     }
 
     func shellTerminalSession(for session: SessionCard) -> PickyShellTerminalSession {
@@ -1496,72 +1331,26 @@ final class PickySessionListViewModel: ObservableObject {
         shellTerminalSessionsBySessionID.removeValue(forKey: sessionID)?.close()
     }
 
-    func openTerminalOverlay(sessionID: String) {
-        pickySessionLog("open terminal overlay session=\(sessionID)")
-        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
-              let piSessionFilePath = session.piSessionFilePath else {
-            lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
-            return
-        }
-        // The overlay launches its own `pi --session` process against the on-disk session
-        // file, so the user gets a terminal view of the transcript even when the daemon is
-        // still writing to it.
-
-        let baselineSnapshot = terminalSessionSnapshotIfAvailable(sessionFilePath: piSessionFilePath)
-
-        do {
-            let handle = try terminalPresenter.openTerminal(
-                sessionID: session.id,
-                title: session.title,
-                sessionFilePath: piSessionFilePath,
-                cwd: session.cwd,
-                onClose: { [weak self] closedHandle in
-                    guard let self,
-                          self.terminalOverlayHandlesBySessionID[session.id] == closedHandle else {
-                        return
-                    }
-                    self.terminalOverlayHandlesBySessionID[session.id] = nil
-                    // Stop the daemon-side tail BEFORE the reconcile so we don't race the
-                    // post-close `syncTerminalSession` for the same final JSONL entries.
-                    self.setTerminalSessionTailEnabled(sessionID: session.id, enabled: false)
-                    self.syncTerminalSessionOnce(sessionID: session.id, baselineSnapshot: baselineSnapshot)
-                }
-            )
-            terminalOverlayHandlesBySessionID[session.id] = handle
-            setTerminalSessionTailEnabled(sessionID: session.id, enabled: true)
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func syncTerminalSessionOnce(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot? = nil) {
+    /// Manual escape hatch for a session the user has been driving from an external
+    /// `pi --session` shell: the daemon has no JSONL watcher, so this reconciles the
+    /// HUD card against the on-disk transcript on demand.
+    func syncTerminalSessionOnce(sessionID: String) {
         enqueueTerminalSessionCommand(sessionID: sessionID) { [weak self] in
-            await self?.sendTerminalSessionSync(sessionID: sessionID, baselineSnapshot: baselineSnapshot)
+            await self?.sendTerminalSessionSync(sessionID: sessionID)
         }
     }
 
-    private func sendTerminalSessionSync(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot? = nil) async {
+    private func sendTerminalSessionSync(sessionID: String) async {
         guard (sessions + archivedSessions).contains(where: { $0.id == sessionID }) else { return }
         let command = PickyCommandEnvelope(
             type: .syncTerminalSession,
-            sessionId: sessionID,
-            baselinePiMessageId: baselineSnapshot?.lastMessageId
+            sessionId: sessionID
         )
         do {
             try await client.send(command)
             lastError = nil
         } catch {
             lastError = error.localizedDescription
-        }
-    }
-
-    private func terminalSessionSnapshotIfAvailable(sessionFilePath: String) -> PickyTerminalSessionSnapshot? {
-        do {
-            let snapshot = try terminalSessionSyncer.snapshot(sessionFilePath: sessionFilePath)
-            return snapshot.isEmpty ? nil : snapshot
-        } catch {
-            return nil
         }
     }
 
@@ -1588,9 +1377,6 @@ final class PickySessionListViewModel: ObservableObject {
         defer { endDockStateMutation() }
 
         pickySessionLog("archive session=\(sessionID)")
-        if isInlineTerminalMode(sessionID: sessionID) {
-            disableInlineTerminalMode(sessionID: sessionID)
-        }
         closeShellTerminalSession(sessionID: sessionID)
         releasedArchivedChildSessionIDs.remove(sessionID)
         archiveCoordinator.setMembership(sessionID, archived: true, store: archiveStore)
@@ -1856,13 +1642,6 @@ final class PickySessionListViewModel: ObservableObject {
         visibleSessionDiffSessionIDs.remove(sessionID)
         terminalSessionCommandChains.removeValue(forKey: sessionID)?.cancel()
         terminalSessionCommandChainIDs.removeValue(forKey: sessionID)
-        if let handle = terminalOverlayHandlesBySessionID.removeValue(forKey: sessionID) {
-            terminalPresenter.closeTerminal(handle: handle)
-        }
-        removeVisibleInlineTerminalAttachments(sessionID: sessionID)
-        invalidatePendingInlineTerminalSync(sessionID: sessionID)
-        closeInlineTerminalSession(sessionID: sessionID, schedulesSync: false)
-        inlineTerminalSessionIDs.remove(sessionID)
         closeShellTerminalSession(sessionID: sessionID)
         if openSessionRequest?.sessionID == sessionID { openSessionRequest = nil }
     }
@@ -2483,12 +2262,6 @@ final class PickySessionListViewModel: ObservableObject {
         lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }
         pendingTerminalMetaBySessionID = pendingTerminalMetaBySessionID.filter { knownSessionIDs.contains($0.key) }
         sessionDiffStoresBySessionID = sessionDiffStoresBySessionID.filter { knownSessionIDs.contains($0.key) }
-        let removedInlineTerminalIDs = inlineTerminalSessionIDs.subtracting(knownSessionIDs)
-        inlineTerminalSessionIDs = inlineTerminalSessionIDs.filter { knownSessionIDs.contains($0) }
-        for sessionID in removedInlineTerminalIDs {
-            removeVisibleInlineTerminalAttachments(sessionID: sessionID)
-            closeInlineTerminalSession(sessionID: sessionID)
-        }
         let removedShellTerminalIDs = Set(shellTerminalSessionsBySessionID.keys).subtracting(knownSessionIDs)
         for sessionID in removedShellTerminalIDs {
             closeShellTerminalSession(sessionID: sessionID)

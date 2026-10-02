@@ -120,8 +120,7 @@ struct PickyHUDDockGroupListKeyboardPolicyTests {
                 highlightedRowID: "bravo",
                 isTextInputFocused: false,
                 isHUDFallbackResponder: true,
-                hasActiveCard: true,
-                isInlineTerminalMode: false
+                hasActiveCard: true
             )
         )
 
@@ -136,8 +135,7 @@ struct PickyHUDDockGroupListKeyboardPolicyTests {
                 highlightedRowID: "bravo",
                 isTextInputFocused: true,
                 isHUDFallbackResponder: true,
-                hasActiveCard: true,
-                isInlineTerminalMode: false
+                hasActiveCard: true
             )
         )
 
@@ -152,8 +150,7 @@ struct PickyHUDDockGroupListKeyboardPolicyTests {
                 highlightedRowID: nil,
                 isTextInputFocused: false,
                 isHUDFallbackResponder: true,
-                hasActiveCard: true,
-                isInlineTerminalMode: false
+                hasActiveCard: true
             )
         )
 

@@ -309,12 +309,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         wirePushToTalkControlHandler(on: hudAgentClientRouter)
         wirePickySettingsControlHandler(on: hudAgentClientRouter)
         // Wire the appearance store and shared settings store into singletons that live
-        // outside the SwiftUI tree (markdown report viewer / terminal overlay) so every
+        // outside the SwiftUI tree (markdown report viewer / tool history viewer) so every
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
         // level (⌘+ / ⌘- / ⌘0) round-trips through the same settings file.
         PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
         PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
-        PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
         let hubDependencies = PickyHubDependencies(
             companionManager: companionManager,
             sessionListViewModel: hudSessionViewModel,

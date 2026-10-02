@@ -373,7 +373,7 @@ struct PickyHUDCardSize: Codable, Equatable {
 }
 
 /// Persisted frame for one of Picky's detached AppKit panels (markdown report viewer,
-/// tool history viewer, Pi terminal overlay). Replaces NSWindow's `setFrameAutosaveName`,
+/// tool history viewer). Replaces NSWindow's `setFrameAutosaveName`,
 /// which silently no-ops on every panel after the first when several share the same
 /// autosave slot. Saving a single struct per panel kind makes the latest user-moved
 /// frame win regardless of how many panels of that kind are simultaneously open.
@@ -410,7 +410,7 @@ struct PickyDetachedPanelFrame: Codable, Equatable {
     }
 }
 
-/// User zoom level for the markdown report viewer, Pi terminal overlay, and the
+/// User zoom level for the markdown report viewer and the
 /// global app surface (HUD/Conversation/Companion/Settings/Feedback). Each surface
 /// keeps its own multiplier so increasing terminal cell density does not also blow up
 /// the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum` (or the
@@ -769,7 +769,7 @@ struct PickySettings: Codable, Equatable {
     /// shown ahead of recent folders and are not capped by the recent-folder limit.
     var pinnedPickleCwds: [String]
     /// Last user-moved frame for each kind of detached panel (markdown report
-    /// viewer, tool history viewer, Pi terminal overlay), keyed by
+    /// viewer, tool history viewer), keyed by
     /// `PickyDetachedPanelKind.rawValue`. Empty/missing entries fall back to
     /// the panel's built-in `targetFrame()`.
     var detachedPanelFrames: [String: PickyDetachedPanelFrame]

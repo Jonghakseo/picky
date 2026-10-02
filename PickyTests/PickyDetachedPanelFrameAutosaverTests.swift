@@ -149,16 +149,16 @@ struct PickyDetachedPanelFramePersisterTests {
 
         let report = PickyDetachedPanelFramePersister.backed(by: store, kind: .reportViewer, legacyDefaults: nil)
         let toolHistory = PickyDetachedPanelFramePersister.backed(by: store, kind: .toolHistoryViewer, legacyDefaults: nil)
-        let terminal = PickyDetachedPanelFramePersister.backed(by: store, kind: .terminalOverlay, legacyDefaults: nil)
+        let hub = PickyDetachedPanelFramePersister.backed(by: store, kind: .hubWindow, legacyDefaults: nil)
 
         report.save(CGRect(x: 1, y: 2, width: 100, height: 100))
         toolHistory.save(CGRect(x: 3, y: 4, width: 200, height: 200))
-        terminal.save(CGRect(x: 5, y: 6, width: 300, height: 300))
+        hub.save(CGRect(x: 5, y: 6, width: 300, height: 300))
         await PickySettingsPersistenceCoordinator.shared(for: store).flush()
 
         #expect(report.load() == CGRect(x: 1, y: 2, width: 100, height: 100))
         #expect(toolHistory.load() == CGRect(x: 3, y: 4, width: 200, height: 200))
-        #expect(terminal.load() == CGRect(x: 5, y: 6, width: 300, height: 300))
+        #expect(hub.load() == CGRect(x: 5, y: 6, width: 300, height: 300))
     }
 }
 

@@ -3,9 +3,9 @@
 //  Picky
 //
 //  Local shell terminal panel attached below a Pickle HUD card. Branded as
-//  the "Extended terminal" in the UI and matched by the `Cmd + E` shortcut,
-//  to distinguish it from the inline terminal mode (`Cmd + T`) that swaps
-//  the card body itself into a Pi TUI.
+//  the "Extended terminal" in the UI and matched by the `Cmd + E` shortcut.
+//  It runs a plain login shell in the Pickle cwd and never attaches to the
+//  Pi session.
 //
 
 import AppKit

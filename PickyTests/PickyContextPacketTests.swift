@@ -187,12 +187,6 @@ struct PickyContextPacketTests {
         // Plain NSWindow defaults to self-release on close; the deferred
         // release otherwise corrupts the next async test's autorelease pool.
         hub.isReleasedWhenClosed = false
-        let terminal = PickyTerminalPanel(
-            contentRect: .zero,
-            styleMask: .titled,
-            backing: .buffered,
-            defer: false
-        )
         let report = PickyReportPanel(
             contentRect: .zero,
             styleMask: .titled,
@@ -210,7 +204,6 @@ struct PickyContextPacketTests {
             hud.close()
             dockGroupList.close()
             hub.close()
-            terminal.close()
             report.close()
             markedChrome.close()
         }
@@ -221,7 +214,6 @@ struct PickyContextPacketTests {
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(dockGroupList))
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(hub))
         // Artifact viewers stay visible so the model can inspect contents.
-        #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(terminal))
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(report))
         // Marked control chrome still stays out of screenshots.
         #expect(CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(markedChrome))

@@ -58,7 +58,8 @@ struct PickyHUDKeyboardShortcutPolicyTests {
     }
 
     @Test func terminalFocusInterceptsHUDShellShortcutsButPassesInputShortcutsThrough() {
-        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
+        // ⌘T no longer belongs to the HUD, so a focused terminal keeps it.
+        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 0, charactersIgnoringModifiers: "E", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 13, charactersIgnoringModifiers: "w", modifiers: .command) == true)
@@ -74,14 +75,6 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 15, charactersIgnoringModifiers: "r", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 15, charactersIgnoringModifiers: "r", modifiers: [.command, .shift]) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 0, charactersIgnoringModifiers: "R", modifiers: .command) == true)
-
-        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalOverlayShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: [.command, .shift]) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalOverlayShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalOverlayShortcut(keyCode: 0, charactersIgnoringModifiers: "T", modifiers: [.command, .shift]) == true)
-
-        #expect(PickyHUDKeyboardShortcutPolicy.isInlineTerminalToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isInlineTerminalToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: [.command, .shift]) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isInlineTerminalToggleShortcut(keyCode: 0, charactersIgnoringModifiers: "T", modifiers: .command) == true)
 
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 45, charactersIgnoringModifiers: "n", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 45, charactersIgnoringModifiers: "n", modifiers: .control) == false)

@@ -33,7 +33,6 @@ PR1_FILES = [
     "Picky/HUD/PickyToolActivityRow.swift",
     # Conversation
     "Picky/HUD/Conversation/PickyConversationComposerView.swift",
-    "Picky/HUD/Conversation/PickyInlineTerminalCardView.swift",
     "Picky/HUD/Conversation/PickyConversationContextLineView.swift",
     "Picky/HUD/Conversation/PickyConversationHeaderView.swift",
     "Picky/HUD/Conversation/PickyConversationListView.swift",

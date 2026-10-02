@@ -1688,16 +1688,13 @@ struct PickyConversationCardViewTests {
         let activeWithPiSession = makeConversationSession(status: .running, logs: ["pi session: /tmp/picky.pi-session"])
         let terminalWithoutPiSession = makeConversationSession(status: .completed)
         let activeMenu = PickyConversationMenu(session: activeWithPiSession, viewModel: viewModel)
-        #expect(activeMenu.canOpenPiTerminal)
-        #expect(activeMenu.canShowInlinePiTerminal)
-        #expect(!activeMenu.isShowingInlinePiTerminal)
         #expect(activeMenu.canCopyResumeCommand)
+        #expect(activeMenu.canSyncFromPiSession)
         #expect(activeMenu.canStop)
 
         let noPiMenu = PickyConversationMenu(session: terminalWithoutPiSession, viewModel: viewModel)
-        #expect(!noPiMenu.canOpenPiTerminal)
-        #expect(!noPiMenu.canShowInlinePiTerminal)
         #expect(!noPiMenu.canCopyResumeCommand)
+        #expect(!noPiMenu.canSyncFromPiSession)
         #expect(!noPiMenu.canStop)
     }
 

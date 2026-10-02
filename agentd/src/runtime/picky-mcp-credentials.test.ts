@@ -96,6 +96,21 @@ it("keeps separate accounts for servers that share a URL under Pi 1.0", async ()
   });
 });
 
+it("refreshes into the older Pi CLI's entry even when another server has a Pi 1.0 entry", async () => {
+  const { agentDir } = await tempAgentDir();
+  await writeAuth(agentDir, { [legacyKey(URL_A)]: state(URL_A, "old-cli"), [perServerKey("work", URL_A)]: state(URL_A, "work") });
+  const credentials = createPickyMcpCredentials(agentDir, await loadPiMcpInternals());
+  const docs = credentials.forServer("docs", URL_A);
+
+  expect(await docs.load()).toEqual(state(URL_A, "old-cli"));
+  await docs.save(state(URL_A, "rotated"));
+
+  expect(await readAuth(agentDir)).toEqual({
+    [legacyKey(URL_A)]: state(URL_A, "rotated"),
+    [perServerKey("work", URL_A)]: state(URL_A, "work"),
+  });
+});
+
 it("signs out of the entries of both Pi versions", async () => {
   const { agentDir } = await tempAgentDir();
   await writeAuth(agentDir, { [legacyKey(URL_A)]: state(URL_A, "old-cli"), [perServerKey("docs", URL_A)]: state(URL_A, "pi-1") });

@@ -54,7 +54,8 @@ export interface PiMcpInternals {
   mcpNamespace(server: string): string;
   /** The locked JSON file backend of `auth.json` and `mcp-auth.json`. */
   FileAuthStorageBackend: new (path: string) => FileAuthStorageBackend;
-  runMcpCommand(args: string[], options: { cwd: string; agentDir: string; credentials?: PickyMcpCredentials; log?: (line: string) => void; error?: (line: string) => void }): Promise<number>;
+  // `credentials` is required: Pi 1.0's default store migrates URL keys and would sign an older CLI out.
+  runMcpCommand(args: string[], options: { cwd: string; agentDir: string; credentials: PickyMcpCredentials; log?: (line: string) => void; error?: (line: string) => void }): Promise<number>;
 }
 
 export interface FileAuthStorageBackend {

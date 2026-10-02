@@ -530,11 +530,17 @@ system messages는 `0.86`~`0.99.0`에서 이미 들어왔다. 세션 파일 버�
   URL 키를 옮긴 뒤 지운다. Picky는 사용자 Pi CLI와 agent directory를 공유하므로 기본 저장소를
   쓰면 1.0 미만 CLI가 Picky가 건드린 OAuth 서버에서 모두 로그아웃된다.
   `picky-mcp-credentials.ts`가 세션 MCP 확장과 Hub의 `runMcpCommand`에 호환 저장소를 넘긴다.
-  읽은 entry에 다시 쓰고, URL entry를 옮기거나 지우지 않으며, 첫 로그인은 URL entry에 쓴다.
-  1.0이 이미 서버별 entry를 만든 URL은 서버별 entry를 따른다. 로그아웃은 두 entry를 모두
+  읽은 entry에 다시 쓰고(서버별 entry > URL entry 순), URL entry를 옮기거나 지우지 않으며,
+  첫 로그인은 URL entry에 쓴다. 1.0이 이미 서버별 entry를 만든 URL은 서버별 entry를 따르고,
+  같은 URL을 쓰는 다른 서버만 서버별 entry를 가진 경우에도 읽은 URL entry에 다시 쓴다. 로그아웃은 두 entry를 모두
   지운다. refresh는 두 버전의 잠금 파일(URL 키, 서버별 키 순서)을 모두 잡는다.
-  `picky-mcp-credentials.test.ts`는 1.0 기본 저장소로 7개 실패(RED)를 재현한 뒤 통과한다.
+  `picky-mcp-credentials.test.ts`는 1.0 기본 저장소로 8개 실패(RED)를 재현한 뒤 통과한다.
   agent directory 격리가 들어가면 이 저장소를 제거한다.
+- 호환 저장소의 알려진 한계: mcp.json에서 지운 서버의 서버별 키가 `mcp-auth.json`에 남으면,
+  같은 URL을 쓰는 다른 서버의 첫 로그인이 서버별 키로 가서 1.0 미만 CLI가 보지 못한다.
+  내장 `mcp` 확장을 대체하는 사용자 확장(`replaceable: true`)이나 `-builtin:mcp`는 이 저장소를 우회한다.
+  refresh는 URL 잠금을 쥔 채 서버별 잠금을 기다리므로, 드문 3자 중첩에서는 구버전 CLI의 refresh가
+  ELOCKED로 실패할 수 있다.
 - `auth.provider`, `oauth.clientName`, `oauth.authServerMetadataUrl`, 서버 `description`은
   1.0 SDK가 직접 처리한다. `-`와 `_`만 다른 서버 이름은 CLI와 같이 거부된다.
 - MCP 도구·namespace 이름의 `-`가 `_`로 바뀐다(`mcp__my-server__x` → `mcp__my_server__x`).
@@ -554,7 +560,7 @@ system messages는 `0.86`~`0.99.0`에서 이미 들어왔다. 세션 파일 버�
 
 검증 결과:
 
-- 필수 SDK/OAuth/MCP 계약 20개 통과. 새 `picky-mcp-credentials.test.ts` 9개 통과.
+- 필수 SDK/OAuth/MCP 계약 20개 통과. 새 `picky-mcp-credentials.test.ts` 10개 통과.
 - `PICKY_TEST_ASYNC_PROVIDER_ROOT=agentd/vendor/async-task-providers`로 전체 `test:ci` 실행:
   첫 단계 1,172개 통과(선택적 6개 건너뜀), server/supervisor 단계 447개 통과.
 - `typecheck`, `lint`, `build`, `pnpm run check:architecture`(기존 경고 4개),

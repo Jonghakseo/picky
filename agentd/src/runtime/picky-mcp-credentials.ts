@@ -9,7 +9,9 @@
  *
  * - an older CLI keeps its sign-in and sees tokens Picky refreshed (refresh tokens may rotate);
  * - once a Pi 1.0 CLI has moved a sign-in to its per-server key, Picky follows that entry;
- * - servers that share a URL keep separate accounts once one of them has a per-server entry.
+ * - a save goes to this server's per-server entry when it has one, else to the URL entry when one
+ *   exists, and for a first sign-in to a per-server entry only when another server already holds
+ *   one for this URL, otherwise to the URL entry.
  *
  * Refreshes take the refresh locks of both versions, URL lock first, so neither CLI refreshes a
  * token Picky is refreshing.
@@ -55,8 +57,12 @@ export function createPickyMcpCredentials(agentDir: string, internals: Pick<PiMc
   const saveKey = (states: States, name: string, serverUrl: string) => {
     const { legacy, perServer } = keys(name, serverUrl);
     if (states[perServer]) return perServer;
+    // `load` returned the URL entry, so a refreshed token has to go back there or the older CLI loses it.
+    if (states[legacy]) return legacy;
     // Pi 1.0 already keeps separate accounts for this URL; a URL entry would hand ours to the others.
-    const anotherServerSignedIn = Object.keys(states).some((key) => key !== perServer && key.endsWith(`|${legacy}`));
+    const perServerPrefix = mcpNamespace("");
+    const anotherServerSignedIn = Object.keys(states)
+      .some((key) => key !== perServer && key.startsWith(perServerPrefix) && key.endsWith(`|${legacy}`));
     return anotherServerSignedIn ? perServer : legacy;
   };
 
@@ -92,10 +98,12 @@ export function createPickyMcpCredentials(agentDir: string, internals: Pick<PiMc
     /** Signs out for both CLI versions. */
     remove(name: string, serverUrl: string): boolean {
       const { legacy, perServer } = keys(name, serverUrl);
-      const states = read();
-      if (!(legacy in states) && !(perServer in states)) return false;
-      update((states) => { delete states[legacy]; delete states[perServer]; });
-      return true;
+      return update((states) => {
+        const signedIn = legacy in states || perServer in states;
+        delete states[legacy];
+        delete states[perServer];
+        return signedIn;
+      });
     },
   };
   return store as unknown as PickyMcpCredentials;

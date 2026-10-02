@@ -20,7 +20,8 @@
           { "type": "cubic", "c1x": 300, "c1y": 480, "c2x": 360, "c2y": 360, "x": 460, "y": 320 }
         ],
         "label": "Trend"
-      }
+      },
+      { "id": "text-1", "shape": "text", "x": 320, "y": 180, "w": 220, "h": 24, "text": "Monthly recurring revenue" }
     ],
     "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
     "screenshotSize": { "width": 1280, "height": 827 }

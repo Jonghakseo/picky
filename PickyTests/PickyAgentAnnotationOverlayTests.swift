@@ -49,6 +49,21 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(target.screenLocation.x < 210)
     }
 
+    @Test func resolvesTextCalloutsAndRejectsEmptyText() throws {
+        let resolved = try #require(PickyAnnotationOverlayResolver.resolve(request(annotations: [
+            annotation(id: "text", shape: .text, x: 200, y: 50, w: 100, h: 100, text: "  번역  "),
+        ])).first)
+        #expect(resolved.rect == CGRect(x: 200, y: 225, width: 50, height: 50))
+        #expect(resolved.text == "번역")
+        #expect(resolved.label == nil)
+
+        #expect(throws: PickyAnnotationOverlayResolveError.self) {
+            _ = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
+                annotation(id: "empty", shape: .text, x: 0, y: 0, w: 10, h: 10, text: "   "),
+            ]))
+        }
+    }
+
     @Test func rejectsPATHSpotlightInTheSwiftResolver() {
         #expect(throws: PickyAnnotationOverlayResolveError.self) {
             _ = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
@@ -745,6 +760,79 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(eventRequest.annotations.first?.spotlight == true)
     }
 
+    /// A long caption at the bottom edge has no clean slot: below is clamped
+    /// back over itself, the sides are clamped inward over itself, and the only
+    /// slot that clears the caption collides with another marked line. The
+    /// callout must still never land on the text it explains.
+    @Test func crowdedTextCalloutsNeverCoverTheTextTheyExplain() throws {
+        let screenSize = CGSize(width: 600, height: 300)
+        let items = [
+            (
+                "caption",
+                CGRect(x: 160, y: 262, width: 260, height: 22),
+                "이 금액은 부가세를 포함한 값이며 결제일 환율에 따라 최종 청구액이 달라질 수 있습니다"
+            ),
+            ("total", CGRect(x: 180, y: 200, width: 240, height: 24), "결제 수단 관리"),
+            ("title", CGRect(x: 24, y: 28, width: 180, height: 18), "계속하려면 로그인하세요"),
+            ("help", CGRect(x: 240, y: 26, width: 160, height: 18), "비밀번호를 잊으셨나요?"),
+            ("signup", CGRect(x: 430, y: 118, width: 150, height: 20), "새 계정 만들기"),
+        ].map { PickyAnnotationTextItem(id: $0.0, rect: $0.1, text: $0.2, visualStyle: .fallback) }
+
+        let layouts = PickyAnnotationTextLayoutPolicy.layout(items, screenSize: screenSize)
+
+        #expect(layouts.count == items.count)
+        for item in items {
+            let frame = try #require(layouts[item.id]?.frame)
+            #expect(!frame.intersects(item.rect), "Callout \(item.id) covers its own text")
+            #expect(CGRect(origin: .zero, size: screenSize).contains(frame), "Callout \(item.id) left the screen")
+            // The bottom-edge caption is the one item boxed in on every side:
+            // its own bubble is taller than the gap between "total" and itself,
+            // and bubbles stay next to the text they explain rather than flying
+            // to free space elsewhere on the screen. Every other item has a slot
+            // that clears the remaining marked text.
+            guard item.id != "caption" else { continue }
+            for other in items where other.id != item.id {
+                #expect(!frame.intersects(other.rect), "Callout \(item.id) covers the text of \(other.id)")
+            }
+        }
+    }
+
+    /// Mirrors the marketing-page fixture rendered by the messenger-UX gallery
+    /// (`PickyMessengerUXRenderGalleryTests`, 720x400). The long body paragraph
+    /// wants the empty band under itself, which is exactly where the CTA button
+    /// label and its badge sit; neither may end up under a bubble.
+    @Test func galleryTranslationFixtureKeepsEveryMarkedTextReadable() throws {
+        let screenSize = CGSize(width: 720, height: 400)
+        let items = [
+            ("nav", CGRect(x: 470, y: 18, width: 220, height: 18), "요금    문서    로그인"),
+            ("title", CGRect(x: 40, y: 92, width: 520, height: 36), "회의는 줄이고 더 빨리 출시하세요"),
+            (
+                "body",
+                CGRect(x: 40, y: 142, width: 420, height: 40),
+                "비동기 스탠드업, 결정 기록, 리뷰 대기열로 회의 없이도 팀이 계속 움직여요."
+            ),
+            ("cta", CGRect(x: 56, y: 212, width: 128, height: 18), "무료 체험 시작"),
+            ("badge", CGRect(x: 216, y: 214, width: 70, height: 14), "결제 수단 등록 없이 바로 시작할 수 있어요"),
+            (
+                "billing",
+                CGRect(x: 60, y: 288, width: 300, height: 18),
+                "결제 주기: 연간. 중간에 상위 요금제로 바꾸면 남은 기간만큼 일할 계산해서 차액만 청구해요."
+            ),
+        ].map { PickyAnnotationTextItem(id: $0.0, rect: $0.1, text: $0.2, visualStyle: .fallback) }
+
+        let layouts = PickyAnnotationTextLayoutPolicy.layout(items, screenSize: screenSize)
+
+        #expect(layouts.count == items.count)
+        for item in items {
+            let frame = try #require(layouts[item.id]?.frame)
+            #expect(!frame.intersects(item.rect), "Callout \(item.id) covers its own text")
+            #expect(CGRect(origin: .zero, size: screenSize).contains(frame), "Callout \(item.id) left the screen")
+            for other in items where other.id != item.id {
+                #expect(!frame.intersects(other.rect), "Callout \(item.id) covers the text of \(other.id)")
+            }
+        }
+    }
+
     private func sceneContext() -> PickyContextPacket {
         PickyContextPacket(
             id: "context",
@@ -860,9 +948,9 @@ struct PickyAgentAnnotationOverlayTests {
         x: Double? = nil, y: Double? = nil,
         w: Double? = nil, h: Double? = nil, x1: Double? = nil, y1: Double? = nil, x2: Double? = nil, y2: Double? = nil,
         commands: [PickyAnnotationPathCommand]? = nil,
-        spotlight: Bool? = nil, label: String? = nil
+        spotlight: Bool? = nil, label: String? = nil, text: String? = nil
     ) -> PickyAnnotationOverlayAnnotation {
-        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, commands: commands, spotlight: spotlight, label: label, clamped: nil)
+        PickyAnnotationOverlayAnnotation(id: id, shape: shape, x: x, y: y, w: w, h: h, x1: x1, y1: y1, x2: x2, y2: y2, commands: commands, spotlight: spotlight, label: label, text: text, clamped: nil)
     }
 
     private func resolvedAnnotation(id: String, spotlight: Bool = false) -> PickyAgentAnnotation {

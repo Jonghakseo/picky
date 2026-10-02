@@ -259,4 +259,28 @@ describe("AnnotationDslParser", () => {
     expect(ANNOTATION_DSL_TAG_OPEN_PATTERN.test("[ RECT : x=1]")).toBe(true);
     expect(ANNOTATION_DSL_TAG_OPEN_PATTERN.test("[rect: x=1]")).toBe(true);
   });
+
+  it("parses TEXT callouts with line-break escapes and quoted brackets", () => {
+    const parser = new AnnotationDslParser();
+    const result = parser.feed('[TEXT: x=40 y=92 w=520 h=36 text="요금 [연간]\\n월 환산 20% 할인"] 화면에 띄웠어요.');
+
+    expect(result.droppedTags).toEqual([]);
+    expect(result.cleanText).toBe(" 화면에 띄웠어요.");
+    expect(result.completedTags).toEqual([
+      { kind: "annotation", annotation: { id: "dsl-1", shape: "text", x: 40, y: 92, w: 520, h: 36, text: "요금 [연간]\n월 환산 20% 할인" } },
+    ]);
+    expect(result.streamItems[0]).toEqual({ kind: "visualBoundary", verb: "TEXT" });
+  });
+
+  it("drops TEXT without text or with text beyond 500 characters, and ignores label/spotlight", () => {
+    const parser = new AnnotationDslParser();
+    const tooLong = "가".repeat(501);
+    const result = parser.feed(`[TEXT: x=1 y=2 w=3 h=4] [TEXT: x=1 y=2 w=3 h=4 text="${tooLong}"] [TEXT: x=1 y=2 w=3 h=4 text="ok" label="x" spotlight]`);
+
+    expect(result.droppedTags).toEqual(["TEXT requires text up to 500 characters", "TEXT requires text up to 500 characters"]);
+    expect(result.completedTags).toEqual([
+      { kind: "annotation", annotation: { id: "dsl-1", shape: "text", x: 1, y: 2, w: 3, h: 4, text: "ok" } },
+    ]);
+    expect(result.healedTags).toEqual(["TEXT: unknown key ignored"]);
+  });
 });

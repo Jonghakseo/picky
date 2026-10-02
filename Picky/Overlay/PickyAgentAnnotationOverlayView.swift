@@ -33,10 +33,24 @@ struct PickyAgentAnnotationOverlayView: View {
         }
     }
 
+    /// TEXT callouts, in tag order, with their original text box in local coordinates.
+    private var textItems: [PickyAnnotationTextItem] {
+        annotationsForScreen.compactMap { annotation in
+            guard annotation.shape == .text, let text = annotation.text, let rect = localRect(annotation.rect) else {
+                return nil
+            }
+            return PickyAnnotationTextItem(id: annotation.id, rect: rect, text: text, visualStyle: annotation.visualStyle)
+        }
+    }
+
     private var accessibilitySummary: String {
         let labelTexts = annotationsForScreen.compactMap(\.label)
-        guard !labelTexts.isEmpty else { return L10n.t("overlay.annotation.visible") }
-        return L10n.t("overlay.annotation.summary", labelTexts.joined(separator: ", "))
+        let calloutTexts = annotationsForScreen.compactMap(\.text)
+        let parts = [
+            labelTexts.isEmpty ? nil : L10n.t("overlay.annotation.summary", labelTexts.joined(separator: ", ")),
+            calloutTexts.isEmpty ? nil : L10n.t("overlay.annotation.text.summary", calloutTexts.joined(separator: ", ")),
+        ].compactMap { $0 }
+        return parts.isEmpty ? L10n.t("overlay.annotation.visible") : parts.joined(separator: " ")
     }
 
     var body: some View {
@@ -55,6 +69,9 @@ struct PickyAgentAnnotationOverlayView: View {
                             .position(x: anchor.x, y: anchor.y)
                     }
                 }
+            }
+            if !textItems.isEmpty {
+                PickyAnnotationTextOverlayView(items: textItems, screenSize: screenFrame.size)
             }
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
@@ -88,6 +105,9 @@ struct PickyAgentAnnotationOverlayView: View {
                     visualStyle: annotation.visualStyle
                 )
             }
+        case .text:
+            // Rendered as a group by `PickyAnnotationTextOverlayView` so callouts avoid each other.
+            EmptyView()
         }
     }
 
@@ -224,6 +244,8 @@ enum PickyAnnotationLabelGeometry {
                 CGPoint(x: localBounds.midX, y: localBounds.minY - labelGap - halfHeight),
                 CGPoint(x: localBounds.midX, y: localBounds.maxY + labelGap + halfHeight),
             ]
+        case .text:
+            return nil
         }
 
         return candidates.first(where: { fits($0, screenSize: screenSize, labelSize: labelSize) })
@@ -358,7 +380,7 @@ enum PickyAnnotationSpotlightMaskGeometry {
                     width: abs(localEnd.x - localStart.x) + linePadding * 2,
                     height: abs(localEnd.y - localStart.y) + linePadding * 2
                 ))
-            case .path:
+            case .path, .text:
                 return nil
             }
         }

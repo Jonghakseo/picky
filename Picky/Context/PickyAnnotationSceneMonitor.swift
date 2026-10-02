@@ -642,7 +642,7 @@ final class PickyAnnotationSceneMonitor {
         return annotations.reduce(into: [:]) { result, annotation in
             let geometry: CGRect?
             switch annotation.shape {
-            case .rect:
+            case .rect, .text:
                 geometry = annotation.rect
             case .line:
                 if let start = annotation.point, let end = annotation.endPoint {

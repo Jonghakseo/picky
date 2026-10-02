@@ -99,6 +99,22 @@ enum PickyAnnotationOverlayResolver {
                 label: normalizedLabel(annotation.label),
                 visualStyle: visualStyle
             )
+        case .text:
+            guard annotation.spotlight == nil else {
+                throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "spotlight")
+            }
+            guard let text = normalizedLabel(annotation.text) else {
+                throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "text")
+            }
+            return PickyAgentAnnotation(
+                id: annotation.id,
+                shape: annotation.shape,
+                displayFrame: displayFrame,
+                rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
+                label: nil,
+                text: text,
+                visualStyle: visualStyle
+            )
         case .path:
             guard annotation.spotlight == nil else {
                 throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "spotlight")

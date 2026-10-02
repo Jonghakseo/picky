@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, EventEnvelopeVariantSchema, PickyAgentSessionSchema, PickySessionMetaPatchSchema, PickySessionProjectionMutationSchema, PickySessionProjectionMutationVariantSchema, PROTOCOL_VERSION } from "./protocol.js";
+import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, EventEnvelopeVariantSchema, PickyAgentSessionSchema, PickySessionMetaPatchSchema, PickySessionProjectionMutationSchema, PickySessionProjectionMutationVariantSchema, PickyAnnotationOverlayAnnotationSchema, PROTOCOL_VERSION } from "./protocol.js";
 import { mutationNames, persistedSessionFieldOwnership } from "./domain/session-projection-ownership.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
@@ -1087,5 +1087,14 @@ describe("tool history structured result compatibility", () => {
     expect(schema.safeParse({ ...fixture, structuredResult: "x".repeat(16384) }).success).toBe(true);
     expect(schema.safeParse({ ...fixture, structuredResult: "x".repeat(16385) }).success).toBe(false);
     expect(schema.safeParse({ ...fixture, structuredResult: { value: "answer" } }).success).toBe(false);
+  });
+});
+
+describe("annotation overlay text shape", () => {
+  it("accepts a text callout and rejects text fields on other shapes or missing bodies", () => {
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "t", shape: "text", x: 1, y: 2, w: 3, h: 4, text: "번역" }).success).toBe(true);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "t", shape: "text", x: 1, y: 2, w: 3, h: 4 }).success).toBe(false);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "t", shape: "text", x: 1, y: 2, w: 3, h: 4, text: "a", spotlight: true }).success).toBe(false);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "r", shape: "rect", x: 1, y: 2, w: 3, h: 4, text: "a" }).success).toBe(false);
   });
 });

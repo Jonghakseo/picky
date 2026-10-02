@@ -32,4 +32,12 @@ describe("annotation validation", () => {
     expect(() => clampAnnotation({ id: "path", shape: "path", commands: [{ type: "move", x: 1, y: 1 }] }, screenshotSize)).toThrow("2 to 32 commands");
     expect(() => clampAnnotation({ id: "path", shape: "path", commands: [{ type: "move", x: 1, y: 1 }, { type: "line", x: 2, y: 2 }], spotlight: true }, screenshotSize)).toThrow("does not support spotlight");
   });
+
+  it("clamps TEXT boxes like rectangles and requires a bounded text body", () => {
+    expect(clampAnnotation({ id: "text", shape: "text", x: 90, y: 70, w: 30, h: 20, text: "  번역  " }, screenshotSize))
+      .toMatchObject({ x: 90, y: 70, w: 10, h: 10, text: "번역", clamped: true });
+    expect(() => clampAnnotation({ id: "text", shape: "text", x: 1, y: 1, w: 2, h: 2, text: "   " }, screenshotSize)).toThrow("text requires");
+    expect(() => clampAnnotation({ id: "text", shape: "text", x: 1, y: 1, w: 2, h: 2, text: "a".repeat(501) }, screenshotSize)).toThrow("text requires");
+    expect(() => clampAnnotation({ id: "text", shape: "text", x: 1, y: 1, w: 2, h: 2, text: "a", spotlight: true }, screenshotSize)).toThrow("does not support spotlight");
+  });
 });

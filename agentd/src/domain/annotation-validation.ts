@@ -1,6 +1,8 @@
 import type { ScreenshotSize } from "./pointer-validation.js";
 
-export const ANNOTATION_SHAPES = ["rect", "line", "path"] as const;
+export const ANNOTATION_SHAPES = ["rect", "line", "path", "text"] as const;
+/** TEXT callouts carry a translation or short explanation, not a document. */
+export const ANNOTATION_TEXT_MAX_LENGTH = 500;
 export type AnnotationShape = typeof ANNOTATION_SHAPES[number];
 export type AnnotationMode = "replace" | "append" | "clear";
 
@@ -22,6 +24,8 @@ export interface AnnotationInput {
   commands?: AnnotationPathCommand[];
   spotlight?: boolean;
   label?: string;
+  /** Callout body for `text` annotations. */
+  text?: string;
 }
 
 export interface ClampedAnnotation extends AnnotationInput {
@@ -49,6 +53,13 @@ export function clampAnnotation(annotation: AnnotationInput, screenshotSize: Scr
       }, clamped);
     case "path":
       return clampPath(input, coordinate, clamped);
+    case "text": {
+      if (input.spotlight !== undefined) throw new Error("text does not support spotlight.");
+      if (!input.text || input.text.length > ANNOTATION_TEXT_MAX_LENGTH) {
+        throw new Error(`text requires 1 to ${ANNOTATION_TEXT_MAX_LENGTH} characters.`);
+      }
+      return clampRect(input, screenshotSize, coordinate, clamped);
+    }
   }
 }
 
@@ -118,10 +129,12 @@ function normalizeAnnotation(annotation: AnnotationInput): AnnotationInput {
   const id = annotation.id.trim();
   if (!id) throw new Error("Annotation id is required.");
   const label = annotation.label?.trim();
+  const text = annotation.text?.trim();
   return {
     ...annotation,
     id,
     label: label || undefined,
+    text: text || undefined,
   };
 }
 

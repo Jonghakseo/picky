@@ -28358,6 +28358,22 @@
           }
         }
       }
+    },
+    "overlay.annotation.text.summary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes beside on-screen text: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 글자 옆 설명: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

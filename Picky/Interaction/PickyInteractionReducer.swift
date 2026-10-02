@@ -22,7 +22,7 @@ enum PickyAnnotationPointerTarget {
     static func make(_ annotation: PickyAgentAnnotation) -> PickyPointerTarget? {
         let anchor: CGPoint
         switch annotation.shape {
-        case .rect:
+        case .rect, .text:
             guard let rect = annotation.rect else { return nil }
             anchor = CGPoint(x: rect.midX, y: rect.midY)
         case .line:

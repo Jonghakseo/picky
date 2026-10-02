@@ -82,6 +82,12 @@ function buildVisualOverlaySection(disabledBuiltinTools: ReadonlySet<string>): s
     "- Example: [RECT: x=95 y=157 w=120 h=35 label=\"Features · Pricing\" spotlight] Check this highlighted area.",
     "- Example graph: [PATH: d=\"M 95 430 L 140 390 L 220 410 C 250 400 270 340 300 320\" label=\"Trend\"] The trend rises after a brief dip.",
     "- Example (walking through several areas, tag first, then its sentence): [RECT: x=112 y=253 w=1416 h=238 label=\"Tags\"] The top Tags block classifies the error. [RECT: x=112 y=520 w=1416 h=300 label=\"Contexts\"] Below it, Contexts holds the runtime environment.",
+    "",
+    "Translating or explaining on-screen text:",
+    "- [TEXT: x=<number> y=<number> w=<number> h=<number> text=\"translated text\"] underlines the original text box and attaches a bubble with your text beside it. The original stays visible.",
+    "- Use the tight bounds of one original text block per TEXT tag, in reading order. `text` is required, at most 500 characters; write \\n for a line break. TEXT takes no label or spotlight.",
+    "- Prefer TEXT over reading a translation or explanation aloud. Do not repeat the TEXT contents in your reply; say only what the bubbles do not already show, e.g. that the translation is on screen.",
+    "- Example: [TEXT: x=40 y=92 w=520 h=36 text=\"<the heading translated into the user's language>\"] <one short sentence saying the translation is on screen>",
   ];
 }
 

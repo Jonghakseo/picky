@@ -444,6 +444,8 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var pathCommands: [PickyAgentAnnotationPathCommand]?
     var spotlight: Bool
     let label: String?
+    /// Callout body for `.text` annotations; `rect` is the original text box.
+    var text: String?
     let visualStyle: PickyAnnotationVisualStyle
 
     init(
@@ -456,6 +458,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         pathCommands: [PickyAgentAnnotationPathCommand]? = nil,
         spotlight: Bool = false,
         label: String?,
+        text: String? = nil,
         visualStyle: PickyAnnotationVisualStyle = .fallback
     ) {
         self.id = id
@@ -467,11 +470,12 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         self.pathCommands = pathCommands
         self.spotlight = spotlight
         self.label = label
+        self.text = text
         self.visualStyle = visualStyle
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, shape, displayFrame, point, endPoint, rect, pathCommands, spotlight, label, visualStyle
+        case id, shape, displayFrame, point, endPoint, rect, pathCommands, spotlight, label, text, visualStyle
     }
 
     init(from decoder: Decoder) throws {
@@ -485,6 +489,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
         pathCommands = try container.decodeIfPresent([PickyAgentAnnotationPathCommand].self, forKey: .pathCommands)
         spotlight = try container.decodeIfPresent(Bool.self, forKey: .spotlight) ?? false
         label = try container.decodeIfPresent(String.self, forKey: .label)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
         visualStyle = try container.decodeIfPresent(PickyAnnotationVisualStyle.self, forKey: .visualStyle) ?? .fallback
     }
 }

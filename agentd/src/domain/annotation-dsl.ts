@@ -1,7 +1,7 @@
-import type { AnnotationInput } from "./annotation-validation.js";
+import { ANNOTATION_TEXT_MAX_LENGTH, type AnnotationInput } from "./annotation-validation.js";
 import { parseAnnotationSvgPath } from "./annotation-svg-path.js";
 
-const KNOWN_VERBS = ["RECT", "LINE", "PATH", "SCREEN"] as const;
+const KNOWN_VERBS = ["RECT", "LINE", "PATH", "TEXT", "SCREEN"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
 export type AnnotationDslVisualVerb = Exclude<KnownVerb, "SCREEN">;
 
@@ -193,7 +193,7 @@ export class AnnotationDslParser {
       return { tag: { kind: "screen", screenId } };
     }
 
-    const label = optionalText(args, "label", heals);
+    const label = verb === "TEXT" ? undefined : optionalText(args, "label", heals);
     if (label === null) return { error: `${verb} has invalid label` };
     const screenId = this.screenId;
     const coordinate = (key: string): number | undefined => finiteNumber(args[key], heals);
@@ -224,6 +224,14 @@ export class AnnotationDslParser {
         const fields = required("x1", "y1", "x2", "y2");
         if (!fields) return { error: "LINE requires x1, y1, x2, and y2" };
         annotation = { ...this.annotationBase("line", label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
+        break;
+      }
+      case "TEXT": {
+        const fields = required("x", "y", "w", "h");
+        if (!fields) return { error: "TEXT requires x, y, w, and h" };
+        const text = calloutText(args.text, heals);
+        if (!text) return { error: "TEXT requires text up to 500 characters" };
+        annotation = { ...this.annotationBase("text", undefined), ...fields, text };
         break;
       }
       case "PATH": {
@@ -264,12 +272,13 @@ function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
     case "RECT": return new Set(["x", "y", "w", "h", "label", "spotlight"]);
     case "LINE": return new Set(["x1", "y1", "x2", "y2", "label", "spotlight"]);
     case "PATH": return new Set(["d", "label"]);
+    case "TEXT": return new Set(["x", "y", "w", "h", "text"]);
     case "SCREEN": return new Set(["id"]);
   }
 }
 
 function isVisualVerb(value: string): value is AnnotationDslVisualVerb {
-  return value === "RECT" || value === "LINE" || value === "PATH";
+  return value === "RECT" || value === "LINE" || value === "PATH" || value === "TEXT";
 }
 
 function isPartialKnownOpener(value: string): boolean {
@@ -451,6 +460,17 @@ function optionalText(args: Record<string, ParsedValue>, key: string, heals: Set
   const value = textValue(args[key], heals);
   if (value === null) return null;
   return value.trim() ? value : undefined;
+}
+
+/**
+ * TEXT body: quoted, trimmed, `\n` escapes become line breaks, never longer
+ * than `ANNOTATION_TEXT_MAX_LENGTH` so the DSL and the validator agree.
+ */
+function calloutText(value: ParsedValue | undefined, heals: Set<HealReason>): string | undefined {
+  if (!value) return undefined;
+  const raw = value.quoted ? value.value.replace(/\\n/g, "\n") : textValue(value, heals);
+  const text = raw?.trim();
+  return text && text.length <= ANNOTATION_TEXT_MAX_LENGTH ? text : undefined;
 }
 
 function textValue(value: ParsedValue | undefined, heals: Set<HealReason>): string | null {

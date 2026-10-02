@@ -12,7 +12,7 @@ enum PickyAnnotationOverlayMode: String, Codable, Equatable {
 }
 
 enum PickyAnnotationOverlayShape: String, Codable, Equatable {
-    case rect, line, path
+    case rect, line, path, text
 }
 
 enum PickyAnnotationPathCommandType: String, Codable, Equatable {
@@ -61,6 +61,8 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
     let commands: [PickyAnnotationPathCommand]?
     let spotlight: Bool?
     let label: String?
+    /// Callout body for `.text` annotations.
+    let text: String?
     let clamped: Bool?
 
     init(
@@ -77,6 +79,7 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
         commands: [PickyAnnotationPathCommand]? = nil,
         spotlight: Bool? = nil,
         label: String? = nil,
+        text: String? = nil,
         clamped: Bool? = nil
     ) {
         self.id = id
@@ -92,6 +95,7 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
         self.commands = commands
         self.spotlight = spotlight
         self.label = label
+        self.text = text
         self.clamped = clamped
     }
 }

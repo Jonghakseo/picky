@@ -24,6 +24,7 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
     let onToggleExpansion: (() -> Void)?
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
+    var timestamp: PickyBubbleTimestamp? = nil
     /// Declared so SwiftUI knows this representable depends on the global app
     /// font scale. Without this, when only the env value changes (no other
     /// input changes), SwiftUI short-circuits and never calls `updateNSView`,
@@ -49,7 +50,8 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
             expansionSystemImageName: expansionSystemImageName,
             onToggleExpansion: onToggleExpansion,
             onOpenAsReport: onOpenAsReport,
-            onCopyText: onCopyText
+            onCopyText: onCopyText,
+            timestamp: timestamp
         )
     }
 
@@ -88,6 +90,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
     private let markdownView = PickyBubbleMarkdownContentView()
     private let hoverButton = NSButton(title: "", target: nil, action: nil)
     private let expansionButton = NSButton(title: "", target: nil, action: nil)
+    private let timestampAccessory = PickyBubbleTimestampAccessory()
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
     private var actionText: String?
@@ -134,6 +137,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         expansionButton.action = #selector(toggleExpansionClicked)
         expansionButton.isHidden = true
         addSubview(expansionButton)
+        timestampAccessory.install(in: self)
 
         applyHoverButtonAppearance()
         applyExpansionButtonAppearance()
@@ -188,8 +192,10 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         expansionSystemImageName: String?,
         onToggleExpansion: (() -> Void)?,
         onOpenAsReport: (() -> Void)?,
-        onCopyText: (() -> Void)?
+        onCopyText: (() -> Void)?,
+        timestamp: PickyBubbleTimestamp? = nil
     ) {
+        timestampAccessory.configure(timestamp)
         markdownView.configure(
             markdown: markdown,
             codeBlockMaxLines: codeBlockMaxLines,
@@ -255,6 +261,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
             height: Metrics.hoverIconSize
         )
         hoverButton.isHidden = !(isPointerInside && onOpenAsReport != nil)
+        timestampAccessory.layout(beside: bubbleRect, side: .agent, isPointerInside: isPointerInside)
         needsDisplay = true
     }
 
@@ -329,7 +336,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
     /// the content view's per-width cache — eliminating it halves the
     /// surface-initiated measurement count.
     private func bubbleMetrics(rootWidth: CGFloat) -> (bubbleWidth: CGFloat, bubbleHeight: CGFloat, textHeight: CGFloat) {
-        let bubbleCap = min(maxBubbleWidth, rootWidth)
+        let bubbleCap = max(0, min(maxBubbleWidth, rootWidth) - timestampAccessory.reservedWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: interiorCap)
         let contentWidth = min(interiorCap, ceil(max(textSize.width, expansionButtonWidth())))

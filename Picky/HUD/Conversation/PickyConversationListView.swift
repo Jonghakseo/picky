@@ -138,8 +138,8 @@ struct PickyConversationListView: View {
                             // the group and every bubble identity stable; leaf values are read
                             // through the registry-owned PickyMessageStore below.
                             ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                                if shouldShowTurnSeparator(before: index, groups: groups) {
-                                    PickyConversationTimeSeparatorView(text: turnSeparatorText(before: index, groups: groups))
+                                if let dividerTitle = dateDividerTitle(before: index, groups: groups) {
+                                    PickyConversationDateDivider(title: dividerTitle)
                                 }
                                 turnGroupView(group)
                             }
@@ -312,7 +312,9 @@ struct PickyConversationListView: View {
 
         let groups = turnGroups
         let renderedMessages = groups.flatMap { group in
-            [group.userMessage].compactMap { $0 } + group.bodyMessages + group.trailingMessages
+            [group.userMessage].compactMap { $0 }
+                + PickyTurnBodyPolicy.visibleBodyMessages(group.bodyMessages)
+                + group.trailingMessages
         }
         for message in renderedMessages {
             switch PickyConversationBubbleKind(message: message) {
@@ -371,7 +373,7 @@ struct PickyConversationListView: View {
             // sibling identities during a same-ID streaming replacement.
             PickyTurnCardView(
                 group: group,
-                activeTool: liveToolForCurrentTurn(group),
+                presence: presence(for: group),
                 onOpenActiveToolHistory: group.isCurrent ? { [weak viewModel] in
                     viewModel?.openToolHistoryForCurrentTurn(sessionID: session.id)
                 } : nil
@@ -389,7 +391,7 @@ struct PickyConversationListView: View {
         } else {
             // Pre-turn slice: messages that arrived before the first user_text
             // (e.g., session bootstrap notes). Render flat without chapter chrome.
-            ForEach(group.bodyMessages, id: \.id) { message in
+            ForEach(PickyTurnBodyPolicy.visibleBodyMessages(group.bodyMessages), id: \.id) { message in
                 messageLeafView(message, in: group)
                     .id(message.id)
             }
@@ -459,13 +461,15 @@ struct PickyConversationListView: View {
                 message: message,
                 onOpenAsReport: openMessageReportAction(for: message),
                 onCopyText: { viewModel.copyMessageText($0) },
-                onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
+                onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) },
+                timestamp: .sent(at: message.createdAt)
             )
         case .agentText:
             PickyAgentBubbleView(
                 message: message,
                 onOpenAsReport: openMessageReportAction(for: message),
                 onCopyText: { viewModel.copyMessageText($0) },
+                timestamp: .sent(at: message.createdAt),
                 isLatestAgentResponse: latestAgentResponseOverride ?? isLatestAgentResponse(message),
                 rendersFullResponse: rendersFullAgentResponseOverride ?? PickyAgentResponseVisibilityPolicy.rendersFullResponse(
                     message: message,
@@ -603,24 +607,24 @@ struct PickyConversationListView: View {
         }
     }
 
-    /// Every group with a leading user/command message is a Focus Stack
-    /// chapter. Even an empty completed turn retains its request summary and
-    /// can expand into the original user bubble without inventing a duplicate.
-    /// Shared by `turnGroupView` and `renderSnapshot.turnCardCount`.
+    /// Every group with a leading user/command message renders through
+    /// `PickyTurnCardView`. Shared by `turnGroupView` and `renderSnapshot.turnCardCount`.
     private func shouldRenderTurnCard(_ group: PickyTurnGroup) -> Bool {
         group.hasUserMessage
     }
 
-    /// Resolves the tool to surface in the active turn's live indicator.
-    /// Only the current turn shows one. Falls back from `activeTool` to the
-    /// most recent tool started inside the turn so the indicator does not
-    /// blink off during the gap between successive tool calls — the completion
-    /// state is then conveyed by the row's status indicator (pulsing dot →
-    /// checkmark → failure dot).
-    private func liveToolForCurrentTurn(_ group: PickyTurnGroup) -> PickyToolActivity? {
+    /// Presence line for the current turn only. A running tool makes it
+    /// "working"; between tools it reads "thinking".
+    private func presence(for group: PickyTurnGroup) -> PickyConversationPresencePresentation? {
         guard group.isCurrent else { return nil }
-        let turnStart = group.userMessage?.createdAt ?? group.bodyMessages.first?.createdAt ?? .distantPast
-        return session.mostRecentTool(after: turnStart)
+        let turnStart = group.userMessage?.createdAt ?? group.bodyMessages.first?.createdAt
+        return PickyConversationPresencePresentation.make(
+            isRunning: session.status == .running || session.status == .queued,
+            isWaitingForInput: session.status == .waiting_for_input,
+            activeTool: session.activeTool,
+            activeTodoForm: session.todoState?.tasks.first { $0.status == .inProgress }?.displayText,
+            startedAt: turnStart
+        )
     }
 
     private func openToolHistory(forAgentActivityID messageID: String) {
@@ -787,42 +791,18 @@ struct PickyConversationListView: View {
         .help(L10n.t("hud.conversation.loadMoreTurns.help"))
     }
 
-    /// Time separator between two adjacent turn cards. Inside a turn card,
-    /// individual message timing is summarized by the chip in the header so
-    /// per-message separators inside the body would be redundant.
-    /// `groups` is threaded in from `body` so the ForEach iteration does not
-    /// re-walk `session.messages` for every turn separator decision.
-    private func shouldShowTurnSeparator(before index: Int, groups: [PickyTurnGroup]) -> Bool {
-        guard index > 0 else { return false }
-        guard let previous = groups[index - 1].bodyMessages.last?.createdAt
-            ?? groups[index - 1].userMessage?.createdAt else { return false }
-        guard let current = groups[index].userMessage?.createdAt
-            ?? groups[index].bodyMessages.first?.createdAt else { return false }
-        return current.timeIntervalSince(previous) >= 60
-    }
-
-    private func turnSeparatorText(before index: Int, groups: [PickyTurnGroup]) -> String {
-        guard index > 0 else { return L10n.t("hud.conversation.time.now") }
-        guard let previous = groups[index - 1].bodyMessages.last?.createdAt
-            ?? groups[index - 1].userMessage?.createdAt,
-            let current = groups[index].userMessage?.createdAt
-                ?? groups[index].bodyMessages.first?.createdAt else {
-            return L10n.t("hud.conversation.time.now")
+    /// Day separator before the first visible turn and whenever a turn starts
+    /// on a different calendar day than the previous one ended.
+    private func dateDividerTitle(before index: Int, groups: [PickyTurnGroup]) -> String? {
+        guard let current = groups[index].userMessage?.createdAt ?? groups[index].bodyMessages.first?.createdAt else {
+            return nil
         }
-        return elapsedText(seconds: max(0, Int(current.timeIntervalSince(previous))))
-    }
-
-    private func elapsedText(seconds: Int) -> String {
-        if seconds < 60 { return L10n.t("hud.conversation.time.now") }
-        let minutes = seconds / 60
-        if minutes < 60 {
-            return L10n.t("hud.conversation.time.minutesLater", Int64(minutes))
+        if index > 0,
+           let previous = groups[index - 1].bodyMessages.last?.createdAt ?? groups[index - 1].userMessage?.createdAt,
+           Calendar.current.isDate(previous, inSameDayAs: current) {
+            return nil
         }
-        return L10n.t(
-            "hud.conversation.time.hoursMinutesLater",
-            Int64(minutes / 60),
-            Int64(minutes % 60)
-        )
+        return PickyConversationDateDividerPolicy.title(for: current)
     }
 
     private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
@@ -1221,18 +1201,5 @@ private struct PickyConversationMessageLeafView<Content: View>: View, Equatable 
                 subagentPresentation
             )
         }
-    }
-}
-
-private struct PickyConversationTimeSeparatorView: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(PickyHUDTypography.metaMedium)
-            .foregroundColor(DS.Colors.textTertiary)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, DS.Spacing.space2)
     }
 }

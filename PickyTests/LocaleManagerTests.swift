@@ -39,15 +39,15 @@ final class LocaleManagerTests: XCTestCase {
 
         manager.apply(.english)
         XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "Context: 43%")
-        XCTAssertEqual(L10n.t("hud.conversation.turn.latest"), "Latest")
-        XCTAssertEqual(L10n.t("hud.thinking.title"), "Thinking")
+        XCTAssertEqual(L10n.t("hud.conversation.status.running"), "Running")
+        XCTAssertEqual(L10n.t("hud.presence.thinking"), "Thinking")
         XCTAssertEqual(activityCategoryLabels(), ["Read", "bash", "Edit", "Write", "Subagent", "Other"])
         XCTAssertEqual(activitySummaryLabel(), "Made 20 tool calls")
 
         manager.apply(.korean)
         XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "컨텍스트: 43%")
-        XCTAssertEqual(L10n.t("hud.conversation.turn.latest"), "최신")
-        XCTAssertEqual(L10n.t("hud.thinking.title"), "생각 과정")
+        XCTAssertEqual(L10n.t("hud.conversation.status.running"), "실행 중")
+        XCTAssertEqual(L10n.t("hud.presence.thinking"), "생각 중")
         XCTAssertEqual(activityCategoryLabels(), ["읽기", "실행", "수정", "쓰기", "서브에이전트", "기타"])
         XCTAssertEqual(activitySummaryLabel(), "도구 20회 사용")
     }

@@ -13,6 +13,8 @@ struct PickyUserBubbleView: View {
     var onOpenAsReport: (() -> Void)? = nil
     var onCopyText: ((String) -> Void)? = nil
     var onEditText: ((String) -> Void)? = nil
+    /// Send time shown beside the bubble end on hover. `nil` hides it.
+    var timestamp: PickyBubbleTimestamp? = nil
 
     @State private var isExpanded = false
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
@@ -33,8 +35,10 @@ struct PickyUserBubbleView: View {
                 onToggleExpansion: expansionAction,
                 onOpenAsReport: textViewOpenAsReportAction,
                 onCopyText: copyTextAction,
-                onEditText: editTextAction
+                onEditText: editTextAction,
+                timestamp: timestamp
             )
+            .pickyBubbleTimestampAccessibility(timestamp)
             .frame(width: bubbleMaxWidth, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

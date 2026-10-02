@@ -16134,70 +16134,6 @@
         }
       }
     },
-    "hud.conversation.time.hoursMinutesLater": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lldh %lldm later"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld시간 %lld분 후"
-          }
-        }
-      }
-    },
-    "hud.conversation.time.minutesLater": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lldm later"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld분 후"
-          }
-        }
-      }
-    },
-    "hud.conversation.time.now": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "now"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "지금"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.collapse.accessibilityHint": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Collapse turn"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "요청과 응답 접기"
-          }
-        }
-      }
-    },
     "hud.conversation.turn.collapsed": {
       "localizations": {
         "en": {
@@ -16214,86 +16150,6 @@
         }
       }
     },
-    "hud.conversation.turn.collapsed.accessibilityValue": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Collapsed. %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "접힘. %@"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.current": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Current"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "현재"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.current.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Current turn"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "현재 요청"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.error": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Error"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "오류"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.expand.accessibilityHint": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expand turn"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "요청과 응답 펼치기"
-          }
-        }
-      }
-    },
     "hud.conversation.turn.expanded": {
       "localizations": {
         "en": {
@@ -16306,86 +16162,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "펼쳐짐"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.expanded.accessibilityValue": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expanded. %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "펼쳐짐. %@"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.latest": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Latest"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "최신"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.latest.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Latest turn"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "최근 요청"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.previous.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Previous turn"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이전 요청"
-          }
-        }
-      }
-    },
-    "hud.conversation.turn.request": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Request"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "요청"
           }
         }
       }
@@ -28451,6 +28227,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ MCP 사용 중"
+          }
+        }
+      }
+    },
+    "hud.presence.skill": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using %@ skill"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 스킬 사용"
+          }
+        }
+      }
+    },
+    "hud.presence.subagent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegated to %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에게 맡김"
+          }
+        }
+      }
+    },
+    "hud.presence.thinking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "생각 중"
+          }
+        }
+      }
+    },
+    "hud.conversation.dateDivider.today": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오늘"
+          }
+        }
+      }
+    },
+    "hud.conversation.dateDivider.yesterday": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yesterday"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "어제"
           }
         }
       }

@@ -75,12 +75,10 @@ struct PickyTurnCardViewTests {
         let runningGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .running)
         #expect(runningGroups.map(\.isCurrent) == [false, true])
         #expect(runningGroups.map(\.isLatest) == [false, true])
-        #expect(runningGroups.map(\.isRecent) == [true, true])
 
         let completedGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
         #expect(completedGroups.map(\.isCurrent) == [false, false])
         #expect(completedGroups.map(\.isLatest) == [false, true])
-        #expect(completedGroups.map(\.isRecent) == [true, true])
 
         let failedGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .failed)
         #expect(failedGroups.map(\.isCurrent) == [false, false])
@@ -96,62 +94,6 @@ struct PickyTurnCardViewTests {
         #expect(groups.isEmpty)
     }
 
-    // MARK: - Default expansion policy
-
-    @Test func twoMostRecentTurnsStayExpandedAndHaveNoCollapseState() {
-        let latestGroup = PickyTurnGroup(
-            id: "u1",
-            userMessage: msg("u1", kind: .userText, secondsOffset: 0),
-            bodyMessages: [msg("a1", kind: .agentText, secondsOffset: 1)],
-            isCurrent: false,
-            isLatest: true
-        )
-        let recentGroup = PickyTurnGroup(
-            id: "u0",
-            userMessage: msg("u0", kind: .userText, secondsOffset: 0),
-            bodyMessages: [msg("a0", kind: .agentText, secondsOffset: 1)],
-            isCurrent: false,
-            isRecent: true
-        )
-        let pastGroup = PickyTurnGroup(
-            id: "u-1",
-            userMessage: msg("u-1", kind: .userText, secondsOffset: 0),
-            bodyMessages: [msg("a-1", kind: .agentText, secondsOffset: 1)],
-            isCurrent: false
-        )
-
-        let latestCard = PickyTurnCardView(group: latestGroup) { _ in EmptyMessageContent() }
-        let recentCard = PickyTurnCardView(group: recentGroup) { _ in EmptyMessageContent() }
-        let pastCard = PickyTurnCardView(group: pastGroup) { _ in EmptyMessageContent() }
-
-        #expect(latestCard.isExpanded)
-        #expect(recentCard.isExpanded)
-        #expect(!PickyTurnChapterPolicy.canCollapse(isRecent: latestGroup.isRecent))
-        #expect(!PickyTurnChapterPolicy.canCollapse(isRecent: recentGroup.isRecent))
-        #expect(!pastCard.isExpanded)
-        #expect(PickyTurnChapterPolicy.canCollapse(isRecent: pastGroup.isRecent))
-    }
-
-    @Test func grouperMarksOnlyTheLastTwoTurnsAsRecent() {
-        let messages: [PickySessionMessage] = (1...4).flatMap { index in
-            [
-                msg("u\(index)", kind: .userText, secondsOffset: TimeInterval(index * 2)),
-                msg("a\(index)", kind: .agentText, secondsOffset: TimeInterval(index * 2 + 1)),
-            ]
-        }
-
-        let groups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
-
-        #expect(groups.map(\.isRecent) == [false, false, true, true])
-        #expect(groups.map(\.isLatest) == [false, false, false, true])
-    }
-
-    @Test func chapterAccessibilityDistinguishesLatestCurrentAndPreviousTurns() {
-        #expect(PickyFocusStackChapterAccessibilityPresentation.visualState(isCurrent: true, isLatest: true) == L10n.t("hud.conversation.turn.latest"))
-        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true, isLatest: true) == L10n.t("hud.conversation.turn.latest.accessibilityLabel"))
-        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: true, isLatest: false) == L10n.t("hud.conversation.turn.current.accessibilityLabel"))
-        #expect(PickyFocusStackChapterAccessibilityPresentation.label(isCurrent: false, isLatest: false) == L10n.t("hud.conversation.turn.previous.accessibilityLabel"))
-    }
 
     @MainActor
     @Test func expandedChapterKeepsRequestAndFirstResponseVisuallySeparated() {
@@ -162,7 +104,7 @@ struct PickyTurnCardViewTests {
             secondsOffset: 0,
             text: "나 뿐만 아니라 모든 팀원들의 데이터가 필요해서 깃헙 이력이 필요해."
         )
-        let thinking = msg("thinking1", kind: .agentThinking, secondsOffset: 1, text: "reasoning")
+        let response = msg("a1", kind: .agentText, secondsOffset: 1, text: "reasoning")
 
         func fittingHeight<Content: View>(_ content: Content) -> CGFloat {
             let host = NSHostingView(rootView: content)
@@ -185,7 +127,7 @@ struct PickyTurnCardViewTests {
                     if message.kind == .userText {
                         PickyUserBubbleView(message: message)
                     } else {
-                        PickyTypingBubbleView(message: message, initiallyCollapsed: true)
+                        PickyAgentBubbleView(message: message)
                     }
                 }
                 .frame(width: detailWidth)
@@ -195,12 +137,12 @@ struct PickyTurnCardViewTests {
         }
 
         let responseHeight = fittingHeight(
-            PickyTypingBubbleView(message: thinking, initiallyCollapsed: true)
+            PickyAgentBubbleView(message: response)
                 .frame(width: detailWidth)
                 .fixedSize(horizontal: false, vertical: true)
                 .environment(\.pickyHUDDetailWidth, detailWidth)
         )
-        let measuredSpacing = renderedHeight(bodyMessages: [thinking])
+        let measuredSpacing = renderedHeight(bodyMessages: [response])
             - renderedHeight(bodyMessages: [])
             - responseHeight
 
@@ -245,27 +187,10 @@ struct PickyTurnCardViewTests {
 
     // MARK: - Expansion policy (race-window latch)
 
-    @Test func expansionPolicyDefaultsToIsCurrentBeforeAnyObservation() {
-        let policy = PickyTurnExpansionPolicy()
-        #expect(policy.isExpanded(isCurrent: true) == true)
-        #expect(policy.isExpanded(isCurrent: false) == false)
-    }
-
-    @Test func expansionPolicyLatchesCollapsedOnceObservedNonCurrent() {
-        // Simulates the snapshot-loaded "past" turn: onAppear observes
-        // isCurrent=false, then a follow-up submit briefly flips isCurrent=true
-        // (race between status:running and the deferred user_text journal
-        // write). The latch must keep the card collapsed for the flicker.
-        var policy = PickyTurnExpansionPolicy()
-        policy.observe(isCurrent: false)
-        #expect(policy.isExpanded(isCurrent: true) == false)
-        #expect(policy.isExpanded(isCurrent: false) == false)
-    }
-
     @Test func completedTurnStaysVisuallySettledDuringDelayedUserTextBoundary() {
         // The same status-before-user_text race must not recolor the completed
         // turn as current or revive its final tool call as a live inline row.
-        var policy = PickyTurnExpansionPolicy()
+        var policy = PickyTurnLiveStatePolicy()
         policy.observe(isCurrent: false)
 
         #expect(!policy.isVisuallyCurrent(isCurrent: true))
@@ -273,176 +198,15 @@ struct PickyTurnCardViewTests {
     }
 
     @Test func brandNewTurnCanPresentAsCurrentBeforeAnyCompletedObservation() {
-        let policy = PickyTurnExpansionPolicy()
+        let policy = PickyTurnLiveStatePolicy()
 
         #expect(policy.isVisuallyCurrent(isCurrent: true))
         #expect(!policy.isVisuallyCurrent(isCurrent: false))
     }
 
-    @Test func expansionPolicyLatchesCollapsedAfterCurrentToNonCurrentTransition() {
-        // Simulates a normal completion: the turn was current (expanded),
-        // then the session went idle (isCurrent=false, auto-collapsed).
-        // A later follow-up that briefly re-flags the same group as current
-        // must NOT re-expand it.
-        var policy = PickyTurnExpansionPolicy()
-        policy.observe(isCurrent: true)
-        #expect(policy.isExpanded(isCurrent: true) == true)
-        policy.observe(isCurrent: false)
-        #expect(policy.isExpanded(isCurrent: false) == false)
-        // The race-window flip back to true must stay collapsed.
-        #expect(policy.isExpanded(isCurrent: true) == false)
-    }
-
-    @Test func expansionPolicyManualToggleOverridesLatch() {
-        var policy = PickyTurnExpansionPolicy()
-        policy.observe(isCurrent: false) // latched collapsed
-        policy.setManualExpansion(true)
-        #expect(policy.isExpanded(isCurrent: false) == true)
-        #expect(policy.isExpanded(isCurrent: true) == true)
-        policy.setManualExpansion(false)
-        #expect(policy.isExpanded(isCurrent: true) == false)
-    }
-
-    @Test func expansionPolicyPreservesCurrentTurnExpansionWhenNeverObservedNonCurrent() {
-        // A brand-new turn appears as current and has never been observed
-        // non-current. It should remain expanded across re-renders.
-        var policy = PickyTurnExpansionPolicy()
-        policy.observe(isCurrent: true)
-        policy.observe(isCurrent: true)
-        #expect(policy.isExpanded(isCurrent: true) == true)
-    }
-
     // MARK: - Collapsed representative selection
 
-    @Test func collapsedSummaryRemovesMarkdownPresentationSyntax() {
-        let summary = PickyFocusStackPriorChapterPresentation.oneLinePlainText(
-            "## 찬성 — **중요** `code` [링크](https://example.com)"
-        )
-
-        #expect(summary == "찬성 — 중요 code 링크")
-    }
-
-    @Test func collapsedRepresentativeFavorsLastAgentText() {
-        let group = PickyTurnGroup(
-            id: "u1",
-            userMessage: msg("u1", kind: .userText, secondsOffset: 0),
-            bodyMessages: [
-                msg("a1", kind: .agentText, secondsOffset: 1, text: "first"),
-                msg("a-act", kind: .agentActivity, secondsOffset: 2, activitySnapshot: PickyActivitySummary(bash: 1)),
-                msg("a2", kind: .agentText, secondsOffset: 3, text: "final")
-            ],
-            isCurrent: false
-        )
-
-        #expect(group.collapsedRepresentativeMessage?.id == "a2")
-    }
-
-    @Test func collapsedRepresentativeFallsBackToErrorWhenNoAgentText() {
-        let group = PickyTurnGroup(
-            id: "u1",
-            userMessage: msg("u1", kind: .userText, secondsOffset: 0),
-            bodyMessages: [
-                msg("a-act", kind: .agentActivity, secondsOffset: 1, activitySnapshot: PickyActivitySummary(bash: 1)),
-                msg("a-err", kind: .agentError, secondsOffset: 2, errorMessage: "boom")
-            ],
-            isCurrent: false
-        )
-
-        #expect(group.collapsedRepresentativeMessage?.id == "a-err")
-    }
-
-    @Test func collapsedRepresentativeIsNilWhenNoTextOrError() {
-        let group = PickyTurnGroup(
-            id: "u1",
-            userMessage: msg("u1", kind: .userText, secondsOffset: 0),
-            bodyMessages: [
-                msg("a-act", kind: .agentActivity, secondsOffset: 1, activitySnapshot: PickyActivitySummary(bash: 1))
-            ],
-            isCurrent: false
-        )
-
-        #expect(group.collapsedRepresentativeMessage == nil)
-    }
-
     // MARK: - Focus Stack prior chapter presentation
-
-    @Test func priorChapterPresentationNormalizesRequestAndUsesRepresentativeResponse() {
-        let group = PickyTurnGroup(
-            id: "u1",
-            userMessage: msg("u1", kind: .userText, secondsOffset: 0, text: "  Review\n this   change  "),
-            bodyMessages: [
-                msg("a-act", kind: .agentActivity, secondsOffset: 1, activitySnapshot: PickyActivitySummary(bash: 2)),
-                msg("a1", kind: .agentText, secondsOffset: 3, text: "  Updated\n the summary.  ")
-            ],
-            isCurrent: false
-        )
-
-        let presentation = PickyFocusStackPriorChapterPresentation(group: group)
-
-        #expect(presentation.requestText == "Review this change")
-        #expect(presentation.responseText == "Updated the summary.")
-        #expect(presentation.responseKind == .response)
-        #expect(presentation.summary == group.summary)
-        #expect(presentation.summary.displayText == "\(L10n.t("hud.conversation.turn.tool.many", Int64(2))) · \(L10n.t("hud.conversation.duration.seconds", Int64(3)))")
-    }
-
-    @Test func priorChapterPresentationUsesCommandReceiptWhenRequestTextIsAbsent() {
-        let receipt = PickyCommandReceipt(command: "/compact", status: .submitted, detail: nil)
-        let group = PickyTurnGroup(
-            id: "command",
-            userMessage: PickySessionMessage(
-                id: "command",
-                kind: .commandReceipt,
-                createdAt: originDate,
-                originatedBy: nil,
-                text: nil,
-                question: nil,
-                cancelledAt: nil,
-                activitySnapshot: nil,
-                assistantRun: nil,
-                errorContext: nil,
-                errorMessage: nil,
-                commandReceipt: receipt
-            ),
-            bodyMessages: [],
-            isCurrent: false
-        )
-
-        #expect(PickyFocusStackPriorChapterPresentation(group: group).requestText == "/compact")
-    }
-
-    @Test func priorChapterPresentationUsesErrorMessageWhenNoAgentResponseExists() {
-        let group = PickyTurnGroup(
-            id: "u1",
-            userMessage: msg("u1", kind: .userText, secondsOffset: 0, text: "Run tests"),
-            bodyMessages: [
-                msg("a-error", kind: .agentError, secondsOffset: 2, text: "Build failed", errorMessage: " exit code 65\n")
-            ],
-            isCurrent: false
-        )
-
-        let presentation = PickyFocusStackPriorChapterPresentation(group: group)
-
-        #expect(presentation.responseText == "exit code 65")
-        #expect(presentation.responseKind == .error)
-    }
-
-    @Test func priorChapterPresentationLeavesResponseUnavailableWithoutTextOrError() {
-        let group = PickyTurnGroup(
-            id: "u1",
-            userMessage: msg("u1", kind: .userText, secondsOffset: 0, text: "Check status"),
-            bodyMessages: [
-                msg("a-act", kind: .agentActivity, secondsOffset: 1, activitySnapshot: PickyActivitySummary(read: 1))
-            ],
-            isCurrent: false
-        )
-
-        let presentation = PickyFocusStackPriorChapterPresentation(group: group)
-
-        #expect(presentation.responseText == nil)
-        #expect(presentation.responseKind == .unavailable)
-        #expect(presentation.summary.displayText == "\(L10n.t("hud.conversation.turn.tool.one", Int64(1))) · \(L10n.t("hud.conversation.duration.seconds", Int64(1)))")
-    }
 
     @Test func grouperPullsCompactSystemMessagesOutOfBodyIntoTrailing() {
         // Auto-compaction system messages must render outside the (possibly
@@ -460,9 +224,6 @@ struct PickyTurnCardViewTests {
         #expect(groups.count == 1)
         #expect(groups[0].bodyMessages.map(\.id) == ["a-text"])
         #expect(groups[0].trailingMessages.map(\.id) == ["a-compact-ok", "a-compact-fail"])
-        // Once compact messages live outside the body, the collapsed representative
-        // is just the latest agent text — no special-case filter needed.
-        #expect(groups[0].collapsedRepresentativeMessage?.id == "a-text")
     }
 
     @Test func grouperKeepsCompactTrailingWhenSessionIsActive() {
@@ -811,25 +572,59 @@ struct PickyTurnCardViewTests {
         #expect(groups[1].bodyMessages.last?.activitySnapshot == PickyActivitySummary(edit: 5))
     }
 
-    @Test func turnCardAcceptsActiveToolForLiveIndicator() {
-        // Sanity check: the turn card simply stores the active-tool slot the
-        // caller injects. The body renders it as `PickyToolCallInlineRow` on
-        // the current turn so users see what's running in real time.
-        let active = tool("live", name: "bash", secondsOffset: 0, status: "running")
-        let card = PickyTurnCardView(
-            group: PickyTurnGroup(
-                id: "u1",
-                userMessage: msg("u1", kind: .userText, secondsOffset: 0),
-                bodyMessages: [msg("a", kind: .agentText, secondsOffset: 1)],
-                isCurrent: true
-            ),
-            activeTool: active,
-            onOpenActiveToolHistory: {}
-        ) { _ in EmptyMessageContent() }
 
-        #expect(card.activeTool?.toolCallId == "live")
-        #expect(card.activeTool?.isActive == true)
-        #expect(card.onOpenActiveToolHistory != nil)
+    // MARK: - Messenger body
+
+    @Test func thinkingIsHiddenFromTheTranscriptBody() {
+        let body = [
+            msg("t1", kind: .agentThinking, secondsOffset: 1, text: "reasoning"),
+            msg("a1", kind: .agentText, secondsOffset: 2, text: "answer"),
+            msg("act", kind: .agentActivity, secondsOffset: 3),
+        ]
+        #expect(PickyTurnBodyPolicy.visibleBodyMessages(body).map(\.id) == ["a1", "act"])
+    }
+
+    @Test func presenceShowsHumanDescriptionsAndNeverRawCommands() {
+        let bash = PickyToolActivity(toolCallId: "b", name: "bash", status: "running",
+                                     argsPreview: #"{"command":"pnpm vitest run","title":"테스트 실행"}"#)
+        let untitled = PickyToolActivity(toolCallId: "c", name: "bash", status: "running",
+                                         argsPreview: #"{"command":"rm -rf build"}"#)
+        let grep = PickyToolActivity(toolCallId: "g", name: "grep", status: "succeeded",
+                                     argsPreview: #"{"pattern":"secret"}"#)
+
+        let working = PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil, startedAt: nil)
+        #expect(working?.phase == .working)
+        #expect(working?.detail == "테스트 실행")
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: untitled, activeTodoForm: nil, startedAt: nil)?.detail == nil)
+        // A finished tool drops back to thinking even with an in-progress todo.
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: grep, activeTodoForm: "HUD 정리 중", startedAt: nil)?.phase == .thinking)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: bash, activeTodoForm: "HUD 정리 중", startedAt: nil)?.detail == "HUD 정리 중")
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: nil, startedAt: nil)?.phase == .thinking)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: false, isWaitingForInput: true, activeTool: bash, activeTodoForm: nil, startedAt: nil)?.phase == .waitingForInput)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: false, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil, startedAt: nil) == nil)
+    }
+
+    @Test func dateDividerTitlesUseTodayYesterdayAndDates() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 2, hour: 12))!
+        let today = calendar.date(from: DateComponents(year: 2026, month: 10, day: 2, hour: 9))!
+        let yesterday = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 23))!
+        let lastYear = calendar.date(from: DateComponents(year: 2025, month: 12, day: 31, hour: 9))!
+
+        #expect(PickyConversationDateDividerPolicy.title(for: today, now: now, calendar: calendar) == L10n.t("hud.conversation.dateDivider.today"))
+        #expect(PickyConversationDateDividerPolicy.title(for: yesterday, now: now, calendar: calendar) == L10n.t("hud.conversation.dateDivider.yesterday"))
+        #expect(PickyConversationDateDividerPolicy.title(for: lastYear, now: now, calendar: calendar).contains("2025"))
+        #expect(PickyConversationDateDividerPolicy.messageIDsStartingDay(
+            [("a", yesterday), ("b", yesterday.addingTimeInterval(60)), ("c", today)], calendar: calendar
+        ) == ["a", "c"])
     }
 }
 
@@ -853,7 +648,13 @@ private struct DelayedTurnBoundaryHarness: View {
     var body: some View {
         PickyTurnCardView(
             group: model.group,
-            activeTool: model.group.isCurrent ? staleTool : nil,
+            presence: model.group.isCurrent ? PickyConversationPresencePresentation.make(
+                isRunning: true,
+                isWaitingForInput: false,
+                activeTool: staleTool,
+                activeTodoForm: nil,
+                startedAt: nil
+            ) : nil,
             onOpenActiveToolHistory: {}
         ) { message in
             Text(message.text ?? "message")

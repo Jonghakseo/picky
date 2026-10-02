@@ -238,7 +238,9 @@ Korean input method.
 **Evidence:** a 30 s `sample` while typing showed about 40% of main-thread
 time in SwiftUI updates driven from `PickyIMENSTextView.keyDown`. Most of it
 was `PickyTurnCardView.body`, where every collapsed chapter re-ran
-`AttributedString(markdown:)` through `PickyFocusStackPriorChapterPresentation`.
+`AttributedString(markdown:)` through the collapsed-chapter summary path
+(`PickyFocusStackPriorChapterPresentation`, removed with the 2026-10 messenger
+layout).
 The Korean IME makes a synchronous XPC round trip per key and the run loop
 drains SwiftUI observers while it waits, so the render cost lands inside the
 keystroke.

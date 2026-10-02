@@ -359,6 +359,29 @@ struct PickyUserBubblePixelWidthTests {
         #expect(collectTextFieldStrings(defaultSurface).contains { $0.contains("more lines") })
         #expect(!collectTextFieldStrings(fullSurface).contains { $0.contains("more lines") })
     }
+
+    /// The width reserved beside a bubble has to hold the whole send time in
+    /// both locale formats, otherwise hovering shows a clipped "오전 10:…".
+    @Test func hoverTimeLabelIsNeverClippedByTheReservedWidth() {
+        let accessory = PickyBubbleTimestampAccessory()
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+        accessory.install(in: host)
+
+        for text in ["오후 12:59", "오전 10:15", "12:59 PM"] {
+            accessory.configure(PickyBubbleTimestamp(content: .time(text), isPinned: true))
+            accessory.layout(
+                beside: NSRect(x: 0, y: 0, width: 200, height: 24),
+                side: .agent,
+                isPointerInside: true
+            )
+
+            #expect(!accessory.field.isHidden)
+            #expect(
+                accessory.field.frame.width >= ceil(accessory.field.fittingSize.width),
+                "\(text) is clipped: \(accessory.field.frame.width) < \(accessory.field.fittingSize.width)"
+            )
+        }
+    }
 }
 
 private func collectUserBubbleSurfaces(_ root: NSView) -> [PickyUserBubbleSurfaceNSView] {

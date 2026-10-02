@@ -2,14 +2,13 @@
 //  PickyTurnCardView.swift
 //  Picky
 //
-//  Turn-grouped collapsible container for conversation messages.
+//  Turn-grouped container for conversation messages.
 //
 //  A "turn" is a slice of `session.messages` starting at a `userText`
 //  or `commandReceipt` message and continuing until the next boundary (or end of list).
-//  Each turn renders as a card whose body is the agent activity in
-//  response to that user input. The two most recent turns always stay expanded
-//  and have no collapse state. Older turns default to collapsed and retain their
-//  manual expansion controls.
+//  Turns render messenger-style: no chapter header or collapse state, thinking
+//  blocks hidden, and the running turn ends with one presence line
+//  (design/proposals/messenger-ux-2026-10.md §2).
 //
 
 import Foundation
@@ -40,9 +39,6 @@ struct PickyTurnGroup: Identifiable, Equatable {
     let isCurrent: Bool
     /// The final group in the journal, regardless of session status.
     let isLatest: Bool
-    /// One of the two most recent groups. Recent content stays fully visible and
-    /// deliberately has no collapse state.
-    let isRecent: Bool
     /// Live cumulative activity counts for the in-progress turn. agentd
     /// increments this on every tool call but only emits an agentActivity
     /// *message* once the turn commits, so the active turn must read this
@@ -57,7 +53,6 @@ struct PickyTurnGroup: Identifiable, Equatable {
         trailingMessages: [PickySessionMessage] = [],
         isCurrent: Bool,
         isLatest: Bool = false,
-        isRecent: Bool = false,
         liveActivitySummary: PickyActivitySummary? = nil
     ) {
         self.id = id
@@ -66,31 +61,12 @@ struct PickyTurnGroup: Identifiable, Equatable {
         self.trailingMessages = trailingMessages
         self.isCurrent = isCurrent
         self.isLatest = isLatest
-        self.isRecent = isRecent || isLatest
         self.liveActivitySummary = liveActivitySummary
     }
 
     static let preTurnID = "__picky_pre_turn__"
 
     var hasUserMessage: Bool { userMessage != nil }
-
-    /// The message that should represent the turn when collapsed: the most
-    /// recent text-bearing agent reply, falling back to the most recent error.
-    /// Compaction system messages are not considered here because the grouper
-    /// pulls them into `trailingMessages` and renders them outside the
-    /// card.
-    var collapsedRepresentativeMessage: PickySessionMessage? {
-        if let lastAgentText = bodyMessages.last(where: { msg in
-            switch msg.kind {
-            case .agentText: return true
-            case .system: return true
-            default: return false
-            }
-        }) {
-            return lastAgentText
-        }
-        return bodyMessages.last(where: { $0.kind == .agentError })
-    }
 
     var summary: PickyTurnSummary {
         summary(now: nil)
@@ -189,60 +165,6 @@ struct PickyTurnSummary: Equatable {
     }
 }
 
-
-/// Pure, flat-summary projection for a collapsed Focus Stack chapter. It owns
-/// no message state and deliberately keeps the original message leaves out of
-/// the collapsed tree. Expanding the chapter renders those original leaves once
-/// through `PickyTurnCardView.messageContent`.
-struct PickyFocusStackPriorChapterPresentation: Equatable {
-    enum ResponseKind: Equatable {
-        case response
-        case error
-        case unavailable
-    }
-
-    let requestText: String
-    let responseText: String?
-    let responseKind: ResponseKind
-    let summary: PickyTurnSummary
-
-    init(group: PickyTurnGroup) {
-        requestText = Self.oneLinePlainText(
-            group.userMessage?.text ?? group.userMessage?.commandReceipt?.command
-        ) ?? L10n.t("hud.conversation.turn.request")
-        summary = group.summary
-
-        guard let representative = group.collapsedRepresentativeMessage else {
-            responseText = nil
-            responseKind = .unavailable
-            return
-        }
-
-        if representative.kind == .agentError {
-            responseText = Self.oneLinePlainText(
-                representative.errorMessage ?? representative.text ?? representative.errorContext
-            ) ?? L10n.t("hud.conversation.turn.error")
-            responseKind = .error
-        } else {
-            responseText = Self.oneLinePlainText(representative.text)
-            responseKind = responseText == nil ? .unavailable : .response
-        }
-    }
-
-    static func oneLinePlainText(_ text: String?) -> String? {
-        guard let text else { return nil }
-        let plainText: String
-        if let attributed = try? AttributedString(markdown: text) {
-            plainText = String(attributed.characters)
-        } else {
-            plainText = text
-        }
-        let normalized = plainText
-            .split(whereSeparator: { $0.isWhitespace })
-            .joined(separator: " ")
-        return normalized.isEmpty ? nil : normalized
-    }
-}
 
 /// Builds turn groups from a flat slice of `visibleMessages`. Marks the last
 /// group as `isCurrent` when the session is still in an active state.
@@ -436,7 +358,6 @@ enum PickyTurnGrouper {
         guard !output.isEmpty else { return [] }
 
         let latestIndex = output.count - 1
-        let recentStartIndex = max(0, output.count - 2)
         let latestIsCurrent = activeStatuses.contains(sessionStatus)
         return output.enumerated().map { index, group in
             let isLatest = index == latestIndex
@@ -447,36 +368,21 @@ enum PickyTurnGrouper {
                 trailingMessages: group.trailingMessages,
                 isCurrent: isLatest && latestIsCurrent,
                 isLatest: isLatest,
-                isRecent: index >= recentStartIndex,
                 liveActivitySummary: isLatest && latestIsCurrent ? liveActivitySummary : nil
             )
         }
     }
 }
 
-/// Expansion and current-state policy for older turn cards. Pulled out of the
-/// view so the status-before-user_text race is directly unit-testable.
-/// `PickyTurnChapterPolicy` bypasses expansion for the two most recent groups,
-/// while `isVisuallyCurrent` still protects every chapter's live affordances.
-///
-/// Lifecycle:
-///   • `manualExpansion` wins when set — user toggles override the default.
-///   • `hasBeenSeenComplete` latches to true the first time `observe(isCurrent:)`
-///     is called with `isCurrent == false`. Once latched, the turn stays visually
-///     settled even if `group.isCurrent` flips true again. This guards the race
-///     where agentd emits `status:running` before the new user_text journal entry
-///     on a follow-up submit (see `pushPendingQueueDelivery` in
-///     `agentd/src/session-supervisor.ts`). Without the visual latch, the previous
-///     turn briefly regains the running tint, timeline, and final live-tool row.
-struct PickyTurnExpansionPolicy: Equatable {
-    var manualExpansion: Bool? = nil
+/// Current-state latch for a turn. `hasBeenSeenComplete` latches to true the
+/// first time `observe(isCurrent:)` sees `isCurrent == false`; once latched the
+/// turn stays visually settled even if `group.isCurrent` flips true again. This
+/// guards the race where agentd emits `status:running` before the new user_text
+/// journal entry on a follow-up submit (see `pushPendingQueueDelivery` in
+/// `agentd/src/session-supervisor.ts`). Without the latch the previous turn
+/// briefly regains its presence line.
+struct PickyTurnLiveStatePolicy: Equatable {
     var hasBeenSeenComplete: Bool = false
-
-    func isExpanded(isCurrent: Bool) -> Bool {
-        if let manualExpansion { return manualExpansion }
-        if hasBeenSeenComplete { return false }
-        return isCurrent
-    }
 
     func isVisuallyCurrent(isCurrent: Bool) -> Bool {
         isCurrent && !hasBeenSeenComplete
@@ -485,302 +391,59 @@ struct PickyTurnExpansionPolicy: Equatable {
     mutating func observe(isCurrent: Bool) {
         if !isCurrent { hasBeenSeenComplete = true }
     }
+}
 
-    mutating func setManualExpansion(_ value: Bool) {
-        manualExpansion = value
+enum PickyTurnBodyPolicy {
+    /// Thinking stays out of the messenger transcript; the presence line says
+    /// "thinking" while it happens.
+    static func visibleBodyMessages(_ messages: [PickySessionMessage]) -> [PickySessionMessage] {
+        messages.filter { $0.kind != .agentThinking }
     }
 }
 
-enum PickyTurnChapterPolicy {
-    static func canCollapse(isRecent: Bool) -> Bool {
-        !isRecent
-    }
-
-    static func isExpanded(
-        isRecent: Bool,
-        isCurrent: Bool,
-        expansion: PickyTurnExpansionPolicy
-    ) -> Bool {
-        isRecent || expansion.isExpanded(isCurrent: isCurrent)
-    }
-}
-
-enum PickyFocusStackChapterAccessibilityPresentation {
-    static func label(isCurrent: Bool, isLatest: Bool) -> String {
-        if isLatest { return L10n.t("hud.conversation.turn.latest.accessibilityLabel") }
-        return isCurrent
-            ? L10n.t("hud.conversation.turn.current.accessibilityLabel")
-            : L10n.t("hud.conversation.turn.previous.accessibilityLabel")
-    }
-
-    static func value(isExpanded: Bool, detail: String) -> String {
-        L10n.t(
-            isExpanded ? "hud.conversation.turn.expanded.accessibilityValue" : "hud.conversation.turn.collapsed.accessibilityValue",
-            detail
-        )
-    }
-
-    static func visualState(isCurrent: Bool, isLatest: Bool) -> String? {
-        if isLatest { return L10n.t("hud.conversation.turn.latest") }
-        return isCurrent ? L10n.t("hud.conversation.turn.current") : nil
-    }
-}
-
-/// Focus Stack chapter. Older turns collapse into a flat summary; expanded
-/// chapters render each original message exactly once through the caller's
-/// stable leaf closure. The two most recent turns are permanently expanded.
+/// One turn rendered as plain chat rows: the request bubble, the visible
+/// response rows, and, while the turn is live, the presence line.
 struct PickyTurnCardView<MessageContent: View>: View {
     let group: PickyTurnGroup
-    /// The tool currently running in this turn, used to render a live
-    /// "what the agent is doing right now" indicator at the bottom of the
-    /// expanded body. Only the active turn passes a non-nil value.
-    var activeTool: PickyToolActivity? = nil
-    /// Tap handler for the active-tool indicator, typically opening the
-    /// session-scoped tool history viewer.
+    /// Presence line for the live turn. Only the active turn passes a value.
+    var presence: PickyConversationPresencePresentation? = nil
+    /// Tap handler for the presence line, typically opening the session-scoped
+    /// tool history viewer.
     var onOpenActiveToolHistory: (() -> Void)? = nil
     @ViewBuilder let messageContent: (PickySessionMessage) -> MessageContent
 
-    @State private var expansion = PickyTurnExpansionPolicy()
+    @State private var liveState = PickyTurnLiveStatePolicy()
 
-    /// The two most recent turns are permanent, non-collapsible reading
-    /// surfaces. Older turns retain the manual expansion and race-latch policy.
-    var isExpanded: Bool {
-        PickyTurnChapterPolicy.isExpanded(
-            isRecent: group.isRecent,
-            isCurrent: group.isCurrent,
-            expansion: expansion
-        )
-    }
-
-    private var isVisuallyCurrent: Bool {
-        expansion.isVisuallyCurrent(isCurrent: group.isCurrent)
-    }
-
-    private var presentedActiveTool: PickyToolActivity? {
-        isVisuallyCurrent ? activeTool : nil
-    }
-
-    private var priorChapterPresentation: PickyFocusStackPriorChapterPresentation {
-        PickyFocusStackPriorChapterPresentation(group: group)
+    private var presentedPresence: PickyConversationPresencePresentation? {
+        liveState.isVisuallyCurrent(isCurrent: group.isCurrent) ? presence : nil
     }
 
     var body: some View {
         let _ = PickyPerf.event("turn_card_body")
-        Group {
-            if isExpanded {
-                expandedChapter
-                    .transition(.opacity)
-            } else {
-                collapsedPriorChapter
-                    .transition(.opacity)
-            }
-        }
-        // Scope the toggle animation to this chapter. The parent list and
-        // composer remain outside the transaction, preventing downstream rows
-        // from sliding through a fading collapsed chapter.
-        .animation(.easeOut(duration: 0.18), value: isExpanded)
-        .onAppear { expansion.observe(isCurrent: group.isCurrent) }
-        .onChange(of: group.isCurrent) { _, isCurrent in
-            expansion.observe(isCurrent: isCurrent)
-        }
-    }
-
-    private var expandedChapter: some View {
+        let visibleBody = PickyTurnBodyPolicy.visibleBodyMessages(group.bodyMessages)
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            if group.isLatest {
-                latestHeader
-            } else if group.isRecent {
-                recentHeader
-            } else {
-                expandedHeader
-            }
             if let userMessage = group.userMessage {
                 messageContent(userMessage)
             }
-            // Render the active tool row even when there are no body messages so a
-            // tool-only running turn (no thinking, no agent_text, no committed
-            // agent_activity yet) still shows live progress below the user bubble.
-            // A completed chapter that temporarily regains raw `isCurrent` during
-            // the delayed user_text boundary keeps its old tool row suppressed.
-            if !group.bodyMessages.isEmpty || presentedActiveTool != nil {
+            // Render the presence line even when there are no body messages so a
+            // tool-only running turn still shows live progress below the request.
+            if !visibleBody.isEmpty || presentedPresence != nil {
                 VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                    ForEach(group.bodyMessages, id: \.id) { message in
+                    ForEach(visibleBody, id: \.id) { message in
                         messageContent(message)
                     }
-                    if let presentedActiveTool {
-                        PickyToolCallInlineRow(tool: presentedActiveTool, onTap: onOpenActiveToolHistory ?? {})
+                    if let presentedPresence {
+                        PickyConversationPresenceRow(presentation: presentedPresence, onTap: onOpenActiveToolHistory)
                     }
                 }
-                // Keep the request bubble and the first reasoning/response row
-                // as separate reading blocks. The outer stack already supplies
-                // 8pt; this adds 12pt without loosening spacing inside the response.
+                // Keep the request bubble and the first response row as separate
+                // reading blocks. The outer stack already supplies 8pt; this adds 12pt.
                 .padding(.top, group.userMessage == nil ? 0 : DS.Spacing.space3)
             }
         }
-    }
-
-    @ViewBuilder
-    private var latestHeader: some View {
-        if isVisuallyCurrent {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let _ = PickyPerf.event("turn_card_header_timeline_tick")
-                latestChapterHeader(summary: group.summary(now: context.date))
-            }
-        } else {
-            latestChapterHeader(summary: group.summary)
+        .onAppear { liveState.observe(isCurrent: group.isCurrent) }
+        .onChange(of: group.isCurrent) { _, isCurrent in
+            liveState.observe(isCurrent: isCurrent)
         }
-    }
-
-    private func latestChapterHeader(summary: PickyTurnSummary) -> some View {
-        HStack(spacing: DS.Spacing.space1) {
-            Text(L10n.t("hud.conversation.turn.latest"))
-                .font(PickyHUDTypography.metaSemibold)
-                .foregroundColor(isVisuallyCurrent ? DS.Colors.info : DS.Colors.textSecondary)
-            Text(summary.expandedDisplayText)
-                .font(PickyHUDTypography.metaSemibold)
-                .foregroundColor(DS.Colors.textTertiary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, DS.Spacing.space1)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: isVisuallyCurrent,
-            isLatest: true
-        ))
-        .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
-            isExpanded: true,
-            detail: summary.expandedDisplayText
-        ))
-    }
-
-    private var recentHeader: some View {
-        HStack(spacing: DS.Spacing.space1) {
-            Text(group.summary.expandedDisplayText)
-                .font(PickyHUDTypography.metaSemibold)
-                .foregroundColor(DS.Colors.textTertiary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, DS.Spacing.space1)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: isVisuallyCurrent,
-            isLatest: false
-        ))
-        .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
-            isExpanded: true,
-            detail: group.summary.expandedDisplayText
-        ))
-    }
-
-    @ViewBuilder
-    private var expandedHeader: some View {
-        if isVisuallyCurrent {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let _ = PickyPerf.event("turn_card_header_timeline_tick")
-                chapterHeader(summary: group.summary(now: context.date))
-            }
-        } else {
-            chapterHeader(summary: group.summary)
-        }
-    }
-
-    private func chapterHeader(summary: PickyTurnSummary) -> some View {
-        Button {
-            expansion.setManualExpansion(false)
-        } label: {
-            HStack(spacing: DS.Spacing.space1) {
-                Image(systemName: "chevron.down")
-                    .pickyFont(size: 9, weight: .bold)
-                    .foregroundColor(headerForegroundColor)
-                if isVisuallyCurrent {
-                    Circle()
-                        .fill(DS.Colors.info)
-                        .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
-                }
-                Text(summary.expandedDisplayText)
-                    .font(PickyHUDTypography.metaSemibold)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, DS.Spacing.space1)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: isVisuallyCurrent,
-            isLatest: group.isLatest
-        ))
-        .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
-            isExpanded: true,
-            detail: summary.expandedDisplayText
-        ))
-        .accessibilityHint(L10n.t("hud.conversation.turn.collapse.accessibilityHint"))
-        .hoverAffordance()
-    }
-
-    private var collapsedPriorChapter: some View {
-        let presentation = priorChapterPresentation
-        return Button {
-            expansion.setManualExpansion(true)
-        } label: {
-            VStack(alignment: .leading, spacing: DS.Spacing.space1) {
-                HStack(spacing: DS.Spacing.space1) {
-                    if let visualState = PickyFocusStackChapterAccessibilityPresentation.visualState(
-                        isCurrent: isVisuallyCurrent,
-                        isLatest: group.isLatest
-                    ) {
-                        Text(visualState)
-                            .font(PickyHUDTypography.metaSemibold)
-                            .foregroundColor(headerForegroundColor)
-                    }
-                    Image(systemName: "chevron.right")
-                        .pickyFont(size: 9, weight: .bold)
-                        .foregroundColor(headerForegroundColor)
-                    Text(presentation.requestText)
-                        .font(PickyHUDTypography.bodyCompactMedium)
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 0)
-                }
-                if let responseText = presentation.responseText {
-                    Text(responseText)
-                        .font(PickyHUDTypography.supporting)
-                        .foregroundColor(
-                            presentation.responseKind == .error
-                                ? DS.Colors.destructiveText
-                                : DS.Colors.textSecondary
-                        )
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            .padding(.vertical, DS.Spacing.space1)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(PickyFocusStackChapterAccessibilityPresentation.label(
-            isCurrent: isVisuallyCurrent,
-            isLatest: group.isLatest
-        ))
-        .accessibilityValue(PickyFocusStackChapterAccessibilityPresentation.value(
-            isExpanded: false,
-            detail: collapsedAccessibilityValue(for: presentation)
-        ))
-        .accessibilityHint(L10n.t("hud.conversation.turn.expand.accessibilityHint"))
-        .hoverAffordance()
-    }
-
-    private var headerForegroundColor: Color {
-        isVisuallyCurrent ? DS.Colors.info : DS.Colors.textTertiary
-    }
-
-    private func collapsedAccessibilityValue(for presentation: PickyFocusStackPriorChapterPresentation) -> String {
-        [presentation.requestText, presentation.responseText]
-            .compactMap { $0 }
-            .joined(separator: ". ")
     }
 }

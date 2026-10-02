@@ -61,18 +61,6 @@ struct PickySessionCard: Equatable, Identifiable {
         tools.last { $0.isActive }
     }
 
-    /// Active tool first, then the most recent tool started inside the given
-    /// turn time-range. Used by the live tool indicator so it does not
-    /// blink during the gap between successive tool calls (thinking /
-    /// streaming periods carry no `isActive` tool).
-    func mostRecentTool(after turnStart: Date) -> PickyToolActivity? {
-        if let active = activeTool { return active }
-        return tools.last { tool in
-            guard let started = tool.startedAt else { return false }
-            return started >= turnStart
-        }
-    }
-
     var compactCwdDescription: String? {
         Self.compactCwd(cwd)
     }

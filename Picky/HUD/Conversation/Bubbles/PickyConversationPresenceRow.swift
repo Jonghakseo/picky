@@ -1,0 +1,170 @@
+//
+//  PickyConversationPresenceRow.swift
+//  Picky
+//
+//  Messenger-style "working" line under the last bubble of a running turn.
+//  Replaces the inline tool row and the live thinking block for Pickles.
+//  Design: design/proposals/messenger-ux-2026-10.md §2-1.
+//
+
+import SwiftUI
+
+struct PickyConversationPresencePresentation: Equatable {
+    enum Phase: Equatable {
+        case thinking
+        case working
+        case waitingForInput
+    }
+
+    let phase: Phase
+    /// Human-written description of the current step. Never a raw command,
+    /// path, or JSON argument.
+    let detail: String?
+    let startedAt: Date?
+
+    var title: String {
+        switch phase {
+        case .thinking: L10n.t("hud.presence.thinking")
+        case .working: L10n.t("hud.liveStep.working")
+        case .waitingForInput: L10n.t("hud.conversation.status.waiting")
+        }
+    }
+
+    var isAnimated: Bool { phase != .waitingForInput }
+
+    /// Only a running tool makes the line "working". Once it finishes the line
+    /// drops back to "thinking" so a finished or failed step never reads as
+    /// still in progress.
+    static func make(
+        isRunning: Bool,
+        isWaitingForInput: Bool,
+        activeTool: PickyToolActivity?,
+        activeTodoForm: String?,
+        startedAt: Date?
+    ) -> Self? {
+        if isWaitingForInput {
+            return Self(phase: .waitingForInput, detail: nil, startedAt: nil)
+        }
+        guard isRunning else { return nil }
+        let todo = activeTodoForm.flatMap(nonEmptyLine)
+        if let activeTool, activeTool.isActive {
+            return Self(phase: .working, detail: todo ?? detail(for: activeTool), startedAt: startedAt)
+        }
+        return Self(phase: .thinking, detail: nil, startedAt: startedAt)
+    }
+
+    /// Detail priority after the active todo: bash/bash_async title, skill name,
+    /// delegated subagent. Everything else shows the bare phase title.
+    static func detail(for tool: PickyToolActivity) -> String? {
+        if let skill = PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) {
+            return L10n.t("hud.presence.skill", skill)
+        }
+        switch tool.name.lowercased() {
+        case "bash", "bash_async":
+            return PickyToolHistoryRenderer.recoverStringValue(from: tool.argsPreview, key: "title")
+                .flatMap(nonEmptyLine)
+        case "subagent":
+            let agents = tool.subagentSummary?.agents.compactMap(nonEmptyLine) ?? []
+            guard !agents.isEmpty else { return nil }
+            return L10n.t("hud.presence.subagent", agents.joined(separator: ", "))
+        default:
+            return nil
+        }
+    }
+
+    private static func nonEmptyLine(_ text: String) -> String? {
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return line?.isEmpty == false ? line : nil
+    }
+}
+
+struct PickyConversationPresenceRow: View {
+    let presentation: PickyConversationPresencePresentation
+    var onTap: (() -> Void)? = nil
+
+    var body: some View {
+        let _ = PickyPerf.event("conversation_presence_row_body")
+        Button { onTap?() } label: {
+            HStack(spacing: DS.Spacing.space2) {
+                PickyPresenceTypingIndicator(isAnimated: presentation.isAnimated)
+                HStack(spacing: DS.Spacing.space1) {
+                    Text(presentation.title)
+                        .font(PickyHUDTypography.labelMedium)
+                        .foregroundStyle(DS.Colors.textSecondary)
+                        .fixedSize()
+                    if let detail = presentation.detail {
+                        Text("·")
+                            .font(PickyHUDTypography.labelMedium)
+                            .foregroundStyle(DS.Colors.textTertiary)
+                            .accessibilityHidden(true)
+                        Text(detail)
+                            .font(PickyHUDTypography.labelMedium)
+                            .foregroundStyle(DS.Colors.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                Spacer(minLength: DS.Spacing.space2)
+                if let startedAt = presentation.startedAt {
+                    Text(startedAt, style: .timer)
+                        .font(PickyHUDTypography.metaMonospacedMedium)
+                        .monospacedDigit()
+                        .foregroundStyle(DS.Colors.textTertiary)
+                        .fixedSize()
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.trailing, DS.Spacing.space1)
+            .frame(minHeight: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(onTap == nil)
+        .help(L10n.t("hud.toolHistory.open"))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([presentation.title, presentation.detail].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint(onTap == nil ? "" : L10n.t("hud.toolHistory.open"))
+    }
+}
+
+/// Three dots in a small agent-side bubble. Dots fade in sequence while the
+/// Pickle is active; Reduce Motion and the waiting phase keep them static.
+private struct PickyPresenceTypingIndicator: View {
+    let isAnimated: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isPulsing = false
+
+    private static let dotSize: CGFloat = 5
+    private static let cycle: Double = 0.9
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(DS.Colors.textTertiary)
+                    .frame(width: Self.dotSize, height: Self.dotSize)
+                    .opacity(dotOpacity)
+                    .animation(animation(delay: Double(index) * Self.cycle / 3), value: isPulsing)
+            }
+        }
+        .padding(.horizontal, DS.Spacing.space2)
+        .padding(.vertical, DS.Spacing.space2)
+        .background(DS.Colors.surface2, in: PickyConversationBubbleLayout.bubbleShape(side: .agent))
+        .accessibilityHidden(true)
+        .onAppear { isPulsing = shouldAnimate }
+        .onChange(of: shouldAnimate) { _, value in isPulsing = value }
+    }
+
+    private var shouldAnimate: Bool { isAnimated && !reduceMotion }
+
+    private var dotOpacity: Double {
+        guard shouldAnimate else { return isAnimated ? 0.8 : 0.45 }
+        return isPulsing ? 0.35 : 1
+    }
+
+    private func animation(delay: Double) -> Animation? {
+        guard shouldAnimate else { return nil }
+        return .easeInOut(duration: Self.cycle / 2).repeatForever(autoreverses: true).delay(delay)
+    }
+}

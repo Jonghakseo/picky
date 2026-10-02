@@ -23,6 +23,7 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
     let onEditText: (() -> Void)?
+    var timestamp: PickyBubbleTimestamp? = nil
     /// See `PickyAgentBubbleSurfaceView.appFontScale` — declaring the env
     /// dependency forces SwiftUI to call `updateNSView` whenever the global
     /// app font scale changes, which lets the underlying markdown view's
@@ -49,7 +50,8 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
             onToggleExpansion: onToggleExpansion,
             onOpenAsReport: onOpenAsReport,
             onCopyText: onCopyText,
-            onEditText: onEditText
+            onEditText: onEditText,
+            timestamp: timestamp
         )
     }
 
@@ -91,6 +93,9 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     private let skillIconView = NSImageView()
     private let skillNameField = NSTextField(labelWithString: "")
     private let skillMetaField = NSTextField(labelWithString: "")
+    private let timestampAccessory = PickyBubbleTimestampAccessory()
+    private var trackingArea: NSTrackingArea?
+    private var isPointerInside = false
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
     private var header: PickyUserBubbleHeader?
@@ -128,7 +133,31 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         expansionButton.isHidden = true
         expansionButton.setButtonType(.momentaryChange)
         addSubview(expansionButton)
+        timestampAccessory.install(in: self)
         applyExpansionButtonAppearance()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        trackingArea = area
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+        needsLayout = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
+        needsLayout = true
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -166,8 +195,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         onToggleExpansion: (() -> Void)?,
         onOpenAsReport: (() -> Void)?,
         onCopyText: (() -> Void)?,
-        onEditText: (() -> Void)?
+        onEditText: (() -> Void)?,
+        timestamp: PickyBubbleTimestamp? = nil
     ) {
+        timestampAccessory.configure(timestamp)
         markdownView.configure(
             markdown: markdown,
             onOpenAsReport: onOpenAsReport,
@@ -242,6 +273,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         if header == nil {
             layoutExpansionButton(in: bubbleRect, y: &y, textWidth: textWidth)
         }
+        timestampAccessory.layout(beside: bubbleRect, side: .user, isPointerInside: isPointerInside)
         needsDisplay = true
     }
 
@@ -289,7 +321,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     /// line), so the second measure was pure thrash against the content view's
     /// per-width cache. Mirrors `PickyAgentBubbleSurfaceNSView.bubbleMetrics`.
     private func bubbleMetrics(rootWidth: CGFloat) -> (bubbleWidth: CGFloat, bubbleHeight: CGFloat, textHeight: CGFloat) {
-        let bubbleCap = min(maxBubbleWidth, rootWidth)
+        let bubbleCap = max(0, min(maxBubbleWidth, rootWidth) - timestampAccessory.reservedWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
         let hasSkillHeader = header != nil
         let textSize = hasBodyText ? measuredTextContentSize(forWidth: interiorCap) : .zero

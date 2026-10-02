@@ -11,6 +11,8 @@ struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
     var onOpenAsReport: (() -> Void)? = nil
     var onCopyText: ((String) -> Void)? = nil
+    /// Send time shown beside the bubble end on hover. `nil` hides it.
+    var timestamp: PickyBubbleTimestamp? = nil
     /// The globally newest response owns latest-response shortcuts and report
     /// behavior. `rendersFullResponse` additionally keeps every agent segment
     /// in the latest turn untruncated without granting those shortcuts.
@@ -33,8 +35,10 @@ struct PickyAgentBubbleView: View {
                 expansionSystemImageName: expansionSystemImageName,
                 onToggleExpansion: expansionAction,
                 onOpenAsReport: hoverIconAction,
-                onCopyText: copyTextAction
+                onCopyText: copyTextAction,
+                timestamp: timestamp
             )
+            .pickyBubbleTimestampAccessibility(timestamp)
             .frame(width: bubbleMaxWidth, alignment: .leading)
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }

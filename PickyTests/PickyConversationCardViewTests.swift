@@ -76,7 +76,7 @@ private final class ConversationCardSelectionStore: PickySessionSelectionStoring
 @Suite(.serialized)
 @MainActor
 struct PickyConversationCardViewTests {
-    @Test func runningPhaseRendersTypingBubbleQueueAndActivityStrip() {
+    @Test func runningPhaseHidesThinkingAndRendersQueueAndActivityStrip() {
         let session = makeConversationSession(
             status: .running,
             messages: [
@@ -94,7 +94,9 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.typingBubbleCount == 1)
+        // Thinking never reaches the transcript in the messenger layout; the
+        // presence line reports it instead.
+        #expect(snapshot.typingBubbleCount == 0)
         #expect(snapshot.batchGroupCount == 1)
         #expect(snapshot.pendingBubbleCount == 1)
         #expect(snapshot.activitySummaryCount == 1)
@@ -2468,62 +2470,6 @@ struct PickyConversationCardViewTests {
 
         #expect(list.hiddenHistoryCount == 0)
         #expect(list.visibleMessages.count == 2)
-    }
-
-    @Test func currentTurnFallsBackToMostRecentToolWhenNothingIsRunning() {
-        // During a thinking/streaming gap between tool calls, `activeTool`
-        // is nil because no tool is in the running state. The live indicator
-        // must still show the *last* tool of the turn so it does not blink
-        // on and off — a checkmark on the row signals "that call settled".
-        let session = makeConversationSession(
-            status: .running,
-            messages: [
-                message("u", kind: .userText, text: "do stuff")
-            ],
-            tools: [
-                toolActivity("finished", name: "read", secondsOffset: 1, status: "succeeded")
-            ]
-        )
-
-        #expect(session.activeTool == nil)
-        let representative = session.mostRecentTool(after: baseDate)
-        #expect(representative?.toolCallId == "finished")
-    }
-
-    @Test func mostRecentToolPrefersRunningOverFinished() {
-        let session = makeConversationSession(
-            status: .running,
-            messages: [
-                message("u", kind: .userText, text: "do stuff")
-            ],
-            tools: [
-                toolActivity("done", name: "read", secondsOffset: 1, status: "succeeded"),
-                toolActivity("live", name: "bash", secondsOffset: 2, status: "running")
-            ]
-        )
-
-        #expect(session.mostRecentTool(after: baseDate)?.toolCallId == "live")
-    }
-
-    @Test func mostRecentToolIgnoresToolsStartedBeforeTurn() {
-        let earlier = baseDate.addingTimeInterval(-30)
-        let session = makeConversationSession(
-            status: .running,
-            messages: [
-                message("u", kind: .userText, text: "new turn")
-            ],
-            tools: [
-                PickyToolActivity(
-                    toolCallId: "previous-turn",
-                    name: "read",
-                    status: "succeeded",
-                    startedAt: earlier
-                )
-            ]
-        )
-
-        #expect(session.activeTool == nil)
-        #expect(session.mostRecentTool(after: baseDate) == nil)
     }
 
     @Test func runningSessionExposesActiveToolOnCurrentTurnCard() {

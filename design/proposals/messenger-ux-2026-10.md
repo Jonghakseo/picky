@@ -106,6 +106,7 @@ To translate or explain on-screen text, prefer TEXT over a long spoken answer.
 |---|---|---|
 | 생각 중(thinking 스트리밍, 도구 없음) | 생각 중 | 없음 |
 | 도구 실행 중 | 작업 중 | 아래 우선순위. 도구가 끝나면 바로 `생각 중`으로 돌아감 |
+| 응답은 끝났고 백그라운드 작업(`bash_async`, subagent)만 실행 중 | 작업 중 | 진행 중 todo가 있으면 그 문구 |
 | 질문 대기 | 입력 대기 | 없음 (질문 버블이 따로 있음) |
 
 세부 문구 우선순위. 사람이 쓴 설명만 쓰고 명령·경로·JSON은 쓰지 않는다.

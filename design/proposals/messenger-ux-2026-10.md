@@ -119,6 +119,8 @@ To translate or explain on-screen text, prefer TEXT over a long spoken answer.
 
 경과 시간은 턴 시작 기준 `m:ss`, 기존 턴 헤더 타이머와 같은 값.
 
+짧은 도구가 연달아 실행될 때 `작업 중`과 `생각 중`이 깜빡이지 않도록 표시를 안정화한다(`PickyConversationPresenceStabilizer`). `작업 중`으로 바뀌는 것, 설명만 바뀌는 것, `입력 대기`로 바뀌는 것은 즉시 반영한다. `작업 중`에서 `생각 중`으로 내려가는 것만 미룬다. 도구가 끝난 뒤 0.4초 유예하고, `작업 중`은 최소 0.6초 보여 준다. 유예 안에 다음 도구가 시작되면 설명만 바뀐다.
+
 ### 2-2. 전송 시각 (`PickyBubbleTimestamp`)
 
 - 말풍선 끝 옆, 아래쪽에 맞춰 `오전 10:15` 형식(meta, textTertiary). Pickle 말풍선은 오른쪽 끝 옆, 내 말풍선은 왼쪽 끝 옆(카카오톡 위치).

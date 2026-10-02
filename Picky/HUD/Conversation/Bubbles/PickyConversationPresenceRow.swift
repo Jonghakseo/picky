@@ -83,12 +83,68 @@ struct PickyConversationPresencePresentation: Equatable {
     }
 }
 
+/// Smooths "working" <-> "thinking" flips caused by back-to-back short tool
+/// calls. Entering "working", changing its detail, waiting for input, and any
+/// non-working change apply at once. Leaving "working" for "thinking" waits
+/// until the step has been gone for `workingGrace` and shown for at least
+/// `minimumWorkingDuration`, so a tool that starts inside that window just
+/// replaces the detail instead of blinking through "thinking".
+struct PickyConversationPresenceStabilizer: Equatable {
+    static let workingGrace: TimeInterval = 0.4
+    static let minimumWorkingDuration: TimeInterval = 0.6
+
+    private(set) var displayed: PickyConversationPresencePresentation?
+    private var workingSince: Date?
+    /// When the live value first stopped being "working" (the step ended).
+    private var leftWorkingAt: Date?
+
+    /// Applies `target` at `now` and returns how long to wait before calling
+    /// again, or nil when the displayed value already matches the target.
+    mutating func update(target: PickyConversationPresencePresentation, now: Date) -> TimeInterval? {
+        if target.phase == .working {
+            if displayed?.phase != .working { workingSince = now }
+            leftWorkingAt = nil
+            displayed = target
+            return nil
+        }
+        guard displayed?.phase == .working, target.phase == .thinking, let workingSince else {
+            reset(to: target)
+            return nil
+        }
+        let leftAt = leftWorkingAt ?? now
+        leftWorkingAt = leftAt
+        let releaseAt = max(
+            leftAt.addingTimeInterval(Self.workingGrace),
+            workingSince.addingTimeInterval(Self.minimumWorkingDuration)
+        )
+        let remaining = releaseAt.timeIntervalSince(now)
+        guard remaining > 0 else {
+            reset(to: target)
+            return nil
+        }
+        return remaining
+    }
+
+    private mutating func reset(to target: PickyConversationPresencePresentation) {
+        displayed = target
+        workingSince = nil
+        leftWorkingAt = nil
+    }
+}
+
 struct PickyConversationPresenceRow: View {
     let presentation: PickyConversationPresencePresentation
     var onTap: (() -> Void)? = nil
+    @State private var stabilizer = PickyConversationPresenceStabilizer()
+
+    /// The stabilized value; the first frame shows the live value directly.
+    private var shown: PickyConversationPresencePresentation {
+        stabilizer.displayed ?? presentation
+    }
 
     var body: some View {
         let _ = PickyPerf.event("conversation_presence_row_body")
+        let presentation = shown
         Button { onTap?() } label: {
             HStack(spacing: DS.Spacing.space2) {
                 PickyPresenceTypingIndicator(isAnimated: presentation.isAnimated)
@@ -129,6 +185,14 @@ struct PickyConversationPresenceRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel([presentation.title, presentation.detail].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint(onTap == nil ? "" : L10n.t("hud.toolHistory.open"))
+        .task(id: self.presentation) {
+            var delay = stabilizer.update(target: self.presentation, now: Date())
+            while let wait = delay {
+                try? await Task.sleep(for: .seconds(wait))
+                guard !Task.isCancelled else { return }
+                delay = stabilizer.update(target: self.presentation, now: Date())
+            }
+        }
     }
 }
 

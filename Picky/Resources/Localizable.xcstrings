@@ -27170,7 +27170,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "생각 중"
+            "value": "생각 중…"
           }
         }
       }
@@ -28371,6 +28371,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "화면 글자 옆 설명: %@"
+          }
+        }
+      }
+    },
+    "overlay.activity.memory.recall": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching memory"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기억 찾기"
+          }
+        }
+      }
+    },
+    "overlay.activity.memory.remember": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving memory"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기억 저장"
+          }
+        }
+      }
+    },
+    "overlay.activity.memory.forget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removing memory"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기억 삭제"
+          }
+        }
+      }
+    },
+    "overlay.activity.webSearch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web search"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웹 검색"
+          }
+        }
+      }
+    },
+    "overlay.activity.mcp": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using %@ MCP"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ MCP 사용 중"
           }
         }
       }

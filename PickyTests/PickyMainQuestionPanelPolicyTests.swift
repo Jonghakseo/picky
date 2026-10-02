@@ -39,7 +39,7 @@ struct PickyMainQuestionPanelPolicyTests {
         )
 
         let presentation = PickyMainActivityChipPresentation(
-            activities: [activity],
+            models: PickyMainActivityConcisePolicy.models(for: [activity]),
             isQuestionPending: true
         )
 

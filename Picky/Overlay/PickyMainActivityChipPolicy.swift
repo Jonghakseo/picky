@@ -43,7 +43,7 @@ struct PickyMainActivityChipModel: Equatable {
 
     private static let maxDetailLength = 44
     private static let thinkingDetailLength = 60
-    private static let pickleToolNames: Set<String> = [
+    static let pickleToolNames: Set<String> = [
         "picky_start_pickle",
         "picky_steer_pickle",
         "picky_handoff",
@@ -114,6 +114,120 @@ struct PickyMainActivityChipModel: Equatable {
     private static func truncate(_ text: String, limit: Int) -> String {
         guard text.count > limit else { return text }
         return String(text.prefix(limit)) + "…"
+    }
+}
+
+/// Messenger-style cursor chips for the main agent. Only activity that has a
+/// human-written description or a dedicated Picky surface is shown; raw tool
+/// names, paths, commands, and thinking previews stay in the tool history.
+/// Design: design/proposals/messenger-ux-2026-10.md §1-1.
+enum PickyMainActivityConcisePolicy {
+    static let maxLabelLength = 44
+
+    static func models(for activities: [PickyMainActivity]) -> [PickyMainActivityChipModel] {
+        let visible = activities.compactMap(model(for:))
+        if !visible.isEmpty { return visible }
+        // The activity stack is cleared when the main turn ends, so any tool entry
+        // means the turn is still working. Keeping the chip between hidden tools
+        // stops it from blinking off after each call.
+        guard activities.contains(where: { $0.kind == .tool }) else { return [] }
+        return [PickyMainActivityChipModel(
+            category: .normal,
+            label: L10n.t("hud.liveStep.working"),
+            detail: nil,
+            isRunning: true
+        )]
+    }
+
+    static func model(for activity: PickyMainActivity) -> PickyMainActivityChipModel? {
+        switch activity.kind {
+        case .thinking:
+            // Never show the reasoning text; the label alone says Picky is thinking.
+            // `.normal` keeps the pulsing dot instead of a second set of dots.
+            return PickyMainActivityChipModel(
+                category: .normal,
+                label: L10n.t("overlay.activity.thinking"),
+                detail: nil,
+                isRunning: true
+            )
+        case .tool:
+            guard let toolName = activity.toolName, !toolName.isEmpty else { return nil }
+            let isRunning = activity.status == "running"
+            if PickyMainActivityChipModel.pickleToolNames.contains(toolName) {
+                return PickyMainActivityChipModel.chipModel(for: activity)
+            }
+            let value = { (key: String) in
+                PickyToolHistoryRenderer.recoverStringValue(from: activity.argsPreview, key: key)
+                    .map(oneLine).flatMap { $0.isEmpty ? nil : truncate($0) }
+            }
+            switch toolName.lowercased() {
+            case "bash", "bash_async":
+                guard let title = value("title") else { return nil }
+                return PickyMainActivityChipModel(category: .normal, label: title, detail: nil, isRunning: isRunning)
+            case "recall", "vcc_recall":
+                return memoryModel("overlay.activity.memory.recall", detail: value("query"), isRunning: isRunning)
+            case "remember":
+                return memoryModel("overlay.activity.memory.remember", detail: value("title"), isRunning: isRunning)
+            case "forget":
+                return memoryModel("overlay.activity.memory.forget", detail: nil, isRunning: isRunning)
+            case "web_search":
+                let query = value("query") ?? firstQuery(activity.argsPreview)
+                return PickyMainActivityChipModel(
+                    category: .normal,
+                    label: L10n.t("overlay.activity.webSearch"),
+                    detail: query,
+                    isRunning: isRunning
+                )
+            default:
+                guard let server = mcpServerName(toolName: toolName, argsPreview: activity.argsPreview) else { return nil }
+                return PickyMainActivityChipModel(
+                    category: .normal,
+                    label: L10n.t("overlay.activity.mcp", server),
+                    detail: nil,
+                    isRunning: isRunning
+                )
+            }
+        }
+    }
+
+    /// MCP tools arrive either directly as `mcp__<server>__<tool>` or, with Pi's
+    /// default codemode exposure, inside a `codemode` script as
+    /// `tools.mcp__<server>__<tool>(...)`. Both collapse to the server name.
+    static func mcpServerName(toolName: String, argsPreview: String?) -> String? {
+        let source: String
+        if toolName.hasPrefix("mcp__") {
+            source = toolName
+        } else if toolName.lowercased() == "codemode", let argsPreview {
+            source = argsPreview
+        } else {
+            return nil
+        }
+        guard let start = source.range(of: "mcp__") else { return nil }
+        let rest = source[start.upperBound...]
+        guard let end = rest.range(of: "__") else { return nil }
+        let server = String(rest[..<end.lowerBound])
+        return server.isEmpty || server.contains(where: { !($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") })
+            ? nil : server
+    }
+
+    private static func firstQuery(_ argsPreview: String?) -> String? {
+        guard let data = argsPreview?.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let first = (object["queries"] as? [String])?.first else { return nil }
+        return truncate(oneLine(first))
+    }
+
+    private static func memoryModel(_ key: String, detail: String?, isRunning: Bool) -> PickyMainActivityChipModel {
+        PickyMainActivityChipModel(category: .normal, label: L10n.t(key), detail: detail, isRunning: isRunning)
+    }
+
+    private static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline).joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func truncate(_ text: String) -> String {
+        text.count > maxLabelLength ? String(text.prefix(maxLabelLength)) + "…" : text
     }
 }
 

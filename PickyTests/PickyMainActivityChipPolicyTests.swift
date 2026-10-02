@@ -197,6 +197,52 @@ struct PickyMainActivityChipPolicyTests {
         )])
     }
 
+    // MARK: - Concise cursor chips (messenger UX)
+
+    @Test func conciseChipsShowBashTitleOnlyAndHideUntitledCommands() {
+        let titled = concise(.init(kind: .tool, toolCallId: "b1", toolName: "bash", status: "running",
+                                   argsPreview: #"{"command":"rg -n label","title":"오버레이 라벨 찾기"}"#))
+        #expect(titled.map(\.label) == ["오버레이 라벨 찾기"])
+        #expect(titled.first?.detail == nil)
+
+        let untitled = concise(.init(kind: .tool, toolCallId: "b2", toolName: "bash", status: "running",
+                                     argsPreview: #"{"command":"git log --oneline -5"}"#))
+        #expect(untitled.map(\.label) == [L10n.t("hud.liveStep.working")])
+        #expect(untitled.contains { ($0.detail ?? "").contains("git") } == false)
+    }
+
+    @Test func conciseChipsNeverShowThinkingText() {
+        let models = concise(.init(kind: .thinking, thinkingPreview: "The user wants the pricing header translated"))
+        #expect(models.map(\.label) == [L10n.t("overlay.activity.thinking")])
+        #expect(models.first?.detail == nil)
+    }
+
+    @Test func conciseChipsHideRawToolsButKeepMemoryWebSearchAndMcpServer() {
+        // A finished hidden tool keeps the neutral chip until the turn clears the stack.
+        #expect(concise(.init(kind: .tool, toolCallId: "r", toolName: "read", status: "completed",
+                              argsPreview: #"{"path":"/repo/a.swift"}"#)).map(\.label) == [L10n.t("hud.liveStep.working")])
+        #expect(PickyMainActivityConcisePolicy.models(for: []).isEmpty)
+        #expect(concise(.init(kind: .tool, toolCallId: "m", toolName: "recall", status: "running",
+                              argsPreview: #"{"query":"메신저 디자인"}"#)).map(\.detail) == ["메신저 디자인"])
+        let web = concise(.init(kind: .tool, toolCallId: "w", toolName: "web_search", status: "running",
+                                argsPreview: #"{"queries":["SwiftUI TimelineView"]}"#))
+        #expect(web.map(\.label) == [L10n.t("overlay.activity.webSearch")])
+        #expect(web.map(\.detail) == ["SwiftUI TimelineView"])
+
+        let direct = concise(.init(kind: .tool, toolCallId: "d", toolName: "mcp__creatrip__jira_search", status: "running",
+                                   argsPreview: #"{"jql":"project = PK"}"#))
+        let viaCodemode = concise(.init(kind: .tool, toolCallId: "c", toolName: "codemode", status: "running",
+                                        argsPreview: #"{"code":"await tools.mcp__creatrip__jira_search({})"}"#))
+        let expected = L10n.t("overlay.activity.mcp", "creatrip")
+        #expect(direct.map(\.label) == [expected])
+        #expect(viaCodemode.map(\.label) == [expected])
+        #expect(direct.first?.detail == nil)
+    }
+
+    private func concise(_ activity: PickyMainActivity) -> [PickyMainActivityChipModel] {
+        PickyMainActivityConcisePolicy.models(for: [activity])
+    }
+
     private func tool(id: String, status: String) -> PickyMainActivity {
         PickyMainActivity(kind: .tool, toolCallId: id, toolName: "read", status: status)
     }

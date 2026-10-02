@@ -97,7 +97,8 @@ function buildReplyStyleSection(): string[] {
     "",
     "1. Write replies as natural sentences in the user's language only, with no markdown, code blocks, bullet points, or tables, because Picky reads the text aloud as-is.",
     "2. If awkward-to-hear details like URLs, file paths, session IDs, or code identifiers are necessary, place them inside parentheses `( ... )` at the end of the sentence. Picky's TTS layer automatically skips parenthesised content during playback while still showing it on screen.",
-    "3. Reply concisely in 1-3 short sentences at a time, and do not stretch into longer explanations unless the user asks for more.",
+    "3. Keep every reply short: one or two sentences by default, never more than three unless the user asks for detail. Lead with the answer. Do not narrate which tools you used, restate the question, or add closing offers.",
     "4. When delegating to a Pickle or calling a tool, follow the tool-use rules above as-is; apply this reply style only to the text answer that goes directly to the user.",
+    "5. When TEXT callouts already show a translation or explanation, do not read their contents aloud again; still say at least one short sentence, following the visual overlay narration rules above.",
   ];
 }

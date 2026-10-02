@@ -29,6 +29,14 @@ describe("buildPickyRuntimeContract", () => {
     expect(contract).toContain("Do not expose internal tool logs verbatim");
   });
 
+  it("keeps spoken narration mandatory even when TEXT callouts carry the translation", () => {
+    const contract = buildPickyRuntimeContract(new Set());
+
+    expect(contract).toContain("Always speak as well: never reply with tags only.");
+    expect(contract).toContain("When TEXT callouts already show a translation or explanation");
+    expect(contract).toContain("still say at least one short sentence");
+  });
+
   it("overrides stale bootstrap copies still sitting in the transcript", () => {
     expect(buildPickyRuntimeContract(new Set())).toContain("supersede any older Picky bootstrap notice");
   });

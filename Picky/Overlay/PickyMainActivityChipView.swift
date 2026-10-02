@@ -12,8 +12,8 @@ struct PickyMainActivityChipPresentation: Equatable {
     let models: [PickyMainActivityChipModel]
     let isQuestionPending: Bool
 
-    init(activities: [PickyMainActivity], isQuestionPending: Bool) {
-        self.models = activities.compactMap(PickyMainActivityChipModel.chipModel(for:))
+    init(models: [PickyMainActivityChipModel], isQuestionPending: Bool) {
+        self.models = models
         self.isQuestionPending = isQuestionPending
     }
 }
@@ -21,13 +21,13 @@ struct PickyMainActivityChipPresentation: Equatable {
 @MainActor
 final class PickyMainActivityChipPresentationCache: ObservableObject {
     @Published private(set) var presentation = PickyMainActivityChipPresentation(
-        activities: [],
+        models: [],
         isQuestionPending: false
     )
 
     func update(activities: [PickyMainActivity], isQuestionPending: Bool) {
         let updated = PickyMainActivityChipPresentation(
-            activities: activities,
+            models: PickyMainActivityConcisePolicy.models(for: activities),
             isQuestionPending: isQuestionPending
         )
         guard updated != presentation else { return }

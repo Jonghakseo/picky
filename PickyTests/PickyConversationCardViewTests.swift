@@ -1980,7 +1980,9 @@ struct PickyConversationCardViewTests {
         #expect(overCapBubble.isCollapsible)
         #expect(overCapBubble.isCollapsed)
         #expect(overCapBubble.displayedMarkdown == atCap + "...")
-        #expect(!previewBubble.isCollapsible)
+        // Older replies expand in place instead of only offering the report window.
+        #expect(previewBubble.isCollapsible)
+        #expect(previewBubble.isCollapsed)
         #expect(previewBubble.displayedMarkdown == (1...8).map { "line \($0)" }.joined(separator: "\n") + "...")
 
         // System text (seeded handoff context, bootstrap notes) renders through

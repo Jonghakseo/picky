@@ -48,11 +48,14 @@ struct PickyAgentBubbleView: View {
 
     var displayedMarkdown: String {
         let text = displayText
-        guard !usesPreviewTruncation else { return PickyAgentResponsePreview.truncatedMarkdown(text) }
+        guard !usesPreviewTruncation else {
+            return isExpanded ? text : PickyAgentResponsePreview.truncatedMarkdown(text)
+        }
         return isCollapsed ? PickyAgentResponsePreview.collapsedFullResponseMarkdown(text) : text
     }
 
-    /// Older agent replies keep the short 8-line preview. Everything else this
+    /// Older agent replies start as the short 8-line preview and expand in
+    /// place; the report window stays a secondary hover action. Everything else this
     /// bubble renders (the latest response, latest-turn segments, and system or
     /// question-fallback text) is shown in full.
     private var usesPreviewTruncation: Bool {
@@ -60,7 +63,7 @@ struct PickyAgentBubbleView: View {
     }
 
     var displayedCodeBlockMaxLines: Int {
-        displaysFullResponse ? 0 : PickyAgentResponsePreview.codeBlockMaxLines
+        displaysFullResponse || (usesPreviewTruncation && isExpanded) ? 0 : PickyAgentResponsePreview.codeBlockMaxLines
     }
 
     private var displaysFullResponse: Bool {
@@ -71,7 +74,9 @@ struct PickyAgentBubbleView: View {
     /// view (and make every HUD resize re-measure a huge markdown tree), so they
     /// collapse past a line cap until the reader expands them.
     var isCollapsible: Bool {
-        !usesPreviewTruncation && PickyAgentResponsePreview.exceedsFullResponseLineLimit(displayText)
+        usesPreviewTruncation
+            ? PickyAgentResponsePreview.isTruncated(displayText)
+            : PickyAgentResponsePreview.exceedsFullResponseLineLimit(displayText)
     }
 
     var isCollapsed: Bool { isCollapsible && !isExpanded }

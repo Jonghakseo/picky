@@ -51,12 +51,38 @@ enum PickyPiOAuthLoginProvider: String, CaseIterable, Identifiable, Codable, Sen
         case .anthropic: "a.circle"
         }
     }
+
+    /// Login methods the Pi SDK offers for this provider. Only OpenAI Codex
+    /// asks Picky to choose between browser callback and device code login.
+    var supportedLoginMethods: [PickyPiOAuthLoginMethod] {
+        switch self {
+        case .openAICodex: [.browser, .deviceCode]
+        case .anthropic: [.browser]
+        }
+    }
+}
+
+/// The user's chosen sign-in method. The raw value is the option id the Pi SDK
+/// uses in its login method `select` prompt.
+enum PickyPiOAuthLoginMethod: String, Equatable, Sendable {
+    case browser = "browser"
+    case deviceCode = "device_code"
+}
+
+/// A device code the user must enter on the provider's verification page.
+struct PickyPiOAuthDeviceCode: Equatable, Sendable {
+    let verificationURL: URL
+    let userCode: String
 }
 
 @MainActor
 protocol PickyPiOAuthLoginRunning: AnyObject {
     func authStatus(for provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus
-    func signIn(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus
+    func signIn(
+        provider: PickyPiOAuthLoginProvider,
+        method: PickyPiOAuthLoginMethod,
+        onDeviceCode: @escaping @MainActor (PickyPiOAuthDeviceCode) -> Void
+    ) async throws -> PickyPiOAuthLoginAuthStatus
     func signOut(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus
     func cancel(provider: PickyPiOAuthLoginProvider)
 }
@@ -65,9 +91,16 @@ protocol PickyPiOAuthLoginRunning: AnyObject {
 final class PickyPiOAuthLoginController: ObservableObject {
     @Published private var statuses: [PickyPiOAuthLoginProvider: PickyPiOAuthLoginStatus]
     @Published private(set) var pendingSignOutProvider: PickyPiOAuthLoginProvider?
+    /// Device codes waiting for the user to enter them. Present only while the
+    /// matching device code sign-in is in flight.
+    @Published private(set) var deviceCodes: [PickyPiOAuthLoginProvider: PickyPiOAuthDeviceCode] = [:]
+    /// The method of the sign-in currently in flight, so the UI can describe
+    /// what it is waiting for before the device code arrives.
+    @Published private(set) var inFlightMethods: [PickyPiOAuthLoginProvider: PickyPiOAuthLoginMethod] = [:]
 
     private let runner: PickyPiOAuthLoginRunning
     private var tasks: [PickyPiOAuthLoginProvider: Task<Void, Never>] = [:]
+    private var signInAttemptIDs: [PickyPiOAuthLoginProvider: UUID] = [:]
 
     init(runner: PickyPiOAuthLoginRunning) {
         self.runner = runner
@@ -113,21 +146,33 @@ final class PickyPiOAuthLoginController: ObservableObject {
         }
     }
 
-    func signIn(provider: PickyPiOAuthLoginProvider) {
-        guard !isBusy(provider) else { return }
+    func signIn(provider: PickyPiOAuthLoginProvider, method: PickyPiOAuthLoginMethod = .browser) {
+        guard !isBusy(provider), provider.supportedLoginMethods.contains(method) else { return }
         statuses[provider] = .signingIn
+        deviceCodes[provider] = nil
+        inFlightMethods[provider] = method
+        let attemptID = UUID()
+        signInAttemptIDs[provider] = attemptID
         tasks[provider]?.cancel()
         tasks[provider] = Task { [weak self] in
             guard let self else { return }
             do {
-                let authStatus = try await runner.signIn(provider: provider)
+                let authStatus = try await runner.signIn(provider: provider, method: method) { [weak self] deviceCode in
+                    // Ignore codes from a cancelled or superseded attempt.
+                    guard let self, self.signInAttemptIDs[provider] == attemptID,
+                          self.status(for: provider) == .signingIn else { return }
+                    self.deviceCodes[provider] = deviceCode
+                }
                 guard !Task.isCancelled else { return }
+                clearSignInProgress(provider)
                 statuses[provider] = Self.loginStatus(from: authStatus)
             } catch is CancellationError {
                 guard !Task.isCancelled else { return }
+                clearSignInProgress(provider)
                 statuses[provider] = .notConfigured
             } catch {
                 guard !Task.isCancelled else { return }
+                clearSignInProgress(provider)
                 statuses[provider] = .failed(Self.presentableError(error))
             }
             tasks[provider] = nil
@@ -169,8 +214,15 @@ final class PickyPiOAuthLoginController: ObservableObject {
         runner.cancel(provider: provider)
         tasks[provider]?.cancel()
         tasks[provider] = nil
+        signInAttemptIDs[provider] = nil
+        clearSignInProgress(provider)
         statuses[provider] = .notConfigured
         refresh(provider: provider)
+    }
+
+    private func clearSignInProgress(_ provider: PickyPiOAuthLoginProvider) {
+        deviceCodes[provider] = nil
+        inFlightMethods[provider] = nil
     }
 
     private func isBusy(_ provider: PickyPiOAuthLoginProvider) -> Bool {
@@ -222,7 +274,11 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
         try await requestStatus(provider: provider, commandType: .getPiOAuthStatus, timeoutNanoseconds: statusTimeoutNanoseconds)
     }
 
-    func signIn(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
+    func signIn(
+        provider: PickyPiOAuthLoginProvider,
+        method: PickyPiOAuthLoginMethod,
+        onDeviceCode: @escaping @MainActor (PickyPiOAuthDeviceCode) -> Void
+    ) async throws -> PickyPiOAuthLoginAuthStatus {
         let command = PickyCommandEnvelope(type: .signInPiOAuth, providerId: provider)
         loginRequestIDs[provider] = command.id
         defer {
@@ -235,7 +291,13 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
         do {
             status = try await withTaskCancellationHandler(
                 operation: {
-                    try await awaitStatus(command: command, provider: provider, timeoutNanoseconds: nil)
+                    try await awaitStatus(
+                        command: command,
+                        provider: provider,
+                        loginMethod: method,
+                        onDeviceCode: onDeviceCode,
+                        timeoutNanoseconds: nil
+                    )
                 },
                 onCancel: { [weak self] in
                     Task { @MainActor in self?.cancelRequest(provider: provider, requestId: command.id) }
@@ -278,6 +340,8 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
     private func awaitStatus(
         command: PickyCommandEnvelope,
         provider: PickyPiOAuthLoginProvider,
+        loginMethod: PickyPiOAuthLoginMethod = .browser,
+        onDeviceCode: @escaping @MainActor (PickyPiOAuthDeviceCode) -> Void = { _ in },
         timeoutNanoseconds: UInt64?
     ) async throws -> PickyPiOAuthLoginAuthStatus {
         let stream = client.events
@@ -300,6 +364,21 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
                         guard let url = URL(string: event.url) else {
                             throw PickyPiOAuthLoginError.invalidURL(event.url)
                         }
+                        // Branch on the method the user picked, never on the
+                        // payload: a browser login must not be hijacked by a
+                        // stray user code, and a code login must not silently
+                        // fall back to opening a browser. Status and sign-out
+                        // requests never receive this event and keep `.browser`.
+                        if loginMethod == .deviceCode {
+                            // The user enters the code on the verification page,
+                            // possibly in another browser or on another device,
+                            // so show it instead of opening the page.
+                            guard let userCode = event.userCode, !userCode.isEmpty else {
+                                throw PickyPiOAuthLoginError.deviceCodeMissing
+                            }
+                            onDeviceCode(PickyPiOAuthDeviceCode(verificationURL: url, userCode: userCode))
+                            continue
+                        }
                         guard openURL(url) else {
                             throw PickyPiOAuthLoginError.browserOpenFailed(event.url)
                         }
@@ -307,13 +386,13 @@ final class PickyPiOAuthLoginAgentRunner: PickyPiOAuthLoginRunning {
                         where event.requestId == command.id && event.providerId == provider:
                         switch event.promptType {
                         case .select:
-                            guard let browser = event.options?.first(where: { $0.id == "browser" }) else {
-                                throw PickyPiOAuthLoginError.browserLoginUnavailable
+                            guard let option = event.options?.first(where: { $0.id == loginMethod.rawValue }) else {
+                                throw PickyPiOAuthLoginError.loginMethodUnavailable(loginMethod)
                             }
                             try await client.send(PickyCommandEnvelope(
                                 type: .answerPiOAuthPrompt,
                                 requestId: event.requestId,
-                                value: .string(browser.id),
+                                value: .string(option.id),
                                 promptId: event.promptId
                             ))
                         case .manualCode:
@@ -421,7 +500,8 @@ enum PickyPiOAuthLoginError: LocalizedError, Equatable {
     case timedOut
     case invalidURL(String)
     case browserOpenFailed(String)
-    case browserLoginUnavailable
+    case loginMethodUnavailable(PickyPiOAuthLoginMethod)
+    case deviceCodeMissing
 
     var errorDescription: String? {
         switch self {
@@ -430,7 +510,9 @@ enum PickyPiOAuthLoginError: LocalizedError, Equatable {
         case .timedOut: L10n.t("settings.oauth.timedOut")
         case .invalidURL(let value): L10n.t("settings.oauth.invalidURL", value)
         case .browserOpenFailed(let value): L10n.t("settings.oauth.browserOpenFailed", value)
-        case .browserLoginUnavailable: L10n.t("settings.oauth.browserUnavailable")
+        case .loginMethodUnavailable(.browser): L10n.t("settings.oauth.browserUnavailable")
+        case .loginMethodUnavailable(.deviceCode): L10n.t("settings.oauth.deviceCodeUnavailable")
+        case .deviceCodeMissing: L10n.t("settings.oauth.deviceCodeMissing")
         }
     }
 }

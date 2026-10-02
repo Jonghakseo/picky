@@ -83,7 +83,7 @@ struct PickyPiOAuthLoginControllerTests {
             reloadTimeoutNanoseconds: 100_000_000
         )
 
-        let status = try await runner.signIn(provider: .openAICodex)
+        let status = try await runner.signIn(provider: .openAICodex, method: .browser, onDeviceCode: { _ in })
 
         #expect(status.configured)
         #expect(openedURLs.map(\.absoluteString) == ["https://example.com/oauth"])
@@ -93,6 +93,175 @@ struct PickyPiOAuthLoginControllerTests {
         #expect(promptAnswer?.value == .string("browser"))
         let didReloadAuthentication = client.sentCommands.contains(where: { $0.type == .reloadPiAuthentication })
         #expect(didReloadAuthentication)
+    }
+
+    @Test func deviceCodeSignInShowsTheCodeWithoutOpeningTheBrowserUntilTheDaemonCompletes() async throws {
+        let client = FakePickyAgentClient()
+        var openedURLs: [URL] = []
+        var signInCommand: PickyCommandEnvelope?
+        client.beforeSend = { command in
+            switch command.type {
+            case .signInPiOAuth:
+                guard let provider = command.providerId else {
+                    Issue.record("Expected OAuth provider")
+                    return
+                }
+                signInCommand = command
+                client.emit(.protocolEvent(Self.envelope(.piOAuthPromptRequested(PickyPiOAuthPromptRequestEvent(
+                    requestId: command.id,
+                    providerId: provider,
+                    promptId: "prompt-method",
+                    promptType: .select,
+                    message: "Select OpenAI Codex login method:",
+                    placeholder: nil,
+                    options: [
+                        PickyPiOAuthPromptOption(id: "browser", label: "Browser login (default)", description: nil),
+                        PickyPiOAuthPromptOption(id: "device_code", label: "Device code login (headless)", description: nil),
+                    ]
+                )))))
+            case .answerPiOAuthPrompt:
+                guard let signInCommand, let provider = signInCommand.providerId else { return }
+                client.emit(.protocolEvent(Self.envelope(.piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent(
+                    requestId: signInCommand.id,
+                    providerId: provider,
+                    url: "https://auth.openai.com/codex/device",
+                    instructions: nil,
+                    userCode: "ABCD-12345"
+                )))))
+            case .reloadPiAuthentication:
+                client.emit(.protocolEvent(Self.envelope(.piAuthenticationReloaded(PickyPiAuthenticationReloadedEvent(
+                    requestId: command.id,
+                    reloadedHandleCount: 1
+                )))))
+            default:
+                break
+            }
+        }
+        let runner = PickyPiOAuthLoginAgentRunner(
+            client: client,
+            openURL: { url in openedURLs.append(url); return true },
+            reloadTimeoutNanoseconds: 100_000_000
+        )
+        let controller = PickyPiOAuthLoginController(runner: runner)
+
+        controller.signIn(provider: .openAICodex, method: .deviceCode)
+        await waitUntil { controller.deviceCodes[.openAICodex] != nil }
+
+        #expect(controller.status(for: .openAICodex) == .signingIn)
+        #expect(controller.deviceCodes[.openAICodex] == PickyPiOAuthDeviceCode(
+            verificationURL: URL(string: "https://auth.openai.com/codex/device")!,
+            userCode: "ABCD-12345"
+        ))
+        #expect(openedURLs.isEmpty)
+        let promptAnswer = client.sentCommands.first(where: { $0.type == .answerPiOAuthPrompt })
+        #expect(promptAnswer?.promptId == "prompt-method")
+        #expect(promptAnswer?.value == .string("device_code"))
+
+        let requestId = try #require(signInCommand?.id)
+        client.emit(.protocolEvent(Self.envelope(.piOAuthStatus(PickyPiOAuthStatusEvent(
+            requestId: requestId,
+            providerId: .openAICodex,
+            configured: true,
+            source: "stored",
+            label: nil
+        )))))
+        await waitUntil { controller.status(for: .openAICodex) == .configured(source: "stored") }
+
+        #expect(controller.deviceCodes[.openAICodex] == nil)
+        #expect(openedURLs.isEmpty)
+    }
+
+    @Test func deviceCodeSignInFailsWhenTheDaemonSendsNoUserCode() async {
+        let client = FakePickyAgentClient()
+        var openedURLs: [URL] = []
+        var deliveredCodes: [PickyPiOAuthDeviceCode] = []
+        client.beforeSend = { command in
+            guard command.type == .signInPiOAuth, let provider = command.providerId else { return }
+            client.emit(.protocolEvent(Self.envelope(.piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent(
+                requestId: command.id,
+                providerId: provider,
+                url: "https://auth.openai.com/codex/device",
+                instructions: nil,
+                userCode: ""
+            )))))
+        }
+        let runner = PickyPiOAuthLoginAgentRunner(
+            client: client,
+            openURL: { url in openedURLs.append(url); return true }
+        )
+
+        do {
+            _ = try await runner.signIn(
+                provider: .openAICodex,
+                method: .deviceCode,
+                onDeviceCode: { deliveredCodes.append($0) }
+            )
+            Issue.record("Expected the missing device code to fail the sign-in")
+        } catch let error as PickyPiOAuthLoginError {
+            #expect(error == .deviceCodeMissing)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(openedURLs.isEmpty)
+        #expect(deliveredCodes.isEmpty)
+    }
+
+    @Test func browserSignInStillOpensTheBrowserWhenTheDaemonAlsoSendsAUserCode() async throws {
+        let client = FakePickyAgentClient()
+        var openedURLs: [URL] = []
+        var deliveredCodes: [PickyPiOAuthDeviceCode] = []
+        client.beforeSend = { command in
+            switch command.type {
+            case .signInPiOAuth:
+                guard let provider = command.providerId else { return }
+                client.emit(.protocolEvent(Self.envelope(.piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent(
+                    requestId: command.id,
+                    providerId: provider,
+                    url: "https://example.com/oauth",
+                    instructions: nil,
+                    userCode: "STRAY-0001"
+                )))))
+                client.emit(.protocolEvent(Self.envelope(.piOAuthStatus(PickyPiOAuthStatusEvent(
+                    requestId: command.id,
+                    providerId: provider,
+                    configured: true,
+                    source: "stored",
+                    label: nil
+                )))))
+            case .reloadPiAuthentication:
+                client.emit(.protocolEvent(Self.envelope(.piAuthenticationReloaded(PickyPiAuthenticationReloadedEvent(
+                    requestId: command.id,
+                    reloadedHandleCount: 1
+                )))))
+            default:
+                break
+            }
+        }
+        let runner = PickyPiOAuthLoginAgentRunner(
+            client: client,
+            openURL: { url in openedURLs.append(url); return true },
+            reloadTimeoutNanoseconds: 100_000_000
+        )
+
+        let status = try await runner.signIn(
+            provider: .openAICodex,
+            method: .browser,
+            onDeviceCode: { deliveredCodes.append($0) }
+        )
+
+        #expect(status.configured)
+        #expect(openedURLs.map(\.absoluteString) == ["https://example.com/oauth"])
+        #expect(deliveredCodes.isEmpty)
+    }
+
+    @Test func providersWithoutDeviceCodeLoginIgnoreTheCodeSignInRequest() {
+        let runner = FakePiOAuthLoginRunner(signOutStatus: .init(configured: false))
+        let controller = PickyPiOAuthLoginController(runner: runner)
+
+        controller.signIn(provider: .anthropic, method: .deviceCode)
+
+        #expect(controller.status(for: .anthropic) == .unknown)
     }
 
     @Test func signOutReturnsFallbackStatusAndReloadsEveryDaemon() async throws {
@@ -164,7 +333,7 @@ struct PickyPiOAuthLoginControllerTests {
         let runner = PickyPiOAuthLoginAgentRunner(client: client, openURL: { _ in false })
 
         do {
-            _ = try await runner.signIn(provider: .anthropic)
+            _ = try await runner.signIn(provider: .anthropic, method: .browser, onDeviceCode: { _ in })
             Issue.record("Expected browser launch failure")
         } catch let error as PickyPiOAuthLoginError {
             #expect(error == .browserOpenFailed("https://example.com/oauth"))
@@ -194,7 +363,7 @@ struct PickyPiOAuthLoginControllerTests {
     @Test func cancelSendsTheOwnedLoginRequestIDToAgentd() async {
         let client = FakePickyAgentClient()
         let runner = PickyPiOAuthLoginAgentRunner(client: client)
-        let loginTask = Task { try await runner.signIn(provider: .anthropic) }
+        let loginTask = Task { try await runner.signIn(provider: .anthropic, method: .browser, onDeviceCode: { _ in }) }
         await waitUntil { client.sentCommands.contains(where: { $0.type == .signInPiOAuth }) }
         let requestId = client.sentCommands.first(where: { $0.type == .signInPiOAuth })?.id
 
@@ -262,7 +431,11 @@ private final class FakePiOAuthLoginRunner: PickyPiOAuthLoginRunning {
         .init(configured: false)
     }
 
-    func signIn(provider: PickyPiOAuthLoginProvider) async throws -> PickyPiOAuthLoginAuthStatus {
+    func signIn(
+        provider: PickyPiOAuthLoginProvider,
+        method: PickyPiOAuthLoginMethod,
+        onDeviceCode: @escaping @MainActor (PickyPiOAuthDeviceCode) -> Void
+    ) async throws -> PickyPiOAuthLoginAuthStatus {
         .init(configured: true, source: "stored")
     }
 

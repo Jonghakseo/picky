@@ -895,83 +895,11 @@ struct CompanionPanelSettingsView: View {
     }
 
     private func oauthProviderRow(_ provider: PickyPiOAuthLoginProvider) -> some View {
-        let status = oauthLoginController.status(for: provider)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: provider.iconName)
-                    .pickyFont(size: 13, weight: .semibold)
-                    .foregroundColor(DS.Colors.accentText)
-                    .frame(width: 18, height: 18)
-                VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                    Text(L10n.t(provider.titleKey))
-                        .font(PickyHUDTypography.supportingSemibold)
-                        .foregroundColor(DS.Colors.textPrimary)
-                    Text(L10n.t(provider.subtitleKey))
-                        .font(PickyHUDTypography.supporting)
-                        .foregroundColor(supportingTextColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .pickyHubSelectableText()
-                }
-                Spacer(minLength: 8)
-                oauthStatusPill(status)
-            }
-
-            if case .failed(let message) = status {
-                Text(message)
-                    .font(PickyHUDTypography.supporting)
-                    .foregroundColor(DS.Colors.destructiveText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .pickyHubSelectableText()
-            }
-
-            HStack(spacing: 8) {
-                Button(action: { oauthLoginController.signIn(provider: provider) }) {
-                    Text(oauthPrimaryButtonTitle(for: status))
-                        .font(PickyHUDTypography.statusSemibold)
-                        .foregroundColor(DS.Colors.accentText)
-                        .padding(.horizontal, DS.Spacing.space3)
-                        .padding(.vertical, DS.Spacing.space2)
-                        .background(
-                            RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                                .fill(DS.Colors.accentText.opacity(0.12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                                        .stroke(DS.Colors.accentText.opacity(0.26), lineWidth: 0.5)
-                                )
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(oauthIsBusy(status))
-                .opacity(oauthIsBusy(status) ? 0.55 : 1)
-                .hoverAffordance()
-
-                if case .configured = status {
-                    Button(action: { oauthLoginController.requestSignOut(provider: provider) }) {
-                        Text("settings.oauth.disconnect")
-                            .font(PickyHUDTypography.statusSemibold)
-                            .foregroundColor(DS.Colors.destructiveText)
-                            .padding(.horizontal, DS.Spacing.space3)
-                            .padding(.vertical, DS.Spacing.space2)
-                    }
-                    .buttonStyle(.plain)
-                    .hoverAffordance()
-                }
-
-                if case .signingIn = status {
-                    Button(action: { oauthLoginController.cancel(provider: provider) }) {
-                        Text("settings.oauth.cancel")
-                            .font(PickyHUDTypography.statusSemibold)
-                            .foregroundColor(DS.Colors.textSecondary)
-                            .padding(.horizontal, DS.Spacing.space3)
-                            .padding(.vertical, DS.Spacing.space2)
-                    }
-                    .buttonStyle(.plain)
-                    .hoverAffordance()
-                }
-
-                Spacer(minLength: 0)
-            }
-        }
+        PickySettingsOAuthProviderRow(
+            controller: oauthLoginController,
+            provider: provider,
+            supportingTextColor: supportingTextColor
+        )
         .padding(10)
         .alert(
             L10n.t("settings.oauth.disconnect.confirmation.title"),
@@ -999,60 +927,6 @@ struct CompanionPanelSettingsView: View {
                         .stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.5)
                 )
         )
-    }
-
-    private func oauthStatusPill(_ status: PickyPiOAuthLoginStatus) -> some View {
-        let display = oauthStatusDisplay(status)
-        return HStack(spacing: 4) {
-            Image(systemName: display.icon)
-                .font(PickyHUDTypography.minimumSemibold)
-            Text(display.text)
-                .font(PickyHUDTypography.minimumSemibold)
-                .lineLimit(1)
-        }
-        .foregroundColor(display.foreground)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(
-            Capsule(style: .continuous)
-                .fill(display.background.opacity(0.12))
-        )
-    }
-
-    private func oauthStatusDisplay(_ status: PickyPiOAuthLoginStatus) -> (text: String, icon: String, foreground: Color, background: Color) {
-        switch status {
-        case .unknown, .checking:
-            return (L10n.t("settings.oauth.status.checking"), "clock", DS.Colors.textTertiary, DS.Colors.textTertiary)
-        case .notConfigured:
-            return (L10n.t("settings.oauth.status.notConfigured"), "circle", DS.Colors.textTertiary, DS.Colors.textTertiary)
-        case .configured(let source):
-            let sourceText = source?.isEmpty == false ? source! : L10n.t("settings.oauth.status.stored")
-            return (L10n.t("settings.oauth.status.configured", sourceText), "checkmark.circle.fill", DS.Colors.successText, DS.Colors.success)
-        case .signingIn:
-            return (L10n.t("settings.oauth.status.signingIn"), "arrow.triangle.2.circlepath", DS.Colors.accentText, DS.Colors.accentText)
-        case .signingOut:
-            return (L10n.t("settings.oauth.status.signingOut"), "arrow.triangle.2.circlepath", DS.Colors.textSecondary, DS.Colors.textSecondary)
-        case .failed:
-            return (L10n.t("settings.oauth.status.failed"), "exclamationmark.triangle.fill", DS.Colors.destructiveText, DS.Colors.destructiveText)
-        }
-    }
-
-    private func oauthPrimaryButtonTitle(for status: PickyPiOAuthLoginStatus) -> LocalizedStringKey {
-        switch status {
-        case .configured:
-            return "settings.oauth.reconnect"
-        default:
-            return "settings.oauth.signIn"
-        }
-    }
-
-    private func oauthIsBusy(_ status: PickyPiOAuthLoginStatus) -> Bool {
-        switch status {
-        case .checking, .signingIn, .signingOut:
-            return true
-        default:
-            return false
-        }
     }
 
     /// Settings entry that lets the user install or uninstall the `picky`

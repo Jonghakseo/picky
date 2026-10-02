@@ -10,6 +10,6 @@
   "message": "Select OpenAI Codex login method:",
   "options": [
     { "id": "browser", "label": "Browser login" },
-    { "id": "device", "label": "Device code login" }
+    { "id": "device_code", "label": "Device code login (headless)" }
   ]
 }

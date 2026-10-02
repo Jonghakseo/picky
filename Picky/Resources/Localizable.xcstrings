@@ -11474,13 +11474,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the buttons below to sign in to AI services in your browser. Credentials are saved in Pi’s local authentication storage."
+            "value": "Use the buttons below to sign in to AI services. Credentials are saved in Pi’s local authentication storage."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아래 버튼으로 브라우저에서 AI 서비스에 로그인해요. 로그인 정보는 Pi의 로컬 인증 저장소에 저장돼요."
+            "value": "아래 버튼으로 AI 서비스에 로그인해요. 로그인 정보는 Pi의 로컬 인증 저장소에 저장돼요."
           }
         }
       }
@@ -11554,13 +11554,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "If browser sign-in does not complete, run `pi /login` and choose the same provider to sign in manually."
+            "value": "If browser sign-in does not complete, use Sign in with code for ChatGPT, or run `pi /login` and choose the same provider to sign in manually."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "브라우저에서 로그인이 완료되지 않으면 `pi /login`을 실행하고 같은 서비스를 선택해 수동으로 로그인해 주세요."
+            "value": "브라우저에서 로그인이 완료되지 않으면 ChatGPT는 코드로 로그인을 사용하고, 그 밖에는 `pi /login`을 실행한 뒤 같은 서비스를 선택해 수동으로 로그인해 주세요."
           }
         }
       }
@@ -28259,6 +28259,166 @@
           "stringUnit": {
             "state": "translated",
             "value": "어제"
+          }
+        }
+      }
+    },
+    "settings.oauth.signInWithCode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드로 로그인"
+          }
+        }
+      }
+    },
+    "settings.oauth.status.waitingForCode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the code…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드 입력 대기 중…"
+          }
+        }
+      }
+    },
+    "settings.oauth.deviceCode.instructions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the sign-in page and enter this code. The account connects when you finish there."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 페이지를 열고 이 코드를 입력해 주세요. 입력을 마치면 계정이 연결돼요."
+          }
+        }
+      }
+    },
+    "settings.oauth.deviceCode.copy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드 복사"
+          }
+        }
+      }
+    },
+    "settings.oauth.deviceCode.openPage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open sign-in page"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 페이지 열기"
+          }
+        }
+      }
+    },
+    "settings.oauth.deviceCode.accessibility": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in code %1$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 코드 %1$@"
+          }
+        }
+      }
+    },
+    "settings.oauth.deviceCodeUnavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This provider does not support code sign-in."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 제공업체는 코드 로그인을 지원하지 않아요."
+          }
+        }
+      }
+    },
+    "settings.oauth.deviceCodeMissing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No sign-in code arrived. Try again or use browser sign-in."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 코드가 오지 않았어요. 다시 시도하거나 브라우저로 로그인해 주세요."
+          }
+        }
+      }
+    },
+    "settings.oauth.status.preparingCode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting code…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드 받는 중…"
+          }
+        }
+      }
+    },
+    "settings.oauth.deviceCode.copied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사됨"
           }
         }
       }

@@ -116,7 +116,7 @@ describe("PiOAuthService", () => {
       const method = await interaction.prompt({
         type: "select",
         message: "Choose a login method",
-        options: [{ id: "browser", label: "Browser" }, { id: "device", label: "Device" }],
+        options: [{ id: "browser", label: "Browser" }, { id: "device_code", label: "Device code" }],
       });
       expect(method).toBe("browser");
       interaction.notify({ type: "auth_url", url: "https://example.com/oauth" });

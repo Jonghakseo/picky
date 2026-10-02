@@ -265,11 +265,10 @@ struct PickyUserBubblePixelWidthTests {
         #expect(!strings.contains { $0.contains(" · ") })
     }
 
-    /// Renders a real 200-line assistant reply inside the conversation card and
-    /// drives the in-bubble toggle the way a user would: the collapsed bubble
-    /// must be far shorter than the full text, the toggle must be visible, and
-    /// clicking it must expand the bubble back to full height.
-    @Test func longAgentResponseCollapsesInTheCardAndExpandsOnClick() throws {
+    /// Renders a real 200-line assistant reply inside the conversation card.
+    /// LLM replies never fold, so the bubble must render at full height with no
+    /// show-more / collapse toggle. Only user bubbles fold long text.
+    @Test func longAgentResponseRendersInFullWithoutToggleInTheCard() throws {
         let cardWidth: CGFloat = 600
         let longText = (1...200).map { "line \($0)" }.joined(separator: "\n")
         let agentMessage = PickySessionMessage(
@@ -329,26 +328,11 @@ struct PickyUserBubblePixelWidthTests {
         let surface = try #require(collectAgentBubbleSurfaces(host).first)
         let fullHeight = configuredAgentSurface(markdown: longText, codeBlockMaxLines: 0)
             .measuredSize(forRootWidth: 600).height
-        let collapsedHeight = surface.lastBubbleRect.height
         #expect(
-            collapsedHeight < fullHeight * 0.4,
-            "200-line reply should collapse near the 50-line cap (collapsed=\(collapsedHeight), full=\(fullHeight))"
+            surface.lastBubbleRect.height >= fullHeight - 1,
+            "200-line reply should render at full height (rendered=\(surface.lastBubbleRect.height), full=\(fullHeight))"
         )
-
-        let toggle = try #require(collectButtons(surface).first { !$0.isHidden && !$0.title.isEmpty })
-        #expect(toggle.title == L10n.t("hud.bubble.showMore"))
-
-        toggle.performClick(nil)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
-        host.layoutSubtreeIfNeeded()
-
-        let expandedSurface = try #require(collectAgentBubbleSurfaces(host).first)
-        let expandedToggle = try #require(collectButtons(expandedSurface).first { !$0.isHidden && !$0.title.isEmpty })
-        #expect(expandedToggle.title == L10n.t("hud.bubble.collapse"))
-        #expect(
-            expandedSurface.lastBubbleRect.height > collapsedHeight * 2,
-            "expanding should restore the full reply height (collapsed=\(collapsedHeight), expanded=\(expandedSurface.lastBubbleRect.height))"
-        )
+        #expect(!collectButtons(surface).contains { !$0.isHidden && !$0.title.isEmpty })
     }
 
     @Test func agentSurfaceCanDisableCodeBlockTruncationForLatestResponse() {
@@ -436,9 +420,6 @@ private func configuredAgentSurface(markdown: String, codeBlockMaxLines: Int) ->
         maxBubbleWidth: 600,
         codeBlockMaxLines: codeBlockMaxLines,
         showsShortcutBadge: false,
-        expansionTitle: nil,
-        expansionSystemImageName: nil,
-        onToggleExpansion: nil,
         onOpenAsReport: {},
         onCopyText: nil
     )

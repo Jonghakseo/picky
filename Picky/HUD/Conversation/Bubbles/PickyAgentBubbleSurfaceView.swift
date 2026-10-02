@@ -17,11 +17,6 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
     /// response uses that so the HUD shows the whole LLM reply inline.
     let codeBlockMaxLines: Int
     let showsShortcutBadge: Bool
-    /// Non-nil only when the bubble collapses a long response; drives the
-    /// in-bubble "show more" / "collapse" toggle.
-    let expansionTitle: String?
-    let expansionSystemImageName: String?
-    let onToggleExpansion: (() -> Void)?
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
     var timestamp: PickyBubbleTimestamp? = nil
@@ -46,9 +41,6 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
             maxBubbleWidth: maxBubbleWidth,
             codeBlockMaxLines: codeBlockMaxLines,
             showsShortcutBadge: showsShortcutBadge,
-            expansionTitle: expansionTitle,
-            expansionSystemImageName: expansionSystemImageName,
-            onToggleExpansion: onToggleExpansion,
             onOpenAsReport: onOpenAsReport,
             onCopyText: onCopyText,
             timestamp: timestamp
@@ -83,20 +75,15 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         static let hoverIconSize: CGFloat = 22
         static let hoverIconInset: CGFloat = 5
         static let hoverIconCornerRadius: CGFloat = 6
-        static let expansionSpacing: CGFloat = 7
-        static let expansionButtonHeight: CGFloat = 22
     }
 
     private let markdownView = PickyBubbleMarkdownContentView()
     private let hoverButton = NSButton(title: "", target: nil, action: nil)
-    private let expansionButton = NSButton(title: "", target: nil, action: nil)
     private let timestampAccessory = PickyBubbleTimestampAccessory()
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
     private var actionText: String?
     private var showsShortcutBadge = false
-    private var expansionTitle: String?
-    private var onToggleExpansion: (() -> Void)?
     private var onCopyText: (() -> Void)?
     private var onOpenAsReport: (() -> Void)?
     private var trackingArea: NSTrackingArea?
@@ -129,18 +116,9 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         hoverButton.layer?.borderWidth = 0.5
         addSubview(hoverButton)
 
-        expansionButton.isBordered = false
-        expansionButton.bezelStyle = .regularSquare
-        expansionButton.imagePosition = .imageTrailing
-        expansionButton.setButtonType(.momentaryChange)
-        expansionButton.target = self
-        expansionButton.action = #selector(toggleExpansionClicked)
-        expansionButton.isHidden = true
-        addSubview(expansionButton)
         timestampAccessory.install(in: self)
 
         applyHoverButtonAppearance()
-        applyExpansionButtonAppearance()
     }
 
     /// Layer-backed colors and `contentTintColor` are snapshotted as CGColors
@@ -154,7 +132,6 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyHoverButtonAppearance()
-        applyExpansionButtonAppearance()
     }
 
     private func applyHoverButtonAppearance() {
@@ -162,19 +139,6 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
             hoverButton.contentTintColor = NSColor(DS.Colors.textSecondary)
             hoverButton.layer?.backgroundColor = NSColor(DS.Colors.surface1).withAlphaComponent(0.78).cgColor
             hoverButton.layer?.borderColor = NSColor(DS.Colors.borderSubtle).withAlphaComponent(0.55).cgColor
-        }
-    }
-
-    private func applyExpansionButtonAppearance() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            expansionButton.contentTintColor = NSColor(DS.Colors.textSecondary)
-            expansionButton.attributedTitle = NSAttributedString(
-                string: expansionButton.title,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: PickyHUDTypography.Size.supporting, weight: .medium),
-                    .foregroundColor: NSColor(DS.Colors.textSecondary)
-                ]
-            )
         }
     }
 
@@ -188,9 +152,6 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         maxBubbleWidth: CGFloat,
         codeBlockMaxLines: Int,
         showsShortcutBadge: Bool,
-        expansionTitle: String?,
-        expansionSystemImageName: String?,
-        onToggleExpansion: (() -> Void)?,
         onOpenAsReport: (() -> Void)?,
         onCopyText: (() -> Void)?,
         timestamp: PickyBubbleTimestamp? = nil
@@ -207,13 +168,10 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         self.maxBubbleWidth = max(0, maxBubbleWidth)
         self.showsShortcutBadge = showsShortcutBadge
         self.actionText = markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : markdown
-        self.expansionTitle = expansionTitle
-        self.onToggleExpansion = onToggleExpansion
         self.onCopyText = onCopyText
         self.onOpenAsReport = onOpenAsReport
 
         hoverButton.toolTip = L10n.t("hud.message.openReport.help")
-        configureExpansionButton(title: expansionTitle, systemImageName: expansionSystemImageName)
 
         needsLayout = true
         needsDisplay = true
@@ -243,16 +201,6 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
             width: textWidth,
             height: ceil(metrics.textHeight)
         )
-
-        if !expansionButton.isHidden {
-            let width = min(textWidth, max(52, expansionButtonWidth()))
-            expansionButton.frame = NSRect(
-                x: bubbleRect.minX + Metrics.horizontalPadding - 4,
-                y: markdownView.frame.maxY + Metrics.expansionSpacing,
-                width: width,
-                height: Metrics.expansionButtonHeight
-            )
-        }
 
         hoverButton.frame = NSRect(
             x: bubbleRect.maxX - Metrics.hoverIconSize - Metrics.hoverIconInset,
@@ -339,32 +287,11 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         let bubbleCap = max(0, min(maxBubbleWidth, rootWidth) - timestampAccessory.reservedWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: interiorCap)
-        let contentWidth = min(interiorCap, ceil(max(textSize.width, expansionButtonWidth())))
+        let contentWidth = min(interiorCap, ceil(textSize.width))
         let bubbleWidth = min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
         let textHeight = ceil(textSize.height)
-        var bubbleHeight = textHeight + 2 * Metrics.verticalPadding
-        if expansionTitle != nil {
-            bubbleHeight += Metrics.expansionSpacing + Metrics.expansionButtonHeight
-        }
+        let bubbleHeight = textHeight + 2 * Metrics.verticalPadding
         return (bubbleWidth, bubbleHeight, textHeight)
-    }
-
-    private func configureExpansionButton(title: String?, systemImageName: String?) {
-        expansionButton.title = title ?? ""
-        if let systemImageName {
-            let symbolConfig = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
-            expansionButton.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: title)?
-                .withSymbolConfiguration(symbolConfig)
-        } else {
-            expansionButton.image = nil
-        }
-        expansionButton.isHidden = title == nil || onToggleExpansion == nil
-        expansionButton.toolTip = title
-        applyExpansionButtonAppearance()
-    }
-
-    private func expansionButtonWidth() -> CGFloat {
-        expansionButton.isHidden ? 0 : ceil(expansionButton.fittingSize.width)
     }
 
     private func measuredTextContentSize(forWidth width: CGFloat) -> NSSize {
@@ -430,10 +357,6 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
 
     @objc private func openAsReportClicked() {
         onOpenAsReport?()
-    }
-
-    @objc private func toggleExpansionClicked() {
-        onToggleExpansion?()
     }
 }
 

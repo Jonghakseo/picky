@@ -131,9 +131,6 @@ struct PickyBubbleMeasurementCacheTests {
             maxBubbleWidth: 600,
             codeBlockMaxLines: 0,
             showsShortcutBadge: false,
-            expansionTitle: nil,
-            expansionSystemImageName: nil,
-            onToggleExpansion: nil,
             onOpenAsReport: nil,
             onCopyText: nil
         )

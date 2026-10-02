@@ -1942,50 +1942,31 @@ struct PickyConversationCardViewTests {
             isLatestResponseShortcutHintVisible: true
         )
 
-        #expect(olderBubble.displayedMarkdown == eightLines + "...")
-        #expect(olderBubble.displayedCodeBlockMaxLines == PickyAgentResponsePreview.codeBlockMaxLines)
+        #expect(olderBubble.displayedMarkdown == nineLines)
+        #expect(olderBubble.shouldOfferReport)
         #expect(latestTurnSegment.displayedMarkdown == nineLines)
-        #expect(latestTurnSegment.displayedCodeBlockMaxLines == 0)
         #expect(!latestTurnSegment.isLatestResponseShortcutHintVisible)
         #expect(!latestTurnSegment.shouldOfferReport)
         #expect(latestBubble.displayedMarkdown == nineLines)
-        #expect(latestBubble.displayedCodeBlockMaxLines == 0)
         #expect(latestBubble.isLatestResponseShortcutHintVisible)
         #expect(latestBubble.shouldOfferReport)
     }
 
-    @Test func fullResponseBubbleCollapsesPastFiftyLinesUntilExpanded() {
-        let cap = PickyAgentResponsePreview.fullResponseMaxLines
-        let atCap = (1...cap).map { "line \($0)" }.joined(separator: "\n")
-        let overCap = atCap + "\nline \(cap + 1)"
+    @Test func agentBubblesNeverFoldLongText() {
+        // Only user bubbles fold long text behind show-more. LLM replies,
+        // older or latest, and system text always render in full.
+        let longText = (1...200).map { "line \($0)" }.joined(separator: "\n")
 
-        let atCapBubble = PickyAgentBubbleView(
-            message: message("m-at-cap", kind: .agentText, text: atCap),
+        let olderBubble = PickyAgentBubbleView(message: message("m-older", kind: .agentText, text: longText))
+        let latestBubble = PickyAgentBubbleView(
+            message: message("m-latest", kind: .agentText, text: longText),
             isLatestAgentResponse: true
         )
-        let overCapBubble = PickyAgentBubbleView(
-            message: message("m-over-cap", kind: .agentText, text: overCap),
-            rendersFullResponse: true
-        )
-        let previewBubble = PickyAgentBubbleView(
-            message: message("m-preview", kind: .agentText, text: overCap)
-        )
+        let systemBubble = PickyAgentBubbleView(message: message("m-system", kind: .system, text: longText))
 
-        #expect(!atCapBubble.isCollapsible)
-        #expect(atCapBubble.displayedMarkdown == atCap)
-        #expect(overCapBubble.isCollapsible)
-        #expect(overCapBubble.isCollapsed)
-        #expect(overCapBubble.displayedMarkdown == atCap + "...")
-        // Older replies expand in place instead of only offering the report window.
-        #expect(previewBubble.isCollapsible)
-        #expect(previewBubble.isCollapsed)
-        #expect(previewBubble.displayedMarkdown == (1...8).map { "line \($0)" }.joined(separator: "\n") + "...")
-
-        // System text (seeded handoff context, bootstrap notes) renders through
-        // the same bubble in full, so it must collapse on the same cap.
-        let systemBubble = PickyAgentBubbleView(message: message("m-system", kind: .system, text: overCap))
-        #expect(systemBubble.isCollapsible)
-        #expect(systemBubble.displayedMarkdown == atCap + "...")
+        #expect(olderBubble.displayedMarkdown == longText)
+        #expect(latestBubble.displayedMarkdown == longText)
+        #expect(systemBubble.displayedMarkdown == longText)
     }
 
     @Test func latestTurnVisibilityPolicyExpandsEveryAgentSegmentOnlyInLatestTurn() {

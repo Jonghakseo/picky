@@ -20,7 +20,6 @@ struct PickyAgentBubbleView: View {
     var rendersFullResponse = false
     var isLatestResponseShortcutHintVisible = false
 
-    @State private var isExpanded = false
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
@@ -29,11 +28,8 @@ struct PickyAgentBubbleView: View {
             PickyAgentBubbleSurfaceView(
                 markdown: displayedMarkdown,
                 maxBubbleWidth: bubbleMaxWidth,
-                codeBlockMaxLines: displayedCodeBlockMaxLines,
+                codeBlockMaxLines: 0,
                 showsShortcutBadge: isLatestResponseShortcutHintVisible,
-                expansionTitle: expansionTitle,
-                expansionSystemImageName: expansionSystemImageName,
-                onToggleExpansion: expansionAction,
                 onOpenAsReport: hoverIconAction,
                 onCopyText: copyTextAction,
                 timestamp: timestamp
@@ -43,66 +39,16 @@ struct PickyAgentBubbleView: View {
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onChange(of: message.id) { _, _ in isExpanded = false }
     }
 
     private var bubbleMaxWidth: CGFloat {
         PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth)
     }
 
-    var displayedMarkdown: String {
-        let text = displayText
-        guard !usesPreviewTruncation else {
-            return isExpanded ? text : PickyAgentResponsePreview.truncatedMarkdown(text)
-        }
-        return isCollapsed ? PickyAgentResponsePreview.collapsedFullResponseMarkdown(text) : text
-    }
-
-    /// Older agent replies start as the short 8-line preview and expand in
-    /// place; the report window stays a secondary hover action. Everything else this
-    /// bubble renders (the latest response, latest-turn segments, and system or
-    /// question-fallback text) is shown in full.
-    private var usesPreviewTruncation: Bool {
-        message.kind == .agentText && !displaysFullResponse
-    }
-
-    var displayedCodeBlockMaxLines: Int {
-        displaysFullResponse || (usesPreviewTruncation && isExpanded) ? 0 : PickyAgentResponsePreview.codeBlockMaxLines
-    }
-
-    private var displaysFullResponse: Bool {
-        isLatestAgentResponse || rendersFullResponse
-    }
-
-    /// Full-text bubbles would otherwise push the rest of the transcript out of
-    /// view (and make every HUD resize re-measure a huge markdown tree), so they
-    /// collapse past a line cap until the reader expands them.
-    var isCollapsible: Bool {
-        usesPreviewTruncation
-            ? PickyAgentResponsePreview.isTruncated(displayText)
-            : PickyAgentResponsePreview.exceedsFullResponseLineLimit(displayText)
-    }
-
-    var isCollapsed: Bool { isCollapsible && !isExpanded }
-
-    private var expansionTitle: String? {
-        guard isCollapsible else { return nil }
-        return isExpanded ? L10n.t("hud.bubble.collapse") : L10n.t("hud.bubble.showMore")
-    }
-
-    private var expansionSystemImageName: String? {
-        guard isCollapsible else { return nil }
-        return isExpanded ? "chevron.up" : "chevron.down"
-    }
-
-    private var expansionAction: (() -> Void)? {
-        guard isCollapsible else { return nil }
-        return {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                isExpanded.toggle()
-            }
-        }
-    }
+    /// LLM replies always render in full, with no show-more / collapse toggle.
+    /// Only user bubbles fold long text. Long replies stay reachable in the
+    /// report window through the hover/context-menu affordance.
+    var displayedMarkdown: String { displayText }
 
     private var copyTextAction: (() -> Void)? {
         let text = displayText
@@ -110,9 +56,9 @@ struct PickyAgentBubbleView: View {
         return { onCopyText(text) }
     }
 
-    /// Older bubbles expose the report affordance only when their preview is
-    /// visibly truncated. The latest LLM response is already shown in full, but
-    /// still keeps the same large-window report affordance on hover/context menu.
+    /// Older bubbles expose the report affordance only when their text is long
+    /// enough that a preview would truncate it. The latest LLM response keeps
+    /// the same large-window report affordance on hover/context menu.
     var shouldOfferReport: Bool {
         if isLatestAgentResponse {
             return message.openAsReportMarkdown != nil
@@ -251,19 +197,6 @@ enum PickyAgentResponsePreview {
     /// truncation so the hover "open as report" gate matches what the user
     /// actually sees on screen.
     static let codeBlockMaxLines = 4
-    /// Line cap for bubbles that would otherwise render a full response. Past
-    /// this many source lines the bubble collapses behind a "show more" toggle
-    /// so one long reply cannot swallow the transcript.
-    static let fullResponseMaxLines = 50
-
-    static func collapsedFullResponseMarkdown(_ text: String, maxLines: Int = fullResponseMaxLines) -> String {
-        truncatedMarkdown(text, maxLines: maxLines, maxCharacters: .max)
-    }
-
-    static func exceedsFullResponseLineLimit(_ text: String, maxLines: Int = fullResponseMaxLines) -> Bool {
-        guard maxLines > 0 else { return false }
-        return text.split(separator: "\n", omittingEmptySubsequences: false).count > maxLines
-    }
 
     static func truncatedMarkdown(_ text: String, maxLines: Int = maxLines, maxCharacters: Int = maxCharacters) -> String {
         guard maxLines > 0, maxCharacters > 0 else { return "..." }

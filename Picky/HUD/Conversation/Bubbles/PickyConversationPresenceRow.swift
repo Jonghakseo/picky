@@ -34,28 +34,25 @@ struct PickyConversationPresencePresentation: Equatable {
 
     /// Only a running tool makes the line "working". Once it finishes the line
     /// drops back to "thinking" so a finished or failed step never reads as
-    /// still in progress. When the agent has finished responding and the
-    /// session stays running only for background work (`bash_async`,
-    /// subagents), the line reads "working" too: nothing is thinking.
+    /// still in progress. Once the agent has finished responding, the line
+    /// disappears even if the session stays running for background work
+    /// (`bash_async`, subagents): the Pickle can take a new message, and the
+    /// running-task footer already shows that work.
     static func make(
         isRunning: Bool,
         isWaitingForInput: Bool,
         activeTool: PickyToolActivity?,
         activeTodoForm: String?,
         startedAt: Date?,
-        isAgentResponding: Bool = true,
-        hasBackgroundWork: Bool = false
+        isAgentResponding: Bool = true
     ) -> Self? {
         if isWaitingForInput {
             return Self(phase: .waitingForInput, detail: nil, startedAt: nil)
         }
-        guard isRunning else { return nil }
+        guard isRunning, isAgentResponding else { return nil }
         let todo = activeTodoForm.flatMap(nonEmptyLine)
         if let activeTool, activeTool.isActive {
             return Self(phase: .working, detail: todo ?? detail(for: activeTool), startedAt: startedAt)
-        }
-        if !isAgentResponding, hasBackgroundWork {
-            return Self(phase: .working, detail: todo, startedAt: startedAt)
         }
         return Self(phase: .thinking, detail: nil, startedAt: startedAt)
     }

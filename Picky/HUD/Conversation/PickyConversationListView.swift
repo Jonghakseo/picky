@@ -616,9 +616,9 @@ struct PickyConversationListView: View {
     }
 
     /// Presence line for the current turn only. A running tool makes it
-    /// "working"; between tools it reads "thinking". After the agent finishes
-    /// responding, background work alone keeps it "working" (same idle/settled
-    /// rule as `PickyConversationComposerProjection.submitStatus`).
+    /// "working"; between tools it reads "thinking". It disappears once the
+    /// agent finishes responding, even while background work keeps the session
+    /// running (same idle/settled rule as `PickyConversationComposerProjection.submitStatus`).
     private func presence(for group: PickyTurnGroup) -> PickyConversationPresencePresentation? {
         guard group.isCurrent else { return nil }
         let turnStart = group.userMessage?.createdAt ?? group.bodyMessages.first?.createdAt
@@ -628,8 +628,7 @@ struct PickyConversationListView: View {
             activeTool: session.activeTool,
             activeTodoForm: session.todoState?.tasks.first { $0.status == .inProgress }?.displayText,
             startedAt: turnStart,
-            isAgentResponding: !(session.agentCycle?.phase == .idle || session.agentCycle?.phase == .settled),
-            hasBackgroundWork: (session.asyncWorkSummary?.activeRootCount ?? 0) > 0
+            isAgentResponding: !(session.agentCycle?.phase == .idle || session.agentCycle?.phase == .settled)
         )
     }
 

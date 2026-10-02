@@ -605,14 +605,11 @@ struct PickyTurnCardViewTests {
             isRunning: true, isWaitingForInput: false, activeTool: bash, activeTodoForm: "HUD 정리 중", startedAt: nil)?.detail == "HUD 정리 중")
         #expect(PickyConversationPresencePresentation.make(
             isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: nil, startedAt: nil)?.phase == .thinking)
-        // Agent finished responding; the session runs only for bash_async/subagent work.
+        // Agent finished responding; the session runs only for bash_async/subagent work
+        // and can take a new message, so no presence line.
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: nil, startedAt: nil,
-            isAgentResponding: false, hasBackgroundWork: true)?.phase == .working)
-        // Background work while the agent is still responding is not the agent's current step.
-        #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: nil, startedAt: nil,
-            isAgentResponding: true, hasBackgroundWork: true)?.phase == .thinking)
+            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: "CI 대기", startedAt: nil,
+            isAgentResponding: false) == nil)
         #expect(PickyConversationPresencePresentation.make(
             isRunning: false, isWaitingForInput: true, activeTool: bash, activeTodoForm: nil, startedAt: nil)?.phase == .waitingForInput)
         #expect(PickyConversationPresencePresentation.make(

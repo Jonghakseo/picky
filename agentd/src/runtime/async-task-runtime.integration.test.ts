@@ -1061,6 +1061,37 @@ it("finalizes a real failed SDK response but keeps its surviving work blocked", 
   expect(f.requests).toHaveLength(1);
 }, 15_000);
 
+it.each([
+  { recovers: true, settledStatus: "running" },
+  { recovers: false, settledStatus: "blocked" },
+] as const)("shows a follow-up after a failed response with surviving work as running (recovers=$recovers)", async ({ recovers, settledStatus }) => {
+  const options = { failModel: true };
+  const f = await fixture(options);
+  await f.completion("surviving-resource", { execution: "failed", presence: "active" });
+  await f.handle.followUp({ text: "Finite failed response", imagePaths: [] });
+  await f.session.waitForIdle();
+  await vi.waitFor(() => expect(f.supervisor.get("session-sdk")?.asyncWorkSummary?.episode?.outcome).toBe("failed"));
+  await f.drainEvents();
+  const failedCycleId = f.supervisor.get("session-sdk")?.agentCycle?.cycleId;
+  expect(f.supervisor.get("session-sdk")).toMatchObject({ status: "blocked", lastSummary: "Agent failed with unfinished work" });
+
+  options.failModel = !recovers;
+  await f.supervisor.followUp("session-sdk", "Continue");
+  await vi.waitFor(() => expect(f.requests).toHaveLength(2));
+  await f.session.waitForIdle();
+  await vi.waitFor(() => expect(f.supervisor.get("session-sdk")?.asyncWorkSummary?.episode?.finalizedCycleId).not.toBe(failedCycleId));
+  await f.drainEvents();
+  // Until the new cycle itself fails, no published projection may fall back to the old failure.
+  const nextCycle = f.projections.filter((state) => state.agentCycle && state.agentCycle.cycleId !== failedCycleId && state.agentCycle.outcome !== "failed");
+  expect(nextCycle.some((state) => state.agentCycle?.phase === "responding")).toBe(true);
+  for (const state of nextCycle) {
+    expect(state.status).toBe("running");
+    expect(state.lastSummary).not.toBe("Agent failed with unfinished work");
+  }
+  expect(await f.store.loadReadOnly("session-sdk")).toMatchObject({ status: settledStatus, asyncWorkSummary: { activeRootCount: 1, canReleaseRuntime: false } });
+  expect(f.requests).toHaveLength(2);
+}, 15_000);
+
 it("does not abort an idle model while reconciling a stopped Pickle before follow-up", async () => {
   const f = await fixture({ readyOnDiscovery: true, captureSaved: true });
   await f.supervisor.followUp("session-sdk", "First turn");

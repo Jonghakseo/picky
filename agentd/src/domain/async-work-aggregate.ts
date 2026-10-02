@@ -19,7 +19,7 @@ export function aggregateAsyncWork(before: PickyAgentSession, proposed: PickyAge
   const controls = controlObligations(proposed);
   const executionPending = hasUnfinishedWork(proposed, observation, counts.activeRootCount, pending.length);
   const unfinished = hasUnfinishedWork(proposed, observation, counts.activeRootCount, pending.length, controls.pending);
-  const reason = attentionReason(counts.uncertainExecutionCount, failedDeliveryCount, controls.failures, episode?.outcome, executionPending, observation.tracking);
+  const reason = attentionReason(counts.uncertainExecutionCount, failedDeliveryCount, controls.failures, parentOutcome(proposed, episode), executionPending, observation.tracking);
   const attentionCount = counts.uncertainExecutionCount + failedDeliveryCount + controls.failures + reason.extraCount;
   const quiescent = observation.tracking === "ready" && attentionCount === 0 && !unfinished
     && !proposed.pendingExtensionUiRequest && responseFinalized(proposed, episode);
@@ -38,9 +38,30 @@ export function aggregateAsyncWork(before: PickyAgentSession, proposed: PickyAge
   return { ...proposed, status, lastSummary, asyncWorkSummary: summary };
 }
 
+const ATTENTION_SUMMARIES = new Set([
+  "Async execution outcome unknown",
+  "Async result delivery needs recovery",
+  "Async control needs recovery",
+  "Agent failed with unfinished work",
+  "Async tracking unsupported",
+]);
+
+/**
+ * A failed response stays the parent's verdict only until a newer response cycle exists;
+ * that cycle's own finalization replaces the outcome. Until then only its own failure counts.
+ */
+function parentOutcome(session: PickyAgentSession, episode: Episode | undefined): Episode["outcome"] {
+  const cycle = session.agentCycle;
+  const superseded = episode?.outcome === "failed" && !!cycle && cycle.cycleId !== episode.finalizedCycleId
+    && cycle.outcome !== "failed";
+  return superseded ? undefined : episode?.outcome;
+}
+
 function summaryAfterRecovery(before: PickyAgentSession, proposed: PickyAgentSession, status: PickyAgentSession["status"]): string | undefined {
-  if (before.status === "blocked" && status !== "blocked" && proposed.finalAnswer) return summaryFromFinalAnswer(proposed.finalAnswer);
-  return proposed.lastSummary;
+  if (before.status !== "blocked" || status === "blocked") return proposed.lastSummary;
+  if (proposed.finalAnswer) return summaryFromFinalAnswer(proposed.finalAnswer);
+  // The attention reason no longer holds; do not keep presenting it as the current summary.
+  return proposed.lastSummary && ATTENTION_SUMMARIES.has(proposed.lastSummary) ? undefined : proposed.lastSummary;
 }
 
 function hasUnfinishedWork(session: PickyAgentSession, observation: AsyncWorkObservation, activeRoots: number, pendingTickets: number, pendingControl = false): boolean {

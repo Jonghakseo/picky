@@ -46,6 +46,27 @@ it("lets a handled child failure settle but keeps parent failure with live work 
   expect(aggregateAsyncWork(before, failedParent, idle)).toMatchObject({ status: "failed", asyncWorkSummary: { canReleaseRuntime: true } });
 });
 
+it("lets a newer live response cycle supersede a failed parent with surviving work", () => {
+  const finished = finishedResponse();
+  const liveRoot = finished.asyncTasks!.map((task) => ({ ...task, presence: "active" as const, execution: "running" as const }));
+  const failedEpisode = { ...finished.asyncWorkSummary!.episode!, outcome: "failed" as const };
+  const failed = aggregateAsyncWork(finished, { ...finished, asyncTasks: liveRoot, agentCycle: { ...finished.agentCycle!, outcome: "failed" }, asyncWorkSummary: { ...finished.asyncWorkSummary!, episode: failedEpisode } }, idle);
+  expect(failed).toMatchObject({ status: "blocked", lastSummary: "Agent failed with unfinished work", asyncWorkSummary: { episode: { settled: false } } });
+
+  const nextCycle = { ...failed.agentCycle!, cycleId: "next-cycle", phase: "responding" as const, outcome: undefined };
+  const responding = aggregateAsyncWork(failed, { ...failed, agentCycle: nextCycle }, { ...idle, runtimeBusy: true });
+  expect(responding).toMatchObject({ status: "running", asyncWorkSummary: { attentionCount: 0, episode: { id: failedEpisode.id } } });
+  expect(responding.lastSummary).toBeUndefined();
+
+  const settledCycle = { ...nextCycle, phase: "settled" as const };
+  // The cycle settles before the terminal status finalizes the episode; that gap must not flash the old failure.
+  expect(aggregateAsyncWork(responding, { ...responding, agentCycle: { ...settledCycle, outcome: "completed" } }, idle).status).toBe("running");
+  const finalizedAs = (outcome: "completed" | "failed") => ({ ...responding, agentCycle: { ...settledCycle, outcome },
+    asyncWorkSummary: { ...responding.asyncWorkSummary!, episode: { ...responding.asyncWorkSummary!.episode!, finalizedCycleId: "next-cycle", outcome } } });
+  expect(aggregateAsyncWork(responding, finalizedAs("completed"), idle)).toMatchObject({ status: "running", asyncWorkSummary: { attentionCount: 0 } });
+  expect(aggregateAsyncWork(responding, finalizedAs("failed"), idle)).toMatchObject({ status: "blocked", lastSummary: "Agent failed with unfinished work" });
+});
+
 it("cannot release on reconciling coverage or a pending human result", () => {
   const before = finishedResponse();
   expect(aggregateAsyncWork(before, before, { ...idle, tracking: "reconciling" })).toMatchObject({ status: "completed", asyncWorkSummary: { canReleaseRuntime: false } });

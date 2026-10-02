@@ -1647,25 +1647,19 @@ private enum PickyShakeReactionText {
 
 private struct CursorWaitingIndicatorView: View {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @State private var isAnimating = false
+
+    /// One bounce leg (rest to peak) and the stagger between neighbouring dots.
+    private static let bounceHalfPeriod: TimeInterval = 0.58
+    private static let dotStagger: TimeInterval = 0.13
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(DS.Colors.overlayCursorBlue.opacity(accessibilityReduceMotion ? 0.95 : (isAnimating ? 0.95 : 0.42)))
-                    .frame(width: 4, height: 4)
-                    .scaleEffect(accessibilityReduceMotion ? 1.0 : (isAnimating ? 1.0 : 0.72))
-                    .offset(y: accessibilityReduceMotion ? 0 : (isAnimating ? -1.0 : 1.0))
-                    .animation(
-                        accessibilityReduceMotion
-                            ? nil
-                            : .easeInOut(duration: 0.58)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(index) * 0.13),
-                        value: isAnimating
-                    )
-            }
+        // The bounce is derived from the clock instead of a state-triggered
+        // `repeatForever` animation. A repeating transaction started in
+        // `onAppear` also captures the indicator's first-layout `.position`
+        // shift (size `.zero` -> measured size), which made the dots oscillate
+        // diagonally forever instead of bouncing in place.
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: accessibilityReduceMotion)) { timeline in
+            dots(at: timeline.date.timeIntervalSinceReferenceDate)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5.5)
@@ -1680,11 +1674,26 @@ private struct CursorWaitingIndicatorView: View {
                 .stroke(DS.Colors.overlayCursorBlue.opacity(0.26), lineWidth: 0.8)
         )
         .fixedSize()
-        .onAppear { isAnimating = !accessibilityReduceMotion }
-        .onChange(of: accessibilityReduceMotion) { _, reduceMotion in
-            isAnimating = !reduceMotion
+    }
+
+    private func dots(at time: TimeInterval) -> some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3, id: \.self) { index in
+                let lift = accessibilityReduceMotion ? 1.0 : bounceProgress(at: time, index: index)
+                Circle()
+                    .fill(DS.Colors.overlayCursorBlue.opacity(0.42 + 0.53 * lift))
+                    .frame(width: 4, height: 4)
+                    .scaleEffect(0.72 + 0.28 * lift)
+                    .offset(y: accessibilityReduceMotion ? 0 : 1.0 - 2.0 * lift)
+            }
         }
-        .onDisappear { isAnimating = false }
+    }
+
+    /// 0 at rest, 1 at the peak; a cosine wave matches the previous
+    /// ease-in-out autoreversing bounce.
+    private func bounceProgress(at time: TimeInterval, index: Int) -> Double {
+        let phase = (time - Double(index) * Self.dotStagger) / Self.bounceHalfPeriod
+        return (1 - cos(phase * .pi)) / 2
     }
 }
 

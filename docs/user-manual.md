@@ -107,7 +107,7 @@ Adding, removing, enabling, or changing a server's scope applies after the plugi
 
 Settings keeps its category jump links visible while you scroll through seven groups: **General**, **Accounts and agents**, **Voice and input**, **Screen and overlays**, **Pickles and workspace**, **Notifications, permissions, and privacy**, and **Advanced and diagnostics**. Group headings include a short summary; the Main Agent area further separates workspace and instructions, model and reasoning, screen capture, armed-Pickle delivery, and runtime paths into focused cards. Most toggles and menus save immediately. Directory and provider text fields retain their own drafts and show **Save changes** / **Saved** status.
 
-The **Accounts and agents** group includes Pi OAuth connections for OpenAI Codex and Anthropic. Use **Refresh** to query the current status, **Sign in** or **Reconnect** to authenticate, and **Disconnect** to remove a provider after confirmation. Completing either sign-in or disconnect refreshes authentication for the current Picky/Pickle daemon sessions.
+The **Accounts and agents** group includes Pi OAuth connections for OpenAI Codex and Anthropic. Use **Refresh** to query the current status, **Sign in** or **Reconnect** to authenticate in your browser, and **Disconnect** to remove a provider after confirmation. ChatGPT also offers **Sign in with code**: copy the displayed code, open the sign-in page, and enter it there. Picky waits for approval and connects the account automatically; **Cancel** stops the attempt and clears the code. Claude uses browser sign-in only. Completing either sign-in or disconnect refreshes authentication for the current Picky/Pickle daemon sessions.
 
 ### 2.5 Sidebar controls
 

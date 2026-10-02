@@ -210,7 +210,7 @@ Quick Input is suppressed while Push-to-Talk or dictation is active, and also wh
 
 ### 5.1 Main-agent activity, questions, and cancellation
 
-While the main Picky agent is working, compact activity chips near the cursor show the tools or skills currently in use. If the agent calls `ask_user_question`, Picky opens an interactive cursor-side form. Multi-question requests advance one step at a time; radio and checkbox questions can offer an **Other** response, and text questions accept free-form input.
+While the main Picky agent is working, compact activity chips near the cursor show only readable progress: the title of a shell command, memory lookups and saves, web search queries, and **{server} MCP** for any MCP call. Thinking shows as **Thinking…** without its content. Other tools stay behind a single **Working** chip until the reply ends. If the agent calls `ask_user_question`, Picky opens an interactive cursor-side form. Multi-question requests advance one step at a time; radio and checkbox questions can offer an **Other** response, and text questions accept free-form input.
 
 An active main turn also shows a **Stop** pill near the cursor. Click it to abort the current turn, or press Escape twice within the confirmation window. Picky suppresses this shortcut while another visible panel owns Escape for its own close/cancel action. During Korean or other IME composition in the question form, Escape is first passed to the input method so it can cancel the marked text instead of dismissing the form.
 
@@ -239,6 +239,8 @@ Details:
 ### 6.1 Picky screen guidance
 
 When a reply refers to a concrete location in a captured screenshot, Picky can point at that location or draw rough rectangles, lines, and freeform paths with labels over the matching display. Rectangles and lines may also use spotlights; paths can combine straight and cubic Bézier segments for trends or graph-like guidance. Visual narration is revealed sentence by sentence, so each pointer or drawing appears alongside the part of the spoken/text response that describes it.
+
+To translate or explain on-screen text, Picky underlines the original text and attaches a callout bubble beside it. The original stays visible, the whole translation is shown (long text widens the bubble up to a cap instead of being cut off), and several callouts are placed so they do not cover each other or the other marked text.
 
 These overlays are grounded in the screenshot captured for the current turn. Picky validates the current screen pixels before revealing them, hides drawings when the referenced area changes substantially, and can restore them if the original scene returns during narration or within the roughly 30-second recovery window afterward. Drawings that remain after narration show a lower-center **Clear drawing** control. Agent-authored overlays are visual-only and are not added to the conversation transcript.
 
@@ -378,7 +380,8 @@ The card contains:
 
 - Header with title, status badge, and menu.
 - Context line with working folder, Git/PR/link badges.
-- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; full-text reply and system bubbles longer than 50 lines collapse behind a **Show more** toggle, while older replies may stay compact and can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
+- Conversation history as a messenger thread with Markdown-rendered replies and day dividers (**Today**, **Yesterday**, then dates). Hover a bubble to see its send time. Thinking is not shown in the thread; while a Pickle is replying, a line under the last bubble shows **Thinking** or **Working · <step>** (the current checklist step, shell command title, skill, or delegated agent), with the elapsed time on hover. The line disappears once the reply finishes, even if background work keeps running.
+- The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; full-text reply and system bubbles longer than 50 lines collapse behind a **Show more** toggle. Older replies start as a preview and expand in place with **Show more**; they can still be opened as reports. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays reachable through the Pi terminal overlay).
 - A running-work footer when the runtime reports active background tasks. Expand it to see task names and elapsed times; subagent work shows agent types when available. The footer can open as a popover in a compact card. Background jobs may keep running after the current response ends. Completed subagent launches and `bash_async` notifications are not duplicated in the conversation.
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
@@ -665,7 +668,6 @@ These work when a Pickle card/HUD panel is active.
 | Cmd + E | Toggle the **local-shell utility panel** below the card composer while the conversation stays visible above. It opens directly to a terminal in the Pickle cwd. Distinct from `Cmd + T`, which swaps the entire card body into a Pi terminal. |
 | Cmd + K | Toggle screen-context target for the active Pickle. |
 | Cmd + Delete | Archive the focused Pickle. |
-| Control + T | Toggle thinking blocks. |
 
 Holding Command can reveal shortcut badges on relevant HUD controls.
 

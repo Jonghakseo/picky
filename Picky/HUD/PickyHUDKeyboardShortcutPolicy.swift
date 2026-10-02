@@ -109,16 +109,6 @@ enum PickyHUDKeyboardShortcutPolicy {
         return charactersIgnoringModifiers?.lowercased() == "t"
     }
 
-    static func isThinkingToggleShortcut(
-        keyCode: UInt16,
-        charactersIgnoringModifiers: String?,
-        modifiers: NSEvent.ModifierFlags
-    ) -> Bool {
-        guard modifiers == .control else { return false }
-        if keyCode == tKeyCode { return true }
-        return charactersIgnoringModifiers?.lowercased() == "t"
-    }
-
     static func isNotifyOnCompletionShortcut(
         keyCode: UInt16,
         charactersIgnoringModifiers: String?,

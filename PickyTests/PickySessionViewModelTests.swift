@@ -1825,10 +1825,6 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(keyCode: 40, charactersIgnoringModifiers: "k", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(keyCode: 40, charactersIgnoringModifiers: "k", modifiers: .control) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(keyCode: 0, charactersIgnoringModifiers: "K", modifiers: .command) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .control) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: [.control, .shift]) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 0, charactersIgnoringModifiers: "T", modifiers: .control) == true)
         #expect(PickyHUDDockLayout.numberShortcutForSessionIndex(0) == 1)
         #expect(PickyHUDDockLayout.numberShortcutForSessionIndex(8) == 9)
         #expect(PickyHUDDockLayout.numberShortcutForSessionIndex(9) == nil)
@@ -6021,28 +6017,6 @@ struct PickySessionViewModelTests {
         #expect(command.type == .clearQueue)
         #expect(command.sessionId == "queue-session")
         #expect(command.kind == .all)
-    }
-
-    @MainActor @Test func toggleThinkingBlocksPersistsPiProjectSettingAndUpdatesVisibility() async throws {
-        let cwd = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let piDirectory = cwd.appendingPathComponent(".pi", isDirectory: true)
-        let settingsURL = piDirectory.appendingPathComponent("settings.json")
-        try FileManager.default.createDirectory(at: piDirectory, withIntermediateDirectories: true)
-        try Data(#"{"hideThinkingBlock":false}"#.utf8).write(to: settingsURL)
-        defer { try? FileManager.default.removeItem(at: cwd) }
-
-        let client = FakePickyAgentClient()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "thinking-session", status: "running", cwd: cwd.path))))
-
-        #expect(viewModel.thinkingBlocksHidden(sessionID: "thinking-session") == false)
-
-        viewModel.toggleThinkingBlocks(sessionID: "thinking-session")
-
-        #expect(PickyPiSettingsReader.hideThinkingBlock(in: settingsURL) == true)
-        #expect(viewModel.thinkingBlocksHidden(sessionID: "thinking-session") == true)
-        #expect(viewModel.lastError == nil)
     }
 }
 

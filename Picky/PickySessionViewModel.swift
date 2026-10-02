@@ -38,7 +38,6 @@ final class PickySessionListViewModel: ObservableObject {
     /// invalidate every conversation bubble observing this view model. The active composer
     /// filters this stream by session, generation, request id, draft revision, and cursor.
     let autocompleteEvents = PassthroughSubject<PickyAutocompleteClientEvent, Never>()
-    @Published private(set) var thinkingBlocksHiddenBySessionID: [String: Bool] = [:]
     /// Per-session TODO expansion choice survives Conversation Card teardown while the HUD is closed.
     @Published private(set) var todoProgressExpandedBySessionID: [String: Bool] = [:]
     /// Per-invocation expansion survives conversation-card teardown while the HUD is closed.
@@ -698,7 +697,6 @@ final class PickySessionListViewModel: ObservableObject {
         pendingDoneFlashSessionIDs.remove(sessionID)
         deliveredNotificationKeys.remove("\(sessionID):completed")
         deliveredNotificationKeys.remove("\(sessionID):failed")
-        thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
         todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
         subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
@@ -922,25 +920,6 @@ final class PickySessionListViewModel: ObservableObject {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         clipboardWriter.copy(text)
         lastError = nil
-    }
-
-    func thinkingBlocksHidden(sessionID: String) -> Bool {
-        if let value = thinkingBlocksHiddenBySessionID[sessionID] { return value }
-        guard let session = card(sessionID: sessionID) else { return false }
-        return PickyPiSettingsReader.hideThinkingBlock(cwd: session.cwd)
-    }
-
-    func toggleThinkingBlocks(sessionID: String) {
-        guard let session = card(sessionID: sessionID) else { return }
-        let nextValue = !thinkingBlocksHidden(sessionID: sessionID)
-        do {
-            try PickyPiSettingsReader.setHideThinkingBlock(nextValue, cwd: session.cwd)
-            lastError = nil
-            syncThinkingBlockVisibility()
-            pickySessionLog("thinking blocks hidden=\(nextValue) session=\(sessionID)")
-        } catch {
-            lastError = error.localizedDescription
-        }
     }
 
     func isTodoProgressExpanded(sessionID: String, isComplete: Bool) -> Bool {
@@ -1796,7 +1775,6 @@ final class PickySessionListViewModel: ObservableObject {
         pendingDoneFlashSessionIDs.remove(sessionID)
         deliveredNotificationKeys.remove("\(sessionID):completed")
         deliveredNotificationKeys.remove("\(sessionID):failed")
-        thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
         todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
         subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
@@ -1867,7 +1845,6 @@ final class PickySessionListViewModel: ObservableObject {
         unreadSessionIDs.remove(sessionID)
         pendingDoneFlashSessionIDs.remove(sessionID)
         deliveredNotificationKeys = deliveredNotificationKeys.filter { !$0.hasPrefix("\(sessionID):") }
-        thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
         todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
         subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
@@ -2127,7 +2104,6 @@ final class PickySessionListViewModel: ObservableObject {
             // Keep all local state until a complete snapshot reconciles it.
             syncSlashCommands()
         }
-        syncThinkingBlockVisibility()
         syncSelectionAfterSessionListChange()
         syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
@@ -2499,7 +2475,6 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandController.prune(knownSessionIDs: knownSessionIDs)
         syncSlashCommands()
         composerDraftController.prune(knownSessionIDs: knownSessionIDs)
-        thinkingBlocksHiddenBySessionID = thinkingBlocksHiddenBySessionID.filter { knownSessionIDs.contains($0.key) }
         todoProgressExpandedBySessionID = todoProgressExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
         subagentInvocationExpandedBySessionID = subagentInvocationExpandedBySessionID.filter { knownSessionIDs.contains($0.key) }
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
@@ -2521,12 +2496,6 @@ final class PickySessionListViewModel: ObservableObject {
         if let screenContextTargetSessionID, !knownSessionIDs.contains(screenContextTargetSessionID) {
             clearScreenContextTarget(sessionID: screenContextTargetSessionID)
         }
-    }
-
-    private func syncThinkingBlockVisibility() {
-        thinkingBlocksHiddenBySessionID = Dictionary(uniqueKeysWithValues: (sessions + archivedSessions).map { session in
-            (session.id, PickyPiSettingsReader.hideThinkingBlock(cwd: session.cwd))
-        })
     }
 
     private func effectiveArchivedSessionIDs(for _: [SessionCard]) -> Set<String> {
@@ -2559,9 +2528,6 @@ final class PickySessionListViewModel: ObservableObject {
         upsertSession(incoming, archived: shouldArchive)
         PickyPerf.interval("vm_upsert_apply_manual_order") {
             applyManualOrder()
-        }
-        PickyPerf.interval("vm_upsert_publish_thinking_visibility") {
-            thinkingBlocksHiddenBySessionID[incoming.id] = PickyPiSettingsReader.hideThinkingBlock(cwd: incoming.cwd)
         }
         PickyPerf.interval("vm_upsert_sync_selection_state") {
             syncSelectionAfterSessionListChange()

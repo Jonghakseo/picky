@@ -17207,54 +17207,6 @@
         }
       }
     },
-    "hud.thinking.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Thinking"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "생각 과정"
-          }
-        }
-      }
-    },
-    "hud.thinking.expand": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expand thinking"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "생각 과정 펼치기"
-          }
-        }
-      }
-    },
-    "hud.thinking.collapse": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Collapse thinking"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "생각 과정 접기"
-          }
-        }
-      }
-    },
     "hub.window.title": {
       "localizations": {
         "en": {

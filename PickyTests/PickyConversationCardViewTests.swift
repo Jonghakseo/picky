@@ -144,12 +144,6 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
-    @Test func thinkingBlockUsesLocalizedSupportingDisclosureLabels() {
-        #expect(PickyThinkingBlockPresentation.title == L10n.t("hud.thinking.title"))
-        #expect(PickyThinkingBlockPresentation.help(isCollapsed: true) == L10n.t("hud.thinking.expand"))
-        #expect(PickyThinkingBlockPresentation.help(isCollapsed: false) == L10n.t("hud.thinking.collapse"))
-    }
-
     @Test func assistantRunMetadataUsesCompactDimFooterText() {
         #expect(PickyAssistantRunMetadata(model: "openai-codex/gpt-5.5", thinkingLevel: .high).displayText == "gpt-5.5 high")
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")

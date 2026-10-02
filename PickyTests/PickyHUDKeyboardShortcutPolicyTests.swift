@@ -102,11 +102,4 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isArchiveSessionShortcut(keyCode: 51, modifiers: [.command, .shift]) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.isArchiveSessionShortcut(keyCode: 117, modifiers: .command) == false)
     }
-
-    @Test func thinkingToggleUsesControlTOnly() {
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .control) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: [.control, .shift]) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(keyCode: 0, charactersIgnoringModifiers: "T", modifiers: .control) == true)
-    }
 }

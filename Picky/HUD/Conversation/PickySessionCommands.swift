@@ -55,7 +55,6 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func cycleModel(sessionID: String, direction: PickyModelCycleDirection) async throws
     func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws
     func setNotifyMacOSOnCompletion(sessionID: String, enabled: Bool) async throws
-    func thinkingBlocksHidden(sessionID: String) -> Bool
     func isTodoProgressExpanded(sessionID: String, isComplete: Bool) -> Bool
     func setTodoProgressExpanded(_ isExpanded: Bool, sessionID: String)
     func isSubagentInvocationExpanded(invocationID: String, sessionID: String, isComplete: Bool) -> Bool
@@ -111,7 +110,6 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func removeDockGroup(id: String, keepMembers: Bool)
     func moveSessionInDock(sessionID: String, to destination: PickyDockContainer)
     func moveDockGroup(id: String, toTopLevelIndex target: Int)
-    func toggleThinkingBlocks(sessionID: String)
     func openLatestAgentResponseReport(sessionID: String) async throws
     func unarchive(sessionID: String)
     func requestOpenSession(sessionID: String, targetDisplayID: CGDirectDisplayID?)

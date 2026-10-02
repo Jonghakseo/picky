@@ -11,9 +11,11 @@ import Testing
 struct PickySessionBootstrapReplayBudgetTests {
     // v1 baselines retained for W7 comparison, lowered by 1 when the
     // composer-draft request mirror moved into the draft controller and its
-    // redundant same-value publication disappeared.
-    private static let snapshotOnlyPublishBaseline = 200
-    private static let snapshotAndHydrationPublishBaseline = 1_052
+    // redundant same-value publication disappeared, and again when the
+    // per-session thinking-visibility mirror (Pi `hideThinkingBlock`) was
+    // removed with the messenger transcript.
+    private static let snapshotOnlyPublishBaseline = 198
+    private static let snapshotAndHydrationPublishBaseline = 956
 
     @Test func lightweightSnapshotPublishesThePinnedV1Baseline() {
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(selectedSessionID: "bootstrap-001")

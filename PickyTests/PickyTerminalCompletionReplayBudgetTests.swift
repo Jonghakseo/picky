@@ -9,8 +9,9 @@ import Testing
 
 @MainActor
 struct PickyTerminalCompletionReplayBudgetTests {
-    // v1 terminal-burst baseline retained for W7 comparison.
-    private static let terminalBurstPublishBaseline = 62
+    // v1 terminal-burst baseline retained for W7 comparison, lowered when the
+    // per-session thinking-visibility mirror was removed with the messenger transcript.
+    private static let terminalBurstPublishBaseline = 59
 
     @Test func terminalReplayPublishesThePinnedV1BaselineAndProjectsCompletion() {
         let viewModel = PickyProjectionReplayFixtures.makeViewModel()

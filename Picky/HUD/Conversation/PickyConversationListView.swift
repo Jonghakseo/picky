@@ -479,7 +479,9 @@ struct PickyConversationListView: View {
                 isLatestResponseShortcutHintVisible: latestResponseShortcutHintVisibleOverride ?? shouldShowLatestResponseShortcutHint(for: message)
             )
         case .typing:
-            PickyTypingBubbleView(message: message, initiallyCollapsed: viewModel.thinkingBlocksHidden(sessionID: session.id))
+            // Thinking never renders in the messenger transcript; the presence line
+            // reports it instead (`PickyTurnBodyPolicy`).
+            EmptyView()
         case .subagentInvocation:
             if let presentation = subagentPresentationOverride ?? PickySubagentInvocationPresentation(
                 invocation: message.subagentInvocation,

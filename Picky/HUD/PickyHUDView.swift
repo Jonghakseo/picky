@@ -1243,15 +1243,6 @@ struct PickyHUDView: View {
             return true
         }
 
-        if PickyHUDKeyboardShortcutPolicy.isThinkingToggleShortcut(
-            keyCode: event.keyCode,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
-            modifiers: flags
-        ), let activeCard {
-            viewModel.toggleThinkingBlocks(sessionID: activeCard.id)
-            return true
-        }
-
         if PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,

@@ -13,9 +13,10 @@ struct PickySessionBootstrapReplayBudgetTests {
     // composer-draft request mirror moved into the draft controller and its
     // redundant same-value publication disappeared, and again when the
     // per-session thinking-visibility mirror (Pi `hideThinkingBlock`) was
-    // removed with the messenger transcript.
-    private static let snapshotOnlyPublishBaseline = 198
-    private static let snapshotAndHydrationPublishBaseline = 956
+    // removed with the messenger transcript. Removing the inline Pi terminal
+    // mode eliminated one more same-value publication during snapshot pruning.
+    private static let snapshotOnlyPublishBaseline = 197
+    private static let snapshotAndHydrationPublishBaseline = 955
 
     @Test func lightweightSnapshotPublishesThePinnedV1Baseline() {
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(selectedSessionID: "bootstrap-001")

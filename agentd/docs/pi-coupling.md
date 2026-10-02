@@ -515,6 +515,52 @@ SDK 변경 때문에 production 필터를 제거하거나 provider bus 격리를
 실행 중인 앱을 재시작하는 수동 smoke는 별도 명시 허가 없이는 수행하지 않는다.
 격리 SDK/provider 통합 테스트와 standalone package smoke는 실제 앱 수동 검증과 구분한다.
 
+### 0.99.1 -> 1.0.0
+
+공식 근거: [Pi CHANGELOG](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md),
+[Pi 1.0 발표](https://earendil.com/posts/pi-1-0/). 이 범위의 릴리즈는 `0.99.2`와 `1.0.0`이다.
+발표의 codemode, virtual models, deferred tool loading, cache warming, mid-conversation
+system messages는 `0.86`~`0.99.0`에서 이미 들어왔다. 세션 파일 버전은 3으로 같다.
+`pi-ai`, `pi-coding-agent`, `pi-tui`만 함께 올린다.
+
+- 제거·변경된 공개 API(`getCodemodeWorkerUrl`, `createToolSearchDescription`,
+  `MODEL_GLOBAL_DECLARATIONS`, `McpExposure`의 `codemode-deferred`)는 Picky가 쓰지 않는다.
+  `picky-mcp.ts`가 dist에서 읽는 MCP config 함수와 `runMcpCommand` 경로는 그대로다.
+- `mcp-auth.json` 키가 URL에서 `mcp__<server>|<url>`로 바뀌고, 1.0 기본 저장소는 첫 로드 때
+  URL 키를 옮긴 뒤 지운다. Picky는 사용자 Pi CLI와 agent directory를 공유하므로 기본 저장소를
+  쓰면 1.0 미만 CLI가 Picky가 건드린 OAuth 서버에서 모두 로그아웃된다.
+  `picky-mcp-credentials.ts`가 세션 MCP 확장과 Hub의 `runMcpCommand`에 호환 저장소를 넘긴다.
+  읽은 entry에 다시 쓰고, URL entry를 옮기거나 지우지 않으며, 첫 로그인은 URL entry에 쓴다.
+  1.0이 이미 서버별 entry를 만든 URL은 서버별 entry를 따른다. 로그아웃은 두 entry를 모두
+  지운다. refresh는 두 버전의 잠금 파일(URL 키, 서버별 키 순서)을 모두 잡는다.
+  `picky-mcp-credentials.test.ts`는 1.0 기본 저장소로 7개 실패(RED)를 재현한 뒤 통과한다.
+  agent directory 격리가 들어가면 이 저장소를 제거한다.
+- `auth.provider`, `oauth.clientName`, `oauth.authServerMetadataUrl`, 서버 `description`은
+  1.0 SDK가 직접 처리한다. `-`와 `_`만 다른 서버 이름은 CLI와 같이 거부된다.
+- MCP 도구·namespace 이름의 `-`가 `_`로 바뀐다(`mcp__my-server__x` → `mcp__my_server__x`).
+  Swift 활동 칩과 도구 설명은 이름을 표시만 하고 설정 이름과 비교하지 않으므로 수정하지 않는다.
+- 변경된 `mcp_servers` system prompt 섹션은 대화 중간 system 메시지로 붙는다.
+  `pi-session-syncer`는 user/assistant만 동기화하고, `AsyncTaskModelFence`는 `custom`만 거른다.
+- codemode MCP 서버는 첫 프롬프트를 막지 않고 백그라운드로 연결된다. 긴 세션에서 프롬프트 제출이
+  느려지던 문제(#10198)와 재개 시 deferred MCP 도구가 빠지던 문제는 upstream에서 상속한다.
+- `createLocalShellOperations`는 1.0에서도 cwd 검사 뒤 abort를 다시 확인하지 않는다.
+  기존 패치를 `patches/pi-coding-agent@1.0.0.patch`로 옮긴다.
+- async task 특성 테스트의 SDK 버전 가드(`fixtures/async-task-host.mjs`,
+  `async-task-sdk-spawn-fence.test.ts`, `async-task-provider-admission.integration.test.ts`)를
+  `1.0.0`으로 바꾼다. 가드만 바꾸고 기대 동작은 그대로 둔 채 실제 1.0 SDK에서 재실행한다.
+- 기본 TUI가 fullscreen으로 바뀌지만 SDK 세션에는 영향이 없다. 앱의 Pi 터미널 오버레이는
+  PATH의 `pi`를 실행하므로 사용자 CLI 버전을 따른다.
+- lockfile의 `ws@^8.21.0` peer 경고는 0.99.1과 같다.
+
+검증 결과:
+
+- 필수 SDK/OAuth/MCP 계약 20개 통과. 새 `picky-mcp-credentials.test.ts` 9개 통과.
+- `PICKY_TEST_ASYNC_PROVIDER_ROOT=agentd/vendor/async-task-providers`로 전체 `test:ci` 실행:
+  첫 단계 1,172개 통과(선택적 6개 건너뜀), server/supervisor 단계 447개 통과.
+- `typecheck`, `lint`, `build`, `pnpm run check:architecture`(기존 경고 4개),
+  `node scripts/test-async-provider-package.mjs` 통과.
+- Xcode 앱 빌드와 실행 중인 앱의 수동 smoke는 실행하지 않았다. Swift 코드는 바뀌지 않았다.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

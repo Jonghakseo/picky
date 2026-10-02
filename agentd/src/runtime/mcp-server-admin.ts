@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { createPickyMcpCredentials } from "./picky-mcp-credentials.js";
 import {
   PICKY_MCP_SCOPE_KEY,
   globalMcpConfigPath,
@@ -77,12 +78,13 @@ export class McpServerAdmin {
 
   /** Connects to every enabled global server, like `pi mcp list`, and reports its state. */
   async list(): Promise<McpServerListing> {
-    const { runMcpCommand } = await this.internals();
+    const internals = await this.internals();
     const agentDir = this.agentDir();
+    const credentials = createPickyMcpCredentials(agentDir, internals);
     const output: string[] = [];
     const errors: string[] = [];
     // The agent directory is never a trusted project, so only the global mcp.json is read.
-    await runMcpCommand(["list", "--json"], { cwd: agentDir, agentDir, log: (line) => output.push(line), error: (line) => errors.push(line) });
+    await internals.runMcpCommand(["list", "--json"], { cwd: agentDir, agentDir, credentials, log: (line) => output.push(line), error: (line) => errors.push(line) });
     let parsed: { servers?: ListReport[]; errors?: string[] };
     try {
       parsed = JSON.parse(output.join("\n")) as typeof parsed;
@@ -147,10 +149,11 @@ export class McpServerAdmin {
   }
 
   private async runCommand(args: string[]): Promise<void> {
-    const { runMcpCommand } = await this.internals();
+    const internals = await this.internals();
     const agentDir = this.agentDir();
+    const credentials = createPickyMcpCredentials(agentDir, internals);
     const errors: string[] = [];
-    const code = await runMcpCommand(args, { cwd: agentDir, agentDir, log: () => {}, error: (line) => errors.push(line) });
+    const code = await internals.runMcpCommand(args, { cwd: agentDir, agentDir, credentials, log: () => {}, error: (line) => errors.push(line) });
     if (code !== 0) throw new McpServerOperationError(errors.join("\n") || `pi mcp ${args[0]} failed`);
   }
 

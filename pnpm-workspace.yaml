@@ -3,4 +3,4 @@ packages:
 
 patchedDependencies:
   msedge-tts@2.0.7: patches/msedge-tts@2.0.7.patch
-  "@earendil-works/pi-coding-agent@0.99.1": patches/pi-coding-agent@0.99.1.patch
+  "@earendil-works/pi-coding-agent@1.0.0": patches/pi-coding-agent@1.0.0.patch

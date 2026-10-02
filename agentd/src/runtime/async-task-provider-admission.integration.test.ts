@@ -60,7 +60,7 @@ type ToolInput = { name: string; arguments: ToolCall["arguments"] };
 // A function receives the 1-based model request number and returns that request's tool calls.
 type ToolPlan = ToolInput | ToolInput[] | ((request: number) => ToolInput[]);
 async function fixture(tool: ToolPlan) {
-  expect(VERSION).toBe("0.99.1");
+  expect(VERSION).toBe("1.0.0");
   const extensionRoot = providerPackageRoot();
   const root = await mkdtemp(join(tmpdir(), "picky-w0b-provider-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));

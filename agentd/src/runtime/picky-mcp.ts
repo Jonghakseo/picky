@@ -26,6 +26,7 @@ import {
   type LoadedMcpConfig,
   type McpServerConfig,
 } from "@earendil-works/pi-coding-agent";
+import { createPickyMcpCredentials, type PickyMcpCredentials } from "./picky-mcp-credentials.js";
 
 export const PICKY_MCP_SCOPE_KEY = "pickyScope";
 /** `all`: the main agent and every Pickle. `main`: the main Picky agent only. */
@@ -49,7 +50,15 @@ export interface PiMcpInternals {
   updateMcpServerConfig(path: string, name: string, patch: { enabled?: boolean }): void;
   /** Returns the server config, or an error message. */
   validateMcpServerConfig(name: string, value: unknown): McpServerConfig | string;
-  runMcpCommand(args: string[], options: { cwd: string; agentDir: string; log?: (line: string) => void; error?: (line: string) => void }): Promise<number>;
+  /** `mcp__<server>` with `-` replaced by `_`, as in tool names and `mcp-auth.json` keys. */
+  mcpNamespace(server: string): string;
+  /** The locked JSON file backend of `auth.json` and `mcp-auth.json`. */
+  FileAuthStorageBackend: new (path: string) => FileAuthStorageBackend;
+  runMcpCommand(args: string[], options: { cwd: string; agentDir: string; credentials?: PickyMcpCredentials; log?: (line: string) => void; error?: (line: string) => void }): Promise<number>;
+}
+
+export interface FileAuthStorageBackend {
+  withLock<T>(fn: (current: string | undefined) => { result: T; next?: string }): T;
 }
 
 let internals: Promise<PiMcpInternals> | undefined;
@@ -58,10 +67,11 @@ export function loadPiMcpInternals(): Promise<PiMcpInternals> {
   internals ??= (async () => {
     const dist = piCodingAgentDist();
     const load = async (path: string) => await import(pathToFileURL(join(dist, path)).href) as Record<string, unknown>;
-    const [config, servers, cli] = await Promise.all([
+    const [config, servers, cli, auth] = await Promise.all([
       load("./extensions/mcp/config.js"),
       load("./core/mcp-servers.js"),
       load("./extensions/mcp/cli.js"),
+      load("./core/auth-storage.js"),
     ]);
     const loaded = {
       loadMcpConfig: config.loadMcpConfig,
@@ -69,6 +79,8 @@ export function loadPiMcpInternals(): Promise<PiMcpInternals> {
       removeMcpServerConfig: config.removeMcpServerConfig,
       updateMcpServerConfig: config.updateMcpServerConfig,
       validateMcpServerConfig: servers.validateMcpServerConfig,
+      mcpNamespace: servers.mcpNamespace,
+      FileAuthStorageBackend: auth.FileAuthStorageBackend,
       runMcpCommand: cli.runMcpCommand,
     };
     const missing = Object.entries(loaded).filter(([, value]) => typeof value !== "function").map(([name]) => name);
@@ -99,7 +111,9 @@ export function globalMcpConfigPath(agentDir: string): string {
  * conflicting. `codemode` and `tool_search` stay inactive until an MCP server needs them.
  */
 export async function pickyMcpExtensions(target: PickyMcpRuntimeTarget, agentDir: string): Promise<InlineExtension[]> {
-  const { loadMcpConfig } = await loadPiMcpInternals();
+  const internals = await loadPiMcpInternals();
+  const { loadMcpConfig } = internals;
+  const credentials = createPickyMcpCredentials(agentDir, internals);
   const loadConfig = (ctx: ExtensionContext): LoadedMcpConfig => filterMcpConfigForTarget(
     loadMcpConfig({ agentDir, cwd: ctx.cwd, projectTrusted: ctx.isProjectTrusted() }),
     target,
@@ -107,6 +121,6 @@ export async function pickyMcpExtensions(target: PickyMcpRuntimeTarget, agentDir
   return [
     { name: "codemode", factory: createCodemodeExtension(), replaceable: true, hidden: true },
     { name: "tool-search", factory: createToolSearchExtension(), replaceable: true, hidden: true },
-    { name: "mcp", factory: createMcpExtension({ loadConfig }), replaceable: true, hidden: true },
+    { name: "mcp", factory: createMcpExtension({ loadConfig, credentials }), replaceable: true, hidden: true },
   ];
 }

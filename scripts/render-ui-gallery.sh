@@ -368,8 +368,60 @@ PY
   exit 0
 fi
 
+if [ "$TARGET" = "messenger-ux" ]; then
+  OUTPUT="$ROOT/build/render-gallery/messenger-ux"
+  REQUEST_FILE="$ROOT/build/render-gallery/.messenger-ux-output-path"
+  EXPECTED=(
+    pickle-chat-working-dark-ko.png
+    pickle-chat-working-light-ko.png
+    pickle-chat-hover-dark-ko.png
+    pickle-chat-hover-light-ko.png
+    pickle-presence-states-dark-ko.png
+    pickle-presence-states-light-ko.png
+    translate-original.png
+    translate-overlay-dark-ko.png
+    translate-overlay-light-ko.png
+    main-chips-dark-ko.png
+  )
+
+  rm -rf "$OUTPUT"
+  mkdir -p "$OUTPUT"
+  printf '%s\n' "$OUTPUT" > "$REQUEST_FILE"
+  trap 'rm -f "$REQUEST_FILE"' EXIT
+
+  echo "Rendering messenger-ux gallery offscreen to $OUTPUT"
+  xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
+    -derivedDataPath "$HUB_DERIVED_DATA_PATH" \
+    test -only-testing:PickyTests/PickyMessengerUXRenderGalleryTests
+
+  python3 - "$OUTPUT" "${EXPECTED[@]}" <<'PY'
+import json
+import struct
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+expected = sys.argv[2:]
+manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+entries = {scene["file"]: scene for scene in manifest.get("scenes", [])}
+if set(entries) != set(expected):
+    raise SystemExit(f"manifest scenes differ from expected matrix: {sorted(entries)}")
+for name in expected:
+    data = (output / name).read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise SystemExit(f"invalid PNG: {name}")
+    width, height = struct.unpack(">II", data[16:24])
+    if (width, height) != (entries[name]["pixelWidth"], entries[name]["pixelHeight"]):
+        raise SystemExit(f"manifest dimension mismatch for {name}")
+print(f"Validated {len(expected)} messenger-ux PNG renders.")
+PY
+
+  printf 'Render gallery artifacts:\n  %s\n  %s\n' "$OUTPUT" "$OUTPUT/manifest.json"
+  exit 0
+fi
+
 if [ "$TARGET" != "dock-group" ]; then
-  echo "Usage: $0 {hub|dock-group|conversation-context|conversation-activity|conversation-composer|tool-history|async-tasks}" >&2
+  echo "Usage: $0 {hub|dock-group|messenger-ux|conversation-context|conversation-activity|conversation-composer|tool-history|async-tasks}" >&2
   exit 64
 fi
 

@@ -93,6 +93,14 @@ This target writes seven 2× Korean scenes under `build/render-gallery/conversat
 
 This target writes four 2× Korean scenes under `build/render-gallery/conversation-activity/`: collapsed and expanded tool activity summaries in dark and light appearance. `PickyActivitySummaryRenderGalleryTests` renders the production `PickyActivitySummaryView` with deterministic counts and verifies that todo activity stays out of both the compact total and expanded detail grid. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove hover, disclosure animation, or tool-history navigation.
 
+## Messenger UX gallery
+
+```bash
+./scripts/render-ui-gallery.sh messenger-ux
+```
+
+This target writes ten 2× Korean scenes under `build/render-gallery/messenger-ux/` for `design/proposals/messenger-ux-2026-10.md`: the Pickle chat (date dividers, an older reply with in-place `더 보기`, send-time labels, the clock for a message still being sent, and the presence line) at rest and with one bubble's time pinned to stand in for hover, presence-line states, the TEXT callout overlay over a fixture desktop, and main-agent cursor chips under the concise policy. `PickyMessengerUXRenderGalleryTests` mounts the production bubbles, `PickyConversationPresenceRow`, `PickyConversationDateDivider`, `PickyAnnotationTextOverlayView`, and `PickyMainActivityChipStackView`; only the desktop backdrop under the overlay is a fixture. It cannot prove pointer hover, the typing-dot animation, or overlay pass-through.
+
 ## Hub gallery
 
 ```bash

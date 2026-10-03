@@ -363,6 +363,7 @@ struct PickyHubPluginCatalogTests {
         try await waitUntil { catalog.item(id: id)?.bundledStatus == .notInstalled }
         #expect(!FileManager.default.fileExists(atPath: fixture.targetFile(id).path))
         #expect(fixture.client.sentCommands.isEmpty)
+        try await waitUntil { fixture.client.reloadRequestCount > 0 }
     }
 
     @Test(arguments: ["picky-handoff", "picky-cli"])
@@ -406,6 +407,7 @@ struct PickyHubPluginCatalogTests {
         try await waitUntil { fixture.catalog.item(id: id)?.bundledStatus == .installed }
         #expect(fixture.reload.hasPendingChanges)
         #expect(fixture.client.sentCommands.isEmpty)
+        try await waitUntil { fixture.client.reloadRequestCount > 0 }
     }
 
     @Test func bundledFailureRemainsOnItsCardAndCanRetryAfterFilesystemRepair() async throws {
@@ -428,6 +430,7 @@ struct PickyHubPluginCatalogTests {
         #expect(fixture.catalog.item(id: "picky-handoff")?.errorMessage == nil)
         #expect(fixture.reload.hasPendingChanges)
         #expect(fixture.client.sentCommands.isEmpty)
+        try await waitUntil { fixture.client.reloadRequestCount > 0 }
     }
 
     @Test func staleUpdateCannotOverwriteAReplacementAndKeepsItsErrorAfterAnotherInstall() async throws {
@@ -542,7 +545,11 @@ private final class HubPluginFanoutClient: PickyAgentClient, @unchecked Sendable
         AsyncStream { continuation in lock.withLock { subscribers.append(continuation) } }
     }
 
-    var sentCommands: [PickyCommandEnvelope] { lock.withLock { commands } }
+    /// Package commands only. A successful change also asks the daemons to
+    /// reload plugins; that request is counted separately so the package
+    /// command contracts below stay exact.
+    var sentCommands: [PickyCommandEnvelope] { lock.withLock { commands.filter { $0.type != .reloadPlugins } } }
+    var reloadRequestCount: Int { lock.withLock { commands.filter { $0.type == .reloadPlugins }.count } }
 
     func connect() async { emit(.connected) }
     func disconnect() {

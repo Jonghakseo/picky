@@ -136,17 +136,18 @@ struct PickyNotifyBubbleView: View {
                 maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth),
                 alignment: .leading
             )
+            // The tint lives in the background: a filled shape layered over the
+            // content would take every click, including the expand button's.
             .background(
-                notifyBubbleShape
-                    .fill(DS.Colors.surface3.opacity(0.86))
-            )
-            .overlay(
-                notifyBubbleShape
-                    .fill(notifyType.tintColor.opacity(0.055))
+                ZStack {
+                    notifyBubbleShape.fill(DS.Colors.surface3.opacity(0.86))
+                    notifyBubbleShape.fill(notifyType.tintColor.opacity(0.055))
+                }
             )
             .overlay(
                 notifyBubbleShape
                     .stroke(notifyType.tintColor.opacity(0.34), lineWidth: 0.7)
+                    .allowsHitTesting(false)
             )
             .clipShape(notifyBubbleShape)
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)

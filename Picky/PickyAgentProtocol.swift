@@ -1206,15 +1206,28 @@ enum PickyQueueMode: String, Codable, Equatable {
 }
 
 struct PickyQueueItem: Codable, Equatable {
+    /// The text the runtime holds, which for a Picky submission is the built prompt envelope.
     let text: String
+    /// The user's own instruction, resolved by agentd. Nil only for queue items persisted
+    /// before the daemon sent this field.
+    let displayText: String?
     let enqueuedAt: Date
     let id: String?
     /// Display-only screenshot count. Never a restorable attachment reference.
     let attachedImagesCount: Int?
 
-    init(text: String, enqueuedAt: Date, id: String? = nil, attachedImagesCount: Int? = nil) {
-        self.text = text; self.enqueuedAt = enqueuedAt; self.id = id; self.attachedImagesCount = attachedImagesCount
+    init(text: String, enqueuedAt: Date, id: String? = nil, attachedImagesCount: Int? = nil, displayText: String? = nil) {
+        self.text = text
+        self.displayText = displayText
+        self.enqueuedAt = enqueuedAt
+        self.id = id
+        self.attachedImagesCount = attachedImagesCount
     }
+
+    /// The text every surface shows and restores into the composer. Never the prompt envelope:
+    /// agentd resolves it, and an older item without `displayText` predates envelope wrapping
+    /// for that queue or was queued as raw text.
+    var userFacingText: String { displayText ?? text }
 }
 
 /// A delayed-action timed message the daemon projects from the plugin's own

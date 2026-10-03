@@ -33,7 +33,7 @@ struct PickyErrorBubbleView: View {
                         .foregroundColor(DS.Colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let errorMessage = message.errorMessage, !errorMessage.isEmpty {
+                if let errorMessage = displayedErrorMessage, !errorMessage.isEmpty {
                     Text(errorMessage)
                         .font(PickyHUDTypography.labelMonospacedMedium)
                         .foregroundColor(DS.Colors.textPrimary)
@@ -79,6 +79,13 @@ struct PickyErrorBubbleView: View {
             Spacer(minLength: 36)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Errors Picky itself worded render from the catalog; a runtime or shell message the
+    /// daemon quoted stays exactly as it arrived. Recovery routing still reads the raw
+    /// `errorMessage`, which is where the runtime's own wording lives.
+    var displayedErrorMessage: String? {
+        message.localizedPresentationText ?? message.errorMessage
     }
 
     private var recoveryLabelKey: String {

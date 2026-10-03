@@ -75,7 +75,7 @@ struct PickyVisibleQueue: Equatable {
         committedUserMessages: [PickySubmittedUserMessage]
     ) -> [PickyQueueItem] {
         items.filter { item in
-            let queuedText = PickyQueuedInputText.normalized(item.text)
+            let queuedText = PickyQueuedInputText.normalized(item.userFacingText)
             guard !queuedText.isEmpty else { return false }
             // An item the daemon still lists under its own id is live: agentd drops
             // the entry the moment its user bubble is journaled. Hiding it by text
@@ -94,64 +94,13 @@ struct PickyVisibleQueue: Equatable {
     private static let committedTextMatchWindow: TimeInterval = 300
 }
 
-/// Extracts the user-facing portion of an agentd prompt envelope. This policy
-/// is deliberately shared with restoration, so raw prompt/context envelopes can
-/// never be inserted into a composer draft.
+/// Whitespace normalization for comparing a queued instruction against a
+/// committed user bubble. Resolving the envelope is agentd's job (`displayText`
+/// on the queue item), so this only removes formatting noise.
 enum PickyQueuedInputText {
-    private static let envelopes: [(parent: String, userSection: String)] = [
-        ("# Picky steering message", "## User steering instruction"),
-        ("# Picky follow-up", "## User follow-up"),
-    ]
-
-    static func displayText(from text: String) -> String {
-        extractUserInstruction(from: text) ?? text
-    }
-
     static func normalized(_ text: String) -> String {
-        displayText(from: text)
+        text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func extractUserInstruction(from text: String) -> String? {
-        guard let envelope = envelopes.first(where: { text.contains($0.parent) }),
-              let headingRange = text.range(of: envelope.userSection)
-        else { return nil }
-
-        let body = text[headingRange.upperBound...]
-        let lines = body.split(separator: "\n", omittingEmptySubsequences: false)
-        var extracted: [Substring] = []
-        var hasStarted = false
-
-        for line in lines {
-            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-            if !hasStarted && trimmedLine.isEmpty { continue }
-            if hasStarted && trimmedLine.hasPrefix("## ") { break }
-            hasStarted = true
-            extracted.append(line)
-        }
-
-        let result = stripEnvelopeMetadataPrefix(from: extracted)
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return result.isEmpty ? nil : result
-    }
-
-    private static func stripEnvelopeMetadataPrefix(from lines: [Substring]) -> [Substring] {
-        var result = lines
-        guard let first = result.first,
-              isEnvelopeMetadataLine(first.trimmingCharacters(in: .whitespaces))
-        else { return result }
-
-        result.removeFirst()
-        if let separator = result.first,
-           separator.trimmingCharacters(in: .whitespaces).isEmpty {
-            result.removeFirst()
-        }
-        return result
-    }
-
-    private static func isEnvelopeMetadataLine(_ line: String) -> Bool {
-        line.hasPrefix("- Source:")
     }
 }

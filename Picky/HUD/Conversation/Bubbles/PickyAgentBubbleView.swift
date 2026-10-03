@@ -75,6 +75,9 @@ struct PickyAgentBubbleView: View {
     }
 
     private var displayText: String {
+        // A sentence Picky itself wrote is rendered from the catalog, not from the English
+        // wording the daemon journaled alongside it.
+        if let localized = message.localizedPresentationText, !localized.isEmpty { return localized }
         if let text = message.text, !text.isEmpty { return text }
         if let errorMessage = message.errorMessage, !errorMessage.isEmpty { return errorMessage }
         if let question = message.question { return question.prompt ?? question.title ?? L10n.t("hud.question.requested") }

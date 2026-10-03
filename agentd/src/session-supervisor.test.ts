@@ -393,6 +393,25 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.lastSummary).toBe("Cancelled");
   });
 
+  it("journals a failed direct bash with the shell detail Picky can localize around", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-user-bash-failure-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Initial done" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+    runtime.handle!.onUserBash = async () => { throw new Error("command not found: nope"); };
+
+    await expect(supervisor.followUp(session.id, "!nope")).rejects.toThrow(/command not found: nope/);
+    await waitUntil(() => supervisor.get(session.id)?.messages?.some((message) => message.kind === "agent_error") === true);
+
+    const error = supervisor.get(session.id)?.messages?.find((message) => message.kind === "agent_error");
+    expect(error?.errorMessage).toBe("Bash failed: command not found: nope");
+    // The shell's own words travel verbatim as a parameter; Picky owns only the sentence around them.
+    expect(error?.presentation).toEqual({ code: "userBashFailed", params: { detail: "command not found: nope" } });
+  });
+
   it("rejects ! follow-up input for cancelled and failed sessions", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-user-bash-terminal-test-"));
@@ -4115,7 +4134,10 @@ describe("SessionSupervisor", () => {
     const updated = await supervisor.abort(session.id);
     await settle();
     expect(updated.status).toBe("cancelled");
-    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "system" && message.text === "Cancelled by user")).toHaveLength(1);
+    const cancellations = supervisor.get(session.id)?.messages?.filter((message) => message.kind === "system" && message.text === "Cancelled by user");
+    expect(cancellations).toHaveLength(1);
+    // The English text stays for the CLI and older clients; the code is what the app renders.
+    expect(cancellations?.[0]?.presentation).toEqual({ code: "sessionCancelledByUser" });
   });
 
   it("records cancellation system messages for separate cancelled turns", async () => {

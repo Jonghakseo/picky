@@ -117,7 +117,7 @@ struct PickyFocusStackComposerPresentationTests {
         ).steers == [staleSteer])
     }
 
-    @Test func visibleQueueNormalizesEnvelopesAndKeepsBothKindsChronological() {
+    @Test func visibleQueueRestoresServerResolvedTextAndKeepsBothKindsChronological() {
         let followUpEnvelope = """
         # Picky follow-up
 
@@ -142,8 +142,8 @@ struct PickyFocusStackComposerPresentationTests {
         """
         let origin = Date(timeIntervalSince1970: 1_000)
         let visibleQueue = PickyVisibleQueue(
-            queuedSteers: [PickyQueueItem(text: steerEnvelope, enqueuedAt: origin.addingTimeInterval(2))],
-            queuedFollowUps: [PickyQueueItem(text: followUpEnvelope, enqueuedAt: origin.addingTimeInterval(1))],
+            queuedSteers: [PickyQueueItem(text: steerEnvelope, enqueuedAt: origin.addingTimeInterval(2), displayText: "steer second")],
+            queuedFollowUps: [PickyQueueItem(text: followUpEnvelope, enqueuedAt: origin.addingTimeInterval(1), displayText: "follow-up first")],
             committedUserMessages: []
         )
 

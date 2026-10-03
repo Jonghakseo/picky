@@ -158,6 +158,11 @@ describe("terminal durability", () => {
 
       expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "agent_text" && message.text === text)).toHaveLength(1);
       expect((await store.loadAll()).find((candidate) => candidate.id === session.id)?.messages?.filter((message) => message.kind === "agent_text" && message.text === text)).toHaveLength(1);
+      // The durable terminal commit stages its own cancellation entry, so it has to carry the
+      // same presentation code the incremental path writes or the HUD falls back to English.
+      const persisted = (await store.loadAll()).find((candidate) => candidate.id === session.id)?.messages ?? [];
+      expect(persisted.filter((message) => message.kind === "system" && message.text === "Cancelled by user").map((message) => message.presentation))
+        .toEqual([{ code: "sessionCancelledByUser" }]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

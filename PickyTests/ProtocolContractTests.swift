@@ -137,6 +137,31 @@ struct ProtocolContractTests {
         #expect(legacy.customType == nil)
     }
 
+    @Test func decodesPickyAuthoredMessagePresentationFromFixture() throws {
+        let url = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "session-message-appended-presentation.event.json"
+        })
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder()
+            .decode(PickyEventEnvelope.self, from: Data(contentsOf: url))
+
+        guard case .sessionMessageAppended(_, let message, _) = envelope.event else {
+            Issue.record("Expected sessionMessageAppended event")
+            return
+        }
+        #expect(message.presentation?.code == .sessionCompactionFailed)
+        #expect(message.presentation?.params?.detail == "Summarization request timed out.")
+        #expect(message.presentation?.params?.contextTokens == 190_000)
+        #expect(message.presentation?.params?.contextWindowTokens == 200_000)
+        // The English wording stays on the message for the CLI and for clients that do not
+        // know the code.
+        #expect(message.text?.hasPrefix("Auto-compaction failed") == true)
+
+        let untagged = #"{"id":"m","kind":"system","createdAt":"2026-05-05T00:00:00.000Z","text":"plain"}"#
+        let legacy = try JSONDecoder.pickyAgentProtocolDecoder()
+            .decode(PickySessionMessage.self, from: Data(untagged.utf8))
+        #expect(legacy.presentation == nil)
+    }
+
     @Test func decodesEveryProtocolFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixtures = try fixtureURLs(in: "contracts/protocol")
@@ -1154,7 +1179,7 @@ struct ProtocolContractTests {
         #expect(seq == 8)
     }
 
-    @Test func decodesQueuedAttachedImageCountFromFixture() throws {
+    @Test func decodesQueuedDisplayTextAndAttachedImageCountFromFixture() throws {
         let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
             $0.lastPathComponent == "session-queue-updated.event.json"
         })
@@ -1169,6 +1194,12 @@ struct ProtocolContractTests {
         }
         #expect(steering.map(\.attachedImagesCount) == [2])
         #expect(followUp.map(\.attachedImagesCount) == [nil])
+        // The envelope stays in `text` for runtime matching while the app shows the
+        // instruction agentd resolved; an entry without `displayText` falls back to `text`.
+        #expect(steering.map(\.userFacingText) == ["Prioritize tests"])
+        #expect(steering.first?.text.hasPrefix("# Picky steering message") == true)
+        #expect(followUp.map(\.displayText) == [nil])
+        #expect(followUp.map(\.userFacingText) == ["Summarize after completion"])
     }
 
     @Test func encodesClearQueueCommand() throws {

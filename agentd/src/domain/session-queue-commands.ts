@@ -67,8 +67,9 @@ export function applySelfQueueMutation(
   const item = followUp[followUpIndex]!;
   if (mutation.action === "rewrite") {
     // The rewritten entry carries text only, so an image count from the original submission
-    // must not survive into the row or the user bubble Pi eventually journals.
-    followUp[followUpIndex] = { id: item.id, text: mutation.text, enqueuedAt: item.enqueuedAt };
+    // must not survive into the row or the user bubble Pi eventually journals. The rewrite text
+    // comes straight from the composer, so it is already the user-facing instruction.
+    followUp[followUpIndex] = { id: item.id, text: mutation.text, displayText: mutation.text, enqueuedAt: item.enqueuedAt };
     return { steering, followUp };
   }
   followUp.splice(followUpIndex, 1);

@@ -191,18 +191,25 @@ extension PickySessionMessage {
 
     var isCompactCompletionMessage: Bool {
         guard kind == .system else { return false }
+        if let code = presentation?.code {
+            return code == .sessionCompacted || code == .sessionCompactedAfterOverflow
+        }
         let normalized = text?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         return normalized == "session compacted" || normalized == "session compacted after context overflow"
     }
 
     var isCompactFailureMessage: Bool {
         guard kind == .system else { return false }
+        if let code = presentation?.code { return code == .sessionCompactionFailed }
         let normalized = text?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         return normalized.hasPrefix("auto-compaction failed")
     }
 
     var compactFailureDetailText: String? {
         guard isCompactFailureMessage else { return nil }
+        if let localized = localizedCompactFailureDetail { return localized }
+        // Journals written before the daemon sent typed parameters: the first line is the
+        // title the bubble already draws, so only the rest is the detail.
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let lines = trimmed.components(separatedBy: .newlines)
         let detail = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)

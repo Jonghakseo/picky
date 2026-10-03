@@ -52,7 +52,7 @@ enum PickyQueuedInputDraftPolicy {
         kind: PickyQueueClearKind = .all
     ) -> String? {
         let merged = visibleQueue.items(for: kind)
-            .map { PickyQueuedInputText.displayText(from: $0.text) }
+            .map(\.userFacingText)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")

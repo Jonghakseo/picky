@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hasActivity } from "./domain/activity-summary.js";
 import { stripAnsiEscapeSequences } from "./domain/ansi.js";
-import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyCompactionResult, PickyExtensionUiRequest, PickySessionMessage, PickySubagentInvocation } from "./protocol.js";
+import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySessionMessage, PickySubagentInvocation } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -107,6 +107,7 @@ export class SessionMessageBuilder {
       kind: "system",
       createdAt: this.deps.now(),
       text: "Pinned from idle Pi session",
+      presentation: { code: "sessionPinnedFromIdlePi" },
     });
     if (finalAnswer?.trim()) {
       await this.appendInternal(sessionId, {
@@ -154,23 +155,33 @@ export class SessionMessageBuilder {
     await this.replaceInternal(sessionId, requestId, { ...entry.message, cancelledAt: this.deps.now() });
   }
 
-  async recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void> {
+  async recordError(
+    sessionId: string,
+    errorMessage: string,
+    options: { errorContext?: string; presentation?: PickyMessagePresentation } = {},
+  ): Promise<void> {
     await this.appendInternal(sessionId, {
       id: `msg-error-${randomUUID()}`,
       kind: "agent_error",
       createdAt: this.deps.now(),
       errorMessage,
-      ...(errorContext ? { errorContext } : {}),
+      ...(options.errorContext ? { errorContext: options.errorContext } : {}),
+      ...(options.presentation ? { presentation: options.presentation } : {}),
     });
   }
 
-  async recordSystemMessage(sessionId: string, text: string, options: { compaction?: PickyCompactionResult } = {}): Promise<void> {
+  async recordSystemMessage(
+    sessionId: string,
+    text: string,
+    options: { compaction?: PickyCompactionResult; presentation?: PickyMessagePresentation } = {},
+  ): Promise<void> {
     await this.appendInternal(sessionId, {
       id: `msg-system-${randomUUID()}`,
       kind: "system",
       createdAt: this.deps.now(),
       text,
       ...(options.compaction ? { compaction: options.compaction } : {}),
+      ...(options.presentation ? { presentation: options.presentation } : {}),
     });
   }
 

@@ -450,6 +450,88 @@ describe("RuntimeEventHandler", () => {
   });
 });
 
+// Picky owns these journal sentences, so the app has to be able to render them in the user's
+// language. The daemon keeps writing the English wording for CLI readers and older clients, and
+// tags the entry with a semantic code; text the agent or the shell produced stays verbatim.
+describe("RuntimeEventHandler presentation codes", () => {
+  it("tags a cancelled turn and keeps its English fallback text", async () => {
+    const harness = inputHarness();
+
+    await harness.handler.handle("pickle-1", { type: "status", status: "cancelled", summary: "Cancelled" });
+
+    expect(harness.messageBuilder.recordSystemMessage).toHaveBeenCalledWith(
+      "pickle-1",
+      "Cancelled by user",
+      { presentation: { code: "sessionCancelledByUser" } },
+    );
+  });
+
+  it("tags only the no-detail agent failure, leaving a runtime summary untagged", async () => {
+    const withoutSummary = inputHarness();
+    const withSummary = inputHarness();
+
+    await withoutSummary.handler.handle("pickle-1", { type: "status", status: "failed" });
+    await withSummary.handler.handle("pickle-1", { type: "status", status: "failed", summary: "Model refused the request" });
+
+    expect(withoutSummary.messageBuilder.recordError).toHaveBeenCalledWith(
+      "pickle-1",
+      "Agent failed",
+      { presentation: { code: "agentFailedWithoutDetail" } },
+    );
+    expect(withSummary.messageBuilder.recordError).toHaveBeenCalledWith("pickle-1", "Model refused the request", {});
+  });
+
+  it.each([
+    ["threshold", "Session compacted", "sessionCompacted"],
+    ["overflow", "Session compacted after context overflow", "sessionCompactedAfterOverflow"],
+  ])("tags a %s compaction", async (reason, text, code) => {
+    const harness = inputHarness();
+
+    await harness.handler.handle("pickle-1", {
+      type: "status",
+      status: "running",
+      summary: "Session compacted; continuing…",
+      compactionCompleted: true,
+      compactionReason: reason as "threshold" | "overflow",
+      compaction: { tokensBefore: 128_000, tokensAfter: 21_000 },
+    });
+
+    expect(harness.messageBuilder.recordSystemMessage).toHaveBeenCalledWith("pickle-1", text, {
+      compaction: { tokensBefore: 128_000, tokensAfter: 21_000 },
+      presentation: { code },
+    });
+  });
+
+  it("carries the compaction failure detail and context usage as typed parameters", async () => {
+    const harness = inputHarness({ contextUsage: { tokens: 190_000, contextWindow: 200_000, percent: 95 } });
+
+    await harness.handler.handle("pickle-1", {
+      type: "status",
+      status: "running",
+      summary: "Auto-compaction failed: summarization request timed out",
+      compactionFailed: true,
+    });
+
+    expect(harness.messageBuilder.recordSystemMessage).toHaveBeenCalledWith(
+      "pickle-1",
+      expect.stringContaining("summarization request timed out"),
+      { presentation: { code: "sessionCompactionFailed", params: { detail: "summarization request timed out", contextTokens: 190_000, contextWindowTokens: 200_000 } } },
+    );
+  });
+
+  it("omits usage parameters when the session has no context snapshot", async () => {
+    const harness = inputHarness();
+
+    await harness.handler.handle("pickle-1", { type: "status", status: "running", compactionFailed: true });
+
+    expect(harness.messageBuilder.recordSystemMessage).toHaveBeenCalledWith(
+      "pickle-1",
+      expect.stringContaining("Summarization failed."),
+      { presentation: { code: "sessionCompactionFailed", params: { detail: "Summarization failed." } } },
+    );
+  });
+});
+
 function inputHarness(initial: Partial<PickyAgentSession> = {}) {
   let current = { ...session(), ...initial };
   const patchSession = vi.fn(async (_sessionId: string, patch: Partial<PickyAgentSession>) => {
@@ -466,8 +548,8 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     recordExtensionQuestion: async () => {},
     recordExtensionNotification: async () => {},
     cancelExtensionQuestion: async () => {},
-    recordError: async () => {},
-    recordSystemMessage: async () => {},
+    recordError: vi.fn(async () => {}),
+    recordSystemMessage: vi.fn(async () => {}),
     recordExtensionText,
     recordUserText,
     appendAssistantDelta: () => {},

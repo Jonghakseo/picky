@@ -135,15 +135,18 @@ describe("protocol contract fixtures", () => {
     });
   }
 
-  it("decodes queued attached image evidence and tolerates its absence", () => {
+  it("decodes queued display text and attached image evidence, and tolerates their absence", () => {
     const fixture = JSON.parse(readFileSync(join(contractsRoot, "session-queue-updated.event.json"), "utf8"));
 
     expect(EventEnvelopeSchema.parse(fixture)).toMatchObject({
       type: "sessionQueueUpdated",
-      steering: [{ attachedImagesCount: 2 }],
+      steering: [{ displayText: "Prioritize tests", attachedImagesCount: 2 }],
     });
+    expect((EventEnvelopeSchema.parse(fixture) as { steering: Array<{ text: string }> }).steering[0]?.text).toContain("# Picky steering message");
     expect(EventEnvelopeSchema.parse(fixture)).toMatchObject({ followUp: [{ text: "Summarize after completion" }] });
-    expect((EventEnvelopeSchema.parse(fixture) as { followUp: Array<{ attachedImagesCount?: number }> }).followUp[0]?.attachedImagesCount).toBeUndefined();
+    const followUp = (EventEnvelopeSchema.parse(fixture) as { followUp: Array<{ attachedImagesCount?: number; displayText?: string }> }).followUp[0];
+    expect(followUp?.attachedImagesCount).toBeUndefined();
+    expect(followUp?.displayText).toBeUndefined();
   });
 
   it("keeps the hello fixture protocol and supported versions current", () => {

@@ -68,7 +68,7 @@ struct PickyScheduledMessagesPresentation: Equatable {
                         PickyScheduledMessageRow(
                             id: item.id ?? "follow-up-\(index)",
                             kind: .followUp,
-                            text: PickyQueuedInputText.displayText(from: item.text),
+                            text: item.userFacingText,
                             dueAt: nil,
                             isActionable: item.id != nil
                         )

@@ -171,6 +171,33 @@ describe("SessionStore (legacy / primary layout)", () => {
     expect(JSON.parse(readFileSync(filePath, "utf8"))).toEqual(expected);
   });
 
+  it("compatibility matrix rollback: loads a journal whose presentation code this daemon does not know", async () => {
+    const root = tmpRoot();
+    const store = new SessionStore(root);
+    const sessionsDir = join(root, "sessions");
+    mkdirSync(sessionsDir, { recursive: true });
+    const message = (id: string, presentation: unknown) => ({
+      id, kind: "system", createdAt: "2026-09-07T00:00:00.000Z", text: `English fallback ${id}`, presentation,
+    });
+    writeFileSync(join(sessionsDir, "future-copy.json"), JSON.stringify(makeSession({
+      id: "future-copy",
+      status: "completed",
+      messages: [
+        message("unknown-code", { code: "sessionSomethingNewer" }),
+        message("malformed-params", { code: "userBashFailed", params: { detail: 42 } }),
+        message("known-code", { code: "sessionCancelledByUser" }),
+      ],
+    } as Partial<PickyAgentSession>)));
+
+    const [loaded] = await store.loadAll();
+
+    expect(loaded?.messages?.map((entry) => ({ id: entry.id, text: entry.text, presentation: entry.presentation }))).toEqual([
+      { id: "unknown-code", text: "English fallback unknown-code", presentation: undefined },
+      { id: "malformed-params", text: "English fallback malformed-params", presentation: undefined },
+      { id: "known-code", text: "English fallback known-code", presentation: { code: "sessionCancelledByUser" } },
+    ]);
+  });
+
   it("projects legacy truncated JSON tool previews without rewriting session files", async () => {
     const root = tmpRoot();
     const store = new SessionStore(root);

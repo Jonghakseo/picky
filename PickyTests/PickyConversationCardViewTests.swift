@@ -553,7 +553,7 @@ struct PickyConversationCardViewTests {
         let session = makeConversationSession(
             status: .running,
             messages: [message("m-user", kind: .userText, text: "아니다 10초")],
-            queuedFollowUps: [queueItem(followUpPrompt)]
+            queuedFollowUps: [queueItem(followUpPrompt, displayText: "아니다 10초")]
         )
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
@@ -577,10 +577,10 @@ struct PickyConversationCardViewTests {
 
     // Voice steer wraps the raw text inside the agentd steering envelope before
     // sending it to Pi, so Pi's queue snapshot carries the wrapped form while
-    // the supervisor records the raw user instruction as `user_text`. The HUD
-    // must unwrap the envelope and treat the two as the same message; otherwise
-    // the card briefly (and for active turns, durably) shows the user input
-    // twice — once as the user bubble, once as the pending bubble.
+    // the supervisor records the raw user instruction as `user_text` and resolves
+    // the same instruction into `displayText`. The card must treat the two as one
+    // message; otherwise it briefly (and for active turns, durably) shows the user
+    // input twice — once as the user bubble, once as the pending bubble.
     @Test func queuedSteerEnvelopeMatchingUserTextDoesNotRenderPendingBubble() {
         let steerEnvelope = """
         # Picky steering message
@@ -598,7 +598,7 @@ struct PickyConversationCardViewTests {
         let session = makeConversationSession(
             status: .running,
             messages: [message("m-user", kind: .userText, text: "잠깐만 멈춰봐")],
-            queuedSteers: [queueItem(steerEnvelope)]
+            queuedSteers: [queueItem(steerEnvelope, displayText: "잠깐만 멈춰봐")]
         )
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
@@ -618,10 +618,11 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.pendingSteerBubbleCount == 1)
     }
 
-    // Mirrors the envelope built by agentd `prompt-builder.ts#buildSteerPrompt`.
-    // The pending bubble must show only the user instruction, not the boilerplate
-    // wrapper or the appended captured-context sections.
-    @Test func queuedSteerEnvelopeDisplaysOnlyUserInstruction() {
+    // agentd resolves the queued prompt envelope into `displayText`
+    // (`queue-policy.ts#queueItemDisplayText`), and every surface must show that
+    // instruction rather than the boilerplate wrapper or the appended
+    // captured-context sections.
+    @Test func queuedSteerRendersServerResolvedInstructionInsteadOfTheEnvelope() {
         let steerEnvelope = """
         # Picky steering message
 
@@ -639,81 +640,36 @@ struct PickyConversationCardViewTests {
         ## Screenshots
         - focused screen — shot-1.jpg
         """
+        let item = queueItem(steerEnvelope, displayText: "이게 힌트가 될까?")
+        let visibleQueue = PickyVisibleQueue(queuedSteers: [item], queuedFollowUps: [], committedUserMessages: [])
 
-        #expect(PickyQueuedInputText.displayText(from: steerEnvelope) == "이게 힌트가 될까?")
-        #expect(PickyQueuedInputText.normalized(steerEnvelope) == "이게 힌트가 될까?")
+        #expect(PickyConversationListView.pendingSteerMessage(item, index: 0).text == "이게 힌트가 될까?")
+        #expect(PickyQueuedInputDraftPolicy.queuedInputText(visibleQueue: visibleQueue) == "이게 힌트가 될까?")
     }
 
-    // Mirrors `prompt-builder.ts#buildFollowUpPrompt` — kept alongside the steer
-    // case so future heading renames are caught immediately.
-    @Test func queuedFollowUpEnvelopeDisplaysOnlyUserInstruction() {
-        let followUpEnvelope = """
-        # Picky follow-up
+    // Queue entries persisted before agentd sent `displayText`, plus every entry
+    // the daemon queued as raw text, must still render and restore their text.
+    @Test func queuedItemWithoutDisplayTextFallsBackToItsQueuedText() {
+        let item = queueItem("stop and use 10 seconds")
+        let visibleQueue = PickyVisibleQueue(queuedSteers: [item], queuedFollowUps: [], committedUserMessages: [])
 
-        Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.
-
-        ## User follow-up
-        - Source: text-follow-up
-
-        아니다 10초
-
-        ## Captured context
-        - Captured at: 2026-05-26T08:38:00Z
-        """
-
-        #expect(PickyQueuedInputText.displayText(from: followUpEnvelope) == "아니다 10초")
+        #expect(item.displayText == nil)
+        #expect(PickyConversationListView.pendingSteerMessage(item, index: 0).text == "stop and use 10 seconds")
+        #expect(PickyQueuedInputDraftPolicy.queuedInputText(visibleQueue: visibleQueue) == "stop and use 10 seconds")
     }
 
-    @Test func queuedEnvelopePreservesUserInstructionStartingWithSourceBullet() {
-        let steerEnvelope = """
-        # Picky steering message
+    // The committed-bubble match runs on the resolved instruction, so trailing
+    // whitespace and CRLF line endings on either side must not resurrect a
+    // pending bubble for a message the user already sees.
+    @Test func queuedSteerMatchesCommittedBubbleAcrossWhitespaceAndLineEndings() {
+        let item = queueItem("# Picky steering message", displayText: "  stop and use 10 seconds  \r\n")
+        let visibleQueue = PickyVisibleQueue(
+            queuedSteers: [item],
+            queuedFollowUps: [],
+            committedUserMessages: [PickySubmittedUserMessage(text: "stop and use 10 seconds", createdAt: baseDate)]
+        )
 
-        Boilerplate.
-
-        ## User steering instruction
-        - Source: text-follow-up
-
-        - Source: 이 문구는 사용자 지시의 일부야
-        다음 줄도 유지해야 해
-
-        ## Captured context
-        - Captured at: 2026-05-26T08:38:00Z
-        """
-        let expected = "- Source: 이 문구는 사용자 지시의 일부야\n다음 줄도 유지해야 해"
-
-        #expect(PickyQueuedInputText.displayText(from: steerEnvelope) == expected)
-        #expect(PickyQueuedInputText.normalized(steerEnvelope) == expected)
-    }
-
-    // Plain queued items (no agentd envelope) must pass through unchanged so
-    // legacy/voice paths that already store the raw user text still render.
-    @Test func queuedPlainTextWithoutEnvelopePassesThrough() {
-        let plain = "stop and use 10 seconds"
-        #expect(PickyQueuedInputText.displayText(from: plain) == plain)
-        #expect(PickyQueuedInputText.normalized("  stop and use 10 seconds  \r\n") == plain)
-    }
-
-    // Multi-line user instructions must survive extraction intact, and the
-    // extractor must stop at the next `## ` heading rather than swallowing the
-    // captured-context block.
-    @Test func queuedSteerEnvelopePreservesMultilineInstruction() {
-        let envelope = """
-        # Picky steering message
-
-        Boilerplate.
-
-        ## User steering instruction
-        line one
-        line two
-
-        line four
-
-        ## Captured context
-        - hidden
-        """
-
-        let expected = "line one\nline two\n\nline four"
-        #expect(PickyQueuedInputText.displayText(from: envelope) == expected)
+        #expect(visibleQueue.steers.isEmpty)
     }
 
     @Test func compactingPhaseShowsOverlayAndAllowsComposerQueueSubmission() {
@@ -2796,8 +2752,8 @@ private func descendantTextViews(in root: NSView) -> [NSTextView] {
     return nested
 }
 
-private func queueItem(_ text: String) -> PickyQueueItem {
-    PickyQueueItem(text: text, enqueuedAt: baseDate)
+private func queueItem(_ text: String, displayText: String? = nil) -> PickyQueueItem {
+    PickyQueueItem(text: text, enqueuedAt: baseDate, displayText: displayText)
 }
 
 private func extensionUiRequest(title: String? = "Need a decision", prompt: String? = "Pick one") -> PickyExtensionUiRequest {

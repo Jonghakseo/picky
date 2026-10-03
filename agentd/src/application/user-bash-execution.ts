@@ -9,7 +9,7 @@ import {
   type UserBashInput,
 } from "../domain/user-bash-format.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyAgentSession, PickyContextPacket } from "../protocol.js";
+import type { PickyAgentSession, PickyContextPacket, PickyMessagePresentation } from "../protocol.js";
 import type { RuntimeSessionHandle } from "../runtime/types.js";
 
 /**
@@ -25,7 +25,7 @@ export interface UserBashDeps {
   appendLog(sessionId: string, line: string): Promise<void>;
   flushPendingAssistantOutput(sessionId: string): Promise<void>;
   upsertSystemMessage(sessionId: string, messageId: string, text: string): Promise<void>;
-  recordError(sessionId: string, message: string): Promise<void>;
+  recordError(sessionId: string, message: string, options?: { presentation?: PickyMessagePresentation }): Promise<void>;
   patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
   liveUpdateIntervalMs: number;
 }
@@ -99,7 +99,7 @@ export async function executeUserBash(
     await publishLiveMessage(formatUserBashFailureSystemMessage(input, message, liveOutput));
     await livePublishChain;
     await deps.appendLog(sessionId, `bash failed: ${message}`);
-    await deps.recordError(sessionId, `Bash failed: ${message}`);
+    await deps.recordError(sessionId, `Bash failed: ${message}`, { presentation: { code: "userBashFailed", params: { detail: message } } });
     await deps.patch(sessionId, wasRunning ? { lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined } : { status: "failed", lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined });
     throw error;
   }

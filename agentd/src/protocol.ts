@@ -253,6 +253,12 @@ export type PickyQueueMode = z.infer<typeof PickyQueueModeSchema>;
 export const PickyQueueItemSchema = z.object({
   id: z.string().optional(),
   text: z.string(),
+  // The user-facing instruction for this entry. `text` is what the runtime holds, which for a
+  // Picky steering/follow-up submission is the built prompt envelope (boilerplate + captured
+  // context). agentd resolves the original instruction here so the app renders and restores it
+  // without re-implementing envelope parsing. Absent on queue items persisted before this field
+  // existed; readers fall back to `text`.
+  displayText: z.string().optional(),
   enqueuedAt: isoTimestamp,
   // Display-only evidence that this queued prompt carries structured screenshots. The queue
   // projection never contains image data, and a count alone is not a restorable attachment.
@@ -336,6 +342,34 @@ export const PiOAuthPromptOptionSchema = z.object({
   description: z.string().optional(),
 });
 export type PiOAuthPromptOption = z.infer<typeof PiOAuthPromptOptionSchema>;
+/**
+ * Semantic identity for a journal entry Picky itself authored (as opposed to Pi, an extension,
+ * a tool, or the user). The app renders these through its own localization catalog, so the
+ * daemon never has to pick a language. `text`/`errorMessage` keep carrying the English wording
+ * for the CLI, for journals written before a code existed, and for any reader that does not know
+ * the code. External strings (a shell failure, Pi's summarization error) travel verbatim in
+ * `params.detail` and are never translated.
+ */
+export const PickyMessagePresentationSchema = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("sessionCancelledByUser") }),
+  z.object({ code: z.literal("agentFailedWithoutDetail") }),
+  z.object({ code: z.literal("sessionCompacted") }),
+  z.object({ code: z.literal("sessionCompactedAfterOverflow") }),
+  z.object({
+    code: z.literal("sessionCompactionFailed"),
+    params: z.object({
+      detail: z.string(),
+      // Context usage at the time compaction gave up. `null` tokens means Pi had not reported a
+      // count yet; both fields are absent when the session had no usage snapshot at all.
+      contextTokens: z.number().nullable().optional(),
+      contextWindowTokens: z.number().optional(),
+    }),
+  }),
+  z.object({ code: z.literal("sessionPinnedFromIdlePi") }),
+  z.object({ code: z.literal("userBashFailed"), params: z.object({ detail: z.string() }) }),
+]);
+export type PickyMessagePresentation = z.infer<typeof PickyMessagePresentationSchema>;
+
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
   kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "command_receipt", "subagent_invocation", "system"]),
@@ -363,6 +397,10 @@ export const PickySessionMessageSchema = z.object({
   // can tell the model received screenshots even though no path appears in
   // the message body. Absent on messages that have no attachments.
   attachedImagesCount: z.number().int().nonnegative().optional(),
+  // Set only on messages Picky authored; see PickyMessagePresentationSchema. Codes grow over time,
+  // and a journal written by a newer daemon must still load after a downgrade: an unknown or
+  // malformed presentation is dropped and the English `text`/`errorMessage` fallback stands.
+  presentation: PickyMessagePresentationSchema.optional().catch(undefined),
 });
 export type PickySessionMessage = z.infer<typeof PickySessionMessageSchema>;
 

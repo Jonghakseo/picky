@@ -72,6 +72,57 @@ struct PickyAssistantRunMetadata: Codable, Equatable {
     }
 }
 
+/// Semantic identity of a journal entry agentd wrote on Picky's behalf. The daemon never picks
+/// a language: it sends a code (plus any external detail it had to quote) and the app renders
+/// the sentence from its own catalog.
+enum PickyMessagePresentationCode: String, Codable, Equatable {
+    case sessionCancelledByUser
+    case agentFailedWithoutDetail
+    case sessionCompacted
+    case sessionCompactedAfterOverflow
+    case sessionCompactionFailed
+    case sessionPinnedFromIdlePi
+    case userBashFailed
+}
+
+/// Values a presentation code needs that only the daemon knows. `detail` is text produced
+/// outside Picky (a shell failure, Pi's summarization error) and is shown verbatim.
+struct PickyMessagePresentationParams: Codable, Equatable {
+    var detail: String? = nil
+    /// `nil` when Pi had not reported a token count yet.
+    var contextTokens: Double? = nil
+    var contextWindowTokens: Double? = nil
+}
+
+struct PickyMessagePresentation: Codable, Equatable {
+    /// Nil when this build does not know the code the daemon sent; callers then keep the
+    /// daemon's English `text`/`errorMessage`.
+    let code: PickyMessagePresentationCode?
+    let params: PickyMessagePresentationParams?
+
+    init(code: PickyMessagePresentationCode?, params: PickyMessagePresentationParams? = nil) {
+        self.code = code
+        self.params = params
+    }
+
+    private enum CodingKeys: String, CodingKey { case code, params }
+
+    /// Never throws past the container: a malformed presentation must not make the whole message,
+    /// and with it the session snapshot, undecodable. The daemon's English fallback stands instead.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = (try? container.decodeIfPresent(String.self, forKey: .code)).flatMap { $0 }
+            .flatMap(PickyMessagePresentationCode.init(rawValue:))
+        params = (try? container.decodeIfPresent(PickyMessagePresentationParams.self, forKey: .params)).flatMap { $0 }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(code?.rawValue, forKey: .code)
+        try container.encodeIfPresent(params, forKey: .params)
+    }
+}
+
 struct PickySessionMessage: Codable, Equatable, Identifiable {
     let id: String
     let kind: PickySessionMessageKind
@@ -96,6 +147,8 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     /// structured context channel (PTT / QuickInput screenshots). Nil for
     /// messages that have no attachments or for non-user kinds.
     var attachedImagesCount: Int? = nil
+    /// Set only on entries Picky itself authored; see `PickyMessagePresentationCode`.
+    var presentation: PickyMessagePresentation? = nil
 }
 
 extension PickySessionMessage {
@@ -107,7 +160,7 @@ extension PickySessionMessage {
         switch kind {
         case .agentText, .userText, .system:
             if let compactSummaryReportMarkdown { return compactSummaryReportMarkdown }
-            let source = text ?? ""
+            let source = localizedPresentationText ?? text ?? ""
             let reportText = notifyType == nil ? source : PickyAnsiEscapeSanitizer.stripped(source)
             let trimmed = reportText.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed

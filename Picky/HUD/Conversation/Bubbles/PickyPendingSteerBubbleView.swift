@@ -91,7 +91,7 @@ struct PickyPendingSteerBubbleView: View {
     /// so a steer the Pickle already took is never duplicated as a draft.
     private func edit() {
         guard let itemID = item.id, !isWorking else { return }
-        let text = PickyQueuedInputText.displayText(from: item.text)
+        let text = item.userFacingText
         run(itemID) { commands.appendComposerDraftText(text, sessionID: sessionID) }
     }
 

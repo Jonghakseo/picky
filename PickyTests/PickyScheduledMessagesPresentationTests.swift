@@ -105,7 +105,7 @@ struct PickyScheduledMessagesPresentationTests {
         - hidden
         """
         let presentation = PickyScheduledMessagesPresentation(
-            followUps: [PickyQueueItem(text: envelope, enqueuedAt: now, id: "f1")],
+            followUps: [PickyQueueItem(text: envelope, enqueuedAt: now, id: "f1", displayText: "share the PR")],
             scheduledMessages: [],
             now: now
         )

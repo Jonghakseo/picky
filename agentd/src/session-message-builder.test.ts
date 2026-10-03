@@ -83,6 +83,8 @@ describe("SessionMessageBuilder", () => {
       { id: "msg-pin-system-session-pin", kind: "system", text: "Pinned from idle Pi session", originatedBy: undefined },
       { id: "msg-pin-agent-session-pin", kind: "agent_text", text: "Final answer", originatedBy: undefined },
     ]);
+    // Only the pin notice is Picky's own sentence; the goal and the answer are the user's and Pi's.
+    expect(messages.map((message) => message.presentation?.code)).toEqual([undefined, "sessionPinnedFromIdlePi", undefined]);
   });
 
   it("buffers assistant deltas until a boundary flush", async () => {

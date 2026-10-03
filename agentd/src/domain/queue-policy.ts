@@ -149,16 +149,28 @@ export function queueItems(
     return {
       id: pending?.id ?? makeId(),
       text,
+      // Picky tracks the raw instruction on the pending delivery, so prefer it over re-parsing
+      // the envelope the runtime queued.
+      displayText: pending?.text ?? queueItemDisplayText(text),
       enqueuedAt,
       ...(pending?.attachedImagesCount === undefined ? {} : { attachedImagesCount: pending.attachedImagesCount }),
     };
   });
 }
 
+/**
+ * The instruction a queued entry should show. Picky prompt envelopes carry boilerplate and
+ * captured context around the user's text; everything else is already the user's text.
+ */
+export function queueItemDisplayText(text: string): string {
+  return extractPickyPromptUserInstruction(text) ?? text;
+}
+
 export function sameQueueItems(left: readonly PickyQueueItem[], right: readonly PickyQueueItem[]): boolean {
   return left.length === right.length && left.every((item, index) => (
     item.id === right[index]?.id
     && item.text === right[index]?.text
+    && item.displayText === right[index]?.displayText
     && item.enqueuedAt === right[index]?.enqueuedAt
     && item.attachedImagesCount === right[index]?.attachedImagesCount
   ));

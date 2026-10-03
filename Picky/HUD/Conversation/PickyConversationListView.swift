@@ -670,7 +670,7 @@ struct PickyConversationListView: View {
             kind: .userText,
             createdAt: item.enqueuedAt,
             originatedBy: nil,
-            text: PickyQueuedInputText.displayText(from: item.text),
+            text: item.userFacingText,
             question: nil,
             cancelledAt: nil,
             activitySnapshot: nil,

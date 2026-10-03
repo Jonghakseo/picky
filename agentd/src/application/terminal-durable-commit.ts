@@ -254,8 +254,23 @@ function stageTerminalMessages(
     });
   }
   if (event.status === "failed" && !event.compactionFailed) {
-    messages.push({ id: `msg-error-${randomUUID()}`, kind: "agent_error", createdAt: now, errorMessage: event.summary ?? "Agent failed" });
+    messages.push({
+      id: `msg-error-${randomUUID()}`,
+      kind: "agent_error",
+      createdAt: now,
+      errorMessage: event.summary ?? "Agent failed",
+      // The agent's own summary stays verbatim; only Picky's no-detail fallback is localizable.
+      ...(event.summary ? {} : { presentation: { code: "agentFailedWithoutDetail" as const } }),
+    });
   }
-  if (event.status === "cancelled") messages.push({ id: `msg-system-${randomUUID()}`, kind: "system", createdAt: now, text: "Cancelled by user" });
+  if (event.status === "cancelled") {
+    messages.push({
+      id: `msg-system-${randomUUID()}`,
+      kind: "system",
+      createdAt: now,
+      text: "Cancelled by user",
+      presentation: { code: "sessionCancelledByUser" },
+    });
+  }
   return messages;
 }

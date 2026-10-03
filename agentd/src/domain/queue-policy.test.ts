@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { PickyQueueItem } from "../protocol.js";
-import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, matchPreviousQueueItems, queueItems, sameQueueItems, type PendingQueueDelivery } from "./queue-policy.js";
+import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, matchPreviousQueueItems, queueItems, queueItemDisplayText, sameQueueItems, type PendingQueueDelivery } from "./queue-policy.js";
 
 const enqueuedAt = "2026-06-03T00:00:00.000Z";
 
-function item(id: string, text: string, queuedAt = "2026-06-02T00:00:00.000Z", attachedImagesCount?: number): PickyQueueItem {
-  return { id, text, enqueuedAt: queuedAt, ...(attachedImagesCount === undefined ? {} : { attachedImagesCount }) };
+function item(id: string, text: string, queuedAt = "2026-06-02T00:00:00.000Z", attachedImagesCount?: number, displayText = text): PickyQueueItem {
+  return { id, text, displayText, enqueuedAt: queuedAt, ...(attachedImagesCount === undefined ? {} : { attachedImagesCount }) };
 }
 
 function idFactory(ids: string[]): () => string {
@@ -45,7 +45,30 @@ describe("queue policy", () => {
       [],
       [{ id: "pending-envelope", text: "inspect this", queueText, attachedImagesCount: 1 }],
       idFactory(["unused"]),
-    )).toEqual([item("pending-envelope", queueText, enqueuedAt, 1)]);
+    )).toEqual([item("pending-envelope", queueText, enqueuedAt, 1, "inspect this")]);
+  });
+
+  // The app renders and restores `displayText`, so a steering/follow-up envelope the runtime
+  // queued must resolve back to the instruction the user typed even when Picky no longer holds
+  // a pending delivery for it (reconnect, Pi-side queueing, restored projection).
+  it.each([
+    ["steering", "# Picky steering message\n\nBoilerplate.\n\n## User steering instruction\n- Source: text-follow-up\n\n\uc774\uac8c \ud78c\ud2b8\uac00 \ub420\uae4c?\n\n## Captured context\n- hidden", "\uc774\uac8c \ud78c\ud2b8\uac00 \ub420\uae4c?"],
+    ["follow-up", "# Picky follow-up\n\nBoilerplate.\n\n## User follow-up\n- Source: text-follow-up\n\n\uc544\ub2c8\ub2e4 10\ucd08\n\n## Captured context\n- hidden", "\uc544\ub2c8\ub2e4 10\ucd08"],
+    [
+      "instruction starting with its own Source bullet",
+      "# Picky steering message\n\nBoilerplate.\n\n## User steering instruction\n- Source: text-follow-up\n\n- Source: \uc774 \ubb38\uad6c\ub294 \uc0ac\uc6a9\uc790 \uc9c0\uc2dc\uc758 \uc77c\ubd80\uc57c\n\ub2e4\uc74c \uc904\ub3c4 \uc720\uc9c0\ud574\uc57c \ud574\n\n## Captured context\n- hidden",
+      "- Source: \uc774 \ubb38\uad6c\ub294 \uc0ac\uc6a9\uc790 \uc9c0\uc2dc\uc758 \uc77c\ubd80\uc57c\n\ub2e4\uc74c \uc904\ub3c4 \uc720\uc9c0\ud574\uc57c \ud574",
+    ],
+    [
+      "multi-line instruction ending at the next heading",
+      "# Picky steering message\n\nBoilerplate.\n\n## User steering instruction\nline one\nline two\n\nline four\n\n## Captured context\n- hidden",
+      "line one\nline two\n\nline four",
+    ],
+    ["raw text without an envelope", "stop and use 10 seconds", "stop and use 10 seconds"],
+  ])("resolves the display text of a %s queue entry", (_name, queueText, expected) => {
+    expect(queueItemDisplayText(queueText)).toBe(expected);
+    expect(queueItems([queueText], enqueuedAt, [], [], idFactory(["generated"])))
+      .toEqual([item("generated", queueText, enqueuedAt, undefined, expected)]);
   });
 
   it("omits attached image evidence when the pending delivery had no screenshots", () => {

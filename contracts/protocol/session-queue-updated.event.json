@@ -5,7 +5,12 @@
   "type": "sessionQueueUpdated",
   "sessionId": "session-001",
   "steering": [
-    { "text": "Prioritize tests", "enqueuedAt": "2026-05-05T00:00:03.000Z", "attachedImagesCount": 2 }
+    {
+      "text": "# Picky steering message\n\n## User steering instruction\n- Source: text-follow-up\n\nPrioritize tests\n\n## Captured context\n- CWD: /Users/creatrip/picky",
+      "displayText": "Prioritize tests",
+      "enqueuedAt": "2026-05-05T00:00:03.000Z",
+      "attachedImagesCount": 2
+    }
   ],
   "followUp": [
     { "text": "Summarize after completion", "enqueuedAt": "2026-05-05T00:00:03.000Z" }

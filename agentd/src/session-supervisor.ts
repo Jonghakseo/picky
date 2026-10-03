@@ -1175,7 +1175,7 @@ export class SessionSupervisor extends EventEmitter {
       appendLog: (id, line) => this.appendLog(id, line),
       flushPendingAssistantOutput: async (id) => { await this.messageBuilder.flushAssistantText(id); await this.messageBuilder.flushThinking(id); },
       upsertSystemMessage: (id, messageId, text) => this.messageBuilder.upsertSystemMessage(id, messageId, text),
-      recordError: (id, message) => this.messageBuilder.recordError(id, message),
+      recordError: (id, message, options) => this.messageBuilder.recordError(id, message, options),
       patch: (id, patch) => this.patch(id, patch),
       liveUpdateIntervalMs: this.options.userBashLiveUpdateIntervalMs ?? 1000,
     };
@@ -1744,7 +1744,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.waitForRuntimeEvents(sessionId);
     }
     if (beforeAbort.status !== "cancelled" && countSystemMessages(this.mustGet(sessionId), "Cancelled by user") === cancellationMessagesBefore) {
-      await this.messageBuilder.recordSystemMessage(sessionId, "Cancelled by user");
+      await this.messageBuilder.recordSystemMessage(sessionId, "Cancelled by user", { presentation: { code: "sessionCancelledByUser" } });
     }
     // Pending follow-up/steer prompts that were waiting for Pi to dequeue them will never be
     // processed after an abort, so drop their journal placeholders too.

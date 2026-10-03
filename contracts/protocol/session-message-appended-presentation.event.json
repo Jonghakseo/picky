@@ -1,0 +1,22 @@
+{
+  "id": "event-session-message-appended-presentation",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-05-05T00:00:04.000Z",
+  "type": "sessionMessageAppended",
+  "sessionId": "session-001",
+  "message": {
+    "id": "message-002",
+    "kind": "system",
+    "createdAt": "2026-05-05T00:00:04.000Z",
+    "text": "Auto-compaction failed\n\nSummarization request timed out.\n\nContext was not reduced. Current usage remains 190,000/200,000 tokens.",
+    "presentation": {
+      "code": "sessionCompactionFailed",
+      "params": {
+        "detail": "Summarization request timed out.",
+        "contextTokens": 190000,
+        "contextWindowTokens": 200000
+      }
+    }
+  },
+  "seq": 2
+}

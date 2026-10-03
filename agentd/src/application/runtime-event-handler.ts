@@ -10,7 +10,7 @@ import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js"
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyCompactionResult, PickyExtensionUiRequest, PickySubagentInvocation, PickyToolActivity } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySubagentInvocation, PickyToolActivity } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -18,8 +18,8 @@ interface RuntimeMessageJournal {
   recordExtensionQuestion(sessionId: string, request: PickyExtensionUiRequest): Promise<void>;
   recordExtensionNotification(sessionId: string, request: PickyExtensionUiRequest): Promise<void>;
   cancelExtensionQuestion(sessionId: string, requestId: string): Promise<void>;
-  recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void>;
-  recordSystemMessage(sessionId: string, text: string, options?: { compaction?: PickyCompactionResult }): Promise<void>;
+  recordError(sessionId: string, errorMessage: string, options?: { errorContext?: string; presentation?: PickyMessagePresentation }): Promise<void>;
+  recordSystemMessage(sessionId: string, text: string, options?: { compaction?: PickyCompactionResult; presentation?: PickyMessagePresentation }): Promise<void>;
   recordExtensionText(sessionId: string, text: string, customType?: string): Promise<void>;
   recordUserText(sessionId: string, text: string, originatedBy: "user" | "main_agent" | "pi_extension"): Promise<void>;
   appendAssistantDelta(sessionId: string, delta: string): void;
@@ -327,6 +327,48 @@ export class RuntimeEventHandler {
     logAgentd("runtime event dropped after terminal", { sessionId, eventType, status });
   }
 
+  /** Journals the compaction outcome once per compaction, in Picky's own voice. */
+  private async recordCompactionOutcomeMessages(
+    sessionId: string,
+    currentSession: PickyAgentSession,
+    event: Extract<RuntimeEvent, { type: "status" }>,
+  ): Promise<void> {
+    if (event.compactionCompleted && !hasLatestCompactCompletionMessage(currentSession)) {
+      const overflow = event.compactionReason === "overflow";
+      await this.dependencies.messageBuilder.recordSystemMessage(
+        sessionId,
+        overflow ? "Session compacted after context overflow" : "Session compacted",
+        {
+          ...(event.compaction ? { compaction: event.compaction } : {}),
+          presentation: { code: overflow ? "sessionCompactedAfterOverflow" : "sessionCompacted" },
+        },
+      );
+    }
+    if (event.compactionFailed && !hasLatestCompactFailureMessage(currentSession)) {
+      await this.dependencies.messageBuilder.recordSystemMessage(
+        sessionId,
+        compactFailureMessage(event.summary, currentSession.contextUsage),
+        { presentation: compactFailurePresentation(event.summary, currentSession.contextUsage) },
+      );
+    }
+  }
+
+  /** Closing journal entry for a turn that failed or was cancelled. */
+  private async recordTerminalOutcomeMessage(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> {
+    if (event.status === "failed" && !event.compactionFailed) {
+      // A runtime summary is the agent's own wording and stays verbatim; only the no-detail
+      // fallback is Picky's sentence to localize.
+      await this.dependencies.messageBuilder.recordError(
+        sessionId,
+        event.summary ?? "Agent failed",
+        event.summary ? {} : { presentation: { code: "agentFailedWithoutDetail" } },
+      );
+    }
+    if (event.status === "cancelled") {
+      await this.dependencies.messageBuilder.recordSystemMessage(sessionId, "Cancelled by user", { presentation: { code: "sessionCancelledByUser" } });
+    }
+  }
+
   private async applyContextUsageEvent(sessionId: string, usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined): Promise<void> {
     const current = this.dependencies.getSession(sessionId).contextUsage;
     if (sameContextUsage(current, usage)) return;
@@ -418,16 +460,7 @@ export class RuntimeEventHandler {
 
     if (terminal) this.processedTerminalRuns.add(sessionId);
 
-    if (event.compactionCompleted && !hasLatestCompactCompletionMessage(currentSession)) {
-      await this.dependencies.messageBuilder.recordSystemMessage(
-        sessionId,
-        event.compactionReason === "overflow" ? "Session compacted after context overflow" : "Session compacted",
-        event.compaction ? { compaction: event.compaction } : {},
-      );
-    }
-    if (event.compactionFailed && !hasLatestCompactFailureMessage(currentSession)) {
-      await this.dependencies.messageBuilder.recordSystemMessage(sessionId, compactFailureMessage(event.summary, currentSession.contextUsage));
-    }
+    await this.recordCompactionOutcomeMessages(sessionId, currentSession, event);
 
     const finishesManualTerminalCompaction = isManualTerminalCompactionEvent
       && (event.compactionCompleted || event.compactionFailed || (event.noTurnRan && terminal));
@@ -461,8 +494,7 @@ export class RuntimeEventHandler {
       await this.dependencies.commitTurnActivity(sessionId);
     }
     if (terminal) {
-      if (!event.noTurnRan && event.status === "failed" && !event.compactionFailed) await this.dependencies.messageBuilder.recordError(sessionId, event.summary ?? "Agent failed");
-      if (!event.noTurnRan && event.status === "cancelled") await this.dependencies.messageBuilder.recordSystemMessage(sessionId, "Cancelled by user");
+      if (!event.noTurnRan) await this.recordTerminalOutcomeMessage(sessionId, event);
       if (currentSession.pendingExtensionUiRequest) {
         await this.dependencies.messageBuilder.cancelExtensionQuestion(sessionId, currentSession.pendingExtensionUiRequest.id);
         patch.pendingExtensionUiRequest = undefined;
@@ -773,6 +805,17 @@ function compactFailureMessage(summary: string | undefined, usage: PickyAgentSes
   const detail = compactFailureDetail(summary);
   const usageText = usage ? ` Current usage remains ${formatTokenCount(usage.tokens)}/${formatTokenCount(usage.contextWindow)} tokens.` : "";
   return `Auto-compaction failed\n\n${detail}\n\nContext was not reduced.${usageText}`;
+}
+
+/** Same failure as `compactFailureMessage`, as parts the app can render in its own language. */
+function compactFailurePresentation(summary: string | undefined, usage: PickyAgentSession["contextUsage"]): PickyMessagePresentation {
+  return {
+    code: "sessionCompactionFailed",
+    params: {
+      detail: compactFailureDetail(summary),
+      ...(usage ? { contextTokens: usage.tokens, contextWindowTokens: usage.contextWindow } : {}),
+    },
+  };
 }
 
 function compactFailureDetail(summary: string | undefined): string {

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, SettingsManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vitest";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
 import type { RuntimeEvent, RuntimeSessionHandle } from "./types.js";
@@ -26,7 +26,7 @@ interface Fixture {
   installSkill(name: string, body: string): Promise<void>;
 }
 
-async function fixture(): Promise<Fixture> {
+async function fixture(options: { extraExtension?: (pi: ExtensionAPI) => void } = {}): Promise<Fixture> {
   const root = await mkdtemp(join(tmpdir(), "picky-plugin-reload-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "home/.pi/agent");
@@ -58,7 +58,7 @@ async function fixture(): Promise<Fixture> {
         })();
         return stream;
       } });
-    }] },
+    }, ...(options.extraExtension ? [options.extraExtension] : [])] },
   });
   const handle = await runtime.prewarm({ cwd: root, sessionId: "picky" });
   cleanups.push(async () => { await handle.dispose?.(); });
@@ -161,4 +161,29 @@ it("drops held follow-ups on a full abort, as the main agent's push-to-talk abor
   await vi.waitFor(() => expect(f.handle.hasPendingResourceReload).toBe(false));
   expect(f.handle.getFollowUpMessages()).toEqual([]);
   expect(f.requests).toHaveLength(1);
+});
+
+it("keeps extension greetings out of the transcript during a background plugin reload", async () => {
+  const f = await fixture({ extraExtension: (pi) => {
+    pi.on("session_start", async (_event, ctx) => {
+      ctx.ui.notify("[greeter] loaded 5 hook(s)", "info");
+      ctx.ui.notify("[greeter] settings could not be parsed", "warning");
+    });
+  } });
+  const notifications = () => f.events.flatMap((event) => (
+    event.type === "extension_ui" && event.request.method === "notify" ? [event.request.prompt] : []
+  ));
+  f.events.length = 0;
+
+  await expect(f.handle.requestResourceReload!()).resolves.toBe("reloaded");
+  // The background reload drops the greeting but still reports the problem.
+  expect(notifications()).toEqual(["[greeter] settings could not be parsed"]);
+
+  f.events.length = 0;
+  await f.handle.followUp({ text: "/reload", imagePaths: [] });
+  // A reload the user typed shows everything the extension says.
+  await vi.waitFor(() => expect(notifications()).toEqual([
+    "[greeter] loaded 5 hook(s)",
+    "[greeter] settings could not be parsed",
+  ]));
 });

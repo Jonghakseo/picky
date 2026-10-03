@@ -96,6 +96,8 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   private unsubscribe?: () => void;
   private uiBridge: ExtensionUiBridge;
+  /** Nonzero while Picky runs a background plugin reload; see `reloadPiResourcesQuietly`. */
+  private quietReloadDepth = 0;
   private readonly transcriptRepairLogLine?: string;
   private queuedSteeringCount = 0;
   private queuedFollowUpCount = 0;
@@ -1250,7 +1252,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       isBusy: () => this.runtime.session.isStreaming || piIsCompacting(this.runtime.session),
       isAdapterIdle: () => this.initialPromptTimer === undefined && this.pendingPromptPreflightDeliveryIds.size === 0
         && this.pendingExtensionUiRequestIds.size === 0 && !this.promptQueue.isFlushing,
-      hasPendingExtensionUi: () => this.pendingExtensionUiRequestIds.size > 0, reload: () => this.reloadPiResources(),
+      hasPendingExtensionUi: () => this.pendingExtensionUiRequestIds.size > 0, reload: () => this.reloadPiResourcesQuietly(),
       prepareReplacement: async () => { await this.asyncTasks?.prepareReplacement(); }, waitForReadiness: () => this.waitForAsyncReloadReadiness(),
       hasHeldPrompts: () => this.promptQueue.hasCompactionPrompts, flushHeldPrompts: () => this.flushHeldPromptQueue(false), log: (line) => this.emit({ type: "log", line }), emitReloaded: () => this.emit({ type: "resources_reloaded" }),
     });
@@ -1278,6 +1280,22 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.emitCombinedQueueUpdate();
     logAgentd("pi input held for plugin reload", { sessionId: this.id, phase, promptChars: prompt.text.length });
     return true;
+  }
+
+  /**
+   * Picky reloads every live session on its own when plugins change. Extensions greet a
+   * reload like a fresh session (claude-hooks-bridge posts "loaded N hooks" and its
+   * SessionStart output), and each greeting would land in every Pickle's transcript.
+   * Drop info-level notifications for that background reload only; warnings and errors
+   * still surface, and a user-typed `/reload` keeps every notification.
+   */
+  private async reloadPiResourcesQuietly(): Promise<{ supported: boolean }> {
+    this.quietReloadDepth += 1;
+    try {
+      return await this.reloadPiResources();
+    } finally {
+      this.quietReloadDepth -= 1;
+    }
   }
 
   private reloadPiResources(): Promise<{ supported: boolean }> {
@@ -1464,6 +1482,8 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         if (waits) bridge.answer(request.id, { cancelled: true });
         return;
       }
+      // Checked here rather than on the bridge: a reload can swap the bridge mid-way.
+      if (!waits && this.quietReloadDepth > 0 && request.method === "notify" && (request.notifyType ?? "info") === "info") return;
       if (waits) this.pendingExtensionUiRequestIds.add(request.id);
       this.emit({ type: "extension_ui", request, waitsForInput: waits });
     });

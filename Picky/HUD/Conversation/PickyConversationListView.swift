@@ -75,6 +75,12 @@ struct PickyConversationListView: View {
     @State private var hasUnreadContentSinceUnpinning = false
     @State private var scrollViewportHeight: CGFloat = 0
     @State private var bottomAnchorMaxY: CGFloat = .infinity
+    /// Content top edge in the scroll viewport's space, and its value the last
+    /// time the list was bottom-pinned. Growth at the end of the transcript (a
+    /// presence row, a taller composer) moves the bottom but not this edge; a
+    /// reader scrolling moves both. Only the second may drop the pin.
+    @State private var contentTopY: CGFloat = 0
+    @State private var pinnedContentTopY: CGFloat?
     /// Suppresses an unpin caused by the short layout interval between a
     /// streaming update growing the content and its requested bottom scroll.
     @State private var isAwaitingProgrammaticBottomPin = false
@@ -152,14 +158,17 @@ struct PickyConversationListView: View {
                         Color.clear
                             .frame(height: 1)
                             .id(Self.bottomAnchorID)
-                            .background {
-                                GeometryReader { proxy in
-                                    Color.clear.preference(
-                                        key: PickyConversationBottomAnchorPreferenceKey.self,
-                                        value: proxy.frame(in: .named(Self.scrollCoordinateSpace)).maxY
-                                    )
-                                }
-                            }
+                    }
+                    // One reading for both edges, so a scroll and a content
+                    // change can never be told apart by callback order.
+                    .background {
+                        GeometryReader { proxy in
+                            let frame = proxy.frame(in: .named(Self.scrollCoordinateSpace))
+                            Color.clear.preference(
+                                key: PickyConversationContentEdgesPreferenceKey.self,
+                                value: PickyConversationContentEdges(topY: frame.minY, bottomY: frame.maxY)
+                            )
+                        }
                     }
                     .padding(.vertical, 2)
                     .scrollTargetLayout()
@@ -211,11 +220,12 @@ struct PickyConversationListView: View {
             }
             .onPreferenceChange(PickyConversationScrollViewportPreferenceKey.self) { height in
                 scrollViewportHeight = height
-                updatePinnedStateFromViewportGeometry()
+                updatePinnedStateFromViewportGeometry(proxy: proxy)
             }
-            .onPreferenceChange(PickyConversationBottomAnchorPreferenceKey.self) { maxY in
-                bottomAnchorMaxY = maxY
-                updatePinnedStateFromViewportGeometry()
+            .onPreferenceChange(PickyConversationContentEdgesPreferenceKey.self) { edges in
+                bottomAnchorMaxY = edges.bottomY
+                contentTopY = edges.topY
+                updatePinnedStateFromViewportGeometry(proxy: proxy)
             }
             .task(id: session.id) {
                 expandedHistoryAnchorID = nil
@@ -823,17 +833,24 @@ struct PickyConversationListView: View {
         .help(L10n.t("hud.conversation.jumpToLatest.help"))
     }
 
-    private func updatePinnedStateFromViewportGeometry() {
+    private func updatePinnedStateFromViewportGeometry(proxy: ScrollViewProxy? = nil) {
         guard scrollViewportHeight > 0, bottomAnchorMaxY.isFinite else { return }
 
-        if PickyConversationScrollPolicy.isBottomAnchorPinned(
-            maxY: bottomAnchorMaxY,
-            viewportHeight: scrollViewportHeight
+        switch PickyConversationScrollPolicy.pinGeometryOutcome(
+            isAnchorPinned: PickyConversationScrollPolicy.isBottomAnchorPinned(
+                maxY: bottomAnchorMaxY,
+                viewportHeight: scrollViewportHeight
+            ),
+            wasPinned: isPinnedToBottom,
+            isAwaitingProgrammaticPin: isAwaitingProgrammaticBottomPin,
+            contentTopShift: pinnedContentTopY.map { contentTopY - $0 }
         ) {
+        case .pinned:
             let completedProgrammaticBottomPin = isAwaitingProgrammaticBottomPin
             isPinnedToBottom = true
             hasUnreadContentSinceUnpinning = false
             isAwaitingProgrammaticBottomPin = false
+            pinnedContentTopY = contentTopY
             if PickyConversationScrollPolicy.shouldReportInitialBottomPinReady(
                 completedProgrammaticBottomPin: completedProgrammaticBottomPin,
                 hasReported: hasReportedInitialBottomPinReady
@@ -841,8 +858,18 @@ struct PickyConversationListView: View {
                 hasReportedInitialBottomPinReady = true
                 onInitialBottomPinReady()
             }
-        } else if !isAwaitingProgrammaticBottomPin {
+        case .followGrowth:
+            // The transcript grew under a pinned reader (a presence row, a
+            // status-driven row, a taller composer) without a trigger that
+            // would scroll. Follow it instead of reporting "unpinned", which
+            // would flash the "running below" pill above the list and shift it.
+            if let proxy {
+                scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
+            }
+        case .unpinned:
             isPinnedToBottom = false
+        case .unchanged:
+            break
         }
     }
 
@@ -972,10 +999,15 @@ private struct PickyConversationScrollViewportPreferenceKey: PreferenceKey {
     }
 }
 
-private struct PickyConversationBottomAnchorPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = .infinity
+struct PickyConversationContentEdges: Equatable {
+    let topY: CGFloat
+    let bottomY: CGFloat
+}
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+private struct PickyConversationContentEdgesPreferenceKey: PreferenceKey {
+    static let defaultValue = PickyConversationContentEdges(topY: 0, bottomY: .infinity)
+
+    static func reduce(value: inout PickyConversationContentEdges, nextValue: () -> PickyConversationContentEdges) {
         value = nextValue()
     }
 }
@@ -1023,6 +1055,35 @@ enum PickyConversationScrollPolicy {
     static func isBottomAnchorPinned(maxY: CGFloat, viewportHeight: CGFloat) -> Bool {
         maxY <= viewportHeight + bottomPinThreshold
     }
+
+    enum PinGeometryOutcome: Equatable {
+        case pinned
+        /// Still pinned in intent; the content grew, so scroll to the new end.
+        case followGrowth
+        case unpinned
+        case unchanged
+    }
+
+    /// The bottom leaving the viewport means the reader scrolled away only if
+    /// the content top moved too. If the top stayed where it was when the list
+    /// was last pinned, the content (or viewport) changed size underneath a
+    /// pinned reader, and the pin has to follow it.
+    static func pinGeometryOutcome(
+        isAnchorPinned: Bool,
+        wasPinned: Bool,
+        isAwaitingProgrammaticPin: Bool,
+        contentTopShift: CGFloat?
+    ) -> PinGeometryOutcome {
+        if isAnchorPinned { return .pinned }
+        if isAwaitingProgrammaticPin { return .unchanged }
+        if wasPinned, let contentTopShift, abs(contentTopShift) < contentTopStillTolerance {
+            return .followGrowth
+        }
+        return .unpinned
+    }
+
+    /// Sub-point drift from rounding is not a scroll.
+    static let contentTopStillTolerance: CGFloat = 0.5
 
     static func shouldReportInitialBottomPinReady(
         completedProgrammaticBottomPin: Bool,

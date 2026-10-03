@@ -2241,6 +2241,34 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationScrollPolicy.shouldAutoScroll(from: nil, to: initialTrigger, isPinnedToBottom: false))
     }
 
+    /// Sending from an idle Pickle adds the user bubble, then the running
+    /// presence row arrives without a scroll trigger. That growth must keep a
+    /// pinned reader pinned; reporting "unpinned" flashed the "running below"
+    /// pill above the transcript and shifted the whole list for a moment.
+    @Test func conversationScrollPolicyFollowsGrowthUnderAPinnedReader() {
+        #expect(PickyConversationScrollPolicy.pinGeometryOutcome(
+            isAnchorPinned: false, wasPinned: true, isAwaitingProgrammaticPin: false, contentTopShift: 0
+        ) == .followGrowth)
+        // A reader scrolling up moves the content top as well: that unpins.
+        #expect(PickyConversationScrollPolicy.pinGeometryOutcome(
+            isAnchorPinned: false, wasPinned: true, isAwaitingProgrammaticPin: false, contentTopShift: 120
+        ) == .unpinned)
+        // Without a recorded pinned position there is nothing to compare against.
+        #expect(PickyConversationScrollPolicy.pinGeometryOutcome(
+            isAnchorPinned: false, wasPinned: true, isAwaitingProgrammaticPin: false, contentTopShift: nil
+        ) == .unpinned)
+        // A reader who already scrolled away is not dragged back by growth.
+        #expect(PickyConversationScrollPolicy.pinGeometryOutcome(
+            isAnchorPinned: false, wasPinned: false, isAwaitingProgrammaticPin: false, contentTopShift: 0
+        ) == .unpinned)
+        #expect(PickyConversationScrollPolicy.pinGeometryOutcome(
+            isAnchorPinned: false, wasPinned: true, isAwaitingProgrammaticPin: true, contentTopShift: 0
+        ) == .unchanged)
+        #expect(PickyConversationScrollPolicy.pinGeometryOutcome(
+            isAnchorPinned: true, wasPinned: false, isAwaitingProgrammaticPin: false, contentTopShift: 300
+        ) == .pinned)
+    }
+
     @Test func conversationScrollPolicyTreatsOnlyNearViewportBottomAsPinned() {
         let viewportHeight: CGFloat = 320
         let threshold = PickyConversationScrollPolicy.bottomPinThreshold

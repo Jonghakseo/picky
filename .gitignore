@@ -84,3 +84,6 @@ agentd/scratch/
 # Picky workspace lives outside the repo; `Picky/App/PickyWorkspaceSeeder.swift`
 # remains the source of truth for what gets seeded into a new install.
 /.pi/
+
+# Local Excalidraw scratch diagrams.
+/.diagrams/

@@ -9,10 +9,24 @@
 
 import Foundation
 
+/// Who asked for a layout mutation. `bookkeeping` is Picky keeping the layout
+/// in lockstep with the daemon's session universe (admission, reconciliation)
+/// plus the legacy replay itself; everything else is a deliberate arrangement
+/// by the user, the main agent, or the CLI.
+enum PickyDockLayoutMutationOrigin {
+    case explicit
+    case bookkeeping
+}
+
 @MainActor
 final class PickySessionDockLayoutController {
     private let store: PickyDockLayoutStoring
     private let onSaveError: (Error) -> Void
+    /// Called for every explicit mutation attempt, before it is applied. One
+    /// hook here is what keeps "a deliberate arrangement cancels the pending
+    /// legacy replay" true for mutation entry points added later, instead of
+    /// relying on each new facade method to remember the rule.
+    var onExplicitLayoutMutation: (() -> Void)?
 
     private(set) var layout: PickyDockLayout
     /// Monotonic admission revision prevents an awaited durable mutation from
@@ -80,7 +94,7 @@ final class PickySessionDockLayoutController {
             }
         }
 
-        return apply(next, changed: changed)
+        return apply(next, changed: changed, origin: .bookkeeping)
     }
 
     /// Replay a legacy `manualOrder` drag order onto the top-level dock
@@ -119,7 +133,7 @@ final class PickySessionDockLayoutController {
             guard case .session = next.entries[index], let sessionID = remaining.popFirst() else { continue }
             next.entries[index] = .session(id: sessionID)
         }
-        return apply(next, changed: true)
+        return apply(next, changed: true, origin: .bookkeeping)
     }
 
     /// Admit one active session without pruning other persisted IDs. V2
@@ -129,7 +143,7 @@ final class PickySessionDockLayoutController {
     func admitActiveSessionIfMissing(_ sessionID: String) -> Bool {
         var next = layout
         let changed = next.appendNewSessionIfMissing(sessionID)
-        return apply(next, changed: changed)
+        return apply(next, changed: changed, origin: .bookkeeping)
     }
 
     @discardableResult
@@ -236,7 +250,8 @@ final class PickySessionDockLayoutController {
     }
 
     @discardableResult
-    private func apply(_ next: PickyDockLayout, changed: Bool) -> Bool {
+    private func apply(_ next: PickyDockLayout, changed: Bool, origin: PickyDockLayoutMutationOrigin = .explicit) -> Bool {
+        if origin == .explicit { onExplicitLayoutMutation?() }
         let normalized = next.normalizedForFolderRail()
         let didChange = changed || normalized != layout
         guard didChange else { return false }
@@ -247,7 +262,8 @@ final class PickySessionDockLayoutController {
     }
 
     @discardableResult
-    private func applyPersisting(_ next: PickyDockLayout, changed: Bool) async throws -> Bool {
+    private func applyPersisting(_ next: PickyDockLayout, changed: Bool, origin: PickyDockLayoutMutationOrigin = .explicit) async throws -> Bool {
+        if origin == .explicit { onExplicitLayoutMutation?() }
         let normalized = next.normalizedForFolderRail()
         let didChange = changed || normalized != layout
         guard didChange else { return false }

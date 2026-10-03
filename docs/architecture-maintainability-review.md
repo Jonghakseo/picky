@@ -334,13 +334,17 @@ verifier·reviewer·challenger 격리 검토 2사이클. 검증 증거: Swift �
 | 1 | 카드 round-trip이 `lastRequest.source`를 `.followUp`으로 강제 | P3 | 텍스트가 같으면 이전 source 보존 + 테스트 |
 | 2 | ratchet이 파일명만 보고 `extension <Stem>` 블록을 다른 파일에 두면 우회 | P2 | extension 블록 라인을 그룹에 합산 (`09f874340`) |
 | 2 | ratchet pin을 올려도 감지 못 함 | P2 | `origin/main` 대비 pin 인상·삭제 검사 |
+| 2 | 파일을 옮기면 ratchet pin 이력이 끊겨 임의 상향 가능 | P2 | base ref 대비 git rename 감지로 `file:` pin 을 새 경로에 매핑 (heal-2 R3) |
 | 2 | `additionalOwnedSessionIDs` 항상 빈 집합, `disconnectAll` 주석 오류, `pickleSessionIds` 재할당 가능 | P3 | 제거·수정·`readonly` |
 
 ### 남은 리스크 (수정하지 않음)
 
 - ~~**`mutateSession`의 lossy 재설치**~~ (P1-2c에서 해결): `PickyRegistrySessionProjectionStorage.mutateSession`/`mutateArchivedSession`이 대상 세션 스토어만 변이하도록 바꿔, 무관한 세션의 `revision`·`finalAnswer`·`archivedAt`이 더는 리셋되지 않는다. `SessionStore.replace(card:)`가 revision과 finalAnswer를 함께 싣는다. 회귀 테스트 3건이 수정 전 실패/수정 후 통과로 고정한다.
 - ~~**v2 부트스트랩이 영속 선택을 잃는다** (위 P1-2 주석의 (a))~~ (0-f에서 해결): `syncSelectionAfterSessionListChange`에 `deferringUnknownSessionDemotion`을 추가해, 스냅샷 적용 경로는 아직 도착하지 않은(= active·archived 어디에도 없는) 세션을 이유로 선택을 강등하거나 `PickySelectedSessionID`를 지우지 않는다. 스냅샷이 증명할 수 있는 유일한 멤버십 변화인 아카이브 전환은 그대로 강등한다. 권위 있는 판정은 `applySessionProjectionBootstrapCompletion` 한 곳에 남는다. 회귀 테스트 3건(복원 1 + 신규 2)이 수정 전 실패/수정 후 통과로 고정한다.
-- ~~**레거시 수동 도크 정렬 마이그레이션이 v2에서 돌지 않는다** (위 P1-2 주석의 (b))~~ (heal-1에서 해결): 뷰모델이 시작 시 "dock layout 이 비었고 `manualOrder` 는 남아 있다"를 기억했다가 첫 primary `applySessionProjectionBootstrapCompletion`에서 `PickySessionDockLayoutController.applyLegacyManualOrder`로 한 번만 재생한다. 멤버십이 권위를 갖는 그 시점에만 돌고, 그 전에 사용자가 도크를 직접 재배치했으면(`moveSessionInDock`·`moveDockGroup`·`createDockGroup`) 최신 의도를 우선해 건너뛴다. 0-a에서 순서 단언이 약화됐던 뷰모델 테스트를 원래 계약으로 복원하고 건너뛰기 케이스를 추가해 수정 전 실패/수정 후 통과로 고정했다.
+- ~~**레거시 수동 도크 정렬 마이그레이션이 v2에서 돌지 않는다** (위 P1-2 주석의 (b))~~ (heal-1에서 해결, heal-2에서 보강): 첫 primary `applySessionProjectionBootstrapCompletion`에서 `PickySessionDockLayoutController.applyLegacyManualOrder`로 한 번만 재생한다. 멤버십이 권위를 갖는 그 시점에만 돈다.
+  - **재생 대기는 영속 상태다** (heal-2 R1): 부트스트랩 admission 이 스냅샷마다 도착순 layout 을 디스크에 쓰므로 "layout 이 비었다"는 관찰은 한 번의 실행만 지나면 사라진다. primary completion 에 도달하지 못한 실행(데몬 크래시, 종료, 워치독 경로)이 레거시 순서를 영구히 날리지 않도록 `PickySessionManualOrderStoring.isLegacyManualOrderReplayPending`(UserDefaults)에 대기 상태를 남긴다. 빈 layout 관찰은 대기를 *켜기만* 하므로 이미 layout 이 있는 사용자에게는 새로 생기지 않는다.
+  - **취소 규칙은 한 지점에서 강제한다** (heal-2 R2): Picky 자체 bookkeeping(`reconcile`, `admitActiveSessionIfMissing`, 재생 자체)만 `PickyDockLayoutMutationOrigin.bookkeeping` 으로 표시하고, 컨트롤러의 `apply`/`applyPersisting` 기본값인 `.explicit` 변이는 전부 `onExplicitLayoutMutation` 훅으로 대기를 취소한다. UI 드래그·그룹 생성뿐 아니라 CLI/메인 에이전트 경로(`*Persisting`), ungroup, rename, 보류 그룹 배정 드레인이 모두 포함되고, 새 변이 진입점도 별도 조치 없이 규칙을 따른다.
+  - 0-a에서 순서 단언이 약화됐던 뷰모델 테스트를 원래 계약으로 복원하고, 건너뛰기 케이스와 heal-2 회귀 4건(중단된 실행 후 재생, 기존 layout 비무장, CLI 생성 억제, ungroup 억제)을 수정 전 실패/수정 후 통과로 고정했다.
 - **voice follow-up hover·screen context target·active voice follow-up은 같은 결함이 아니다** (0-f 확인): 세 값 모두 `PickyUserDefaultsSessionSelectionStore`의 프로세스 내 transient 필드이거나 뷰모델 전용 `@Published`라 영속 저장소에 쓰이지 않고, `beginHoveredVoiceFollowUp`·`armScreenContextTarget`·`toggleScreenContextTarget`이 모두 `sessions.contains`를 선행 검사하므로 아직 도착하지 않은 세션 ID를 가질 수 없다. 뷰모델도 앱 수명당 하나(`PickyApp.swift`의 `hudSessionViewModel`)라 부트스트랩 중 재생성되지 않는다. 그래서 스냅샷 경로의 이 3종 호출은 그대로 둔다.
 - **rewind 후 `lastRequest` 미갱신**: 폐기된 분기의 요청 텍스트가 REQUEST 행에 남는다. 이전 로그 파생 값도 같은 동작이었으므로 회귀는 아니지만 제품 판단이 필요하다.
 - **supervisor 내부 v1 emit 파이프라인**: 서버 리스너는 사라졌지만 `session`/`log`/`messageAppended` 등 내부 이벤트와 `emitTerminalV1Compatibility`는 남아 있다. `session-supervisor.test.ts` 335건이 이 이벤트로 검증하므로 테스트 리팩터와 함께 제거해야 한다.

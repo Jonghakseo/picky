@@ -120,12 +120,12 @@ final class PickySessionListViewModel: ObservableObject {
     private var dockStateMutationDepth = 0
     private var needsImmediateDockStateSyncAfterMutation = false
     internal let dockLayoutController: PickySessionDockLayoutController
-    /// True when this launch found an empty dock layout next to a non-empty
-    /// legacy `manualOrder`: drags the user made before groups existed were
-    /// never carried into the layout. V2 bootstrap admits sessions one
-    /// snapshot at a time, so the layout stops being empty long before
-    /// membership is authoritative; this flag carries that launch-time
-    /// observation to the one moment the replay can run correctly.
+    /// True while a pre-groups `manualOrder` still owes its one-time replay.
+    /// V2 bootstrap admits sessions one snapshot at a time, so the layout stops
+    /// being empty long before membership is authoritative; this flag carries
+    /// the launch-time observation to the one moment the replay can run
+    /// correctly. It mirrors `manualOrderStore.isLegacyManualOrderReplayPending`
+    /// so a launch that never reaches primary completion does not drop it.
     internal var needsLegacyManualOrderMigration = false
     enum PendingDockGroupAssignment {
         case groupName(String)
@@ -232,8 +232,9 @@ final class PickySessionListViewModel: ObservableObject {
         }
         self.dockLayoutController = dockLayoutController
         self.dockLayout = dockLayoutController.layout
-        self.needsLegacyManualOrderMigration = dockLayoutController.layout.entries.isEmpty
-            && !manualOrderStore.manualOrder.isEmpty
+        self.needsLegacyManualOrderMigration = manualOrderStore.armLegacyManualOrderReplayIfNeeded(
+            dockLayoutIsEmpty: dockLayoutController.layout.entries.isEmpty
+        )
         self.artifactPathValidator = artifactPathValidator
         self.clipboardWriter = clipboardWriter
         self.reportPresenter = reportPresenter ?? PickyReportViewerPresenter.shared
@@ -286,6 +287,7 @@ final class PickySessionListViewModel: ObservableObject {
             self?.onSessionProjectionStorageChanged?()
         }
         self.sessionProjectionRecoveryCoordinator = Self.makeSessionProjectionRecoveryCoordinator(for: self)
+        dockLayoutController.onExplicitLayoutMutation = { [weak self] in self?.settleLegacyManualOrderReplay() }
         syncDockStateNow()
     }
 

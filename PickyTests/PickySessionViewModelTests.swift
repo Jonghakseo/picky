@@ -114,6 +114,7 @@ private final class FakeArchiveStore: PickySessionArchiveStoring {
 
 private final class FakeManualOrderStore: PickySessionManualOrderStoring {
     var manualOrder: [String] = []
+    var isLegacyManualOrderReplayPending = false
 }
 
 @MainActor
@@ -3728,6 +3729,127 @@ struct PickySessionViewModelTests {
 
         #expect(viewModel.dockLayout.testSessionIDs == ["c", "a", "b"])
         #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs == ["c", "a", "b"])
+    }
+
+    private func makeLegacyReplayViewModel(
+        orderStore: FakeManualOrderStore,
+        dockLayoutStore: FakeViewModelDockLayoutStore
+    ) -> PickySessionListViewModel {
+        PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            selectionStore: FakeSelectionStore(),
+            archiveStore: FakeArchiveStore(),
+            manualOrderStore: orderStore,
+            dockLayoutStore: dockLayoutStore
+        )
+    }
+
+    private func seedLegacyReplaySessions(into viewModel: PickySessionListViewModel) {
+        for (id, title, createdAt) in sessionSeedRows {
+            viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+                id: id,
+                title: title,
+                status: "running",
+                summary: id,
+                createdAt: createdAt,
+                updatedAt: createdAt
+            ))))
+        }
+    }
+
+    // Bootstrap admission writes the arrival-order layout to disk on every
+    // snapshot, so "the layout was empty at launch" is destroyed by the very
+    // first run. A run that ends before primary completion (daemon crash, quit,
+    // watchdog-only path) must not therefore lose the pre-groups drag order.
+    @Test func legacyManualOrderReplaySurvivesALaunchWithoutBootstrapCompletion() {
+        let orderStore = FakeManualOrderStore()
+        orderStore.manualOrder = ["c", "a", "b"]
+        let dockLayoutStore = FakeViewModelDockLayoutStore()
+
+        let interruptedLaunch = makeLegacyReplayViewModel(orderStore: orderStore, dockLayoutStore: dockLayoutStore)
+        seedLegacyReplaySessions(into: interruptedLaunch)
+        // Arrival order is on disk and no completion ever arrives.
+        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs == ["a", "b", "c"])
+
+        let nextLaunch = makeLegacyReplayViewModel(orderStore: orderStore, dockLayoutStore: dockLayoutStore)
+        seedLegacyReplaySessions(into: nextLaunch)
+        nextLaunch.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
+
+        #expect(nextLaunch.dockLayout.testSessionIDs == ["b", "a", "c"])
+        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs == ["b", "a", "c"])
+        // The debt is settled, so a third launch replays nothing.
+        #expect(orderStore.isLegacyManualOrderReplayPending == false)
+    }
+
+    // The replay is owed only to someone whose drags never reached a layout.
+    // A user who already has a dock layout must never acquire that debt, no
+    // matter how long a stale `manualOrder` lingers in UserDefaults.
+    @Test func existingDockLayoutNeverArmsTheLegacyManualOrderReplay() {
+        let orderStore = FakeManualOrderStore()
+        orderStore.manualOrder = ["c", "a", "b"]
+        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "b"),
+            .session(id: "c")
+        ]))
+
+        let viewModel = makeLegacyReplayViewModel(orderStore: orderStore, dockLayoutStore: dockLayoutStore)
+        seedLegacyReplaySessions(into: viewModel)
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
+
+        #expect(orderStore.isLegacyManualOrderReplayPending == false)
+        #expect(viewModel.dockLayout.testSessionIDs == ["a", "b", "c"])
+    }
+
+    // Dock arrangement from the main agent/CLI is as deliberate as a drag, so
+    // it cancels the pending replay too. Before this, only three ViewModel
+    // methods cancelled and the CLI path silently kept the replay armed.
+    @Test func cliGroupCreationBeforeBootstrapCompletionSuppressesTheLegacyReplay() async throws {
+        let orderStore = FakeManualOrderStore()
+        orderStore.manualOrder = ["c", "a", "b"]
+        let dockLayoutStore = FakeViewModelDockLayoutStore()
+        let viewModel = makeLegacyReplayViewModel(orderStore: orderStore, dockLayoutStore: dockLayoutStore)
+        seedLegacyReplaySessions(into: viewModel)
+
+        _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
+            action: .create,
+            groupId: nil,
+            name: "Research",
+            sessionIds: ["c"]
+        ))
+
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
+
+        // The legacy order would have put "b" ahead of "a" at top level.
+        #expect(viewModel.dockLayout.testSessionIDs == ["a", "b", "c"])
+        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs == ["a", "b", "c"])
+        #expect(orderStore.isLegacyManualOrderReplayPending == false)
+    }
+
+    // Ungroup is a layout change the user just made by hand; the replay must
+    // not resurrect the old order on top of it at completion. The pending debt
+    // here comes from a previous interrupted launch, which is the only way a
+    // layout with groups can still owe a replay.
+    @Test func ungroupBeforeBootstrapCompletionSuppressesTheLegacyReplay() {
+        let orderStore = FakeManualOrderStore()
+        orderStore.manualOrder = ["c", "a", "b"]
+        orderStore.isLegacyManualOrderReplayPending = true
+        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", name: "G", color: .red, memberSessionIDs: ["b", "c"]))
+        ]))
+        let viewModel = makeLegacyReplayViewModel(orderStore: orderStore, dockLayoutStore: dockLayoutStore)
+        seedLegacyReplaySessions(into: viewModel)
+
+        viewModel.removeDockGroup(id: "g", keepMembers: true)
+        #expect(viewModel.dockLayout.testSessionIDs == ["a", "b", "c"])
+
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
+
+        #expect(viewModel.dockLayout.testSessionIDs == ["a", "b", "c"])
+        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs == ["a", "b", "c"])
+        #expect(orderStore.isLegacyManualOrderReplayPending == false)
     }
 
     @Test func removeDockGroupArchivesMembersAndPersistsThroughViewModel() async throws {

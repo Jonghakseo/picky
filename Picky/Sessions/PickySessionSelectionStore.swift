@@ -75,6 +75,31 @@ protocol PickySessionArchiveStoring: AnyObject {
 /// at index 0 lands on the visually-end slot.
 protocol PickySessionManualOrderStoring: AnyObject {
     var manualOrder: [String] { get set }
+    /// Whether a pre-groups `manualOrder` drag order still owes a one-time
+    /// replay onto the dock layout. The layout itself is written to disk by
+    /// every bootstrap admission, so "the layout was empty at launch" survives
+    /// only one run; a launch that never reaches primary bootstrap completion
+    /// would otherwise lose the legacy order for good. Set the first time the
+    /// empty layout is observed, cleared when the replay runs or is cancelled.
+    var isLegacyManualOrderReplayPending: Bool { get set }
+}
+
+extension PickySessionManualOrderStoring {
+    /// Decides at launch whether the one-time legacy replay is still owed.
+    ///
+    /// The persisted flag is authoritative because the dock layout is rewritten
+    /// to disk by every bootstrap admission: a run that ends before primary
+    /// bootstrap completion (daemon crash, quit, watchdog-only path) leaves a
+    /// non-empty arrival-order layout behind, so "the layout was empty" is gone
+    /// for good after one launch. Observing the empty layout only ever *arms*
+    /// the flag, so a user who already has a dock layout never acquires a debt.
+    func armLegacyManualOrderReplayIfNeeded(dockLayoutIsEmpty: Bool) -> Bool {
+        guard !manualOrder.isEmpty else { return false }
+        if isLegacyManualOrderReplayPending { return true }
+        guard dockLayoutIsEmpty else { return false }
+        isLegacyManualOrderReplayPending = true
+        return true
+    }
 }
 
 final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring, PickyScreenContextTargetLabelStoring {
@@ -210,6 +235,7 @@ final class PickyUserDefaultsSessionArchiveStore: PickySessionArchiveStoring {
 final class PickyUserDefaultsSessionManualOrderStore: PickySessionManualOrderStoring {
     static let shared = PickyUserDefaultsSessionManualOrderStore()
     static let key = "PickyManualSessionOrder"
+    static let legacyReplayPendingKey = "PickyLegacyManualOrderReplayPending"
 
     private let defaults: UserDefaults
 
@@ -224,6 +250,17 @@ final class PickyUserDefaultsSessionManualOrderStore: PickySessionManualOrderSto
                 defaults.removeObject(forKey: Self.key)
             } else {
                 defaults.set(newValue, forKey: Self.key)
+            }
+        }
+    }
+
+    var isLegacyManualOrderReplayPending: Bool {
+        get { defaults.bool(forKey: Self.legacyReplayPendingKey) }
+        set {
+            if newValue {
+                defaults.set(true, forKey: Self.legacyReplayPendingKey)
+            } else {
+                defaults.removeObject(forKey: Self.legacyReplayPendingKey)
             }
         }
     }

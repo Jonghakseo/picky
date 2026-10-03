@@ -961,13 +961,42 @@ function extractRatchetPins(source) {
   return new Map([...entries(groups, "group"), ...entries(files, "file")]);
 }
 
-function ratchetPinChanges(baseSource, currentSource, isStillAboveThreshold) {
+// Pins are compared by path, so moving a file would otherwise erase its
+// history: the base pin points at a path that no longer exists ("removed, and
+// no longer above threshold" => allowed) while the pin at the new path looks
+// brand new and can be set to any value. Git's own rename detection restores
+// the link without a hand-maintained alias table.
+function detectRatchetPinRenames(baseRef) {
+  const output = execFileSync(
+    "git",
+    ["diff", "-M", "--name-status", "--diff-filter=R", baseRef, "--"],
+    { cwd: root, encoding: "utf8" }
+  );
+  const renames = new Map();
+  for (const line of output.split("\n")) {
+    const [status, from, to] = line.split("\t");
+    if (!status?.startsWith("R") || !from || !to) continue;
+    renames.set(from, to);
+  }
+  return renames;
+}
+
+function ratchetPinChanges(baseSource, currentSource, isStillAboveThreshold, renames = new Map()) {
   const basePins = extractRatchetPins(baseSource);
   const currentPins = extractRatchetPins(currentSource);
+  // Only file pins carry a path. Swift type groups are keyed by type name, so
+  // a file move keeps the same group entry and needs no remapping.
+  const followRename = (entry) => {
+    if (!entry.startsWith("file:")) return entry;
+    const movedTo = renames.get(entry.slice("file:".length));
+    return movedTo ? `file:${movedTo}` : entry;
+  };
   return [...basePins].flatMap(([entry, basePin]) => {
-    const currentPin = currentPins.get(entry);
-    if (currentPin !== undefined && currentPin > basePin) return [`${entry} pin increased from ${basePin} to ${currentPin}.`];
-    if (currentPin === undefined && isStillAboveThreshold(entry)) return [`${entry} pin was removed while it remains above its size threshold.`];
+    const tracked = followRename(entry);
+    const moved = tracked === entry ? "" : ` (moved to ${tracked.slice("file:".length)})`;
+    const currentPin = currentPins.get(tracked);
+    if (currentPin !== undefined && currentPin > basePin) return [`${entry}${moved} pin increased from ${basePin} to ${currentPin}.`];
+    if (currentPin === undefined && isStillAboveThreshold(tracked)) return [`${entry}${moved} pin was removed while it remains above its size threshold.`];
     return [];
   });
 }
@@ -991,7 +1020,18 @@ function checkRatchetPinsDidNotIncrease(groups, thresholds) {
     const file = path.join(root, name);
     return fs.existsSync(file) && lineCount(file) > (name.endsWith(".swift") ? thresholds.swift : thresholds.ts);
   };
-  for (const change of ratchetPinChanges(baseSource, read("scripts/check-architecture-rules.js"), isStillAboveThreshold)) addError(`Ratchet history check: ${change}`);
+  let renames;
+  try {
+    renames = detectRatchetPinRenames(baseRef);
+  } catch (error) {
+    // Degrade to plain path comparison rather than failing the whole guard on
+    // a git hiccup, but say so: in this mode a moved file's pin history is not
+    // enforced. Working-tree moves that were never `git add`ed are invisible to
+    // rename detection for the same reason and fall back the same way.
+    renames = new Map();
+    console.warn(`warning: ratchet pin rename detection unavailable (${error.message.split("\n")[0]}); moved-file pins are compared by path only.`);
+  }
+  for (const change of ratchetPinChanges(baseSource, read("scripts/check-architecture-rules.js"), isStillAboveThreshold, renames)) addError(`Ratchet history check: ${change}`);
 }
 
 function checkRatchetPinFixtures() {
@@ -1001,6 +1041,25 @@ function checkRatchetPinFixtures() {
   if (pins.get("group:Group") !== 10 || pins.get("file:File.swift") !== 20) addError("Ratchet pin self-test failed to extract numeric pins.");
   const changes = ratchetPinChanges(base, current, (entry) => entry === "file:File.swift");
   if (changes.length !== 2) addError("Ratchet pin self-test failed to reject a raised or removed active pin.");
+
+  // A moved file keeps its pin history: the base pin is compared against the
+  // pin at its new path, not treated as a fresh unpinned entry.
+  const renames = new Map([["Old/File.swift", "New/File.swift"]]);
+  const movedPin = (pin) => `function checkFileSizeRatchet() { const allowlist = new Map([["New/File.swift", ${pin}]]); }`;
+  const basePinned = `function checkFileSizeRatchet() { const allowlist = new Map([["Old/File.swift", 20]]); }`;
+  const alwaysAbove = () => true;
+  if (ratchetPinChanges(basePinned, movedPin(30), alwaysAbove, renames).length !== 1) {
+    addError("Ratchet pin self-test failed to reject a raised pin on a moved file.");
+  }
+  if (ratchetPinChanges(basePinned, movedPin(10), alwaysAbove, renames).length !== 0) {
+    addError("Ratchet pin self-test rejected a lowered pin on a moved file.");
+  }
+  // Documents the degraded mode: without rename data the old path is simply
+  // gone and below threshold, so the move escapes history. That is why the
+  // caller warns loudly when git rename detection is unavailable.
+  if (ratchetPinChanges(basePinned, movedPin(30), () => false, new Map()).length !== 0) {
+    addError("Ratchet pin self-test expected path-only fallback without rename data.");
+  }
 }
 
 function finish() {

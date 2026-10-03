@@ -1013,6 +1013,7 @@ private final class PickyHubRenderGalleryArchiveStore: PickySessionArchiveStorin
 
 private final class PickyHubRenderGalleryManualOrderStore: PickySessionManualOrderStoring {
     var manualOrder: [String] = []
+    var isLegacyManualOrderReplayPending = false
 }
 
 private final class PickyHubRenderGalleryDraftStore: PickyComposerDraftStoring {

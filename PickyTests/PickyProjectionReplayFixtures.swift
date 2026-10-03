@@ -258,6 +258,7 @@ private final class ProjectionReplayArchiveStore: PickySessionArchiveStoring {
 
 private final class ProjectionReplayManualOrderStore: PickySessionManualOrderStoring {
     var manualOrder: [String] = []
+    var isLegacyManualOrderReplayPending = false
 }
 
 private final class ProjectionReplayComposerDraftStore: PickyComposerDraftStoring {

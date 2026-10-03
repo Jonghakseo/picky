@@ -123,6 +123,7 @@ private final class QuickStartArchiveStore: PickySessionArchiveStoring {
 @MainActor
 private final class QuickStartManualOrderStore: PickySessionManualOrderStoring {
     var manualOrder: [String] = []
+    var isLegacyManualOrderReplayPending = false
 }
 
 @MainActor

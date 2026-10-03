@@ -1463,7 +1463,7 @@ private final class V2SelectionStore: PickySessionSelectionStoring {
     func setScreenContextTarget(sessionID: String?, sticky: Bool) { screenContextTargetSessionID = sessionID; screenContextTargetSticky = sticky }
 }
 private final class V2ArchiveStore: PickySessionArchiveStoring { var archivedSessionIDs = Set<String>(); var manuallyArchivedSessionIDs = Set<String>() }
-private final class V2ManualOrderStore: PickySessionManualOrderStoring { var manualOrder: [String] = [] }
+private final class V2ManualOrderStore: PickySessionManualOrderStoring { var manualOrder: [String] = []; var isLegacyManualOrderReplayPending = false }
 private final class V2ComposerDraftStore: PickyComposerDraftStoring { func draft(for _: String) -> String? { nil }; func setDraft(_: String?, for _: String) {}; func prune(knownSessionIDs _: Set<String>) {} }
 private final class V2AttachmentDraftStore: PickyComposerAttachmentDraftStoring { func attachmentPaths(for _: String) -> [String] { [] }; func setAttachmentPaths(_: [String], for _: String) {}; func prune(knownSessionIDs _: Set<String>) {} }
 

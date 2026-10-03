@@ -1,0 +1,8 @@
+{
+  "id": "cmd-schedule-message",
+  "protocolVersion": "2026-08-25",
+  "type": "scheduleMessage",
+  "sessionId": "session-001",
+  "text": "Check the deploy result",
+  "delayMs": 300000
+}

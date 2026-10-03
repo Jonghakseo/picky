@@ -259,6 +259,18 @@ export const PickyQueueItemSchema = z.object({
   attachedImagesCount: z.number().int().nonnegative().optional(),
 });
 export type PickyQueueItem = z.infer<typeof PickyQueueItemSchema>;
+/**
+ * One timed message held by the delayed-action Pi extension for this session. The daemon
+ * projects the extension's on-disk store (`PI_DELAYED_ACTION_DIR`) rather than owning the
+ * schedule itself, so the extension stays the single source of truth for firing.
+ */
+export const PickyScheduledMessageSchema = z.object({
+  id: z.string().min(1),
+  text: z.string(),
+  dueAt: isoTimestamp,
+  createdAt: isoTimestamp,
+});
+export type PickyScheduledMessage = z.infer<typeof PickyScheduledMessageSchema>;
 export const PickyActivitySummarySchema = z.object({
   read: z.number().int().default(0),
   bash: z.number().int().default(0),
@@ -393,6 +405,9 @@ export const PickyAgentSessionSchema = z.object({
   messageJournalAvailable: z.boolean().optional(),
   queuedSteers: z.array(PickyQueueItemSchema).default([]),
   queuedFollowUps: z.array(PickyQueueItemSchema).default([]),
+  // Timed messages owned by the delayed-action extension, sorted by dueAt. Projected
+  // alongside the queues because the HUD presents both in one scheduled-messages surface.
+  scheduledMessages: z.array(PickyScheduledMessageSchema).default([]),
   steeringMode: PickyQueueModeSchema.default("one-at-a-time"),
   followUpMode: PickyQueueModeSchema.default("one-at-a-time"),
   activitySummary: PickyActivitySummarySchema.default({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 }),
@@ -414,7 +429,7 @@ export const PickyAgentSessionSchema = z.object({
 });
 
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
-export type PickyAgentSession = Omit<PickyAgentSessionParsed, "revision" | "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns"> & Partial<Pick<PickyAgentSessionParsed, "revision" | "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns">>;
+export type PickyAgentSession = Omit<PickyAgentSessionParsed, "revision" | "messages" | "queuedSteers" | "queuedFollowUps" | "scheduledMessages" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns"> & Partial<Pick<PickyAgentSessionParsed, "revision" | "messages" | "queuedSteers" | "queuedFollowUps" | "scheduledMessages" | "steeringMode" | "followUpMode" | "activitySummary" | "subagentRuns">>;
 
 // Patch-driven metadata updates deliberately omit the conversation journal. Live
 // clients receive message mutations through the ordered sessionMessage* events,
@@ -470,7 +485,9 @@ export const PickySessionProjectionMutationVariantSchema = z.discriminatedUnion(
   z.object({ type: z.literal("artifactUpsert"), artifact: PickyArtifactSchema }),
   z.object({ type: z.literal("artifactsSet"), artifacts: z.array(PickyArtifactSchema) }),
   z.object({ type: z.literal("changedFilesSet"), changedFiles: z.array(PickyChangedFileSchema) }),
-  z.object({ type: z.literal("queueSet"), queuedSteers: z.array(PickyQueueItemSchema), queuedFollowUps: z.array(PickyQueueItemSchema), steeringMode: PickyQueueModeSchema, followUpMode: PickyQueueModeSchema }),
+  // `scheduledMessages` defaults so a daemon paired with an older Picky app build keeps
+  // decoding the mutation; the daemon itself always emits the field.
+  z.object({ type: z.literal("queueSet"), queuedSteers: z.array(PickyQueueItemSchema), queuedFollowUps: z.array(PickyQueueItemSchema), scheduledMessages: z.array(PickyScheduledMessageSchema).default([]), steeringMode: PickyQueueModeSchema, followUpMode: PickyQueueModeSchema }),
   z.object({ type: z.literal("activitySet"), activitySummary: PickyActivitySummarySchema }),
   z.object({ type: z.literal("finalAnswerSet"), finalAnswer: z.string().nullable() }),
   z.object({ type: z.literal("extensionUiRequestSet"), request: PickyExtensionUiRequestSchema.nullable() }),
@@ -729,6 +746,17 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("setSessionThinkingLevel"), sessionId: z.string(), thinkingLevel: ThinkingLevelSchema }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionModel"), sessionId: z.string(), direction: ModelCycleDirectionSchema.default("forward") }),
   CommandBaseSchema.extend({ type: z.literal("clearQueue"), sessionId: z.string(), kind: z.enum(["steering", "followUp", "all"]) }),
+  // Per-item queue edits. `itemId` is the `PickyQueueItem.id` the daemon projected; the
+  // daemon fails with `queueItemNotFound` when Pi already consumed that entry.
+  CommandBaseSchema.extend({ type: z.literal("removeQueuedInput"), sessionId: z.string(), itemId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("editQueuedFollowUp"), sessionId: z.string(), itemId: z.string().min(1), text: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("sendQueuedFollowUpNow"), sessionId: z.string(), itemId: z.string().min(1) }),
+  // Timed messages delegated to the delayed-action extension. `delayedActionUnavailable`
+  // means the extension is not installed in this session's Pi runtime.
+  CommandBaseSchema.extend({ type: z.literal("scheduleMessage"), sessionId: z.string(), text: z.string().min(1), delayMs: z.number().int().positive() }),
+  CommandBaseSchema.extend({ type: z.literal("cancelScheduledMessage"), sessionId: z.string(), scheduledId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("editScheduledMessage"), sessionId: z.string(), scheduledId: z.string().min(1), text: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("sendScheduledMessageNow"), sessionId: z.string(), scheduledId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("syncTerminalSession"), sessionId: z.string(), baselinePiMessageId: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setTerminalSessionTailEnabled"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("followUp"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional(), visualDslEnabled: z.boolean().optional() }),
@@ -1217,7 +1245,10 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("sessionMessagesImported"), sessionId: z.string(), messages: z.array(PickySessionMessageSchema), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageReplaced"), sessionId: z.string(), messageId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageRemoved"), sessionId: z.string(), messageId: z.string(), seq: z.number().int() }),
-  EventBaseSchema.extend({ type: z.literal("sessionQueueUpdated"), sessionId: z.string(), steering: z.array(PickyQueueItemSchema), followUp: z.array(PickyQueueItemSchema), steeringMode: PickyQueueModeSchema.optional(), followUpMode: PickyQueueModeSchema.optional(), seq: z.number().int() }),
+  // Legacy v1 queue event. The daemon publishes queue state through the v2 `queueSet`
+  // mutation; this variant stays for older recordings and keeps `scheduledMessages`
+  // optional so both shapes decode.
+  EventBaseSchema.extend({ type: z.literal("sessionQueueUpdated"), sessionId: z.string(), steering: z.array(PickyQueueItemSchema), followUp: z.array(PickyQueueItemSchema), scheduledMessages: z.array(PickyScheduledMessageSchema).optional(), steeringMode: PickyQueueModeSchema.optional(), followUpMode: PickyQueueModeSchema.optional(), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionActivityUpdated"), sessionId: z.string(), activitySummary: PickyActivitySummarySchema, seq: z.number().int() }),
   EventBaseSchema.extend({
     type: z.literal("terminalSessionSyncOutcome"),

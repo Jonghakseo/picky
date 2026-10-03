@@ -192,6 +192,7 @@ extension PickyRegistrySessionProjectionStorage {
             store.queueStore.replace(
                 steers: projection.queuedSteers,
                 followUps: projection.queuedFollowUps,
+                scheduled: omittedFields.contains("scheduledMessages") ? [] : projection.scheduledMessages,
                 steeringMode: projection.steeringMode,
                 followUpMode: projection.followUpMode
             )
@@ -255,8 +256,8 @@ extension PickyRegistrySessionProjectionStorage {
             store.artifactStore.replace(artifacts: artifacts, changedFiles: store.artifactStore.changedFilesProjectionState.loadedValue ?? [])
         case .changedFilesSet(let changedFiles):
             store.artifactStore.replace(artifacts: store.artifactStore.artifactsState.loadedValue ?? [], changedFiles: changedFiles)
-        case .queueSet(let steers, let followUps, let steeringMode, let followUpMode):
-            store.queueStore.replace(steers: steers, followUps: followUps, steeringMode: steeringMode, followUpMode: followUpMode)
+        case .queueSet(let steers, let followUps, let scheduled, let steeringMode, let followUpMode):
+            store.queueStore.replace(steers: steers, followUps: followUps, scheduled: scheduled, steeringMode: steeringMode, followUpMode: followUpMode)
         case .activitySet(let activity):
             store.activityStore.replace(activity)
         case .finalAnswerSet(let finalAnswer):

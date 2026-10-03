@@ -663,8 +663,8 @@ private extension PickyEventEnvelope {
             return "type=sessionMessageReplaced id=\(id) session=\(sessionId) message=\(messageId) seq=\(seq)"
         case .sessionMessageRemoved(let sessionId, let messageId, let seq):
             return "type=sessionMessageRemoved id=\(id) session=\(sessionId) message=\(messageId) seq=\(seq)"
-        case .sessionQueueUpdated(let sessionId, let steering, let followUp, _, _, let seq):
-            return "type=sessionQueueUpdated id=\(id) session=\(sessionId) steering=\(steering.count) followUp=\(followUp.count) seq=\(seq)"
+        case .sessionQueueUpdated(let sessionId, let steering, let followUp, let scheduled, _, _, let seq):
+            return "type=sessionQueueUpdated id=\(id) session=\(sessionId) steering=\(steering.count) followUp=\(followUp.count) scheduled=\(scheduled?.count ?? -1) seq=\(seq)"
         case .sessionActivityUpdated(let sessionId, let activitySummary, let seq):
             return "type=sessionActivityUpdated id=\(id) session=\(sessionId) edit=\(activitySummary.edit) bash=\(activitySummary.bash) todo=\(activitySummary.todo) subagent=\(activitySummary.subagent) thinking=\(activitySummary.thinking) other=\(activitySummary.other) seq=\(seq)"
         case .terminalSessionSyncOutcome(let outcome):

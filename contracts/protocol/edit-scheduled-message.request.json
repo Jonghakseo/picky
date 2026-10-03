@@ -1,0 +1,8 @@
+{
+  "id": "cmd-edit-scheduled-message",
+  "protocolVersion": "2026-08-25",
+  "type": "editScheduledMessage",
+  "sessionId": "session-001",
+  "scheduledId": "delay-1",
+  "text": "Check the deploy result and report"
+}

@@ -304,6 +304,8 @@ final class PickySessionArtifactStore {
 struct PickySessionQueueProjection: Equatable {
     let steers: [PickyQueueItem]
     let followUps: [PickyQueueItem]
+    /// Delayed-action timed messages, sorted by `dueAt` by the daemon.
+    var scheduled: [PickyScheduledMessage] = []
 }
 
 /// Queue delivery modes are scalar session metadata, independent from the
@@ -335,11 +337,17 @@ final class PickySessionQueueStore {
         return modes
     }
 
-    func replace(steers: [PickyQueueItem], followUps: [PickyQueueItem], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode) {
+    func replace(
+        steers: [PickyQueueItem],
+        followUps: [PickyQueueItem],
+        scheduled: [PickyScheduledMessage] = [],
+        steeringMode: PickyQueueMode,
+        followUpMode: PickyQueueMode
+    ) {
         orderedSteerIDs = stableIDs(for: steers, prefix: "steer")
         orderedFollowUpIDs = stableIDs(for: followUps, prefix: "follow-up")
         itemsByID = Dictionary(zip(orderedSteerIDs + orderedFollowUpIDs, steers + followUps), uniquingKeysWith: lastProjectionValueWins)
-        state = .loaded(PickySessionQueueProjection(steers: steers, followUps: followUps))
+        state = .loaded(PickySessionQueueProjection(steers: steers, followUps: followUps, scheduled: scheduled))
         modes = PickySessionQueueModes(steeringMode: steeringMode, followUpMode: followUpMode)
         valueRevision += 1
     }

@@ -26,11 +26,17 @@ export function queueSubmissionSummary(isCompacting: boolean | undefined, fallba
   return isCompacting ? "Compacting session…" : fallback;
 }
 
-export function dropAlreadyMaterializedQueueEntries<T extends MaterializedQueueDeliveryIdentity>(
+/**
+ * Positions in each runtime queue that are still waiting to be delivered, i.e. the entries the
+ * projection shows. An entry whose user bubble was already recorded stays in Pi's queue snapshot
+ * for a moment; it is hidden here so projected items and runtime positions describe the same
+ * messages. Addressing a queue entry by position (per-item edits) has to use these indices.
+ */
+export function visibleQueueEntryIndices<T extends MaterializedQueueDeliveryIdentity>(
   queues: { steering: readonly string[]; followUp: readonly string[] },
   pendingDeliveries: readonly T[],
   materializedDeliveries: readonly T[],
-): { queues: { steering: string[]; followUp: string[] }; remainingMaterialized: T[] } {
+): { steering: number[]; followUp: number[]; remainingMaterialized: T[] } {
   const pendingCounts = new Map<string, number>();
   for (const delivery of pendingDeliveries) {
     const key = `${delivery.kind}\u0000${delivery.text}`;
@@ -38,14 +44,14 @@ export function dropAlreadyMaterializedQueueEntries<T extends MaterializedQueueD
   }
 
   const remainingMaterialized = [...materializedDeliveries];
-  const dropForKind = (kind: T["kind"], texts: readonly string[]): string[] => {
-    const result: string[] = [];
-    for (const text of texts) {
+  const keepForKind = (kind: T["kind"], texts: readonly string[]): number[] => {
+    const result: number[] = [];
+    for (const [index, text] of texts.entries()) {
       const key = `${kind}\u0000${text}`;
       const pendingCount = pendingCounts.get(key) ?? 0;
       if (pendingCount > 0) {
         pendingCounts.set(key, pendingCount - 1);
-        result.push(text);
+        result.push(index);
         continue;
       }
 
@@ -53,18 +59,31 @@ export function dropAlreadyMaterializedQueueEntries<T extends MaterializedQueueD
       if (materializedIndex >= 0) {
         remainingMaterialized.splice(materializedIndex, 1);
       } else {
-        result.push(text);
+        result.push(index);
       }
     }
     return result;
   };
 
   return {
-    queues: {
-      steering: dropForKind("steering", queues.steering),
-      followUp: dropForKind("followUp", queues.followUp),
-    },
+    steering: keepForKind("steering", queues.steering),
+    followUp: keepForKind("followUp", queues.followUp),
     remainingMaterialized,
+  };
+}
+
+export function dropAlreadyMaterializedQueueEntries<T extends MaterializedQueueDeliveryIdentity>(
+  queues: { steering: readonly string[]; followUp: readonly string[] },
+  pendingDeliveries: readonly T[],
+  materializedDeliveries: readonly T[],
+): { queues: { steering: string[]; followUp: string[] }; remainingMaterialized: T[] } {
+  const visible = visibleQueueEntryIndices(queues, pendingDeliveries, materializedDeliveries);
+  return {
+    queues: {
+      steering: visible.steering.map((index) => queues.steering[index]!),
+      followUp: visible.followUp.map((index) => queues.followUp[index]!),
+    },
+    remainingMaterialized: visible.remainingMaterialized,
   };
 }
 

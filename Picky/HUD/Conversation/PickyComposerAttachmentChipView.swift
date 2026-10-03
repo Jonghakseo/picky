@@ -108,3 +108,64 @@ struct PickyComposerAttachmentChipView: View {
         }
     }
 }
+
+/// Horizontally scrolling chip row for composer attachments. It owns its own
+/// overflow measurement so the editor never re-renders when the row scrolls.
+struct PickyComposerAttachmentsRow: View {
+    @Binding var attachments: [PickyComposerAttachment]
+    @State private var contentWidth: CGFloat = 0
+    @State private var viewportWidth: CGFloat = 0
+
+    var body: some View {
+        if !attachments.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: DS.Spacing.space1) {
+                    ForEach(attachments) { attachment in
+                        PickyComposerAttachmentChipView(attachment: attachment) {
+                            attachments.removeAll { $0.id == attachment.id }
+                        }
+                    }
+                }
+                .padding(.horizontal, Self.contentInset)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: AttachmentContentWidthKey.self, value: proxy.size.width)
+                    }
+                )
+            }
+            .frame(height: DS.Spacing.space6)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: AttachmentViewportWidthKey.self, value: proxy.size.width)
+                }
+            )
+            .onPreferenceChange(AttachmentContentWidthKey.self) { contentWidth = $0 }
+            .onPreferenceChange(AttachmentViewportWidthKey.self) { viewportWidth = $0 }
+            .mask(scrollMask)
+        }
+    }
+
+    /// True when the chip row would clip on the right. Drives a small fade mask
+    /// at the trailing edge so users see there are more attachments to scroll
+    /// into view; collapses to a no-op mask when everything fits.
+    var hasOverflow: Bool {
+        contentWidth > viewportWidth + Self.overflowTolerance
+    }
+
+    private var scrollMask: LinearGradient {
+        let fadeStart: Double = hasOverflow ? 0.88 : 1.0
+        let trailingOpacity: Double = hasOverflow ? 0 : 1
+        return LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: .black, location: 0.0),
+                .init(color: .black, location: fadeStart),
+                .init(color: .black.opacity(trailingOpacity), location: 1.0),
+            ]),
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    private static let contentInset: CGFloat = 2
+    private static let overflowTolerance: CGFloat = 0.5
+}

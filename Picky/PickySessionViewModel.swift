@@ -95,6 +95,9 @@ final class PickySessionListViewModel: ObservableObject {
     func isSessionArchived(_ sessionID: String) -> Bool { archivedSessions.contains { $0.id == sessionID } }
 
     let client: any PickyAgentClient
+    /// Invoked after the composer installs the delayed-action plugin so the app
+    /// can trigger the same daemon reload the plugin manager does.
+    var onScheduledSendPluginInstalled: (() -> Void)?
     /// App-owned defaults only apply when a new Pickle runtime is created.
     /// They intentionally do not mutate a resumed session's Pi configuration.
     let pickleRuntimeDefaultsStore: PickySettingsStore
@@ -1090,6 +1093,85 @@ final class PickySessionListViewModel: ObservableObject {
         try await client.send(PickyCommandEnvelope(type: .clearQueue, sessionId: sessionID, kind: kind))
     }
 
+    // MARK: - Per-item queue and scheduled-message commands
+
+    /// These wait for the daemon's positive acknowledgement, not just for the
+    /// absence of a rejection: each one edits a message the user can still see,
+    /// so "no answer yet" must not clear the composer or the row as if it had
+    /// landed. The window covers attaching a detached runtime and waiting for the
+    /// delayed-action store to settle, which is seconds rather than milliseconds.
+    private func sendQueueCommand(_ command: PickyCommandEnvelope) async throws {
+        if let rejection = try await client.sendAwaitingError(
+            command,
+            timeout: Self.queueCommandAcknowledgementTimeout,
+            requireAcknowledgement: true
+        ) {
+            throw PickyCommandRejection(event: rejection)
+        }
+    }
+
+    private static let queueCommandAcknowledgementTimeout: TimeInterval = 15
+
+    func removeQueuedInput(sessionID: String, itemID: String) async throws {
+        pickySessionLog("remove queued input session=\(sessionID) item=\(itemID)")
+        try await sendQueueCommand(PickyCommandEnvelope(type: .removeQueuedInput, sessionId: sessionID, itemId: itemID))
+    }
+
+    func editQueuedFollowUp(sessionID: String, itemID: String, text: String) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw PickySessionListViewModelError.emptyFollowUp }
+        pickySessionLog("edit queued follow-up session=\(sessionID) item=\(itemID) textChars=\(trimmed.count)")
+        try await sendQueueCommand(PickyCommandEnvelope(type: .editQueuedFollowUp, sessionId: sessionID, text: trimmed, itemId: itemID))
+    }
+
+    func sendQueuedFollowUpNow(sessionID: String, itemID: String) async throws {
+        pickySessionLog("send queued follow-up now session=\(sessionID) item=\(itemID)")
+        try await sendQueueCommand(PickyCommandEnvelope(type: .sendQueuedFollowUpNow, sessionId: sessionID, itemId: itemID))
+    }
+
+    func scheduleMessage(sessionID: String, text: String, delayMs: Int) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw PickySessionListViewModelError.emptyFollowUp }
+        guard delayMs > 0 else { throw PickySessionListViewModelError.emptyFollowUp }
+        pickySessionLog("schedule message session=\(sessionID) delayMs=\(delayMs) textChars=\(trimmed.count)")
+        try await sendQueueCommand(PickyCommandEnvelope(type: .scheduleMessage, sessionId: sessionID, text: trimmed, delayMs: delayMs))
+    }
+
+    func cancelScheduledMessage(sessionID: String, scheduledID: String) async throws {
+        pickySessionLog("cancel scheduled message session=\(sessionID) scheduled=\(scheduledID)")
+        try await sendQueueCommand(PickyCommandEnvelope(type: .cancelScheduledMessage, sessionId: sessionID, scheduledId: scheduledID))
+    }
+
+    func editScheduledMessage(sessionID: String, scheduledID: String, text: String) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw PickySessionListViewModelError.emptyFollowUp }
+        pickySessionLog("edit scheduled message session=\(sessionID) scheduled=\(scheduledID) textChars=\(trimmed.count)")
+        try await sendQueueCommand(PickyCommandEnvelope(type: .editScheduledMessage, sessionId: sessionID, text: trimmed, scheduledId: scheduledID))
+    }
+
+    func sendScheduledMessageNow(sessionID: String, scheduledID: String) async throws {
+        pickySessionLog("send scheduled message now session=\(sessionID) scheduled=\(scheduledID)")
+        try await sendQueueCommand(PickyCommandEnvelope(type: .sendScheduledMessageNow, sessionId: sessionID, scheduledId: scheduledID))
+    }
+
+    func isScheduledSendPluginInstalled() -> Bool {
+        guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }
+        return PickyCuratedPluginInstaller.status(source: PickyCuratedPlugin.delayedAction.source).isInstalled
+    }
+
+    func installScheduledSendPlugin() async throws {
+        let source = PickyCuratedPlugin.delayedAction.source
+        pickySessionLog("install scheduled-send plugin source=\(source)")
+        switch await PickyCuratedPluginInstaller.install(source: source, client: client) {
+        case .success:
+            // Mirrors the Hub/Companion install path so the daemon reloads the
+            // new extension without the user visiting the plugin manager.
+            onScheduledSendPluginInstalled?()
+        case .failure(let error):
+            throw error
+        }
+    }
+
     func answerExtensionUi(sessionID: String, requestID: String, value: JSONValue) async throws {
         pickySessionLog("answer extension-ui session=\(sessionID) request=\(requestID)")
         let command = PickyCommandEnvelope(type: .answerExtensionUi, sessionId: sessionID, requestId: requestID, value: value)
@@ -1763,8 +1845,8 @@ final class PickySessionListViewModel: ObservableObject {
             applySessionMessageReplaced(sessionID: sessionId, messageID: messageId, message: message, seq: seq)
         case .sessionMessageRemoved(let sessionId, let messageId, let seq):
             applySessionMessageRemoved(sessionID: sessionId, messageID: messageId, seq: seq)
-        case .sessionQueueUpdated(let sessionId, let steering, let followUp, let steeringMode, let followUpMode, let seq):
-            applySessionQueueUpdated(sessionID: sessionId, steering: steering, followUp: followUp, steeringMode: steeringMode, followUpMode: followUpMode, seq: seq)
+        case .sessionQueueUpdated(let sessionId, let steering, let followUp, let scheduled, let steeringMode, let followUpMode, let seq):
+            applySessionQueueUpdated(sessionID: sessionId, steering: steering, followUp: followUp, scheduled: scheduled, steeringMode: steeringMode, followUpMode: followUpMode, seq: seq)
         case .sessionActivityUpdated(let sessionId, let activitySummary, let seq):
             applySessionActivityUpdated(sessionID: sessionId, activitySummary: activitySummary, seq: seq)
         case .error(let error):
@@ -2101,12 +2183,13 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func applySessionQueueUpdated(sessionID sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int) {
+    private func applySessionQueueUpdated(sessionID sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], scheduled: [PickyScheduledMessage]?, steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int) {
         PickyPerf.event("vm_event_session_queue_updated")
         guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
         mutateSession(sessionID: sessionId) { card in
             card.queuedSteers = steering
             card.queuedFollowUps = followUp
+            if let scheduled { card.scheduledMessages = scheduled }
             if let steeringMode { card.steeringMode = steeringMode }
             if let followUpMode { card.followUpMode = followUpMode }
             card.updatedAt = Date()

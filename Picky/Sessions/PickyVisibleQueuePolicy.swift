@@ -77,6 +77,10 @@ struct PickyVisibleQueue: Equatable {
         items.filter { item in
             let queuedText = PickyQueuedInputText.normalized(item.text)
             guard !queuedText.isEmpty else { return false }
+            // An item the daemon still lists under its own id is live: agentd drops
+            // the entry the moment its user bubble is journaled. Hiding it by text
+            // would erase a second identical message the user is still waiting on.
+            guard item.id == nil else { return true }
             return !committedUserMessages.contains { message in
                 abs(message.createdAt.timeIntervalSince(item.enqueuedAt)) <= Self.committedTextMatchWindow
                     && PickyQueuedInputText.normalized(message.text) == queuedText

@@ -28,6 +28,8 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var messageJournalAvailable: Bool? = nil
     var queuedSteers: [PickyQueueItem] = []
     var queuedFollowUps: [PickyQueueItem] = []
+    /// Delayed-action timed messages waiting for their send time, sorted by `dueAt`.
+    var scheduledMessages: [PickyScheduledMessage] = []
     var steeringMode: PickyQueueMode = .oneAtATime
     var followUpMode: PickyQueueMode = .oneAtATime
     var activitySummary: PickyActivitySummary = .zero
@@ -44,7 +46,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
         case agentCycle, asyncWorkSummary, asyncTasks, completionTickets, asyncControl
-        case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
+        case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, scheduledMessages, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
         case pendingExtensionUiRequest, notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
     }
     init(
@@ -73,6 +75,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         messageJournalAvailable: Bool? = nil,
         queuedSteers: [PickyQueueItem] = [],
         queuedFollowUps: [PickyQueueItem] = [],
+        scheduledMessages: [PickyScheduledMessage] = [],
         steeringMode: PickyQueueMode = .oneAtATime,
         followUpMode: PickyQueueMode = .oneAtATime,
         activitySummary: PickyActivitySummary = .zero,
@@ -110,6 +113,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.messageJournalAvailable = messageJournalAvailable
         self.queuedSteers = queuedSteers
         self.queuedFollowUps = queuedFollowUps
+        self.scheduledMessages = scheduledMessages
         self.steeringMode = steeringMode
         self.followUpMode = followUpMode
         self.activitySummary = activitySummary
@@ -151,6 +155,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         messageJournalAvailable = try container.decodeIfPresent(Bool.self, forKey: .messageJournalAvailable)
         queuedSteers = try container.decodeIfPresent([PickyQueueItem].self, forKey: .queuedSteers) ?? []
         queuedFollowUps = try container.decodeIfPresent([PickyQueueItem].self, forKey: .queuedFollowUps) ?? []
+        scheduledMessages = try container.decodeIfPresent([PickyScheduledMessage].self, forKey: .scheduledMessages) ?? []
         steeringMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .steeringMode) ?? .oneAtATime
         followUpMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .followUpMode) ?? .oneAtATime
         activitySummary = try container.decodeIfPresent(PickyActivitySummary.self, forKey: .activitySummary) ?? .zero

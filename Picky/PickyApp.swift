@@ -298,6 +298,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             companionManager.onFocusPickleShortcut = { [weak self] mouseLocation in
                 self?.hudOverlayManager.focusUnreadOrRecentSession(mouseLocation: mouseLocation)
             }
+            // Composer-initiated delayed-action install reuses the plugin
+            // manager's reload bookkeeping instead of its own ad-hoc path.
+            hudSessionViewModel.onScheduledSendPluginInstalled = { [weak self] in
+                self?.pluginReloadController.notePluginsChanged()
+            }
             hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require

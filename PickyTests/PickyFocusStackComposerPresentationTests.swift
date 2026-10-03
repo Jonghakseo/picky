@@ -69,41 +69,6 @@ struct PickyFocusStackComposerPresentationTests {
         ) == 480)
     }
 
-    @Test func queueDockShowsBothKindsWithTheirIndependentModes() {
-        let presentation = PickyQueueDockPresentation(
-            visibleQueue: PickyVisibleQueue(
-                queuedSteers: [queueItem("steer once")],
-                queuedFollowUps: [queueItem("follow one"), queueItem("follow two")],
-                committedUserMessages: []
-            ),
-            steeringMode: .oneAtATime,
-            followUpMode: .all
-        )
-
-        #expect(presentation.isVisible)
-        #expect(presentation.kinds.map(\.kind) == [.steer, .followUp])
-        #expect(presentation.kinds.map(\.count) == [1, 2])
-        #expect(presentation.kinds.map(\.mode) == [.oneAtATime, .all])
-        #expect(presentation.accessibilityValue.contains(L10n.t("hud.queue.mode.individual")))
-        #expect(presentation.accessibilityValue.contains(L10n.t("hud.queue.mode.all")))
-        #expect(!PickyQueueDockPresentation(
-            visibleQueue: PickyVisibleQueue(
-                queuedSteers: [],
-                queuedFollowUps: [],
-                committedUserMessages: []
-            ),
-            steeringMode: .oneAtATime,
-            followUpMode: .oneAtATime
-        ).isVisible)
-    }
-
-    @Test func queueDockRoutesRestoreAndClearAsDistinctCommands() {
-        #expect(PickyQueueDockAction.restore.command == .restoreThenClear(.all))
-        #expect(PickyQueueDockAction.clear.command == .clearOnly(.all))
-        #expect(PickyQueueDockAction.restore.inFlightLabel == L10n.t("hud.queue.restoring"))
-        #expect(PickyQueueDockAction.clear.inFlightLabel == L10n.t("hud.queue.clearing"))
-    }
-
     @Test func queuedInputRestoreAvailabilityBlocksVisibleScreenContextAndIgnoresTextOnlyItems() {
         let queuedAt = Date(timeIntervalSince1970: 1_000)
         let textOnly = PickyQueueItem(text: "plain text", enqueuedAt: queuedAt)
@@ -126,38 +91,7 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(PickyQueuedInputRestoreAvailability.resolve(visibleQueue: screenQueue, kind: .steering) == .available)
     }
 
-    @Test func queueDockDisablesRestoreForScreenContextButKeepsClearAvailable() {
-        let presentation = PickyQueueDockPresentation(
-            visibleQueue: PickyVisibleQueue(
-                queuedSteers: [],
-                queuedFollowUps: [PickyQueueItem(text: "inspect this", enqueuedAt: .now, attachedImagesCount: 2)],
-                committedUserMessages: []
-            ),
-            steeringMode: .oneAtATime,
-            followUpMode: .oneAtATime
-        )
-
-        #expect(presentation.restoreAvailability == .blockedByScreenContext(attachedImagesCount: 2))
-        #expect(!presentation.isRestoreEnabled)
-        #expect(presentation.isClearEnabled)
-        #expect(presentation.restoreHelp == L10n.t("hud.queue.restore.blockedByScreenContext.help", Int64(2)))
-        #expect(presentation.restoreAccessibilityLabel == L10n.t("hud.queue.restore.blockedByScreenContext.accessibilityLabel", Int64(2)))
-
-        let textOnly = PickyQueueDockPresentation(
-            visibleQueue: PickyVisibleQueue(
-                queuedSteers: [PickyQueueItem(text: "plain text", enqueuedAt: .now)],
-                queuedFollowUps: [],
-                committedUserMessages: []
-            ),
-            steeringMode: .oneAtATime,
-            followUpMode: .oneAtATime
-        )
-        #expect(textOnly.restoreAvailability == .available)
-        #expect(textOnly.isRestoreEnabled)
-        #expect(textOnly.isClearEnabled)
-    }
-
-    @Test func visibleQueueExcludesCommittedItemsFromBothDockAndDraftRestore() {
+    @Test func visibleQueueExcludesCommittedItemsFromScheduledSurfaceAndDraftRestore() {
         let queuedAt = Date(timeIntervalSince1970: 1_000)
         let staleSteer = PickyQueueItem(text: "committed steer", enqueuedAt: queuedAt)
         let freshFollowUp = PickyQueueItem(text: "fresh follow-up", enqueuedAt: queuedAt.addingTimeInterval(1))
@@ -167,13 +101,8 @@ struct PickyFocusStackComposerPresentationTests {
             committedUserMessages: [PickySubmittedUserMessage(text: "committed steer", createdAt: queuedAt)]
         )
 
-        let dock = PickyQueueDockPresentation(
-            visibleQueue: visibleQueue,
-            steeringMode: .all,
-            followUpMode: .oneAtATime
-        )
-
-        #expect(dock.kinds.map(\.kind) == [.followUp])
+        #expect(visibleQueue.steers.isEmpty)
+        #expect(visibleQueue.followUps == [freshFollowUp])
         #expect(PickyQueuedInputDraftPolicy.draftRestoringQueuedInputs(
             draft: "existing",
             visibleQueue: visibleQueue
@@ -221,14 +150,6 @@ struct PickyFocusStackComposerPresentationTests {
         #expect(PickyQueuedInputDraftPolicy.queuedInputText(visibleQueue: visibleQueue) == "follow-up first\n\nsteer second")
         #expect(PickyQueuedInputDraftPolicy.queuedInputText(visibleQueue: visibleQueue, kind: .steering) == "steer second")
         #expect(PickyQueuedInputDraftPolicy.queuedInputText(visibleQueue: visibleQueue, kind: .followUp) == "follow-up first")
-    }
-
-    @Test func queueEvidenceUsesNeutralToneAndDockStacksAtCompactWidth() {
-        #expect(PickyPendingQueueKind.steer.evidenceTone == .neutral)
-        #expect(PickyPendingQueueKind.followUp.evidenceTone == .neutral)
-        #expect(PickyQueueDockLayout(cardWidth: 399) == .stacked)
-        #expect(PickyQueueDockLayout(cardWidth: 400) == .inline)
-        #expect(PickyQueueDockLayout(cardWidth: 560, heightTier: .constrained) == .constrained)
     }
 
     private func queueItem(_ text: String) -> PickyQueueItem {

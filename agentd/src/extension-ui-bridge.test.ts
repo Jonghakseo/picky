@@ -16,6 +16,22 @@ describe("ExtensionUiBridge", () => {
     await expect(promise).resolves.toBe(true);
   });
 
+  it("keeps extension toasts out of the conversation while Picky drives the extension itself", async () => {
+    const bridge = new ExtensionUiBridge("session-silent");
+    const context = bridge.createContext();
+    const methods: string[] = [];
+    bridge.on("request", (request: { method: string }) => methods.push(request.method));
+
+    await bridge.withSuppressedNotifications(async () => {
+      context.notify("\u2713 delay-1 scheduled", "info");
+      context.setStatus("delay", "1 pending");
+    });
+    context.notify("extension spoke on its own", "info");
+
+    // Status still flows: only the user-visible toast of Picky's own call is dropped.
+    expect(methods).toEqual(["setStatus", "notify"]);
+  });
+
   it("maps cancelled confirm to false and cancelled input to undefined", async () => {
     const bridge = new ExtensionUiBridge("session-1");
     const context = bridge.createContext();

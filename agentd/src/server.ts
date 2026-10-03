@@ -1,4 +1,5 @@
 import { ControlFailure } from "./application/async-control-coordinator.js";
+import { SessionQueueCommandError } from "./domain/session-queue-commands.js";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { WebSocketServer } from "ws";
@@ -345,7 +346,7 @@ export class AgentdServer {
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
       this.send(ws, {
         type: "error",
-        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError || error instanceof ControlFailure ? error.code : "bad_message",
+        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError || error instanceof ControlFailure || error instanceof SessionQueueCommandError ? error.code : "bad_message",
         message: error instanceof Error ? error.message : String(error),
         commandId,
       });
@@ -622,6 +623,13 @@ export class AgentdServer {
       setSessionThinkingLevel: (cmd) => this.options.supervisor.setSessionThinkingLevel(cmd.sessionId, cmd.thinkingLevel),
       cycleSessionModel: (cmd) => this.options.supervisor.cycleSessionModel(cmd.sessionId, cmd.direction),
       clearQueue: (cmd) => this.options.supervisor.clearQueue(cmd.sessionId, cmd.kind),
+      removeQueuedInput: (cmd) => this.options.supervisor.removeQueuedInput(cmd.sessionId, cmd.itemId),
+      editQueuedFollowUp: (cmd) => this.options.supervisor.editQueuedFollowUp(cmd.sessionId, cmd.itemId, cmd.text),
+      sendQueuedFollowUpNow: (cmd) => this.options.supervisor.sendQueuedFollowUpNow(cmd.sessionId, cmd.itemId),
+      scheduleMessage: (cmd) => this.options.supervisor.scheduleMessage(cmd.sessionId, cmd.text, cmd.delayMs),
+      cancelScheduledMessage: (cmd) => this.options.supervisor.cancelScheduledMessage(cmd.sessionId, cmd.scheduledId),
+      editScheduledMessage: (cmd) => this.options.supervisor.editScheduledMessage(cmd.sessionId, cmd.scheduledId, cmd.text),
+      sendScheduledMessageNow: (cmd) => this.options.supervisor.sendScheduledMessageNow(cmd.sessionId, cmd.scheduledId),
       syncTerminalSession: (cmd) => this.options.supervisor.syncTerminalSession(cmd.sessionId, cmd.baselinePiMessageId),
       setTerminalSessionTailEnabled: (cmd) => this.options.supervisor.setTerminalSessionTailEnabled(cmd.sessionId, cmd.enabled),
       followUp: (cmd) => {
@@ -1245,6 +1253,16 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return runtimeControlCommandLogFields(command);
     case "clearQueue":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, kind: command.kind };
+    case "removeQueuedInput": case "sendQueuedFollowUpNow":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, itemId: command.itemId };
+    case "editQueuedFollowUp":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, itemId: command.itemId, textChars: command.text.length };
+    case "scheduleMessage":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, textChars: command.text.length, delayMs: command.delayMs };
+    case "cancelScheduledMessage": case "sendScheduledMessageNow":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, scheduledId: command.scheduledId };
+    case "editScheduledMessage":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, scheduledId: command.scheduledId, textChars: command.text.length };
     case "syncTerminalSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, baselinePiMessageId: command.baselinePiMessageId };
     case "setTerminalSessionTailEnabled":

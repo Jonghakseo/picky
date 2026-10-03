@@ -204,6 +204,38 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
     return this.followUpQueue;
   }
 
+  getPiSessionId(): string | undefined {
+    return this.id;
+  }
+
+  removeQueuedMessage(kind: "steering" | "followUp", index: number): boolean {
+    const queue = kind === "steering" ? this.steering : this.followUpQueue;
+    if (index < 0 || index >= queue.length) return false;
+    queue.splice(index, 1);
+    this.emitQueueUpdate();
+    return true;
+  }
+
+  replaceQueuedFollowUpText(index: number, text: string): boolean {
+    if (index < 0 || index >= this.followUpQueue.length) return false;
+    this.followUpQueue[index] = text;
+    this.emitQueueUpdate();
+    return true;
+  }
+
+  moveFollowUpToSteering(index: number): boolean {
+    if (index < 0 || index >= this.followUpQueue.length) return false;
+    const [text] = this.followUpQueue.splice(index, 1);
+    this.steering.push(text!);
+    this.emitQueueUpdate();
+    return true;
+  }
+
+  /** The mock has no extensions, so Picky reports scheduling as unavailable against it. */
+  hasExtensionCommand(_name: string): boolean {
+    return false;
+  }
+
   listSlashCommands(): RuntimeSlashCommand[] {
     return [
       { name: "mock", description: "Mock runtime command", source: "extension" },

@@ -129,6 +129,7 @@ final class PickySessionStore {
             messages: messages,
             queuedSteers: queue?.steers ?? [],
             queuedFollowUps: queue?.followUps ?? [],
+            scheduledMessages: queue?.scheduled ?? [],
             steeringMode: queueModes.steeringMode,
             followUpMode: queueModes.followUpMode,
             activitySummary: activity,
@@ -191,6 +192,7 @@ final class PickySessionStore {
             messageJournalAvailable: false,
             queuedSteers: queue?.steers ?? [],
             queuedFollowUps: queue?.followUps ?? [],
+            scheduledMessages: queue?.scheduled ?? [],
             steeringMode: queueModes.steeringMode,
             followUpMode: queueModes.followUpMode,
             activitySummary: activityStore.activityState.loadedValue ?? .zero,
@@ -256,13 +258,14 @@ final class PickySessionStore {
     }
 
     private func replaceQueue(for card: PickySessionListViewModel.SessionCard) {
-        guard !card.queuedSteers.isEmpty || !card.queuedFollowUps.isEmpty else {
+        guard !card.queuedSteers.isEmpty || !card.queuedFollowUps.isEmpty || !card.scheduledMessages.isEmpty else {
             queueStore.markUnavailable(steeringMode: card.steeringMode, followUpMode: card.followUpMode)
             return
         }
         queueStore.replace(
             steers: card.queuedSteers,
             followUps: card.queuedFollowUps,
+            scheduled: card.scheduledMessages,
             steeringMode: card.steeringMode,
             followUpMode: card.followUpMode
         )

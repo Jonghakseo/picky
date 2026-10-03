@@ -1,0 +1,7 @@
+{
+  "id": "cmd-send-queued-follow-up-now",
+  "protocolVersion": "2026-08-25",
+  "type": "sendQueuedFollowUpNow",
+  "sessionId": "session-001",
+  "itemId": "queue-item-001"
+}

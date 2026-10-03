@@ -36,6 +36,7 @@ struct PickySessionCard: Equatable, Identifiable {
     var messages: [PickySessionMessage]
     var queuedSteers: [PickyQueueItem]
     var queuedFollowUps: [PickyQueueItem]
+    var scheduledMessages: [PickyScheduledMessage] = []
     var steeringMode: PickyQueueMode
     var followUpMode: PickyQueueMode
     var activitySummary: PickyActivitySummary
@@ -235,6 +236,7 @@ extension PickySessionCard {
         self.messages = session.messages
         self.queuedSteers = session.queuedSteers
         self.queuedFollowUps = session.queuedFollowUps
+        self.scheduledMessages = session.scheduledMessages
         self.steeringMode = session.steeringMode
         self.followUpMode = session.followUpMode
         self.activitySummary = session.activitySummary
@@ -292,6 +294,7 @@ extension PickySessionCard {
             result.messages = messages
             result.queuedSteers = queuedSteers
             result.queuedFollowUps = queuedFollowUps
+            result.scheduledMessages = scheduledMessages
             result.steeringMode = steeringMode
             result.followUpMode = followUpMode
             result.activitySummary = activitySummary

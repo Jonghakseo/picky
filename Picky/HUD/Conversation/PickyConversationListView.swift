@@ -143,8 +143,7 @@ struct PickyConversationListView: View {
                                 }
                                 turnGroupView(group)
                             }
-                            queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
-                            queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
+                            pendingSteerSection(items: visibleQueuedSteers)
                         }
                         // Sentinel anchor pinned to the very end of the list. Scrolling
                         // to a real message id is fragile because turn cards collapse
@@ -303,12 +302,8 @@ struct PickyConversationListView: View {
     /// UI state; counts represent each turn's expanded content.
     var renderSnapshot: PickyConversationListRenderSnapshot {
         var snapshot = PickyConversationListRenderSnapshot()
-        let followUps = visibleQueuedFollowUps
-        let steers = visibleQueuedSteers
-        snapshot.batchGroupCount += session.followUpMode == .all && !followUps.isEmpty ? 1 : 0
-        snapshot.batchGroupCount += session.steeringMode == .all && !steers.isEmpty ? 1 : 0
-        snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : followUps.count
-        snapshot.pendingBubbleCount += session.steeringMode == .all ? 0 : steers.count
+        // Follow-ups never reach the thread; steers render as dimmed user bubbles.
+        snapshot.pendingSteerBubbleCount = visibleQueuedSteers.count
 
         let groups = turnGroups
         let renderedMessages = groups.flatMap { group in
@@ -636,42 +631,44 @@ struct PickyConversationListView: View {
         viewModel.openToolHistoryForAgentActivity(sessionID: session.id, messageID: messageID)
     }
 
+    /// A queued steer is a message the user already sent; the Pickle has just
+    /// not reached a tool boundary yet. It therefore renders as an ordinary
+    /// user bubble, dimmed until it is consumed. Queued follow-ups are not in
+    /// the thread at all: they live in the scheduled surface above the composer.
     @ViewBuilder
-    private func queueSection(items: [PickyQueueItem], kind: PickyPendingQueueKind, mode: PickyQueueMode) -> some View {
-        if !items.isEmpty {
-            queueGroupHeader(items: items, kind: kind)
-            if mode == .all {
-                PickyBatchGroupView(items: items, kind: kind)
-            } else {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    PickyPendingBubbleView(queueItem: item, kind: kind)
-                }
-            }
+    private func pendingSteerSection(items: [PickyQueueItem]) -> some View {
+        ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+            PickyUserBubbleView(
+                message: Self.pendingSteerMessage(item, index: index),
+                timestamp: .sent(at: item.enqueuedAt)
+            )
+            .opacity(Self.pendingSteerOpacity)
+            .accessibilityValue(L10n.t("hud.queue.pending.steer"))
         }
     }
 
-    private func queueGroupHeader(items: [PickyQueueItem], kind: PickyPendingQueueKind) -> some View {
-        HStack(spacing: DS.Spacing.space1) {
-            Image(systemName: kind.iconName)
-                .font(PickyHUDTypography.statusSemibold)
-                .foregroundColor(DS.Colors.textSecondary)
-                .accessibilityHidden(true)
-            Text(kind.label)
-                .font(PickyHUDTypography.statusSemibold)
-                .foregroundColor(DS.Colors.textSecondary)
-            Text("\(items.count)")
-                .font(PickyHUDTypography.statusMonospacedMedium)
-                .foregroundColor(DS.Colors.textTertiary)
-        }
-        .padding(.horizontal, DS.Spacing.space1)
-        .padding(.top, DS.Spacing.space1)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(L10n.t("hud.queue.queued.accessibilityLabel", kind.label))
-        .accessibilityValue(L10n.t("hud.queue.pendingCount.accessibilityValue", Int64(items.count)))
+    /// Dimming is the only difference from a delivered message, so the bubble
+    /// keeps its identity when agentd materializes the real `user_text`.
+    static let pendingSteerOpacity: Double = 0.6
+
+    static func pendingSteerMessage(_ item: PickyQueueItem, index: Int) -> PickySessionMessage {
+        PickySessionMessage(
+            id: "queued-steer-\(item.id ?? String(index))",
+            kind: .userText,
+            createdAt: item.enqueuedAt,
+            originatedBy: nil,
+            text: PickyQueuedInputText.displayText(from: item.text),
+            question: nil,
+            cancelledAt: nil,
+            activitySnapshot: nil,
+            errorContext: nil,
+            errorMessage: nil,
+            attachedImagesCount: item.attachedImagesCount
+        )
     }
 
     private var hasQueueOrActivity: Bool {
-        !visibleQueuedSteers.isEmpty || !visibleQueuedFollowUps.isEmpty
+        !visibleQueuedSteers.isEmpty
     }
 
     private var visibleQueue: PickyVisibleQueue {
@@ -1149,8 +1146,8 @@ enum PickyAgentResponseVisibilityPolicy {
 
 struct PickyConversationListRenderSnapshot: Equatable {
     var typingBubbleCount = 0
-    var batchGroupCount = 0
-    var pendingBubbleCount = 0
+    /// Queued steers drawn as dimmed user bubbles at the end of the thread.
+    var pendingSteerBubbleCount = 0
     var questionBubbleCount = 0
     var errorBubbleCount = 0
     var activitySummaryCount = 0

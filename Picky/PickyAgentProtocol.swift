@@ -77,6 +77,12 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var mainAgentModelPattern: String?
     var direction: PickyModelCycleDirection?
     var kind: PickyQueueClearKind?
+    /// `PickyQueueItem.id` targeted by a per-item queue command.
+    var itemId: String?
+    /// `PickyScheduledMessage.id` targeted by a scheduled-message command.
+    var scheduledId: String?
+    /// Send delay for `scheduleMessage`, in milliseconds. Always > 0.
+    var delayMs: Int?
     /// Pi message id observed when a Picky terminal overlay was opened. The daemon imports only
     /// active Pi transcript messages after this id when syncing the terminal session back.
     var baselinePiMessageId: String?
@@ -156,6 +162,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         mainAgentModelPattern: String? = nil,
         direction: PickyModelCycleDirection? = nil,
         kind: PickyQueueClearKind? = nil,
+        itemId: String? = nil,
+        scheduledId: String? = nil,
+        delayMs: Int? = nil,
         baselinePiMessageId: String? = nil,
         disabledBuiltinTools: [String]? = nil,
         sources: [String]? = nil,
@@ -227,6 +236,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.mainAgentModelPattern = mainAgentModelPattern
         self.direction = direction
         self.kind = kind
+        self.itemId = itemId
+        self.scheduledId = scheduledId
+        self.delayMs = delayMs
         self.baselinePiMessageId = baselinePiMessageId
         self.action = action
         self.groupAction = groupAction
@@ -295,6 +307,14 @@ enum PickyCommandType: String, Codable, Equatable {
     case duplicatePickleSession
     case pinPickleSession
     case clearQueue
+    /// Removes one queued steer or follow-up by `PickyQueueItem.id`.
+    case removeQueuedInput
+    case editQueuedFollowUp
+    case sendQueuedFollowUpNow
+    case scheduleMessage
+    case cancelScheduledMessage
+    case editScheduledMessage
+    case sendScheduledMessageNow
     case syncTerminalSession
     case setTerminalSessionTailEnabled
     case followUp
@@ -458,7 +478,9 @@ enum PickyEvent: Equatable {
     case sessionMessagesImported(sessionId: String, messages: [PickySessionMessage], seq: Int)
     case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageRemoved(sessionId: String, messageId: String, seq: Int)
-    case sessionQueueUpdated(sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int)
+    /// `scheduled` is nil when the daemon does not carry delayed-action state on
+    /// this event; the app then keeps the scheduled projection it already has.
+    case sessionQueueUpdated(sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], scheduled: [PickyScheduledMessage]?, steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int)
     case sessionActivityUpdated(sessionId: String, activitySummary: PickyActivitySummary, seq: Int)
     case terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome)
     case error(PickyErrorEvent)
@@ -594,6 +616,7 @@ enum PickyEvent: Equatable {
                 sessionId: payload.sessionId,
                 steering: payload.steering,
                 followUp: payload.followUp,
+                scheduled: payload.scheduledMessages,
                 steeringMode: payload.steeringMode,
                 followUpMode: payload.followUpMode,
                 seq: payload.seq
@@ -830,7 +853,7 @@ private struct PickySessionMessageAppendedPayload: Decodable { let sessionId: St
 private struct PickySessionMessagesImportedPayload: Decodable { let sessionId: String; let messages: [PickySessionMessage]; let seq: Int }
 private struct PickySessionMessageReplacedPayload: Decodable { let sessionId: String; let messageId: String; let message: PickySessionMessage; let seq: Int }
 private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: String; let messageId: String; let seq: Int }
-private struct PickySessionQueueUpdatedPayload: Decodable { let sessionId: String; let steering: [PickyQueueItem]; let followUp: [PickyQueueItem]; let steeringMode: PickyQueueMode?; let followUpMode: PickyQueueMode?; let seq: Int }
+private struct PickySessionQueueUpdatedPayload: Decodable { let sessionId: String; let steering: [PickyQueueItem]; let followUp: [PickyQueueItem]; let scheduledMessages: [PickyScheduledMessage]?; let steeringMode: PickyQueueMode?; let followUpMode: PickyQueueMode?; let seq: Int }
 private struct PickySessionActivityUpdatedPayload: Decodable { let sessionId: String; let activitySummary: PickyActivitySummary; let seq: Int }
 
 struct PickyHelloEvent: Decodable, Equatable {
@@ -1167,6 +1190,23 @@ struct PickyQueueItem: Codable, Equatable {
 
     init(text: String, enqueuedAt: Date, id: String? = nil, attachedImagesCount: Int? = nil) {
         self.text = text; self.enqueuedAt = enqueuedAt; self.id = id; self.attachedImagesCount = attachedImagesCount
+    }
+}
+
+/// A delayed-action timed message the daemon projects from the plugin's own
+/// store. Picky never writes that store directly; it sends schedule/cancel
+/// commands and re-reads the projection.
+struct PickyScheduledMessage: Codable, Equatable, Identifiable {
+    let id: String
+    let text: String
+    let dueAt: Date
+    let createdAt: Date
+
+    init(id: String, text: String, dueAt: Date, createdAt: Date) {
+        self.id = id
+        self.text = text
+        self.dueAt = dueAt
+        self.createdAt = createdAt
     }
 }
 

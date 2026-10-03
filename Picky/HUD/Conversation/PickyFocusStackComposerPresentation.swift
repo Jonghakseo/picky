@@ -12,6 +12,22 @@ enum PickyConversationComposerSubmitKind: Equatable {
     case followUp
 }
 
+/// What pressing send (or return) does. While a scheduled message is being
+/// edited the composer saves that message instead of sending a new one.
+enum PickyComposerSubmitRoute: Equatable {
+    case send(PickyConversationComposerSubmitKind?)
+    case saveScheduledEdit(id: String, kind: PickyScheduledMessageRow.Kind)
+
+    static func route(
+        editingScheduledRowID: String?,
+        editingScheduledRowKind: PickyScheduledMessageRow.Kind?,
+        submitKind: PickyConversationComposerSubmitKind?
+    ) -> Self {
+        guard let editingScheduledRowID, let editingScheduledRowKind else { return .send(submitKind) }
+        return .saveScheduledEdit(id: editingScheduledRowID, kind: editingScheduledRowKind)
+    }
+}
+
 enum PickyConversationComposerReturnKeyAction: Equatable {
     case insertNewline
     case submitDefault
@@ -122,138 +138,5 @@ enum PickyComposerEditorHeightPolicy {
 
     static func transientGrowth(forEditorHeight editorHeight: CGFloat) -> CGFloat {
         max(0, height(forMeasuredContentHeight: editorHeight) - minimumHeight)
-    }
-}
-
-enum PickyQueueEvidenceTone: Equatable {
-    case neutral
-}
-
-enum PickyQueueDockLayout: Equatable {
-    case inline
-    case stacked
-    case constrained
-
-    init(
-        cardWidth: CGFloat,
-        heightTier: PickyConversationFocusStackHeightTier = .regular
-    ) {
-        if heightTier == .constrained {
-            self = .constrained
-        } else {
-            self = cardWidth < 400 ? .stacked : .inline
-        }
-    }
-}
-
-enum PickyQueueDockCommand: Equatable {
-    case restoreThenClear(PickyQueueClearKind)
-    case clearOnly(PickyQueueClearKind)
-}
-
-enum PickyQueueDockAction: Equatable {
-    case restore
-    case clear
-
-    var inFlightLabel: String {
-        switch self {
-        case .restore: return L10n.t("hud.queue.restoring")
-        case .clear: return L10n.t("hud.queue.clearing")
-        }
-    }
-
-    var command: PickyQueueDockCommand {
-        switch self {
-        case .restore: return .restoreThenClear(.all)
-        case .clear: return .clearOnly(.all)
-        }
-    }
-}
-
-struct PickyQueueDockKindPresentation: Equatable, Identifiable {
-    enum Kind: Hashable {
-        case steer
-        case followUp
-
-        var label: String {
-            switch self {
-            case .steer: return L10n.t("hud.composer.submit.steer")
-            case .followUp: return L10n.t("hud.composer.submit.followUp")
-            }
-        }
-    }
-
-    let kind: Kind
-    let count: Int
-    let mode: PickyQueueMode
-
-    var id: Kind { kind }
-
-    var modeLabel: String {
-        L10n.t(mode == .all ? "hud.queue.mode.all" : "hud.queue.mode.individual")
-    }
-
-    var accessibilityValue: String {
-        L10n.t(
-            count == 1 ? "hud.queue.item.one.accessibilityValue" : "hud.queue.item.many.accessibilityValue",
-            Int64(count),
-            kind.label,
-            modeLabel
-        )
-    }
-}
-
-struct PickyQueueDockPresentation: Equatable {
-    let kinds: [PickyQueueDockKindPresentation]
-    let restoreAvailability: PickyQueuedInputRestoreAvailability
-
-    init(
-        visibleQueue: PickyVisibleQueue,
-        steeringMode: PickyQueueMode,
-        followUpMode: PickyQueueMode
-    ) {
-        var kinds: [PickyQueueDockKindPresentation] = []
-        if !visibleQueue.steers.isEmpty {
-            kinds.append(.init(kind: .steer, count: visibleQueue.steers.count, mode: steeringMode))
-        }
-        if !visibleQueue.followUps.isEmpty {
-            kinds.append(.init(kind: .followUp, count: visibleQueue.followUps.count, mode: followUpMode))
-        }
-        self.kinds = kinds
-        restoreAvailability = PickyQueuedInputRestoreAvailability.resolve(visibleQueue: visibleQueue)
-    }
-
-    var isVisible: Bool {
-        !kinds.isEmpty
-    }
-
-    var isRestoreEnabled: Bool {
-        restoreAvailability == .available
-    }
-
-    var isClearEnabled: Bool {
-        isVisible
-    }
-
-    var restoreHelp: String {
-        switch restoreAvailability {
-        case .blockedByScreenContext(let attachedImagesCount):
-            L10n.t("hud.queue.restore.blockedByScreenContext.help", Int64(attachedImagesCount))
-        case .available, .unavailable:
-            L10n.t("hud.queue.restore.help")
-        }
-    }
-
-    var restoreAccessibilityLabel: String {
-        switch restoreAvailability {
-        case .blockedByScreenContext(let attachedImagesCount):
-            L10n.t("hud.queue.restore.blockedByScreenContext.accessibilityLabel", Int64(attachedImagesCount))
-        case .available, .unavailable:
-            L10n.t("hud.queue.restore.accessibilityLabel")
-        }
-    }
-
-    var accessibilityValue: String {
-        kinds.map(\.accessibilityValue).joined(separator: "; ")
     }
 }

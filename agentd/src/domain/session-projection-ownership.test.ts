@@ -19,6 +19,7 @@ const dedicatedFields = new Set([
   "changedFiles",
   "queuedSteers",
   "queuedFollowUps",
+  "scheduledMessages",
   "steeringMode",
   "followUpMode",
   "activitySummary",

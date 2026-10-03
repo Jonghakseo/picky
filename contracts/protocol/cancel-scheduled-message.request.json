@@ -1,0 +1,7 @@
+{
+  "id": "cmd-cancel-scheduled-message",
+  "protocolVersion": "2026-08-25",
+  "type": "cancelScheduledMessage",
+  "sessionId": "session-001",
+  "scheduledId": "delay-1"
+}

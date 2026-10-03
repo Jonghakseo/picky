@@ -1,0 +1,7 @@
+{
+  "id": "cmd-remove-queued-input",
+  "protocolVersion": "2026-08-25",
+  "type": "removeQueuedInput",
+  "sessionId": "session-001",
+  "itemId": "queue-item-001"
+}

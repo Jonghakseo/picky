@@ -14795,13 +14795,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Guide the current task · ⌥↵ Follow-up · esc Stop"
+            "value": "Message · ⌥↵ Send after this reply · esc Stop"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업 지시 추가 · ⌥↵ 후속 요청 · esc 중지"
+            "value": "메시지 보내기 · ⌥↵ 응답 끝나면 보내기 · esc 중지"
           }
         }
       }
@@ -16535,214 +16535,6 @@
         }
       }
     },
-    "hud.queue.actionFailed": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Queue action failed: %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대기열 작업 실패: %@"
-          }
-        }
-      }
-    },
-    "hud.queue.batch.followUp": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow-up batch · all after the current task"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "후속 요청 묶음 · 현재 작업이 끝나면 모두 전달"
-          }
-        }
-      }
-    },
-    "hud.queue.batch.steer": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Steering batch · all next turn"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작업 지시 묶음 · 다음 응답에 모두 전달"
-          }
-        }
-      }
-    },
-    "hud.queue.clear": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete queued requests"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대기 요청 삭제"
-          }
-        }
-      }
-    },
-    "hud.queue.clear.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clear pending work"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대기 중인 작업 지우기"
-          }
-        }
-      }
-    },
-    "hud.queue.clear.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete pending messages without moving them to the message field"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "입력란으로 옮기지 않고 대기 중인 메시지 삭제"
-          }
-        }
-      }
-    },
-    "hud.queue.clearing": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clearing…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "지우는 중…"
-          }
-        }
-      }
-    },
-    "hud.queue.item.many.accessibilityValue": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld %@ items, %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld개 %@ 항목, %@"
-          }
-        }
-      }
-    },
-    "hud.queue.item.one.accessibilityValue": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld %@ item, %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld개 %@ 항목, %@"
-          }
-        }
-      }
-    },
-    "hud.queue.kindSummary": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ %lld · %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ %lld개 · %@"
-          }
-        }
-      }
-    },
-    "hud.queue.mode.all": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "all together"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "한 번에"
-          }
-        }
-      }
-    },
-    "hud.queue.mode.individual": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "individually"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "개별"
-          }
-        }
-      }
-    },
-    "hud.queue.pending.followUp": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow-up pending"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "후속 요청 대기"
-          }
-        }
-      }
-    },
     "hud.queue.pending.steer": {
       "localizations": {
         "en": {
@@ -16759,86 +16551,6 @@
         }
       }
     },
-    "hud.queue.pendingCount.accessibilityValue": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld pending"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld개 대기 중"
-          }
-        }
-      }
-    },
-    "hud.queue.queued.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Queued %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 대기열"
-          }
-        }
-      }
-    },
-    "hud.queue.restore": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move to input"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "입력란으로 옮기기"
-          }
-        }
-      }
-    },
-    "hud.queue.restore.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move queued messages to the message field"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대기 중인 메시지를 입력란으로 옮기기"
-          }
-        }
-      }
-    },
-    "hud.queue.restore.blockedByScreenContext.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Restore queued messages unavailable: %lld attached screen images cannot yet be restored"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "메시지를 입력란으로 옮길 수 없음: 첨부된 화면 이미지 %lld개 복원 미지원"
-          }
-        }
-      }
-    },
     "hud.queue.restore.blockedByScreenContext.error": {
       "localizations": {
         "en": {
@@ -16851,70 +16563,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "첨부된 화면 이미지 %lld개는 아직 복원할 수 없어 메시지를 입력란으로 옮길 수 없어요."
-          }
-        }
-      }
-    },
-    "hud.queue.restore.blockedByScreenContext.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Restore is unavailable because %lld attached screen images cannot yet be restored"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "첨부된 화면 이미지 %lld개는 아직 복원할 수 없어 메시지를 입력란으로 옮길 수 없어요."
-          }
-        }
-      }
-    },
-    "hud.queue.restore.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Move queued messages to the message field and clear the queue"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대기 중인 메시지를 입력란으로 옮기고 대기열 비우기"
-          }
-        }
-      }
-    },
-    "hud.queue.restoring": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Moving to input…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "입력란으로 옮기는 중…"
-          }
-        }
-      }
-    },
-    "hud.queue.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pending work"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "대기 중인 작업"
           }
         }
       }
@@ -27779,6 +27427,438 @@
           "stringUnit": {
             "state": "translated",
             "value": "일부 대화는 아직 이전 플러그인을 쓰고 있어요."
+          }
+        }
+      }
+    },
+    "hud.composer.sendTiming.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send when"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보낼 시점"
+          }
+        }
+      }
+    },
+    "hud.composer.sendTiming.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose when to send"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보낼 시점 고르기"
+          }
+        }
+      }
+    },
+    "hud.composer.sendTiming.install": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치"
+          }
+        }
+      }
+    },
+    "hud.composer.sendTiming.installing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 중…"
+          }
+        }
+      }
+    },
+    "hud.composer.sendTiming.pluginRequired": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs the delayed action plugin."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "delayed action 플러그인이 필요해요."
+          }
+        }
+      }
+    },
+    "hud.composer.sendTiming.textOnly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scheduled messages send text only."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 메시지는 글자만 보낼 수 있어요."
+          }
+        }
+      }
+    },
+    "hud.composer.sendTiming.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send when"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보낼 시점"
+          }
+        }
+      }
+    },
+    "hud.scheduled.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scheduled messages"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 메시지"
+          }
+        }
+      }
+    },
+    "hud.scheduled.collapse.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide scheduled messages"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 메시지 접기"
+          }
+        }
+      }
+    },
+    "hud.scheduled.delete.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제"
+          }
+        }
+      }
+    },
+    "hud.scheduled.delete.confirm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this scheduled message?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 예약 메시지를 삭제할까요?"
+          }
+        }
+      }
+    },
+    "hud.scheduled.edit.alreadySent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That scheduled message was already sent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정하던 예약 메시지는 이미 보냈어요"
+          }
+        }
+      }
+    },
+    "hud.scheduled.editing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editing scheduled message"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 메시지 수정 중"
+          }
+        }
+      }
+    },
+    "hud.scheduled.editing.cancel.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop editing and restore the draft"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정을 멈추고 쓰던 내용으로 되돌리기"
+          }
+        }
+      }
+    },
+    "hud.scheduled.expand.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show scheduled messages"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 메시지 보기"
+          }
+        }
+      }
+    },
+    "hud.scheduled.group.afterCurrentReply": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After this reply"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 응답이 끝나면"
+          }
+        }
+      }
+    },
+    "hud.scheduled.group.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· %@"
+          }
+        }
+      }
+    },
+    "hud.scheduled.relative.days": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In %lld days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld일 후"
+          }
+        }
+      }
+    },
+    "hud.scheduled.relative.hours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In %lld h"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld시간 후"
+          }
+        }
+      }
+    },
+    "hud.scheduled.relative.minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In %lld min"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld분 후"
+          }
+        }
+      }
+    },
+    "hud.scheduled.relative.soon": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In a moment"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잠시 후"
+          }
+        }
+      }
+    },
+    "hud.scheduled.row.delete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제"
+          }
+        }
+      }
+    },
+    "hud.scheduled.row.edit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정"
+          }
+        }
+      }
+    },
+    "hud.scheduled.row.sendNow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 보내기"
+          }
+        }
+      }
+    },
+    "hud.scheduled.summary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld scheduled"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 메시지 %lld"
+          }
+        }
+      }
+    },
+    "hud.scheduled.summary.accessibilityValue": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld scheduled, next %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약 메시지 %lld개, 다음 %@"
+          }
+        }
+      }
+    },
+    "hud.scheduled.summary.next": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Next: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· 다음: %@"
           }
         }
       }

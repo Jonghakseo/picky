@@ -298,6 +298,13 @@ struct PickyConversationCardView: View {
                 isOptionModifierPressed: isOptionModifierPressed,
                 sharedStopError: $backgroundStopError,
                 stopErrorInShelf: false,
+                // Roughly 40% of the card, so the floating list never swallows
+                // the whole transcript.
+                scheduledPanelMaxHeight: PickyConversationCardHeightPolicy.resolvedHeight(
+                    fixedHeight: fixedHeight,
+                    maxHeight: maxHeight,
+                    transientGrowth: transientComposerHeightGrowth
+                ) * 0.4,
                 onToggleUtilityPanel: onToggleUtilityPanel,
                 onRequestRewind: { showingRewindPicker = true },
                 onTransientHeightChange: { growth in

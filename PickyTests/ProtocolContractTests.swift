@@ -599,7 +599,7 @@ struct ProtocolContractTests {
         let queue = try decoder.decode(PickyEventEnvelope.self, from: queueJSON)
         let terminal = try decoder.decode(PickyEventEnvelope.self, from: terminalJSON)
 
-        if case .sessionQueueUpdated(let sessionId, let steering, let followUp, let steeringMode, let followUpMode, let seq) = queue.event {
+        if case .sessionQueueUpdated(let sessionId, let steering, let followUp, _, let steeringMode, let followUpMode, let seq) = queue.event {
             #expect(sessionId == "session-queue")
             #expect(steering.map(\.text) == ["slow down"])
             #expect(followUp.map(\.text) == ["then report"])
@@ -1102,7 +1102,7 @@ struct ProtocolContractTests {
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        guard case .sessionQueueUpdated(let sessionId, let steering, let followUp, let steeringMode, let followUpMode, let seq) = envelope.event else {
+        guard case .sessionQueueUpdated(let sessionId, let steering, let followUp, let scheduled, let steeringMode, let followUpMode, let seq) = envelope.event else {
             Issue.record("Expected sessionQueueUpdated")
             return
         }
@@ -1112,6 +1112,8 @@ struct ProtocolContractTests {
         #expect(followUp.isEmpty)
         #expect(steeringMode == nil)
         #expect(followUpMode == nil)
+        // A daemon without delayed-action projection omits the field entirely.
+        #expect(scheduled == nil)
         #expect(seq == 8)
     }
 
@@ -1124,7 +1126,7 @@ struct ProtocolContractTests {
             from: Data(contentsOf: fixture)
         )
 
-        guard case .sessionQueueUpdated(_, let steering, let followUp, _, _, _) = envelope.event else {
+        guard case .sessionQueueUpdated(_, let steering, let followUp, _, _, _, _) = envelope.event else {
             Issue.record("Expected sessionQueueUpdated")
             return
         }

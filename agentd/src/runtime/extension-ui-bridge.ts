@@ -114,6 +114,8 @@ export class ExtensionUiBridge extends EventEmitter {
   private queuedDialogIds: string[] = [];
   private activeDialogId: string | undefined;
   private cancellingAll = false;
+  private suppressedNotificationDepth = 0;
+  private capturedNotifications: string[] | undefined;
   private editorText = "";
   private autocompleteProviderFactories: AutocompleteProviderFactory[] = [];
   private composedAutocompleteProvider: AutocompleteProvider | undefined;
@@ -329,7 +331,42 @@ export class ExtensionUiBridge extends EventEmitter {
     }
   }
 
+  /**
+   * Runs Picky-initiated extension work with the extension's own `notify` toasts dropped.
+   * Housekeeping Picky performs on the user's behalf (for example rescheduling a timed
+   * message) must not surface the extension's confirmation text as a conversation message;
+   * the HUD already shows the result. Extension-initiated notifications are unaffected.
+   */
+  async withSuppressedNotifications<T>(effect: () => Promise<T>): Promise<T> {
+    this.suppressedNotificationDepth += 1;
+    try {
+      return await effect();
+    } finally {
+      this.suppressedNotificationDepth -= 1;
+    }
+  }
+
+  /**
+   * Same, but hands the dropped text back to the caller. Some extension commands report their
+   * outcome only through `notify` (delayed-action answers "already fired / unknown id" that
+   * way), and Picky has to act on that answer instead of showing it.
+   */
+  async withCapturedNotifications<T>(effect: () => Promise<T>): Promise<{ value: T; notifications: string[] }> {
+    const previous = this.capturedNotifications;
+    const captured: string[] = [];
+    this.capturedNotifications = captured;
+    try {
+      return { value: await this.withSuppressedNotifications(effect), notifications: captured };
+    } finally {
+      this.capturedNotifications = previous;
+    }
+  }
+
   private fireAndForget(method: ExtensionUiMethod, payload: Record<string, unknown>): void {
+    if (method === "notify" && this.suppressedNotificationDepth > 0) {
+      if (typeof payload.prompt === "string") this.capturedNotifications?.push(payload.prompt);
+      return;
+    }
     this.emit("request", this.request(`ext-ui-${randomUUID()}`, method, payload), false);
   }
 

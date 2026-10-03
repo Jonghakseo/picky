@@ -25,7 +25,6 @@ struct PickyConversationComposerView: View {
     }
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
-    @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
     let focusRequestID: Int
     let focusStackHeightTier: PickyConversationFocusStackHeightTier
     let isUtilityPanelOpen: Bool
@@ -34,10 +33,10 @@ struct PickyConversationComposerView: View {
     var onToggleUtilityPanel: () -> Void
     var onRequestRewind: () -> Void
     var onTransientHeightChange: (CGFloat) -> Void
+    /// Ceiling for the floating scheduled panel, roughly 40% of the card.
+    let scheduledPanelMaxHeight: CGFloat
     @State private var draft: String = ""
     @State private var attachments: [PickyComposerAttachment] = []
-    @State private var attachmentContentWidth: CGFloat = 0
-    @State private var attachmentViewportWidth: CGFloat = 0
     @State private var selectedAutocompleteIndex: Int = 0
     @State private var isAutocompleteDismissed: Bool = false
     @State private var autocompleteCapabilities: PickyAutocompleteCapabilitiesSnapshot?
@@ -53,8 +52,8 @@ struct PickyConversationComposerView: View {
     @State private var keyDownMonitor: Any?
     @State private var measuredEditorContentHeight: CGFloat = PickyComposerEditorHeightPolicy.minimumHeight
     @State private var isFocused: Bool = false
-    @State private var queueActionInFlight: PickyQueueDockAction?
-    @State private var queueActionError: String?
+    @State private var isRestoringQueue = false
+    @StateObject private var scheduled = PickyComposerScheduledModel()
     @State private var localStopError: String?
     private var sharedStopError: Binding<String?>?
     var stopErrorInShelf = false
@@ -79,10 +78,12 @@ struct PickyConversationComposerView: View {
         isOptionModifierPressed: Bool = false,
         sharedStopError: Binding<String?>? = nil,
         stopErrorInShelf: Bool = false,
+        scheduledPanelMaxHeight: CGFloat = Self.defaultScheduledPanelMaxHeight,
         onToggleUtilityPanel: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { },
         onTransientHeightChange: @escaping (CGFloat) -> Void = { _ in }
     ) {
+        self.scheduledPanelMaxHeight = scheduledPanelMaxHeight
         self.metaStore = metaStore
         self.conversationStore = conversationStore
         self.queueStore = queueStore
@@ -112,6 +113,7 @@ struct PickyConversationComposerView: View {
         isUtilityPanelOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
         isOptionModifierPressed: Bool = false,
+        scheduledPanelMaxHeight: CGFloat = Self.defaultScheduledPanelMaxHeight,
         onToggleUtilityPanel: @escaping () -> Void = { },
         onRequestRewind: @escaping () -> Void = { },
         onTransientHeightChange: @escaping (CGFloat) -> Void = { _ in }
@@ -124,6 +126,7 @@ struct PickyConversationComposerView: View {
         queueStore.replace(
             steers: session.queuedSteers,
             followUps: session.queuedFollowUps,
+            scheduled: session.scheduledMessages,
             steeringMode: session.steeringMode,
             followUpMode: session.followUpMode
         )
@@ -139,6 +142,7 @@ struct PickyConversationComposerView: View {
             isUtilityPanelOpen: isUtilityPanelOpen,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
             isOptionModifierPressed: isOptionModifierPressed,
+            scheduledPanelMaxHeight: scheduledPanelMaxHeight,
             onToggleUtilityPanel: onToggleUtilityPanel,
             onRequestRewind: onRequestRewind,
             onTransientHeightChange: onTransientHeightChange
@@ -147,8 +151,18 @@ struct PickyConversationComposerView: View {
 
     var body: some View {
         let _ = PickyPerf.event("composer_body")
+        let scheduledNow = scheduledPresentation
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            queueDock
+            scheduledSection(scheduledNow)
+            if scheduled.editing != nil {
+                PickyScheduledMessageEditBarView(onCancel: cancelScheduledEdit)
+            }
+            if let scheduledError = scheduled.composerVisibleError(isSurfaceVisible: scheduledNow.isVisible) {
+                Label(scheduledError, systemImage: "exclamationmark.triangle")
+                    .font(PickyHUDTypography.status)
+                    .foregroundStyle(DS.Colors.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let stopError, !stopErrorInShelf {
                 Label(L10n.t("hud.asyncTasks.stopError", stopError), systemImage: "exclamationmark.triangle")
                     .foregroundStyle(DS.Colors.destructiveText)
@@ -189,6 +203,9 @@ struct PickyConversationComposerView: View {
         .onChange(of: focusRequestID) { _, _ in
             focusComposerIfPossible()
         }
+        .onChange(of: scheduledNow) { _, presentation in
+            scheduled.reconcile(with: presentation)
+        }
         .onChange(of: droppedFilePaths) { _, paths in
             guard !paths.isEmpty else { return }
             if !isComposerInputDisabled {
@@ -197,6 +214,7 @@ struct PickyConversationComposerView: View {
             droppedFilePaths = []
         }
         .onChange(of: session.id) { _, _ in
+            scheduled.reset()
             attachments = commands.persistedComposerAttachmentPaths(for: session.id)
                 .map { PickyComposerAttachment(path: $0) }
             measuredEditorContentHeight = PickyComposerEditorHeightPolicy.minimumHeight
@@ -273,22 +291,53 @@ struct PickyConversationComposerView: View {
         let isDismissed: Bool
     }
 
-    private var queueDock: some View {
-        PickyConversationQueueDockView(
-            presentation: PickyQueueDockPresentation(
-                visibleQueue: session.visibleQueue,
-                steeringMode: session.steeringMode,
-                followUpMode: session.followUpMode
-            ),
-            layout: PickyQueueDockLayout(
-                cardWidth: pickyHUDDetailWidth,
-                heightTier: focusStackHeightTier
-            ),
-            actionInFlight: queueActionInFlight,
-            actionError: queueActionError,
-            onAction: performQueueAction
+    /// Both pending surfaces live here: queued follow-ups and delayed-action
+    /// timed messages. The expanded list floats so the transcript keeps its
+    /// height and scroll position.
+    var scheduledPresentation: PickyScheduledMessagesPresentation {
+        let followUps = session.visibleQueue.followUps
+        let scheduledMessages = session.scheduledMessages
+        // The composer re-renders on every keystroke; with nothing pending there is
+        // no locale, calendar, or relative-time work worth doing on that path.
+        guard !followUps.isEmpty || !scheduledMessages.isEmpty else { return .empty }
+        return PickyScheduledMessagesPresentation(
+            followUps: followUps,
+            scheduledMessages: scheduledMessages,
+            now: PickyScheduledMessagesPresentation.currentMinute()
         )
     }
+
+    private func scheduledSection(_ presentation: PickyScheduledMessagesPresentation) -> some View {
+        PickyComposerScheduledSurface(
+            presentation: presentation,
+            model: scheduled,
+            commands: commands,
+            sessionID: session.id,
+            maxHeight: resolvedScheduledPanelMaxHeight,
+            currentDraft: draft,
+            applyDraft: applyEditedDraft
+        )
+    }
+
+    private var resolvedScheduledPanelMaxHeight: CGFloat {
+        focusStackHeightTier == .constrained
+            ? min(scheduledPanelMaxHeight, Self.constrainedScheduledPanelMaxHeight)
+            : scheduledPanelMaxHeight
+    }
+
+    /// Entering, leaving, or saving an edit all replace the editor's text.
+    private func applyEditedDraft(_ text: String) {
+        draft = text
+        synchronizeAutocompleteInput(text: text)
+        isFocused = true
+    }
+
+    private func cancelScheduledEdit() {
+        scheduled.cancelEdit(commands: commands, sessionID: session.id, applyDraft: applyEditedDraft)
+    }
+
+    static let defaultScheduledPanelMaxHeight: CGFloat = 240
+    private static let constrainedScheduledPanelMaxHeight: CGFloat = 150
 
     private var runtimePresentation: PickyComposerRuntimePresentation {
         PickyComposerRuntimePresentation(assistantRun: session.currentAssistantRun)
@@ -550,21 +599,18 @@ struct PickyConversationComposerView: View {
     @ViewBuilder
     private var autocompletePanel: some View {
         if let snapshot = autocompleteSuggestions, !snapshot.items.isEmpty {
-            let selectedIndex = selectedAutocompleteClampedIndex(for: snapshot.items)
-            autocompleteSuggestionList(
-                selectedID: selectedIndex,
-                suggestionCount: snapshot.items.count
-            ) {
-                ForEach(Array(snapshot.items.enumerated()), id: \.offset) { index, item in
-                    Button {
-                        acceptAutocomplete(item, snapshot: snapshot)
-                    } label: {
-                        autocompleteRow(item, prefix: snapshot.prefix, isSelected: index == selectedIndex)
-                    }
-                    .buttonStyle(.plain)
-                    .id(index)
-                }
-            }
+            PickyComposerAutocompletePanelView(
+                snapshot: snapshot,
+                selectedIndex: PickySlashCommandAutocompletePolicy.clampedSelectionIndex(
+                    selectedAutocompleteIndex,
+                    suggestionCount: snapshot.items.count
+                ),
+                slashCommands: commands.slashCommandsIncludingRewindTreeCommand(
+                    commands.slashCommandsBySessionID[session.id] ?? [],
+                    sessionID: session.id
+                ),
+                onAccept: { acceptAutocomplete($0, snapshot: snapshot) }
+            )
         }
     }
 
@@ -575,104 +621,12 @@ struct PickyConversationComposerView: View {
             && autocompleteSuggestions?.items.isEmpty == false
     }
 
-    /// Keeps the full result set available to keyboard and pointer navigation
-    /// while constraining the floating panel to four dense rows. ScrollViewReader
-    /// reveals the keyboard-selected item without resizing the composer.
-    private func autocompleteSuggestionList<SelectionID: Hashable, Content: View>(
-        selectedID: SelectionID,
-        suggestionCount: Int,
-        @ViewBuilder content: @escaping () -> Content
-    ) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: suggestionCount > PickySlashCommandAutocompletePolicy.maxVisibleRows) {
-                LazyVStack(alignment: .leading, spacing: 1, content: content)
-            }
-            .scrollDisabled(suggestionCount <= PickySlashCommandAutocompletePolicy.maxVisibleRows)
-            .frame(maxHeight: .infinity)
-            .onAppear {
-                proxy.scrollTo(selectedID, anchor: .center)
-            }
-            .onChange(of: selectedID) { _, newSelectedID in
-                proxy.scrollTo(newSelectedID, anchor: .center)
-            }
-        }
-        .padding(DS.Spacing.xs)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: Self.autocompletePanelHeight(forSuggestionCount: suggestionCount), alignment: .top)
-        .background(autocompletePanelBackground)
-    }
-
-    private func autocompleteRow(_ item: PickyAutocompleteItem, prefix: String?, isSelected: Bool) -> some View {
-        let command = matchingSlashCommand(for: item, prefix: prefix)
-        let isFile = prefix?.hasPrefix("@") == true
-        let isDirectory = isFile && item.label.hasSuffix("/")
-        return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if isFile {
-                Image(systemName: isDirectory ? "folder.fill" : "doc.text")
-                    .pickyFont(size: 10, weight: .semibold)
-                    .foregroundColor(isDirectory ? DS.Colors.accentText : DS.Colors.textTertiary)
-                    .frame(width: 14)
-            }
-            Text(command.map { "/\($0.name)" } ?? item.label)
-                .font(PickyHUDTypography.labelMonospacedSemibold)
-                .foregroundColor(DS.Colors.accentText)
-                .lineLimit(1)
-            if let command {
-                Text(command.source.displayName)
-                    .font(PickyHUDTypography.minimumSemibold)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(DS.Colors.surface2.opacity(0.75)))
-            }
-            if let description = item.description, !description.isEmpty {
-                Text(description)
-                    .font(PickyHUDTypography.status)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .frame(minHeight: Self.autocompleteRowMinimumHeight)
-        .background(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                .fill(isSelected ? DS.Colors.accentSubtle.opacity(0.55) : Color.clear)
-        )
-        .contentShape(Rectangle())
-    }
-
-    private func matchingSlashCommand(for item: PickyAutocompleteItem, prefix: String?) -> PickySlashCommand? {
-        guard prefix?.hasPrefix("/") == true else { return nil }
-        return commands.slashCommandsIncludingRewindTreeCommand(
-            commands.slashCommandsBySessionID[session.id] ?? [],
-            sessionID: session.id
-        ).first { $0.name == item.value }
-    }
-
-    private var autocompletePanelBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: DS.CornerRadius.extraLarge, style: .continuous)
-        return PickyHUDMaterialFill(shape: shape, fallback: DS.Colors.surface1)
-            .overlay(
-                shape.stroke(DS.Colors.borderSubtle.opacity(0.7), lineWidth: 0.8)
-            )
-            .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
-    }
-
     private var autocompleteHighlightRange: NSRange? {
         guard !autocompleteInput.isComposing else { return nil }
         return PickyComposerAutocompletePolicy.highlightRange(
             prefix: autocompleteSuggestions?.prefix,
             cursorLocation: autocompleteInput.cursorLocation ?? autocompleteInput.text.utf16.count,
             text: autocompleteInput.text
-        )
-    }
-
-    private func selectedAutocompleteClampedIndex(for suggestions: [PickyAutocompleteItem]) -> Int {
-        PickySlashCommandAutocompletePolicy.clampedSelectionIndex(
-            selectedAutocompleteIndex,
-            suggestionCount: suggestions.count
         )
     }
 
@@ -693,10 +647,11 @@ struct PickyConversationComposerView: View {
               let snapshot = autocompleteSuggestions,
               !snapshot.items.isEmpty
         else { return autocompleteApplyRequestID != nil }
-        acceptAutocomplete(
-            snapshot.items[selectedAutocompleteClampedIndex(for: snapshot.items)],
-            snapshot: snapshot
+        let selectedIndex = PickySlashCommandAutocompletePolicy.clampedSelectionIndex(
+            selectedAutocompleteIndex,
+            suggestionCount: snapshot.items.count
         )
+        acceptAutocomplete(snapshot.items[selectedIndex], snapshot: snapshot)
         return true
     }
 
@@ -897,6 +852,10 @@ struct PickyConversationComposerView: View {
 
     private func handleComposerEscapeKey() -> Bool {
         if dismissAutocomplete() { return true }
+        if scheduled.editing != nil {
+            cancelScheduledEdit()
+            return true
+        }
         if isScreenContextArmed {
             commands.clearScreenContextTarget(sessionID: session.id)
             return true
@@ -955,14 +914,6 @@ struct PickyConversationComposerView: View {
             : .systemFont(ofSize: PickyHUDTypography.Size.bodyCompact, weight: .regular)
     }
 
-    static func editorHeight(forMeasuredContentHeight contentHeight: CGFloat) -> CGFloat {
-        PickyComposerEditorHeightPolicy.height(forMeasuredContentHeight: contentHeight)
-    }
-
-    static func editorHeight(for text: String) -> CGFloat {
-        PickyComposerEditorHeightPolicy.height(for: text)
-    }
-
     private static let editorTextInsetHeight: CGFloat = 2
 
     private var trailingActions: some View {
@@ -977,26 +928,63 @@ struct PickyConversationComposerView: View {
 
     private var sendButton: some View {
         let presentation = submitPresentation
-        return Button(action: submitActiveKind) {
-            ZStack {
-                Image(systemName: presentation.iconName)
-                    .id(presentation.iconName)
-                    .transition(.opacity.combined(with: .scale(scale: 0.82)))
+        return PickyComposerSplitSendButton(
+            iconName: presentation.iconName,
+            accessibilityLabel: presentation.accessibilityLabel,
+            helpText: sendHelpText,
+            isEnabled: !isSendDisabled,
+            tint: sendColor,
+            isMenuOpen: scheduled.isSendTimingMenuPresented,
+            isMenuEnabled: isSendTimingMenuEnabled,
+            onSend: submitActiveKind,
+            onToggleMenu: {
+                guard isSendTimingMenuEnabled else { return }
+                scheduled.openSendTimingMenu(
+                    canSendAfterCurrentReply: optionReturnSubmitKind == .followUp,
+                    carriesScreenContext: carriesScreenContext,
+                    commands: commands
+                )
             }
-            .pickyFont(size: 11, weight: .semibold)
-            .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
-            .frame(
-                width: PickyComposerToolbarMetrics.controlSize,
-                height: PickyComposerToolbarMetrics.controlSize
+        )
+        .pickyInstantPopover(isPresented: $scheduled.isSendTimingMenuPresented, arrowEdge: .top) {
+            PickySendTimingMenuView(
+                options: scheduled.sendTimingMenu?.options ?? [],
+                isPluginInstalled: scheduled.sendTimingMenu?.isPluginInstalled ?? false,
+                isInstallingPlugin: scheduled.isInstallingPlugin,
+                installError: scheduled.installError,
+                onSelect: selectSendTiming,
+                onInstallPlugin: {
+                    scheduled.installPlugin(
+                        canSendAfterCurrentReply: optionReturnSubmitKind == .followUp,
+                        carriesScreenContext: carriesScreenContext,
+                        commands: commands
+                    )
+                }
             )
-            .contentShape(Rectangle())
-            .animation(.easeOut(duration: DS.Animation.fast), value: presentation.iconName)
         }
-        .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: !isSendDisabled))
-        .disabled(isSendDisabled)
-        .help(sendHelpText)
-        .accessibilityLabel(presentation.accessibilityLabel)
-        .accessibilityHint(sendHelpText)
+    }
+
+    private var isSendTimingMenuEnabled: Bool {
+        PickySendTimingPolicy.isMenuEnabled(
+            isSendEnabled: !isSendDisabled,
+            isEditingScheduledMessage: scheduled.editing != nil
+        )
+    }
+
+    /// A timed send stores plain text, so anything that would travel as an image
+    /// or a screen capture keeps the timed rows disabled.
+    private var carriesScreenContext: Bool {
+        !attachments.isEmpty || isScreenContextArmed
+    }
+
+    private func selectSendTiming(_ timing: PickySendTiming) {
+        scheduled.isSendTimingMenuPresented = false
+        switch timing {
+        case .afterCurrentReply:
+            submit(.followUp)
+        case .delay(let seconds):
+            submitScheduled(delayMs: seconds * 1000)
+        }
     }
 
     private var stopButton: some View {
@@ -1078,19 +1066,6 @@ struct PickyConversationComposerView: View {
             }
     }
 
-    static func composerBorderState(
-        isDropTargeted: Bool,
-        bashMode: PickyComposerBashMode,
-        isRunning: Bool,
-        isFocused: Bool
-    ) -> PickyComposerBorderState {
-        if isDropTargeted { return .fileDrop }
-        if bashMode != .none { return .bash }
-        if isRunning { return .running }
-        if isFocused { return .focused }
-        return .rest
-    }
-
     private var composerBackgroundFill: Color {
         if isComposerInputDisabled { return DS.Colors.surface2.opacity(0.38) }
         return isFileDropTargeted ? DS.Colors.accentSubtle.opacity(0.28) : DS.Colors.surface2.opacity(0.55)
@@ -1110,56 +1085,6 @@ struct PickyConversationComposerView: View {
         PickyComposerLabelPolicy.bashAccentColor(for: effectiveBashMode)
     }
 
-    /// Mirror of `parseUserBashInput` in agentd's session supervisor. Kept in
-    /// sync intentionally: if the parser there changes, this needs to change
-    /// too, otherwise the composer will lie about the submit action.
-    static func bashMode(in text: String) -> PickyComposerBashMode {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("!") else { return .none }
-        let isPrivate = trimmed.hasPrefix("!!")
-        let body = isPrivate ? trimmed.dropFirst(2) : trimmed.dropFirst(1)
-        let command = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !command.isEmpty else { return .none }
-        return isPrivate ? .private : .visible
-    }
-
-    static func draftText(afterAppendingDroppedFilePaths paths: [String], to draft: String) -> String {
-        let normalizedPaths = paths
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !normalizedPaths.isEmpty else { return draft }
-
-        let droppedText = normalizedPaths.joined(separator: "\n")
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return droppedText
-        }
-        if draft.hasSuffix("\n") {
-            return draft + droppedText
-        }
-        return "\(draft)\n\(droppedText)"
-    }
-
-    static func shouldResetSlashCommandDismissal(newDraft: String, acceptedDraft: String?) -> Bool {
-        newDraft != acceptedDraft
-    }
-
-    static func submissionText(draft: String, attachmentPaths: [String]) -> String {
-        let trimmedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let merged = draftText(afterAppendingDroppedFilePaths: attachmentPaths, to: trimmedDraft)
-        // With attachments present we intentionally do NOT let the message
-        // trigger agentd's `!`/`!!` bash shortcut: the appended file paths
-        // would be silently glued onto the command line and either run as
-        // arguments to whatever bash command the user typed, or break out
-        // of the prompt entirely. Prepending a single space defeats the
-        // prefix check in `parseUserBashInput` without altering how Pi
-        // reads the message body, so the user gets a regular prompt with
-        // the attachments intact.
-        if !attachmentPaths.isEmpty && merged.hasPrefix("!") {
-            return " " + merged
-        }
-        return merged
-    }
-
     private func appendAttachmentPaths(_ paths: [String]) {
         let cleaned = paths
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -1169,61 +1094,8 @@ struct PickyConversationComposerView: View {
         isFocused = true
     }
 
-    @ViewBuilder
     private var attachmentChipsRow: some View {
-        if !attachments.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(attachments) { attachment in
-                        PickyComposerAttachmentChipView(attachment: attachment) {
-                            attachments.removeAll { $0.id == attachment.id }
-                        }
-                    }
-                }
-                .padding(.horizontal, 2)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: AttachmentContentWidthKey.self,
-                            value: proxy.size.width
-                        )
-                    }
-                )
-            }
-            .frame(height: 24)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: AttachmentViewportWidthKey.self,
-                        value: proxy.size.width
-                    )
-                }
-            )
-            .onPreferenceChange(AttachmentContentWidthKey.self) { attachmentContentWidth = $0 }
-            .onPreferenceChange(AttachmentViewportWidthKey.self) { attachmentViewportWidth = $0 }
-            .mask(attachmentScrollMask)
-        }
-    }
-
-    /// True when the chip row would clip on the right. Drives a small fade
-    /// mask at the trailing edge so users see there are more attachments to
-    /// scroll into view; collapses to a no-op mask when everything fits.
-    private var attachmentRowHasOverflow: Bool {
-        attachmentContentWidth > attachmentViewportWidth + 0.5
-    }
-
-    private var attachmentScrollMask: LinearGradient {
-        let fadeStart: Double = attachmentRowHasOverflow ? 0.88 : 1.0
-        let trailingOpacity: Double = attachmentRowHasOverflow ? 0 : 1
-        return LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: .black, location: 0.0),
-                .init(color: .black, location: fadeStart),
-                .init(color: .black.opacity(trailingOpacity), location: 1.0),
-            ]),
-            startPoint: .leading,
-            endPoint: .trailing
-        )
+        PickyComposerAttachmentsRow(attachments: $attachments)
     }
 
     private func restorePersistedDraftIfNeeded() {
@@ -1285,26 +1157,6 @@ struct PickyConversationComposerView: View {
         }
     }
 
-    func returnKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerReturnKeyAction {
-        Self.returnKeyAction(for: modifiers)
-    }
-
-    static func returnKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerReturnKeyAction {
-        if modifiers.contains(.shift) { return .insertNewline }
-        if modifiers.contains(.option) { return .submitOptionReturn }
-        return .submitDefault
-    }
-
-    func upArrowKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerUpArrowKeyAction {
-        Self.upArrowKeyAction(for: modifiers)
-    }
-
-    static func upArrowKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerUpArrowKeyAction {
-        if modifiers.contains(.option) { return .restoreQueue }
-        if modifiers.isEmpty { return .recallPreviousMessage }
-        return .navigateAutocomplete
-    }
-
     private var placeholder: String {
         PickyComposerLabelPolicy.placeholder(
             isCompacting: session.isCompacting,
@@ -1333,15 +1185,78 @@ struct PickyConversationComposerView: View {
     }
 
     private func submitActiveKind() {
-        submit(activeSubmitKind)
+        route(activeSubmitKind)
     }
 
     private func submitDefault() {
-        submit(defaultSubmitKind)
+        route(defaultSubmitKind)
     }
 
     private func submitOptionReturn() {
-        submit(optionReturnSubmitKind)
+        route(optionReturnSubmitKind)
+    }
+
+    private func route(_ submitKind: PickyConversationComposerSubmitKind?) {
+        switch PickyComposerSubmitRoute.route(
+            editingScheduledRowID: scheduled.editing?.id,
+            editingScheduledRowKind: scheduled.editing?.kind,
+            submitKind: submitKind
+        ) {
+        case .send(let kind):
+            submit(kind)
+        case .saveScheduledEdit:
+            scheduled.submitEdit(
+                text: draft,
+                commands: commands,
+                sessionID: session.id,
+                applyDraft: applyEditedDraft
+            )
+        }
+    }
+
+    /// Timed sends never carry the composer's screen attachments: delayed-action
+    /// stores plain text, so the paths would be sent as text instead of images.
+    private func submitScheduled(delayMs: Int) {
+        let submittedSessionID = session.id
+        let submittedAttachmentIDs = Set(attachments.map(\.id))
+        let text = Self.submissionText(draft: draft, attachmentPaths: attachments.map(\.path))
+        guard !text.isEmpty else { return }
+        let originalDraft = draft
+        Task {
+            do {
+                try await commands.scheduleMessage(sessionID: submittedSessionID, text: text, delayMs: delayMs)
+                clearComposerAfterSubmission(
+                    originalDraft: originalDraft,
+                    submittedAttachmentIDs: submittedAttachmentIDs,
+                    sessionID: submittedSessionID
+                )
+            } catch {
+                scheduled.reportCommandFailure(error)
+            }
+        }
+    }
+
+    /// Only what was actually submitted leaves the composer: a draft edited or an
+    /// attachment added while the command was in flight stays for the next message.
+    private func clearComposerAfterSubmission(
+        originalDraft: String,
+        submittedAttachmentIDs: Set<PickyComposerAttachment.ID>,
+        sessionID: String
+    ) {
+        let shouldClearSubmittedDraft = draft == originalDraft
+        if shouldClearSubmittedDraft {
+            draft = ""
+            synchronizeAutocompleteInput(text: "")
+        }
+        attachments.removeAll { submittedAttachmentIDs.contains($0.id) }
+        if shouldClearSubmittedDraft && attachments.isEmpty {
+            commands.clearComposerDraft(sessionID: sessionID)
+            return
+        }
+        if shouldClearSubmittedDraft {
+            commands.updateComposerDraft("", sessionID: sessionID)
+        }
+        commands.updateComposerAttachmentPaths(attachments.map(\.path), sessionID: sessionID)
     }
 
     private func submit(_ kind: PickyConversationComposerSubmitKind?) {
@@ -1366,22 +1281,11 @@ struct PickyConversationComposerView: View {
                 case .followUp:
                     try await commands.followUp(text: text, sessionID: submittedSessionID)
                 }
-                let shouldClearSubmittedDraft = draft == originalDraft
-                if shouldClearSubmittedDraft {
-                    draft = ""
-                    synchronizeAutocompleteInput(text: "")
-                }
-                attachments.removeAll { attachment in
-                    submittedAttachmentIDs.contains(attachment.id)
-                }
-                if shouldClearSubmittedDraft && attachments.isEmpty {
-                    commands.clearComposerDraft(sessionID: submittedSessionID)
-                } else {
-                    if shouldClearSubmittedDraft {
-                        commands.updateComposerDraft("", sessionID: submittedSessionID)
-                    }
-                    commands.updateComposerAttachmentPaths(attachments.map(\.path), sessionID: submittedSessionID)
-                }
+                clearComposerAfterSubmission(
+                    originalDraft: originalDraft,
+                    submittedAttachmentIDs: submittedAttachmentIDs,
+                    sessionID: submittedSessionID
+                )
             } catch {
                 // Command failures preserve the draft and attachments for retry.
             }
@@ -1398,53 +1302,26 @@ struct PickyConversationComposerView: View {
         return true
     }
 
-    static func previousUserMessageText(in context: PickyComposerMessageContext) -> String? {
-        context.submittedUserMessages.last?.text
-    }
-
+    /// ⌥↑ pulls every queued input back into the draft. It is the only bulk
+    /// queue escape hatch left; per-item control lives in the scheduled panel.
     @discardableResult
     private func restoreQueuedMessages() -> Bool {
-        guard PickyQueuedInputRestoreAvailability.resolve(
-            visibleQueue: session.visibleQueue,
-            kind: .all
-        ) == .available else { return false }
-        performQueueAction(.restore)
-        return true
-    }
-
-    private func performQueueAction(_ action: PickyQueueDockAction) {
-        guard queueActionInFlight == nil else { return }
-        queueActionInFlight = action
-        queueActionError = nil
+        guard !isRestoringQueue,
+              PickyQueuedInputRestoreAvailability.resolve(
+                visibleQueue: session.visibleQueue,
+                kind: .all
+              ) == .available else { return false }
+        isRestoringQueue = true
+        scheduled.clearCommandFailure()
         Task {
+            defer { isRestoringQueue = false }
             do {
-                switch action.command {
-                case .restoreThenClear(let kind):
-                    try await commands.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: kind)
-                case .clearOnly(let kind):
-                    try await commands.clearQueue(sessionID: session.id, kind: kind)
-                }
+                try await commands.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: .all)
             } catch {
-                queueActionError = error.localizedDescription
+                scheduled.reportCommandFailure(error)
             }
-            queueActionInFlight = nil
         }
-    }
-
-    static func draftRestoringQueuedMessages(
-        draft: String,
-        queuedSteers: [PickyQueueItem],
-        queuedFollowUps: [PickyQueueItem]
-    ) -> String? {
-        PickyQueuedInputDraftPolicy.draftRestoringQueuedInputs(
-            draft: draft,
-            visibleQueue: PickyVisibleQueue(
-                queuedSteers: queuedSteers,
-                queuedFollowUps: queuedFollowUps,
-                committedUserMessages: []
-            ),
-            kind: .all
-        )
+        return true
     }
 
     private func installKeyDownMonitorIfNeeded() {
@@ -1472,19 +1349,6 @@ struct PickyConversationComposerView: View {
 
     private static let tabKeyCode: UInt16 = 48
     private static let pKeyCode: UInt16 = 35
-    /// Each autocomplete row has a 24pt minimum height, separated by 1pt.
-    /// The panel adds a 4pt inset above and below the scrollable rows.
-    private static let autocompleteRowMinimumHeight: CGFloat = DS.Spacing.xxl
-    private static let autocompleteRowSpacing: CGFloat = 1
-    private static let autocompletePanelVerticalInset: CGFloat = DS.Spacing.xs
-
-    static func autocompletePanelHeight(forSuggestionCount suggestionCount: Int) -> CGFloat {
-        let visibleRows = min(max(suggestionCount, 0), PickySlashCommandAutocompletePolicy.maxVisibleRows)
-        guard visibleRows > 0 else { return 0 }
-        return CGFloat(visibleRows) * autocompleteRowMinimumHeight
-            + CGFloat(visibleRows - 1) * autocompleteRowSpacing
-            + 2 * autocompletePanelVerticalInset
-    }
     private static let autocompleteDebounceNanoseconds: UInt64 = 80_000_000
 
     private func stopIfPossible() {

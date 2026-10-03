@@ -24,7 +24,7 @@ import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./applicatio
 import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyQueueItem, PickyQueueMode, PickyScheduledMessage, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
 import type { PickyShowAnnotationsRequest, PickyShowAnnotationsResult } from "./application/annotation-overlay-request.js";
 import { PickleVisualDslCoordinator, type PickleVisualDslLease } from "./application/pickle-visual-dsl-coordinator.js";
@@ -50,6 +50,10 @@ import {
 import type { SessionDiffView } from "./domain/git-diff.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueSubmissionSummary, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
+import { sameScheduledMessages } from "./domain/delayed-action-store.js";
+import { ScheduledMessageProjector } from "./application/scheduled-message-projector.js";
+import { SessionQueueCommandService, type SessionQueueCommandDeps } from "./application/session-queue-command-service.js";
+import { selfMutatedQueueItems, type SelfQueueMutation } from "./domain/session-queue-commands.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { isSemanticNoOpPatch } from "./domain/session-patch-policy.js";
@@ -108,6 +112,10 @@ export class SessionSupervisor extends EventEmitter {
   // items as pending bubbles instead of (incorrectly) hiding them behind a duplicate user bubble.
   private pendingQueueDeliveries = new Map<string, PendingQueueDelivery[]>();
   private materializedQueueDeliveries = new Map<string, PendingQueueDelivery[]>();
+  // Per-item queue edit Picky itself is performing, held only for that command. The queue update
+  // it triggers is reconciled against this instead of by text, so a rewritten or promoted message
+  // is never mistaken for one the agent consumed.
+  private selfQueueMutations = new Map<string, SelfQueueMutation>();
   private readonly pendingPickleVisualDslLeases = new Map<string, PickleVisualDslLease>();
   private readonly pickleVisualDslCoordinator: PickleVisualDslCoordinator;
   // Serialize all session-state writes per session id. Without this, concurrent patch/sync calls
@@ -119,8 +127,17 @@ export class SessionSupervisor extends EventEmitter {
   private readonly terminalSessionCoordinator: TerminalSessionCoordinator;
   private readonly terminalManualCompactionCoordinator: TerminalManualCompactionCoordinator;
   private readonly followUpLifecycleDiagnostics: FollowUpLifecycleDiagnostics;
+  // Timed messages live in the delayed-action extension's store, not in Picky. The projector
+  // mirrors that file so the HUD can list them next to the follow-up queue.
+  private readonly scheduledMessages: ScheduledMessageProjector;
+  private readonly queueCommands: SessionQueueCommandService;
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
+    this.scheduledMessages = new ScheduledMessageProjector(
+      (sessionId, messages) => this.applyScheduledMessages(sessionId, messages),
+      options.scheduledMessageProjector,
+    );
+    this.queueCommands = new SessionQueueCommandService(this.queueCommandDeps());
     this.followUpLifecycleDiagnostics = new FollowUpLifecycleDiagnostics({
       getSession: (sessionId) => this.sessions.get(sessionId),
       getSessionOrThrow: (sessionId) => this.mustGet(sessionId),
@@ -1169,6 +1186,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private clearPendingQueueDeliveries(sessionId: string): void {
     this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
+    this.selfQueueMutations.delete(sessionId);
     const pending = this.pendingQueueDeliveries.get(sessionId) ?? [];
     for (const delivery of pending) {
       if (delivery.visualDslLeaseId) this.pendingPickleVisualDslLeases.delete(delivery.visualDslLeaseId);
@@ -1185,6 +1203,46 @@ export class SessionSupervisor extends EventEmitter {
     this.materializedQueueDeliveries.delete(sessionId);
     handle.clearQueue();
     await this.applyQueueUpdate(sessionId, [], []);
+  }
+
+  removeQueuedInput(sessionId: string, itemId: string): Promise<void> { return this.queueCommands.removeQueuedInput(sessionId, itemId); }
+  editQueuedFollowUp(sessionId: string, itemId: string, text: string): Promise<void> { return this.queueCommands.editQueuedFollowUp(sessionId, itemId, text); }
+  sendQueuedFollowUpNow(sessionId: string, itemId: string): Promise<void> { return this.queueCommands.sendQueuedFollowUpNow(sessionId, itemId); }
+  scheduleMessage(sessionId: string, text: string, delayMs: number): Promise<void> { return this.queueCommands.scheduleMessage(sessionId, text, delayMs); }
+  cancelScheduledMessage(sessionId: string, scheduledId: string): Promise<void> { return this.queueCommands.cancelScheduledMessage(sessionId, scheduledId); }
+  editScheduledMessage(sessionId: string, scheduledId: string, text: string): Promise<void> { return this.queueCommands.editScheduledMessage(sessionId, scheduledId, text); }
+  sendScheduledMessageNow(sessionId: string, scheduledId: string): Promise<void> { return this.queueCommands.sendScheduledMessageNow(sessionId, scheduledId); }
+
+  private queueCommandDeps(): SessionQueueCommandDeps {
+    return {
+      session: (id) => this.mustGet(id),
+      handle: (id, action) => this.runtimeHandleForSessionCommand(id, action),
+      pendingDeliveries: (id) => this.pendingQueueDeliveries.get(id),
+      materializedDeliveries: (id) => this.materializedQueueDeliveries.get(id),
+      dropPendingDelivery: (id, itemId) => this.discardPendingQueueDeliveryById(id, itemId),
+      beginSelfMutation: (id, mutation) => { this.selfQueueMutations.set(id, mutation); },
+      endSelfMutation: (id) => { this.selfQueueMutations.delete(id); },
+      waitForQueuedStateToSettle: (id) => this.waitForQueuedStateToSettle(id),
+      applyQueueUpdate: (id, steering, followUp) => this.applyQueueUpdate(id, steering, followUp),
+      scheduledMessages: this.scheduledMessages,
+      send: (id, text) => this.steer(id, text),
+    };
+  }
+
+  private discardPendingQueueDeliveryById(sessionId: string, itemId: string): void {
+    const pending = this.pendingQueueDeliveries.get(sessionId);
+    const index = pending?.findIndex((entry) => entry.id === itemId) ?? -1;
+    if (!pending || index < 0) return;
+    const [entry] = pending.splice(index, 1);
+    this.followUpLifecycleDiagnostics.clearFollowUpStall(itemId);
+    this.discardPickleVisualDslLease(sessionId, entry);
+    if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
+  }
+
+  private async applyScheduledMessages(sessionId: string, scheduledMessages: PickyScheduledMessage[]): Promise<void> {
+    if (!this.sessions.has(sessionId)) return;
+    if (sameScheduledMessages(this.mustGet(sessionId).scheduledMessages ?? [], scheduledMessages)) return;
+    await this.patch(sessionId, { scheduledMessages });
   }
 
   private async recordNonSkillSlashCommandReceipt(sessionId: string, text: string): Promise<string | undefined> {
@@ -1406,22 +1464,29 @@ export class SessionSupervisor extends EventEmitter {
     } else {
       this.materializedQueueDeliveries.delete(sessionId);
     }
-    const queuedSteers = queueItems(nextRuntimeQueues.steering, enqueuedAt, current.queuedSteers, pendingDeliveries.filter((entry) => entry.kind === "steering"), randomUUID);
-    const queuedFollowUps = queueItems(nextRuntimeQueues.followUp, enqueuedAt, current.queuedFollowUps, pendingDeliveries.filter((entry) => entry.kind === "followUp"), randomUUID);
+    // A per-item edit Picky issued republishes the queue with the same delivery ids under a new
+    // text or kind, which by text alone is indistinguishable from the agent consuming a message.
+    const selfMutated = selfMutatedQueueItems(this.selfQueueMutations.get(sessionId), { steering: current.queuedSteers, followUp: current.queuedFollowUps }, nextRuntimeQueues);
+    if (selfMutated) this.selfQueueMutations.delete(sessionId);
+    const queuedSteers = selfMutated?.steering ?? queueItems(nextRuntimeQueues.steering, enqueuedAt, current.queuedSteers, pendingDeliveries.filter((entry) => entry.kind === "steering"), randomUUID);
+    const queuedFollowUps = selfMutated?.followUp ?? queueItems(nextRuntimeQueues.followUp, enqueuedAt, current.queuedFollowUps, pendingDeliveries.filter((entry) => entry.kind === "followUp"), randomUUID);
     const previousSteeringMode = this.lastEmittedSteeringMode.get(sessionId) ?? current.steeringMode ?? "one-at-a-time";
     const previousFollowUpMode = this.lastEmittedFollowUpMode.get(sessionId) ?? current.followUpMode ?? "one-at-a-time";
     const queueChanged = !sameQueueItems(current.queuedSteers ?? [], queuedSteers) || !sameQueueItems(current.queuedFollowUps ?? [], queuedFollowUps);
     const modeChanged = steeringMode !== (current.steeringMode ?? "one-at-a-time") || followUpMode !== (current.followUpMode ?? "one-at-a-time");
-    const removedItems = diffQueueRemovedItems(current.queuedSteers ?? [], current.queuedFollowUps ?? [], nextRuntimeQueues.steering, nextRuntimeQueues.followUp);
-    for (const item of removedItems) this.followUpLifecycleDiagnostics.clearFollowUpStallForQueueItem(sessionId, item);
+    const removedItems = selfMutated ? [] : diffQueueRemovedItems(current.queuedSteers ?? [], current.queuedFollowUps ?? [], nextRuntimeQueues.steering, nextRuntimeQueues.followUp);
+    // Outside a self-mutation, an entry that left both queues reached the agent; a still-queued id never did.
+    const survivingIds = new Set([...queuedSteers, ...queuedFollowUps].map((item) => item.id));
+    const deliveredItems = removedItems.filter((item) => !item.id || !survivingIds.has(item.id));
+    for (const item of deliveredItems) this.followUpLifecycleDiagnostics.clearFollowUpStallForQueueItem(sessionId, item);
     await this.patch(sessionId, { queuedSteers, queuedFollowUps, steeringMode, followUpMode });
     this.followUpLifecycleDiagnostics.logLifecycle("queueUpdateReconciled", sessionId, this.runtimeHandles.get(sessionId), {
       steeringCount: nextRuntimeQueues.steering.length,
       followUpCount: nextRuntimeQueues.followUp.length,
-      removedCount: removedItems.length,
+      removedCount: deliveredItems.length,
     });
-    if (removedItems.length > 0 && !isTerminalStatus(current.status)) {
-      await this.drainDeliveredQueueItems(sessionId, removedItems);
+    if (deliveredItems.length > 0 && !isTerminalStatus(current.status)) {
+      await this.drainDeliveredQueueItems(sessionId, deliveredItems);
     }
 
     const emittedSteeringMode = steeringMode === previousSteeringMode ? undefined : steeringMode;
@@ -1736,6 +1801,7 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeHandleUnsubscribes.get(sessionId)?.();
     this.runtimeHandleUnsubscribes.delete(sessionId);
     this.runtimeHandles.delete(sessionId);
+    await this.scheduledMessages.untrack(sessionId);
     if (!tracked && !explicitDeletion) await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
   }
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
@@ -1750,6 +1816,7 @@ export class SessionSupervisor extends EventEmitter {
     // no question bubble for the user to answer.
     handle.setHostPendingExtensionUiPresent?.(() => Boolean(this.sessions.get(sessionId)?.pendingExtensionUiRequest));
     handle.setResourceReloadHost?.({ runInput: (effect) => this.asyncControls.input(sessionId, effect) });
+    await this.scheduledMessages.track(sessionId, handle.getPiSessionId?.());
     const todoResolution = handle.getTodoStateResolution?.();
     if (todoResolution?.resolved) await this.updateTodoState(sessionId, todoResolution.todoState);
     const currentAssistantRun = handle.getAssistantRunMetadata?.();

@@ -14,7 +14,7 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage,subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeResourceReloadHost,RuntimeResourceReloadOutcome,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
+import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeExtensionCommandResult,RuntimeExtensionToolResult,RuntimeResourceReloadHost,RuntimeResourceReloadOutcome,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
@@ -66,8 +66,10 @@ sliceUtf16,
 stringValue,
 textFromPiMessageContent,
 } from "./pi-sdk-runtime-helpers.js";
-import { createBaseAutocompleteProvider,PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
+import { createBaseAutocompleteProvider,listSessionSlashCommands } from "./pi-autocomplete-provider.js";
 import { isRegisteredExtensionCommand,PiPromptQueue,type PiQueueSnapshot } from "./pi-prompt-queue.js";
+import { movePiFollowUpToSteering,removePiQueuedMessage,replacePiQueuedFollowUpText } from "./pi-queue-mutation.js";
+import { PiExtensionInvoker } from "./pi-extension-invocation.js";
 import { WriteFileMetadataTracker } from "./write-file-path.js";
 import { ResourceReloadScheduler } from "./pi-resource-reload.js";
 import { handlePiBuiltinSlashCommand } from "./pi-builtin-slash-commands.js";
@@ -122,6 +124,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private agentStartCount = 0;
   private autocompleteGeneration = 0;
   private autocompleteQueryController: AbortController | undefined;
+  private readonly extensionInvoker = new PiExtensionInvoker(() => this.runtime.session, () => this.uiBridge);
   private readonly subagentInvocationTracker = new SubagentInvocationTracker();
   private readonly writeFileMetadata = new WriteFileMetadataTracker();
   private asyncSettled = true;
@@ -571,39 +574,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return { generation: request.generation, ...completion };
   }
 
-  async listSlashCommands(): Promise<RuntimeSlashCommand[]> {
-    const commands: RuntimeSlashCommand[] = [
-      ...PICKY_BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, source: "builtin" as const })),
-    ];
-    // Trade-off: we expose every extension command in autocomplete instead of trying to
-    // filter out ones that depend on Pi TUI surfaces Picky does not implement.
-    //
-    // Why we don't filter:
-    //   - Pi SDK assigns the agentDir itself (e.g. ~/.pi/agent) as the baseDir for every
-    //     auto-discovered local extension under ~/.pi/agent/extensions/*. A directory-level
-    //     `ui.custom` scan therefore flags ALL local extensions if any single sibling uses it,
-    //     producing false positives for clean extensions like /github:pr-merge.
-    //   - ExtensionUiBridge implements the common surfaces (notify/confirm/select/input/
-    //     editor/askUserQuestion/setStatus/setTitle) and composes addAutocompleteProvider
-    //     over Pi's built-in slash/path provider. Terminal-component surfaces such as
-    //     setWidget/setHeader/setFooter/setEditorComponent remain no-ops.
-    //   - The only hard failure is `ui.custom`, which throws PickyOverlayUnsupportedError.
-    //     extension-crash-guard.ts swallows that (and any extension TypeError such as a missing
-    //     `theme.fg`) so daemon stays alive; the user just sees the command no-op or error.
-    //
-    // Cost we accept: a few overlay-heavy commands (e.g. /widgets, /sub:peek, /subagents) show
-    // up in autocomplete but produce only an error or empty effect when invoked.
-    for (const command of this.runtime.session.extensionRunner.getRegisteredCommands()) {
-      commands.push({ name: command.invocationName, description: command.description, source: "extension" });
-    }
-    for (const template of this.runtime.session.promptTemplates) {
-      commands.push({ name: template.name, description: template.description, source: "prompt" });
-    }
-    for (const skill of this.runtime.session.resourceLoader.getSkills().skills) {
-      commands.push({ name: `skill:${skill.name}`, description: skill.description, source: "skill" });
-    }
-    return commands;
-  }
+  async listSlashCommands(): Promise<RuntimeSlashCommand[]> { return listSessionSlashCommands(this.runtime.session); }
 
   clearQueue(): { steering: string[]; followUp: string[] } {
     const cleared = this.runtime.session.clearQueue();
@@ -645,6 +616,19 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   getSteeringMessages(): readonly string[] { return this.combinedQueueSnapshot().steering; }
   getFollowUpMessages(): readonly string[] { return this.combinedQueueSnapshot().followUp; }
+
+  getPiSessionId(): string | undefined { return this.extensionInvoker.sessionId(); }
+  hasExtensionCommand(name: string): boolean { return this.extensionInvoker.hasCommand(name); }
+  hasExtensionTool(name: string): boolean { return this.extensionInvoker.hasTool(name); }
+  runExtensionCommandSilently(name: string, args: string): Promise<RuntimeExtensionCommandResult> { return this.extensionInvoker.runCommand(name, args); }
+  runExtensionToolSilently(name: string, params: Record<string, unknown>): Promise<RuntimeExtensionToolResult> { return this.extensionInvoker.runTool(name, params); }
+
+  // Per-item edits address Pi's own queue positions, so an entry Picky is still holding for a
+  // compaction flush is out of range and reports as "already gone" rather than editing a neighbour.
+  private readonly onQueueMutated = (): void => this.emitCombinedQueueUpdate();
+  removeQueuedMessage(kind: "steering" | "followUp", index: number): boolean { return removePiQueuedMessage(this.runtime.session, kind, index, this.onQueueMutated); }
+  replaceQueuedFollowUpText(index: number, text: string): boolean { return replacePiQueuedFollowUpText(this.runtime.session, index, text, this.onQueueMutated); }
+  moveFollowUpToSteering(index: number): boolean { return movePiFollowUpToSteering(this.runtime.session, index, this.onQueueMutated); }
 
   private piQueueSnapshot(): PiQueueSnapshot {
     return {

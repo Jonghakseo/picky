@@ -1,5 +1,6 @@
 import type { LogField } from "../local-log.js";
 import type { AgentRuntime, RuntimeCustomTool } from "../runtime/types.js";
+import type { ScheduledMessageProjectorOptions } from "./scheduled-message-projector.js";
 import type { TaskRouter } from "../task-router.js";
 
 export interface ReloadPluginsSummary {
@@ -58,4 +59,6 @@ export interface SessionSupervisorOptions {
   followUpStallDelayMs?: number;
   scheduleFollowUpStall?: (callback: () => void, delayMs: number) => unknown;
   clearFollowUpStall?: (timer: unknown) => void;
+  /** Test seam for the delayed-action store directory, reader, and watcher. */
+  scheduledMessageProjector?: ScheduledMessageProjectorOptions;
 }

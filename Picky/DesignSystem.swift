@@ -320,6 +320,11 @@ enum DS {
         /// Component elevation for the archive-progress state on a Dock tile.
         static let dockArchiveFeedbackShadowOpacity: Double = 0.30
         static let dockArchiveFeedbackShadowRadius: CGFloat = 5
+        /// Component elevation for panels that float over the conversation
+        /// transcript, such as the scheduled-messages list.
+        static let floatingPanelShadowOpacity: Double = 0.28
+        static let floatingPanelShadowRadius: CGFloat = 12
+        static let floatingPanelShadowYOffset: CGFloat = 4
     }
 
     // MARK: - Animation Durations

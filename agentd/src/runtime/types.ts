@@ -175,6 +175,17 @@ export type RuntimeEvent =
   | { type: "resources_reloaded" }
   | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
 
+export interface RuntimeExtensionToolResult {
+  isError: boolean;
+  text: string;
+  details?: Record<string, unknown>;
+}
+
+export interface RuntimeExtensionCommandResult {
+  /** `ctx.ui.notify` text the command produced while Picky suppressed it, in order. */
+  notifications: string[];
+}
+
 export interface RuntimeSteerResult {
   /**
    * True when Pi handled the prompt synchronously inside `session.prompt()` without starting an
@@ -281,6 +292,41 @@ export interface RuntimeSessionHandle {
   clearQueue(): { steering: string[]; followUp: string[] };
   getSteeringMessages(): readonly string[];
   getFollowUpMessages(): readonly string[];
+  /**
+   * Per-item queue edits, addressed by position in the `getSteeringMessages()` /
+   * `getFollowUpMessages()` snapshot the caller just read. Each returns false when that
+   * position is gone (the agent already drained it), so callers can report a lost race
+   * without side effects. Optional: a runtime whose queue cannot be edited item by item
+   * leaves them unset and Picky reports the capability as unavailable.
+   */
+  removeQueuedMessage?(kind: "steering" | "followUp", index: number): boolean;
+  /** Rewrites one queued follow-up. Attachments of the original submission are dropped. */
+  replaceQueuedFollowUpText?(index: number, text: string): boolean;
+  /** Promotes one queued follow-up into the steering queue, attachments included. */
+  moveFollowUpToSteering?(index: number): boolean;
+  /**
+   * Pi's own session identifier. Extensions that persist per-session state key on this,
+   * so Picky needs it to read their stores. Undefined for runtimes without Pi sessions.
+   */
+  getPiSessionId?(): string | undefined;
+  /** True when an extension registered this slash command in the live session. */
+  hasExtensionCommand?(name: string): boolean;
+  /** True when an extension registered this tool in the live session. */
+  hasExtensionTool?(name: string): boolean;
+  /**
+   * Executes a registered extension tool directly with structured parameters, outside any
+   * agent turn. Preferred over the slash-command path when the command parses free text,
+   * because user text can otherwise be mistaken for arguments.
+   */
+  runExtensionToolSilently?(name: string, params: Record<string, unknown>): Promise<RuntimeExtensionToolResult>;
+  /**
+   * Invokes a registered extension command handler directly, without routing it through
+   * Pi's prompt path. Nothing is journaled (no user bubble, no command receipt) and the
+   * command's `ctx.ui.notify` toasts are suppressed, so Picky-initiated housekeeping stays
+   * invisible in the conversation. The suppressed text comes back to the caller, because it
+   * is where extensions report outcomes a command handler cannot return.
+   */
+  runExtensionCommandSilently?(name: string, args: string): Promise<RuntimeExtensionCommandResult>;
   /**
    * Reverse a Pi server-side input rewrite (slash-command / `>subagent` mention expansion) back
    * to the raw text the user submitted, using mappings the runtime learned while pairing echoes.

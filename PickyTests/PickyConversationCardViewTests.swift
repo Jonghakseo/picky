@@ -97,8 +97,9 @@ struct PickyConversationCardViewTests {
         // Thinking never reaches the transcript in the messenger layout; the
         // presence line reports it instead.
         #expect(snapshot.typingBubbleCount == 0)
-        #expect(snapshot.batchGroupCount == 1)
-        #expect(snapshot.pendingBubbleCount == 1)
+        // Queued follow-ups moved out of the thread into the scheduled surface;
+        // the queued steer stays as a dimmed user bubble.
+        #expect(snapshot.pendingSteerBubbleCount == 1)
         #expect(snapshot.activitySummaryCount == 1)
         #expect(snapshot.showsActivitySummary)
     }
@@ -535,7 +536,9 @@ struct PickyConversationCardViewTests {
         #expect(PickyQuestionOptionsLayoutPolicy.layout(for: ["12345678", "abcdef", "abcde"]) == .stacked)
     }
 
-    @Test func queuedFollowUpMatchingUserTextDoesNotRenderPendingBubble() {
+    // A follow-up Pi already committed as `user_text` must not linger as a
+    // scheduled message; otherwise the user sees the same request twice.
+    @Test func queuedFollowUpMatchingUserTextLeavesBothThreadAndScheduledSurfaceEmpty() {
         let followUpPrompt = """
         # Picky follow-up
 
@@ -554,9 +557,10 @@ struct PickyConversationCardViewTests {
         )
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+        let composer = PickyConversationComposerView(session: session, viewModel: viewModel)
 
-        #expect(snapshot.pendingBubbleCount == 0)
-        #expect(snapshot.batchGroupCount == 0)
+        #expect(snapshot.pendingSteerBubbleCount == 0)
+        #expect(!composer.scheduledPresentation.isVisible)
     }
 
     @Test func queuedSteerMatchingUserTextDoesNotRenderPendingBubble() {
@@ -568,8 +572,7 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.pendingBubbleCount == 0)
-        #expect(snapshot.batchGroupCount == 0)
+        #expect(snapshot.pendingSteerBubbleCount == 0)
     }
 
     // Voice steer wraps the raw text inside the agentd steering envelope before
@@ -600,8 +603,7 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.pendingBubbleCount == 0)
-        #expect(snapshot.batchGroupCount == 0)
+        #expect(snapshot.pendingSteerBubbleCount == 0)
     }
 
     @Test func queuedItemWithoutMatchingUserTextStillRendersPendingBubble() {
@@ -613,8 +615,7 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.pendingBubbleCount == 1)
-        #expect(snapshot.batchGroupCount == 0)
+        #expect(snapshot.pendingSteerBubbleCount == 1)
     }
 
     // Mirrors the envelope built by agentd `prompt-builder.ts#buildSteerPrompt`.
@@ -1875,37 +1876,6 @@ struct PickyConversationCardViewTests {
         let bubble = PickyUserBubbleView(message: message("m-screen", kind: .userText, text: "use this", attachedImagesCount: 1))
 
         #expect(bubble.displayedAttachedImagesLabel == "🖥️ 1 attached")
-    }
-
-    @Test func pendingBubbleShowsQueuedScreenContextEvidenceLikeMaterializedUserBubble() {
-        let attached = PickyPendingBubbleView(
-            queueItem: PickyQueueItem(text: "inspect this", enqueuedAt: baseDate, id: "q-1", attachedImagesCount: 2),
-            kind: .followUp
-        )
-        let textOnly = PickyPendingBubbleView(
-            queueItem: PickyQueueItem(text: "inspect this", enqueuedAt: baseDate, id: "q-2"),
-            kind: .followUp
-        )
-        let zeroCount = PickyPendingBubbleView(
-            queueItem: PickyQueueItem(text: "inspect this", enqueuedAt: baseDate, id: "q-3", attachedImagesCount: 0),
-            kind: .steer
-        )
-
-        #expect(attached.displayedAttachedImagesLabel == "🖥️ 2 attached")
-        #expect(textOnly.displayedAttachedImagesLabel == nil)
-        #expect(zeroCount.displayedAttachedImagesLabel == nil)
-    }
-
-    @Test func batchedPendingBubblesKeepPerItemScreenContextEvidence() {
-        let batch = PickyBatchGroupView(
-            items: [
-                PickyQueueItem(text: "first", enqueuedAt: baseDate, id: "q-1", attachedImagesCount: 1),
-                PickyQueueItem(text: "second", enqueuedAt: baseDate, id: "q-2")
-            ],
-            kind: .followUp
-        )
-
-        #expect(batch.items.map { PickyPendingBubbleView(queueItem: $0, kind: .followUp).displayedAttachedImagesLabel } == ["🖥️ 1 attached", nil])
     }
 
     @Test func userBubblePreviewUsesSameLineAndCharacterLimitsAsAgentResponses() {

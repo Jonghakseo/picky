@@ -198,15 +198,7 @@ function artifactAndPresentationMutations(before: Readonly<PickyAgentSession>, a
     }
   }
   if (!same(before.changedFiles, after.changedFiles)) mutations.push({ type: "changedFilesSet", changedFiles: after.changedFiles });
-  if (!sameQueue(before, after)) {
-    mutations.push({
-      type: "queueSet",
-      queuedSteers: after.queuedSteers ?? [],
-      queuedFollowUps: after.queuedFollowUps ?? [],
-      steeringMode: after.steeringMode ?? "one-at-a-time",
-      followUpMode: after.followUpMode ?? "one-at-a-time",
-    });
-  }
+  if (!sameQueue(before, after)) mutations.push(queueSetMutation(after));
   if (!same(before.activitySummary, after.activitySummary)) mutations.push({ type: "activitySet", activitySummary: after.activitySummary ?? zeroActivity() });
   if (!same(before.finalAnswer, after.finalAnswer)) mutations.push({ type: "finalAnswerSet", finalAnswer: after.finalAnswer ?? null });
   if (!same(before.pendingExtensionUiRequest, after.pendingExtensionUiRequest)) {
@@ -250,9 +242,21 @@ function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function queueSetMutation(after: PickyAgentSession): Extract<PickySessionProjectionMutation, { type: "queueSet" }> {
+  return {
+    type: "queueSet",
+    queuedSteers: after.queuedSteers ?? [],
+    queuedFollowUps: after.queuedFollowUps ?? [],
+    scheduledMessages: after.scheduledMessages ?? [],
+    steeringMode: after.steeringMode ?? "one-at-a-time",
+    followUpMode: after.followUpMode ?? "one-at-a-time",
+  };
+}
+
 function sameQueue(before: Readonly<PickyAgentSession>, after: PickyAgentSession): boolean {
   return same(before.queuedSteers ?? [], after.queuedSteers ?? [])
     && same(before.queuedFollowUps ?? [], after.queuedFollowUps ?? [])
+    && same(before.scheduledMessages ?? [], after.scheduledMessages ?? [])
     && (before.steeringMode ?? "one-at-a-time") === (after.steeringMode ?? "one-at-a-time")
     && (before.followUpMode ?? "one-at-a-time") === (after.followUpMode ?? "one-at-a-time");
 }

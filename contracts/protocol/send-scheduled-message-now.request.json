@@ -1,0 +1,7 @@
+{
+  "id": "cmd-send-scheduled-message-now",
+  "protocolVersion": "2026-08-25",
+  "type": "sendScheduledMessageNow",
+  "sessionId": "session-001",
+  "scheduledId": "delay-1"
+}

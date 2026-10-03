@@ -1,0 +1,8 @@
+{
+  "id": "cmd-edit-queued-follow-up",
+  "protocolVersion": "2026-08-25",
+  "type": "editQueuedFollowUp",
+  "sessionId": "session-001",
+  "itemId": "queue-item-001",
+  "text": "Summarize the diff instead"
+}

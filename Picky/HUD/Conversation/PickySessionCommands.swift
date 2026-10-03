@@ -42,6 +42,17 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func replaceComposerDraftText(_ text: String, sessionID: String)
     func clearQueueRestoringQueuedInputs(sessionID: String, kind: PickyQueueClearKind) async throws
     func clearQueue(sessionID: String, kind: PickyQueueClearKind) async throws
+    func removeQueuedInput(sessionID: String, itemID: String) async throws
+    func editQueuedFollowUp(sessionID: String, itemID: String, text: String) async throws
+    func sendQueuedFollowUpNow(sessionID: String, itemID: String) async throws
+    func scheduleMessage(sessionID: String, text: String, delayMs: Int) async throws
+    func cancelScheduledMessage(sessionID: String, scheduledID: String) async throws
+    func editScheduledMessage(sessionID: String, scheduledID: String, text: String) async throws
+    func sendScheduledMessageNow(sessionID: String, scheduledID: String) async throws
+    /// Whether the delayed-action curated plugin that backs timed sends is
+    /// installed. Reads Pi's package layout, so callers must not poll it.
+    func isScheduledSendPluginInstalled() -> Bool
+    func installScheduledSendPlugin() async throws
     func abortRestoringQueuedInputs(sessionID: String) async throws
     func steer(text: String, sessionID: String?) async throws
     func followUp(text: String, sessionID: String?) async throws
@@ -222,6 +233,7 @@ struct PickyConversationComposerProjection {
     let messageContext: PickyComposerMessageContext
     let queuedSteers: [PickyQueueItem]
     let queuedFollowUps: [PickyQueueItem]
+    let scheduledMessages: [PickyScheduledMessage]
     let steeringMode: PickyQueueMode
     let followUpMode: PickyQueueMode
 
@@ -244,6 +256,7 @@ struct PickyConversationComposerProjection {
         let queue = queueStore.queueState.loadedValue
         queuedSteers = queue?.steers ?? []
         queuedFollowUps = queue?.followUps ?? []
+        scheduledMessages = queue?.scheduled ?? []
         let modes = queueStore.queueModes
         steeringMode = modes.steeringMode
         followUpMode = modes.followUpMode
@@ -260,6 +273,7 @@ struct PickyConversationComposerProjection {
         messageContext = PickyComposerMessageContext(messages: card.messages)
         queuedSteers = card.queuedSteers
         queuedFollowUps = card.queuedFollowUps
+        scheduledMessages = card.scheduledMessages
         steeringMode = card.steeringMode
         followUpMode = card.followUpMode
     }

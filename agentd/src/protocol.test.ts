@@ -949,7 +949,7 @@ describe("protocol contract fixtures", () => {
       artifactUpsert: { type: "artifactUpsert", artifact: { id: "artifact-001", kind: "report", title: "Report", updatedAt: "2026-08-24T00:00:00.000Z" } },
       artifactsSet: { type: "artifactsSet", artifacts: [] },
       changedFilesSet: { type: "changedFilesSet", changedFiles: [] },
-      queueSet: { type: "queueSet", queuedSteers: [], queuedFollowUps: [], steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" },
+      queueSet: { type: "queueSet", queuedSteers: [], queuedFollowUps: [], scheduledMessages: [], steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" },
       activitySet: { type: "activitySet", activitySummary: { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 } },
       finalAnswerSet: { type: "finalAnswerSet", finalAnswer: null },
       extensionUiRequestSet: { type: "extensionUiRequestSet", request: null },
@@ -959,6 +959,37 @@ describe("protocol contract fixtures", () => {
       expect(PickySessionProjectionMutationSchema.parse(mutation)).toEqual(mutation);
       expect(mutationNamesForOwnership()).toContain(type);
     }
+  });
+
+  it("carries scheduled messages in the queue projection and defaults them for older senders", () => {
+    const scheduled = { id: "delay-1", text: "check the deploy", dueAt: "2026-05-05T00:05:00.000Z", createdAt: "2026-05-05T00:00:00.000Z" };
+
+    expect(PickySessionProjectionMutationSchema.parse({
+      type: "queueSet",
+      queuedSteers: [],
+      queuedFollowUps: [],
+      scheduledMessages: [scheduled],
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
+    })).toMatchObject({ scheduledMessages: [scheduled] });
+
+    // A Picky app built before this field exists keeps decoding the mutation.
+    expect(PickySessionProjectionMutationSchema.parse({
+      type: "queueSet",
+      queuedSteers: [],
+      queuedFollowUps: [],
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
+    })).toMatchObject({ scheduledMessages: [] });
+
+    expect(PickyAgentSessionSchema.parse({
+      id: "session-001",
+      title: "Session",
+      status: "running",
+      createdAt: "2026-05-05T00:00:00.000Z",
+      updatedAt: "2026-05-05T00:00:00.000Z",
+      scheduledMessages: [scheduled],
+    }).scheduledMessages).toEqual([scheduled]);
   });
 
   it("keeps projection mutation ownership and schema variants in exact parity", () => {

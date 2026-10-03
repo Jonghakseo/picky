@@ -137,7 +137,7 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
     case artifactUpsert(PickyArtifact)
     case artifactsSet([PickyArtifact])
     case changedFilesSet([PickyChangedFile])
-    case queueSet(queuedSteers: [PickyQueueItem], queuedFollowUps: [PickyQueueItem], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode)
+    case queueSet(queuedSteers: [PickyQueueItem], queuedFollowUps: [PickyQueueItem], scheduledMessages: [PickyScheduledMessage], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode)
     case activitySet(PickyActivitySummary)
     case finalAnswerSet(String?)
     case extensionUiRequestSet(PickyExtensionUiRequest?)
@@ -169,7 +169,7 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case type, patch, message, messageId, messages, line, logs, tool, tools, todoState, runs, artifact, artifacts
-        case changedFiles, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary
+        case changedFiles, queuedSteers, queuedFollowUps, scheduledMessages, steeringMode, followUpMode, activitySummary
         case finalAnswer, request, detail, control
     }
 
@@ -207,6 +207,8 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
             self = .queueSet(
                 queuedSteers: try container.decode([PickyQueueItem].self, forKey: .queuedSteers),
                 queuedFollowUps: try container.decode([PickyQueueItem].self, forKey: .queuedFollowUps),
+                // Optional so a daemon without delayed-action projection keeps working.
+                scheduledMessages: try container.decodeIfPresent([PickyScheduledMessage].self, forKey: .scheduledMessages) ?? [],
                 steeringMode: try container.decode(PickyQueueMode.self, forKey: .steeringMode),
                 followUpMode: try container.decode(PickyQueueMode.self, forKey: .followUpMode)
             )
@@ -312,7 +314,7 @@ struct PickySessionProjectionSnapshot: Decodable, Equatable {
         "id", "title", "status", "cwd", "piSessionFilePath", "createdAt", "updatedAt",
         "lastSummary", "thinkingPreview", "finalAnswer", "logs", "tools", "todoState",
         "subagentRuns", "artifacts", "changedFiles", "messages", "messageJournalAvailable",
-        "queuedSteers", "queuedFollowUps", "steeringMode", "followUpMode", "activitySummary",
+        "queuedSteers", "queuedFollowUps", "scheduledMessages", "steeringMode", "followUpMode", "activitySummary",
         "contextUsage", "currentAssistantRun", "pendingExtensionUiRequest", "notifyMainOnCompletion", "notifyMacOSOnCompletion",
         "archived", "archivedAt", "pinned",
     ]

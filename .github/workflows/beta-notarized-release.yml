@@ -311,18 +311,39 @@ jobs:
           set -euo pipefail
           app="${PWD}/build/package/export/${APP_NAME}.app"
 
+          # Running /usr/bin/file on each of the ~23k agentd files took about
+          # 3 minutes to find 4 binaries. Read only the first four bytes of each
+          # regular file, then confirm the few candidates with /usr/bin/file,
+          # because 0xCAFEBABE is shared by universal Mach-O and Java class files.
+          # Inline rather than a repo script so legacy-tag reruns still work.
+          macho_list="${RUNNER_TEMP}/picky-agentd-macho.txt"
+          python3 - "${app}/Contents/Resources/agentd" > "${macho_list}" <<'PY'
+          import os, subprocess, sys
+          magics = {bytes.fromhex(v) for v in ("feedface", "cefaedfe", "feedfacf", "cffaedfe",
+                                               "cafebabe", "bebafeca", "cafebabf", "bfbafeca")}
+          for directory, _, names in os.walk(sys.argv[1]):
+              for name in names:
+                  path = os.path.join(directory, name)
+                  if os.path.islink(path) or not os.path.isfile(path):
+                      continue
+                  with open(path, "rb") as handle:
+                      if handle.read(4) not in magics:
+                          continue
+                  if "Mach-O" in subprocess.run(["/usr/bin/file", "-b", path], check=True,
+                                                  capture_output=True, text=True).stdout:
+                      print(path)
+          PY
+
           signed_count=0
-          while IFS= read -r -d '' file; do
-            if /usr/bin/file "${file}" | /usr/bin/grep -q 'Mach-O'; then
-              /usr/bin/codesign \
-                --force \
-                --options runtime \
-                --timestamp \
-                --sign "${PICKY_CODE_SIGN_IDENTITY}" \
-                "${file}"
-              signed_count=$((signed_count + 1))
-            fi
-          done < <(/usr/bin/find "${app}/Contents/Resources/agentd" -type f -print0)
+          while IFS= read -r file; do
+            /usr/bin/codesign \
+              --force \
+              --options runtime \
+              --timestamp \
+              --sign "${PICKY_CODE_SIGN_IDENTITY}" \
+              "${file}"
+            signed_count=$((signed_count + 1))
+          done < "${macho_list}"
           echo "Signed nested Mach-O files: ${signed_count}"
 
           /usr/bin/codesign \

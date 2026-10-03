@@ -127,6 +127,8 @@ private final class QuickStartManualOrderStore: PickySessionManualOrderStoring {
 
 @MainActor
 struct PickyHubQuickStartLauncherTests {
+    private let events = PickyProjectionEventFixtures()
+
     @Test func firstInstructionInjectsTheSelectedReplyLanguage() {
         let korean = PickyHubQuickStartLauncher.firstInstruction(
             for: .landingPage,
@@ -416,11 +418,10 @@ struct PickyHubQuickStartLauncherTests {
             artifacts: [],
             changedFiles: []
         )
-        sessions.apply(.protocolEvent(PickyEventEnvelope(
+        sessions.apply(.protocolEvent(events.snapshotEnvelope(
             id: "event-\(sessionID)",
-            protocolVersion: "2026-07-23",
-            timestamp: now,
-            event: .sessionUpdated(session)
+            session: session,
+            timestamp: now
         )))
     }
 

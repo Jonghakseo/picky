@@ -215,7 +215,8 @@ _2026-09-06: 선택지 B(메시지 집합 parity 검사)를 `checkProtocolMessag
 _2026-09-06 진행 상황:_
 - _2a 완료: CLI·handoff 확장은 `pickleSessionsSnapshot`/`pickleSessionUpdated` 응답과 `awaitPickleSessionTerminal`로 전환. `pickle-create --wait`는 이전에 negotiating 소켓이 v1 브로드캐스트를 받지 못해 실제로는 동작하지 않았던 경로였고, 이제 실제 데몬 e2e 테스트로 검증됨._
 - _2b 완료: agentd에서 `socket-dialect.ts`, v1 브로드캐스트 14종, `listSessions`/`getSession` 명령, app snapshot 압축 정책을 제거. 세션 projection은 `sessionProjectionV2` 구독 소켓에만 전달._
-- _2c 미착수: Swift `PickyEvent` v1 디코드 case 15종, `PickySessionListViewModel`의 v1 apply 경로(약 350줄), 라우터 `sessionCache` 미러, 그리고 이를 fixture로 쓰는 Swift 테스트 약 330개(`PickySessionViewModelTests` 315건)가 남아 있다. 테스트가 `sessionUpdated` JSON으로 세션을 주입하므로, v2 `sessionProjectionSnapshot` 주입 헬퍼와 recovery coordinator 배선을 테스트 setup에 넣는 별도 작업이 필요하다. 그 전까지 TS 스키마 15종은 wire-dead 상태로 유지(`protocol.ts` 주석 참조)._
+- _2c 완료: Swift `PickyEvent` v1 case 15종과 `PickySessionListViewModel`의 v1 apply 경로(`PickySessionViewModel+MetaUpdate.swift`), v1 전용 가드 `PickySessionCard.merged(with:)`·`PickySessionStatusPresentation.canTransition(to:)`, 라우터 `sessionCache`, `protocol.ts`의 v1 스키마 15종, `contracts/protocol/`의 v1 fixture 17개를 제거. 라우터는 `pickleSessionSummariesProvider`(레지스트리 read model)로만 Pickle 요약을 읽는다. Swift 테스트 약 330곳은 공용 v2 빌더 `PickyTests/PickyProjectionEventFixtures.swift`로 이관했고, v1 경로 전용 테스트 6건만 삭제했다._
+- _2c 에서 드러난 v2 부트스트랩 결함 2건은 범위 밖이라 수정하지 않았다. (a) `applySessionProjectionSnapshot`이 세션별 스냅샷마다 `syncSelectionAfterSessionListChange`를 호출해, 영속 선택 세션이 아직 도착하지 않았으면 선택이 최신 갱신 세션으로 강등되고 `PickySelectedSessionID`가 지워진다. (b) `PickySessionDockLayoutController.reconcile`의 레거시 수동순서 마이그레이션은 `entries.isEmpty`에서만 돌지만 v2는 스냅샷마다 `admitActiveSessionIfMissing`으로 엔트리를 채우므로 업그레이드 사용자의 수동 도크 정렬이 유실된다._
 
 - `cli.ts`가 `sessionProjectionV2`를 등록하고 `sessionProjectionSnapshot/Transaction`으로 세션을 읽도록 바꾼다.
 - 그 후 `socket-dialect.ts`, `server.ts`의 dialect 분기, `PickySessionListViewModel`의 `.sessionSnapshot/.sessionUpdated` 분기, 라우터의 `sessionCache`, 프로토콜의 v1 이벤트 16종을 제거한다.
@@ -332,7 +333,8 @@ verifier·reviewer·challenger 격리 검토 2사이클. 검증 증거: Swift �
 
 ### 남은 리스크 (수정하지 않음)
 
-- **`mutateSession`의 lossy 재설치** (이번 범위 이전부터 존재): `PickyRegistrySessionProjectionStorage.mutateSession`이 카드 하나를 바꿀 때 전 세션 스토어를 `replace(card:)`로 재설치해 무관한 세션의 `revision`·`finalAnswer`·`archivedAt`을 리셋한다. P1-2c(Swift v1 카드 파사드 제거)와 함께 대상 스토어만 변이하는 API로 바꿔야 한다.
+- ~~**`mutateSession`의 lossy 재설치**~~ (P1-2c에서 해결): `PickyRegistrySessionProjectionStorage.mutateSession`/`mutateArchivedSession`이 대상 세션 스토어만 변이하도록 바꿔, 무관한 세션의 `revision`·`finalAnswer`·`archivedAt`이 더는 리셋되지 않는다. `SessionStore.replace(card:)`가 revision과 finalAnswer를 함께 싣는다. 회귀 테스트 3건이 수정 전 실패/수정 후 통과로 고정한다.
+- **v2 부트스트랩이 영속 선택과 레거시 도크 정렬을 잃는다** (이번 범위 이전부터 존재, P1-2c에서 발견): 위 P1-2 주석의 (a)·(b). 둘 다 "v1은 전체 스냅샷 한 번, v2는 세션별 스냅샷 + completion" 차이에서 오며, 한 번만 돌아야 하는 재조정을 completion 배리어로 옮기는 수정이 필요하다.
 - **rewind 후 `lastRequest` 미갱신**: 폐기된 분기의 요청 텍스트가 REQUEST 행에 남는다. 이전 로그 파생 값도 같은 동작이었으므로 회귀는 아니지만 제품 판단이 필요하다.
 - **supervisor 내부 v1 emit 파이프라인**: 서버 리스너는 사라졌지만 `session`/`log`/`messageAppended` 등 내부 이벤트와 `emitTerminalV1Compatibility`는 남아 있다. `session-supervisor.test.ts` 335건이 이 이벤트로 검증하므로 테스트 리팩터와 함께 제거해야 한다.
 - **구버전 앱 + 신버전 데몬**: 앱·데몬이 한 번들로 배포되고 Sparkle 교체 전 데몬을 동기 종료하므로 정상 경로에서는 발생하지 않지만, `PICKY_AGENTD_ROOT` 같은 dev override로 섞이면 등록은 성공하고 도크가 비어 보인다. 명시적 거부가 필요하면 `registerAppCapabilities`에서 `sessionProjectionV2` 없는 앱 등록을 error로 만들면 된다.

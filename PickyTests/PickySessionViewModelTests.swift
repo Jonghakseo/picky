@@ -266,6 +266,17 @@ private final class FirstResponderProbeView: NSView {
 @Suite(.serialized)
 @MainActor
 struct PickySessionViewModelTests {
+    private let events = EventJSON()
+
+    /// a/b/c ordered by `createdAt`. A v2 bootstrap publishes one snapshot per
+    /// session, so tests that need a multi-session dock seed replay these rows
+    /// instead of a single list payload.
+    private let sessionSeedRows: [(id: String, title: String, createdAt: String)] = [
+        ("a", "A", "2026-05-01T00:00:00.000Z"),
+        ("b", "B", "2026-05-01T00:00:10.000Z"),
+        ("c", "C", "2026-05-01T00:00:20.000Z"),
+    ]
+
     @MainActor @Test func hidesDockUntilInitialSessionSnapshotArrives() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
@@ -278,9 +289,7 @@ struct PickySessionViewModelTests {
         viewModel.apply(.connected)
         #expect(viewModel.isLoadingInitialSessionSnapshot)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: #"""
-        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
-        """#)))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(viewModel.isLoadingInitialSessionSnapshot == false)
     }
@@ -528,10 +537,10 @@ struct PickySessionViewModelTests {
         ))
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "queued", summary: "Queued"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Started"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.extensionUiRequest())))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "queued", summary: "Queued"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Started"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.extensionUiRequest())))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done"))))
 
         #expect(viewModel.sessions.first?.status == .completed)
         #expect(viewModel.sessions.first?.lastSummary == "Done")
@@ -541,56 +550,56 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func slimTodoStateUpdatesApplyAndClearWithoutReplacingSession() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 1))))
         #expect(viewModel.sessions.first?.todoState?.tasks.first?.activeForm == "Implementing HUD")
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, cleared: true))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 2, cleared: true))))
         #expect(viewModel.sessions.first?.todoState == nil)
     }
 
     @MainActor @Test func todoExpansionPersistsPerSessionAndCollapsesOnceWhenWorkCompletes() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 1))))
 
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
         viewModel.setTodoProgressExpanded(false, sessionID: "session-1")
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
         viewModel.setTodoProgressExpanded(true, sessionID: "session-1")
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, taskStatus: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 2, taskStatus: "completed"))))
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
 
         viewModel.setTodoProgressExpanded(true, sessionID: "session-1")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 3, taskStatus: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 3, taskStatus: "completed"))))
         #expect(viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
     }
 
     @MainActor @Test func todoExpansionRemainsCollapsedWhenTodoRestartsAfterCompletion() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 1))))
 
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
         viewModel.setTodoProgressExpanded(false, sessionID: "session-1")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, taskStatus: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 2, taskStatus: "completed"))))
 
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 3, taskStatus: "in_progress"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 3, taskStatus: "in_progress"))))
 
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: false))
     }
 
     @MainActor @Test func todoExpansionDefaultsCompletedWorkToCollapsedAndClearsWithTodoState() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1, taskStatus: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 1, taskStatus: "completed"))))
 
         #expect(!viewModel.isTodoProgressExpanded(sessionID: "session-1", isComplete: true))
         viewModel.setTodoProgressExpanded(true, sessionID: "session-1")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 2, cleared: true))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 2, cleared: true))))
 
         #expect(viewModel.todoProgressExpandedBySessionID["session-1"] == nil)
     }
@@ -602,8 +611,8 @@ struct PickySessionViewModelTests {
     @MainActor @Test func cancelledSessionAcceptsRunningUpdateAfterSteeringResume() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "cancelled", summary: "Cancelled"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Steering message sent", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "cancelled", summary: "Cancelled"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Steering message sent", updatedAt: "2026-05-01T00:00:10.000Z"))))
 
         #expect(viewModel.sessions.first?.status == .running)
         #expect(viewModel.sessions.first?.lastSummary == "Steering message sent")
@@ -626,7 +635,7 @@ struct PickySessionViewModelTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "transport-1", title: "Streamed", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "transport-1", title: "Streamed", status: "running"))))
 
         try await wait { viewModel.sessions.first?.id == "transport-1" }
         #expect(viewModel.sessions.first?.id == "transport-1")
@@ -651,9 +660,7 @@ struct PickySessionViewModelTests {
 
         // Once an (empty) snapshot lands the loader flips off via the same
         // reducer path that the unit tests verify directly.
-        client.emit(.protocolEvent(.fixture(eventJSON: #"""
-        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
-        """#)))
+        client.emit(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
         try await wait { viewModel.isLoadingInitialSessionSnapshot == false }
         #expect(viewModel.isLoadingInitialSessionSnapshot == false)
 
@@ -669,9 +676,12 @@ struct PickySessionViewModelTests {
     @MainActor @Test func sessionsRemainOrderedByCreationTimeAcrossStatusChanges() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "completed", title: "Completed", status: "completed", createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:30.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "running", title: "Running", status: "running", createdAt: "2026-05-01T00:00:20.000Z", updatedAt: "2026-05-01T00:00:00.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "waiting", title: "Waiting", status: "waiting_for_input", createdAt: "2026-05-01T00:00:10.000Z", updatedAt: "2026-05-01T00:00:40.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "completed", title: "Completed", status: "completed", createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:30.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "running", title: "Running", status: "running", createdAt: "2026-05-01T00:00:20.000Z", updatedAt: "2026-05-01T00:00:00.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "waiting", title: "Waiting", status: "waiting_for_input", createdAt: "2026-05-01T00:00:10.000Z", updatedAt: "2026-05-01T00:00:40.000Z"))))
+        // v2 hydrates one snapshot per session and orders the dock once, at the
+        // bootstrap membership cutover.
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(viewModel.sessions.map(\.id) == ["running", "waiting", "completed"])
         #expect(viewModel.sessions.contains { $0.id == "completed" && $0.status == .completed })
@@ -679,7 +689,7 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func dockSessionProjectionExcludesConversationDetailsAndIncludesDockPresentation() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
         let baselineCard = try #require(viewModel.sessions.first)
         let baseline = PickyHUDDockSession(session: baselineCard)
 
@@ -703,20 +713,20 @@ struct PickySessionViewModelTests {
         statusChanged.status = .completed
         #expect(PickyHUDDockSession(session: statusChanged) != baseline)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionTodoStateUpdated(seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionTodoStateUpdated(seq: 1))))
         let todoCard = try #require(viewModel.sessions.first)
         #expect(PickyHUDDockSession(session: todoCard) != baseline)
     }
 
     @MainActor @Test func toolOnlyEventChangesFullSessionWithoutPublishingDockSnapshot() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
         viewModel.flushDockStateForTesting()
         let baseline = viewModel.dockState.snapshot
         var publishedSnapshots: [PickyHUDDockSnapshot] = []
         let cancellable = viewModel.dockState.$snapshot.dropFirst().sink { publishedSnapshots.append($0) }
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.tool(sessionId: "session-1", toolCallId: "tool-1", name: "bash", status: "running", preview: "pnpm test"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.tool(sessionId: "session-1", toolCallId: "tool-1", name: "bash", status: "running", preview: "pnpm test"))))
         viewModel.flushDockStateForTesting()
 
         #expect(viewModel.sessions.first?.tools.count == 1)
@@ -727,12 +737,12 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func statusTransitionPublishesOneCompleteDockSnapshot() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
         viewModel.flushDockStateForTesting()
         var publishedSnapshots: [PickyHUDDockSnapshot] = []
         let cancellable = viewModel.dockState.$snapshot.dropFirst().sink { publishedSnapshots.append($0) }
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done"))))
         viewModel.flushDockStateForTesting()
 
         #expect(publishedSnapshots.count == 1)
@@ -777,7 +787,7 @@ struct PickySessionViewModelTests {
             archiveStore: FakeArchiveStore(),
             manualOrderStore: FakeManualOrderStore()
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
         viewModel.flushDockStateForTesting()
         viewModel.armScreenContextTarget(sessionID: "session-1", sticky: true)
         var publishedSnapshots: [PickyHUDDockSnapshot] = []
@@ -795,9 +805,9 @@ struct PickySessionViewModelTests {
     @MainActor @Test func toolEventsCorrelateByToolCallId() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated())))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.tool(sessionId: "session-1", toolCallId: "tool-1", name: "bash", status: "running", preview: "pnpm test"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.tool(sessionId: "session-1", toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "passed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated())))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.tool(sessionId: "session-1", toolCallId: "tool-1", name: "bash", status: "running", preview: "pnpm test"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.tool(sessionId: "session-1", toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "passed"))))
 
         let tools = viewModel.sessions.first?.tools ?? []
         #expect(tools.count == 1)
@@ -843,7 +853,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
         try await viewModel.abort(sessionID: "session-1")
 
         let abortCommand = try #require(client.sentCommands.first { $0.type == .abort })
@@ -854,8 +864,8 @@ struct PickySessionViewModelTests {
     @MainActor @Test func extensionUiAnswersEmitConfirmValueAndCancellationCommands() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.extensionUiRequest())))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "waiting_for_input"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.extensionUiRequest())))
 
         try await viewModel.answerExtensionUi(sessionID: "session-1", requestID: "ui-1", value: .bool(true))
         try await viewModel.cancelExtensionUi(sessionID: "session-1", requestID: "ui-2")
@@ -873,8 +883,8 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         client.sendAwaitingErrorResult = PickyErrorEvent(code: "bad_message", message: "Request no longer available", commandId: nil)
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.askUserQuestionRequest())))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "waiting_for_input"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.askUserQuestionRequest())))
 
         do {
             try await viewModel.answerExtensionUi(sessionID: "session-1", requestID: "ui-form", value: .object(["value": .string("reply")]))
@@ -894,12 +904,12 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "rewind-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "rewind-session", messageId: "message-1", text: "keep", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "rewind-session", messageId: "message-2", text: "remove", seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "rewind-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "rewind-session", messageId: "message-1", text: "keep", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "rewind-session", messageId: "message-2", text: "remove", seq: 2))))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageRemoved(sessionId: "rewind-session", messageId: "message-2", seq: 3))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionRewound(sessionId: "rewind-session", editorText: "다시 질문할 내용", removedIds: ["message-2"]))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageRemoved(sessionId: "rewind-session", messageId: "message-2", seq: 3))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionRewound(sessionId: "rewind-session", editorText: "다시 질문할 내용", removedIds: ["message-2"]))))
 
         let card = try #require(viewModel.sessions.first { $0.id == "rewind-session" })
         #expect(card.messages.map(\.id) == ["message-1"])
@@ -917,8 +927,8 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Started"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.setEditorTextRequest(text: "review comments"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Started"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.setEditorTextRequest(text: "review comments"))))
 
         let draftRequest = try #require(viewModel.composerDraftRequest(for: "session-1"))
         #expect(draftRequest.text == "review comments")
@@ -981,10 +991,13 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-screen-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"event-queue-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"queue-screen-session","steering":[],"followUp":[{"id":"follow-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"seq":1}
-        """)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "queue-screen-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(
+            sessionId: "queue-screen-session",
+            steering: [],
+            followUp: [EventJSON.QueueItem("inspect this", attachedImagesCount: 2)],
+            seq: 1
+        ))))
 
         #expect(viewModel.restoreQueuedInputsToComposerDraft(sessionID: "queue-screen-session") == false)
         #expect(viewModel.persistedComposerDraft(for: "queue-screen-session") == "existing draft")
@@ -1008,10 +1021,13 @@ struct PickySessionViewModelTests {
             client: client,
             notificationCenter: PickyNoopNotificationCenter()
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "clear-screen-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"event-clear-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"clear-screen-session","steering":[],"followUp":[{"id":"follow-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"seq":1}
-        """)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "clear-screen-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(
+            sessionId: "clear-screen-session",
+            steering: [],
+            followUp: [EventJSON.QueueItem("inspect this", attachedImagesCount: 2)],
+            seq: 1
+        ))))
 
         // Restore is blocked for screen-attached queues, but the explicitly destructive Clear must
         // stay available so the user can always discard pending work.
@@ -1030,10 +1046,13 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "mixed-queue-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"event-mixed-queue","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"mixed-queue-session","steering":[{"id":"steer-text","text":"plain steer","enqueuedAt":"2026-05-01T00:00:04.000Z"}],"followUp":[{"id":"follow-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"seq":1}
-        """)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "mixed-queue-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(
+            sessionId: "mixed-queue-session",
+            steering: ["plain steer"],
+            followUp: [EventJSON.QueueItem("inspect this", attachedImagesCount: 2)],
+            seq: 1
+        ))))
 
         var restoreError: Error?
         do {
@@ -1058,8 +1077,8 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "queue-session", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "queue-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "queue-session", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 1))))
         var publishedRequests: [PickyComposerDraftRequest?] = []
         let commands: any PickySessionCommands = viewModel
         let cancellable = commands.composerDraftRequestPublisher(for: "queue-session")
@@ -1091,8 +1110,8 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "running-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "running-session", steering: ["queued steer"], followUp: [], steeringMode: nil, followUpMode: nil, seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "running-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "running-session", steering: ["queued steer"], followUp: [], steeringMode: nil, followUpMode: nil, seq: 1))))
 
         try await viewModel.abortRestoringQueuedInputs(sessionID: "running-session")
 
@@ -1113,10 +1132,13 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             composerAttachmentDraftStore: attachmentStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "abort-screen-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"event-abort-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"abort-screen-session","steering":[{"id":"steer-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":1}],"followUp":[],"seq":1}
-        """)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "abort-screen-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(
+            sessionId: "abort-screen-session",
+            steering: [EventJSON.QueueItem("inspect this", attachedImagesCount: 1)],
+            followUp: [],
+            seq: 1
+        ))))
 
         try await viewModel.abortRestoringQueuedInputs(sessionID: "abort-screen-session")
 
@@ -1165,7 +1187,7 @@ struct PickySessionViewModelTests {
         #expect(clipboard.copied == ["  keep surrounding whitespace  "])
     }
 
-    @MainActor @Test func emptySessionSnapshotDoesNotPrunePersistedComposerDrafts() {
+    @MainActor @Test func emptyBootstrapCompletionDoesNotPrunePersistedComposerDrafts() {
         let draftStore = FakeComposerDraftStore()
         let attachmentStore = FakeComposerAttachmentDraftStore()
         draftStore.drafts = ["session-1": "keep me"]
@@ -1177,7 +1199,7 @@ struct PickySessionViewModelTests {
             composerAttachmentDraftStore: attachmentStore
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.emptySessionSnapshot())))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(draftStore.prunedKnownSessionIDs == nil)
         #expect(attachmentStore.prunedKnownSessionIDs == nil)
@@ -1185,7 +1207,7 @@ struct PickySessionViewModelTests {
         #expect(attachmentStore.attachments == ["session-1": ["/tmp/keep.png"]])
     }
 
-    @MainActor @Test func sessionSnapshotPrunesPersistedComposerDraftsForRemovedSessions() {
+    @MainActor @Test func bootstrapCompletionPrunesPersistedComposerDraftsForRemovedSessions() {
         let draftStore = FakeComposerDraftStore()
         draftStore.drafts = ["session-1": "keep me", "missing-session": "remove me"]
         let viewModel = PickySessionListViewModel(
@@ -1194,31 +1216,41 @@ struct PickySessionViewModelTests {
             composerDraftStore: draftStore
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "session-1", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(id: "session-1", status: "running"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: ["missing-session"], isPrimary: true))
 
         #expect(draftStore.prunedKnownSessionIDs == ["session-1"])
         #expect(draftStore.drafts == ["session-1": "keep me"])
     }
 
-    @MainActor @Test func partialSessionSnapshotPreservesSkippedSessionAndItsComposerDraftUntilCompleteSnapshot() throws {
+    @MainActor @Test func bootstrapRetainsUnrefreshedSessionAndItsComposerDraftUntilMembershipDropsIt() throws {
         let draftStore = FakeComposerDraftStore()
         let viewModel = PickySessionListViewModel(
             client: FakePickyAgentClient(),
             notificationCenter: PickyNoopNotificationCenter(),
             composerDraftStore: draftStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-a", title: "A original", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-b", title: "B original", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-c", title: "C original", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-a", title: "A original", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-b", title: "B original", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-c", title: "C original", status: "running"))))
         draftStore.drafts["session-b"] = "keep this draft"
 
-        let validA = #"{"id":"session-a","title":"A refreshed","status":"completed","cwd":"/tmp/a","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let malformedB = #"{"id":"session-b","title":"B malformed","status":42,"cwd":"/tmp/b","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let validC = #"{"id":"session-c","title":"C refreshed","status":"completed","cwd":"/tmp/c","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let partialSnapshot = #"{"id":"partial-snapshot","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":["#
-            + validA + "," + malformedB + "," + validC + "]}"
-
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: partialSnapshot)))
+        // The daemon republishes A and C but cannot publish B this round. B stays
+        // in the completion's membership, so the cutover must keep its card and
+        // its unsent draft instead of treating the gap as a deletion.
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+            id: "session-a",
+            title: "A refreshed",
+            status: "completed",
+            updatedAt: "2026-05-01T00:00:10.000Z"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+            id: "session-c",
+            title: "C refreshed",
+            status: "completed",
+            updatedAt: "2026-05-01T00:00:10.000Z"
+        ))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         let cardsAfterPartial = viewModel.sessions + viewModel.archivedSessions
         #expect(Set(cardsAfterPartial.map(\.id)) == ["session-a", "session-b", "session-c"])
@@ -1226,11 +1258,11 @@ struct PickySessionViewModelTests {
         #expect(cardsAfterPartial.first(where: { $0.id == "session-b" })?.title == "B original")
         #expect(cardsAfterPartial.first(where: { $0.id == "session-c" })?.title == "C refreshed")
         #expect(draftStore.drafts["session-b"] == "keep this draft")
-        #expect(draftStore.prunedKnownSessionIDs == nil)
+        #expect(draftStore.prunedKnownSessionIDs == ["session-a", "session-b", "session-c"])
 
-        let completeSnapshot = #"{"id":"complete-snapshot","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:20.000Z","type":"sessionSnapshot","sessions":["#
-            + validA + "," + validC + "]}"
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: completeSnapshot)))
+        // The next bootstrap drops B from membership, which is the only signal
+        // that authorizes removing the card and its persisted draft.
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: ["session-b"], isPrimary: true))
 
         let cardsAfterComplete = viewModel.sessions + viewModel.archivedSessions
         #expect(Set(cardsAfterComplete.map(\.id)) == ["session-a", "session-c"])
@@ -1238,44 +1270,11 @@ struct PickySessionViewModelTests {
         #expect(draftStore.prunedKnownSessionIDs == ["session-a", "session-c"])
     }
 
-    @MainActor @Test func partialSessionSnapshotResetsIncrementalSeqForRetainedSession() throws {
-        let draftStore = FakeComposerDraftStore()
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            composerDraftStore: draftStore
-        )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-a", title: "A original", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-b", title: "B original", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-c", title: "C original", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "session-b", messageId: "old-high-seq", text: "old high seq", seq: 10))))
-        draftStore.drafts["session-b"] = "keep this draft"
-
-        let validA = #"{"id":"session-a","title":"A refreshed","status":"completed","cwd":"/tmp/a","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let malformedB = #"{"id":"session-b","title":"B malformed","status":42,"cwd":"/tmp/b","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let validC = #"{"id":"session-c","title":"C refreshed","status":"completed","cwd":"/tmp/c","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:10.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
-        let partialSnapshot = #"{"id":"partial-snapshot","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":["#
-            + validA + "," + malformedB + "," + validC + "]}"
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: partialSnapshot)))
-
-        let retainedCard = try #require((viewModel.sessions + viewModel.archivedSessions).first(where: { $0.id == "session-b" }))
-        #expect(retainedCard.title == "B original")
-        #expect(retainedCard.messages.map(\.text) == ["old high seq"])
-        #expect(draftStore.drafts["session-b"] == "keep this draft")
-
-        // agentd restarted before this partial snapshot, so its next event
-        // counter starts at one and must not be compared to B's old seq=10.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "session-b", messageId: "new-low-seq", text: "new low seq", seq: 1))))
-
-        let updatedCard = try #require((viewModel.sessions + viewModel.archivedSessions).first(where: { $0.id == "session-b" }))
-        #expect(updatedCard.messages.map(\.text) == ["old high seq", "new low seq"])
-    }
-
     @MainActor @Test func askUserQuestionRequestStoresQuestionsAndSendsCompositeAnswer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.askUserQuestionRequest())))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "waiting_for_input"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.askUserQuestionRequest())))
 
         let request = try #require(viewModel.sessions.first?.pendingExtensionUiRequest)
         #expect(request.method == "askUserQuestion")
@@ -1292,7 +1291,7 @@ struct PickySessionViewModelTests {
         let card = try #require(viewModel.sessions.first)
         #expect(card.pendingExtensionUiRequest?.id == "ui-form", "Only the daemon's authoritative state clears a submitted question")
         #expect(card.lastRequestText == "Scope?: Project \u{00B7} Items?: Rule \u{00B7} Note: ok")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", updatedAt: "2026-05-01T00:00:02.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", updatedAt: "2026-05-01T00:00:02.000Z"))))
         #expect(viewModel.sessions.first?.pendingExtensionUiRequest == nil)
     }
 
@@ -1304,10 +1303,10 @@ struct PickySessionViewModelTests {
         // back to the just-resurrected existing value.
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(status: "waiting_for_input"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithPending(status: "waiting_for_input"))))
         #expect(viewModel.sessions.first?.pendingExtensionUiRequest != nil)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Extension UI answered", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Extension UI answered", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.pendingExtensionUiRequest == nil)
@@ -1322,10 +1321,11 @@ struct PickySessionViewModelTests {
         // time the session re-entered `.running` (e.g. after a follow-up).
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithThinking(status: "running", thinkingPreview: "deciding next step"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithThinking(status: "running", thinkingPreview: "deciding next step"))))
         #expect(viewModel.sessions.first?.thinkingPreview == "deciding next step")
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.thinkingPreview == nil)
@@ -1334,8 +1334,8 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func answerExtensionUiKeepsPriorRequestTextWhenUserCancels() async throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input", lastRequest: "계속 진행해줘."))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.askUserQuestionRequest())))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "waiting_for_input", lastRequest: "계속 진행해줘."))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.askUserQuestionRequest())))
 
         try await viewModel.cancelExtensionUi(sessionID: "session-1", requestID: "ui-form")
 
@@ -1353,8 +1353,8 @@ struct PickySessionViewModelTests {
         ))
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done again"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done again"))))
 
         #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.isEmpty)
     }
@@ -1368,9 +1368,9 @@ struct PickySessionViewModelTests {
         ))
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "First done"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Running again"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Second done", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "First done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Running again"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Second done", updatedAt: "2026-05-01T00:00:10.000Z"))))
 
         #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.isEmpty)
     }
@@ -1379,7 +1379,7 @@ struct PickySessionViewModelTests {
         let notifications = PickyNoopNotificationCenter()
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "completed", summary: "Already done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(status: "completed", summary: "Already done"))))
 
         #expect(notifications.delivered.isEmpty)
     }
@@ -1393,8 +1393,8 @@ struct PickySessionViewModelTests {
         ))
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:10.000Z"))))
 
         #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
     }
@@ -1403,7 +1403,7 @@ struct PickySessionViewModelTests {
         let notifications = PickyNoopNotificationCenter()
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))
 
         #expect(viewModel.sessions.first?.status == .completed)
         #expect(viewModel.sessions.first?.pinned == true)
@@ -1423,7 +1423,7 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done"))))
 
         #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
     }
@@ -1441,7 +1441,7 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "failed", summary: "Boom"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "failed", summary: "Boom"))))
 
         #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.failed.title")))
     }
@@ -1459,7 +1459,7 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(status: "waiting_for_input", summary: "Waiting"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithPending(status: "waiting_for_input", summary: "Waiting"))))
 
         #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.waiting.title")))
     }
@@ -1468,7 +1468,7 @@ struct PickySessionViewModelTests {
         let notifications = PickyNoopNotificationCenter()
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             title: "New Pickle · manual-project",
             status: "waiting_for_input",
             summary: "Ready for instructions"
@@ -1487,9 +1487,15 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "failure", status: "failed", summary: "Boom", updatedAt: "2026-05-01T00:00:10.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(id: "pending", status: "waiting_for_input", summary: "Waiting", updatedAt: "2026-05-01T00:00:20.000Z"))))
+        // A cold hydration snapshot only seeds terminal dedupe, so each session
+        // has to be live before its notifying transition arrives.
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Working"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "failure", status: "running", summary: "Working"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pending", status: "running", summary: "Working"))))
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "failure", status: "failed", summary: "Boom", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithPending(id: "pending", status: "waiting_for_input", summary: "Waiting", updatedAt: "2026-05-01T00:00:20.000Z"))))
 
         let titles = notifications.delivered.map(\.title)
         #expect(!titles.contains(L10n.t("notif.session.completed.title")))
@@ -1510,8 +1516,9 @@ struct PickySessionViewModelTests {
         ))
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "running-pickle", title: "Running task", status: "running", summary: "Working"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(id: "waiting-pickle", status: "waiting_for_input", summary: "Pick one", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "running-pickle", title: "Running task", status: "running", summary: "Working"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "waiting-pickle", status: "running", summary: "Working"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithPending(id: "waiting-pickle", status: "waiting_for_input", summary: "Pick one", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         let waitingIdentifiers = notifications.delivered.map(\.identifier).filter { $0.contains(":waiting:") }
         #expect(waitingIdentifiers == ["waiting-pickle:waiting:ui-form"])
@@ -1536,10 +1543,11 @@ struct PickySessionViewModelTests {
         ))
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(requestId: "ui-form-1", status: "waiting_for_input", summary: "Q1", updatedAt: "2026-05-01T00:00:02.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Working"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithPending(requestId: "ui-form-1", status: "waiting_for_input", summary: "Q1", updatedAt: "2026-05-01T00:00:02.000Z"))))
         // Daemon clears pending and resumes the Pickle (mimics post-answer sessionUpdated).
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Answered", updatedAt: "2026-05-01T00:00:05.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(requestId: "ui-form-2", status: "waiting_for_input", summary: "Q2", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Answered", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithPending(requestId: "ui-form-2", status: "waiting_for_input", summary: "Q2", updatedAt: "2026-05-01T00:00:10.000Z"))))
 
         let waitingIdentifiers = notifications.delivered.map(\.identifier).filter { $0.contains(":waiting:") }
         #expect(waitingIdentifiers == ["session-1:waiting:ui-form-1", "session-1:waiting:ui-form-2"])
@@ -1551,10 +1559,10 @@ struct PickySessionViewModelTests {
     @MainActor @Test func sessionSnapshotClearsStalePendingExtensionUiRequest() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(status: "waiting_for_input"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdatedWithPending(status: "waiting_for_input"))))
         #expect(viewModel.sessions.first?.pendingExtensionUiRequest != nil)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "running", summary: "Reattached", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(status: "running", summary: "Reattached", updatedAt: "2026-05-01T00:00:10.000Z"))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.pendingExtensionUiRequest == nil)
@@ -1570,9 +1578,9 @@ struct PickySessionViewModelTests {
         ))
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Steering message sent", updatedAt: "2026-05-01T00:00:10.000Z", pinned: false))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:20.000Z", pinned: false))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", summary: "Steering message sent", updatedAt: "2026-05-01T00:00:10.000Z", pinned: false))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:20.000Z", pinned: false))))
 
         #expect(viewModel.sessions.first?.pinned == false)
         #expect(!notifications.delivered.map(\.title).contains(L10n.t("notif.session.completed.title")))
@@ -2848,8 +2856,8 @@ struct PickySessionViewModelTests {
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "older", status: "completed", updatedAt: "2026-05-01T00:00:01.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "newer", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "older", status: "completed", updatedAt: "2026-05-01T00:00:01.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "newer", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         #expect(viewModel.selectedSession?.id == "newer")
         #expect(selection.selectedSessionID == nil)
@@ -2870,7 +2878,7 @@ struct PickySessionViewModelTests {
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "notified", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "notified", status: "completed"))))
 
         viewModel.requestOpenSession(sessionID: "notified")
         let firstRequest = try #require(viewModel.openSessionRequest)
@@ -2893,7 +2901,7 @@ struct PickySessionViewModelTests {
             selectionStore: selection
         )
         viewModel.apply(.protocolEvent(.fixture(
-            eventJSON: EventJSON.sessionUpdated(id: "existing-selection", status: "running")
+            eventJSON: events.sessionUpdated(id: "existing-selection", status: "running")
         )))
         viewModel.select(sessionID: "existing-selection")
 
@@ -2918,7 +2926,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-screen", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-screen", status: "completed"))))
 
         viewModel.toggleScreenContextTarget(sessionID: "pickle-screen")
         #expect(viewModel.screenContextTargetSessionID == "pickle-screen")
@@ -2936,7 +2944,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-running", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-running", status: "running"))))
 
         viewModel.toggleScreenContextTarget(sessionID: "pickle-running")
         try await viewModel.steer(text: "일반 카드 스티어", sessionID: "pickle-running")
@@ -2951,7 +2959,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-sticky", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-sticky", status: "completed"))))
 
         viewModel.toggleScreenContextTarget(sessionID: "pickle-sticky")
 
@@ -2964,7 +2972,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-locked", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-locked", status: "completed"))))
 
         viewModel.armScreenContextTarget(sessionID: "pickle-locked", sticky: true)
 
@@ -2978,7 +2986,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-token", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-token", status: "completed"))))
 
         let before = viewModel.screenContextArmCollapseToken
         viewModel.toggleScreenContextTarget(sessionID: "pickle-token")
@@ -2994,7 +3002,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-menu", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-menu", status: "completed"))))
 
         viewModel.toggleScreenContextTarget(sessionID: "pickle-menu")
         viewModel.toggleStickyScreenContextTarget(sessionID: "pickle-menu")
@@ -3008,7 +3016,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-menu", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-menu", status: "completed"))))
         viewModel.armScreenContextTarget(sessionID: "pickle-menu", sticky: true)
 
         viewModel.toggleStickyScreenContextTarget(sessionID: "pickle-menu")
@@ -3023,8 +3031,8 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-a", status: "completed"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-b", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-a", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-b", status: "completed"))))
 
         viewModel.armScreenContextTarget(sessionID: "pickle-a", sticky: true)
         viewModel.toggleScreenContextTarget(sessionID: "pickle-b")
@@ -3039,7 +3047,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-clear", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-clear", status: "completed"))))
 
         viewModel.armScreenContextTarget(sessionID: "pickle-clear", sticky: true)
         viewModel.clearScreenContextTarget(sessionID: "pickle-clear")
@@ -3059,7 +3067,7 @@ struct PickySessionViewModelTests {
             NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
         }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-voice", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-voice", status: "running"))))
         try await settle()
         viewModel.beginHoveredVoiceFollowUp(sessionID: "pickle-voice")
         NotificationCenter.default.post(
@@ -3088,7 +3096,7 @@ struct PickySessionViewModelTests {
             NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
         }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-voice", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-voice", status: "running"))))
         try await settle()
         NotificationCenter.default.post(
             name: .pickyVoiceFollowUpTargetChanged,
@@ -3098,9 +3106,7 @@ struct PickySessionViewModelTests {
         try await wait { viewModel.activeVoiceFollowUpSessionID == "pickle-voice" }
         #expect(viewModel.activeVoiceFollowUpSessionID == "pickle-voice")
 
-        client.emit(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
-        """)))
+        client.emit(.sessionProjectionBootstrapCompletion(removedSessionIDs: ["pickle-voice"], isPrimary: true))
         try await settle()
 
         #expect(viewModel.activeVoiceFollowUpSessionID == nil)
@@ -3115,8 +3121,8 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "main-1", title: "Main", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "main-1", title: "Main", status: "completed"))))
         try await settle()
 
         viewModel.archive(sessionID: "pickle-1")
@@ -3130,7 +3136,7 @@ struct PickySessionViewModelTests {
         #expect(archiveCommand.sessionId == "pickle-1")
         #expect(archiveCommand.archived == true)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Updated"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Updated"))))
         // 아카이브 카드 lastSummary 갱신이 sessions 재정렬보다 늦게 도착하므로
         // 그 조건을 predicate로 잡아야 안전.
         try await wait { viewModel.archivedSessions.first(where: { $0.id == "pickle-1" })?.lastSummary == "Updated" }
@@ -3158,7 +3164,7 @@ struct PickySessionViewModelTests {
                 return created
             }
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "shell-archive", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "shell-archive", status: "completed"))))
         let session = try #require(viewModel.sessions.first)
         let allocatedSession = viewModel.shellTerminalSession(for: session)
         allocatedSession.attach()
@@ -3177,7 +3183,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.archivedSessions.map(\.id) == ["shell-archive"])
     }
 
-    @MainActor @Test func sessionSnapshotPrunesManualArchiveIDsForRemovedSessions() {
+    @MainActor @Test func bootstrapCompletionPrunesManualArchiveIDsForRemovedSessions() {
         let archiveStore = FakeArchiveStore()
         archiveStore.manuallyArchivedSessionIDs = ["alive", "ghost"]
         let viewModel = PickySessionListViewModel(
@@ -3186,7 +3192,8 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "alive", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(id: "alive", status: "running"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: ["ghost"], isPrimary: true))
 
         #expect(archiveStore.manuallyArchivedSessionIDs == ["alive"])
     }
@@ -3203,17 +3210,18 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "archived-1", status: "completed", archived: true))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(id: "archived-1", status: "completed", archived: true))))
 
         #expect(viewModel.sessions.map(\.id) == [])
         #expect(viewModel.archivedSessions.map(\.id) == ["archived-1"])
         #expect(archiveStore.manuallyArchivedSessionIDs == ["archived-1"])
     }
 
-    @MainActor @Test func sessionSnapshotDoesNotWipeManualArchiveIDsOnEmptySnapshot() {
-        // Guards against the regression where an empty snapshot (transient or partial)
-        // would intersect manuallyArchivedSessionIDs with an empty universe and wipe
-        // every archived ID from UserDefaults.
+    @MainActor @Test func emptyBootstrapCompletionDoesNotWipeManualArchiveIDs() {
+        // Guards against the regression where a bootstrap that hydrated no
+        // sessions (transient or partial) would intersect
+        // manuallyArchivedSessionIDs with an empty universe and wipe every
+        // archived ID from UserDefaults.
         let archiveStore = FakeArchiveStore()
         archiveStore.manuallyArchivedSessionIDs = ["keep-1", "keep-2"]
         let viewModel = PickySessionListViewModel(
@@ -3222,10 +3230,7 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
 
-        let emptySnapshot = """
-        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[]}
-        """
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: emptySnapshot)))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(archiveStore.manuallyArchivedSessionIDs == ["keep-1", "keep-2"])
     }
@@ -3242,7 +3247,7 @@ struct PickySessionViewModelTests {
             archiveCommitDelayNanoseconds: 50_000_000
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
         try await settle()
 
         viewModel.archive(sessionID: "pickle-1")
@@ -3262,7 +3267,7 @@ struct PickySessionViewModelTests {
             childSessionReleaser: releaser,
             archiveCommitDelayNanoseconds: 50_000_000
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
 
         viewModel.archive(sessionID: "pickle-1")
 
@@ -3285,14 +3290,14 @@ struct PickySessionViewModelTests {
             archiveCommitDelayNanoseconds: 50_000_000
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
         try await settle()
 
         viewModel.archive(sessionID: "pickle-1")
         try await settle()
         #expect(releaser.releasedSessionIDs.isEmpty)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1",
             title: "Pickle",
             status: "completed",
@@ -3313,7 +3318,7 @@ struct PickySessionViewModelTests {
             childSessionReleaser: releaser,
             archiveCommitDelayNanoseconds: 50_000_000
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
 
         viewModel.archive(sessionID: "pickle-1")
         viewModel.unarchive(sessionID: "pickle-1")
@@ -3333,7 +3338,7 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
         try await settle()
 
         viewModel.archive(sessionID: "pickle-1")
@@ -3362,7 +3367,7 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
         try await settle()
 
         viewModel.archive(sessionID: "pickle-1")
@@ -3392,12 +3397,12 @@ struct PickySessionViewModelTests {
         let terminalIDs: Set<String> = ["completed", "failed", "cancelled", "blocked"]
         let activeIDs: Set<String> = ["queued", "running", "waiting_for_input"]
         for status in terminalIDs.union(activeIDs).sorted() {
-            client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: status, title: status, status: status))))
+            client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: status, title: status, status: status))))
             try await settle()
             viewModel.archive(sessionID: status)
             try await settle()
         }
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "unarchived", title: "Unarchived", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "unarchived", title: "Unarchived", status: "completed"))))
         try await settle()
 
         viewModel.deleteAllArchivedSessions()
@@ -3421,7 +3426,7 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: status))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: status))))
         try await settle()
         viewModel.archive(sessionID: "pickle-1")
         try await settle()
@@ -3444,7 +3449,7 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
         try await settle()
         viewModel.archive(sessionID: "pickle-1")
         try await settle()
@@ -3467,7 +3472,7 @@ struct PickySessionViewModelTests {
             archiveStore: FakeArchiveStore()
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
         try await settle()
 
         viewModel.deleteArchivedSession(sessionID: "pickle-1")
@@ -3513,9 +3518,10 @@ struct PickySessionViewModelTests {
         )
         // Three sessions arrive with createdAt newest → oldest = a > b > c.
         // Default order (no drag yet): sessions = [a, b, c] (newest first).
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "c", title: "C", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:20.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "c", title: "C", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:20.000Z"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(viewModel.sessions.map(\.id) == ["a", "b", "c"]) // newest first, no manual order yet
         #expect(orderStore.manualOrder.isEmpty)
@@ -3540,8 +3546,9 @@ struct PickySessionViewModelTests {
             archiveStore: FakeArchiveStore(),
             manualOrderStore: orderStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         // sessions = [b, a]; visible = [a, b]; b's visible idx = 1.
         let didMove = viewModel.moveSession(sessionID: "b", toVisibleIndex: 1)
@@ -3559,15 +3566,17 @@ struct PickySessionViewModelTests {
             archiveStore: FakeArchiveStore(),
             manualOrderStore: orderStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
         // sessions = [a, b]; visible = [b, a]. Reorder a to visible idx 0.
         _ = viewModel.moveSession(sessionID: "a", toVisibleIndex: 0)
         #expect(viewModel.sessions.map(\.id) == ["b", "a"]) // manual order locked
 
         // A brand new session arrives. It must land at the visually-end slot
         // (= sessions[0]) regardless of where the user dragged existing ones.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "new", title: "New", status: "running", createdAt: "2026-05-01T00:00:20.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "new", title: "New", status: "running", createdAt: "2026-05-01T00:00:20.000Z"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(viewModel.sessions.map(\.id) == ["new", "b", "a"])
         #expect(orderStore.manualOrder == ["new", "b", "a"])
@@ -3582,8 +3591,9 @@ struct PickySessionViewModelTests {
             archiveStore: FakeArchiveStore(),
             manualOrderStore: orderStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "b", title: "B", status: "completed", createdAt: "2026-05-01T00:00:00.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "a", title: "A", status: "completed", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "b", title: "B", status: "completed", createdAt: "2026-05-01T00:00:00.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "a", title: "A", status: "completed", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
         _ = viewModel.moveSession(sessionID: "a", toVisibleIndex: 0) // seed + reorder
         #expect(orderStore.manualOrder == ["b", "a"])
 
@@ -3605,8 +3615,9 @@ struct PickySessionViewModelTests {
             archiveStore: FakeArchiveStore(),
             manualOrderStore: orderStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "b", title: "B", status: "running", createdAt: "2026-05-01T00:00:00.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "a", title: "A", status: "running", createdAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
         _ = viewModel.moveSession(sessionID: "a", toVisibleIndex: 0)
         #expect(viewModel.sessions.map(\.id) == ["b", "a"]) // locked to manual order
 
@@ -3627,17 +3638,21 @@ struct PickySessionViewModelTests {
             archiveStore: FakeArchiveStore(),
             manualOrderStore: orderStore
         )
-        // Send all three sessions in one snapshot — mirrors how production
-        // delivers the initial state after connect, where manualOrder must be
-        // applied wholesale before any per-id pruning would drop entries.
-        let snapshotJSON = """
-        {"id":"snapshot-multi","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
-            {"id":"a","title":"A","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"a","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
-            {"id":"b","title":"B","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:10.000Z","updatedAt":"2026-05-01T00:00:10.000Z","lastSummary":"b","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
-            {"id":"c","title":"C","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:20.000Z","updatedAt":"2026-05-01T00:00:20.000Z","lastSummary":"c","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
-        ]}
-        """
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: snapshotJSON)))
+        // Hydrate all three sessions through the bootstrap snapshot stream —
+        // mirrors how production delivers the initial state after connect,
+        // where manualOrder must be applied wholesale before any per-id
+        // pruning would drop entries.
+        for (id, title, createdAt) in sessionSeedRows {
+            viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+                id: id,
+                title: title,
+                status: "running",
+                summary: id,
+                createdAt: createdAt,
+                updatedAt: createdAt
+            ))))
+        }
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         // Order from store wins, not createdAt.
         #expect(viewModel.sessions.map(\.id) == ["c", "a", "b"])
@@ -3645,7 +3660,14 @@ struct PickySessionViewModelTests {
 
     // MARK: - Dock layout controller seam
 
-    @MainActor @Test func dockLayoutMigratesManualOrderThroughViewModelReconcile() {
+    // V2 bootstrap admits one session per snapshot, so the dock layout is no
+    // longer empty by the time `reconcileDockLayout` runs and the controller's
+    // legacy-manual-order migration (guarded by `entries.isEmpty`) never fires.
+    // That migration contract is still covered at the controller seam in
+    // `PickySessionDockLayoutControllerTests`. What the view-model seam can
+    // still prove is that the manual order drives the session list and that
+    // every bootstrapped session is admitted to the dock exactly once.
+    @MainActor @Test func dockLayoutAdmitsEveryBootstrappedSessionWhileManualOrderDrivesSessionOrder() {
         let orderStore = FakeManualOrderStore()
         orderStore.manualOrder = ["c", "a", "b"]
         let dockLayoutStore = FakeViewModelDockLayoutStore()
@@ -3657,19 +3679,22 @@ struct PickySessionViewModelTests {
             manualOrderStore: orderStore,
             dockLayoutStore: dockLayoutStore
         )
-        let snapshotJSON = """
-        {"id":"snapshot-dock-layout","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
-            {"id":"a","title":"A","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"a","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
-            {"id":"b","title":"B","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:10.000Z","updatedAt":"2026-05-01T00:00:10.000Z","lastSummary":"b","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
-            {"id":"c","title":"C","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:20.000Z","updatedAt":"2026-05-01T00:00:20.000Z","lastSummary":"c","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
-        ]}
-        """
-
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: snapshotJSON)))
+        for (id, title, createdAt) in sessionSeedRows {
+            viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+                id: id,
+                title: title,
+                status: "running",
+                summary: id,
+                createdAt: createdAt,
+                updatedAt: createdAt
+            ))))
+        }
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(viewModel.sessions.map(\.id) == ["c", "a", "b"])
-        #expect(viewModel.dockLayout.testSessionIDs == ["b", "a", "c"])
-        #expect(dockLayoutStore.savedLayouts.map(\.testSessionIDs) == [["b", "a", "c"]])
+        #expect(viewModel.dockLayout.testSessionIDs.sorted() == ["a", "b", "c"])
+        #expect(viewModel.dockLayout.testSessionIDs.count == 3)
+        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs.sorted() == ["a", "b", "c"])
     }
 
     @Test func removeDockGroupArchivesMembersAndPersistsThroughViewModel() async throws {
@@ -3691,12 +3716,9 @@ struct PickySessionViewModelTests {
             dockLayoutStore: dockLayoutStore
         )
 
-        let sessions = ["a", "b", "c"].map { id in
-            PickyAgentSession(id: id, title: id, status: .running, createdAt: Date(), updatedAt: Date(),
-                logs: [], tools: [], artifacts: [], changedFiles: [])
+        for id in ["a", "b", "c"] {
+            viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(id: id, title: id, status: "running"))))
         }
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(id: "group-members", protocolVersion: pickyAgentProtocolVersion,
-            timestamp: Date(), event: .sessionSnapshot(PickySessionSnapshot(sessions: sessions)))))
         viewModel.removeDockGroup(id: "g", keepMembers: false)
 
         try await wait { viewModel.dockLayout.group(withID: "g") == nil }
@@ -3719,7 +3741,7 @@ struct PickySessionViewModelTests {
             notificationCenter: notifications,
             clipboardWriter: clipboard
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1",
             title: "Pickle",
             status: "running",
@@ -3737,7 +3759,7 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionCardExtractsPiSessionFileFromHandoffTranscript() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pinned-pickle",
             title: "Pinned",
             status: "completed",
@@ -3757,7 +3779,7 @@ struct PickySessionViewModelTests {
             composerDraftStore: draftStore,
             composerAttachmentDraftStore: attachmentStore
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "recreated", title: "Old", status: "completed", logs: ["pi session: /tmp/recreated.jsonl"]
         ))))
         viewModel.updateComposerDraft("discard me", sessionID: "recreated")
@@ -3765,7 +3787,8 @@ struct PickySessionViewModelTests {
         viewModel.requestOpenSession(sessionID: "recreated")
 
         viewModel.applySessionProjectionBootstrapCompletion(removedSessionIDs: ["recreated"], isPrimary: true)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        events.forgetSession("recreated")
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "recreated", title: "New", status: "running", logs: ["pi session: /tmp/recreated.jsonl"]
         ))))
         for _ in 0..<8 { await Task.yield() }
@@ -3784,7 +3807,7 @@ struct PickySessionViewModelTests {
             client: client,
             notificationCenter: PickyNoopNotificationCenter()
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1",
             title: "Pickle",
             status: "completed",
@@ -3802,8 +3825,8 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func terminalSyncOutcomeWithImportsSetsBannerState() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.terminalSessionSyncOutcome(
             sessionId: "pickle-1", baselineFound: true, importedMessageCount: 2
         ))))
 
@@ -3812,8 +3835,8 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func terminalSyncOutcomeWithBaselineMissingSetsBannerState() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.terminalSessionSyncOutcome(
             sessionId: "pickle-1", baselineFound: false, importedMessageCount: 0
         ))))
 
@@ -3826,8 +3849,8 @@ struct PickySessionViewModelTests {
         // suppressing it upstream keeps the HUD from showing a banner that
         // just confirms what the user already saw when the terminal closed.
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.terminalSessionSyncOutcome(
             sessionId: "pickle-1", baselineFound: true, importedMessageCount: 0
         ))))
 
@@ -3840,12 +3863,12 @@ struct PickySessionViewModelTests {
         // composer placeholder stuck on "Send a recovery steer or open terminal" even though
         // the terminal session resolved the failure.
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "failed", summary: "Codex error",
             updatedAt: "2026-05-01T00:00:00.000Z",
             piSessionFilePath: "/tmp/pi-session.jsonl"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "completed", summary: "terminal recovery answer",
             updatedAt: "2026-05-01T00:00:10.000Z",
             piSessionFilePath: "/tmp/pi-session.jsonl"
@@ -3859,12 +3882,12 @@ struct PickySessionViewModelTests {
         // cancels mid-turn, opens the Pi terminal overlay, finishes the work, and closes the
         // overlay, the imported assistant answer should clear the cancelled status in the HUD.
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "cancelled", summary: "Cancelled by user",
             updatedAt: "2026-05-01T00:00:00.000Z",
             piSessionFilePath: "/tmp/pi-session.jsonl"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "completed", summary: "terminal recovery answer",
             updatedAt: "2026-05-01T00:00:10.000Z",
             piSessionFilePath: "/tmp/pi-session.jsonl"
@@ -3877,15 +3900,22 @@ struct PickySessionViewModelTests {
         // The recovery direction is opened up but the reverse is still guarded so a delayed
         // failure snapshot can't undo a real completion that the HUD already rendered.
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
+            id: "pickle-1", status: "running", piSessionFilePath: "/tmp/pi-session.jsonl"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "completed", summary: "Done",
             updatedAt: "2026-05-01T00:00:10.000Z",
-            piSessionFilePath: "/tmp/pi-session.jsonl"
+            piSessionFilePath: "/tmp/pi-session.jsonl",
+            seq: 2
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        // The delayed failure frame carries a revision the cursor has already
+        // passed, which is how v2 rejects an out-of-order status.
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "failed", summary: "Late failure snapshot",
             updatedAt: "2026-05-01T00:00:20.000Z",
-            piSessionFilePath: "/tmp/pi-session.jsonl"
+            piSessionFilePath: "/tmp/pi-session.jsonl",
+            seq: 1
         ))))
 
         #expect(viewModel.sessions.first?.status == .completed)
@@ -3894,17 +3924,17 @@ struct PickySessionViewModelTests {
     @MainActor @Test func completedSessionShowsNewAsyncAttentionButRejectsOlderSnapshot() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         let attention = #"{"tracking":"ready","activeRootCount":0,"pendingCompletionCount":0,"uncertainExecutionCount":1,"attentionCount":1,"workRevision":2,"canReleaseRuntime":false}"#
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "completed", updatedAt: "2026-05-01T00:00:10.000Z", piSessionFilePath: "/tmp/pi-session.jsonl"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pickle-1", status: "blocked", summary: "Async execution outcome unknown", updatedAt: "2026-05-01T00:00:11.000Z",
-            piSessionFilePath: "/tmp/pi-session.jsonl", asyncWorkSummaryJSON: attention
+            piSessionFilePath: "/tmp/pi-session.jsonl", asyncWorkSummaryJSON: attention, seq: 2
         ))))
         #expect(viewModel.sessions.first?.status == .blocked)
         #expect(viewModel.sessions.first?.asyncWorkSummary?.attentionCount == 1)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pickle-1", status: "completed", updatedAt: "2026-05-01T00:00:09.000Z", piSessionFilePath: "/tmp/pi-session.jsonl"
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
+            id: "pickle-1", status: "completed", updatedAt: "2026-05-01T00:00:09.000Z", piSessionFilePath: "/tmp/pi-session.jsonl", seq: 1
         ))))
         #expect(viewModel.sessions.first?.status == .blocked)
     }
@@ -3948,23 +3978,23 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func extensionUiLogsAreHiddenFromRecentLogPreview() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             status: "running",
             logs: ["visible log", "extension ui: setWidget"]
         ))))
 
         #expect(viewModel.sessions.first?.logPreview == "visible log")
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "extension ui: notify"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionLog(sessionId: "session-1", line: "extension ui: notify"))))
         #expect(viewModel.sessions.first?.logPreview == "visible log")
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionLog(sessionId: "session-1", line: "done"))))
         #expect(viewModel.sessions.first?.logPreview == "done")
     }
 
     @MainActor @Test func sessionCardsExposeLastRequestAndCompactCwd() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             status: "running",
             logs: ["Picky handoff: initial screen check", "steer: summarize the failing case"],
             lastRequest: "summarize the failing case"
@@ -3975,19 +4005,19 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.compactCwdDescription == expectedCompactCwd)
 
         // Log copy alone must not change the request; the typed field does.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: include CWD in the HUD"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionLog(sessionId: "session-1", line: "steer: include CWD in the HUD"))))
         #expect(viewModel.sessions.first?.lastRequestText == "summarize the failing case")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", lastRequest: "include CWD in the HUD"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running", lastRequest: "include CWD in the HUD"))))
         #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")
     }
 
     @MainActor @Test func liveTransitionToCompletedQueuesDoneFlash() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
         #expect(viewModel.pendingDoneFlashSessionIDs.contains("pickle-1"))
 
         viewModel.markDoneFlashConsumed(sessionID: "pickle-1")
@@ -3995,31 +4025,31 @@ struct PickySessionViewModelTests {
 
         // A duplicate .completed update (e.g. a tool/log patch arriving after the terminal
         // status) must not re-queue the flash within the same completion phase.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Resent", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Resent", updatedAt: "2026-05-01T00:00:10.000Z"))))
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
     }
 
     @MainActor @Test func liveAttentionTransitionMarksUnreadUntilSessionIsRead() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
         #expect(viewModel.unreadSessionIDs.isEmpty)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
         #expect(viewModel.unreadSessionIDs == ["pickle-1"])
 
         viewModel.markSessionRead(sessionID: "pickle-1")
         #expect(viewModel.unreadSessionIDs.isEmpty)
         #expect(viewModel.lastActualConversationCardOpenedID == nil)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running", updatedAt: "2026-05-01T00:00:10.000Z"))))
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 
     @MainActor @Test func actualConversationCardOpenRecordsTargetAndClearsUnread() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         viewModel.markConversationCardOpened(sessionID: "pickle-1")
 
@@ -4030,12 +4060,12 @@ struct PickySessionViewModelTests {
     @MainActor @Test func snapshotHydrationDoesNotQueueDoneFlashForHistoricalCompletedSessions() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "historical", title: "Historical", status: "completed", summary: "Already done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(id: "historical", title: "Historical", status: "completed", summary: "Already done"))))
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
 
         // Snapshot already populated previousStatus = .completed for this session, so a follow-up
         // sessionUpdated still in .completed must not retroactively flash.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "historical", title: "Historical", status: "completed", summary: "Updated", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "historical", title: "Historical", status: "completed", summary: "Updated", updatedAt: "2026-05-01T00:00:10.000Z"))))
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
     }
 
@@ -4045,7 +4075,7 @@ struct PickySessionViewModelTests {
         // didn't watch it transition. previousStatus is nil for the first sight.
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "first-sight", title: "First sight", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "first-sight", title: "First sight", status: "completed"))))
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
     }
 
@@ -4055,18 +4085,21 @@ struct PickySessionViewModelTests {
         // dedupe reset in resetTerminalNotificationKeysIfNeeded.
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
         viewModel.markDoneFlashConsumed(sessionID: "pickle-1")
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running", summary: "Working", updatedAt: "2026-05-01T00:00:10.000Z"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Done again", updatedAt: "2026-05-01T00:00:20.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running", summary: "Working", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Done again", updatedAt: "2026-05-01T00:00:20.000Z"))))
 
         #expect(viewModel.pendingDoneFlashSessionIDs.contains("pickle-1"))
     }
 
-    @MainActor @Test func runtimeDetachedRestoredSessionsStayVisibleAndClearAutoArchiveState() {
+    // v2 derives dock membership from `manuallyArchivedSessionIDs` only, and a
+    // bootstrap snapshot never overrides a local archive intent, so there is no
+    // separate auto-archive set left for a snapshot to clear.
+    @MainActor @Test func runtimeDetachedRestoredSessionsStayVisibleAcrossBootstrapSnapshots() {
         let archiveStore = FakeArchiveStore()
         archiveStore.archivedSessionIDs = ["lost-runtime", "manual-completed"]
         archiveStore.manuallyArchivedSessionIDs = ["manual-completed"]
@@ -4076,21 +4109,39 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
-        """)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+            id: "lost-runtime",
+            title: "Old Pickle",
+            status: "blocked",
+            summary: "Runtime not attached after daemon restart; start a new task or resume support is required"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+            id: "manual-completed",
+            title: "Manual archive",
+            status: "completed",
+            summary: "Done"
+        ))))
 
         #expect(viewModel.sessions.map(\.id) == ["lost-runtime"])
         #expect(viewModel.archivedSessions.map(\.id) == ["manual-completed"])
-        #expect(archiveStore.archivedSessionIDs == ["manual-completed"])
 
         viewModel.archive(sessionID: "lost-runtime")
         #expect(archiveStore.archivedSessionIDs == ["lost-runtime", "manual-completed"])
         #expect(archiveStore.manuallyArchivedSessionIDs == ["lost-runtime", "manual-completed"])
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached-2","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
-        """)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+            id: "lost-runtime",
+            title: "Old Pickle",
+            status: "blocked",
+            summary: "Runtime not attached after daemon restart; start a new task or resume support is required",
+            updatedAt: "2026-05-01T00:00:01.000Z"
+        ))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+            id: "manual-completed",
+            title: "Manual archive",
+            status: "completed",
+            summary: "Done"
+        ))))
         #expect(viewModel.sessions.isEmpty)
         #expect(viewModel.archivedSessions.map(\.id) == ["lost-runtime", "manual-completed"])
     }
@@ -4104,13 +4155,13 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "followup-detached",
             title: "Detached Pickle",
             status: "blocked",
             summary: "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or open the Pi terminal overlay"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionLog(
             sessionId: "followup-detached",
             line: "steer rejected: Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or open the Pi terminal overlay"
         ))))
@@ -4119,14 +4170,13 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.status == .blocked)
         #expect(viewModel.sessions.first?.isRuntimeDetached == true)
         #expect(viewModel.archivedSessions.isEmpty)
-        #expect(archiveStore.archivedSessionIDs.isEmpty)
     }
 
     @MainActor @Test func textSteerTargetsSelectedSessionAndRejectsEmptyInput() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-follow", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-follow", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         try await viewModel.steer(text: "  continue here  ")
         #expect(client.sentCommands.last?.type == .steer)
@@ -4146,7 +4196,7 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "archived-pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "archived-pickle", status: "completed"))))
         try await settle()
 
         viewModel.archive(sessionID: "archived-pickle")
@@ -4170,7 +4220,7 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "archived-pickle", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "archived-pickle", status: "completed"))))
         try await settle()
 
         viewModel.archive(sessionID: "archived-pickle")
@@ -4188,7 +4238,7 @@ struct PickySessionViewModelTests {
     @MainActor @Test func pinnedCompletedSessionAcceptsFollowUpCommand() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "pinned-completed",
             title: "Pinned completed Pi session",
             status: "completed",
@@ -4210,7 +4260,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", piSessionFilePath: "/tmp/pi-session.jsonl"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands", piSessionFilePath: "/tmp/pi-session.jsonl"))))
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await settle()
@@ -4223,7 +4273,7 @@ struct PickySessionViewModelTests {
         slashRequests = client.sentCommands.filter { $0.type == .listSlashCommands }
         #expect(slashRequests.count == 1)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: slashRequests[0].id))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: slashRequests[0].id))))
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
 
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
@@ -4238,18 +4288,18 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "session-commands",
             cwd: "/tmp/old-product",
             piSessionFilePath: "/tmp/old-pi.jsonl"
         ))))
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { !client.sentCommands.filter { $0.type == .listSlashCommands }.isEmpty }
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "session-commands",
             updatedAt: "2026-05-01T00:00:05.000Z",
             cwd: "/tmp/new-product",
@@ -4261,9 +4311,9 @@ struct PickySessionViewModelTests {
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
         #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
         try await settle()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "session-commands",
             updatedAt: "2026-05-01T00:00:10.000Z",
             cwd: "/tmp/new-product",
@@ -4280,15 +4330,15 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands"))))
         try await settle()
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { !client.sentCommands.filter { $0.type == .listSlashCommands }.isEmpty }
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "session-commands",
             updatedAt: "2026-05-01T00:00:05.000Z",
             logs: ["runtime reattached from pi session: /tmp/pi.jsonl"],
@@ -4306,21 +4356,21 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
         let oldRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/next"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands", cwd: "/tmp/next"))))
         try await settle()
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
         let newRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: newRequestId, commandNames: ["new-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: newRequestId, commandNames: ["new-command"]))))
         try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["new-command"] }
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: oldRequestId, commandNames: ["old-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: oldRequestId, commandNames: ["old-command"]))))
         try await settle()
 
         #expect(viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["new-command"])
@@ -4330,23 +4380,23 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-unrequested"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-unrequested"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
         let staleRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionResourcesReloaded(sessionId: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionResourcesReloaded(sessionId: "session-commands"))))
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
         let refreshedRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionResourcesReloaded(sessionId: "session-unrequested"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionResourcesReloaded(sessionId: "session-unrequested"))))
         try await settle()
 
         #expect(client.sentCommands.filter { $0.type == .listSlashCommands && $0.sessionId == "session-commands" }.count == 2)
         #expect(client.sentCommands.filter { $0.type == .listSlashCommands && $0.sessionId == "session-unrequested" }.isEmpty)
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["old-command"]))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: refreshedRequestId, commandNames: ["new-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["old-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: refreshedRequestId, commandNames: ["new-command"]))))
         try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["new-command"] }
     }
 
@@ -4354,14 +4404,14 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
         let staleRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", updatedAt: "2026-05-01T00:00:05.000Z", cwd: "/tmp/new"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["old-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands", updatedAt: "2026-05-01T00:00:05.000Z", cwd: "/tmp/new"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["old-command"]))))
         try await settle()
 
         #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
@@ -4376,14 +4426,14 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
         let staleRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionLog(
             sessionId: "session-commands",
             line: "runtime reattached from pi session: /tmp/pi.jsonl"
         ))))
@@ -4392,11 +4442,11 @@ struct PickySessionViewModelTests {
         let freshRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
         #expect(staleRequestId != freshRequestId)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["stale-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["stale-command"]))))
         try await settle()
         #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: freshRequestId, commandNames: ["fresh-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: freshRequestId, commandNames: ["fresh-command"]))))
         try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["fresh-command"] }
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
     }
@@ -4405,7 +4455,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
@@ -4417,10 +4467,10 @@ struct PickySessionViewModelTests {
         let pollingRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
         #expect(slowRequestId != pollingRequestId)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: slowRequestId, commandNames: ["slow-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: slowRequestId, commandNames: ["slow-command"]))))
         try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["slow-command"] }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: pollingRequestId, commandNames: ["polling-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: pollingRequestId, commandNames: ["polling-command"]))))
         try await settle()
         #expect(viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["slow-command"])
     }
@@ -4429,13 +4479,13 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: nil, commandNames: ["legacy-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: nil, commandNames: ["legacy-command"]))))
         try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["legacy-command"] }
     }
 
@@ -4443,21 +4493,21 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", updatedAt: "2026-05-01T00:00:05.000Z", cwd: "/tmp/new"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands", updatedAt: "2026-05-01T00:00:05.000Z", cwd: "/tmp/new"))))
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: nil, commandNames: ["stale-legacy-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: nil, commandNames: ["stale-legacy-command"]))))
         try await settle()
         #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: nil, commandNames: ["fresh-legacy-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: nil, commandNames: ["fresh-legacy-command"]))))
         try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["fresh-legacy-command"] }
     }
 
@@ -4465,13 +4515,13 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-commands"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
         let requestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: requestId, commandNames: ["loaded"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(requestId: requestId, commandNames: ["loaded"]))))
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
 
         viewModel.refreshSlashCommandsIfStillLoading(sessionID: "session-commands")
@@ -4483,8 +4533,8 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "keep-session", cwd: "/tmp/keep"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "remove-session", cwd: "/tmp/old"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "keep-session", cwd: "/tmp/keep"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "remove-session", cwd: "/tmp/old"))))
         try await settle()
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "keep-session")
@@ -4494,12 +4544,12 @@ struct PickySessionViewModelTests {
         let keepRequestID = requests.first { $0.sessionId == "keep-session" }!.id
         let removeRequestID = requests.first { $0.sessionId == "remove-session" }!.id
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(
             sessionId: "keep-session",
             requestId: keepRequestID,
             commandNames: ["keep-loaded"]
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(
             sessionId: "remove-session",
             requestId: removeRequestID,
             commandNames: ["remove-loaded"]
@@ -4507,7 +4557,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.slashCommandsBySessionID["keep-session"]?.map(\.name) == ["keep-loaded"])
         #expect(viewModel.slashCommandsBySessionID["remove-session"]?.map(\.name) == ["remove-loaded"])
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "remove-session",
             updatedAt: "2026-05-01T00:00:05.000Z",
             cwd: "/tmp/new"
@@ -4517,14 +4567,15 @@ struct PickySessionViewModelTests {
         viewModel.ensureSlashCommandsLoaded(sessionID: "remove-session")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 3 }
         let refreshedRemoveRequestID = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.slashCommandsSnapshot(
             sessionId: "remove-session",
             requestId: refreshedRemoveRequestID,
             commandNames: ["remove-reloaded"]
         ))))
         #expect(viewModel.slashCommandsBySessionID["remove-session"]?.map(\.name) == ["remove-reloaded"])
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "keep-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(id: "keep-session"))))
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: ["remove-session"], isPrimary: true))
         #expect(viewModel.slashCommandsBySessionID["keep-session"]?.map(\.name) == ["keep-loaded"])
         #expect(viewModel.slashCommandsBySessionID["remove-session"] == nil)
         #expect(Set(viewModel.slashCommandsBySessionID.keys) == ["keep-session"])
@@ -4638,7 +4689,7 @@ struct PickySessionViewModelTests {
     @MainActor @Test func textSteerCanTargetCancelledSessionByExplicitID() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-cancelled", status: "cancelled", summary: "Cancelled", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-cancelled", status: "cancelled", summary: "Cancelled", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         try await viewModel.steer(text: "  다시 진행해줘  ", sessionID: "session-cancelled")
 
@@ -4652,7 +4703,7 @@ struct PickySessionViewModelTests {
     @MainActor @Test func continueAfterRuntimeFailureSendsShortLocalizedPromptViaSteer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-runtime-failure", status: "failed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-runtime-failure", status: "failed", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         try await viewModel.continueAfterRuntimeFailure(sessionID: "session-runtime-failure")
 
@@ -4664,13 +4715,13 @@ struct PickySessionViewModelTests {
     @MainActor @Test func retryAfterRuntimeRaceResendsLastRequestViaSteer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-race", status: "running", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-race", status: "running", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         // Mirrors the real flow: the user sends a follow-up that the supervisor delivers
         // to Pi, which then fails with the activeRun race. The viewmodel records the text
         // before the failure surfaces, so `lastRequestText` is what the Retry chip will resend.
         try await viewModel.followUp(text: "엥 리뷰 리퀘스트 했어?", sessionID: "session-race")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-race", status: "failed", summary: "Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.", updatedAt: "2026-05-01T00:00:06.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-race", status: "failed", summary: "Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.", updatedAt: "2026-05-01T00:00:06.000Z"))))
 
         let commandCountBeforeRetry = client.sentCommands.count
         try await viewModel.retryAfterRuntimeRace(sessionID: "session-race")
@@ -4684,7 +4735,7 @@ struct PickySessionViewModelTests {
     @MainActor @Test func retryAfterRuntimeRaceWithoutPreviousRequestThrows() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-empty", status: "failed", summary: "Agent is already processing a prompt.", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "session-empty", status: "failed", summary: "Agent is already processing a prompt.", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         let commandCountBeforeRetry = client.sentCommands.count
         await #expect(throws: PickySessionListViewModelError.emptyFollowUp) {
@@ -4696,7 +4747,7 @@ struct PickySessionViewModelTests {
     @MainActor @Test func notifyMainToggleSendsCommandAndUpdatesSession() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "session-notify",
             status: "completed",
             updatedAt: "2026-05-01T00:00:05.000Z",
@@ -4714,7 +4765,7 @@ struct PickySessionViewModelTests {
     @MainActor @Test func notifyMacOSToggleSendsCommandAndUpdatesSession() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "session-notify-macos",
             status: "running",
             updatedAt: "2026-05-01T00:00:05.000Z",
@@ -4892,9 +4943,9 @@ struct PickySessionViewModelTests {
             reportPresenter: presenter,
             generatedReportDirectory: generatedRoot
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "msg-session", title: "Multi reply", status: "completed"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "msg-session", messageId: "msg-1", text: "# First", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "msg-session", messageId: "msg-2", text: "# Second", seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "msg-session", title: "Multi reply", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "msg-session", messageId: "msg-1", text: "# First", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "msg-session", messageId: "msg-2", text: "# Second", seq: 2))))
 
         try await viewModel.openReport(sessionID: "msg-session", messageID: "msg-1")
 
@@ -4915,7 +4966,7 @@ struct PickySessionViewModelTests {
             reportPresenter: presenter,
             generatedReportDirectory: generatedRoot
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "subagent-session", title: "Investigate", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "subagent-session", title: "Investigate", status: "completed"))))
         let run = PickySubagentRun(
             runId: 12,
             agent: "reviewer",
@@ -4933,11 +4984,11 @@ struct PickySessionViewModelTests {
             model: nil,
             invocationId: "tool-1"
         )
-        let encodedRuns = String(decoding: try JSONEncoder().encode([run]), as: UTF8.self)
-        let eventJSON = """
-        {"id":"event-subagent-runs","protocolVersion":"2026-07-23","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionSubagentRunsUpdated","sessionId":"subagent-session","runs":\(encodedRuns),"seq":1}
-        """
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: eventJSON)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSubagentRunsUpdated(
+            sessionId: "subagent-session",
+            runs: [run],
+            seq: 1
+        ))))
 
         try await viewModel.openSubagentRunResponse(sessionID: "subagent-session", invocationID: "tool-1", runId: 12)
 
@@ -4958,9 +5009,9 @@ struct PickySessionViewModelTests {
             reportPresenter: presenter,
             generatedReportDirectory: generatedRoot
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "latest-response-session", title: "Latest", status: "completed"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "latest-response-session", messageId: "msg-1", text: "# First", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "latest-response-session", messageId: "msg-2", text: "# Second", seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "latest-response-session", title: "Latest", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "latest-response-session", messageId: "msg-1", text: "# First", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "latest-response-session", messageId: "msg-2", text: "# Second", seq: 2))))
 
         #expect(viewModel.sessions.first?.latestAgentResponseReportMessageID == "msg-2")
         #expect(viewModel.sessions.first?.hasLatestAgentResponseReport == true)
@@ -4984,7 +5035,7 @@ struct PickySessionViewModelTests {
             notificationCenter: PickyNoopNotificationCenter(),
             reportPresenter: presenter
         )
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "empty-msg-session", title: "Empty", status: "completed"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "empty-msg-session", title: "Empty", status: "completed"))))
 
         await #expect(throws: PickySessionListViewModelError.missingReport) {
             try await viewModel.openReport(sessionID: "empty-msg-session", messageID: "non-existent")
@@ -5086,33 +5137,35 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionMessageIncrementalEventsAppendReplaceRemoveAndIgnoreStaleSeq() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "conversation-session"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-1", text: "first", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageReplaced(sessionId: "conversation-session", messageId: "m-1", text: "updated", seq: 2))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-stale", text: "stale", seq: 2))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageRemoved(sessionId: "conversation-session", messageId: "m-1", seq: 3))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-old", text: "old", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "conversation-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-1", text: "first", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageReplaced(sessionId: "conversation-session", messageId: "m-1", text: "updated", seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-stale", text: "stale", seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageRemoved(sessionId: "conversation-session", messageId: "m-1", seq: 3))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-old", text: "old", seq: 1))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.messages.isEmpty)
     }
 
-    @MainActor @Test func sessionMessagesImportedAppendsBatchInOneUpdateAndIgnoresStaleSeqAndDuplicates() throws {
+    @MainActor @Test func sessionMessagesImportedAppendsBatchInOneUpdateIgnoresStaleSeqAndUpsertsDuplicates() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "import-session"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "import-session", messageId: "m-hud", text: "hud message", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "import-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "import-session", messageId: "m-hud", text: "hud message", seq: 1))))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessagesImported(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessagesImported(
             sessionId: "import-session",
             entries: [("m-pi-1", "pi turn 1"), ("m-hud", "duplicate of hud"), ("m-pi-2", "pi turn 2")],
             seq: 2
         ))))
         let card = try #require(viewModel.sessions.first)
         #expect(card.messages.map(\.id) == ["m-hud", "m-pi-1", "m-pi-2"])
-        #expect(card.messages.first?.text == "hud message")
+        // v2 `messagesImport` upserts: a repeated id refreshes the text in place
+        // instead of appending a second copy or shifting order.
+        #expect(card.messages.first?.text == "duplicate of hud")
 
         // A stale-seq replay of the same import must be dropped by the incremental guard.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessagesImported(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessagesImported(
             sessionId: "import-session",
             entries: [("m-pi-3", "stale import")],
             seq: 2
@@ -5122,8 +5175,8 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func commandReceiptMessageDecodesAndAppends() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "command-session"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.commandReceiptMessageAppended(sessionId: "command-session", messageId: "cmd-1", command: "/c", status: "failed", detail: "unmerged paths", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "command-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.commandReceiptMessageAppended(sessionId: "command-session", messageId: "cmd-1", command: "/c", status: "failed", detail: "unmerged paths", seq: 1))))
 
         let message = try #require(viewModel.sessions.first?.messages.first)
         #expect(message.kind == .commandReceipt)
@@ -5133,25 +5186,27 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionSnapshotResetsIncrementalSeqAfterDaemonRestart() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "restart-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "restart-session", messageId: "old-high-seq", text: "old high seq", seq: 10))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "restart-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "restart-session", messageId: "old-high-seq", text: "old high seq", seq: 10))))
         #expect(viewModel.sessions.first?.messages.map(\.text) == ["old high seq"])
 
         // After an agentd restart the daemon sends a fresh snapshot for the same session id, but
         // its in-memory incremental seq counter starts over at 1. The snapshot is authoritative and
         // must reset the Swift-side watermark so the new seq=1 event is not dropped as stale.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "restart-session", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "restart-session", messageId: "new-low-seq", text: "new low seq", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(id: "restart-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "restart-session", messageId: "new-low-seq", text: "new low seq", seq: 1))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.messages.map(\.text) == ["new low seq"])
     }
 
-    @MainActor @Test func sessionQueueUpdatedAppliesModesAndPreservesExistingModeWhenNil() throws {
+    // `queueSet` carries both modes on every frame in v2, so a later queue
+    // change cannot silently drop the mode the user picked.
+    @MainActor @Test func sessionQueueUpdatedAppliesModesAndKeepsThemAcrossQueueChanges() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-session"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "queue-session", steering: ["steer"], followUp: ["follow"], steeringMode: "all", followUpMode: "all", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "queue-session", steering: ["steer-2"], followUp: [], steeringMode: nil, followUpMode: nil, seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "queue-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "queue-session", steering: ["steer"], followUp: ["follow"], steeringMode: "all", followUpMode: "all", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "queue-session", steering: ["steer-2"], followUp: [], steeringMode: "all", followUpMode: "all", seq: 2))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.queuedSteers.map(\.text) == ["steer-2"])
@@ -5162,10 +5217,13 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionQueueUpdatedProjectsQueuedScreenContextEvidence() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-screen-session"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"event-queue-screen","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"queue-screen-session","steering":[{"id":"steer-screen","text":"inspect this","enqueuedAt":"2026-05-01T00:00:04.000Z","attachedImagesCount":2}],"followUp":[{"id":"follow-plain","text":"later","enqueuedAt":"2026-05-01T00:00:04.000Z"}],"seq":1}
-        """)))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "queue-screen-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(
+            sessionId: "queue-screen-session",
+            steering: [EventJSON.QueueItem("inspect this", attachedImagesCount: 2)],
+            followUp: ["later"],
+            seq: 1
+        ))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.queuedSteers.first?.attachedImagesCount == 2)
@@ -5174,12 +5232,12 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionUpdatedAfterIncrementalEventDoesNotResetConversationRenderState() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "live-conversation", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
 
         // Full lifecycle snapshots must preserve the live incremental projection.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.status == .completed)
@@ -5189,12 +5247,12 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionMetaUpdatedPreservesIncrementalConversationStateAndAppliesStatus() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "running"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.tool(sessionId: "live-conversation", toolCallId: "t-1", name: "bash", status: "succeeded", preview: "ran tests"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "live-conversation", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.tool(sessionId: "live-conversation", toolCallId: "t-1", name: "bash", status: "succeeded", preview: "ran tests"))))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
 
         let card = try #require(viewModel.sessions.first)
         #expect(card.status == .completed)
@@ -5217,7 +5275,7 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(
             id: "terminal-race",
             status: "completed",
             summary: "Done",
@@ -5225,7 +5283,7 @@ struct PickySessionViewModelTests {
         ))))
         #expect(viewModel.sessions.isEmpty)
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
             id: "terminal-race",
             status: "completed",
             summary: "Done",
@@ -5248,19 +5306,19 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(
             id: "retransition",
             status: "completed",
             summary: "Done",
             updatedAt: "2026-05-01T00:00:03.000Z"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(
             id: "retransition",
             status: "running",
             summary: "Resumed",
             updatedAt: "2026-05-01T00:00:04.000Z"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
             id: "retransition",
             status: "running",
             summary: "Resumed",
@@ -5285,14 +5343,14 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(
             id: "orphan",
             status: "completed",
             summary: "Done",
             updatedAt: "2026-05-01T00:00:03.000Z"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.emptySessionSnapshot())))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "orphan",
             status: "running",
             summary: "Fresh run",
@@ -5317,14 +5375,14 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(
             id: "deleted",
             status: "completed",
             summary: "Done",
             updatedAt: "2026-05-01T00:00:03.000Z"
         ))))
         viewModel.finalizeDeletedArchivedSession(sessionID: "deleted")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "deleted",
             status: "running",
             summary: "Fresh run",
@@ -5349,12 +5407,12 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "terminal-race",
             status: "completed",
             summary: "Done"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
             id: "terminal-race",
             status: "completed",
             summary: "Done",
@@ -5377,11 +5435,11 @@ struct PickySessionViewModelTests {
             notificationPreferencesProvider: preferences
         )
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "terminal-race",
             status: "running"
         ))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(
             id: "terminal-race",
             status: "completed",
             summary: "Done",
@@ -5394,7 +5452,7 @@ struct PickySessionViewModelTests {
     @MainActor @Test func sessionMetaUpdatedBeforeHydrationDoesNotCreateAnEmptyConversation() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMetaUpdated(id: "not-hydrated", status: "completed", summary: "Done"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMetaUpdated(id: "not-hydrated", status: "completed", summary: "Done"))))
 
         #expect(viewModel.sessions.isEmpty)
         #expect(viewModel.archivedSessions.isEmpty)
@@ -5402,11 +5460,13 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionUpdatedWithNewPiSessionFileResetsIncrementalConversationState() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "replaced-session", status: "completed", piSessionFilePath: "/tmp/old-pi.jsonl"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "replaced-session", messageId: "m-1", text: "old answer", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "replaced-session", steering: [], followUp: ["old follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "replaced-session", status: "completed", piSessionFilePath: "/tmp/old-pi.jsonl"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "replaced-session", messageId: "m-1", text: "old answer", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "replaced-session", steering: [], followUp: ["old follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
 
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        // The daemon republishes the whole projection when a Pickle moves to a
+        // fresh Pi session; that snapshot is what discards the old transcript.
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
             id: "replaced-session",
             title: "New Pickle · picky",
             status: "waiting_for_input",
@@ -5426,16 +5486,18 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func freshPiSessionResetClearsConversationEvenIfDiagnosticLogAlreadyUpdatedPath() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "replaced-session", status: "completed", piSessionFilePath: "/tmp/old-pi.jsonl"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "replaced-session", messageId: "m-1", text: "old answer", seq: 1))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "replaced-session", steering: [], followUp: ["old follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "replaced-session", status: "completed", piSessionFilePath: "/tmp/old-pi.jsonl"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionMessageAppended(sessionId: "replaced-session", messageId: "m-1", text: "old answer", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionQueueUpdated(sessionId: "replaced-session", steering: [], followUp: ["old follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
 
         // PiSdkRuntime used to emit the new `pi session:` diagnostic before the replacement
         // snapshot. The log event pre-updated the card's piSessionFilePath, so the subsequent
         // empty replacement snapshot looked like an ordinary transient sessionUpdated and the HUD
         // preserved stale Earlier history.
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "replaced-session", line: "pi session: /tmp/new-pi.jsonl"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionLog(sessionId: "replaced-session", line: "pi session: /tmp/new-pi.jsonl"))))
+        // The daemon republishes the whole projection when a Pickle moves to a
+        // fresh Pi session; that snapshot is what discards the old transcript.
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
             id: "replaced-session",
             title: "New Pickle · picky",
             status: "waiting_for_input",
@@ -5456,15 +5518,15 @@ struct PickySessionViewModelTests {
 
     @MainActor @Test func sessionActivityUpdatedMirrorsSummary() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "activity-session"))))
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionActivityUpdated(sessionId: "activity-session", edit: 2, bash: 3, thinking: 4, other: 5, seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "activity-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionActivityUpdated(sessionId: "activity-session", edit: 2, bash: 3, thinking: 4, other: 5, seq: 1))))
 
         #expect(viewModel.sessions.first?.activitySummary == PickyActivitySummary(edit: 2, bash: 3, thinking: 4, other: 5))
     }
 
     @MainActor @Test func appliesProjectionBootstrapAfterProtocolCutover() {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
             id: "session-001",
             title: "Current v1 projection",
             status: "running"
@@ -5539,9 +5601,10 @@ private func wait(
 }
 
 @MainActor @Test func visibleSessionDiffRefreshesForViewChangesAndTurnCompletion() async throws {
+    let events = EventJSON()
     let client = FakePickyAgentClient()
     let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-    viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+    viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "running"))))
 
     viewModel.setSessionDiffVisible(true, sessionID: "session-1")
     try await wait { client.sentCommands.count == 1 }
@@ -5587,13 +5650,22 @@ private func wait(
     )))
     #expect(viewModel.sessionDiffState(for: "session-1").isLoading)
 
-    viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", updatedAt: "2026-05-01T00:00:01.000Z"))))
+    viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(status: "completed", updatedAt: "2026-05-01T00:00:01.000Z"))))
     try await wait { client.sentCommands.count == 3 }
     #expect(client.sentCommands.last?.view == .staged)
 }
 
-private enum EventJSON {
-    static func sessionUpdated(
+/// Builds projection v2 protocol envelopes behind the v1 call-site shape.
+/// One instance per test (Swift Testing makes a fresh suite value for every
+/// test) owns the per-session revision cursor: the first frame for a session
+/// installs a snapshot and later frames patch it, exactly like the daemon.
+@MainActor
+private final class EventJSON {
+    private let builder = PickyProjectionEventFixtures()
+
+    // MARK: - Session metadata
+
+    func sessionUpdated(
         id: String = "session-1",
         title: String = "Investigate current screen",
         status: String = "running",
@@ -5607,22 +5679,56 @@ private enum EventJSON {
         notifyMacOSOnCompletion: Bool? = nil,
         pinned: Bool? = nil,
         lastRequest: String? = nil,
-        asyncWorkSummaryJSON: String? = nil
+        asyncWorkSummaryJSON: String? = nil,
+        seq: Int? = nil
     ) -> String {
-        let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
-        let encodedLastRequest = lastRequest.map { ",\"lastRequest\":{\"source\":\"steer\",\"text\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))}" } ?? ""
-        let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
-        let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
-        let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
-        let encodedMacOSNotify = notifyMacOSOnCompletion.map { ",\"notifyMacOSOnCompletion\":\($0)" } ?? ""
-        let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
-        let encodedAsyncWorkSummary = asyncWorkSummaryJSON.map { ",\"asyncWorkSummary\":\($0)" } ?? ""
-        return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedMacOSNotify)\(encodedPinned)\(encodedLastRequest)\(encodedAsyncWorkSummary)}}
-        """
+        let scalars = scalarFields(
+            id: id,
+            title: title,
+            status: status,
+            summary: summary,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            cwd: cwd,
+            piSessionFilePath: piSessionFilePath,
+            notifyMainOnCompletion: notifyMainOnCompletion,
+            notifyMacOSOnCompletion: notifyMacOSOnCompletion,
+            pinned: pinned,
+            lastRequest: lastRequest,
+            asyncWorkSummaryJSON: asyncWorkSummaryJSON
+        )
+        if !builder.hasSnapshottedSession(id) {
+            return builder.snapshotEventJSON(
+                id: "event-\(id)-\(status)",
+                sessionID: id,
+                projectionJSON: projectionJSON(scalars: scalars, logs: logs),
+                timestamp: updatedAt
+            )
+        }
+        // The daemon owns `thinkingPreview` and the pending extension UI
+        // request: a whole-session update that carries neither means both are
+        // over, so clear them explicitly instead of leaving stale text pinned.
+        var mutations = [
+            PickyProjectionEventFixtures.metaPatchMutation("\(scalars),\"thinkingPreview\":null"),
+            "{\"type\":\"extensionUiRequestSet\",\"request\":null}",
+        ]
+        if !logs.isEmpty { mutations.append(logsSetMutation(logs)) }
+        return builder.transactionEventJSON(
+            id: "event-\(id)-\(status)",
+            sessionID: id,
+            mutations: mutations,
+            seq: seq,
+            timestamp: updatedAt
+        )
     }
 
-    static func sessionMetaUpdated(
+    /// An authoritative membership removal wipes the session; the daemon's next
+    /// publication for that id is a fresh snapshot, not a patch.
+    func forgetSession(_ id: String) {
+        builder.forgetSession(id)
+    }
+
+    func sessionMetaUpdated(
         id: String = "session-1",
         title: String = "Investigate current screen",
         status: String = "running",
@@ -5631,13 +5737,23 @@ private enum EventJSON {
         updatedAt: String = "2026-05-01T00:00:00.000Z",
         cwd: String = testProjectCwd
     ) -> String {
-        let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
-        return """
-        {"id":"meta-\(id)-\(status)","protocolVersion":"2026-08-25","timestamp":"\(updatedAt)","type":"sessionMetaUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","artifacts":[],"changedFiles":[]}}
+        // A metadata patch never carries the conversation, so it stays a
+        // transaction even for a session this builder has not snapshotted:
+        // the view model then has no projection to patch, matching the v1
+        // "meta ignored before hydration" contract.
+        let fields = """
+        "id":\(encode(id)),"title":\(encode(title)),"status":\(encode(status)),"cwd":\(encode(cwd)),\
+        "createdAt":\(encode(createdAt)),"updatedAt":\(encode(updatedAt)),"lastSummary":\(encode(summary))
         """
+        return builder.transactionEventJSON(
+            id: "meta-\(id)-\(status)",
+            sessionID: id,
+            mutations: [PickyProjectionEventFixtures.metaPatchMutation(fields)],
+            timestamp: updatedAt
+        )
     }
 
-    static func sessionSnapshot(
+    func sessionSnapshot(
         id: String = "session-1",
         title: String = "Investigate current screen",
         status: String = "running",
@@ -5648,43 +5764,246 @@ private enum EventJSON {
         piSessionFilePath: String? = nil,
         archived: Bool? = nil
     ) -> String {
-        let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
-        let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
-        let encodedArchived = archived.map { ",\"archived\":\($0)" } ?? ""
-        return """
-        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedArchived)}]}
-        """
+        var scalars = scalarFields(
+            id: id,
+            title: title,
+            status: status,
+            summary: summary,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            cwd: testProjectCwd,
+            piSessionFilePath: piSessionFilePath,
+            notifyMainOnCompletion: nil,
+            notifyMacOSOnCompletion: nil,
+            pinned: nil,
+            lastRequest: nil,
+            asyncWorkSummaryJSON: nil
+        )
+        if let archived { scalars += ",\"archived\":\(archived)" }
+        return builder.snapshotEventJSON(
+            id: "snapshot-\(id)-\(status)",
+            sessionID: id,
+            projectionJSON: projectionJSON(scalars: scalars, logs: logs),
+            timestamp: updatedAt
+        )
     }
 
-    static func emptySessionSnapshot() -> String {
-        """
-        {"id":"snapshot-empty","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[]}
-        """
-    }
-
-    static func slashCommandsSnapshot(
-        sessionId: String = "session-commands",
-        requestId: String?,
-        commandNames: [String] = ["deploy", "fix-tests", "skill:context7-cli"]
+    func sessionUpdatedWithPending(
+        id: String = "session-1",
+        requestId: String = "ui-form",
+        status: String = "waiting_for_input",
+        summary: String = "Waiting for input",
+        updatedAt: String = "2026-05-01T00:00:02.000Z"
     ) -> String {
-        let encodedSessionId = String(decoding: try! JSONEncoder().encode(sessionId), as: UTF8.self)
-        let encodedRequestId = requestId.map { ",\"requestId\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
-        let commands = commandNames.enumerated().map { index, name in
-            let source: String
-            switch index {
-            case 1: source = "prompt"
-            case 2: source = "skill"
-            default: source = "extension"
-            }
-            let encodedName = String(decoding: try! JSONEncoder().encode(name), as: UTF8.self)
-            return "{\"name\":\(encodedName),\"description\":\(encodedName),\"source\":\"\(source)\"}"
-        }.joined(separator: ",")
-        return """
-        {"id":"event-slash-commands","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":\(encodedSessionId)\(encodedRequestId),"commands":[\(commands)]}
+        let request = """
+        {"id":\(encode(requestId)),"sessionId":\(encode(id)),"method":"askUserQuestion","title":"Continue?",\
+        "prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice",\
+        "options":[{"value":"a","label":"A"}],"required":true}],"createdAt":\(encode(updatedAt))}
         """
+        let scalars = """
+        "id":\(encode(id)),"title":"Investigate current screen","status":\(encode(status)),"cwd":\(encode(testProjectCwd)),\
+        "createdAt":"2026-05-01T00:00:00.000Z","updatedAt":\(encode(updatedAt)),"lastSummary":\(encode(summary))
+        """
+        if !builder.hasSnapshottedSession(id) {
+            return builder.snapshotEventJSON(
+                id: "event-\(id)-pending",
+                sessionID: id,
+                projectionJSON: "{\(scalars),\"pendingExtensionUiRequest\":\(request)}",
+                timestamp: updatedAt
+            )
+        }
+        return builder.transactionEventJSON(
+            id: "event-\(id)-pending",
+            sessionID: id,
+            mutations: [
+                PickyProjectionEventFixtures.metaPatchMutation(scalars),
+                "{\"type\":\"extensionUiRequestSet\",\"request\":\(request)}",
+            ],
+            timestamp: updatedAt
+        )
     }
 
-    static func sessionTodoStateUpdated(
+    func sessionUpdatedWithThinking(
+        id: String = "session-1",
+        status: String = "running",
+        summary: String = "Started",
+        thinkingPreview: String,
+        updatedAt: String = "2026-05-01T00:00:01.000Z"
+    ) -> String {
+        let fields = """
+        "status":\(encode(status)),"updatedAt":\(encode(updatedAt)),"lastSummary":\(encode(summary)),\
+        "thinkingPreview":\(encode(thinkingPreview))
+        """
+        return builder.transactionEventJSON(
+            id: "event-\(id)-thinking",
+            sessionID: id,
+            mutations: [PickyProjectionEventFixtures.metaPatchMutation(fields)],
+            timestamp: updatedAt
+        )
+    }
+
+    // MARK: - Owned collections
+
+    func sessionLog(sessionId: String, line: String) -> String {
+        builder.transactionEventJSON(
+            id: "event-log",
+            sessionID: sessionId,
+            mutations: [PickyProjectionEventFixtures.logAppendMutation(line)],
+            timestamp: "2026-05-01T00:00:03.000Z"
+        )
+    }
+
+    func tool(sessionId: String, toolCallId: String, name: String, status: String, preview: String) -> String {
+        let tool = """
+        {"toolCallId":\(encode(toolCallId)),"name":\(encode(name)),"status":\(encode(status)),\
+        "preview":\(encode(preview)),"startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}
+        """
+        return builder.transactionEventJSON(
+            id: "event-tool-\(status)",
+            sessionID: sessionId,
+            mutations: ["{\"type\":\"toolUpsert\",\"tool\":\(tool)}"],
+            timestamp: "2026-05-01T00:00:03.000Z"
+        )
+    }
+
+    func sessionMessageAppended(sessionId: String, messageId: String, text: String, seq: Int) -> String {
+        builder.transactionEventJSON(
+            id: "event-message-append-\(seq)",
+            sessionID: sessionId,
+            mutations: ["{\"type\":\"messageAppend\",\"message\":\(agentMessageJSON(messageId: messageId, text: text))}"],
+            seq: seq,
+            timestamp: "2026-05-01T00:00:04.000Z"
+        )
+    }
+
+    func sessionMessagesImported(sessionId: String, entries: [(messageId: String, text: String)], seq: Int) -> String {
+        let messages = entries.map { entry in
+            """
+            {"id":\(encode(entry.messageId)),"kind":"agent_text","createdAt":"2026-05-01T00:00:04.000Z",\
+            "originatedBy":"pi_extension","text":\(encode(entry.text))}
+            """
+        }.joined(separator: ",")
+        return builder.transactionEventJSON(
+            id: "event-messages-imported-\(seq)",
+            sessionID: sessionId,
+            mutations: ["{\"type\":\"messagesImport\",\"messages\":[\(messages)]}"],
+            seq: seq,
+            timestamp: "2026-05-01T00:00:04.000Z"
+        )
+    }
+
+    func sessionMessageReplaced(sessionId: String, messageId: String, text: String, seq: Int) -> String {
+        builder.transactionEventJSON(
+            id: "event-message-replace-\(seq)",
+            sessionID: sessionId,
+            mutations: [
+                """
+                {"type":"messageReplace","messageId":\(encode(messageId)),\
+                "message":\(agentMessageJSON(messageId: messageId, text: text))}
+                """,
+            ],
+            seq: seq,
+            timestamp: "2026-05-01T00:00:04.000Z"
+        )
+    }
+
+    func sessionMessageRemoved(sessionId: String, messageId: String, seq: Int) -> String {
+        builder.transactionEventJSON(
+            id: "event-message-remove-\(seq)",
+            sessionID: sessionId,
+            mutations: ["{\"type\":\"messageRemove\",\"messageId\":\(encode(messageId))}"],
+            seq: seq,
+            timestamp: "2026-05-01T00:00:04.000Z"
+        )
+    }
+
+    func commandReceiptMessageAppended(
+        sessionId: String,
+        messageId: String,
+        command: String,
+        status: String,
+        detail: String? = nil,
+        seq: Int
+    ) -> String {
+        let encodedDetail = detail.map { ",\"detail\":\(encode($0))" } ?? ""
+        let message = """
+        {"id":\(encode(messageId)),"kind":"command_receipt","createdAt":"2026-05-01T00:00:04.000Z",\
+        "text":\(encode(command)),"commandReceipt":{"command":\(encode(command)),"status":\(encode(status))\(encodedDetail)}}
+        """
+        return builder.transactionEventJSON(
+            id: "event-command-receipt-\(seq)",
+            sessionID: sessionId,
+            mutations: ["{\"type\":\"messageAppend\",\"message\":\(message)}"],
+            seq: seq,
+            timestamp: "2026-05-01T00:00:04.000Z"
+        )
+    }
+
+    /// A queued steer/follow-up. String literals keep text-only call sites
+    /// unchanged; `attachedImagesCount` covers the screen-context queues.
+    struct QueueItem: ExpressibleByStringLiteral {
+        let text: String
+        let attachedImagesCount: Int?
+
+        init(_ text: String, attachedImagesCount: Int? = nil) {
+            self.text = text
+            self.attachedImagesCount = attachedImagesCount
+        }
+
+        init(stringLiteral value: String) {
+            self.init(value)
+        }
+    }
+
+    func sessionQueueUpdated(
+        sessionId: String,
+        steering: [QueueItem],
+        followUp: [QueueItem],
+        steeringMode: String? = nil,
+        followUpMode: String? = nil,
+        seq: Int
+    ) -> String {
+        // v2 `queueSet` owns both modes, so an unspecified mode keeps the
+        // daemon default instead of the previous card value.
+        let mutation = """
+        {"type":"queueSet","queuedSteers":\(queueItemsJSON(steering)),"queuedFollowUps":\(queueItemsJSON(followUp)),\
+        "scheduledMessages":[],"steeringMode":\(encode(steeringMode ?? "one-at-a-time")),\
+        "followUpMode":\(encode(followUpMode ?? "one-at-a-time"))}
+        """
+        return builder.transactionEventJSON(
+            id: "event-queue-\(seq)",
+            sessionID: sessionId,
+            mutations: [mutation],
+            seq: seq,
+            timestamp: "2026-05-01T00:00:04.000Z"
+        )
+    }
+
+    func sessionSubagentRunsUpdated(sessionId: String, runs: [PickySubagentRun], seq: Int) -> String {
+        builder.transactionEventJSON(
+            id: "event-subagent-runs-\(seq)",
+            sessionID: sessionId,
+            mutations: [PickyProjectionEventFixtures.subagentRunsSetMutation(runs)],
+            seq: seq,
+            timestamp: "2026-07-14T01:00:00.000Z"
+        )
+    }
+
+    func sessionActivityUpdated(sessionId: String, edit: Int, bash: Int, thinking: Int, other: Int, seq: Int) -> String {
+        builder.transactionEventJSON(
+            id: "event-activity-\(seq)",
+            sessionID: sessionId,
+            mutations: [
+                """
+                {"type":"activitySet","activitySummary":{"edit":\(edit),"bash":\(bash),"thinking":\(thinking),"other":\(other)}}
+                """,
+            ],
+            seq: seq,
+            timestamp: "2026-05-01T00:00:04.000Z"
+        )
+    }
+
+    func sessionTodoStateUpdated(
         sessionId: String = "session-1",
         seq: Int,
         cleared: Bool = false,
@@ -5692,132 +6011,74 @@ private enum EventJSON {
     ) -> String {
         let todoState = cleared
             ? "null"
-            : "{\"tasks\":[{\"id\":\"todo-1\",\"content\":\"Implement HUD\",\"status\":\"\(taskStatus)\",\"activeForm\":\"Implementing HUD\"}],\"updatedAt\":\"2026-07-14T01:00:00.000Z\"}"
+            : """
+            {"tasks":[{"id":"todo-1","content":"Implement HUD","status":\(encode(taskStatus)),\
+            "activeForm":"Implementing HUD"}],"updatedAt":"2026-07-14T01:00:00.000Z"}
+            """
+        return builder.transactionEventJSON(
+            id: "event-todo-\(seq)",
+            sessionID: sessionId,
+            mutations: ["{\"type\":\"todoSet\",\"todoState\":\(todoState)}"],
+            seq: seq,
+            timestamp: "2026-07-14T01:00:00.000Z"
+        )
+    }
+
+    // MARK: - Non-projection events
+
+    func slashCommandsSnapshot(
+        sessionId: String = "session-commands",
+        requestId: String?,
+        commandNames: [String] = ["deploy", "fix-tests", "skill:context7-cli"]
+    ) -> String {
+        let encodedRequestId = requestId.map { ",\"requestId\":\(encode($0))" } ?? ""
+        let commands = commandNames.enumerated().map { index, name in
+            let source: String
+            switch index {
+            case 1: source = "prompt"
+            case 2: source = "skill"
+            default: source = "extension"
+            }
+            return "{\"name\":\(encode(name)),\"description\":\(encode(name)),\"source\":\"\(source)\"}"
+        }.joined(separator: ",")
         return """
-        {"id":"event-todo-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-07-14T01:00:00.000Z","type":"sessionTodoStateUpdated","sessionId":"\(sessionId)","todoState":\(todoState),"seq":\(seq)}
+        {"id":"event-slash-commands","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":\(encode(sessionId))\(encodedRequestId),"commands":[\(commands)]}
         """
     }
 
-    static func sessionResourcesReloaded(sessionId: String = "session-commands") -> String {
+    func sessionResourcesReloaded(sessionId: String = "session-commands") -> String {
         """
         {"id":"event-resources-reloaded","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionResourcesReloaded","sessionId":"\(sessionId)"}
         """
     }
 
-    static func extensionUiRequest() -> String {
+    func extensionUiRequest() -> String {
         """
         {"id":"event-ui","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-1","sessionId":"session-1","method":"confirm","title":"Confirm","prompt":"Proceed?","options":null,"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
-    static func askUserQuestionRequest() -> String {
+    func askUserQuestionRequest() -> String {
         """
         {"id":"event-ui-form","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
-    static func setEditorTextRequest(text: String) -> String {
-        let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
-        return """
-        {"id":"event-ui-editor-text","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-editor-text","sessionId":"session-1","method":"set_editor_text","text":\(encodedText),"createdAt":"2026-05-01T00:00:02.000Z"}}
+    func setEditorTextRequest(text: String) -> String {
+        """
+        {"id":"event-ui-editor-text","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-editor-text","sessionId":"session-1","method":"set_editor_text","text":\(encode(text)),"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
-    static func sessionUpdatedWithPending(
-        id: String = "session-1",
-        requestId: String = "ui-form",
-        status: String = "waiting_for_input",
-        summary: String = "Waiting for input",
-        updatedAt: String = "2026-05-01T00:00:02.000Z"
-    ) -> String {
-        """
-        {"id":"event-\(id)-pending","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"\(requestId)","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
-        """
-    }
-
-    static func sessionUpdatedWithThinking(
-        id: String = "session-1",
-        status: String = "running",
-        summary: String = "Started",
-        thinkingPreview: String,
-        updatedAt: String = "2026-05-01T00:00:01.000Z"
-    ) -> String {
-        let encodedThinking = String(decoding: try! JSONEncoder().encode(thinkingPreview), as: UTF8.self)
-        return """
-        {"id":"event-\(id)-thinking","protocolVersion":"2026-07-23","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","thinkingPreview":\(encodedThinking),"logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
-        """
-    }
-
-    static func sessionLog(sessionId: String, line: String) -> String {
-        let encodedLine = String(decoding: try! JSONEncoder().encode(line), as: UTF8.self)
-        return """
-        {"id":"event-log","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionLogAppended","sessionId":"\(sessionId)","line":\(encodedLine)}
-        """
-    }
-
-    static func tool(sessionId: String, toolCallId: String, name: String, status: String, preview: String) -> String {
-        """
-        {"id":"event-tool-\(status)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:03.000Z","type":"toolActivityUpdated","sessionId":"\(sessionId)","tool":{"toolCallId":"\(toolCallId)","name":"\(name)","status":"\(status)","preview":"\(preview)","startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}}
-        """
-    }
-
-    static func sessionMessageAppended(sessionId: String, messageId: String, text: String, seq: Int) -> String {
-        sessionMessageEvent(type: "sessionMessageAppended", sessionId: sessionId, messageId: messageId, text: text, seq: seq)
-    }
-
-    static func sessionMessagesImported(sessionId: String, entries: [(messageId: String, text: String)], seq: Int) -> String {
-        let messages = entries.map { entry -> String in
-            let encodedText = String(decoding: try! JSONEncoder().encode(entry.text), as: UTF8.self)
-            return "{\"id\":\"\(entry.messageId)\",\"kind\":\"agent_text\",\"createdAt\":\"2026-05-01T00:00:04.000Z\",\"originatedBy\":\"pi_extension\",\"text\":\(encodedText)}"
-        }.joined(separator: ",")
-        return """
-        {"id":"event-messages-imported-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessagesImported","sessionId":"\(sessionId)","messages":[\(messages)],"seq":\(seq)}
-        """
-    }
-
-    static func sessionMessageReplaced(sessionId: String, messageId: String, text: String, seq: Int) -> String {
-        sessionMessageEvent(type: "sessionMessageReplaced", sessionId: sessionId, messageId: messageId, text: text, seq: seq)
-    }
-
-    static func sessionMessageRemoved(sessionId: String, messageId: String, seq: Int) -> String {
-        """
-        {"id":"event-message-remove-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageRemoved","sessionId":"\(sessionId)","messageId":"\(messageId)","seq":\(seq)}
-        """
-    }
-
-    static func sessionRewound(sessionId: String, editorText: String?, removedIds: [String]) -> String {
-        let encodedEditorText = editorText.map { String(decoding: try! JSONEncoder().encode($0), as: UTF8.self) } ?? "null"
-        let encodedRemovedIds = String(decoding: try! JSONEncoder().encode(removedIds), as: UTF8.self)
+    func sessionRewound(sessionId: String, editorText: String?, removedIds: [String]) -> String {
+        let encodedEditorText = editorText.map { encode($0) } ?? "null"
+        let encodedRemovedIds = PickyProjectionEventFixtures.encodeStrings(removedIds)
         return """
         {"id":"event-session-rewound","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionRewound","sessionId":"\(sessionId)","editorText":\(encodedEditorText),"removedIds":\(encodedRemovedIds)}
         """
     }
 
-    static func commandReceiptMessageAppended(sessionId: String, messageId: String, command: String, status: String, detail: String? = nil, seq: Int) -> String {
-        let encodedCommand = String(decoding: try! JSONEncoder().encode(command), as: UTF8.self)
-        let encodedDetail = detail.map { ",\"detail\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
-        return """
-        {"id":"event-command-receipt-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageAppended","sessionId":"\(sessionId)","message":{"id":"\(messageId)","kind":"command_receipt","createdAt":"2026-05-01T00:00:04.000Z","text":\(encodedCommand),"commandReceipt":{"command":\(encodedCommand),"status":"\(status)"\(encodedDetail)}},"seq":\(seq)}
-        """
-    }
-
-    static func sessionQueueUpdated(sessionId: String, steering: [String], followUp: [String], steeringMode: String?, followUpMode: String?, seq: Int) -> String {
-        let steeringItems = queueItemsJSON(steering)
-        let followUpItems = queueItemsJSON(followUp)
-        let encodedSteeringMode = steeringMode.map { ",\"steeringMode\":\"\($0)\"" } ?? ""
-        let encodedFollowUpMode = followUpMode.map { ",\"followUpMode\":\"\($0)\"" } ?? ""
-        return """
-        {"id":"event-queue-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"\(sessionId)","steering":\(steeringItems),"followUp":\(followUpItems)\(encodedSteeringMode)\(encodedFollowUpMode),"seq":\(seq)}
-        """
-    }
-
-    static func sessionActivityUpdated(sessionId: String, edit: Int, bash: Int, thinking: Int, other: Int, seq: Int) -> String {
-        """
-        {"id":"event-activity-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionActivityUpdated","sessionId":"\(sessionId)","activitySummary":{"edit":\(edit),"bash":\(bash),"thinking":\(thinking),"other":\(other)},"seq":\(seq)}
-        """
-    }
-
-    static func terminalSessionSyncOutcome(
+    func terminalSessionSyncOutcome(
         sessionId: String = "session-1",
         baselineFound: Bool,
         importedMessageCount: Int,
@@ -5831,19 +6092,66 @@ private enum EventJSON {
         """
     }
 
-    private static func sessionMessageEvent(type: String, sessionId: String, messageId: String, text: String, seq: Int) -> String {
-        let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
-        return """
-        {"id":"event-message-\(type)-\(seq)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:04.000Z","type":"\(type)","sessionId":"\(sessionId)","messageId":"\(messageId)","message":{"id":"\(messageId)","kind":"agent_text","createdAt":"2026-05-01T00:00:04.000Z","originatedBy":"main_agent","text":\(encodedText),"question":null,"cancelledAt":null,"report":null,"errorContext":null,"errorMessage":null},"seq":\(seq)}
+    // MARK: - Payload helpers
+
+    /// Patch-safe scalar metadata. Owned collections stay out of `metaPatch`,
+    /// which rejects unknown keys.
+    private func scalarFields(
+        id: String,
+        title: String,
+        status: String,
+        summary: String,
+        createdAt: String,
+        updatedAt: String,
+        cwd: String,
+        piSessionFilePath: String?,
+        notifyMainOnCompletion: Bool?,
+        notifyMacOSOnCompletion: Bool?,
+        pinned: Bool?,
+        lastRequest: String?,
+        asyncWorkSummaryJSON: String?
+    ) -> String {
+        var fields = """
+        "id":\(encode(id)),"title":\(encode(title)),"status":\(encode(status)),"cwd":\(encode(cwd)),\
+        "createdAt":\(encode(createdAt)),"updatedAt":\(encode(updatedAt)),"lastSummary":\(encode(summary))
+        """
+        if let piSessionFilePath { fields += ",\"piSessionFilePath\":\(encode(piSessionFilePath))" }
+        if let notifyMainOnCompletion { fields += ",\"notifyMainOnCompletion\":\(notifyMainOnCompletion)" }
+        if let notifyMacOSOnCompletion { fields += ",\"notifyMacOSOnCompletion\":\(notifyMacOSOnCompletion)" }
+        if let pinned { fields += ",\"pinned\":\(pinned)" }
+        if let lastRequest { fields += ",\"lastRequest\":{\"source\":\"steer\",\"text\":\(encode(lastRequest))}" }
+        if let asyncWorkSummaryJSON { fields += ",\"asyncWorkSummary\":\(asyncWorkSummaryJSON)" }
+        return fields
+    }
+
+    private func projectionJSON(scalars: String, logs: [String]) -> String {
+        """
+        {\(scalars),"logs":\(PickyProjectionEventFixtures.encodeStrings(logs)),"tools":[],"artifacts":[],"changedFiles":[]}
         """
     }
 
-    private static func queueItemsJSON(_ texts: [String]) -> String {
-        let items = texts.map { text in
-            let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
-            return "{\"text\":\(encodedText),\"enqueuedAt\":\"2026-05-01T00:00:04.000Z\"}"
+    private func logsSetMutation(_ logs: [String]) -> String {
+        "{\"type\":\"logsSet\",\"logs\":\(PickyProjectionEventFixtures.encodeStrings(logs))}"
+    }
+
+    private func agentMessageJSON(messageId: String, text: String) -> String {
+        """
+        {"id":\(encode(messageId)),"kind":"agent_text","createdAt":"2026-05-01T00:00:04.000Z",\
+        "originatedBy":"main_agent","text":\(encode(text)),"question":null,"cancelledAt":null,\
+        "report":null,"errorContext":null,"errorMessage":null}
+        """
+    }
+
+    private func queueItemsJSON(_ queueItems: [QueueItem]) -> String {
+        let items = queueItems.map { item in
+            let attached = item.attachedImagesCount.map { ",\"attachedImagesCount\":\($0)" } ?? ""
+            return "{\"text\":\(encode(item.text)),\"enqueuedAt\":\"2026-05-01T00:00:04.000Z\"\(attached)}"
         }
         return "[\(items.joined(separator: ","))]"
+    }
+
+    private func encode(_ value: String) -> String {
+        PickyProjectionEventFixtures.encodeString(value)
     }
 }
 

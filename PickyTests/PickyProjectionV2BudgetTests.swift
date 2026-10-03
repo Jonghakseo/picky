@@ -11,10 +11,9 @@ import Testing
 
 @MainActor
 struct PickyProjectionV2BudgetTests {
-    // Deterministic W7 pins. v1 characterization remains in the dedicated
-    // W0 suites (bootstrap: 1,054; terminal burst: 62).
+    // Deterministic W7 pins. The retired v1 path measured 1,054 publications
+    // for the same bootstrap corpus and 62 for the terminal burst.
     private static let bootstrapPublishBudget = 95
-    private static let messageOnlyV1PublishBudget = 3
     private static let messageOnlyV2PublishBudget = 3
     private static let messageOnlyDockPublishBudget = 0
     private static let terminalV2PublishBudget = 5
@@ -36,9 +35,9 @@ struct PickyProjectionV2BudgetTests {
             try apply(snapshot(for: session, revision: index), to: viewModel)
         }
 
-        // v1 snapshot + hydration is 1,054 publications for the same 94-session
-        // corpus. V2 emits one registry façade publish per snapshot plus one
-        // default-selection transition, satisfying the ≤1+ε target.
+        // The v1 snapshot + hydration replay cost 1,054 publications for the
+        // same 94-session corpus. V2 emits one registry façade publish per
+        // snapshot plus one default-selection transition, satisfying ≤1+ε.
         #expect(publishCount == Self.bootstrapPublishBudget)
         #expect(viewModel.sessions.count + viewModel.archivedSessions.count == 94)
         withExtendedLifetime(cancellable) {}
@@ -95,30 +94,6 @@ struct PickyProjectionV2BudgetTests {
         #expect(dockPublishCount == Self.messageOnlyDockPublishBudget)
         withExtendedLifetime(v2Cancellable) {}
         withExtendedLifetime(dockCancellable) {}
-
-        let v1ViewModel = PickyProjectionReplayFixtures.makeViewModel()
-        PickyProjectionReplayFixtures.apply(
-            PickyProjectionReplayFixtures.bootstrapEnvelope(
-                id: "v1-message-bootstrap",
-                event: .sessionSnapshot(PickySessionSnapshot(sessions: [target]))
-            ),
-            to: v1ViewModel
-        )
-        var v1PublishCount = 0
-        let v1Cancellable = v1ViewModel.objectWillChange.sink { v1PublishCount += 1 }
-        PickyProjectionReplayFixtures.apply(
-            PickyProjectionReplayFixtures.bootstrapEnvelope(
-                id: "v1-message-append",
-                event: .sessionMessageAppended(
-                    sessionId: target.id,
-                    message: PickyProjectionReplayFixtures.terminalMessage(id: "message-only", kind: .agentText, text: "Streaming"),
-                    seq: 1
-                )
-            ),
-            to: v1ViewModel
-        )
-        #expect(v1PublishCount == Self.messageOnlyV1PublishBudget)
-        withExtendedLifetime(v1Cancellable) {}
     }
 
     @Test func terminalTransactionPinsV2FacadeAndDockBudgets() throws {

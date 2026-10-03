@@ -42,9 +42,14 @@ final class PickySessionStore {
     func replace(card: PickySessionListViewModel.SessionCard) {
         precondition(card.id == sessionID)
         var metadata = PickySessionMetadata(card: card)
-        if case .loaded(let previous) = metaStore.metadataState,
-           previous.lastRequest?.text == card.lastRequestText {
-            metadata.lastRequest = previous.lastRequest
+        if case .loaded(let previous) = metaStore.metadataState {
+            // `SessionCard` cannot represent these, so an installation through
+            // the façade must carry them instead of resetting them.
+            metadata.revision = previous.revision
+            metadata.finalAnswer = previous.finalAnswer
+            if previous.lastRequest?.text == card.lastRequestText {
+                metadata.lastRequest = previous.lastRequest
+            }
         }
         metaStore.replace(metadata)
         presentation = PickySessionCardPresentation(card: card)

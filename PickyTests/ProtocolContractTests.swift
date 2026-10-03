@@ -79,30 +79,15 @@ struct ProtocolContractTests {
         #expect(legacyResult.text == result.text)
     }
 
-    @Test func decodesSessionMetaUpdateWithoutConversationMessages() throws {
-        let url = try #require(try fixtureURLs(in: "contracts/protocol").first { $0.lastPathComponent == "session-meta-updated.event.json" })
-        let data = try Data(contentsOf: url)
-        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
-
-        guard case .sessionMetaUpdated(let session) = envelope.event else {
-            Issue.record("Expected sessionMetaUpdated event")
-            return
-        }
-        #expect(session.id == "session-001")
-        #expect(session.status == .running)
-        #expect(session.messages.isEmpty)
-        #expect(session.logs.isEmpty)
-        #expect(session.tools.isEmpty)
-    }
-
     @Test func decodesJSONToolResultMetadataAndLegacyPayloads() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixture = try #require(try fixtureURLs(in: "contracts/protocol").first {
-            $0.lastPathComponent == "tool-activity-json-result.event.json"
+            $0.lastPathComponent == "session-projection-tool-json-result.event.json"
         })
         let envelope = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
-        guard case let .toolActivityUpdated(_, tool) = envelope.event else {
-            Issue.record("Expected tool activity update")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .toolUpsert(let tool) = transaction.mutations.first else {
+            Issue.record("Expected a toolUpsert projection mutation")
             return
         }
         #expect(tool.preview == #"{"items":[..."#)
@@ -120,13 +105,14 @@ struct ProtocolContractTests {
 
     @Test func decodesExtensionCustomTypeOnSystemMessages() throws {
         let url = try #require(try fixtureURLs(in: "contracts/protocol").first {
-            $0.lastPathComponent == "session-message-appended-custom-type.event.json"
+            $0.lastPathComponent == "session-projection-message-custom-type.event.json"
         })
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder()
             .decode(PickyEventEnvelope.self, from: Data(contentsOf: url))
 
-        guard case .sessionMessageAppended(_, let message, _) = envelope.event else {
-            Issue.record("Expected sessionMessageAppended event")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .messageAppend(let message) = transaction.mutations.first else {
+            Issue.record("Expected a messageAppend projection mutation")
             return
         }
         #expect(message.customType == "bash-async-completion")
@@ -139,13 +125,14 @@ struct ProtocolContractTests {
 
     @Test func decodesPickyAuthoredMessagePresentationFromFixture() throws {
         let url = try #require(try fixtureURLs(in: "contracts/protocol").first {
-            $0.lastPathComponent == "session-message-appended-presentation.event.json"
+            $0.lastPathComponent == "session-projection-message-presentation.event.json"
         })
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder()
             .decode(PickyEventEnvelope.self, from: Data(contentsOf: url))
 
-        guard case .sessionMessageAppended(_, let message, _) = envelope.event else {
-            Issue.record("Expected sessionMessageAppended event")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .messageAppend(let message) = transaction.mutations.first else {
+            Issue.record("Expected a messageAppend projection mutation")
             return
         }
         #expect(message.presentation?.code == .sessionCompactionFailed)
@@ -214,101 +201,95 @@ struct ProtocolContractTests {
         #expect(artifact.id == "artifact-preview")
     }
 
-    @Test func keepsSessionsWithArtifactsContainingRawBacktickURLsInSnapshots() throws {
+    @Test func keepsProjectionSnapshotsWithArtifactsContainingRawBacktickURLs() throws {
         let json = """
         {
-          "id":"event-snapshot-backtick-url",
-          "protocolVersion":"2026-07-23",
+          "id":"event-projection-backtick-url",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-01T00:00:01.000Z",
-          "type":"sessionSnapshot",
-          "sessions":[
-            {
-              "id":"session-healthy",
-              "title":"Healthy session",
-              "status":"completed",
-              "cwd":"/tmp/healthy",
-              "createdAt":"2026-05-01T00:00:00.000Z",
-              "updatedAt":"2026-05-01T00:00:01.000Z",
-              "logs":[],
-              "tools":[],
-              "artifacts":[],
-              "changedFiles":[]
-            },
-            {
-              "id":"session-backtick-url",
-              "title":"Session with preview link",
-              "status":"completed",
-              "cwd":"/tmp/backtick",
-              "createdAt":"2026-05-01T00:00:00.000Z",
-              "updatedAt":"2026-05-01T00:00:01.000Z",
-              "logs":[],
-              "tools":[],
-              "artifacts":[{
-                "id":"artifact-preview",
-                "kind":"link",
-                "title":"Preview",
-                "url":"https://pull-request-web-4483.preview.creatrip.com`/`",
-                "updatedAt":"2026-05-01T00:00:00.000Z"
-              }],
-              "changedFiles":[]
-            }
-          ]
+          "type":"sessionProjectionSnapshot",
+          "sessionId":"session-backtick-url",
+          "epoch":"epoch-001",
+          "revision":3,
+          "complete":true,
+          "omittedFields":[],
+          "projection":{
+            "id":"session-backtick-url",
+            "title":"Session with preview link",
+            "status":"completed",
+            "cwd":"/tmp/backtick",
+            "createdAt":"2026-05-01T00:00:00.000Z",
+            "updatedAt":"2026-05-01T00:00:01.000Z",
+            "logs":[],
+            "tools":[],
+            "artifacts":[{
+              "id":"artifact-preview",
+              "kind":"link",
+              "title":"Preview",
+              "url":"https://pull-request-web-4483.preview.creatrip.com`/`",
+              "updatedAt":"2026-05-01T00:00:00.000Z"
+            }],
+            "changedFiles":[]
+          }
         }
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
 
-        guard case .sessionSnapshot(let snapshot) = envelope.event else {
-            Issue.record("Expected sessionSnapshot")
+        guard case .sessionProjectionSnapshot(let snapshot) = envelope.event else {
+            Issue.record("Expected sessionProjectionSnapshot")
             return
         }
-        #expect(snapshot.isComplete)
-        #expect(snapshot.skippedSessionCount == 0)
-        #expect(snapshot.sessions.map(\.id) == ["session-healthy", "session-backtick-url"])
-        #expect(snapshot.sessions[1].artifacts.count == 1)
+        #expect(snapshot.sessionId == "session-backtick-url")
+        #expect(snapshot.projection.artifacts.count == 1)
+        #expect(snapshot.projection.artifacts.first?.id == "artifact-preview")
     }
 
-    @Test func marksSnapshotsPartialWhenAContainedSessionCannotDecode() throws {
+    @Test func dropsProjectionSnapshotsWhoseSessionCannotDecode() throws {
         let json = """
         {
-          "id":"event-snapshot-partial",
-          "protocolVersion":"2026-07-23",
+          "id":"event-projection-undecodable",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-01T00:00:01.000Z",
-          "type":"sessionSnapshot",
-          "sessions":[
-            {"id":"session-a","title":"A","status":"running","cwd":"/tmp/a","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
-            {"id":"session-b","title":"B","status":42,"cwd":"/tmp/b","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
-            {"id":"session-c","title":"C","status":"completed","cwd":"/tmp/c","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
-          ]
+          "type":"sessionProjectionSnapshot",
+          "sessionId":"session-b",
+          "epoch":"epoch-001",
+          "revision":1,
+          "complete":true,
+          "omittedFields":[],
+          "projection":{"id":"session-b","title":"B","status":42,"createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
         }
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-
-        guard case .sessionSnapshot(let snapshot) = envelope.event else {
-            Issue.record("Expected sessionSnapshot")
-            return
-        }
-        #expect(snapshot.isComplete == false)
-        #expect(snapshot.skippedSessionCount == 1)
-        #expect(snapshot.sessions.map(\.id) == ["session-a", "session-c"])
+        // One poisoned record is isolated to its own session frame instead of
+        // blanking the dock, so the app simply ignores the unknown event.
+        #expect(envelope.event == .unknown(type: "sessionProjectionSnapshot"))
     }
 
     @Test func ignoresUnknownFutureFields() throws {
         let json = """
         {
           "id":"event-future-001",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-01T00:00:00.000Z",
-          "type":"sessionLogAppended",
+          "type":"sessionProjectionTransaction",
           "sessionId":"session-001",
-          "line":"hello",
+          "epoch":"epoch-001",
+          "baseRevision":0,
+          "revision":1,
+          "mutations":[{"type":"logAppend","line":"hello"}],
           "futureField":{"nested":true}
         }
         """.data(using: .utf8)!
 
         let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        #expect(event.event == .sessionLogAppended(sessionId: "session-001", line: "hello"))
+        guard case .sessionProjectionTransaction(let transaction) = event.event else {
+            Issue.record("Expected sessionProjectionTransaction")
+            return
+        }
+        #expect(transaction.sessionId == "session-001")
+        #expect(transaction.mutations == [.logAppend(line: "hello")])
     }
 
     @Test func decodesSessionReplyWritingUpdatedEvent() throws {
@@ -632,15 +613,21 @@ struct ProtocolContractTests {
         let queueJSON = """
         {
           "id":"event-queue",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-07-19T00:00:00.000Z",
-          "type":"sessionQueueUpdated",
+          "type":"sessionProjectionTransaction",
           "sessionId":"session-queue",
-          "steering":[{"id":"steer-1","text":"slow down","enqueuedAt":"2026-07-19T00:00:00.000Z"}],
-          "followUp":[{"id":"follow-1","text":"then report","enqueuedAt":"2026-07-19T00:00:01.000Z"}],
-          "steeringMode":"one-at-a-time",
-          "followUpMode":"all",
-          "seq":7
+          "epoch":"epoch-001",
+          "baseRevision":6,
+          "revision":7,
+          "mutations":[{
+            "type":"queueSet",
+            "queuedSteers":[{"id":"steer-1","text":"slow down","enqueuedAt":"2026-07-19T00:00:00.000Z"}],
+            "queuedFollowUps":[{"id":"follow-1","text":"then report","enqueuedAt":"2026-07-19T00:00:01.000Z"}],
+            "scheduledMessages":[],
+            "steeringMode":"one-at-a-time",
+            "followUpMode":"all"
+          }]
         }
         """.data(using: .utf8)!
         let terminalJSON = """
@@ -661,15 +648,16 @@ struct ProtocolContractTests {
         let queue = try decoder.decode(PickyEventEnvelope.self, from: queueJSON)
         let terminal = try decoder.decode(PickyEventEnvelope.self, from: terminalJSON)
 
-        if case .sessionQueueUpdated(let sessionId, let steering, let followUp, _, let steeringMode, let followUpMode, let seq) = queue.event {
-            #expect(sessionId == "session-queue")
+        if case .sessionProjectionTransaction(let transaction) = queue.event,
+           case .queueSet(let steering, let followUp, _, let steeringMode, let followUpMode) = transaction.mutations.first {
+            #expect(transaction.sessionId == "session-queue")
             #expect(steering.map(\.text) == ["slow down"])
             #expect(followUp.map(\.text) == ["then report"])
             #expect(steeringMode == .oneAtATime)
             #expect(followUpMode == .all)
-            #expect(seq == 7)
+            #expect(transaction.revision == 7)
         } else {
-            Issue.record("Expected sessionQueueUpdated event")
+            Issue.record("Expected a queueSet projection mutation")
         }
         #expect(terminal.event == .terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome(
             sessionId: "session-terminal",
@@ -680,19 +668,20 @@ struct ProtocolContractTests {
         )))
     }
 
-    @Test func decodesTodoStateFromSessionUpdateFixture() throws {
+    @Test func decodesTodoStateFromProjectionFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
-            $0.lastPathComponent == "session-updated.event.json"
+            $0.lastPathComponent == "session-projection-todo-set.event.json"
         })
 
         let envelope = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
 
-        guard case .sessionUpdated(let session) = envelope.event else {
-            Issue.record("Expected sessionUpdated event")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .todoSet(let decodedTodoState) = transaction.mutations.first else {
+            Issue.record("Expected a todoSet projection mutation")
             return
         }
-        let todoState = try #require(session.todoState)
+        let todoState = try #require(decodedTodoState)
         #expect(todoState.completedCount == 1)
         #expect(todoState.tasks.count == 2)
         #expect(todoState.tasks[1].status == .inProgress)
@@ -702,31 +691,51 @@ struct ProtocolContractTests {
 
     @Test func decodesSlimTodoStateUpdatesIncludingClear() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
-        let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
-            $0.lastPathComponent == "session-todo-state-updated.event.json"
-        })
-        let update = try decoder.decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
+        let updateJSON = """
+        {
+          "id":"event-session-todo-update",
+          "protocolVersion":"2026-08-25",
+          "timestamp":"2026-07-14T01:00:00.000Z",
+          "type":"sessionProjectionTransaction",
+          "sessionId":"session-001",
+          "epoch":"epoch-001",
+          "baseRevision":8,
+          "revision":9,
+          "mutations":[{"type":"todoSet","todoState":{"tasks":[{"id":"todo-1","content":"Implement HUD","status":"in_progress","activeForm":"Implementing HUD"}],"updatedAt":"2026-07-14T01:00:00.000Z"}}]
+        }
+        """.data(using: .utf8)!
         let clearJSON = """
         {
           "id":"event-session-todo-clear",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-07-14T01:01:00.000Z",
-          "type":"sessionTodoStateUpdated",
+          "type":"sessionProjectionTransaction",
           "sessionId":"session-001",
-          "todoState":null,
-          "seq":10
+          "epoch":"epoch-001",
+          "baseRevision":9,
+          "revision":10,
+          "mutations":[{"type":"todoSet","todoState":null}]
         }
         """.data(using: .utf8)!
+
+        let update = try decoder.decode(PickyEventEnvelope.self, from: updateJSON)
         let clear = try decoder.decode(PickyEventEnvelope.self, from: clearJSON)
 
-        guard case .sessionTodoStateUpdated(let sessionID, let todoState, let seq) = update.event else {
-            Issue.record("Expected sessionTodoStateUpdated event")
+        guard case .sessionProjectionTransaction(let updateTransaction) = update.event,
+              case .todoSet(let todoState) = updateTransaction.mutations.first else {
+            Issue.record("Expected a todoSet projection mutation")
             return
         }
-        #expect(sessionID == "session-001")
+        #expect(updateTransaction.sessionId == "session-001")
         #expect(todoState?.tasks.first?.activeForm == "Implementing HUD")
-        #expect(seq == 9)
-        #expect(clear.event == .sessionTodoStateUpdated(sessionId: "session-001", todoState: nil, seq: 10))
+        #expect(updateTransaction.revision == 9)
+
+        guard case .sessionProjectionTransaction(let clearTransaction) = clear.event else {
+            Issue.record("Expected sessionProjectionTransaction")
+            return
+        }
+        #expect(clearTransaction.mutations == [.todoSet(nil)])
+        #expect(clearTransaction.revision == 10)
     }
 
     @Test func decodesQuickReplyEvent() throws {
@@ -884,24 +893,27 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-notify-message",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-05T00:00:00.000Z",
-          "type":"sessionMessageAppended",
+          "type":"sessionProjectionTransaction",
           "sessionId":"session-1",
-          "seq":3,
-          "message":{
+          "epoch":"epoch-001",
+          "baseRevision":2,
+          "revision":3,
+          "mutations":[{"type":"messageAppend","message":{
             "id":"notify-1",
             "kind":"system",
             "createdAt":"2026-05-05T00:00:00.000Z",
             "text":"Extension warning",
             "notifyType":"warning"
-          }
+          }}]
         }
         """.data(using: .utf8)!
 
         let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        guard case .sessionMessageAppended(_, let message, _) = event.event else {
-            Issue.record("Expected session message appended")
+        guard case .sessionProjectionTransaction(let transaction) = event.event,
+              case .messageAppend(let message) = transaction.mutations.first else {
+            Issue.record("Expected a messageAppend projection mutation")
             return
         }
         #expect(message.notifyType == .warning)
@@ -1000,10 +1012,15 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-legacy-session",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-05T00:00:00.000Z",
-          "type":"sessionUpdated",
-          "session":{
+          "type":"sessionProjectionSnapshot",
+          "sessionId":"session-legacy",
+          "epoch":"epoch-001",
+          "revision":1,
+          "complete":true,
+          "omittedFields":[],
+          "projection":{
             "id":"session-legacy",
             "title":"Legacy session",
             "status":"running",
@@ -1018,10 +1035,11 @@ struct ProtocolContractTests {
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        guard case .sessionUpdated(let session) = envelope.event else {
-            Issue.record("Expected sessionUpdated")
+        guard case .sessionProjectionSnapshot(let snapshot) = envelope.event else {
+            Issue.record("Expected sessionProjectionSnapshot")
             return
         }
+        let session = snapshot.projection
         #expect(session.messages.isEmpty)
         #expect(session.queuedSteers.isEmpty)
         #expect(session.queuedFollowUps.isEmpty)
@@ -1036,10 +1054,15 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-session-file",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-05T00:00:00.000Z",
-          "type":"sessionUpdated",
-          "session":{
+          "type":"sessionProjectionSnapshot",
+          "sessionId":"session-with-file",
+          "epoch":"epoch-001",
+          "revision":1,
+          "complete":true,
+          "omittedFields":[],
+          "projection":{
             "id":"session-with-file",
             "title":"Session with file",
             "status":"running",
@@ -1055,39 +1078,43 @@ struct ProtocolContractTests {
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        guard case .sessionUpdated(let session) = envelope.event else {
-            Issue.record("Expected sessionUpdated")
+        guard case .sessionProjectionSnapshot(let snapshot) = envelope.event else {
+            Issue.record("Expected sessionProjectionSnapshot")
             return
         }
-        #expect(session.piSessionFilePath == "/tmp/explicit-pi-session.jsonl")
+        #expect(snapshot.projection.piSessionFilePath == "/tmp/explicit-pi-session.jsonl")
     }
 
     @Test func decodesSessionMessageAppendedEvent() throws {
         let json = """
         {
           "id":"event-message-appended",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-05T00:00:00.000Z",
-          "type":"sessionMessageAppended",
+          "type":"sessionProjectionTransaction",
           "sessionId":"session-001",
-          "message":{
+          "epoch":"epoch-001",
+          "baseRevision":6,
+          "revision":7,
+          "mutations":[{"type":"messageAppend","message":{
             "id":"message-001",
             "kind":"agent_text",
             "createdAt":"2026-05-05T00:00:00.000Z",
             "originatedBy":"main_agent",
             "text":"Done",
             "assistantRun":{"model":"openai-codex/gpt-5.6","thinkingLevel":"max"}
-          },
-          "seq":7
+          }}]
         }
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        guard case .sessionMessageAppended(let sessionId, let message, let seq) = envelope.event else {
-            Issue.record("Expected sessionMessageAppended")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .messageAppend(let message) = transaction.mutations.first else {
+            Issue.record("Expected a messageAppend projection mutation")
             return
         }
-        #expect(sessionId == "session-001")
+        let seq = transaction.revision
+        #expect(transaction.sessionId == "session-001")
         #expect(message.id == "message-001")
         #expect(message.kind == .agentText)
         #expect(message.originatedBy == .mainAgent)
@@ -1118,25 +1145,29 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-activity-message",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-05T00:00:00.000Z",
-          "type":"sessionMessageAppended",
+          "type":"sessionProjectionTransaction",
           "sessionId":"session-001",
-          "message":{
+          "epoch":"epoch-001",
+          "baseRevision":7,
+          "revision":8,
+          "mutations":[{"type":"messageAppend","message":{
             "id":"message-activity-001",
             "kind":"agent_activity",
             "createdAt":"2026-05-05T00:00:00.000Z",
             "activitySnapshot":{"edit":1,"bash":2,"thinking":3,"other":4,"todo":5,"subagent":6}
-          },
-          "seq":8
+          }}]
         }
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        guard case .sessionMessageAppended(_, let message, let seq) = envelope.event else {
-            Issue.record("Expected sessionMessageAppended")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .messageAppend(let message) = transaction.mutations.first else {
+            Issue.record("Expected a messageAppend projection mutation")
             return
         }
+        let seq = transaction.revision
         #expect(message.kind == .agentActivity)
         #expect(message.activitySnapshot == PickyActivitySummary(
             edit: 1,
@@ -1149,47 +1180,56 @@ struct ProtocolContractTests {
         #expect(seq == 8)
     }
 
-    @Test func decodesSessionQueueUpdatedWithoutModes() throws {
+    @Test func decodesQueueMutationWithoutScheduledMessages() throws {
         let json = """
         {
           "id":"event-queue-updated",
-          "protocolVersion":"2026-07-23",
+          "protocolVersion":"2026-08-25",
           "timestamp":"2026-05-05T00:00:00.000Z",
-          "type":"sessionQueueUpdated",
+          "type":"sessionProjectionTransaction",
           "sessionId":"session-001",
-          "steering":[{"text":"steer","enqueuedAt":"2026-05-05T00:00:00.000Z"}],
-          "followUp":[],
-          "seq":8
+          "epoch":"epoch-001",
+          "baseRevision":7,
+          "revision":8,
+          "mutations":[{
+            "type":"queueSet",
+            "queuedSteers":[{"text":"steer","enqueuedAt":"2026-05-05T00:00:00.000Z"}],
+            "queuedFollowUps":[],
+            "steeringMode":"one-at-a-time",
+            "followUpMode":"one-at-a-time"
+          }]
         }
         """.data(using: .utf8)!
 
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
-        guard case .sessionQueueUpdated(let sessionId, let steering, let followUp, let scheduled, let steeringMode, let followUpMode, let seq) = envelope.event else {
-            Issue.record("Expected sessionQueueUpdated")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .queueSet(let steering, let followUp, let scheduled, let steeringMode, let followUpMode) = transaction.mutations.first else {
+            Issue.record("Expected a queueSet projection mutation")
             return
         }
-        #expect(sessionId == "session-001")
+        #expect(transaction.sessionId == "session-001")
         #expect(steering.map(\.text) == ["steer"])
         #expect(steering.first?.attachedImagesCount == nil)
         #expect(followUp.isEmpty)
-        #expect(steeringMode == nil)
-        #expect(followUpMode == nil)
+        #expect(steeringMode == .oneAtATime)
+        #expect(followUpMode == .oneAtATime)
         // A daemon without delayed-action projection omits the field entirely.
-        #expect(scheduled == nil)
-        #expect(seq == 8)
+        #expect(scheduled.isEmpty)
+        #expect(transaction.revision == 8)
     }
 
     @Test func decodesQueuedDisplayTextAndAttachedImageCountFromFixture() throws {
         let fixture = try #require(fixtureURLs(in: "contracts/protocol").first {
-            $0.lastPathComponent == "session-queue-updated.event.json"
+            $0.lastPathComponent == "session-projection-transaction.event.json"
         })
         let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(
             PickyEventEnvelope.self,
             from: Data(contentsOf: fixture)
         )
 
-        guard case .sessionQueueUpdated(_, let steering, let followUp, _, _, _, _) = envelope.event else {
-            Issue.record("Expected sessionQueueUpdated")
+        guard case .sessionProjectionTransaction(let transaction) = envelope.event,
+              case .queueSet(let steering, let followUp, _, _, _) = transaction.mutations.first(where: { if case .queueSet = $0 { return true } else { return false } }) else {
+            Issue.record("Expected a queueSet projection mutation")
             return
         }
         #expect(steering.map(\.attachedImagesCount) == [2])
@@ -1284,7 +1324,7 @@ struct ProtocolContractTests {
         #expect(value.epoch == "epoch-001")
         #expect(value.baseRevision == 4)
         #expect(value.revision == 5)
-        #expect(value.mutations.map(\.type) == ["metaPatch", "logsSet", "toolsSet", "artifactsSet", "finalAnswerSet"])
+        #expect(value.mutations.map(\.type) == ["metaPatch", "logsSet", "toolsSet", "artifactsSet", "finalAnswerSet", "queueSet"])
 
         guard case .sessionProjectionSnapshot(let value) = snapshot.event else {
             Issue.record("Expected sessionProjectionSnapshot")

@@ -2243,16 +2243,13 @@ final class CompanionManager: ObservableObject {
 
     func applyAgentEvent(_ event: PickyEvent) {
         switch event {
-        case .sessionUpdated(let session), .sessionMetaUpdated(let session):
-            handleSessionStatusTransition(session: session)
-            updatePassiveAgentSummary(session.lastSummary ?? "\(session.title) · \(session.status.rawValue)")
         case .sessionProjectionSnapshot(let snapshot):
             applySessionProjectionSnapshotSideEffects(snapshot)
         case .sessionProjectionTransaction(let transaction):
             applySessionProjectionTransactionSideEffects(transaction)
         case .sessionProjectionBootstrapComplete:
             break
-        case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionTodoStateUpdated, .sessionSubagentRunsUpdated, .sessionArchivedAuthoritative, .pluginsReloaded,
+        case .sessionResourcesReloaded, .pluginsReloaded,
              .hubStatisticsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted:
             // Progress events are already represented in the HUD. They should not
             // replace a cursor bubble that is currently speaking/showing a real
@@ -2325,11 +2322,11 @@ final class CompanionManager: ObservableObject {
             }
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
             clearInteractionStateForConnectionLoss()
-        case .asyncControlContext, .asyncTaskCommandResult, .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot,
+        case .asyncControlContext, .asyncTaskCommandResult, .hello, .slashCommandsSnapshot,
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .autocompleteCapabilitiesSnapshot, .autocompleteSuggestionsSnapshot, .autocompleteCompletionApplied,
              .rewindTargetsSnapshot, .sessionRuntimeOptionsSnapshot, .toolHistoryDetailResult, .sessionDiffResult, .sessionRewound, .ack, .unknown,
-             .sessionMessageAppended, .sessionMessagesImported, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .sessionReplyWritingUpdated, .sessionToolCallPreparingUpdated, .terminalSessionSyncOutcome,
+             .sessionReplyWritingUpdated, .sessionToolCallPreparingUpdated, .terminalSessionSyncOutcome,
              .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested:
             break
         }

@@ -8,6 +8,8 @@ import Testing
 
 @MainActor
 struct PickyHUDUnreadFocusRoutingTests {
+    private let events = PickyProjectionEventFixtures()
+
     @Test func focusesOnlyTheTargetDisplayAfterRestoringMinimizedInput() {
         let target = FakeHUDSessionFocusPanel()
         let other = FakeHUDSessionFocusPanel()
@@ -32,15 +34,8 @@ struct PickyHUDUnreadFocusRoutingTests {
             client: FakePickyAgentClient(),
             notificationCenter: PickyNoopNotificationCenter()
         )
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(
-            id: "snapshot",
-            protocolVersion: "1",
-            timestamp: Date(),
-            event: .sessionSnapshot(PickySessionSnapshot(sessions: [
-                session(id: "first"),
-                session(id: "unread"),
-            ]))
-        )))
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(session: session(id: "first"))))
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(session: session(id: "unread"))))
         viewModel.dockLayout = PickyDockLayout(entries: [
             .session(id: "first"),
             .session(id: "unread"),
@@ -80,14 +75,8 @@ struct PickyHUDUnreadFocusRoutingTests {
             client: FakePickyAgentClient(),
             notificationCenter: PickyNoopNotificationCenter()
         )
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(
-            id: "snapshot",
-            protocolVersion: "1",
-            timestamp: Date(),
-            event: .sessionSnapshot(PickySessionSnapshot(sessions: [
-                session(id: "other"), session(id: "notified"),
-            ]))
-        )))
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(session: session(id: "other"))))
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(session: session(id: "notified"))))
         viewModel.select(sessionID: "other")
         let visibility = PickyHUDVisibilityStore(settingsStore: settings)
         visibility.setAllVisible(false, persist: false)
@@ -143,10 +132,7 @@ struct PickyHUDUnreadFocusRoutingTests {
         let viewModel = PickySessionListViewModel(
             client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter()
         )
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(
-            id: "snapshot", protocolVersion: "1", timestamp: Date(),
-            event: .sessionSnapshot(PickySessionSnapshot(sessions: [session(id: "member")]))
-        )))
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(session: session(id: "member"))))
         let visibility = PickyHUDVisibilityStore(settingsStore: settings)
         let target = FakeHUDSessionFocusPanel()
         let other = FakeHUDSessionFocusPanel()
@@ -181,10 +167,7 @@ struct PickyHUDUnreadFocusRoutingTests {
         let viewModel = PickySessionListViewModel(
             client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter()
         )
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(
-            id: "snapshot", protocolVersion: "1", timestamp: Date(),
-            event: .sessionSnapshot(PickySessionSnapshot(sessions: [session(id: "member")]))
-        )))
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(session: session(id: "member"))))
         let appearance = PickyAppearanceStore(settingsStore: settings)
         let manager = PickyHUDOverlayManager(
             viewModel: viewModel, appearanceStore: appearance,

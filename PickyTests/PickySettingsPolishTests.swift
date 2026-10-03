@@ -1105,7 +1105,7 @@ struct PickySettingsPolishTests {
         let client = FakePolishClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "archive-me", title: "Archive Me", status: "completed", summary: "final summary"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionProjectionSnapshotJSON(id: "archive-me", title: "Archive Me", status: "completed", summary: "final summary"))))
         try await waitUntil {
             (viewModel.sessions + viewModel.archivedSessions).contains(where: { $0.id == "archive-me" })
         }
@@ -1152,9 +1152,15 @@ private final class FakePolishClient: PickyAgentClient {
     func emit(_ event: PickyClientEvent) { continuation.yield(event) }
 }
 
-private func sessionUpdatedJSON(id: String, title: String, status: String, summary: String) -> String {
+private func sessionProjectionSnapshotJSON(
+    id: String,
+    title: String,
+    status: String,
+    summary: String,
+    revision: Int = 1
+) -> String {
     """
-    {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+    {"id":"event-\(id)-\(status)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"\(id)","epoch":"settings-polish-test","revision":\(revision),"complete":true,"omittedFields":[],"projection":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
     """
 }
 

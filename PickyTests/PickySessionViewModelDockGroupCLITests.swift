@@ -77,14 +77,19 @@ private extension PickyDockLayout {
     }
 }
 
+@MainActor
 struct PickySessionViewModelDockGroupCLITests {
+    private let events = PickyProjectionEventFixtures()
+
     private static func decodeEnvelope(_ json: String) throws -> PickyEventEnvelope {
         try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
     }
 
-    private static func sessionSnapshot(_ ids: [String]) -> PickyEventEnvelope {
-        let sessions = ids.enumerated().map { index, id in
-            PickyAgentSession(
+    /// Bootstraps the dock with one v2 projection snapshot per session, in the
+    /// order the daemon sends them.
+    private func applySessions(_ ids: [String], to viewModel: PickySessionListViewModel) {
+        for (index, id) in ids.enumerated() {
+            let session = PickyAgentSession(
                 id: id,
                 title: id.uppercased(),
                 status: .running,
@@ -95,13 +100,14 @@ struct PickySessionViewModelDockGroupCLITests {
                 artifacts: [],
                 changedFiles: []
             )
+            viewModel.apply(.protocolEvent(events.snapshotEnvelope(
+                id: "snapshot-group-management-\(id)",
+                session: session
+            )))
         }
-        return PickyEventEnvelope(
-            id: "snapshot-group-management",
-            protocolVersion: pickyAgentProtocolVersion,
-            timestamp: Date(),
-            event: .sessionSnapshot(PickySessionSnapshot(sessions: sessions))
-        )
+        // A v2 bootstrap is a per-session snapshot wave closed by a membership
+        // completion. Dock ordering is reconciled there, not per snapshot.
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
     }
 
     @MainActor @Test func dockLayoutStoreSeedsInitialPublishedLayout() {
@@ -160,24 +166,27 @@ struct PickySessionViewModelDockGroupCLITests {
         viewModel.apply(.protocolEvent(try Self.decodeEnvelope("""
         {
           "id": "snapshot-cli-group",
-          "protocolVersion": "2026-07-23",
+          "protocolVersion": "2026-08-25",
           "timestamp": "2026-05-01T00:00:30.000Z",
-          "type": "sessionSnapshot",
-          "sessions": [
-            {
-              "id": "a",
-              "title": "A",
-              "status": "running",
-              "cwd": "/tmp/ws",
-              "createdAt": "2026-05-01T00:00:00.000Z",
-              "updatedAt": "2026-05-01T00:00:00.000Z",
-              "lastSummary": "a",
-              "logs": [],
-              "tools": [],
-              "artifacts": [],
-              "changedFiles": []
-            }
-          ]
+          "type": "sessionProjectionSnapshot",
+          "sessionId": "a",
+          "epoch": "epoch-cli",
+          "revision": 1,
+          "complete": true,
+          "omittedFields": [],
+          "projection": {
+            "id": "a",
+            "title": "A",
+            "status": "running",
+            "cwd": "/tmp/ws",
+            "createdAt": "2026-05-01T00:00:00.000Z",
+            "updatedAt": "2026-05-01T00:00:00.000Z",
+            "lastSummary": "a",
+            "logs": [],
+            "tools": [],
+            "artifacts": [],
+            "changedFiles": []
+          }
         }
         """)))
 
@@ -202,24 +211,27 @@ struct PickySessionViewModelDockGroupCLITests {
         viewModel.apply(.protocolEvent(try Self.decodeEnvelope("""
         {
           "id": "snapshot-created-pickle",
-          "protocolVersion": "2026-07-23",
+          "protocolVersion": "2026-08-25",
           "timestamp": "2026-05-01T00:00:30.000Z",
-          "type": "sessionSnapshot",
-          "sessions": [
-            {
-              "id": "new-pickle",
-              "title": "New Pickle",
-              "status": "running",
-              "cwd": "/tmp/ws",
-              "createdAt": "2026-05-01T00:00:00.000Z",
-              "updatedAt": "2026-05-01T00:00:00.000Z",
-              "lastSummary": "",
-              "logs": [],
-              "tools": [],
-              "artifacts": [],
-              "changedFiles": []
-            }
-          ]
+          "type": "sessionProjectionSnapshot",
+          "sessionId": "new-pickle",
+          "epoch": "epoch-cli",
+          "revision": 1,
+          "complete": true,
+          "omittedFields": [],
+          "projection": {
+            "id": "new-pickle",
+            "title": "New Pickle",
+            "status": "running",
+            "cwd": "/tmp/ws",
+            "createdAt": "2026-05-01T00:00:00.000Z",
+            "updatedAt": "2026-05-01T00:00:00.000Z",
+            "lastSummary": "",
+            "logs": [],
+            "tools": [],
+            "artifacts": [],
+            "changedFiles": []
+          }
         }
         """)))
 
@@ -238,7 +250,7 @@ struct PickySessionViewModelDockGroupCLITests {
             notificationCenter: PickyNoopNotificationCenter(),
             dockLayoutStore: dockLayoutStore
         )
-        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["b", "a"])))
+        applySessions(["b", "a"], to: viewModel)
 
         let groups = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .create,
@@ -265,7 +277,7 @@ struct PickySessionViewModelDockGroupCLITests {
             notificationCenter: PickyNoopNotificationCenter(),
             dockLayoutStore: dockLayoutStore
         )
-        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
+        applySessions(["c", "b", "a"], to: viewModel)
 
         _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .addMembers,
@@ -298,7 +310,7 @@ struct PickySessionViewModelDockGroupCLITests {
             notificationCenter: PickyNoopNotificationCenter(),
             dockLayoutStore: dockLayoutStore
         )
-        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
+        applySessions(["c", "b", "a"], to: viewModel)
 
         _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .removeGroup,
@@ -325,7 +337,7 @@ struct PickySessionViewModelDockGroupCLITests {
             dockLayoutStore: dockLayoutStore,
             archiveCommitDelayNanoseconds: 60_000_000_000
         )
-        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
+        applySessions(["c", "b", "a"], to: viewModel)
 
         _ = try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(
             action: .archiveGroup,
@@ -352,7 +364,7 @@ struct PickySessionViewModelDockGroupCLITests {
             dockLayoutStore: dockLayoutStore,
             archiveCommitDelayNanoseconds: 60_000_000_000
         )
-        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b", "a"])))
+        applySessions(["c", "b", "a"], to: viewModel)
         dockLayoutStore.errorToThrow = CLIGroupDockLayoutStore.SaveError.failed
 
         await #expect(throws: CLIGroupDockLayoutStore.SaveError.self) {
@@ -377,7 +389,7 @@ struct PickySessionViewModelDockGroupCLITests {
         ]))
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(),
             archiveStore: CLIGroupArchiveStore(), dockLayoutStore: store, archiveCommitDelayNanoseconds: 60_000_000_000)
-        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["c", "b"])))
+        applySessions(["c", "b"], to: viewModel)
         await #expect(throws: PickyAsyncControlError.self) {
             try await viewModel.manageDockGroups(.init(action: .archiveGroup, groupId: "g", name: nil, sessionIds: []))
         }
@@ -401,7 +413,7 @@ struct PickySessionViewModelDockGroupCLITests {
             notificationCenter: PickyNoopNotificationCenter(),
             dockLayoutStore: dockLayoutStore
         )
-        viewModel.apply(.protocolEvent(Self.sessionSnapshot(["b", "a"])))
+        applySessions(["b", "a"], to: viewModel)
 
         await #expect(throws: PickyDockGroupManagementError.sessionNotFound("missing")) {
             try await viewModel.manageDockGroups(PickyDockGroupManagementRequest(

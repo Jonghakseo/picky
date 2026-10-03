@@ -1569,7 +1569,7 @@ struct PickyConversationCardViewTests {
         client.sendError = SendFailure()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "x", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionProjectionSnapshotJSON(id: "x", status: "running"))))
         try await waitForSession(viewModel, id: "x")
 
         await #expect(throws: SendFailure.self) {
@@ -1584,7 +1584,7 @@ struct PickyConversationCardViewTests {
         let client = ConversationCardFakeClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "x", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionProjectionSnapshotJSON(id: "x", status: "running"))))
         try await waitForSession(viewModel, id: "x")
 
         try await viewModel.steer(text: "test", sessionID: "x")
@@ -1600,7 +1600,7 @@ struct PickyConversationCardViewTests {
         let client = ConversationCardFakeClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "x", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionProjectionSnapshotJSON(id: "x", status: "completed"))))
         try await waitForSession(viewModel, id: "x")
 
         try await viewModel.followUp(text: "test", sessionID: "x")
@@ -1668,7 +1668,7 @@ struct PickyConversationCardViewTests {
         viewModel.start()
         defer { viewModel.stop() }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "pickle-voice", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionProjectionSnapshotJSON(id: "pickle-voice", status: "running"))))
         try await waitForSession(viewModel, id: "pickle-voice")
 
         let session = try #require(viewModel.sessions.first(where: { $0.id == "pickle-voice" }))
@@ -2641,9 +2641,13 @@ private func waitForSession(
     }
 }
 
-private func sessionUpdatedJSON(id: String = "session-1", status: String = "running") -> String {
+private func sessionProjectionSnapshotJSON(
+    id: String = "session-1",
+    status: String = "running",
+    revision: Int = 1
+) -> String {
     """
-    {"id":"evt-\(id)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"Test session","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"summary","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+    {"id":"evt-\(id)","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionProjectionSnapshot","sessionId":"\(id)","epoch":"conversation-card-test","revision":\(revision),"complete":true,"omittedFields":[],"projection":{"id":"\(id)","title":"Test session","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"summary","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
     """
 }
 

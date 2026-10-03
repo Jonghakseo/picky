@@ -34,11 +34,16 @@ enum PickyProjectionReplayFixtures {
         viewModel.apply(.protocolEvent(envelope))
     }
 
-    static func bootstrapSnapshotEvent() -> PickyEventEnvelope {
-        bootstrapEnvelope(
-            id: "bootstrap-summary",
-            event: .sessionSnapshot(PickySessionSnapshot(sessions: lightweightBootstrapSessions()))
-        )
+    /// The daemon bootstraps a connection with one `sessionProjectionSnapshot`
+    /// per session, in descending `updatedAt` order.
+    static func bootstrapSnapshotEvents(using builder: PickyProjectionEventFixtures) -> [PickyEventEnvelope] {
+        lightweightBootstrapSessions().reversed().map { session in
+            builder.snapshotEnvelope(
+                id: "bootstrap-\(session.id)",
+                session: session,
+                timestamp: bootstrapDate
+            )
+        }
     }
 
     static func bootstrapEnvelope(id: String, event: PickyEvent) -> PickyEventEnvelope {
@@ -159,27 +164,36 @@ enum PickyProjectionReplayFixtures {
         )
     }
 
-    /// App-bound v1 projection derived from the deterministic agentd terminal
-    /// baseline. The tool and activity envelopes preserve the captured order:
+    /// App-bound v2 projection derived from the deterministic agentd terminal
+    /// baseline. The tool and activity frames preserve the captured order:
     /// thinking activity, thinking message, read activity, running tool,
-    /// succeeded tool, then the terminal activity reset.
-    static func terminalReplayEvents() -> [PickyEvent] {
+    /// succeeded tool, then the terminal activity reset and completion patch.
+    static func terminalReplayEnvelopes(using builder: PickyProjectionEventFixtures) -> [PickyEventEnvelope] {
         let artifact = terminalArtifact()
-        return [
-            .sessionMetaUpdated(terminalSession(status: .running, messages: [], messageJournalAvailable: false, artifacts: [])),
-            .sessionActivityUpdated(sessionId: terminalSessionID, activitySummary: PickyActivitySummary(thinking: 1), seq: 1),
-            .sessionMessageAppended(sessionId: terminalSessionID, message: terminalMessage(id: "thinking-terminal", kind: .agentThinking, text: "Preparing the final result."), seq: 2),
-            .sessionActivityUpdated(sessionId: terminalSessionID, activitySummary: PickyActivitySummary(thinking: 1, read: 1), seq: 3),
-            .toolActivityUpdated(sessionId: terminalSessionID, tool: PickyToolActivity(toolCallId: "tool-read", name: "read", status: "running", preview: "Read the session state", endedAt: nil)),
-            .toolActivityUpdated(sessionId: terminalSessionID, tool: PickyToolActivity(toolCallId: "tool-read", name: "read", status: "succeeded", preview: "Read the session state", resultPreview: "state loaded", endedAt: terminalDate)),
-            .sessionMessageAppended(sessionId: terminalSessionID, message: terminalMessage(id: "assistant-terminal", kind: .agentText, text: terminalFinalAnswer), seq: 4),
-            .sessionMessageRemoved(sessionId: terminalSessionID, messageId: "thinking-terminal", seq: 5),
-            .sessionMessageAppended(sessionId: terminalSessionID, message: terminalMessage(id: "activity-terminal", kind: .agentActivity, text: nil, activity: PickyActivitySummary(thinking: 1, read: 1)), seq: 6),
-            .sessionActivityUpdated(sessionId: terminalSessionID, activitySummary: .zero, seq: 7),
-            .sessionMetaUpdated(terminalSession(status: .completed, messages: [], messageJournalAvailable: false, artifacts: [], finalAnswer: terminalFinalAnswer)),
-            .sessionMetaUpdated(terminalSession(status: .completed, messages: [], messageJournalAvailable: false, artifacts: [artifact], finalAnswer: terminalFinalAnswer)),
-            .artifactUpdated(sessionId: terminalSessionID, artifact: artifact),
+        let mutations: [[String]] = [
+            [PickyProjectionEventFixtures.activitySetMutation(PickyActivitySummary(thinking: 1))],
+            [PickyProjectionEventFixtures.messageAppendMutation(terminalMessage(id: "thinking-terminal", kind: .agentThinking, text: "Preparing the final result."))],
+            [PickyProjectionEventFixtures.activitySetMutation(PickyActivitySummary(thinking: 1, read: 1))],
+            [PickyProjectionEventFixtures.toolUpsertMutation(PickyToolActivity(toolCallId: "tool-read", name: "read", status: "running", preview: "Read the session state", endedAt: nil))],
+            [PickyProjectionEventFixtures.toolUpsertMutation(PickyToolActivity(toolCallId: "tool-read", name: "read", status: "succeeded", preview: "Read the session state", resultPreview: "state loaded", endedAt: terminalDate))],
+            [PickyProjectionEventFixtures.messageAppendMutation(terminalMessage(id: "assistant-terminal", kind: .agentText, text: terminalFinalAnswer))],
+            [PickyProjectionEventFixtures.messageRemoveMutation(messageID: "thinking-terminal")],
+            [PickyProjectionEventFixtures.messageAppendMutation(terminalMessage(id: "activity-terminal", kind: .agentActivity, text: nil, activity: PickyActivitySummary(thinking: 1, read: 1)))],
+            [PickyProjectionEventFixtures.activitySetMutation(.zero)],
+            [
+                PickyProjectionEventFixtures.metaPatchMutation("\"status\":\"completed\",\"lastSummary\":\"Completed the investigation.\""),
+                PickyProjectionEventFixtures.finalAnswerSetMutation(terminalFinalAnswer),
+            ],
+            [PickyProjectionEventFixtures.artifactUpsertMutation(artifact)],
         ]
+        return mutations.enumerated().map { index, mutation in
+            builder.transactionEnvelope(
+                id: "terminal-event-\(index)",
+                sessionID: terminalSessionID,
+                mutations: mutation,
+                timestamp: terminalDate
+            )
+        }
     }
 
     static func terminalEnvelope(_ event: PickyEvent) -> PickyEventEnvelope {

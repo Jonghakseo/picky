@@ -30,6 +30,26 @@
     {
       "type": "finalAnswerSet",
       "finalAnswer": "Completed successfully."
+    },
+    {
+      "type": "queueSet",
+      "queuedSteers": [
+        {
+          "text": "# Picky steering message\n\n## User steering instruction\n- Source: text-follow-up\n\nPrioritize tests\n\n## Captured context\n- CWD: /Users/creatrip/picky",
+          "displayText": "Prioritize tests",
+          "enqueuedAt": "2026-08-24T00:00:00.000Z",
+          "attachedImagesCount": 2
+        }
+      ],
+      "queuedFollowUps": [
+        {
+          "text": "Summarize after completion",
+          "enqueuedAt": "2026-08-24T00:00:00.000Z"
+        }
+      ],
+      "scheduledMessages": [],
+      "steeringMode": "one-at-a-time",
+      "followUpMode": "one-at-a-time"
     }
   ]
 }

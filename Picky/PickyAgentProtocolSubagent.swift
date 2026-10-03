@@ -7,12 +7,6 @@
 
 import Foundation
 
-struct PickySubagentRunsUpdatedPayload: Decodable {
-    let sessionId: String
-    let runs: [PickySubagentRun]
-    let seq: Int
-}
-
 enum PickySubagentRunStatus: String, Codable, Equatable {
     case running, done, error
 }

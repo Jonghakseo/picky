@@ -221,19 +221,6 @@ struct PickyTodoProgressPresentationTests {
         #expect(!PickyTodoProgressMarkerPolicy.shouldAnimateInProgressMarker(taskStatus: .completed, isSessionRunning: true))
     }
 
-    @Test func daemonSessionUpdateCanAuthoritativelyClearTodoState() {
-        let todoState = PickyTodoState(
-            tasks: [PickyTodoTask(id: "todo-1", content: "Implement HUD", status: .inProgress)],
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_003)
-        )
-        let existing = PickySessionListViewModel.SessionCard.fromAgentSession(agentSession(todoState: todoState))
-        let incoming = PickySessionListViewModel.SessionCard.fromAgentSession(agentSession(todoState: nil))
-
-        let merged = existing.merged(with: incoming, preserveConversationState: true)
-
-        #expect(merged.todoState == nil)
-    }
-
     @Test func completedStateUsesLastTaskAsStableSummary() throws {
         let state = PickyTodoState(
             tasks: [
@@ -254,20 +241,5 @@ struct PickyTodoProgressPresentationTests {
         #expect(presentation.fraction == 1)
         #expect(presentation.activeText == "Run tests")
         #expect(presentation.isComplete)
-    }
-
-    private func agentSession(todoState: PickyTodoState?) -> PickyAgentSession {
-        PickyAgentSession(
-            id: "session-todo",
-            title: "Todo session",
-            status: .running,
-            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_010),
-            logs: [],
-            tools: [],
-            todoState: todoState,
-            artifacts: [],
-            changedFiles: []
-        )
     }
 }

@@ -107,6 +107,18 @@ function contextFixture() {
   };
 }
 
+const projectionTransactionEvent = (id: string, mutations: unknown[]) => ({
+  id,
+  protocolVersion: PROTOCOL_VERSION,
+  timestamp: "2026-08-24T00:00:00.000Z",
+  type: "sessionProjectionTransaction",
+  sessionId: "session-001",
+  epoch: "epoch-001",
+  baseRevision: 0,
+  revision: 1,
+  mutations,
+});
+
 describe("protocol contract fixtures", () => {
   it.each(["prepare", "execute"])("decodes %s archive quiescence and legacy absence", (action) => {
     const fixture = JSON.parse(readFileSync(join(contractsRoot, `async-task-archive-${action}-quiescent.command.json`), "utf8"));
@@ -136,17 +148,17 @@ describe("protocol contract fixtures", () => {
   }
 
   it("decodes queued display text and attached image evidence, and tolerates their absence", () => {
-    const fixture = JSON.parse(readFileSync(join(contractsRoot, "session-queue-updated.event.json"), "utf8"));
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, "session-projection-transaction.event.json"), "utf8"));
+    const decoded = EventEnvelopeSchema.parse(fixture);
+    if (decoded.type !== "sessionProjectionTransaction") throw new Error("Unexpected event type");
+    const queueSet = decoded.mutations.find((mutation) => mutation.type === "queueSet");
+    if (queueSet?.type !== "queueSet") throw new Error("Missing queueSet mutation");
 
-    expect(EventEnvelopeSchema.parse(fixture)).toMatchObject({
-      type: "sessionQueueUpdated",
-      steering: [{ displayText: "Prioritize tests", attachedImagesCount: 2 }],
-    });
-    expect((EventEnvelopeSchema.parse(fixture) as { steering: Array<{ text: string }> }).steering[0]?.text).toContain("# Picky steering message");
-    expect(EventEnvelopeSchema.parse(fixture)).toMatchObject({ followUp: [{ text: "Summarize after completion" }] });
-    const followUp = (EventEnvelopeSchema.parse(fixture) as { followUp: Array<{ attachedImagesCount?: number; displayText?: string }> }).followUp[0];
-    expect(followUp?.attachedImagesCount).toBeUndefined();
-    expect(followUp?.displayText).toBeUndefined();
+    expect(queueSet.queuedSteers[0]).toMatchObject({ displayText: "Prioritize tests", attachedImagesCount: 2 });
+    expect(queueSet.queuedSteers[0]?.text).toContain("# Picky steering message");
+    expect(queueSet.queuedFollowUps[0]).toMatchObject({ text: "Summarize after completion" });
+    expect(queueSet.queuedFollowUps[0]?.attachedImagesCount).toBeUndefined();
+    expect(queueSet.queuedFollowUps[0]?.displayText).toBeUndefined();
   });
 
   it("keeps the hello fixture protocol and supported versions current", () => {
@@ -557,15 +569,13 @@ describe("protocol contract fixtures", () => {
   });
 
   it("parses slim todo state updates including authoritative clears", () => {
-    expect(EventEnvelopeSchema.parse({
-      id: "event-todo-state",
-      protocolVersion: PROTOCOL_VERSION,
-      timestamp: "2026-07-14T01:00:00.000Z",
-      type: "sessionTodoStateUpdated",
+    expect(EventEnvelopeSchema.parse(projectionTransactionEvent("event-todo-state", [
+      { type: "todoSet", todoState: null },
+    ]))).toMatchObject({
+      type: "sessionProjectionTransaction",
       sessionId: "session-001",
-      todoState: null,
-      seq: 10,
-    })).toMatchObject({ type: "sessionTodoStateUpdated", sessionId: "session-001", todoState: null, seq: 10 });
+      mutations: [{ type: "todoSet", todoState: null }],
+    });
   });
 
   it("parses message rewind commands and events", () => {
@@ -754,12 +764,8 @@ describe("protocol contract fixtures", () => {
 
   it("parses session message events with full message payloads", () => {
     expect(() =>
-      EventEnvelopeSchema.parse({
-        id: "event-message-appended",
-        protocolVersion: PROTOCOL_VERSION,
-        timestamp: "2026-05-05T00:00:00.000Z",
-        type: "sessionMessageAppended",
-        sessionId: "session-001",
+      EventEnvelopeSchema.parse(projectionTransactionEvent("event-message-appended", [{
+        type: "messageAppend",
         message: {
           id: "message-001",
           kind: "agent_text",
@@ -768,19 +774,14 @@ describe("protocol contract fixtures", () => {
           text: "Done",
           assistantRun: { model: "openai-codex/gpt-5.6", thinkingLevel: "max" },
         },
-        seq: 1,
-      }),
+      }])),
     ).not.toThrow();
   });
 
   it("parses extension notify session message events with severity", () => {
     expect(() =>
-      EventEnvelopeSchema.parse({
-        id: "event-notify-message",
-        protocolVersion: PROTOCOL_VERSION,
-        timestamp: "2026-05-05T00:00:00.000Z",
-        type: "sessionMessageAppended",
-        sessionId: "session-001",
+      EventEnvelopeSchema.parse(projectionTransactionEvent("event-notify-message", [{
+        type: "messageAppend",
         message: {
           id: "notify-001",
           kind: "system",
@@ -788,19 +789,14 @@ describe("protocol contract fixtures", () => {
           text: "Pi extension warning",
           notifyType: "warning",
         },
-        seq: 2,
-      }),
+      }])),
     ).not.toThrow();
   });
 
   it("parses subagent invocation message events with optional activity fields", () => {
     expect(() =>
-      EventEnvelopeSchema.parse({
-        id: "event-subagent-invocation",
-        protocolVersion: PROTOCOL_VERSION,
-        timestamp: "2026-08-02T00:00:00.000Z",
-        type: "sessionMessageAppended",
-        sessionId: "session-001",
+      EventEnvelopeSchema.parse(projectionTransactionEvent("event-subagent-invocation", [{
+        type: "messageAppend",
         message: {
           id: "message-subagent-invocation",
           kind: "subagent_invocation",
@@ -812,8 +808,7 @@ describe("protocol contract fixtures", () => {
             completed: true,
           },
         },
-        seq: 2,
-      }),
+      }])),
     ).not.toThrow();
     expect(PickyAgentSessionSchema.parse({
       id: "session-summary", title: "Pickle", status: "running", createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z",
@@ -833,37 +828,31 @@ describe("protocol contract fixtures", () => {
 
   it("parses agent activity session message events", () => {
     expect(() =>
-      EventEnvelopeSchema.parse({
-        id: "event-activity-message",
-        protocolVersion: PROTOCOL_VERSION,
-        timestamp: "2026-05-05T00:00:00.000Z",
-        type: "sessionMessageAppended",
-        sessionId: "session-001",
+      EventEnvelopeSchema.parse(projectionTransactionEvent("event-activity-message", [{
+        type: "messageAppend",
         message: {
           id: "message-activity-001",
           kind: "agent_activity",
           createdAt: "2026-05-05T00:00:00.000Z",
           activitySnapshot: { edit: 1, bash: 2, thinking: 3, other: 4 },
         },
-        seq: 2,
-      }),
+      }])),
     ).not.toThrow();
   });
 
-  it("parses session queue updates with optional mode fields", () => {
-    const base = {
-      id: "event-queue-updated",
-      protocolVersion: PROTOCOL_VERSION,
-      timestamp: "2026-05-05T00:00:00.000Z",
-      type: "sessionQueueUpdated",
-      sessionId: "session-001",
-      steering: [{ text: "steer", enqueuedAt: "2026-05-05T00:00:00.000Z" }],
-      followUp: [{ text: "follow", enqueuedAt: "2026-05-05T00:00:00.000Z" }],
-      seq: 2,
+  it("parses queue mutations and defaults absent scheduled messages", () => {
+    const queueSet = {
+      type: "queueSet",
+      queuedSteers: [{ text: "steer", enqueuedAt: "2026-05-05T00:00:00.000Z" }],
+      queuedFollowUps: [{ text: "follow", enqueuedAt: "2026-05-05T00:00:00.000Z" }],
+      steeringMode: "one-at-a-time",
+      followUpMode: "all",
     };
 
-    expect(() => EventEnvelopeSchema.parse(base)).not.toThrow();
-    expect(() => EventEnvelopeSchema.parse({ ...base, steeringMode: "one-at-a-time", followUpMode: "all" })).not.toThrow();
+    const decoded = EventEnvelopeSchema.parse(projectionTransactionEvent("event-queue-updated", [queueSet]));
+    if (decoded.type !== "sessionProjectionTransaction") throw new Error("Unexpected event type");
+    expect(decoded.mutations[0]).toMatchObject({ type: "queueSet", steeringMode: "one-at-a-time", followUpMode: "all", scheduledMessages: [] });
+    expect(() => EventEnvelopeSchema.parse(projectionTransactionEvent("event-queue-updated", [{ ...queueSet, steeringMode: undefined }]))).toThrow();
   });
 
   it("preserves absent, null, and value semantics for projection meta patches", () => {

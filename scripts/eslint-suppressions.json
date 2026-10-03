@@ -45,7 +45,7 @@
   },
   {
     "path": "agentd/src/server.ts",
-    "directive": "// eslint-disable-next-line complexity, max-lines-per-function -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior."
+    "directive": "// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior."
   },
   {
     "path": "agentd/src/session-supervisor.ts",

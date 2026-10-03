@@ -354,12 +354,12 @@ struct PickyAgentClientTests {
         #expect(text.contains("\"type\":\"routeTask\"") || text.contains("\"type\" : \"routeTask\""))
     }
 
-    @Test func receivesHelloAndSessionUpdatedEvents() async throws {
+    @Test func receivesHelloAndSessionProjectionSnapshotEvents() async throws {
         let task = FakeWebSocketTask()
         task.enqueue(contentsOf: [
             .success(.string(EventJSON.hello())),
             .success(.string("""
-            {"id":"event-session","protocolVersion":"2026-07-23","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+            {"id":"event-session","protocolVersion":"2026-08-25","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionProjectionSnapshot","sessionId":"session-1","epoch":"epoch-client","revision":1,"complete":true,"omittedFields":[],"projection":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
             """))
         ])
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
@@ -374,10 +374,11 @@ struct PickyAgentClientTests {
         } else { Issue.record("Expected hello") }
 
         if case .protocolEvent(let event)? = session,
-           case .sessionUpdated(let pickySession) = event.event {
-            #expect(pickySession.id == "session-1")
-            #expect(pickySession.status == .running)
-        } else { Issue.record("Expected sessionUpdated") }
+           case .sessionProjectionSnapshot(let snapshot) = event.event {
+            #expect(snapshot.sessionId == "session-1")
+            #expect(snapshot.revision == 1)
+            #expect(snapshot.projection.status == .running)
+        } else { Issue.record("Expected sessionProjectionSnapshot") }
     }
 
     @Test func encodesPackageCommandsAndDecodesUpdateEvents() throws {

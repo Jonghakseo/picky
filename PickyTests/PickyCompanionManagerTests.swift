@@ -391,6 +391,8 @@ private final class FakeNSSpeechSynthesizer: PickyNSSpeechSynthesizing {
 
 @MainActor
 struct PickyCompanionManagerTests {
+    private let events = PickyProjectionEventFixtures()
+
     @Test func screenContextDisplayToggleExcludesAndReincludesOneDisplay() {
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
@@ -938,11 +940,9 @@ struct PickyCompanionManagerTests {
             notificationCenter: PickyNoopNotificationCenter(),
             selectionStore: selection
         )
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(
             id: "evt-hovered-pickle",
-            protocolVersion: "2026-07-23",
-            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
-            event: .sessionUpdated(session(id: "pickle-hovered", status: .completed))
+            session: session(id: "pickle-hovered", status: .completed)
         )))
         let card = PickyConversationCardView(
             viewModel: viewModel,
@@ -978,11 +978,9 @@ struct PickyCompanionManagerTests {
             notificationCenter: PickyNoopNotificationCenter(),
             selectionStore: selection
         )
-        viewModel.apply(.protocolEvent(PickyEventEnvelope(
+        viewModel.apply(.protocolEvent(events.snapshotEnvelope(
             id: "evt-deferred-hovered-pickle",
-            protocolVersion: "2026-07-23",
-            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
-            event: .sessionUpdated(session(id: "pickle-hovered", status: .completed))
+            session: session(id: "pickle-hovered", status: .completed)
         )))
         let card = PickyConversationCardView(
             viewModel: viewModel,
@@ -1222,7 +1220,7 @@ struct PickyCompanionManagerTests {
         // utterance-scoped target before the Pickle terminal event can arrive.
         manager.setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "test-target-cleared-after-send")
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-race", status: .cancelled)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-race", status: .cancelled))))
         #expect(manager.latestAgentSessionSummary == "Pickle · cancelled")
 
         // Wait past the deferred-receipt window to prove the cancelled
@@ -1468,16 +1466,21 @@ struct PickyCompanionManagerTests {
         )
         #expect(manager.voiceState == .responding)
 
-        manager.applyAgentEvent(.sessionLogAppended(sessionId: "pickle-1", line: "running"))
-        manager.applyAgentEvent(.toolActivityUpdated(sessionId: "pickle-1", tool: PickyToolActivity(
-            toolCallId: "tool-1",
-            name: "bash",
-            status: "running",
-            preview: nil,
-            startedAt: nil,
-            endedAt: nil
+        manager.applyAgentEvent(.sessionProjectionTransaction(events.transaction(
+            sessionID: "pickle-1",
+            mutations: [
+                PickyProjectionEventFixtures.logAppendMutation("running"),
+                PickyProjectionEventFixtures.toolUpsertMutation(PickyToolActivity(
+                    toolCallId: "tool-1",
+                    name: "bash",
+                    status: "running",
+                    preview: nil,
+                    startedAt: nil,
+                    endedAt: nil
+                )),
+            ]
         )))
-        manager.applyAgentEvent(.sessionUpdated(PickyAgentSession(
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: PickyAgentSession(
             id: "pickle-1",
             title: "Pickle",
             status: .running,
@@ -1489,7 +1492,7 @@ struct PickyCompanionManagerTests {
             tools: [],
             artifacts: [],
             changedFiles: []
-        )))
+        ))))
 
         #expect(manager.latestAgentSessionSummary == "기존 응답")
     }
@@ -3001,7 +3004,7 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .responding)
 
         // Drive an unrelated reducer event so the interaction projection ticks.
-        manager.applyAgentEvent(.sessionUpdated(PickyAgentSession(
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: PickyAgentSession(
             id: "unrelated",
             title: "Unrelated",
             status: .running,
@@ -3013,7 +3016,7 @@ struct PickyCompanionManagerTests {
             tools: [],
             artifacts: [],
             changedFiles: []
-        )))
+        ))))
         try await settle()
 
         // Still responding because the speak came from the system path, not
@@ -3026,26 +3029,27 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .idle }
     }
 
-    // MARK: - sessionUpdated terminal status -> cursor cleanup (HUD abort regression)
+    // MARK: - Projection snapshot terminal status -> cursor cleanup (HUD abort regression)
 
-    @Test func sessionUpdatedToCancelledReleasesCursorProcessingForAwaitedSession() async throws {
+    @Test func projectionSnapshotToCancelledReleasesCursorProcessingForAwaitedSession() async throws {
         // Repro for the HUD-abort bug: user hits abort on a Pickle that the cursor is
-        // waiting on. agentd patches the session to .cancelled and emits sessionUpdated
-        // (no quickReply ever lands). CompanionManager must detect the terminal transition
-        // and release the cursor; otherwise voiceState stays at .processing (yellow).
+        // waiting on. agentd patches the session to .cancelled and republishes the
+        // projection snapshot (no quickReply ever lands). CompanionManager must detect
+        // the terminal transition and release the cursor; otherwise voiceState stays at
+        // .processing (yellow).
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-aborted")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hello")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-aborted", status: .cancelled)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-aborted", status: .cancelled))))
 
         #expect(manager.voiceState == .idle)
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
         manager.stop()
     }
 
-    @Test func sessionUpdatedToFailedReleasesCursorProcessingForAwaitedSession() async throws {
+    @Test func projectionSnapshotToFailedReleasesCursorProcessingForAwaitedSession() async throws {
         // Same flow as cancelled, but exercises the .failed terminal status that
         // arrives when a runtime crash / unrecoverable error ends the session without
         // a quickReply.
@@ -3054,7 +3058,7 @@ struct PickyCompanionManagerTests {
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-failed", status: .failed)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-failed", status: .failed))))
 
         #expect(manager.voiceState == .idle)
         manager.stop()
@@ -3095,7 +3099,7 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
-    @Test func sessionUpdatedToCancelledForUnrelatedSessionDoesNotReleaseCursor() async throws {
+    @Test func projectionSnapshotToCancelledForUnrelatedSessionDoesNotReleaseCursor() async throws {
         // The cursor is waiting on pickle-A; an unrelated pickle-B getting cancelled
         // must not yank the cursor out of .processing. Without sessionID matching this
         // would otherwise produce spurious clears whenever ANY background session
@@ -3105,14 +3109,14 @@ struct PickyCompanionManagerTests {
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-B", status: .cancelled)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-B", status: .cancelled))))
 
         #expect(manager.voiceState == .processing, "the cursor was waiting on pickle-A; pickle-B's terminal status must not touch it")
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-A")
         manager.stop()
     }
 
-    @Test func sessionUpdatedToRunningDoesNotReleaseCursor() async throws {
+    @Test func projectionSnapshotToRunningDoesNotReleaseCursor() async throws {
         // Defensive regression: non-terminal status transitions must keep the cursor's
         // .processing state intact.
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
@@ -3120,18 +3124,18 @@ struct PickyCompanionManagerTests {
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-running", status: .running)))
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-running", status: .waiting_for_input)))
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-running", status: .blocked)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-running", status: .running))))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-running", status: .waiting_for_input))))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-running", status: .blocked))))
 
         #expect(manager.voiceState == .processing)
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-running")
         manager.stop()
     }
 
-    @Test func sessionUpdatedToCancelledAfterPTTInterruptIsIdempotent() async throws {
+    @Test func projectionSnapshotToCancelledAfterPTTInterruptIsIdempotent() async throws {
         // PTT interrupt already cleared the cursor + voiceFollowUp before the
-        // session-level abort reached agentd and bounced back as sessionUpdated.
+        // session-level abort reached agentd and bounced back as a projection snapshot.
         // The terminal transition must be a safe no-op (no exceptions, no second
         // mutation of voiceState that would clobber a fresh user input in progress).
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
@@ -3140,15 +3144,15 @@ struct PickyCompanionManagerTests {
         manager.interruptSpokenResponseForVoiceInput()
         try await waitUntil { manager.voiceState == .idle }
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-race", status: .cancelled)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-race", status: .cancelled))))
 
         #expect(manager.voiceState == .idle)
         manager.stop()
     }
 
-    @Test func sessionUpdatedToCompletedDoesNotInterruptOngoingSpokenResponse() async throws {
+    @Test func projectionSnapshotToCompletedDoesNotInterruptOngoingSpokenResponse() async throws {
         // Normal completion delivers a quickReply that already moves voiceState into
-        // .responding (and clears the pending timing). A subsequent sessionUpdated
+        // .responding (and clears the pending timing). A subsequent projection snapshot
         // with .completed must NOT collapse that response back to .idle — the spoken
         // reply is mid-playback.
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
@@ -3158,14 +3162,14 @@ struct PickyCompanionManagerTests {
         )
         #expect(manager.voiceState == .responding)
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-1", status: .completed)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-1", status: .completed))))
 
-        #expect(manager.voiceState == .responding, "a late .completed sessionUpdated must not abort the in-flight spoken reply")
+        #expect(manager.voiceState == .responding, "a late .completed projection snapshot must not abort the in-flight spoken reply")
         manager.stop()
     }
 
-    @Test func repeatedTerminalSessionUpdatedOnlyTriggersCleanupOnce() async throws {
-        // agentd can re-emit sessionUpdated for the same session multiple times
+    @Test func repeatedTerminalProjectionSnapshotOnlyTriggersCleanupOnce() async throws {
+        // agentd can re-emit a projection snapshot for the same session multiple times
         // (e.g. reconnect snapshot + live update). The cleanup must only happen on
         // the first transition into a terminal status; subsequent terminal updates
         // for the same session must be silent.
@@ -3173,17 +3177,17 @@ struct PickyCompanionManagerTests {
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-replay")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
 
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-replay", status: .cancelled)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-replay", status: .cancelled))))
         try await waitUntil { manager.voiceState == .idle }
 
         // Start a NEW awaited turn on a different session; the duplicate terminal
-        // sessionUpdated for the OLD session must not collapse the new cursor state.
+        // snapshot for the OLD session must not collapse the new cursor state.
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-new")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi again")
         #expect(manager.voiceState == .processing)
-        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-replay", status: .cancelled)))
+        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-replay", status: .cancelled))))
 
-        #expect(manager.voiceState == .processing, "duplicate terminal sessionUpdated for the old session must be a no-op")
+        #expect(manager.voiceState == .processing, "a duplicate terminal projection snapshot for the old session must be a no-op")
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-new")
         manager.stop()
     }

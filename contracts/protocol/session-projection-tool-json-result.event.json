@@ -1,0 +1,27 @@
+{
+  "id": "event-projection-tool-json-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-05-01T00:00:03.000Z",
+  "type": "sessionProjectionTransaction",
+  "sessionId": "session-001",
+  "epoch": "epoch-001",
+  "baseRevision": 0,
+  "revision": 1,
+  "mutations": [
+    {
+      "type": "toolUpsert",
+      "tool": {
+        "toolCallId": "tool-json-001",
+        "name": "mcp__example__search",
+        "status": "succeeded",
+        "preview": "{\"items\":[...",
+        "resultPreview": "{\"items\":[...",
+        "resultJSONPreview": "{\"items\":[]}",
+        "resultPreviewTruncated": true,
+        "resultPreviewRepaired": true,
+        "startedAt": "2026-05-01T00:00:02.000Z",
+        "endedAt": "2026-05-01T00:00:03.000Z"
+      }
+    }
+  ]
+}

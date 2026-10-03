@@ -423,22 +423,8 @@ enum PickyEvent: Equatable {
     case piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent)
     case piOAuthPromptRequested(PickyPiOAuthPromptRequestEvent)
     case piAuthenticationReloaded(PickyPiAuthenticationReloadedEvent)
-    case sessionSnapshot(PickySessionSnapshot)
     case sessionProjectionTransaction(PickySessionProjectionTransaction), sessionProjectionSnapshot(PickySessionProjectionSnapshot)
     case sessionProjectionBootstrapComplete(PickySessionProjectionBootstrapComplete)
-    /// Full lifecycle snapshot used to hydrate the conversation journal.
-    case sessionUpdated(PickyAgentSession)
-    /// Patch-driven session state that deliberately omits `messages`; clients
-    /// merge it into an already hydrated session projection.
-    case sessionMetaUpdated(PickyAgentSession)
-    /// Authoritative archive-flag change signaled by agentd. Picky's session
-    /// view model trusts THIS event to update its local
-    /// `manuallyArchivedSessionIDs` UserDefaults; it deliberately ignores the
-    /// `archived` field on plain `sessionUpdated` to avoid mid-flight
-    /// unarchive flicker when an unrelated update arrives while the user has
-    /// just toggled archive locally. Fired by agentd whenever
-    /// `setSessionArchived` runs — from a Picky client command or tool.
-    case sessionArchivedAuthoritative(sessionId: String, archived: Bool)
     case sessionResourcesReloaded(sessionId: String)
     case pluginsReloaded(PickyPluginsReloadedEvent)
     case hubStatisticsResult(PickyHubStatisticsResultEvent)
@@ -448,12 +434,7 @@ enum PickyEvent: Equatable {
     case packageOperationCompleted(PickyPackageOperationCompletedEvent)
     case mcpServerList(PickyMcpServerListEvent)
     case mcpServerOperationCompleted(PickyMcpServerOperationCompletedEvent)
-    case sessionLogAppended(sessionId: String, line: String)
-    case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
-    case sessionTodoStateUpdated(sessionId: String, todoState: PickyTodoState?, seq: Int)
-    case sessionSubagentRunsUpdated(sessionId: String, runs: [PickySubagentRun], seq: Int)
     case extensionUiRequest(PickyExtensionUiRequest)
-    case artifactUpdated(sessionId: String, artifact: PickyArtifact)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
     case annotationOverlayRequested(PickyAnnotationOverlayRequest)
     case pickleHandoffRequested(PickyPickleHandoffRequest)
@@ -471,17 +452,6 @@ enum PickyEvent: Equatable {
     case toolHistoryDetailResult(PickyToolHistoryDetailResult)
     case sessionDiffResult(PickySessionDiffResult)
     case sessionRewound(sessionId: String, editorText: String?, removedIds: [String])
-    case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
-    /// Bulk append for terminal-sync / history-restore imports. The whole batch
-    /// shares one seq so the conversation updates in a single publish instead of
-    /// replaying the import message-by-message.
-    case sessionMessagesImported(sessionId: String, messages: [PickySessionMessage], seq: Int)
-    case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
-    case sessionMessageRemoved(sessionId: String, messageId: String, seq: Int)
-    /// `scheduled` is nil when the daemon does not carry delayed-action state on
-    /// this event; the app then keeps the scheduled projection it already has.
-    case sessionQueueUpdated(sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], scheduled: [PickyScheduledMessage]?, steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int)
-    case sessionActivityUpdated(sessionId: String, activitySummary: PickyActivitySummary, seq: Int)
     /// Live-only presence signal: the model is streaming its reply text. The
     /// daemon deliberately does not persist this, so it is never hydrated from
     /// a snapshot and an older daemon simply never sends it.
@@ -558,35 +528,11 @@ enum PickyEvent: Equatable {
     /// Pickle session lifecycle, journal, queue, and artifact events.
     private static func decodeSessionEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
         switch type {
-        case "sessionSnapshot", "sessionProjectionTransaction", "sessionProjectionSnapshot", "sessionProjectionBootstrapComplete":
-            return type == "sessionSnapshot" ? .sessionSnapshot(try PickySessionSnapshotPayload(from: decoder).snapshot) : Self.decodeDormantSessionProjectionEvent(type: type, decoder: decoder)
-        case "sessionUpdated":
-            let payload = try PickySessionUpdatedPayload(from: decoder)
-            return .sessionUpdated(payload.session)
-        case "sessionMetaUpdated":
-            let payload = try PickySessionUpdatedPayload(from: decoder)
-            return .sessionMetaUpdated(payload.session)
-        case "sessionArchivedAuthoritative":
-            let payload = try PickySessionArchivedAuthoritativePayload(from: decoder)
-            return .sessionArchivedAuthoritative(sessionId: payload.sessionId, archived: payload.archived)
+        case "sessionProjectionTransaction", "sessionProjectionSnapshot", "sessionProjectionBootstrapComplete":
+            return Self.decodeDormantSessionProjectionEvent(type: type, decoder: decoder)
         case "sessionResourcesReloaded":
             let payload = try PickySessionResourcesReloadedPayload(from: decoder)
             return .sessionResourcesReloaded(sessionId: payload.sessionId)
-        case "sessionLogAppended":
-            let payload = try PickySessionLogAppendedPayload(from: decoder)
-            return .sessionLogAppended(sessionId: payload.sessionId, line: payload.line)
-        case "toolActivityUpdated":
-            let payload = try PickyToolActivityUpdatedPayload(from: decoder)
-            return .toolActivityUpdated(sessionId: payload.sessionId, tool: payload.tool)
-        case "sessionTodoStateUpdated":
-            let payload = try PickyTodoStateUpdatedPayload(from: decoder)
-            return .sessionTodoStateUpdated(sessionId: payload.sessionId, todoState: payload.todoState, seq: payload.seq)
-        case "sessionSubagentRunsUpdated":
-            let payload = try PickySubagentRunsUpdatedPayload(from: decoder)
-            return .sessionSubagentRunsUpdated(sessionId: payload.sessionId, runs: payload.runs, seq: payload.seq)
-        case "artifactUpdated":
-            let payload = try PickyArtifactUpdatedPayload(from: decoder)
-            return .artifactUpdated(sessionId: payload.sessionId, artifact: payload.artifact)
         case "slashCommandsSnapshot":
             let payload = try PickySlashCommandsSnapshotPayload(from: decoder)
             return .slashCommandsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, commands: payload.commands)
@@ -606,32 +552,6 @@ enum PickyEvent: Equatable {
         case "sessionRewound":
             let payload = try PickySessionRewoundPayload(from: decoder)
             return .sessionRewound(sessionId: payload.sessionId, editorText: payload.editorText, removedIds: payload.removedIds)
-        case "sessionMessageAppended":
-            let payload = try PickySessionMessageAppendedPayload(from: decoder)
-            return .sessionMessageAppended(sessionId: payload.sessionId, message: payload.message, seq: payload.seq)
-        case "sessionMessagesImported":
-            let payload = try PickySessionMessagesImportedPayload(from: decoder)
-            return .sessionMessagesImported(sessionId: payload.sessionId, messages: payload.messages, seq: payload.seq)
-        case "sessionMessageReplaced":
-            let payload = try PickySessionMessageReplacedPayload(from: decoder)
-            return .sessionMessageReplaced(sessionId: payload.sessionId, messageId: payload.messageId, message: payload.message, seq: payload.seq)
-        case "sessionMessageRemoved":
-            let payload = try PickySessionMessageRemovedPayload(from: decoder)
-            return .sessionMessageRemoved(sessionId: payload.sessionId, messageId: payload.messageId, seq: payload.seq)
-        case "sessionQueueUpdated":
-            let payload = try PickySessionQueueUpdatedPayload(from: decoder)
-            return .sessionQueueUpdated(
-                sessionId: payload.sessionId,
-                steering: payload.steering,
-                followUp: payload.followUp,
-                scheduled: payload.scheduledMessages,
-                steeringMode: payload.steeringMode,
-                followUpMode: payload.followUpMode,
-                seq: payload.seq
-            )
-        case "sessionActivityUpdated":
-            let payload = try PickySessionActivityUpdatedPayload(from: decoder)
-            return .sessionActivityUpdated(sessionId: payload.sessionId, activitySummary: payload.activitySummary, seq: payload.seq)
         case "sessionReplyWritingUpdated":
             let payload = try PickySessionReplyWritingUpdatedPayload(from: decoder)
             return .sessionReplyWritingUpdated(sessionId: payload.sessionId, writing: payload.writing)
@@ -762,76 +682,6 @@ struct PickyPiAuthenticationReloadedEvent: Decodable, Equatable {
 private struct PickyMainTurnSettledPayload: Decodable { let contextId: String }
 /// A daemon session snapshot plus local decode completeness metadata.
 ///
-/// `skippedSessionCount` is intentionally not a wire field: it describes
-/// whether Picky had to omit malformed records while decoding this envelope.
-/// Consumers must treat incomplete snapshots as non-authoritative so an
-/// undecodable session cannot erase its already-rendered local state.
-struct PickySessionSnapshot: Equatable {
-    let sessions: [PickyAgentSession]
-    let skippedSessionCount: Int
-
-    var isComplete: Bool { skippedSessionCount == 0 }
-
-    init(sessions: [PickyAgentSession], skippedSessionCount: Int = 0) {
-        self.sessions = sessions
-        self.skippedSessionCount = skippedSessionCount
-    }
-}
-
-private struct PickySessionSnapshotPayload: Decodable {
-    let snapshot: PickySessionSnapshot
-
-    private enum CodingKeys: String, CodingKey { case sessions }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        // Decode sessions element-by-element and drop any that fail rather than
-        // failing the entire snapshot. One poisoned record must never blank the
-        // whole dock; the app stays usable and the skip is logged for triage.
-        // `PickyFailableSession.init` never throws, so the unkeyed container
-        // always advances exactly once per element regardless of Foundation's
-        // error-advancement behavior.
-        var unkeyed = try container.nestedUnkeyedContainer(forKey: .sessions)
-        var decoded: [PickyAgentSession] = []
-        if let count = unkeyed.count { decoded.reserveCapacity(count) }
-        var skipped = 0
-        while !unkeyed.isAtEnd {
-            let element = try unkeyed.decode(PickyFailableSession.self)
-            if let session = element.session {
-                decoded.append(session)
-            } else {
-                skipped += 1
-                if let error = element.error {
-                    PickyLog.notice(.agentClient, prefix: "\u{1F50C} Picky agent client \u{2014}", message: "skipped undecodable session in snapshot: \(error)")
-                }
-            }
-        }
-        if skipped > 0 {
-            PickyLog.notice(.agentClient, prefix: "\u{1F50C} Picky agent client \u{2014}", message: "session snapshot decoded with \(decoded.count) kept, \(skipped) skipped")
-        }
-        snapshot = PickySessionSnapshot(sessions: decoded, skippedSessionCount: skipped)
-    }
-}
-
-/// Wraps a single session decode so failures are captured instead of thrown.
-/// A non-throwing `init(from:)` guarantees the enclosing unkeyed container
-/// advances exactly one element per iteration.
-private struct PickyFailableSession: Decodable {
-    let session: PickyAgentSession?
-    let error: Error?
-
-    init(from decoder: Decoder) throws {
-        do {
-            session = try PickyAgentSession(from: decoder)
-            error = nil
-        } catch {
-            session = nil
-            self.error = error
-        }
-    }
-}
-private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
-private struct PickySessionArchivedAuthoritativePayload: Decodable { let sessionId: String; let archived: Bool }
 private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
 
 struct PickyPluginsReloadedEvent: Decodable, Equatable {
@@ -853,22 +703,12 @@ struct PickyHubStatisticsResultEvent: Decodable, Equatable {
     let snapshot: PickyHubStatisticsSnapshot?
 }
 
-private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }
-private struct PickyToolActivityUpdatedPayload: Decodable { let sessionId: String; let tool: PickyToolActivity }
-private struct PickyTodoStateUpdatedPayload: Decodable { let sessionId: String; let todoState: PickyTodoState?; let seq: Int }
 private struct PickyExtensionUiRequestPayload: Decodable { let request: PickyExtensionUiRequest }
-private struct PickyArtifactUpdatedPayload: Decodable { let sessionId: String; let artifact: PickyArtifact }
 private struct PickyPointerOverlayRequestedPayload: Decodable { let request: PickyPointerOverlayRequest }
 private struct PickyAnnotationOverlayRequestedPayload: Decodable { let request: PickyAnnotationOverlayRequest }
 private struct PickySlashCommandsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let commands: [PickySlashCommand] }
 private struct PickyRewindTargetsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let targets: [PickyRewindTarget] }
 private struct PickySessionRewoundPayload: Decodable { let sessionId: String; let editorText: String?; let removedIds: [String] }
-private struct PickySessionMessageAppendedPayload: Decodable { let sessionId: String; let message: PickySessionMessage; let seq: Int }
-private struct PickySessionMessagesImportedPayload: Decodable { let sessionId: String; let messages: [PickySessionMessage]; let seq: Int }
-private struct PickySessionMessageReplacedPayload: Decodable { let sessionId: String; let messageId: String; let message: PickySessionMessage; let seq: Int }
-private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: String; let messageId: String; let seq: Int }
-private struct PickySessionQueueUpdatedPayload: Decodable { let sessionId: String; let steering: [PickyQueueItem]; let followUp: [PickyQueueItem]; let scheduledMessages: [PickyScheduledMessage]?; let steeringMode: PickyQueueMode?; let followUpMode: PickyQueueMode?; let seq: Int }
-private struct PickySessionActivityUpdatedPayload: Decodable { let sessionId: String; let activitySummary: PickyActivitySummary; let seq: Int }
 
 struct PickyHelloEvent: Decodable, Equatable {
     let serverName: String

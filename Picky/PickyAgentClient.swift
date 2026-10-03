@@ -577,20 +577,12 @@ private extension PickyEventEnvelope {
             return "type=piAuthenticationReloaded id=\(id) request=\(result.requestId) handles=\(result.reloadedHandleCount)"
         case .mainAgentSessionInfoUpdated(let sessionFilePath, let cwd):
             return "type=mainAgentSessionInfoUpdated id=\(id) hasSessionFile=\(sessionFilePath != nil ? 1 : 0) hasCwd=\(cwd != nil ? 1 : 0)"
-        case .sessionSnapshot(let snapshot):
-            return "type=sessionSnapshot id=\(id) sessions=\(snapshot.sessions.count) complete=\(snapshot.isComplete) skipped=\(snapshot.skippedSessionCount)"
         case .sessionProjectionTransaction(let transaction):
             return "type=sessionProjectionTransaction id=\(id) session=\(transaction.sessionId) revision=\(transaction.revision) mutations=\(transaction.mutations.count) dormant=1"
         case .sessionProjectionSnapshot(let snapshot):
             return "type=sessionProjectionSnapshot id=\(id) session=\(snapshot.sessionId) revision=\(snapshot.revision) complete=\(snapshot.complete ? 1 : 0) dormant=1"
         case .sessionProjectionBootstrapComplete(let completion):
             return "type=sessionProjectionBootstrapComplete id=\(id) epoch=\(completion.epoch) bootstrap=\(completion.bootstrapId) sessions=\(completion.sessionIds.count) dormant=1"
-        case .sessionUpdated(let session):
-            return "type=sessionUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
-        case .sessionMetaUpdated(let session):
-            return "type=sessionMetaUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
-        case .sessionArchivedAuthoritative(let sessionId, let archived):
-            return "type=sessionArchivedAuthoritative id=\(id) session=\(sessionId) archived=\(archived)"
         case .sessionResourcesReloaded(let sessionId):
             return "type=sessionResourcesReloaded id=\(id) session=\(sessionId)"
         case .pluginsReloaded(let summary):
@@ -609,18 +601,8 @@ private extension PickyEventEnvelope {
             return "type=mcpServerList id=\(id) command=\(result.commandId) ok=\(result.ok ? 1 : 0) servers=\(result.servers.count) configErrors=\(result.configErrors.count)"
         case .mcpServerOperationCompleted(let result):
             return "type=mcpServerOperationCompleted id=\(id) request=\(result.requestId) operation=\(result.operation.rawValue) ok=\(result.ok ? 1 : 0) code=\(result.errorCode ?? "none")"
-        case .sessionLogAppended(let sessionId, let line):
-            return "type=sessionLogAppended id=\(id) session=\(sessionId) lineChars=\(line.count)"
-        case .toolActivityUpdated(let sessionId, let tool):
-            return "type=toolActivityUpdated id=\(id) session=\(sessionId) tool=\(tool.name) status=\(tool.status)"
-        case .sessionTodoStateUpdated(let sessionId, let todoState, let seq):
-            return "type=sessionTodoStateUpdated id=\(id) session=\(sessionId) tasks=\(todoState?.tasks.count ?? 0) seq=\(seq)"
-        case .sessionSubagentRunsUpdated(let sessionId, let runs, let seq):
-            return "type=sessionSubagentRunsUpdated id=\(id) session=\(sessionId) runs=\(runs.count) seq=\(seq)"
         case .extensionUiRequest(let request):
             return "type=extensionUiRequest id=\(id) session=\(request.sessionId) request=\(request.id) method=\(request.method)"
-        case .artifactUpdated(let sessionId, let artifact):
-            return "type=artifactUpdated id=\(id) session=\(sessionId) artifact=\(artifact.id) kind=\(artifact.kind)"
         case .pointerOverlayRequested(let request):
             return "type=pointerOverlayRequested id=\(id) request=\(request.id) screen=\(request.screenId ?? "primary")"
         case .annotationOverlayRequested(let request):
@@ -655,18 +637,6 @@ private extension PickyEventEnvelope {
             return "type=sessionDiffResult id=\(id) session=\(result.sessionId) view=\(result.view.rawValue) files=\(result.files.count) request=\(result.requestID ?? "none")"
         case .sessionRewound(let sessionId, let editorText, let removedIds):
             return "type=sessionRewound id=\(id) session=\(sessionId) editorTextChars=\(editorText?.count ?? 0) removed=\(removedIds.count)"
-        case .sessionMessageAppended(let sessionId, _, let seq):
-            return "type=sessionMessageAppended id=\(id) session=\(sessionId) seq=\(seq)"
-        case .sessionMessagesImported(let sessionId, let messages, let seq):
-            return "type=sessionMessagesImported id=\(id) session=\(sessionId) messages=\(messages.count) seq=\(seq)"
-        case .sessionMessageReplaced(let sessionId, let messageId, _, let seq):
-            return "type=sessionMessageReplaced id=\(id) session=\(sessionId) message=\(messageId) seq=\(seq)"
-        case .sessionMessageRemoved(let sessionId, let messageId, let seq):
-            return "type=sessionMessageRemoved id=\(id) session=\(sessionId) message=\(messageId) seq=\(seq)"
-        case .sessionQueueUpdated(let sessionId, let steering, let followUp, let scheduled, _, _, let seq):
-            return "type=sessionQueueUpdated id=\(id) session=\(sessionId) steering=\(steering.count) followUp=\(followUp.count) scheduled=\(scheduled?.count ?? -1) seq=\(seq)"
-        case .sessionActivityUpdated(let sessionId, let activitySummary, let seq):
-            return "type=sessionActivityUpdated id=\(id) session=\(sessionId) edit=\(activitySummary.edit) bash=\(activitySummary.bash) todo=\(activitySummary.todo) subagent=\(activitySummary.subagent) thinking=\(activitySummary.thinking) other=\(activitySummary.other) seq=\(seq)"
         case .sessionReplyWritingUpdated(let sessionId, let writing):
             return "type=sessionReplyWritingUpdated id=\(id) session=\(sessionId) writing=\(writing)"
         case .sessionToolCallPreparingUpdated(let sessionId, let preparing):

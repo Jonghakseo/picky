@@ -165,13 +165,7 @@ final class PickySessionListViewModel: ObservableObject {
     private var screenContextTargetCancellable: AnyCancellable?
     private var composerDraftAppendCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
-    /// Terminal thin updates that precede initial journal hydration. They must
-    /// not create an empty card, but their live transition still needs to run
-    /// through `upsert` once a full session payload arrives so notifications
-    /// are not silently cold-seeded.
-    var pendingTerminalMetaBySessionID: [String: PickyAgentSession] = [:]
     private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
-    private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
     let sessionProjectionStorage: any PickySessionProjectionStorage
     /// App composition uses this narrow notification to wake bridge requests
@@ -1600,8 +1594,6 @@ final class PickySessionListViewModel: ObservableObject {
         subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
         syncSlashCommands()
-        lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
-        pendingTerminalMetaBySessionID.removeValue(forKey: sessionID)
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTargetState()
         }
@@ -1670,8 +1662,6 @@ final class PickySessionListViewModel: ObservableObject {
         subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
         composerDraftController.clearDraft(sessionID: sessionID)
-        lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
-        pendingTerminalMetaBySessionID.removeValue(forKey: sessionID)
         pendingDockGroupAssignments.removeValue(forKey: sessionID)
         sessionDiffStoresBySessionID.removeValue(forKey: sessionID)
         visibleSessionDiffSessionIDs.remove(sessionID)
@@ -1743,8 +1733,6 @@ final class PickySessionListViewModel: ObservableObject {
     /// callers and exposing it would only widen the API surface.
     private func apply(_ event: PickyEvent) {
         switch event {
-        case .sessionSnapshot(let snapshot):
-            applySessionSnapshot(snapshot)
         case .sessionProjectionSnapshot(let snapshot):
             sessionProjectionRecoveryCoordinator?.receive(snapshot: snapshot)
         case .sessionProjectionTransaction(let transaction):
@@ -1752,24 +1740,8 @@ final class PickySessionListViewModel: ObservableObject {
         // Completion is consumed at the router boundary with source metadata.
         case .sessionProjectionBootstrapComplete:
             break
-        case .sessionUpdated(let session):
-            applySessionUpdated(session)
-        case .sessionMetaUpdated(let session):
-            applySessionMetaUpdated(session)
-        case .sessionArchivedAuthoritative(let sessionId, let archived):
-            applySessionArchivedAuthoritative(sessionID: sessionId, archived: archived)
-        case .sessionLogAppended(let sessionId, let line):
-            applySessionLogAppended(sessionID: sessionId, line: line)
-        case .toolActivityUpdated(let sessionId, let tool):
-            applyToolActivityUpdated(sessionID: sessionId, tool: tool)
-        case .sessionTodoStateUpdated(let sessionId, let todoState, let seq):
-            applyTodoStateUpdated(sessionID: sessionId, todoState: todoState, seq: seq)
-        case .sessionSubagentRunsUpdated(let sessionId, let runs, let seq):
-            applySubagentRunsUpdated(sessionID: sessionId, runs: runs, seq: seq)
         case .extensionUiRequest(let request):
             applyExtensionUiRequest(request)
-        case .artifactUpdated(let sessionId, let artifact):
-            applyArtifactUpdated(sessionID: sessionId, artifact: artifact)
         case .sessionResourcesReloaded(let sessionId):
             PickyPerf.event("vm_event_session_resources_reloaded")
             pickySessionLog("session resources reloaded session=\(sessionId)")
@@ -1790,18 +1762,6 @@ final class PickySessionListViewModel: ObservableObject {
         case .sessionDiffResult(let result):
             applySessionDiffResult(result)
         case .sessionRewound(let sessionId, let editorText, _): applySessionRewound(sessionID: sessionId, editorText: editorText)
-        case .sessionMessageAppended(let sessionId, let message, let seq):
-            applySessionMessageAppended(sessionID: sessionId, message: message, seq: seq)
-        case .sessionMessagesImported(let sessionId, let messages, let seq):
-            applySessionMessagesImported(sessionID: sessionId, messages: messages, seq: seq)
-        case .sessionMessageReplaced(let sessionId, let messageId, let message, let seq):
-            applySessionMessageReplaced(sessionID: sessionId, messageID: messageId, message: message, seq: seq)
-        case .sessionMessageRemoved(let sessionId, let messageId, let seq):
-            applySessionMessageRemoved(sessionID: sessionId, messageID: messageId, seq: seq)
-        case .sessionQueueUpdated(let sessionId, let steering, let followUp, let scheduled, let steeringMode, let followUpMode, let seq):
-            applySessionQueueUpdated(sessionID: sessionId, steering: steering, followUp: followUp, scheduled: scheduled, steeringMode: steeringMode, followUpMode: followUpMode, seq: seq)
-        case .sessionActivityUpdated(let sessionId, let activitySummary, let seq):
-            applySessionActivityUpdated(sessionID: sessionId, activitySummary: activitySummary, seq: seq)
         case .error(let error):
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
@@ -1831,236 +1791,10 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     // MARK: - Protocol event handlers
-    private func applySessionSnapshot(_ snapshot: PickySessionSnapshot) {
-        PickyPerf.event("vm_event_session_snapshot")
-        let elapsedSinceConnectedMs = lastConnectedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1
-        pickySessionLog("snapshot sessions=\(snapshot.sessions.count) complete=\(snapshot.isComplete) skipped=\(snapshot.skippedSessionCount) elapsedSinceConnectedMs=\(elapsedSinceConnectedMs)")
-        disarmInitialSnapshotWatchdog()
-        isLoadingInitialSessionSnapshot = false
-        let previousCardsByID = Dictionary(uniqueKeysWithValues: (sessions + archivedSessions).map { ($0.id, $0) })
-
-        // Retain the input order for valid daemon records while deduplicating
-        // defensively. A partial snapshot then appends only cards that failed
-        // to decode, preserving their last known local projection without
-        // allowing a duplicate session ID into either HUD list.
-        var incomingCardsByID: [String: SessionCard] = [:]
-        var incomingCardIDs: [String] = []
-        for session in snapshot.sessions {
-            let card = SessionCard.fromAgentSession(session)
-            if incomingCardsByID[card.id] == nil {
-                incomingCardIDs.append(card.id)
-            }
-            incomingCardsByID[card.id] = card
-        }
-        let incomingCards = incomingCardIDs.compactMap { incomingCardsByID[$0] }
-        let cards: [SessionCard]
-        if snapshot.isComplete {
-            cards = incomingCards
-        } else {
-            let retainedCards = previousCardsByID.values.filter { incomingCardsByID[$0.id] == nil }
-            cards = incomingCards + retainedCards
-        }
-
-        // Only a complete snapshot is authoritative for archive reconciliation.
-        // A partial snapshot may be missing an undecodable session, so it may
-        // add a valid daemon archive flag but must not remove existing IDs.
-        if snapshot.isComplete, !cards.isEmpty {
-            let daemonArchivedIDs = Set(cards.filter(\.archived).map(\.id))
-            let universe = Set(cards.map(\.id))
-            let reconciled = archiveStore.manuallyArchivedSessionIDs
-                .union(daemonArchivedIDs)
-                .intersection(universe)
-            if reconciled != archiveStore.manuallyArchivedSessionIDs {
-                archiveStore.manuallyArchivedSessionIDs = reconciled
-            }
-        } else if !snapshot.isComplete, !incomingCards.isEmpty {
-            let daemonArchivedIDs = Set(incomingCards.filter(\.archived).map(\.id))
-            let reconciled = archiveStore.manuallyArchivedSessionIDs.union(daemonArchivedIDs)
-            if reconciled != archiveStore.manuallyArchivedSessionIDs {
-                archiveStore.manuallyArchivedSessionIDs = reconciled
-            }
-        }
-        let archivedIDs = effectiveArchivedSessionIDs(for: cards)
-        // Every snapshot begins a new daemon incremental-event epoch. Even a
-        // partial snapshot may follow an agentd restart, whose counters start
-        // at one; retained undecodable cards must accept those new events.
-        lastIncrementalSeqBySessionID.removeAll()
-        for card in cards {
-            reconcileTodoProgressExpansion(
-                sessionID: card.id,
-                previousState: previousCardsByID[card.id]?.todoState,
-                currentState: card.todoState
-            )
-            reconcileSubagentInvocationExpansion(
-                sessionID: card.id,
-                messages: card.messages,
-                previousRuns: previousCardsByID[card.id]?.subagentRuns ?? [],
-                currentRuns: card.subagentRuns
-            )
-        }
-        PickyPerf.interval("vm_snapshot_publish_session_lists") {
-            replaceAllSessions(
-                active: cards.filter { !archivedIDs.contains($0.id) },
-                archived: cards.filter { archivedIDs.contains($0.id) }.sortedForArchiveList()
-            )
-        }
-        PickyPerf.interval("vm_snapshot_apply_manual_order") {
-            applyManualOrder()
-        }
-        for card in cards {
-            applyPendingTerminalMetaIfNeeded(for: card.id)
-        }
-        for card in cards {
-            PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
-            PickyGitHubPullRequestStatus.prefetchIfNeeded(
-                cwd: card.cwd,
-                artifactURLs: card.artifacts.compactMap(\.url)
-            )
-        }
-        if snapshot.isComplete {
-            pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
-        } else {
-            // Missing IDs in a partial snapshot are not evidence that their
-            // drafts, terminal state, unread badges, or command caches are stale.
-            // Keep all local state until a complete snapshot reconciles it.
-            syncSlashCommands()
-        }
-        syncSelectionAfterSessionListChange()
-        syncVoiceFollowUpAfterSessionListChange()
-        syncScreenContextTargetAfterSessionListChange()
-        syncActiveVoiceFollowUpAfterSessionListChange()
-        for card in sessions {
-            if previousCardsByID[card.id] == nil {
-                markNotificationDeliveredIfNeeded(for: card)
-            } else {
-                deliverNotificationIfNeeded(for: card)
-            }
-        }
-    }
-
-    private func applySessionUpdated(_ session: PickyAgentSession) {
-        PickyPerf.event("vm_event_session_updated")
-        pickySessionLog("session updated session=\(session.id) status=\(session.status.rawValue)")
-        let incomingCard = PickyPerf.interval("vm_session_from_agent_session") {
-            SessionCard.fromAgentSession(session)
-        }
-        let previousCard = (sessions + archivedSessions).first { $0.id == session.id }
-        reconcileTodoProgressExpansion(
-            sessionID: session.id,
-            previousState: previousCard?.todoState,
-            currentState: incomingCard.todoState
-        )
-        reconcileSubagentInvocationExpansion(
-            sessionID: session.id,
-            messages: incomingCard.messages,
-            previousRuns: previousCard?.subagentRuns ?? [],
-            currentRuns: incomingCard.subagentRuns
-        )
-        if shouldInvalidateSlashCommandCache(previous: previousCard, incoming: incomingCard) {
-            invalidateSlashCommandCache(sessionID: session.id)
-        }
-        PickyPerf.interval("vm_event_session_updated_upsert") {
-            upsert(
-                incomingCard,
-                preserveIncrementalConversationState: lastIncrementalSeqBySessionID[session.id] != nil
-            )
-        }
-        applyPendingTerminalMetaIfNeeded(for: session.id)
-        if visibleSessionDiffSessionIDs.contains(session.id),
-           PickySessionDiffPresentation.isSettledTransition(from: previousCard?.status, to: incomingCard.status) {
-            requestSessionDiff(sessionID: session.id)
-        }
-    }
-
     private func applySessionDiffResult(_ result: PickySessionDiffResult) {
         guard let store = sessionDiffStoresBySessionID[result.sessionId] else { return }
         let next = PickySessionDiffState.reducing(current: store.state, result: result)
         store.replace(next)
-    }
-
-    private func applySessionArchivedAuthoritative(sessionID sessionId: String, archived: Bool) {
-        PickyPerf.event("vm_event_session_archived_authoritative")
-        // agentd has issued an authoritative archive-state change (either
-        // from a client setSessionArchived command, or from the
-        // picky_unarchive_pickle tool). Mirror it into the local
-        // manuallyArchivedSessionIDs set — the only thing upsert() looks
-        // at when deciding dock placement — and then re-upsert the card
-        // so the dock actually moves. We do this here rather than on
-        // plain sessionUpdated to avoid the long-standing
-        // mid-flight unarchive flicker race.
-        pickySessionLog("session archived authoritative session=\(sessionId) archived=\(archived)")
-        if pendingArchiveIntentBySessionID[sessionId] == archived {
-            clearPendingArchiveIntent(sessionID: sessionId)
-        }
-        archiveCoordinator.setMembership(sessionId, archived: archived, store: archiveStore)
-        // Re-place the card by feeding the cached snapshot back through
-        // upsert with its archived field updated to match. If we have no
-        // record of the session yet, drop the signal — the next regular
-        // sessionUpdated will hydrate it with the authoritative flag.
-        if let existing = (sessions + archivedSessions).first(where: { $0.id == sessionId }) {
-            var refreshed = existing
-            refreshed.archived = archived
-            upsert(refreshed, preserveIncrementalConversationState: true)
-        }
-    }
-
-    private func applySessionLogAppended(sessionID sessionId: String, line: String) {
-        PickyPerf.event("vm_event_session_log_appended")
-        pickySessionLog("session log session=\(sessionId) lineChars=\(line.count)")
-        if SessionCard.piSessionFilePath(fromLogLine: line) != nil || SessionCard.isRuntimeReattachLogLine(line) {
-            invalidateSlashCommandCache(sessionID: sessionId)
-        }
-        mutateSession(sessionID: sessionId) { card in
-            if SessionCard.isDisplayableLogPreview(line) {
-                card.logPreview = line
-            }
-            if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
-                card.piSessionFilePath = piSessionFilePath
-            }
-            card.updatedAt = Date()
-        }
-    }
-
-    private func applyToolActivityUpdated(sessionID sessionId: String, tool: PickyToolActivity) {
-        PickyPerf.event("vm_event_tool_activity_updated")
-        mutateSession(sessionID: sessionId) { card in
-            if let toolIndex = card.tools.firstIndex(where: { $0.toolCallId == tool.toolCallId }) {
-                card.tools[toolIndex] = tool
-            } else {
-                card.tools.append(tool)
-            }
-            card.logPreview = [tool.name, tool.preview].compactMap { $0 }.joined(separator: ": ")
-            card.updatedAt = tool.endedAt ?? Date()
-        }
-    }
-
-    private func applyTodoStateUpdated(sessionID sessionId: String, todoState: PickyTodoState?, seq: Int) {
-        PickyPerf.event("vm_event_todo_state_updated")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        reconcileTodoProgressExpansion(
-            sessionID: sessionId,
-            previousState: card(sessionID: sessionId)?.todoState,
-            currentState: todoState
-        )
-        mutateSession(sessionID: sessionId) { card in
-            card.todoState = todoState
-            card.updatedAt = todoState?.updatedAt ?? Date()
-        }
-    }
-
-    private func applySubagentRunsUpdated(sessionID sessionId: String, runs: [PickySubagentRun], seq: Int) {
-        PickyPerf.event("vm_event_subagent_runs_updated")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        reconcileSubagentInvocationExpansion(
-            sessionID: sessionId,
-            messages: card(sessionID: sessionId)?.messages ?? [],
-            previousRuns: card(sessionID: sessionId)?.subagentRuns ?? [],
-            currentRuns: runs
-        )
-        mutateSession(sessionID: sessionId) { card in
-            card.subagentRuns = runs
-            card.updatedAt = Date()
-        }
     }
 
     private func applyExtensionUiRequest(_ request: PickyExtensionUiRequest) {
@@ -2075,91 +1809,10 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func applyArtifactUpdated(sessionID sessionId: String, artifact: PickyArtifact) {
-        PickyPerf.event("vm_event_artifact_updated")
-        pickySessionLog("artifact updated session=\(sessionId) artifact=\(artifact.id) kind=\(artifact.kind)")
-        mutateSession(sessionID: sessionId) { card in
-            if let index = card.artifacts.firstIndex(where: { $0.id == artifact.id }) {
-                card.artifacts[index] = artifact
-            } else {
-                card.artifacts.append(artifact)
-            }
-            card.updatedAt = artifact.updatedAt
-        }
-    }
-
     private func applySlashCommandsSnapshot(sessionID sessionId: String, requestID requestId: String?, commands: [PickySlashCommand]) {
         PickyPerf.event("vm_event_slash_commands_snapshot")
         slashCommandController.applySnapshot(sessionID: sessionId, requestID: requestId, commands: commands)
         syncSlashCommands()
-    }
-
-    private func applySessionMessageAppended(sessionID sessionId: String, message: PickySessionMessage, seq: Int) {
-        PickyPerf.event("vm_event_session_message_appended")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        mutateSession(sessionID: sessionId) { card in
-            card.messages.append(message)
-            card.updatedAt = max(card.updatedAt, message.createdAt)
-        }
-    }
-
-    private func applySessionMessagesImported(sessionID sessionId: String, messages: [PickySessionMessage], seq: Int) {
-        PickyPerf.event("vm_event_session_messages_imported")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        var appendedMessages: [PickySessionMessage] = []
-        mutateSession(sessionID: sessionId) { card in
-            let existingIDs = Set(card.messages.map(\.id))
-            appendedMessages = messages.filter { !existingIDs.contains($0.id) }
-            guard !appendedMessages.isEmpty else { return }
-            card.messages.append(contentsOf: appendedMessages)
-            if let latestCreatedAt = appendedMessages.map(\.createdAt).max() {
-                card.updatedAt = max(card.updatedAt, latestCreatedAt)
-            }
-        }
-    }
-
-    private func applySessionMessageReplaced(sessionID sessionId: String, messageID messageId: String, message: PickySessionMessage, seq: Int) {
-        PickyPerf.event("vm_event_session_message_replaced")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        mutateSession(sessionID: sessionId) { card in
-            if let index = card.messages.firstIndex(where: { $0.id == messageId }) {
-                card.messages[index] = message
-            } else {
-                card.messages.append(message)
-            }
-            card.updatedAt = max(card.updatedAt, message.createdAt)
-        }
-    }
-
-    private func applySessionMessageRemoved(sessionID sessionId: String, messageID messageId: String, seq: Int) {
-        PickyPerf.event("vm_event_session_message_removed")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        mutateSession(sessionID: sessionId) { card in
-            card.messages.removeAll { $0.id == messageId }
-            card.updatedAt = Date()
-        }
-    }
-
-    private func applySessionQueueUpdated(sessionID sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], scheduled: [PickyScheduledMessage]?, steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int) {
-        PickyPerf.event("vm_event_session_queue_updated")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        mutateSession(sessionID: sessionId) { card in
-            card.queuedSteers = steering
-            card.queuedFollowUps = followUp
-            if let scheduled { card.scheduledMessages = scheduled }
-            if let steeringMode { card.steeringMode = steeringMode }
-            if let followUpMode { card.followUpMode = followUpMode }
-            card.updatedAt = Date()
-        }
-    }
-
-    private func applySessionActivityUpdated(sessionID sessionId: String, activitySummary: PickyActivitySummary, seq: Int) {
-        PickyPerf.event("vm_event_session_activity_updated")
-        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
-        mutateSession(sessionID: sessionId) { card in
-            card.activitySummary = activitySummary
-            card.updatedAt = Date()
-        }
     }
 
     private func applyTerminalSessionSyncOutcome(_ outcome: PickyTerminalSessionSyncOutcome) {
@@ -2224,13 +1877,6 @@ final class PickySessionListViewModel: ObservableObject {
         default:
             return false
         }
-    }
-
-    private func acceptIncrementalEvent(sessionID: String, seq: Int) -> Bool {
-        let lastSeq = lastIncrementalSeqBySessionID[sessionID] ?? 0
-        guard seq > lastSeq else { return false }
-        lastIncrementalSeqBySessionID[sessionID] = seq
-        return true
     }
 
     func shouldInvalidateSlashCommandCache(previous: SessionCard?, incoming: SessionCard) -> Bool {
@@ -2326,8 +1972,6 @@ final class PickySessionListViewModel: ObservableObject {
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
         unreadSessionIDs = unreadSessionIDs.filter { knownSessionIDs.contains($0) }
         releasedArchivedChildSessionIDs = releasedArchivedChildSessionIDs.filter { knownSessionIDs.contains($0) }
-        lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }
-        pendingTerminalMetaBySessionID = pendingTerminalMetaBySessionID.filter { knownSessionIDs.contains($0.key) }
         sessionDiffStoresBySessionID = sessionDiffStoresBySessionID.filter { knownSessionIDs.contains($0.key) }
         let removedShellTerminalIDs = Set(shellTerminalSessionsBySessionID.keys).subtracting(knownSessionIDs)
         for sessionID in removedShellTerminalIDs {
@@ -2335,59 +1979,6 @@ final class PickySessionListViewModel: ObservableObject {
         }
         if let screenContextTargetSessionID, !knownSessionIDs.contains(screenContextTargetSessionID) {
             clearScreenContextTarget(sessionID: screenContextTargetSessionID)
-        }
-    }
-
-    private func effectiveArchivedSessionIDs(for _: [SessionCard]) -> Set<String> {
-        let manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
-        if archiveStore.archivedSessionIDs != manuallyArchivedIDs {
-            archiveStore.archivedSessionIDs = manuallyArchivedIDs
-        }
-        return manuallyArchivedIDs
-    }
-
-    func upsert(_ card: SessionCard, preserveIncrementalConversationState: Bool = false) {
-        PickyPerf.event("vm_upsert_called")
-        let archivedIDs = effectiveArchivedSessionIDs(for: [card])
-        let shouldArchive = archivedIDs.contains(card.id)
-        let previousStatus = (sessions + archivedSessions).first(where: { $0.id == card.id })?.status
-        PickyPerf.interval("vm_upsert_prefetch_enqueue") {
-            PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
-            PickyGitHubPullRequestStatus.prefetchIfNeeded(
-                cwd: card.cwd,
-                artifactURLs: card.artifacts.compactMap(\.url)
-            )
-        }
-        var incoming = card
-        PickyPerf.interval("vm_upsert_merge_existing") {
-            if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
-                incoming = existing.merged(with: card, preserveConversationState: preserveIncrementalConversationState)
-            }
-        }
-
-        upsertSession(incoming, archived: shouldArchive)
-        PickyPerf.interval("vm_upsert_apply_manual_order") {
-            applyManualOrder()
-        }
-        PickyPerf.interval("vm_upsert_sync_selection_state") {
-            syncSelectionAfterSessionListChange()
-            syncVoiceFollowUpAfterSessionListChange()
-            syncScreenContextTargetAfterSessionListChange()
-            syncActiveVoiceFollowUpAfterSessionListChange()
-        }
-        if shouldArchive {
-            // Archived sessions are out of the dock surface; suppress unread badge.
-            PickyPerf.interval("vm_upsert_publish_archive_badges") {
-                unreadSessionIDs.remove(incoming.id)
-            }
-            releaseArchivedTerminalChildIfCommitted(incoming)
-        } else {
-            releasedArchivedChildSessionIDs.remove(incoming.id)
-            PickyPerf.interval("vm_upsert_publish_completion_badges") {
-                requestDoneFlashIfNeeded(previousStatus: previousStatus, incoming: incoming)
-                updateUnreadStateIfNeeded(previousStatus: previousStatus, incoming: incoming)
-            }
-            deliverNotificationIfNeeded(for: incoming)
         }
     }
 
@@ -2434,7 +2025,6 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func replaceAllSessions(active: [SessionCard], archived: [SessionCard]) { sessionProjectionStorage.replaceAllSessions(active: active, archived: archived) }
     private func removeSession(id: String) { sessionProjectionStorage.removeSession(id: id) }
     /// Local archive actions in v2 move registry membership only, preserving
     /// all addressed and unrelated child stores. The legacy fallback retains
@@ -2446,10 +2036,6 @@ final class PickySessionListViewModel: ObservableObject {
         return archived
             ? sessionProjectionStorage.archiveSession(id: id)
             : sessionProjectionStorage.unarchiveSession(id: id)
-    }
-
-    private func upsertSession(_ card: SessionCard, archived: Bool) {
-        sessionProjectionStorage.upsertSession(card, archived: archived)
     }
 
     func updateCompletionNotificationProjection(sessionID: String, notifyMain: Bool? = nil, notifyMacOS: Bool? = nil) {

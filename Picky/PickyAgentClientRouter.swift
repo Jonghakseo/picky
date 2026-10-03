@@ -79,10 +79,6 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// rather than the mutable session-level retired set.
     private var childGenerations: [String: Int] = [:]
     private var retiredChildGenerations = Set<ChildGeneration>()
-    /// v1 compatibility mirror. v2 bridge reads are supplied by the registry
-    /// storage and never apply projection mutations in this router.
-    private var sessionCache: [String: PickyAgentSession] = [:]
-    private var sessionOwnerKeys: [String: String] = [:]
     /// Owner-scoped bootstrap reconciliation rules for v2 projection frames.
     /// The ledger is pure; this router feeds it connection facts and applies
     /// its decisions to transport state.
@@ -90,8 +86,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private var sessionProjectionWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     /// Commands typed against a freshly spawned Pickle before the child runtime has left
     /// `.queued`. They are drained in order once the child emits its first non-queued
-    /// `sessionUpdated`, avoiding early follow-up/steer sends while the Pi process is still
-    /// bootstrapping.
+    /// projection publication, avoiding early follow-up/steer sends while the Pi process is
+    /// still bootstrapping.
     private var pendingChildCommands: [String: [PickyCommandEnvelope]] = [:]
     /// Commands removed from `pendingChildCommands` by a currently running
     /// drain. Keeping the not-yet-sent remainder here lets child termination
@@ -811,8 +807,6 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 }
                 try await asyncOwnerControl.deleteSession(sessionID: sessionId, timeout: permanentDeletionAcknowledgementTimeout)
                 try await finalizeDeletion(sessionId)
-                sessionCache[sessionId] = nil
-                sessionOwnerKeys[sessionId] = nil
                 releaseChild(sessionId: sessionId)
                 await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessionSummaries(), delivered: true)
             case .manageGroups:
@@ -856,10 +850,10 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     /// Bridge list operations expose session summaries, not message journals.
-    /// The cache only receives full lifecycle payloads plus granular journal
-    /// events, so it cannot safely claim journal authority between hydrations.
+    /// The registry-backed provider owns the journal, so the bridge projection
+    /// deliberately strips it here.
     private func cachedPickleSessionSummaries() -> [PickyAgentSession] {
-        let sessions = pickleSessionSummariesProvider?() ?? Array(sessionCache.values)
+        let sessions = pickleSessionSummariesProvider?() ?? []
         return sessions
             .sorted { $0.updatedAt > $1.updatedAt }
             .map { session in
@@ -871,10 +865,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     func pickleSessionSummary(id: String) -> PickyAgentSession? {
-        if let provider = pickleSessionSummariesProvider {
-            return provider().first { $0.id == id }
-        }
-        return sessionCache[id]
+        pickleSessionSummariesProvider?().first { $0.id == id }
     }
 
     /// Called after the registry has committed a projection publication. Only
@@ -885,9 +876,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         reconcileBootingChildSessions()
     }
 
-    /// The v1 dialect cleared child boot state from `rememberSession`. A v2
-    /// socket never receives those events, so the registry publication is the
-    /// only signal that a freshly spawned Pickle is ready for its queued input.
+    /// The registry publication is the only signal that a freshly spawned
+    /// Pickle has left `.queued` and is ready for its queued input.
     private func reconcileBootingChildSessions() {
         for sessionId in Set(pendingChildCommands.keys).union(bootingChildSessionIds) {
             guard let session = pickleSessionSummary(id: sessionId) else { continue }
@@ -1006,7 +996,6 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                         break
                     }
                     self.asyncControlTransport.receive(envelope.event, source: client)
-                    self.rememberSessionEvent(envelope.event, ownerKey: key)
                     // Dispatch `type="error"` rejections and `type="ack"`
                     // confirmations to any `sendAwaitingError` caller blocked on
                     // this commandId. The event still falls through to the
@@ -1239,45 +1228,6 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     private func logDiscardedProjectionBootstrapCompletion(ownerKey: String, reason: String) {
         PickyLog.notice(.agentClient, prefix: "🔌 Picky agent client —", message: "discarded projection bootstrap completion owner=\(ownerKey) reason=\(reason)")
-    }
-
-    private func rememberSessionEvent(_ event: PickyEvent, ownerKey: String) {
-        switch event {
-        case .sessionUpdated(let session):
-            rememberSession(session, ownerKey: ownerKey)
-        case .sessionMetaUpdated(var session):
-            // A thin update cannot hydrate a session that this router has not
-            // seen in a full snapshot. Preserve the cached journal otherwise.
-            guard let existing = sessionCache[session.id] else { return }
-            session.messages = existing.messages
-            session.logs = existing.logs
-            session.tools = existing.tools
-            rememberSession(session, ownerKey: ownerKey)
-        case .sessionSnapshot(let snapshot):
-            let snapshotSessionIDs = Set(snapshot.sessions.map(\.id))
-            if snapshot.isComplete {
-                let removedSessionIDs = sessionOwnerKeys.compactMap { sessionID, sessionOwnerKey in
-                    sessionOwnerKey == ownerKey && !snapshotSessionIDs.contains(sessionID) ? sessionID : nil
-                }
-                for sessionID in removedSessionIDs {
-                    sessionCache[sessionID] = nil
-                    sessionOwnerKeys[sessionID] = nil
-                }
-            }
-            for session in snapshot.sessions { rememberSession(session, ownerKey: ownerKey) }
-        default:
-            break
-        }
-    }
-
-    private func rememberSession(_ session: PickyAgentSession, ownerKey: String) {
-        sessionCache[session.id] = session
-        sessionOwnerKeys[session.id] = ownerKey
-        resumeSessionProjectionWaiters()
-        if session.status != .queued, isChildEndpointReadyOrNotBooting(sessionId: session.id) {
-            bootingChildSessionIds.remove(session.id)
-        }
-        scheduleDrainPendingChildCommandsIfReady(for: session)
     }
 
     /// Drops and re-establishes the connection that owns `sessionID`'s

@@ -205,55 +205,63 @@ private func projectionCompletionEvent(epoch: String, bootstrapID: String, sessi
     return .protocolEvent(try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8)))
 }
 
-private func makeSessionUpdatedEvent(id: String, title: String = "Pickle", status: PickySessionStatus = .running, finalAnswer: String? = nil) -> PickyEventEnvelope {
-    PickyEventEnvelope(
-        id: "event-session-\(id)",
+private func makeSessionProjectionSnapshotEvent(
+    _ session: PickyAgentSession,
+    envelopeID: String? = nil,
+    revision: Int = 1
+) -> PickyEventEnvelope {
+    let projection = String(decoding: try! JSONEncoder.pickyAgentProtocolEncoder().encode(session), as: UTF8.self)
+    let json = """
+    {"sessionId":"\(session.id)","epoch":"router-epoch","revision":\(revision),"complete":true,"omittedFields":[],"projection":\(projection)}
+    """
+    let snapshot = try! JSONDecoder.pickyAgentProtocolDecoder().decode(
+        PickySessionProjectionSnapshot.self,
+        from: Data(json.utf8)
+    )
+    return PickyEventEnvelope(
+        id: envelopeID ?? "event-session-\(session.id)-\(revision)",
         protocolVersion: pickyAgentProtocolVersion,
         timestamp: Date(),
-        event: .sessionUpdated(PickyAgentSession(
-            id: id,
-            title: title,
-            status: status,
-            cwd: "/tmp/ws",
-            createdAt: Date(),
-            updatedAt: Date(),
-            finalAnswer: finalAnswer,
-            logs: [],
-            tools: [],
-            artifacts: [],
-            changedFiles: []
-        ))
+        event: .sessionProjectionSnapshot(snapshot)
     )
 }
 
-private func makeSessionSnapshotEvent(id: String, title: String = "Pickle", status: PickySessionStatus = .completed) -> PickyEventEnvelope {
-    PickyEventEnvelope(
-        id: "event-snapshot-\(id)",
-        protocolVersion: pickyAgentProtocolVersion,
-        timestamp: Date(),
-        event: .sessionSnapshot(PickySessionSnapshot(sessions: [
-            PickyAgentSession(
-                id: id,
-                title: title,
-                status: status,
-                cwd: "/tmp/ws",
-                createdAt: Date(),
-                updatedAt: Date(),
-                logs: [],
-                tools: [],
-                artifacts: [],
-                changedFiles: []
-            )
-        ]))
+/// The registry-backed CLI read model the router queries through
+/// `pickleSessionSummariesProvider`. The router no longer keeps its own
+/// session cache, so tests that need the router to know a Pickle's status or
+/// cwd publish it here instead of relying on a forwarded projection event.
+private func makeProjectedSession(
+    id: String,
+    title: String = "Pickle",
+    status: PickySessionStatus = .running,
+    cwd: String = "/tmp/ws",
+    finalAnswer: String? = nil
+) -> PickyAgentSession {
+    PickyAgentSession(
+        id: id,
+        title: title,
+        status: status,
+        cwd: cwd,
+        createdAt: Date(),
+        updatedAt: Date(),
+        finalAnswer: finalAnswer,
+        logs: [],
+        tools: [],
+        artifacts: [],
+        changedFiles: []
     )
 }
 
-private func makeEmptySessionSnapshotEvent() -> PickyEventEnvelope {
-    PickyEventEnvelope(
-        id: "event-snapshot-empty",
-        protocolVersion: pickyAgentProtocolVersion,
-        timestamp: Date(),
-        event: .sessionSnapshot(PickySessionSnapshot(sessions: []))
+private func makeSessionUpdatedEvent(
+    id: String,
+    title: String = "Pickle",
+    status: PickySessionStatus = .running,
+    finalAnswer: String? = nil,
+    revision: Int = 1
+) -> PickyEventEnvelope {
+    makeSessionProjectionSnapshotEvent(
+        makeProjectedSession(id: id, title: title, status: status, finalAnswer: finalAnswer),
+        revision: revision
     )
 }
 
@@ -1044,6 +1052,8 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        var projectionSessions: [PickyAgentSession] = []
+        router.pickleSessionSummariesProvider = { projectionSessions }
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-boot", cwd: "/tmp/ws")
         _ = try await poolFactory.waitForRunner(sessionId: "pickle-boot")
@@ -1051,23 +1061,14 @@ struct PickyAgentClientRouterTests {
         let spawnedClient = try await spawned
         let child = try #require(spawnedClient as? StubAgentClient)
 
-        let sawQueued = Task<Void, Never> {
-            for await event in router.events {
-                if case .protocolEvent(let envelope) = event,
-                   case .sessionUpdated(let session) = envelope.event,
-                   session.id == "pickle-boot",
-                   session.status == .queued {
-                    return
-                }
-            }
-        }
-        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot", status: .queued)))
-        await sawQueued.value
+        projectionSessions = [makeProjectedSession(id: "pickle-boot", status: .queued)]
+        router.sessionProjectionStorageDidChange()
 
         try await router.send(PickyCommandEnvelope(id: "cmd-follow-queued", type: .followUp, sessionId: "pickle-boot", text: "too early"))
         #expect(!child.sentCommands.contains { $0.id == "cmd-follow-queued" })
 
-        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot", status: .running)))
+        projectionSessions = [makeProjectedSession(id: "pickle-boot", status: .running)]
+        router.sessionProjectionStorageDidChange()
         try await waitUntil { child.sentCommands.contains { $0.id == "cmd-follow-queued" } }
     }
 
@@ -1514,6 +1515,9 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        router.pickleSessionSummariesProvider = {
+            [makeProjectedSession(id: "pickle-restored", status: .completed)]
+        }
         await router.connect()
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-restored", cwd: "/tmp/ws")
@@ -1521,7 +1525,7 @@ struct PickyAgentClientRouterTests {
         poolFactory.emitReady(for: "pickle-restored")
         _ = try await spawned
         router.releaseChild(sessionId: "pickle-restored")
-        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-restored", status: .completed)))
+        router.sessionProjectionStorageDidChange()
         await Task.yield()
 
         async let sent: Void = router.send(PickyCommandEnvelope(type: .followUp, sessionId: "pickle-restored", text: "continue"))
@@ -1558,21 +1562,24 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        router.pickleSessionSummariesProvider = {
+            [makeProjectedSession(id: "pickle-boot-completed", status: .completed)]
+        }
         await router.connect()
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-boot-completed", cwd: "/tmp/ws")
         _ = try await poolFactory.waitForRunner(sessionId: "pickle-boot-completed")
-        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot-completed", status: .completed)))
+        router.sessionProjectionStorageDidChange()
         await Task.yield()
 
         try await router.send(PickyCommandEnvelope(type: .followUp, sessionId: "pickle-boot-completed", text: "continue"))
         poolFactory.emitReady(for: "pickle-boot-completed")
         _ = try await spawned
-        guard let child = clientFactory.madeClients.last?.client else {
+        guard clientFactory.madeClients.last?.client != nil else {
             Issue.record("Expected spawned child client")
             return
         }
-        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot-completed", status: .completed)))
+        router.sessionProjectionStorageDidChange()
 
         let deadline = Date().addingTimeInterval(2)
         while Date() < deadline, !clientFactory.madeClients.contains(where: { made in
@@ -1588,86 +1595,6 @@ struct PickyAgentClientRouterTests {
         #expect(drainedFollowUp)
     }
 
-    @Test func pickleBridgeListDoesNotExposeStaleIncrementalMessages() async throws {
-        let primary = StubAgentClient(id: "primary")
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
-        let pool = PickyAgentDaemonPool(
-            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
-        )
-        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
-        let firstMessage = PickySessionMessage(
-            id: "message-a",
-            kind: .agentText,
-            createdAt: Date(),
-            originatedBy: .mainAgent,
-            text: "A",
-            question: nil,
-            cancelledAt: nil,
-            activitySnapshot: nil,
-            errorContext: nil,
-            errorMessage: nil
-        )
-        let appendedMessage = PickySessionMessage(
-            id: "message-b",
-            kind: .agentText,
-            createdAt: Date(),
-            originatedBy: .mainAgent,
-            text: "B",
-            question: nil,
-            cancelledAt: nil,
-            activitySnapshot: nil,
-            errorContext: nil,
-            errorMessage: nil
-        )
-        let session = PickyAgentSession(
-            id: "pickle-summary",
-            title: "Summary",
-            status: .running,
-            cwd: "/tmp/ws",
-            createdAt: Date(),
-            updatedAt: Date(),
-            logs: ["persisted log"],
-            tools: [PickyToolActivity(toolCallId: "t-1", name: "bash", status: "succeeded", preview: "ran tests")],
-            artifacts: [],
-            changedFiles: [],
-            messages: [firstMessage]
-        )
-
-        await router.connect()
-        primary.emit(.protocolEvent(PickyEventEnvelope(
-            id: "full-session",
-            protocolVersion: pickyAgentProtocolVersion,
-            timestamp: Date(),
-            event: .sessionUpdated(session)
-        )))
-        primary.emit(.protocolEvent(PickyEventEnvelope(
-            id: "appended-message",
-            protocolVersion: pickyAgentProtocolVersion,
-            timestamp: Date(),
-            event: .sessionMessageAppended(sessionId: session.id, message: appendedMessage, seq: 1)
-        )))
-        var completedSession = session
-        completedSession.status = .completed
-        completedSession.logs = []
-        completedSession.tools = []
-        primary.emit(.protocolEvent(PickyEventEnvelope(
-            id: "thin-meta",
-            protocolVersion: pickyAgentProtocolVersion,
-            timestamp: Date(),
-            event: .sessionMetaUpdated(completedSession)
-        )))
-        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
-
-        try await waitUntil {
-            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.sessions?.contains { $0.id == session.id } == true }
-        }
-        let summary = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions?.first { $0.id == session.id })
-        #expect(summary.status == .completed)
-        #expect(summary.messages.isEmpty)
-        #expect(summary.logs == ["persisted log"])
-        #expect(summary.tools.map(\.toolCallId) == ["t-1"])
-        #expect(summary.messageJournalAvailable == false)
-    }
 
     @Test func pickleBridgeListReadsV2ProjectionStorageAfterBootstrap() async throws {
         let primary = StubAgentClient(id: "primary")
@@ -1772,32 +1699,6 @@ struct PickyAgentClientRouterTests {
                     && primary.sentCommands.contains { $0.type == .completePickleBridgeRequest && $0.delivered == true }
             }
         }
-    }
-
-    @Test func pickleBridgeListIncludesPrimarySnapshotSessions() async throws {
-        let primary = StubAgentClient(id: "primary")
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
-        let pool = PickyAgentDaemonPool(
-            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
-        )
-        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
-
-        await router.connect()
-        let sawSnapshot = Task<Bool, Never> {
-            for await event in router.events {
-                if case .protocolEvent(let envelope) = event,
-                   case .sessionSnapshot(let snapshot) = envelope.event,
-                   snapshot.sessions.contains(where: { $0.id == "legacy-pickle" }) {
-                    return true
-                }
-            }
-            return false
-        }
-        primary.emit(.protocolEvent(makeSessionSnapshotEvent(id: "legacy-pickle", title: "Legacy Pickle")))
-        #expect(await sawSnapshot.value)
-
-        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
-        try await waitUntil { primary.sentCommands.contains(where: { $0.type == .completePickleBridgeRequest && $0.sessions?.first?.id == "legacy-pickle" }) }
     }
 
     @Test func pickleBridgeListIncludesDockGroupsWithCachedSessions() async throws {
@@ -2085,7 +1986,7 @@ struct PickyAgentClientRouterTests {
         #expect(setup.pool.endpoint(for: sessionID) != nil)
     }
 
-    @Test func pickleBridgeListEvictsOnlySessionsAbsentFromEmittingDaemonSnapshot() async throws {
+    @Test func handlesPickleBridgeListAndSteerThroughChildProjectionProvider() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)
         try makeStubAgentdPackage(at: agentd)
@@ -2102,72 +2003,10 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
-
-        await router.connect()
-        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "child-session", cwd: "/tmp/ws")
-        _ = try await poolFactory.waitForRunner(sessionId: "child-session")
-        poolFactory.emitReady(for: "child-session")
-        _ = try await spawned
-        guard let child = clientFactory.madeClients.first?.client else {
-            Issue.record("Expected spawned child client")
-            return
+        // The registry projection, not the router, owns Pickle summaries.
+        router.pickleSessionSummariesProvider = {
+            [makeProjectedSession(id: "pickle-bridge", title: "Bridge", status: .running, finalAnswer: "done")]
         }
-
-        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "primary-session")))
-        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "child-session")))
-        primary.emit(.protocolEvent(makeEmptySessionSnapshotEvent()))
-        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
-
-        try await waitUntil {
-            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest }
-        }
-        let sessions = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions)
-        #expect(!sessions.contains { $0.id == "primary-session" })
-        #expect(sessions.contains { $0.id == "child-session" })
-    }
-
-    @Test func partialSnapshotDoesNotEvictSessionsFromEmittingDaemon() async throws {
-        let primary = StubAgentClient(id: "primary")
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
-        let pool = PickyAgentDaemonPool(
-            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
-        )
-        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
-
-        await router.connect()
-        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "primary-session")))
-        primary.emit(.protocolEvent(PickyEventEnvelope(
-            id: "partial-snapshot",
-            protocolVersion: pickyAgentProtocolVersion,
-            timestamp: Date(),
-            event: .sessionSnapshot(PickySessionSnapshot(sessions: [], skippedSessionCount: 1))
-        )))
-        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
-
-        try await waitUntil {
-            primary.sentCommands.contains { $0.type == .completePickleBridgeRequest }
-        }
-        let sessions = try #require(primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.sessions)
-        #expect(sessions.contains { $0.id == "primary-session" })
-    }
-
-    @Test func handlesPickleBridgeListAndSteerThroughChildSessionCache() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
-        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
-        try makeStubAgentdPackage(at: agentd)
-        let primary = StubAgentClient(id: "primary")
-        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
-        let pool = PickyAgentDaemonPool(
-            configuration: PickyAgentDaemonPool.Configuration(
-                token: "tok",
-                appSupportRoot: root,
-                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
-                bundleResourceURL: nil
-            ),
-            factory: poolFactory
-        )
-        let clientFactory = StubClientFactory()
-        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
 
         await router.connect()
         try await Task.sleep(nanoseconds: 20_000_000)
@@ -2178,8 +2017,8 @@ struct PickyAgentClientRouterTests {
         let sawChildSession = Task<Bool, Never> {
             for await event in router.events {
                 if case .protocolEvent(let envelope) = event,
-                   case .sessionUpdated(let session) = envelope.event,
-                   session.id == "pickle-bridge" {
+                   case .sessionProjectionSnapshot(let snapshot) = envelope.event,
+                   snapshot.sessionId == "pickle-bridge" {
                     return true
                 }
             }
@@ -2187,6 +2026,9 @@ struct PickyAgentClientRouterTests {
         }
         clientFactory.madeClients.first?.client.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-bridge", title: "Bridge", finalAnswer: "done")))
         #expect(await sawChildSession.value)
+        // The registry commit, not the forwarded frame, is what tells the router
+        // the freshly spawned child has finished booting.
+        router.sessionProjectionStorageDidChange()
 
         primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
         try await waitUntil { primary.sentCommands.contains(where: { $0.type == .completePickleBridgeRequest && $0.sessions?.first?.id == "pickle-bridge" }) }
@@ -2213,6 +2055,8 @@ struct PickyAgentClientRouterTests {
         )
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        var projectionSessions: [PickyAgentSession] = []
+        router.pickleSessionSummariesProvider = { projectionSessions }
         let errorRecorder = RouterErrorRecorder()
         let eventStream = router.events
         let errorObserver = Task {
@@ -2225,7 +2069,8 @@ struct PickyAgentClientRouterTests {
         let runner = try await poolFactory.waitForRunner(sessionId: "pickle-drain-exit")
         poolFactory.emitReady(for: "pickle-drain-exit")
         let child = try #require(try await spawned as? StubAgentClient)
-        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-drain-exit", status: .queued)))
+        projectionSessions = [makeProjectedSession(id: "pickle-drain-exit", status: .queued)]
+        router.sessionProjectionStorageDidChange()
         await Task.yield()
 
         let first = PickyCommandEnvelope(id: "cmd-drain-first", type: .followUp, sessionId: "pickle-drain-exit", text: "first")
@@ -2245,7 +2090,8 @@ struct PickyAgentClientRouterTests {
         // made full-suite load occasionally drain only one command.
         try await router.send(first)
         try await router.send(second)
-        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-drain-exit", status: .running)))
+        projectionSessions = [makeProjectedSession(id: "pickle-drain-exit", status: .running)]
+        router.sessionProjectionStorageDidChange()
 
         try await waitUntil { errorRecorder.error(for: second.id) != nil }
         #expect(errorRecorder.error(for: second.id)?.commandId == second.id)
@@ -2276,6 +2122,8 @@ struct PickyAgentClientRouterTests {
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
         let sessionId = "pickle-generation-race"
+        var projectionSessions: [PickyAgentSession] = []
+        router.pickleSessionSummariesProvider = { projectionSessions }
         let errorRecorder = RouterErrorRecorder()
         let eventStream = router.events
         let errorObserver = Task {
@@ -2288,7 +2136,8 @@ struct PickyAgentClientRouterTests {
         let oldRunner = try await poolFactory.waitForRunner(sessionId: sessionId)
         poolFactory.emitReady(for: sessionId)
         let oldChild = try #require(try await initialSpawn as? StubAgentClient)
-        oldChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .queued)))
+        projectionSessions = [makeProjectedSession(id: sessionId, status: .queued)]
+        router.sessionProjectionStorageDidChange()
         await Task.yield()
 
         let oldFirst = PickyCommandEnvelope(id: "old-drain-first", type: .followUp, sessionId: sessionId, text: "old first")
@@ -2306,7 +2155,8 @@ struct PickyAgentClientRouterTests {
         // `async let` begins executing under full-suite load.
         try await router.send(oldFirst)
         try await router.send(oldSecond)
-        oldChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
+        projectionSessions = [makeProjectedSession(id: sessionId, status: .running)]
+        router.sessionProjectionStorageDidChange()
         try await waitUntil { oldChild.disconnectCalls == 1 }
 
         async let respawn: PickyAgentClient = router.spawnChildClient(sessionId: sessionId, cwd: "/tmp/ws")
@@ -2316,7 +2166,8 @@ struct PickyAgentClientRouterTests {
         poolFactory.emitReady(for: sessionId)
         let newChild = try #require(try await respawn as? StubAgentClient)
         let newRunner = try #require(poolFactory.runners[sessionId])
-        newChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .queued)))
+        projectionSessions = [makeProjectedSession(id: sessionId, status: .queued)]
+        router.sessionProjectionStorageDidChange()
         await Task.yield()
 
         let newFirst = PickyCommandEnvelope(id: "new-drain-first", type: .followUp, sessionId: sessionId, text: "new first")
@@ -2328,7 +2179,8 @@ struct PickyAgentClientRouterTests {
         }
         try await router.send(newFirst)
         try await router.send(newSecond)
-        newChild.emit(.protocolEvent(makeSessionUpdatedEvent(id: sessionId, status: .running)))
+        projectionSessions = [makeProjectedSession(id: sessionId, status: .running)]
+        router.sessionProjectionStorageDidChange()
         try await waitUntil { newChild.sentCommands.contains { $0.id == newFirst.id } }
 
         // Let the old send throw only after the same session id owns a new,
@@ -2647,8 +2499,8 @@ struct PickyAgentClientRouterTests {
         async let resultA: Bool = {
             for await event in subscriberA {
                 if case .protocolEvent(let envelope) = event,
-                   case .sessionUpdated(let session) = envelope.event,
-                   session.id == "session-broadcast" {
+                   case .sessionProjectionSnapshot(let snapshot) = envelope.event,
+                   snapshot.sessionId == "session-broadcast" {
                     return true
                 }
             }
@@ -2657,8 +2509,8 @@ struct PickyAgentClientRouterTests {
         async let resultB: Bool = {
             for await event in subscriberB {
                 if case .protocolEvent(let envelope) = event,
-                   case .sessionUpdated(let session) = envelope.event,
-                   session.id == "session-broadcast" {
+                   case .sessionProjectionSnapshot(let snapshot) = envelope.event,
+                   snapshot.sessionId == "session-broadcast" {
                     return true
                 }
             }
@@ -2845,14 +2697,18 @@ private func asyncControlResult(_ command: PickyAsyncTaskCommand, outcome: Picky
           preparationId: command.type == .prepareSessionArchive ? "preparation" : nil)
 }
 
-private func trackedSessionEvent(id: String = "tracked", archived: Bool = false) -> PickyEventEnvelope {
+private func trackedSession(id: String = "tracked", archived: Bool = false) -> PickyAgentSession {
     var session = PickyAgentSession(id: id, title: "Tracked", status: .completed, cwd: "/tmp/ws",
         createdAt: Date(), updatedAt: Date(), logs: [], tools: [], artifacts: [], changedFiles: [])
     session.archived = archived
     session.asyncControl = .init(controlGeneration: 1, admissionState: .open, operations: [])
     session.asyncWorkSummary = .init(tracking: .ready, activeRootCount: 0, pendingCompletionCount: 0,
         uncertainExecutionCount: 0, attentionCount: 0, workRevision: 4, canReleaseRuntime: true)
-    return asyncControlEnvelope(.sessionUpdated(session))
+    return session
+}
+
+private func trackedSessionEvent(id: String = "tracked", archived: Bool = false) -> PickyEventEnvelope {
+    makeSessionProjectionSnapshotEvent(trackedSession(id: id, archived: archived))
 }
 
 extension PickyAgentClientRouterTests {
@@ -3012,7 +2868,7 @@ extension PickyAgentClientRouterTests {
             archiveStore: RouterArchiveStore(), archiveCommitDelayNanoseconds: 60_000_000_000,
             sessionProjectionStorage: storage)
         if projectionV2 {
-            guard case .sessionUpdated(let session) = trackedSessionEvent().event else { return }
+            let session = trackedSession()
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
@@ -3186,6 +3042,10 @@ extension PickyAgentClientRouterTests {
         launcherFactory.emitReady(for: "tracked")
         let child = try #require(try await spawning.value as? StubAgentClient)
         child.emit(.protocolEvent(trackedSessionEvent(archived: true)))
+        // The registry commit is what tells the router the child left booting,
+        // so input is forwarded instead of queued behind the spawn.
+        router.pickleSessionSummariesProvider = { [trackedSession(archived: true)] }
+        router.sessionProjectionStorageDidChange()
         let control = try #require(router.asyncTaskControl)
         var approval: PickyReleaseApproval?
         child.onSendInject = { envelope in
@@ -3385,7 +3245,7 @@ extension PickyAgentClientRouterTests {
         let runner = try await launchers.waitForRunner(sessionId: "tracked")
         launchers.emitReady(for: "tracked")
         let child = try #require(try await spawning.value as? StubAgentClient)
-        guard case .sessionUpdated(var session) = trackedSessionEvent(archived: true).event else { return }
+        var session = trackedSession(archived: true)
         session.status = .running
         session.asyncWorkSummary = .init(tracking: .ready, activeRootCount: 1, pendingCompletionCount: 0,
             uncertainExecutionCount: 0, attentionCount: 0, workRevision: 4, canReleaseRuntime: false)
@@ -3452,7 +3312,7 @@ extension PickyAgentClientRouterTests {
             child.emit(.protocolEvent(asyncControlEnvelope(.asyncControlContext(context))))
         }
 
-        guard case .sessionUpdated(var session) = trackedSessionEvent(archived: true).event else { return }
+        var session = trackedSession(archived: true)
         session.status = .waiting_for_input
         session.asyncWorkSummary = .init(tracking: .ready, activeRootCount: 1, pendingCompletionCount: 0,
             uncertainExecutionCount: 0, attentionCount: 0, workRevision: 4, canReleaseRuntime: false)
@@ -3526,7 +3386,7 @@ extension PickyAgentClientRouterTests {
                 $0.type == .registerAppCapabilities && $0.capabilities?.contains("sessionProjectionV2") == true
             }
         }
-        guard case .sessionUpdated(var session) = trackedSessionEvent(archived: true).event else { return }
+        var session = trackedSession(archived: true)
         session.status = .running
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -3629,11 +3489,7 @@ extension PickyAgentClientRouterTests {
         router.pickleSessionSummariesProvider = { storage.sessionSummariesForCLI() }
         viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
         let snapshots = try [false, true].enumerated().map { revision, archived in
-            let event = trackedSessionEvent(archived: archived).event
-            let session = try #require({ () -> PickyAgentSession? in
-                if case .sessionUpdated(let session) = event { return session }
-                return nil
-            }())
+            let session = trackedSession(archived: archived)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
@@ -3772,9 +3628,7 @@ extension PickyAgentClientRouterTests {
         viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
         defer { viewModel.stop(); router.disconnect() }
         let snapshots = try [!archived, archived].enumerated().map { revision, membership in
-            guard case .sessionUpdated(let session) = trackedSessionEvent(archived: membership).event else {
-                throw PickyAsyncControlError.invalidResponse
-            }
+            let session = trackedSession(archived: membership)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))
@@ -3950,9 +3804,7 @@ extension PickyAgentClientRouterTests {
         }
         viewModel.start()
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
-        guard case .sessionUpdated(let session) = trackedSessionEvent().event else {
-            throw PickyAsyncControlError.invalidResponse
-        }
+        let session = trackedSession()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let projection = try JSONSerialization.jsonObject(with: encoder.encode(session))

@@ -141,39 +141,41 @@ final class PickyRegistrySessionProjectionStorage: PickySessionProjectionStorage
         ], final: final)
     }
 
+    /// Mutates only the addressed session's store. Reinstalling the whole
+    /// store would round-trip every *other* session through the lossy
+    /// `SessionCard` boundary, resetting their `revision` and `finalAnswer`.
     @discardableResult
     func mutateSession(
         sessionID: String,
         mutate: (inout PickySessionListViewModel.SessionCard) -> Void
     ) -> PickySessionListViewModel.SessionCard? {
-        let before = snapshot()
-        guard let index = before.activeSessions.firstIndex(where: { $0.id == sessionID }) else { return nil }
-        var card = before.activeSessions[index]
+        guard registry.activeSessionIDs.contains(sessionID),
+              let store = registry.existingSessionStore(sessionID: sessionID),
+              var card = store.materializedSessionCard() else { return nil }
         mutate(&card)
-        var active = before.activeSessions
-        active[index] = card
-        install(active: active, archived: before.archivedSessions)
-        let final = snapshot()
+        store.replace(card: card)
+        let final = snapshotReusingPublishedArchive()
         publish([step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: true, archivedChanged: false)], final: final)
         return card
     }
 
+    /// Archived counterpart of `mutateSession`. The archive order can depend on
+    /// the mutated card, so membership is re-sorted without reinstalling cards.
     @discardableResult
     func mutateArchivedSession(
         sessionID: String,
         mutate: (inout PickySessionListViewModel.SessionCard) -> Void
     ) -> PickySessionListViewModel.SessionCard? {
-        let before = snapshot()
-        guard let index = before.archivedSessions.firstIndex(where: { $0.id == sessionID }) else { return nil }
-        var card = before.archivedSessions[index]
+        guard registry.archivedSessionIDs.contains(sessionID),
+              let store = registry.existingSessionStore(sessionID: sessionID),
+              var card = store.materializedSessionCard() else { return nil }
         mutate(&card)
-        var updatedArchived = before.archivedSessions
-        updatedArchived[index] = card
-        let archived = updatedArchived.sortedForArchiveList()
-        install(active: before.activeSessions, archived: archived)
+        store.replace(card: card)
+        let unsortedArchived = snapshot()
+        registry.replaceMembership(active: registry.activeSessionIDs, archived: unsortedArchived.archivedSessions.sortedForArchiveList().map(\.id))
         let final = snapshot()
         publish([
-            step(active: before.activeSessions, archived: updatedArchived, activeChanged: false, archivedChanged: true),
+            step(active: unsortedArchived.activeSessions, archived: unsortedArchived.archivedSessions, activeChanged: false, archivedChanged: true),
             step(active: final.activeSessions, archived: final.archivedSessions, activeChanged: false, archivedChanged: true),
         ], final: final)
         return card

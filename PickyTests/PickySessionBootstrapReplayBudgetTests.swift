@@ -9,36 +9,7 @@ import Testing
 
 @MainActor
 struct PickySessionBootstrapReplayBudgetTests {
-    // v1 baselines retained for W7 comparison, lowered by 1 when the
-    // composer-draft request mirror moved into the draft controller and its
-    // redundant same-value publication disappeared, and again when the
-    // per-session thinking-visibility mirror (Pi `hideThinkingBlock`) was
-    // removed with the messenger transcript. Removing the inline Pi terminal
-    // mode eliminated one more same-value publication during snapshot pruning.
-    private static let snapshotOnlyPublishBaseline = 197
-    private static let snapshotAndHydrationPublishBaseline = 955
-
-    @Test func lightweightSnapshotPublishesThePinnedV1Baseline() {
-        let viewModel = PickyProjectionReplayFixtures.makeViewModel(selectedSessionID: "bootstrap-001")
-        var publishCount = 0
-        let cancellable = viewModel.objectWillChange.sink { publishCount += 1 }
-
-        PickyProjectionReplayFixtures.apply(PickyProjectionReplayFixtures.bootstrapSnapshotEvent(), to: viewModel)
-
-        #expect(publishCount == Self.snapshotOnlyPublishBaseline)
-        withExtendedLifetime(cancellable) {}
-    }
-
-    @Test func lightweightSnapshotAndHydrationsPublishThePinnedV1Baseline() {
-        let viewModel = PickyProjectionReplayFixtures.makeViewModel(selectedSessionID: "bootstrap-001")
-        var publishCount = 0
-        let cancellable = viewModel.objectWillChange.sink { publishCount += 1 }
-
-        applyFullReplay(to: viewModel)
-
-        #expect(publishCount == Self.snapshotAndHydrationPublishBaseline)
-        withExtendedLifetime(cancellable) {}
-    }
+    private let events = PickyProjectionEventFixtures()
 
     @Test func historicalCompletedHydrationDoesNotDeliverNotificationsOrAttentionEffects() {
         let notifications = PickyNoopNotificationCenter()
@@ -52,11 +23,16 @@ struct PickySessionBootstrapReplayBudgetTests {
     }
 
     @Test func fullHydrationRetainsArchiveMembershipSelectionAndStableOrder() {
-        let first = PickyProjectionReplayFixtures.makeViewModel(selectedSessionID: "bootstrap-001")
-        let second = PickyProjectionReplayFixtures.makeViewModel(selectedSessionID: "bootstrap-001")
+        let first = PickyProjectionReplayFixtures.makeViewModel()
+        let second = PickyProjectionReplayFixtures.makeViewModel()
+        let secondEvents = PickyProjectionEventFixtures()
 
-        applyFullReplay(to: first)
-        applyFullReplay(to: second)
+        // The v2 bootstrap streams one snapshot per session, so the user can
+        // only have a resolvable selection once the membership wave lands. The
+        // contract under test is that the following hydration wave, which
+        // replaces every card with its full journal, does not steal it.
+        applyFullReplay(to: first) { first.select(sessionID: "bootstrap-001") }
+        applyFullReplay(to: second, using: secondEvents) { second.select(sessionID: "bootstrap-001") }
 
         let expectedArchivedIDs = Set(PickyProjectionReplayFixtures.lightweightBootstrapSessions().filter { $0.archived == true }.map(\.id))
         #expect(first.sessions.count + first.archivedSessions.count == 94)
@@ -78,17 +54,11 @@ struct PickySessionBootstrapReplayBudgetTests {
         )
 
         PickyProjectionReplayFixtures.apply(
-            PickyProjectionReplayFixtures.bootstrapEnvelope(
-                id: "unavailable-summary",
-                event: .sessionSnapshot(PickySessionSnapshot(sessions: [unavailable]))
-            ),
+            events.snapshotEnvelope(id: "unavailable-summary", session: unavailable),
             to: viewModel
         )
         PickyProjectionReplayFixtures.apply(
-            PickyProjectionReplayFixtures.bootstrapEnvelope(
-                id: "unavailable-hydration",
-                event: .sessionUpdated(unavailable)
-            ),
+            events.snapshotEnvelope(id: "unavailable-hydration", session: unavailable),
             to: viewModel
         )
 
@@ -97,11 +67,20 @@ struct PickySessionBootstrapReplayBudgetTests {
         #expect(viewModel.sessions.count + viewModel.archivedSessions.count == 1)
     }
 
-    private func applyFullReplay(to viewModel: PickySessionListViewModel) {
-        PickyProjectionReplayFixtures.apply(PickyProjectionReplayFixtures.bootstrapSnapshotEvent(), to: viewModel)
+    private func applyFullReplay(
+        to viewModel: PickySessionListViewModel,
+        using builder: PickyProjectionEventFixtures? = nil,
+        afterMembershipWave: (() -> Void)? = nil
+    ) {
+        let builder = builder ?? events
+        for envelope in PickyProjectionReplayFixtures.bootstrapSnapshotEvents(using: builder) {
+            PickyProjectionReplayFixtures.apply(envelope, to: viewModel)
+        }
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
+        afterMembershipWave?()
         for session in PickyProjectionReplayFixtures.hydratedBootstrapSessions() {
             PickyProjectionReplayFixtures.apply(
-                PickyProjectionReplayFixtures.bootstrapEnvelope(id: "hydration-\(session.id)", event: .sessionUpdated(session)),
+                builder.snapshotEnvelope(id: "hydration-\(session.id)", session: session),
                 to: viewModel
             )
         }

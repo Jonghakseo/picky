@@ -1040,24 +1040,9 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     requestId: z.string().min(1),
     reloadedHandleCount: z.number().int().nonnegative(),
   }),
-  // Wire-dead since the v1 dialect removal: picky-agentd no longer emits any of the
-  // legacy session projection events below. Their schemas remain only because
-  // Picky.app still decodes them; delete both sides together (see
-  // docs/architecture-maintainability-review.md, P1-2c).
-  EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   PickySessionProjectionTransactionEventSchema,
   PickySessionProjectionSnapshotEventSchema,
   PickySessionProjectionBootstrapCompleteEventSchema,
-  EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
-  EventBaseSchema.extend({ type: z.literal("sessionMetaUpdated"), session: PickyAgentSessionMetaSchema }),
-  // Explicit signal that a session's `archived` flag was just (un)set on the
-  // daemon side. Picky's session view model trusts THIS event to update its
-  // local `manuallyArchivedSessionIDs` UserDefaults; it deliberately ignores
-  // the `archived` field on plain `sessionUpdated` to avoid mid-flight
-  // unarchive flicker when an unrelated update arrives while the user has
-  // just archived/unarchived locally. Fired from `setSessionArchived`
-  // regardless of source (client command, picky_unarchive_pickle tool, ...).
-  EventBaseSchema.extend({ type: z.literal("sessionArchivedAuthoritative"), sessionId: z.string(), archived: z.boolean() }),
   EventBaseSchema.extend({ type: z.literal("sessionResourcesReloaded"), sessionId: z.string() }),
   EventBaseSchema.extend({
     type: z.literal("pluginsReloaded"),
@@ -1134,12 +1119,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     errorMessage: z.string().min(1).optional(),
     packageChanged: z.boolean().optional(),
   }),
-  EventBaseSchema.extend({ type: z.literal("sessionLogAppended"), sessionId: z.string(), line: z.string() }),
-  EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),
-  EventBaseSchema.extend({ type: z.literal("sessionTodoStateUpdated"), sessionId: z.string(), todoState: PickyTodoStateSchema.nullable(), seq: z.number().int() }),
-  EventBaseSchema.extend({ type: z.literal("sessionSubagentRunsUpdated"), sessionId: z.string(), runs: z.array(PickySubagentRunSchema), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
-  EventBaseSchema.extend({ type: z.literal("artifactUpdated"), sessionId: z.string(), artifact: PickyArtifactSchema }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("annotationOverlayRequested"), request: PickyAnnotationOverlayRequestSchema }),
   EventBaseSchema.extend({
@@ -1278,18 +1258,6 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     text: z.string().max(32768).optional(), nextCursor: z.string().optional(), reason: z.string().optional(), attachmentsOmitted: z.boolean().optional(),
   }),
   EventBaseSchema.extend({ type: z.literal("sessionRewound"), sessionId: z.string(), editorText: z.string().optional(), removedIds: z.array(z.string()) }),
-  EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
-  // Bulk append for terminal-sync / history-restore imports. The whole batch shares one
-  // seq so the client applies it as a single incremental update instead of replaying the
-  // import message-by-message (which renders like a timelapse).
-  EventBaseSchema.extend({ type: z.literal("sessionMessagesImported"), sessionId: z.string(), messages: z.array(PickySessionMessageSchema), seq: z.number().int() }),
-  EventBaseSchema.extend({ type: z.literal("sessionMessageReplaced"), sessionId: z.string(), messageId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
-  EventBaseSchema.extend({ type: z.literal("sessionMessageRemoved"), sessionId: z.string(), messageId: z.string(), seq: z.number().int() }),
-  // Legacy v1 queue event. The daemon publishes queue state through the v2 `queueSet`
-  // mutation; this variant stays for older recordings and keeps `scheduledMessages`
-  // optional so both shapes decode.
-  EventBaseSchema.extend({ type: z.literal("sessionQueueUpdated"), sessionId: z.string(), steering: z.array(PickyQueueItemSchema), followUp: z.array(PickyQueueItemSchema), scheduledMessages: z.array(PickyScheduledMessageSchema).optional(), steeringMode: PickyQueueModeSchema.optional(), followUpMode: PickyQueueModeSchema.optional(), seq: z.number().int() }),
-  EventBaseSchema.extend({ type: z.literal("sessionActivityUpdated"), sessionId: z.string(), activitySummary: PickyActivitySummarySchema, seq: z.number().int() }),
   // Live-only presence signal: true while the model streams reply text, false at
   // the end of that segment. Deliberately not a persisted session field, because
   // assistant deltas must not trigger a durable session write, and a dead turn's

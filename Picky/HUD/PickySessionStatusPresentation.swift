@@ -40,29 +40,4 @@ extension PickySessionStatus {
         }
     }
 
-    func canTransition(to next: PickySessionStatus) -> Bool {
-        if self == next { return true }
-        switch self {
-        case .failed, .cancelled:
-            // Terminal sync recovery: when the user finishes the work in the Pi terminal
-            // overlay after a failed/cancelled turn, the daemon imports the new assistant
-            // answer and patches the session to `completed` (or `blocked` when recovery
-            // surfaces a structural issue). Without allowing this transition the HUD would
-            // keep showing the stale failed/cancelled status and recovery composer copy even
-            // after the terminal sync banner reports imported messages. The reverse direction
-            // (`completed -> failed`) is still gated so a delayed failure snapshot can't
-            // undo a real completion.
-            return next == .queued || next == .running || next == .completed || next == .blocked
-        case .completed:
-            return next == .queued || next == .running
-        case .queued:
-            return true
-        case .running:
-            return next != .queued
-        case .waiting_for_input:
-            return next != .queued
-        case .blocked:
-            return next != .queued
-        }
-    }
 }

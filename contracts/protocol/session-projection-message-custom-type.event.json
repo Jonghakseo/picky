@@ -1,0 +1,23 @@
+{
+  "id": "event-projection-message-custom-type",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-05-05T00:00:00.000Z",
+  "type": "sessionProjectionTransaction",
+  "sessionId": "session-001",
+  "epoch": "epoch-001",
+  "baseRevision": 0,
+  "revision": 1,
+  "mutations": [
+    {
+      "type": "messageAppend",
+      "message": {
+        "id": "message-002",
+        "kind": "system",
+        "createdAt": "2026-05-05T00:00:00.000Z",
+        "originatedBy": "pi_extension",
+        "customType": "bash-async-completion",
+        "text": "[bash_async job-1] build: completed (exit 0) in 42s\nnpm warn deprecated\nLog: /tmp/job-1.log"
+      }
+    }
+  ]
+}

@@ -1340,7 +1340,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
   }
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior.
+// eslint-disable-next-line complexity -- This exhaustive protocol projection intentionally mirrors every event variant without executing behavior.
 function eventLogFields(event: EventEnvelope): Record<string, string | number | undefined> {
   switch (event.type) {
     case "asyncControlContext": return { eventId: event.id, type: event.type, requestId: event.requestId, sessionId: event.sessionId };
@@ -1374,16 +1374,11 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, reloadedHandles: event.reloadedHandleCount };
     case "mainAgentSessionInfoUpdated":
       return { eventId: event.id, type: event.type, hasSessionFile: event.sessionFilePath ? 1 : 0, hasCwd: event.cwd ? 1 : 0 };
-    case "sessionSnapshot": return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "pickleSessionsSnapshot": return { eventId: event.id, type: event.type, commandId: event.commandId, sessions: event.sessions.length };
     case "pickleSessionUpdated": return { eventId: event.id, type: event.type, commandId: event.commandId, sessionId: event.session.id, status: event.session.status };
     case "sessionProjectionTransaction": case "sessionProjectionSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, revision: event.revision };
     case "sessionProjectionBootstrapComplete": return { eventId: event.id, type: event.type, epoch: event.epoch, bootstrapId: event.bootstrapId, sessionCount: event.sessionIds.length };
-    case "sessionUpdated": case "sessionMetaUpdated":
-      return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };
-    case "sessionArchivedAuthoritative":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, archived: event.archived ? 1 : 0 };
     case "sessionResourcesReloaded":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "pluginsReloaded":
@@ -1399,19 +1394,9 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, sourceChars: event.source.length, messageChars: event.message.length };
     case "packageOperationCompleted":
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, sourceChars: event.source.length, ok: event.ok ? 1 : 0, errorChars: event.errorMessage?.length };
-    case "sessionLogAppended":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
     case "toolHistoryDetailResult": return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, status: event.status, textChars: event.text?.length };
-    case "toolActivityUpdated":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, tool: event.tool.name, status: event.tool.status };
-    case "sessionTodoStateUpdated":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, tasks: event.todoState?.tasks.length ?? 0, seq: event.seq };
-    case "sessionSubagentRunsUpdated":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, runs: event.runs.length, seq: event.seq };
     case "mainExtensionUiRequested": case "extensionUiRequest":
       return { eventId: event.id, type: event.type, sessionId: event.request.sessionId, requestId: event.request.id, method: event.request.method };
-    case "artifactUpdated":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
     case "pointerOverlayRequested":
       return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId };
     case "annotationOverlayRequested":
@@ -1448,14 +1433,6 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, view: event.view, isGitRepo: event.isGitRepo ? 1 : 0, files: event.files.length, errorChars: event.errorMessage?.length };
     case "sessionRewound":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, editorTextChars: event.editorText?.length, removedIds: event.removedIds.length };
-    case "sessionMessagesImported":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, messages: event.messages.length, seq: event.seq };
-    case "sessionMessageAppended":
-    case "sessionMessageReplaced":
-    case "sessionMessageRemoved":
-    case "sessionQueueUpdated":
-    case "sessionActivityUpdated":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, seq: event.seq };
     case "sessionReplyWritingUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, writing: event.writing ? 1 : 0 };
     case "sessionToolCallPreparingUpdated":

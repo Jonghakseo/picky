@@ -200,3 +200,29 @@ it("binds settings and the MCP registry for ordinary extensions on the composed 
     expect(api.getMcpServers()).toEqual([expect.objectContaining({ name: "registered" })]);
   } finally { await handle.dispose?.(); }
 });
+
+it("matches a Picky prompt rewritten by a qualified provider so the echo is not a second user message", async () => {
+  const f = await capsule();
+  // Mirror pi-extension-subagent's `>agent` mention transform inside the owned provider.
+  const subagent = f.lock.packages.subagent!;
+  const subagentDir = join(f.packageRoot, "packages", "subagent");
+  await writeFile(join(subagentDir, "index.ts"), `export default function (pi) {
+    pi.on('input', (event) => {
+      if (event.source === 'extension') return { action: 'continue' };
+      const text = event.text.replace(/(^|\\s)>worker\\b/g, '$1subagent:worker');
+      return text === event.text ? { action: 'continue' } : { action: 'transform', text, images: event.images };
+    });
+  }`);
+  subagent.files["index.ts"] = createHash("sha256").update(await readFile(join(subagentDir, "index.ts"))).digest("hex");
+  await writeFile(f.lockPath, JSON.stringify(f.lock));
+  const qualified = qualifyAsyncProviders(f.packageRoot, f.lockPath)!;
+  const runtime = new PiSdkRuntime({ agentDir: f.agentDir, asyncProviderPaths: qualified.paths });
+  const handle = await runtime.prewarm({ cwd: f.root, sessionId: "owned-rewrite" });
+  try {
+    // No model is configured, so Pi rejects the prompt after the input transforms have run.
+    await handle.followUp({ text: "delegate >worker now", imagePaths: [] }).catch(() => undefined);
+    // The learned alias lets Pi's rewritten role=user echo resolve to Picky's own delivery
+    // instead of surfacing as a second, extension-originated user message.
+    expect(handle.reverseInputExpansion?.("delegate subagent:worker now")).toBe("delegate >worker now");
+  } finally { await handle.dispose?.(); }
+}, 15000);

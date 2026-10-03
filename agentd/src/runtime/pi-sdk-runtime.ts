@@ -191,7 +191,10 @@ export class PiSdkRuntime implements AgentRuntime {
       const { settingsManager, providerOptions, refresh } = await prepareAsyncProviderResources(this.options.asyncProviderPaths, resourceLoaderOptions, runtimeCwd, agentDir);
       const ordinaryBus = this.options.asyncProviderPaths ? ordinaryExtensionBus(externalDeliveryEventBus) : externalDeliveryEventBus;
       const mcpFactories = this.options.mcpTarget ? await pickyMcpExtensions(this.options.mcpTarget, agentDir) : [];
-      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), ...mcpFactories, inputRewriteObserver.inlineExtension];
+      // The rewrite observer must be the last `input` handler to see every transform. The composed
+      // loader runs owned providers after ordinary extensions, so it ends whichever loader runs last.
+      const loadsOwnedProviders = refresh !== undefined && settingsManager !== undefined;
+      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), ...mcpFactories, ...(loadsOwnedProviders ? [] : [inputRewriteObserver.inlineExtension])];
       const normalOptions = {
         ...resourceLoaderOptions, ...providerOptions,
         eventBus: ordinaryBus,
@@ -201,7 +204,7 @@ export class PiSdkRuntime implements AgentRuntime {
         ...(settingsManager ? { settingsManager } : {}),
         cwd: runtimeCwd, agentDir, resourceLoaderOptions: normalOptions,
       });
-      if (refresh && settingsManager) {
+      if (loadsOwnedProviders) {
         // SDK factories capture their loader's runtime. Load the owned extensions
         // separately with the real bus, then bind both runtimes through one public
         // ResourceLoader. Ordinary resources continue to come from the normal loader.
@@ -209,7 +212,7 @@ export class PiSdkRuntime implements AgentRuntime {
           noExtensions: true, additionalExtensionPaths: this.options.asyncProviderPaths ?? [],
           noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           eventBus: externalDeliveryEventBus,
-          extensionFactories: asyncFence ? [asyncFence.inlineExtension] : [],
+          extensionFactories: [...(asyncFence ? [asyncFence.inlineExtension] : []), inputRewriteObserver.inlineExtension],
         };
         const ownedServices = await createServices({ cwd: runtimeCwd, agentDir, settingsManager,
           modelRuntime: services.modelRuntime, resourceLoaderOptions: ownedOptions });

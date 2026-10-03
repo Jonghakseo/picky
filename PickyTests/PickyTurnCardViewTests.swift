@@ -616,7 +616,10 @@ struct PickyTurnCardViewTests {
             isRunning: false, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil, startedAt: nil) == nil)
     }
 
-    @Test func presenceStabilizerKeepsWorkingThroughShortGapsBetweenTools() {
+    /// Tools are short and the model's pauses between them are long, so the
+    /// line keeps the last step for 5 seconds after it ends and reads
+    /// "thinking" only when a pause runs longer than that.
+    @Test func presenceKeepsTheLastStepUntilAPauseRunsPastFiveSeconds() {
         let t0 = Date(timeIntervalSince1970: 1_000)
         let working = PickyConversationPresencePresentation(phase: .working, detail: "테스트 실행", startedAt: nil)
         let next = PickyConversationPresencePresentation(phase: .working, detail: "빌드", startedAt: nil)
@@ -624,33 +627,32 @@ struct PickyTurnCardViewTests {
         let waiting = PickyConversationPresencePresentation(phase: .waitingForInput, detail: nil, startedAt: nil)
         var stabilizer = PickyConversationPresenceStabilizer()
 
-        // thinking -> working applies at once.
+        // Before the first tool the line reads "thinking"; a tool applies at once.
         #expect(stabilizer.update(target: thinking, now: t0) == nil)
+        #expect(stabilizer.displayed == thinking)
         #expect(stabilizer.update(target: working, now: t0.addingTimeInterval(0.1)) == nil)
         #expect(stabilizer.displayed == working)
 
-        // A tool that ends right away stays "working" for the 0.6s minimum.
-        let wait = stabilizer.update(target: thinking, now: t0.addingTimeInterval(0.15))
+        // The tool ends; its step stays up for 5 seconds from that moment.
+        let hold = stabilizer.update(target: thinking, now: t0.addingTimeInterval(0.5))
         #expect(stabilizer.displayed == working)
-        #expect(abs((wait ?? 0) - 0.55) < 0.001)
+        #expect(abs((hold ?? 0) - 5) < 0.001)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(4.9)) != nil)
+        #expect(stabilizer.displayed == working)
 
-        // The next tool inside the window only swaps the detail: no "thinking" flash.
-        #expect(stabilizer.update(target: next, now: t0.addingTimeInterval(0.3)) == nil)
+        // A tool starting inside the hold only swaps the detail.
+        #expect(stabilizer.update(target: next, now: t0.addingTimeInterval(5.0)) == nil)
         #expect(stabilizer.displayed == next)
 
-        // After it ends, "thinking" waits out the 0.4s grace, then applies.
-        // The grace counts from when the step ended, not when it started.
-        let grace = stabilizer.update(target: thinking, now: t0.addingTimeInterval(1.0))
-        #expect(abs((grace ?? 0) - 0.4) < 0.001)
+        // A pause longer than 5 seconds switches back to "thinking".
+        _ = stabilizer.update(target: thinking, now: t0.addingTimeInterval(6.0))
         #expect(stabilizer.displayed == next)
-        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(1.2)) != nil)
-        #expect(stabilizer.displayed == next)
-        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(1.41)) == nil)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(11.01)) == nil)
         #expect(stabilizer.displayed == thinking)
 
         // Waiting for input is never delayed.
-        #expect(stabilizer.update(target: working, now: t0.addingTimeInterval(2.0)) == nil)
-        #expect(stabilizer.update(target: waiting, now: t0.addingTimeInterval(2.05)) == nil)
+        #expect(stabilizer.update(target: working, now: t0.addingTimeInterval(12)) == nil)
+        #expect(stabilizer.update(target: waiting, now: t0.addingTimeInterval(12.1)) == nil)
         #expect(stabilizer.displayed == waiting)
     }
 

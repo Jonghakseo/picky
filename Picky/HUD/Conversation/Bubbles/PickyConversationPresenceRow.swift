@@ -32,9 +32,9 @@ struct PickyConversationPresencePresentation: Equatable {
 
     var isAnimated: Bool { phase != .waitingForInput }
 
-    /// Only a running tool makes the line "working". Once it finishes the line
-    /// drops back to "thinking" so a finished or failed step never reads as
-    /// still in progress. Once the agent has finished responding, the line
+    /// Only a running tool makes the live value "working"; between tools it is
+    /// "thinking". `PickyConversationPresenceStabilizer` holds the last step on
+    /// screen through short gaps, so "thinking" shows only for long pauses. Once the agent has finished responding, the line
     /// disappears even if the session stays running for background work
     /// (`bash_async`, subagents): the Pickle can take a new message, and the
     /// running-task footer already shows that work.
@@ -83,14 +83,16 @@ struct PickyConversationPresencePresentation: Equatable {
     }
 }
 
-/// Smooths "working" <-> "thinking" flips caused by back-to-back short tool
-/// calls. Entering "working", changing its detail, waiting for input, and any
-/// non-working change apply at once. Leaving "working" for "thinking" waits
-/// until the step has been gone for `workingGrace` and shown for at least
-/// `minimumWorkingDuration`, so a tool that starts inside that window just
-/// replaces the detail instead of blinking through "thinking".
+/// Keeps the last step on screen between tool calls. Most tools finish in
+/// well under a second while the model spends most of a turn choosing the next
+/// one, so a strict live value read "thinking" nearly all the time. Entering
+/// "working", changing its detail, waiting for input, and any non-working
+/// change apply at once. Leaving "working" for "thinking" waits until the step
+/// has been gone for `workingGrace` (and shown for `minimumWorkingDuration`):
+/// the next tool inside that window only swaps the detail, and only a pause
+/// longer than the grace reads as "thinking" again.
 struct PickyConversationPresenceStabilizer: Equatable {
-    static let workingGrace: TimeInterval = 0.4
+    static let workingGrace: TimeInterval = 5
     static let minimumWorkingDuration: TimeInterval = 0.6
 
     private(set) var displayed: PickyConversationPresencePresentation?

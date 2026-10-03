@@ -1048,8 +1048,10 @@ enum PickyQueueMode: String, Codable, Equatable {
 struct PickyQueueItem: Codable, Equatable {
     /// The text the runtime holds, which for a Picky submission is the built prompt envelope.
     let text: String
-    /// The user's own instruction, resolved by agentd. Nil only for queue items persisted
-    /// before the daemon sent this field.
+    /// The user's own instruction, resolved by agentd. Nil for queue items journaled before
+    /// the daemon sent this field, and for anything an older daemon sends now: a
+    /// `PICKY_AGENTD_ROOT` dev override can point a current app at a pre-Phase-0 agentd.
+    /// Callers fall back to `text`.
     let displayText: String?
     let enqueuedAt: Date
     let id: String?

@@ -95,8 +95,9 @@ struct PickyMessagePresentationParams: Codable, Equatable {
 }
 
 struct PickyMessagePresentation: Codable, Equatable {
-    /// Nil when this build does not know the code the daemon sent; callers then keep the
-    /// daemon's English `text`/`errorMessage`.
+    /// Nil when the daemon sent no usable presentation for this build (unknown code, or a
+    /// payload this build cannot read); callers then keep the daemon's English
+    /// `text`/`errorMessage`. `params` is nil whenever `code` is.
     let code: PickyMessagePresentationCode?
     let params: PickyMessagePresentationParams?
 
@@ -107,13 +108,56 @@ struct PickyMessagePresentation: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey { case code, params }
 
-    /// Never throws past the container: a malformed presentation must not make the whole message,
-    /// and with it the session snapshot, undecodable. The daemon's English fallback stands instead.
+    /// Codes whose sentence is built around a string only the daemon has. Without it the catalog
+    /// copy would render with a hole where the cause belongs, so the presentation is unusable.
+    /// Mirrors the required `params` of `PickyMessagePresentationSchema` in agentd/src/protocol.ts.
+    private static func requiresDetail(_ code: PickyMessagePresentationCode) -> Bool {
+        switch code {
+        case .userBashFailed, .sessionCompactionFailed:
+            return true
+        case .sessionCancelledByUser, .agentFailedWithoutDetail, .sessionCompacted,
+             .sessionCompactedAfterOverflow, .sessionPinnedFromIdlePi:
+            return false
+        }
+    }
+
+    /// Never throws, and never keeps half of a presentation: anything the daemon's own schema
+    /// would reject (a non-object value, an unknown code, missing or malformed `params` for a
+    /// code that needs them) decodes as no presentation at all, exactly like the TypeScript
+    /// `.catch(undefined)`. A malformed presentation must not make the whole message — and with
+    /// it the session snapshot — undecodable, and a surviving code without its detail would
+    /// replace the daemon's English fallback with a sentence that has a blank where the cause is.
     init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        code = (try? container.decodeIfPresent(String.self, forKey: .code)).flatMap { $0 }
-            .flatMap(PickyMessagePresentationCode.init(rawValue:))
-        params = (try? container.decodeIfPresent(PickyMessagePresentationParams.self, forKey: .params)).flatMap { $0 }
+        guard let container = try? decoder.container(keyedBy: CodingKeys.self),
+              let rawCode = try? container.decodeIfPresent(String.self, forKey: .code),
+              let decodedCode = PickyMessagePresentationCode(rawValue: rawCode)
+        else {
+            code = nil
+            params = nil
+            return
+        }
+
+        // A missing `params` key is normal: most codes carry none. Only a key that is present
+        // and unreadable is evidence that this build cannot trust the payload, so the two are
+        // kept apart here. A `null` reads as "no params", matching the daemon's schema, which
+        // ignores the key entirely for codes that declare none.
+        var decodedParams: PickyMessagePresentationParams?
+        if container.contains(.params), (try? container.decodeNil(forKey: .params)) == false {
+            guard let parsed = try? container.decode(PickyMessagePresentationParams.self, forKey: .params) else {
+                code = nil
+                params = nil
+                return
+            }
+            decodedParams = parsed
+        }
+
+        guard !(Self.requiresDetail(decodedCode) && decodedParams?.detail == nil) else {
+            code = nil
+            params = nil
+            return
+        }
+        code = decodedCode
+        params = decodedParams
     }
 
     func encode(to encoder: Encoder) throws {

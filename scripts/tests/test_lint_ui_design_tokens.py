@@ -222,6 +222,27 @@ class UIDesignTokenLintTests(unittest.TestCase):
             self.assertEqual(len(unknown_target), 1)
             self.assertIn("never recorded", unknown_target[0])
 
+    def test_check_aliases_rejects_a_file_the_guard_no_longer_scans(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.copy_fixture("legacy.swift", root)
+            baseline = self.baseline_for(root)
+            moved = "Picky/Elsewhere/Example.swift"
+            (root / moved).parent.mkdir(parents=True, exist_ok=True)
+            (root / "Picky" / "HUD" / "Example.swift").rename(root / moved)
+            aliases = {moved: "Picky/HUD/Example.swift"}
+
+            # The file exists and the baseline knows its old path, so the two
+            # original checks pass. What is gone is the guard's reach: nothing
+            # under Picky/HUD is read any more, so the legacy values in the
+            # moved file would never be reported again.
+            self.assertEqual(lint_ui_design_tokens.lint(root, baseline, ("Picky/HUD",), aliases), [])
+
+            failures = lint_ui_design_tokens.check_aliases(root, baseline, aliases, ("Picky/HUD",))
+
+            self.assertEqual(len(failures), 1)
+            self.assertIn("SCAN_ROOTS", failures[0])
+
     def test_repository_scan_roots_and_aliases_are_current(self):
         missing_roots = [root for root in lint_ui_design_tokens.SCAN_ROOTS if not (REPO_ROOT / root).exists()]
 

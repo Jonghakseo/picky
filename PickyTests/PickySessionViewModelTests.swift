@@ -3660,14 +3660,12 @@ struct PickySessionViewModelTests {
 
     // MARK: - Dock layout controller seam
 
-    // V2 bootstrap admits one session per snapshot, so the dock layout is no
-    // longer empty by the time `reconcileDockLayout` runs and the controller's
-    // legacy-manual-order migration (guarded by `entries.isEmpty`) never fires.
-    // That migration contract is still covered at the controller seam in
-    // `PickySessionDockLayoutControllerTests`. What the view-model seam can
-    // still prove is that the manual order drives the session list and that
-    // every bootstrapped session is admitted to the dock exactly once.
-    @MainActor @Test func dockLayoutAdmitsEveryBootstrappedSessionWhileManualOrderDrivesSessionOrder() {
+    // A user who dragged the dock before groups existed has that order only in
+    // the legacy `manualOrder`. V2 bootstrap admits one session per snapshot,
+    // so by the time membership is authoritative the layout is already full in
+    // arrival order; without the replay at bootstrap completion the old drags
+    // would be overwritten on disk and lost for good.
+    @MainActor @Test func bootstrapCompletionReplaysLegacyManualOrderOntoAnEmptyDockLayout() {
         let orderStore = FakeManualOrderStore()
         orderStore.manualOrder = ["c", "a", "b"]
         let dockLayoutStore = FakeViewModelDockLayoutStore()
@@ -3692,9 +3690,44 @@ struct PickySessionViewModelTests {
         viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
 
         #expect(viewModel.sessions.map(\.id) == ["c", "a", "b"])
-        #expect(viewModel.dockLayout.testSessionIDs.sorted() == ["a", "b", "c"])
-        #expect(viewModel.dockLayout.testSessionIDs.count == 3)
-        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs.sorted() == ["a", "b", "c"])
+        // `manualOrder` is newest-first; dock entries run top-down.
+        #expect(viewModel.dockLayout.testSessionIDs == ["b", "a", "c"])
+        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs == ["b", "a", "c"])
+    }
+
+    // Arranging the dock under v2 is the newer intent. Replaying a years-old
+    // drag order on top of it at bootstrap completion would undo what the user
+    // just did, so the pending migration is dropped instead.
+    @MainActor @Test func dockArrangedBeforeBootstrapCompletionSuppressesTheLegacyReplay() {
+        let orderStore = FakeManualOrderStore()
+        orderStore.manualOrder = ["c", "a", "b"]
+        let dockLayoutStore = FakeViewModelDockLayoutStore()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            selectionStore: FakeSelectionStore(),
+            archiveStore: FakeArchiveStore(),
+            manualOrderStore: orderStore,
+            dockLayoutStore: dockLayoutStore
+        )
+        for (id, title, createdAt) in sessionSeedRows {
+            viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionSnapshot(
+                id: id,
+                title: title,
+                status: "running",
+                summary: id,
+                createdAt: createdAt,
+                updatedAt: createdAt
+            ))))
+        }
+        // Arrival order is a, b, c; the user pulls "c" to the top of the dock.
+        viewModel.moveSessionInDock(sessionID: "c", to: .topLevel(index: 0))
+        #expect(viewModel.dockLayout.testSessionIDs == ["c", "a", "b"])
+
+        viewModel.apply(.sessionProjectionBootstrapCompletion(removedSessionIDs: [], isPrimary: true))
+
+        #expect(viewModel.dockLayout.testSessionIDs == ["c", "a", "b"])
+        #expect(dockLayoutStore.savedLayouts.last?.testSessionIDs == ["c", "a", "b"])
     }
 
     @Test func removeDockGroupArchivesMembersAndPersistsThroughViewModel() async throws {

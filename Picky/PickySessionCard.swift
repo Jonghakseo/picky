@@ -59,7 +59,7 @@ struct PickySessionCard: Equatable, Identifiable {
     /// Daemon-side archive flag mirrored from `PickyAgentSession.archived`.
     /// Snapshot hydration hoists this into the local `manuallyArchivedSessionIDs`
     /// UserDefaults so a Picky restart with cleared local state still partitions
-    /// archived Pickles correctly. Live `sessionUpdated` events keep using the
+    /// archived Pickles correctly. Live projection transactions keep using the
     /// local intent set to avoid mid-flight unarchive flicker.
     var archived: Bool
     /// When the session was archived. Orders the archived list (most recently

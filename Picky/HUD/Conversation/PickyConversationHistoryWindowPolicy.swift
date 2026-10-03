@@ -18,9 +18,10 @@
 import Foundation
 
 enum PickyConversationHistoryWindowPolicy {
-    /// Keep in sync with `SNAPSHOT_VISIBLE_USER_TURN_COUNT` in agentd/src/server.ts:
-    /// the initial sessionSnapshot trims messages to this same window so the first
-    /// full sessionUpdated arrives without a visible layout shift.
+    /// How many of the newest user turns a freshly opened card renders. The
+    /// daemon no longer trims the journal for the app: a projection snapshot
+    /// carries the whole message list, so this window is purely a render
+    /// decision and "Load more" walks backwards through what already arrived.
     static let baseTurnCount = 10
     static let loadMoreTurnStep = 10
 

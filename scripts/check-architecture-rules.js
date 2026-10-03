@@ -810,14 +810,16 @@ function checkFileSizeRatchet() {
     ts: 1500,
   };
   const allowlist = new Map([
-    ["Picky/PickySessionViewModel.swift", 2654],
+    ["Picky/PickySessionViewModel.swift", 2276],
     ["Picky/CompanionManager.swift", 2485],
-    ["Picky/Interaction/PickyInteractionReducer.swift", 1400],
+    ["Picky/Interaction/PickyInteractionReducer.swift", 1370],
     ["Picky/Hub/Settings/CompanionPanelSettingsView.swift", 1982],
     ["Picky/Overlay/BlueCursorView.swift", 1700],
-    ["Picky/Protocol/PickyAgentProtocol.swift", 1509],
+    ["Picky/Protocol/PickyAgentProtocol.swift", 1326],
     ["agentd/src/session-supervisor.ts", 1992],
-    ["agentd/src/runtime/pi-sdk-runtime.ts", 1539],
+    // `agentd/src/runtime/pi-sdk-runtime.ts` kept a 1539 pin until its adapters
+    // moved out; at 301 lines it is back under the plain threshold, so the
+    // exception is gone rather than parked.
   ]);
 
   const swiftFiles = walk("Picky", (file) => file.endsWith(".swift"));
@@ -852,10 +854,12 @@ function swiftTypeGroupStem(relativePath) {
 
 const SWIFT_TYPE_GROUP_RATCHET = new Map([
   ["CompanionManager", 3976],
-  ["PickySessionViewModel", 3473],
-  ["PickyHUDOverlayManager", 2449],
-  ["PickyHUDDockRailView", 1771],
-  ["PickyAgentClientRouter", 1346],
+  ["PickySessionViewModel", 3036],
+  ["PickyHUDOverlayManager", 2442],
+  ["PickyHUDDockRailView", 1553],
+  // Already under the 1500 group threshold. The pin stays so the group cannot
+  // drift back up to it.
+  ["PickyAgentClientRouter", 1301],
 ]);
 
 function swiftExtensionBlockLineCount(source, stem) {

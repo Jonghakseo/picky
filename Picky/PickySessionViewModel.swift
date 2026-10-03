@@ -120,6 +120,13 @@ final class PickySessionListViewModel: ObservableObject {
     private var dockStateMutationDepth = 0
     private var needsImmediateDockStateSyncAfterMutation = false
     internal let dockLayoutController: PickySessionDockLayoutController
+    /// True when this launch found an empty dock layout next to a non-empty
+    /// legacy `manualOrder`: drags the user made before groups existed were
+    /// never carried into the layout. V2 bootstrap admits sessions one
+    /// snapshot at a time, so the layout stops being empty long before
+    /// membership is authoritative; this flag carries that launch-time
+    /// observation to the one moment the replay can run correctly.
+    internal var needsLegacyManualOrderMigration = false
     enum PendingDockGroupAssignment {
         case groupName(String)
         case groupID(String)
@@ -146,7 +153,7 @@ final class PickySessionListViewModel: ObservableObject {
     private var terminalSessionCommandChainIDs: [String: UUID] = [:]
     private var eventTask: Task<Void, Never>?
     /// Safety watchdog that flips `isLoadingInitialSessionSnapshot` to `false`
-    /// even when the daemon never delivers a `sessionSnapshot` (e.g. WebSocket
+    /// even when the daemon never delivers a `sessionProjectionSnapshot` (e.g. WebSocket
     /// upgrade silently fails, agentd crashes mid-handshake, or a protocol
     /// mismatch swallows the response). Without this fallback the dock UI used
     /// to stay stuck on the initial loading state, which manifested as an
@@ -157,7 +164,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let initialSnapshotWatchdogNanoseconds: UInt64 = 4_000_000_000
     /// Wallclock instant of the most recent `.connected` event. Used purely
     /// for diagnostics so we can report how long the daemon kept us waiting
-    /// for the first `sessionSnapshot` after the WebSocket handshake
+    /// for the first `sessionProjectionSnapshot` after the WebSocket handshake
     /// completed — or, if the watchdog fires, exactly how long we waited
     /// before giving up.
     private var lastConnectedAt: Date?
@@ -225,6 +232,8 @@ final class PickySessionListViewModel: ObservableObject {
         }
         self.dockLayoutController = dockLayoutController
         self.dockLayout = dockLayoutController.layout
+        self.needsLegacyManualOrderMigration = dockLayoutController.layout.entries.isEmpty
+            && !manualOrderStore.manualOrder.isEmpty
         self.artifactPathValidator = artifactPathValidator
         self.clipboardWriter = clipboardWriter
         self.reportPresenter = reportPresenter ?? PickyReportViewerPresenter.shared
@@ -381,7 +390,7 @@ final class PickySessionListViewModel: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             guard self.isLoadingInitialSessionSnapshot else { return }
             let waitedMs = self.lastConnectedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1
-            pickySessionLog("initial snapshot watchdog fired — unblocking dock UI without sessionSnapshot waitedSinceConnectedMs=\(waitedMs)")
+            pickySessionLog("initial snapshot watchdog fired — unblocking dock UI without sessionProjectionSnapshot waitedSinceConnectedMs=\(waitedMs)")
             self.isLoadingInitialSessionSnapshot = false
             self.initialSnapshotWatchdogTask = nil
         }
@@ -1643,6 +1652,10 @@ final class PickySessionListViewModel: ObservableObject {
         syncScreenContextTargetAfterSessionListChange()
         syncActiveVoiceFollowUpAfterSessionListChange()
         if isPrimary {
+            // Membership is authoritative only here, so this is the first and
+            // only point where the pre-group drag order can be replayed onto
+            // a layout that holds every session the daemon knows.
+            migrateLegacyManualOrderIfNeeded()
             disarmInitialSnapshotWatchdog()
             isLoadingInitialSessionSnapshot = false
         }

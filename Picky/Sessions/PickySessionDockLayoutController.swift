@@ -83,6 +83,45 @@ final class PickySessionDockLayoutController {
         return apply(next, changed: changed)
     }
 
+    /// Replay a legacy `manualOrder` drag order onto the top-level dock
+    /// entries. V2 bootstrap admits sessions one snapshot at a time, so the
+    /// `entries.isEmpty` migration in `reconcile` can no longer observe the
+    /// empty layout it needs; the caller remembers that state at launch and
+    /// replays the order once membership is authoritative. Group entries and
+    /// their members keep their slots: only ungrouped Pickles are reordered.
+    @discardableResult
+    func applyLegacyManualOrder(_ legacyManualOrder: [String]) -> Bool {
+        guard !legacyManualOrder.isEmpty else { return false }
+        // `manualOrder` is newest-first; `entries` runs top-down with the
+        // newest last, so the legacy order is read in reverse.
+        var rankBySessionID: [String: Int] = [:]
+        for (rank, sessionID) in legacyManualOrder.reversed().enumerated() where rankBySessionID[sessionID] == nil {
+            rankBySessionID[sessionID] = rank
+        }
+        let currentTopLevelIDs = layout.entries.compactMap { entry -> String? in
+            guard case .session(let sessionID) = entry else { return nil }
+            return sessionID
+        }
+        // A session the legacy order never saw was created after the user's
+        // last drag, so it keeps the newest (end) slots in arrival order.
+        let reorderedIDs = currentTopLevelIDs.enumerated()
+            .sorted { lhs, rhs in
+                let left = rankBySessionID[lhs.element] ?? (legacyManualOrder.count + lhs.offset)
+                let right = rankBySessionID[rhs.element] ?? (legacyManualOrder.count + rhs.offset)
+                return left < right
+            }
+            .map(\.element)
+        guard reorderedIDs != currentTopLevelIDs else { return false }
+
+        var next = layout
+        var remaining = reorderedIDs[...]
+        for index in next.entries.indices {
+            guard case .session = next.entries[index], let sessionID = remaining.popFirst() else { continue }
+            next.entries[index] = .session(id: sessionID)
+        }
+        return apply(next, changed: true)
+    }
+
     /// Admit one active session without pruning other persisted IDs. V2
     /// bootstrap snapshots arrive one session at a time, so IDs absent from
     /// the registry at this moment are not evidence that they are stale.

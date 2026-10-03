@@ -365,16 +365,38 @@ def load_baseline(path: Path) -> set[str]:
     return {entry["fingerprint"] for entry in document.get("entries", [])}
 
 
-def check_aliases(root: Path, baseline_path: Path, aliases: dict[str, str]) -> list[str]:
-    """Reject aliases that no longer describe a real move of real baseline debt."""
+def check_aliases(
+    root: Path,
+    baseline_path: Path,
+    aliases: dict[str, str],
+    scan_roots: Iterable[str] = SCAN_ROOTS,
+) -> list[str]:
+    """Reject aliases that no longer describe a real move of real baseline debt.
+
+    An alias only does its job while the guard still reads the file it names. If
+    the file moved again, moved out of SCAN_ROOTS, or became excluded, the alias
+    silently stops mattering and the file's legacy debt leaves the guard with it,
+    so every one of those states is a failure here.
+    """
     document = json.loads(baseline_path.read_text(encoding="utf-8"))
     recorded_paths = {entry["path"] for entry in document.get("entries", [])}
+    scanned_paths = {path.relative_to(root).as_posix() for path in paths_for(root, scan_roots)}
+    repoint = "Point the alias at the file's current path and widen SCAN_ROOTS to cover it. Deleting the alias instead takes this file's legacy debt out of the guard."
     failures: list[str] = []
     for current, recorded in sorted(aliases.items()):
         if not (root / current).is_file():
-            failures.append(f"{current}: aliased to {recorded} but the file no longer exists; drop the alias.")
+            failures.append(f"{current}: aliased to {recorded} but the file no longer exists there. {repoint}")
+        elif current not in scanned_paths:
+            failures.append(
+                f"{current}: aliased to {recorded} but the guard does not scan that path "
+                f"(outside SCAN_ROOTS or in EXCLUDED_FILES), so the alias covers nothing. {repoint}"
+            )
         if recorded not in recorded_paths:
-            failures.append(f"{current}: aliased to {recorded}, which {baseline_path.name} never recorded; drop the alias.")
+            failures.append(
+                f"{current}: aliased to {recorded}, which {baseline_path.name} never recorded; "
+                "name the baseline path this file's entries were actually recorded under, or drop the alias "
+                "if the file carries no baseline debt."
+            )
     return failures
 
 

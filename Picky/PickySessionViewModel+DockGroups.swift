@@ -49,6 +49,24 @@ extension PickySessionListViewModel {
         drainPendingDockGroupAssignments()
     }
 
+    /// Replay drags made before the dock layout existed, once, onto the
+    /// bootstrapped layout. Admission appends sessions in arrival order, which
+    /// would otherwise overwrite that old order for good on the first launch
+    /// after the layout file was reset (or on an upgrade that skipped v1
+    /// reconciliation entirely).
+    internal func migrateLegacyManualOrderIfNeeded() {
+        guard needsLegacyManualOrderMigration else { return }
+        needsLegacyManualOrderMigration = false
+        guard dockLayoutController.applyLegacyManualOrder(manualOrder) else { return }
+        dockLayout = dockLayoutController.layout
+    }
+
+    /// A dock the user arranged under v2 is the newer intent, so the pending
+    /// legacy replay is dropped rather than applied on top of it.
+    private func cancelLegacyManualOrderMigration() {
+        needsLegacyManualOrderMigration = false
+    }
+
     func assignSessionToDockGroup(sessionID: String, groupName: String) {
         if !applyDockGroupAssignment(sessionID: sessionID, groupName: groupName) {
             pendingDockGroupAssignments[sessionID] = .groupName(groupName)
@@ -116,6 +134,7 @@ extension PickySessionListViewModel {
     /// can focus a rename input on it or run further operations.
     @discardableResult
     func createDockGroup(name: String = "", withMemberIDs memberSessionIDs: [String] = []) -> String {
+        cancelLegacyManualOrderMigration()
         let groupID = dockLayoutController.createGroup(name: name, withMemberIDs: memberSessionIDs)
         dockLayout = dockLayoutController.layout
         return groupID
@@ -155,6 +174,7 @@ extension PickySessionListViewModel {
     /// drag handler after it hit-tests the cursor against the current
     /// rendered slots.
     func moveSessionInDock(sessionID: String, to destination: PickyDockContainer) {
+        cancelLegacyManualOrderMigration()
         guard dockLayoutController.moveSession(sessionID: sessionID, to: destination) else { return }
         dockLayout = dockLayoutController.layout
     }
@@ -162,6 +182,7 @@ extension PickySessionListViewModel {
     /// Reorder a group as a whole within the top-level layout. `target` is
     /// the post-removal index (0 = top of dock).
     func moveDockGroup(id: String, toTopLevelIndex target: Int) {
+        cancelLegacyManualOrderMigration()
         guard dockLayoutController.moveGroup(id: id, toTopLevelIndex: target) else { return }
         dockLayout = dockLayoutController.layout
     }

@@ -59,6 +59,80 @@ struct PickyMessagePresentationCopyTests {
         #expect(message.localizedPresentationText == nil)
     }
 
+    // A known code whose detail the daemon could not express in a way this build reads is still
+    // unusable: the catalog sentence quotes that detail, so keeping the code alone would replace
+    // "Bash failed: exit 1" with a sentence that has a blank where the cause belongs.
+    @Test func knownCodeWithUnreadableParamsFallsBackToTheDaemonText() throws {
+        let json = """
+        {"id":"m-bash","kind":"agent_error","createdAt":"2026-05-05T00:00:00.000Z","errorMessage":"Bash failed: exit 1","presentation":{"code":"userBashFailed","params":{"detail":7}}}
+        """
+        let message = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionMessage.self, from: Data(json.utf8))
+
+        #expect(message.errorMessage == "Bash failed: exit 1")
+        #expect(message.presentation?.code == nil)
+        #expect(message.localizedPresentationText == nil)
+        LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            #expect(PickyErrorBubbleView(message: message).displayedErrorMessage == "Bash failed: exit 1")
+        }
+    }
+
+    // Same rule for the compaction failure, whose body is the summarizer's own words.
+    @Test func compactionFailureWithoutParamsFallsBackToTheDaemonText() throws {
+        let json = """
+        {"id":"m-compact","kind":"system","createdAt":"2026-05-05T00:00:00.000Z","text":"Auto-compaction failed\\n\\nSummarization failed.","presentation":{"code":"sessionCompactionFailed"}}
+        """
+        let message = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionMessage.self, from: Data(json.utf8))
+
+        #expect(message.presentation?.code == nil)
+        #expect(message.localizedPresentationText == nil)
+    }
+
+    // A presentation that is not an object at all must not throw out of the message decoder:
+    // one undecodable message would take the whole session snapshot with it.
+    @Test func nonObjectPresentationStillDecodesTheMessage() throws {
+        let scalars = ["\"oops\"", "42"]
+
+        for scalar in scalars {
+            let json = """
+            {"id":"m-scalar","kind":"system","createdAt":"2026-05-05T00:00:00.000Z","text":"Session restored from disk","presentation":\(scalar)}
+            """
+            let message = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionMessage.self, from: Data(json.utf8))
+
+            #expect(message.text == "Session restored from disk")
+            #expect(message.presentation?.code == nil)
+            #expect(message.localizedPresentationText == nil)
+        }
+    }
+
+    // Most codes carry no `params` at all. Dropping those presentations would silently push
+    // every Picky-authored line back to the daemon's English text.
+    @Test func codeWithoutParamsStillRendersFromTheCatalog() throws {
+        let json = """
+        {"id":"m-cancelled","kind":"system","createdAt":"2026-05-05T00:00:00.000Z","text":"Cancelled by user","presentation":{"code":"sessionCancelledByUser"}}
+        """
+        let message = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionMessage.self, from: Data(json.utf8))
+
+        #expect(message.presentation?.code == .sessionCancelledByUser)
+        LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            #expect(PickyAgentBubbleView(message: message).displayedMarkdown == "사용자가 작업을 중단했어요")
+        }
+    }
+
+    // The detail a code needs may still arrive alongside context numbers; keeping both is what
+    // lets the bubble quote the summarizer and report the usage it gave up at.
+    @Test func codeWithParamsKeepsTheDaemonDetail() throws {
+        let json = """
+        {"id":"m-compact-failed","kind":"system","createdAt":"2026-05-05T00:00:00.000Z","text":"Auto-compaction failed\\n\\nSummarization failed.","presentation":{"code":"sessionCompactionFailed","params":{"detail":"Summarization failed.","contextTokens":190000,"contextWindowTokens":200000}}}
+        """
+        let message = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionMessage.self, from: Data(json.utf8))
+
+        #expect(message.presentation?.code == .sessionCompactionFailed)
+        #expect(message.presentation?.params?.detail == "Summarization failed.")
+        LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            #expect(message.compactFailureDetailText?.contains("190,000/200,000") == true)
+        }
+    }
+
     @Test func unknownPresentationCodeFallsBackToTheDaemonText() throws {
         let json = """
         {"id":"m-future","kind":"system","createdAt":"2026-05-05T00:00:00.000Z","text":"Something new happened","presentation":{"code":"somethingPickyDoesNotKnowYet"}}

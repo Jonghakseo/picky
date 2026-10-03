@@ -239,14 +239,14 @@ extension CompanionManager {
 
     /// Releases cursor state tied to a session that just transitioned to a terminal
     /// status. The normal completion path runs through `quickReply` -> `finishAwaitingAgentResponse`,
-    /// but HUD aborts (and runtime cancel/fail) reach the client only as a `sessionUpdated`
-    /// with `.cancelled` / `.failed` — no `quickReply` ever lands. Without this hook the
+    /// but HUD aborts (and runtime cancel/fail) reach the client only as a projection
+    /// status change to `.cancelled` / `.failed` — no `quickReply` ever lands. Without this hook the
     /// cursor stays at `.processing` (yellow) forever because both channels that drive it
     /// (`pendingAgentResponseStartedAt` + interaction state `.waitingForAgent`) never clear.
     ///
     /// Idempotent and side-effect-light when nothing matches:
     ///   - only the *transition* into a terminal status triggers cleanup (duplicate
-    ///     `sessionUpdated` snapshots for the same terminal status are no-ops);
+    ///     projection updates for the same terminal status are no-ops);
     ///   - voice-follow-up tracking is only released when the terminated session is the
     ///     one the cursor is actively waiting on;
     ///   - the interaction-coordinator dispatch is harmless when the reducer never

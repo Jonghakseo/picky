@@ -738,10 +738,10 @@ struct PickyConversationListView: View {
     }
 
     /// Top-of-list marker, always rendered so its row height is reserved from the
-    /// first layout pass. The initial `sessionSnapshot` only carries the visible
-    /// window, so `hiddenTurns` is still 0 on first paint and only becomes
-    /// positive once the full session arrives. Rendering the pill conditionally
-    /// made it pop into existence at that moment and shifted the whole list down.
+    /// first layout pass. `hiddenTurns` flips between zero and positive while the
+    /// card is open (load-more, new turns crossing the window, a compaction
+    /// rewrite), and rendering the pill only in one of those states made it pop
+    /// into existence at that moment and shifted the whole list down.
     @ViewBuilder
     private func historyTopMarker(hiddenTurns: Int, groups: [PickyTurnGroup]) -> some View {
         if hiddenTurns > 0 {

@@ -11,6 +11,10 @@ import XCTest
 
 @MainActor
 final class PickySessionDockLayoutControllerTests: XCTestCase {
+    // Seam-level behavior only. Under v2 the production replay runs through
+    // `applyLegacyManualOrder` at bootstrap completion, because incremental
+    // admission fills the layout before `reconcile` could ever see it empty;
+    // that path is covered in `PickySessionViewModelTests`.
     func testReconcileMigratesLegacyManualOrderIntoEmptyLayout() {
         let store = FakeDockLayoutStore(layout: .empty)
         let controller = PickySessionDockLayoutController(store: store)

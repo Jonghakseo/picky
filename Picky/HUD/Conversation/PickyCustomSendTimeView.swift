@@ -57,7 +57,7 @@ struct PickyCustomSendTimeView: View {
         Button(action: onBack) {
             HStack(spacing: DS.Spacing.space1) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(PickyHUDTypography.minimumSemibold)
                     .foregroundColor(DS.Colors.textSecondary)
                 Text(L10n.t("hud.composer.sendTiming.custom"))
                     .font(PickyHUDTypography.status)
@@ -128,7 +128,7 @@ struct PickyCustomSendTimeView: View {
 
     private static var chevron: some View {
         Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: 9, weight: .semibold))
+            .font(PickyHUDTypography.minimumSemibold)
             .foregroundColor(DS.Colors.textTertiary)
     }
 
@@ -247,7 +247,7 @@ struct PickyCustomSendTimeMonthGrid: View {
                 monthButton(offset: -1, symbol: "chevron.left", label: "hud.composer.sendTiming.custom.previousMonth")
                 monthButton(offset: 1, symbol: "chevron.right", label: "hud.composer.sendTiming.custom.nextMonth")
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, Self.monthHeaderInset)
             HStack(spacing: 0) {
                 ForEach(Array(PickyCustomSendTimePolicy.weekdaySymbols(calendar: calendar, locale: locale).enumerated()), id: \.offset) { _, symbol in
                     Text(symbol)
@@ -288,7 +288,7 @@ struct PickyCustomSendTimeMonthGrid: View {
             }
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(PickyHUDTypography.minimumSemibold)
                 .foregroundColor(enabled ? DS.Colors.textSecondary : DS.Colors.textTertiary.opacity(0.5))
                 .frame(width: 22, height: 22)
                 .background(Circle().fill(enabled ? DS.Colors.surface3 : Color.clear))
@@ -309,7 +309,7 @@ struct PickyCustomSendTimeMonthGrid: View {
                     Circle().fill(DS.Colors.accent)
                 }
                 Text("\(day.dayNumber)")
-                    .font(.system(size: 12, weight: isSelected || day.isToday ? .semibold : .regular))
+                    .font(isSelected || day.isToday ? PickyHUDTypography.supportingSemibold : PickyHUDTypography.supporting)
                     .monospacedDigit()
                     .foregroundColor(foreground(day, isSelected: isSelected))
                 if day.isToday, !isSelected {
@@ -336,6 +336,9 @@ struct PickyCustomSendTimeMonthGrid: View {
     }
 
     static let cell: CGFloat = 28
+    /// Lines the month title and arrows up with the day grid's first and last
+    /// cell, whose glyphs sit slightly inside the 28pt cell edge.
+    static let monthHeaderInset: CGFloat = 2
 }
 
 // MARK: - Chip chrome

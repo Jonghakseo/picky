@@ -146,7 +146,7 @@ struct PickySendTimingMenuView: View {
                 }
                 if option.timing == .custom {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(PickyHUDTypography.minimumSemibold)
                         .foregroundColor(DS.Colors.textTertiary)
                 }
             }

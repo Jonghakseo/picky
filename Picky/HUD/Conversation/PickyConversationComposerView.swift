@@ -947,22 +947,12 @@ struct PickyConversationComposerView: View {
             }
         )
         .pickyInstantPopover(isPresented: $scheduled.isSendTimingMenuPresented, arrowEdge: .top) {
-            PickySendTimingMenuView(
-                options: scheduled.sendTimingMenu?.options ?? [],
-                isPluginInstalled: scheduled.sendTimingMenu?.isPluginInstalled ?? false,
-                isInstallingPlugin: scheduled.isInstallingPlugin,
-                installError: scheduled.installError,
-                onSelect: selectSendTiming,
-                onInstallPlugin: {
-                    scheduled.installPlugin(
-                        canSendAfterCurrentReply: optionReturnSubmitKind == .followUp,
-                        carriesScreenContext: carriesScreenContext,
-                        commands: commands
-                    )
-                },
-                customTime: customSendTimeBinding,
-                onCustomBack: { scheduled.closeCustomSendTime() },
-                onCustomCancel: { scheduled.isSendTimingMenuPresented = false }
+            PickyComposerSendTimingMenuHost(
+                scheduled: scheduled,
+                commands: commands,
+                canSendAfterCurrentReply: optionReturnSubmitKind == .followUp,
+                carriesScreenContext: carriesScreenContext,
+                onSelect: selectSendTiming
             )
         }
     }
@@ -978,14 +968,6 @@ struct PickyConversationComposerView: View {
     /// or a screen capture keeps the timed rows disabled.
     private var carriesScreenContext: Bool {
         !attachments.isEmpty || isScreenContextArmed
-    }
-
-    private var customSendTimeBinding: Binding<PickyCustomSendTimeDraft>? {
-        guard let draft = scheduled.customSendTime else { return nil }
-        return Binding(
-            get: { scheduled.customSendTime ?? draft },
-            set: { scheduled.customSendTime = $0 }
-        )
     }
 
     private func selectSendTiming(_ timing: PickySendTiming) {

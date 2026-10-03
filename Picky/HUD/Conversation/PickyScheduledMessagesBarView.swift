@@ -86,9 +86,10 @@ struct PickyComposerScheduledSurface: View {
             .overlay(alignment: .bottom) {
                 if model.isPanelExpanded {
                     panel
-                        // Pins the panel's bottom edge above the summary line so it
-                        // floats over the transcript instead of pushing it.
-                        .alignmentGuide(VerticalAlignment.bottom) { $0[.top] - DS.Spacing.space2 }
+                        // Bottom-aligned to the summary line, then lifted past it by
+                        // the line's height plus a gap, so the panel floats over the
+                        // transcript instead of covering the line or pushing layout.
+                        .padding(.bottom, PickyScheduledMessagesBarView.minimumHeight + DS.Spacing.space2)
                         .transition(.opacity)
                 }
             }
@@ -140,28 +141,16 @@ struct PickyScheduledMessagesPanelView: View {
     @State private var hoveredRowID: String?
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                ForEach(presentation.groups) { group in
-                    VStack(alignment: .leading, spacing: Self.groupRowSpacing) {
-                        groupHeader(group)
-                        ForEach(group.rows) { row in
-                            rowView(row)
-                        }
-                    }
-                }
-                if let actionError {
-                    Text(actionError)
-                        .font(PickyHUDTypography.status)
-                        .foregroundColor(DS.Colors.destructiveText)
-                        .padding(.horizontal, DS.Spacing.space2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        // An overlay proposes the summary line's ~28pt height, and a bare
+        // ScrollView accepts it, which squeezed the list to one visible line.
+        // Size the panel from its own content instead, capped at `maxHeight`.
+        PickyScheduledPanelListLayout(maxHeight: maxHeight) {
+            listContent.hidden().accessibilityHidden(true)
+            ScrollView(.vertical, showsIndicators: true) {
+                listContent
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: maxHeight)
         .padding(DS.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
@@ -179,6 +168,27 @@ struct PickyScheduledMessagesPanelView: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("hud.scheduled.accessibilityLabel"))
+    }
+
+    private var listContent: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            ForEach(presentation.groups) { group in
+                VStack(alignment: .leading, spacing: Self.groupRowSpacing) {
+                    groupHeader(group)
+                    ForEach(group.rows) { row in
+                        rowView(row)
+                    }
+                }
+            }
+            if let actionError {
+                Text(actionError)
+                    .font(PickyHUDTypography.status)
+                    .foregroundColor(DS.Colors.destructiveText)
+                    .padding(.horizontal, DS.Spacing.space2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func groupHeader(_ group: PickyScheduledMessageGroup) -> some View {
@@ -312,6 +322,23 @@ struct PickyScheduledMessagesPanelView: View {
 
     private static let groupRowSpacing: CGFloat = 2
     private static let toolbarVerticalPadding: CGFloat = 3
+}
+
+/// Sizes the panel to its document height up to `maxHeight`, ignoring the
+/// height its container proposes. Subview 0 is an unplaced measuring copy of
+/// the rows; subview 1 is the scroll view that is actually shown.
+private struct PickyScheduledPanelListLayout: Layout {
+    let maxHeight: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? subviews[0].sizeThatFits(.unspecified).width
+        let documentHeight = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        return CGSize(width: width, height: min(documentHeight, maxHeight))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[1].place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
 }
 
 /// Telegram-style edit bar: names what the composer is currently editing.

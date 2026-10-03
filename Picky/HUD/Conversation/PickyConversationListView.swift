@@ -638,18 +638,15 @@ struct PickyConversationListView: View {
     @ViewBuilder
     private func pendingSteerSection(items: [PickyQueueItem]) -> some View {
         ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-            PickyUserBubbleView(
+            PickyPendingSteerBubbleView(
+                item: item,
                 message: Self.pendingSteerMessage(item, index: index),
-                timestamp: .sent(at: item.enqueuedAt)
+                sessionID: session.id,
+                commands: viewModel
             )
-            .opacity(Self.pendingSteerOpacity)
-            .accessibilityValue(L10n.t("hud.queue.pending.steer"))
         }
     }
 
-    /// Dimming is the only difference from a delivered message, so the bubble
-    /// keeps its identity when agentd materializes the real `user_text`.
-    static let pendingSteerOpacity: Double = 0.6
 
     static func pendingSteerMessage(_ item: PickyQueueItem, index: Int) -> PickySessionMessage {
         PickySessionMessage(

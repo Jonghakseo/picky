@@ -27862,6 +27862,86 @@
           }
         }
       }
+    },
+    "hud.queue.steer.edit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit in composer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력란에서 수정"
+          }
+        }
+      }
+    },
+    "hud.queue.steer.cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel send"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 취소"
+          }
+        }
+      }
+    },
+    "hud.queue.steer.cancel.confirm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel this message?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송을 취소할까요?"
+          }
+        }
+      }
+    },
+    "hud.queue.steer.cancel.keep": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "유지"
+          }
+        }
+      }
+    },
+    "hud.queue.steer.cancel.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't cancel this message"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송을 취소하지 못했어요"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

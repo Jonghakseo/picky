@@ -122,8 +122,12 @@ final class PickyComposerScheduledModel: ObservableObject {
     }
 
     /// Saving an edit replaces the pending message instead of sending a new one.
-    /// Edit mode ends only once the daemon accepted it: a rejected save keeps the
-    /// typed text in the composer so it can be retried instead of disappearing.
+    /// Return saves the edit the way a messenger does: the composer goes back
+    /// to the draft it had before the edit right away, and the row is updated
+    /// when the daemon answers. Edit mode ends before the command starts, so a
+    /// projection update that briefly drops the row mid-save (a timed message is
+    /// cancelled and re-scheduled) cannot strand the typed text in the composer.
+    /// A rejected save puts the typed text back and re-enters edit mode.
     func submitEdit(
         text: String,
         commands: any PickySessionCommands,
@@ -135,6 +139,9 @@ final class PickyComposerScheduledModel: ObservableObject {
         guard !trimmed.isEmpty else { return }
         actionError = nil
         actionErrorRowID = nil
+        self.editing = nil
+        applyDraft(editing.restoredDraft)
+        commands.updateComposerDraft(editing.restoredDraft, sessionID: sessionID)
         Task { [weak self] in
             do {
                 switch editing.kind {
@@ -143,13 +150,16 @@ final class PickyComposerScheduledModel: ObservableObject {
                 case .timed:
                     try await commands.editScheduledMessage(sessionID: sessionID, scheduledID: editing.id, text: trimmed)
                 }
-                guard let self, self.editing == editing else { return }
-                self.editing = nil
-                applyDraft(editing.restoredDraft)
-                commands.updateComposerDraft(editing.restoredDraft, sessionID: sessionID)
             } catch {
-                self?.actionErrorRowID = editing.id
-                self?.actionError = error.localizedDescription
+                guard let self else { return }
+                // Another edit may have started meanwhile; never overwrite it.
+                if self.editing == nil {
+                    self.editing = editing
+                    applyDraft(text)
+                    commands.updateComposerDraft(text, sessionID: sessionID)
+                }
+                self.actionErrorRowID = editing.id
+                self.actionError = error.localizedDescription
             }
         }
     }

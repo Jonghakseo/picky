@@ -209,9 +209,29 @@ struct PickyScheduledMessageCommandTests {
         try await waitUntil { model.actionError != nil }
 
         #expect(model.editing?.id == "q-1")
-        // Only the text the edit put into the editor; the draft was never restored.
-        #expect(drafts.values == ["inspect this"])
+        // The composer cleared on Return, then got the typed text back.
+        #expect(drafts.values == ["inspect this", "original draft", "fixed text"])
         #expect(model.actionErrorRowID == "q-1")
+    }
+
+    /// Return must clear the composer at once, even when the projection drops
+    /// the row while the save is in flight (a timed edit re-schedules it).
+    @Test func returnClearsTheComposerEvenIfTheRowBlinksDuringSave() async throws {
+        let (viewModel, _) = makeViewModel()
+        let model = PickyComposerScheduledModel()
+        let drafts = DraftRecorder()
+        model.handleRowAction(
+            editableRow(), action: .edit, commands: viewModel, sessionID: "s1",
+            currentDraft: "", applyDraft: drafts.apply
+        )
+
+        model.submitEdit(text: "fixed text", commands: viewModel, sessionID: "s1", applyDraft: drafts.apply)
+        #expect(model.editing == nil)
+        #expect(drafts.values == ["inspect this", ""])
+
+        model.reconcile(with: PickyScheduledMessagesPresentation(followUps: [], scheduledMessages: []))
+        #expect(model.actionError == nil)
+        #expect(drafts.values == ["inspect this", ""])
     }
 
     @Test func acceptedEditEndsEditModeAndRestoresThePreviousDraft() async throws {

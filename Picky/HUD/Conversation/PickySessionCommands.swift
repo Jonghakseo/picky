@@ -40,6 +40,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func persistedComposerAttachmentPaths(for sessionID: String) -> [String]
     func updateComposerAttachmentPaths(_ paths: [String], sessionID: String)
     func replaceComposerDraftText(_ text: String, sessionID: String)
+    func appendComposerDraftText(_ text: String, sessionID: String)
     func clearQueueRestoringQueuedInputs(sessionID: String, kind: PickyQueueClearKind) async throws
     func clearQueue(sessionID: String, kind: PickyQueueClearKind) async throws
     func removeQueuedInput(sessionID: String, itemID: String) async throws

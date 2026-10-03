@@ -24,7 +24,6 @@ struct PickyHubSettingsGroupingTests {
 
     @Test(arguments: [
         (CompanionPanelSettingsRoute.general, PickyHubSettingsGroup.general),
-        (.onboarding, .general),
         (.oauth, .agents),
         (.mainAgent, .agents),
         (.builtinTools, .agents),
@@ -269,76 +268,5 @@ struct PickyHubSettingsGroupingTests {
             completedRevision: 4,
             currentRevision: 5
         ))
-    }
-
-    @Test func failedOnboardingReplayRestoresVersionBeforeLaterSettingsSave() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("picky-hub-onboarding-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let project = root.appendingPathComponent("project", isDirectory: true)
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-
-        let store = PickySettingsStore(appSupportRoot: root)
-        var original = PickySettings.defaults(appSupportRoot: root)
-        original.defaultCwd = project.path
-        original.mainAgentCwd = project.path
-        original.worktreeParent = project.path
-        original.onboardingCompletedVersion = 7
-        try store.save(original)
-
-        let persistence = PickySettingsPersistenceCoordinator(store: store)
-        let viewModel = PickySettingsViewModel(store: store, persistence: persistence)
-        let replay = PickyHubOnboardingReplaySaveTransaction.begin(in: &viewModel.settings)
-        #expect(viewModel.settings.onboardingCompletedVersion == 0)
-
-        try Data("invalid settings".utf8).write(to: store.url, options: .atomic)
-        #expect(!(await viewModel.saveDurably()))
-
-        replay.restoreAfterFailedSave(in: &viewModel.settings)
-        #expect(viewModel.settings.onboardingCompletedVersion == 7)
-
-        try store.save(original)
-        viewModel.settings.appearance = .light
-        #expect(await viewModel.saveDurably())
-        let saved = try store.loadStrict()
-        #expect(saved.onboardingCompletedVersion == 7)
-        #expect(saved.appearance == .light)
-    }
-
-    @Test func acceptedReplayCannotAppearCancelledWhileItsQueuedWriteCommits() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hub-replay-busy-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let store = PickySettingsStore(appSupportRoot: root)
-        var original = PickySettings.defaults(appSupportRoot: root)
-        original.defaultCwd = root.path
-        original.mainAgentCwd = root.path
-        original.worktreeParent = root.path
-        original.onboardingCompletedVersion = 7
-        try store.save(original)
-        let viewModel = PickySettingsViewModel(store: store)
-        _ = PickyHubOnboardingReplaySaveTransaction.begin(in: &viewModel.settings)
-        let host = PickyHubModalHost()
-        var saving = true
-        let id = host.present(accessibilityLabel: "Replay", canDismiss: { !saving }) { EmptyView() }
-        let save = Task { await viewModel.saveDurably() }
-        host.dismiss()
-        #expect(host.presentationID == id)
-        #expect(await save.value)
-        #expect(try store.loadStrict().onboardingCompletedVersion == 0)
-        saving = false
-        host.dismiss()
-        #expect(host.presentationID == nil)
-    }
-
-    @Test func failedOnboardingReplayDoesNotReplaceANewerVersion() {
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
-        settings.onboardingCompletedVersion = 7
-        let replay = PickyHubOnboardingReplaySaveTransaction.begin(in: &settings)
-        settings.onboardingCompletedVersion = 8
-
-        replay.restoreAfterFailedSave(in: &settings)
-
-        #expect(settings.onboardingCompletedVersion == 8)
     }
 }

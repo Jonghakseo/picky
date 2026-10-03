@@ -8,7 +8,7 @@
 //  via `.environment(\.locale, ...)` so it doesn't need this helper at all.
 //
 //  Keys live in `Localizable.xcstrings`. Use the same dot-path convention
-//  everywhere (`onboarding.bubble.preWelcome`, `prereq.microphone.title`, etc.)
+//  everywhere (`prereq.microphone.title`, `settings.general.title`, etc.)
 //  so the catalog stays scannable as it grows.
 //
 

@@ -171,7 +171,6 @@ struct CompanionPanelSettingsView: View {
         case .voice: voiceSection
         case .shortcuts: shortcutsSection
         case .builtinTools: builtinToolsSection
-        case .onboarding: onboardingSection
         }
     }
 
@@ -227,7 +226,7 @@ struct CompanionPanelSettingsView: View {
     /// Single tappable row on the Settings index. Subtitle prefers the live
     /// summary built from the current settings (so the user can recognise the
     /// state without drilling in) and falls back to the route's static blurb
-    /// when no summary is meaningful (e.g. the hidden onboarding route).
+    /// when no summary is meaningful.
     private func indexRow(for item: CompanionPanelSettingsRoute) -> some View {
         Button(action: { route = item }) {
             HStack(alignment: .center, spacing: 10) {
@@ -269,12 +268,12 @@ struct CompanionPanelSettingsView: View {
 
     /// Short value-summary for each route, built from the live view-model so
     /// the index doubles as a status overview. Returns `nil` for routes where
-    /// no compact summary exists (e.g. the hidden onboarding entry); the
-    /// caller then falls back to the static subtitle.
+    /// no compact summary exists; the caller then falls back to the static
+    /// subtitle.
     private func indexSummary(for route: CompanionPanelSettingsRoute) -> String? {
         let settings = viewModel.settings
         switch route {
-        case .index, .onboarding:
+        case .index:
             return nil
         case .general:
             return String(localized: settings.appLanguage.displayKey)
@@ -1031,41 +1030,6 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private var onboardingSection: some View {
-        sectionHeader(section: .onboarding, title: L10n.t("settings.section.onboarding.title"), subtitle: L10n.t("settings.section.onboarding.subtitle")) {
-            VStack(alignment: .leading, spacing: DS.Spacing.space4) {
-                Text("settings.section.onboarding.body")
-                    .font(PickyHUDTypography.supportingMedium)
-                    .foregroundColor(supportingTextColor)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .pickyHubSelectableText()
-
-                Button(action: replayOnboarding) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(PickyHUDTypography.minimumSemibold)
-                        Text("settings.section.onboarding.replay")
-                            .font(PickyHUDTypography.statusSemibold)
-                    }
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, DS.Spacing.space2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                            .fill(DS.Colors.surface1.opacity(0.55))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                                    .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-                .hoverAffordance()
-            }
-        }
-    }
-
     private var voiceSection: some View {
         sectionHeader(
             section: .voice,
@@ -1752,7 +1716,7 @@ struct CompanionPanelSettingsView: View {
             commitPickleCwdField()
         case .voice:
             commitVoiceField()
-        case .oauth, .onboarding:
+        case .oauth:
             break
         }
     }
@@ -1777,12 +1741,6 @@ struct CompanionPanelSettingsView: View {
             return
         }
         saveSectionDurably(.shortcuts)
-    }
-
-    /// Legacy standalone-panel replay; Hub uses its failure-safe transaction.
-    private func replayOnboarding() {
-        viewModel.settings.onboardingCompletedVersion = 0
-        saveSectionDurably(.onboarding)
     }
 
     private func saveSectionDurably(_ section: CompanionPanelSettingsSection) {
@@ -1944,7 +1902,7 @@ struct CompanionPanelSettingsView: View {
             piCodingAgentDirDraft = viewModel.settings.piCodingAgentDir
         case .pickle:
             pickleCwdDraft = viewModel.settings.defaultCwd
-        case .general, .oauth, .overlayAndNotifications, .shortcuts, .builtinTools, .onboarding:
+        case .general, .oauth, .overlayAndNotifications, .shortcuts, .builtinTools:
             break
         case .voice:
             syncVoiceDrafts()

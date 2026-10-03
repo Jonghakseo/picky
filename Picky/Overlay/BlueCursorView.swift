@@ -535,7 +535,6 @@ struct BlueCursorView: View {
     }
     @State private var timer: Timer?
     @State private var voicePromptBubbleSize: CGSize = .zero
-    @State private var onboardingBubbleSize: CGSize = .zero
     @State private var shakeReactionBubbleSize: CGSize = .zero
     @State private var cursorWaitingIndicatorSize: CGSize = .zero
     @State private var cursorOpacity: Double = 1.0
@@ -661,69 +660,14 @@ struct BlueCursorView: View {
                     .allowsHitTesting(false)
             }
 
-            // Onboarding guide bubble — only present when the onboarding flow
-            // controller has set guidance text. Rendered above the standard
-            // voice/prompt bubbles so it always wins when the demo is active.
-            // Runs through PickyBubbleMarkdown so action words can be wrapped
-            // in `**bold**` and read more clearly.
-            if isCursorOnThisScreen, let guideText = companionManager.onboardingOverrides?.bubbleText {
-                let renderedText = PickyBubbleMarkdown.displayString(for: guideText)
-                let attributedText = PickyBubbleMarkdown.highlightedAttributedText(
-                    for: guideText,
-                    // Amber pops against the blue bubble background and matches
-                    // the ink-highlight color used in the captured-context
-                    // preview, so the visual language is consistent.
-                    highlightColor: Color(red: 1.0, green: 0.85, blue: 0.2)
-                )
-                let textWidth = PickyBubbleLayout.textWidth(
-                    for: renderedText,
-                    font: .systemFont(ofSize: 11, weight: .medium),
-                    maxWidth: 320
-                )
-                Text(attributedText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.leading)
-                    .frame(width: textWidth, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: Color.black.opacity(0.32), radius: 12, x: 0, y: 4)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 8, x: 0, y: 0)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(Color.white.opacity(0.42), lineWidth: 0.8)
-                    )
-                    .overlay(
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(key: OnboardingBubbleSizePreferenceKey.self, value: geo.size)
-                        }
-                    )
-                    .position(cursorBubbleCenter(for: onboardingBubbleSize))
-                    .animation(cursorFollowAnimation, value: cursorPosition)
-                    .animation(.easeOut(duration: 0.22), value: guideText)
-                    .onPreferenceChange(OnboardingBubbleSizePreferenceKey.self) { newSize in
-                        onboardingBubbleSize = newSize
-                    }
-            }
-
             // Voice prompt bubble — once the push-to-talk button is released,
             // keep the recognized user prompt visible while Picky is preparing
             // and waiting for the Picky response.
-            // Suppressed while the onboarding guide bubble is up so the two
-            // don't overlap; the onboarding flow takes priority during the
-            // demo and the prompt is already in the user's head anyway.
             if isCursorOnThisScreen,
                !companionManager.isQuickInputPanelVisible,
                overlayBubblePreferencesStore.preferences.showUserSpeechRecognitionBubble,
                !companionManager.isProgressiveResponseVisible,
-               companionManager.voicePromptBubbleState.isVisible,
-               companionManager.onboardingOverrides?.bubbleText == nil {
+               companionManager.voicePromptBubbleState.isVisible {
                 let bubbleText = companionManager.voicePromptBubbleState.displayText
                 let textWidth = PickyBubbleLayout.textWidth(
                     for: bubbleText,
@@ -748,8 +692,6 @@ struct BlueCursorView: View {
 
             // Short voice response bubble — mirrors quick TTS replies next to the cursor
             // so simple checks do not require opening the long-running agent HUD.
-            // Also suppressed during onboarding so the guide bubble is the
-            // single signal driving the cursor at that moment.
             if isCursorOnThisScreen,
                !companionManager.isQuickInputPanelVisible,
                overlayBubblePreferencesStore.preferences.showPickyResponseBubble,
@@ -760,8 +702,7 @@ struct BlueCursorView: View {
                let responseBubbleLayout = responseBubbleLayoutCache.layout(
                    for: responseText,
                    contentIdentity: companionManager.activeVisualNarrationSegmentID
-               ),
-               companionManager.onboardingOverrides?.bubbleText == nil {
+               ) {
                 PickyCursorBubblePlacementLayout(
                     cursorPosition: compactCursorChromePlacementIsPreferred ? systemCursorPosition : cursorPosition,
                     screenSize: CGSize(width: screenFrame.width, height: screenFrame.height),
@@ -1020,8 +961,7 @@ struct BlueCursorView: View {
         guard overlayBubblePreferencesStore.preferences.showPickyResponseBubble,
               companionManager.voiceState == .responding || companionManager.isProgressiveResponseVisible,
               let responseText = companionManager.latestAgentSessionSummary,
-              !responseText.isEmpty,
-              companionManager.onboardingOverrides?.bubbleText == nil
+              !responseText.isEmpty
         else {
             responseBubbleLayoutCache.clear()
             return
@@ -1044,7 +984,6 @@ struct BlueCursorView: View {
             && activePointerID == nil
             && !companionManager.isQuickInputPanelVisible
             && !inkOverlayStore.state.isActive
-            && companionManager.onboardingOverrides?.bubbleText == nil
     }
 
     /// Whether the buddy pi icon should be visible on this screen.

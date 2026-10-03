@@ -32,7 +32,6 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case voice
     case shortcuts
     case builtinTools
-    case onboarding
 }
 
 /// A settings route owns only the draft state and autosave observations needed
@@ -65,7 +64,7 @@ enum CompanionPanelSettingsOwnership {
             [.pickle]
         case .voice:
             [.voice]
-        case .index, .general, .overlayAndNotifications, .shortcuts, .builtinTools, .onboarding:
+        case .index, .general, .overlayAndNotifications, .shortcuts, .builtinTools:
             []
         }
     }
@@ -88,27 +87,9 @@ enum CompanionPanelSettingsOwnership {
     }
 }
 
-/// Records the precise onboarding field changed by a replay request. A failed
-/// durable save restores that field only while it still holds the transaction's
-/// temporary value, preserving any newer user edit.
 enum CompanionVoiceDraftSyncPolicy {
     static func shouldSynchronize(completedRevision: Int, currentRevision: Int) -> Bool {
         completedRevision == currentRevision
-    }
-}
-
-struct PickyHubOnboardingReplaySaveTransaction: Equatable {
-    private let previousCompletedVersion: Int
-
-    static func begin(in settings: inout PickySettings) -> Self {
-        let transaction = Self(previousCompletedVersion: settings.onboardingCompletedVersion)
-        settings.onboardingCompletedVersion = 0
-        return transaction
-    }
-
-    func restoreAfterFailedSave(in settings: inout PickySettings) {
-        guard settings.onboardingCompletedVersion == 0 else { return }
-        settings.onboardingCompletedVersion = previousCompletedVersion
     }
 }
 
@@ -129,7 +110,6 @@ enum CompanionPanelSettingsRoute: Hashable {
     case voice
     case shortcuts
     case builtinTools
-    case onboarding
 
     var section: CompanionPanelSettingsSection? {
         switch self {
@@ -142,7 +122,6 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .voice: .voice
         case .shortcuts: .shortcuts
         case .builtinTools: .builtinTools
-        case .onboarding: .onboarding
         }
     }
 
@@ -160,7 +139,6 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .voice: L10n.t("settings.section.voice.title")
         case .shortcuts: L10n.t("settings.section.shortcuts.title")
         case .builtinTools: L10n.t("settings.section.builtinTools.title")
-        case .onboarding: L10n.t("settings.section.onboarding.title")
         }
     }
 
@@ -175,7 +153,6 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .voice: L10n.t("settings.section.voice.subtitle")
         case .shortcuts: L10n.t("settings.section.shortcuts.subtitle")
         case .builtinTools: L10n.t("settings.section.builtinTools.subtitle")
-        case .onboarding: L10n.t("settings.section.onboarding.subtitle")
         }
     }
 }
@@ -183,11 +160,6 @@ enum CompanionPanelSettingsRoute: Hashable {
 /// Visual grouping for the Settings index. Each group renders as a small
 /// uppercase header followed by its leaf rows. Order inside the file is the
 /// order the user sees — rearrange here, not by editing the enum.
-///
-/// `.onboarding` is intentionally absent from every group. The route/section/
-/// view still exist so the takeover overlay (later phases) can mark completion
-/// through the same plumbing, and so dev builds can re-enable the Replay entry
-/// with a single-line edit. Don't remove the case.
 ///
 /// Feedback is not a Settings sub-page anymore — it renders as a panel-level
 /// overlay reached from the Status tab’s entry row.

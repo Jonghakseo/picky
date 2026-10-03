@@ -78,7 +78,6 @@ REQUIRED_GUARDS = {
     "Picky/Hub/Components/PickyHubModal.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/CompanionManager.swift": "if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {",
     "Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
-    "Picky/Companion/Onboarding/OnboardingFlowController.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/BuddyDictationManager.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }",
     "Picky/Shortcuts/ShortcutCaptureRecorder.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/Conversation/PickyConversationComposerView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",

@@ -97,7 +97,6 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func markDoneFlashConsumed(sessionID: String)
     func markSessionRead(sessionID: String)
     func markConversationCardOpened(sessionID: String)
-    func markSessionClosed(sessionID: String)
     func sessionStore(sessionID: String) -> PickySessionStore?
     var archivedSessionAccess: PickyHUDArchivedSessionAccess? { get }
     func toggleStickyScreenContextTarget(sessionID: String)

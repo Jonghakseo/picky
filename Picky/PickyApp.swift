@@ -166,9 +166,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             try await self.hudAgentClientRouter.deliverCompletionToPrimary(envelope)
         }
     )
-    /// Hoisted out of `hudOverlayManager` so the onboarding coordinator can
-    /// also observe it (it needs to detect when the user long-presses the demo
-    /// Pickle to archive it).
+    /// Hoisted out of `hudOverlayManager` so other app-level collaborators can
+    /// observe the same session list instance.
     private lazy var hudSessionViewModel = PickySessionListViewModel(
         client: hudAgentClientRouter,
         notificationPreferencesProvider: notificationPreferencesStore,
@@ -193,12 +192,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// `pluginsReloaded` broadcasts and exposes a single async `reload()` the
     /// extensions section invokes after install/uninstall.
     private lazy var pluginReloadController = PickyPluginReloadController(client: hudAgentClientRouter)
-    /// Persistent activator that decides whether the takeover overlay should
-    /// run on this launch (fresh install or explicit replay via Settings).
-    /// Kept as a stored property so the coordinator can mark completion through
-    /// the same instance.
-    private let onboardingActivator: PickyOnboardingActivator
-    private var onboardingFlowController: OnboardingFlowController?
     /// Owned at the app delegate so hub page selection survives the window
     /// being closed. `PickyDeepLinkDispatcher` routes `picky://` clicks
     /// through `present(deepLink:)`.
@@ -213,7 +206,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         self.appearanceStore = PickyAppearanceStore(settingsStore: settingsStore)
         self.hudVisibilityStore = PickyHUDVisibilityStore(settingsStore: settingsStore)
         self.fontScaleStore = PickyAppFontScaleStore(settingsStore: settingsStore)
-        self.onboardingActivator = PickyOnboardingActivator(settingsStore: settingsStore)
         super.init()
     }
 
@@ -349,8 +341,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 curated: PickyCuratedPluginsViewModel(),
                 pluginReloadController: pluginReloadController,
                 bundled: PickyExtensionsSectionViewModel()
-            ),
-            requestOnboardingReplay: { [weak self] in self?.startOnboardingIfNeeded() }
+            )
         )
         let hubWindowController = PickyHubWindowController(
             dependencies: hubDependencies,
@@ -377,7 +368,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         if !companionManager.permissions.allGranted {
             statusItemController?.showHubOnLaunch()
         }
-        startOnboardingIfNeeded()
         registerAsLoginItemIfNeeded()
     }
 
@@ -390,26 +380,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             self?.hubWindowController?.show()
         }
         return false
-    }
-
-    /// Shared by launch and the Hub replay action, after its settings save
-    /// succeeds. Never replace an active tour or intercept a test session.
-    private func startOnboardingIfNeeded() {
-        guard !Self.isRunningUnitTests,
-              companionManager.onboardingOverrides == nil,
-              onboardingActivator.shouldShowOnboarding else { return }
-        guard companionManager.permissions.allGranted else {
-            hubWindowController?.show(page: .dashboard)
-            return
-        }
-        let controller = OnboardingFlowController(
-            activator: onboardingActivator,
-            companionManager: companionManager,
-            hudRouter: hudAgentClientRouter,
-            hudViewModel: hudSessionViewModel
-        )
-        onboardingFlowController = controller
-        controller.start()
     }
 
     /// Try to drop the `/usr/local/bin/picky` wrapper into place silently. We

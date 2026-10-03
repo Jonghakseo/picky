@@ -66,8 +66,6 @@ PR2_FILES = [
     "Picky/Companion/CompanionPanelExtensionsSection.swift",
     "Picky/Companion/CompanionPanelFooterView.swift",
     "Picky/Companion/CompanionPanelHeaderView.swift",
-    "Picky/Companion/Onboarding/OnboardingSkipPanelController.swift",
-    "Picky/Companion/Onboarding/OnboardingHighlightViewerPanelController.swift",
     # Feedback (sits inside the Companion panel as a sheet)
     "Picky/Feedback/CompanionPanelFeedbackView.swift",
     # Shortcuts settings (rendered inside the Companion settings view)

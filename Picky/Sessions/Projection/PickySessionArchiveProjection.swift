@@ -3,7 +3,7 @@
 //  Picky
 //
 
-/// Read-only archive membership boundary for settings and onboarding surfaces.
+/// Read-only archive membership boundary for settings surfaces.
 /// Consumers observe the ID list, then attach each visible row to its own
 /// stable session store rather than materializing the global session façade.
 @MainActor

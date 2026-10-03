@@ -55,7 +55,6 @@ export const PICKY_DEEP_LINK_ROUTES: ReadonlyArray<readonly [string, string]> = 
   ["picky://settings/tools", "Settings → Tools (built-in tools the agents can call)."],
   ["picky://settings/voice", "Settings → Voice (STT/TTS provider)."],
   ["picky://settings/overlayAndNotifications", "Settings → Overlay & Notifications (cursor, speech bubbles, macOS banners)."],
-  ["picky://settings/onboarding", "Settings → Onboarding replay (hidden index entry)."],
 ] as const;
 
 const PICKY_DEEP_LINK_GUIDANCE = [

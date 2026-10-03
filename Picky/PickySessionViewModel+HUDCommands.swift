@@ -58,7 +58,7 @@ extension PickySessionListViewModel: PickyGitChipActionViewModelDispatch, PickyS
         .init(membership: sessionRegistry, commands: self)
     }
 
-    /// Registry-owned archive membership for settings/onboarding consumers.
+    /// Registry-owned archive membership for settings consumers.
     /// Production always uses the registry backend, so these UI surfaces never
     /// fall back to a parallel array-backed projection.
     var sessionRegistry: PickySessionRegistry {

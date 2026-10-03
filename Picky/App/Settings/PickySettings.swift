@@ -741,13 +741,6 @@ struct PickySettings: Codable, Equatable {
     /// When false, Sparkle only checks for updates when the user picks
     /// "Check for Updates…" from the menu or the Status panel.
     var updatesAutomaticChecksEnabled: Bool
-    /// Highest interactive onboarding revision this install has finished. The
-    /// app compares against `PickyOnboardingVersion.current` on launch to
-    /// decide whether to show the takeover overlay. Existing settings files
-    /// missing this key are treated as already-completed so users updating in
-    /// place don't get a surprise demo — fresh installs decode the field via
-    /// `defaults()` (value 0) and qualify naturally.
-    var onboardingCompletedVersion: Int
     /// `true` once the user explicitly **uninstalled** the `/usr/local/bin/picky`
     /// shell wrapper from Settings. Set so the app-launch auto-installer does
     /// not silently re-add the command after they removed it. The Settings
@@ -869,7 +862,6 @@ struct PickySettings: Codable, Equatable {
         hudCardSizes: [String: PickyHUDCardSize] = [:],
         updateChannel: PickyUpdateChannel = .stable,
         updatesAutomaticChecksEnabled: Bool = true,
-        onboardingCompletedVersion: Int = 0,
         shellCommandAutoInstallOptedOut: Bool = false,
         mainThreadWatchdogEnabled: Bool = true,
         appLanguage: PickyLanguage = .system,
@@ -941,7 +933,6 @@ struct PickySettings: Codable, Equatable {
         self.hudCardSizes = hudCardSizes
         self.updateChannel = updateChannel
         self.updatesAutomaticChecksEnabled = updatesAutomaticChecksEnabled
-        self.onboardingCompletedVersion = onboardingCompletedVersion
         self.shellCommandAutoInstallOptedOut = shellCommandAutoInstallOptedOut
         self.mainThreadWatchdogEnabled = mainThreadWatchdogEnabled
         self.appLanguage = appLanguage
@@ -1039,7 +1030,6 @@ struct PickySettings: Codable, Equatable {
             hudCardSizes: [:],
             updateChannel: defaultUpdateChannel(forReleaseChannel: AppBundleConfiguration.releaseChannel),
             updatesAutomaticChecksEnabled: true,
-            onboardingCompletedVersion: 0,
             shellCommandAutoInstallOptedOut: false,
             mainThreadWatchdogEnabled: true,
             appLanguage: .system,
@@ -1163,7 +1153,6 @@ struct PickySettings: Codable, Equatable {
         case hudCardSizes
         case updateChannel
         case updatesAutomaticChecksEnabled
-        case onboardingCompletedVersion
         case shellCommandAutoInstallOptedOut
         case mainThreadWatchdogEnabled
         case appLanguage
@@ -1240,12 +1229,6 @@ struct PickySettings: Codable, Equatable {
             .mapValues { $0.clamped() }
         updateChannel = try container.decodeIfPresent(PickyUpdateChannel.self, forKey: .updateChannel) ?? defaults.updateChannel
         updatesAutomaticChecksEnabled = try container.decodeIfPresent(Bool.self, forKey: .updatesAutomaticChecksEnabled) ?? defaults.updatesAutomaticChecksEnabled
-        // Missing field on an existing settings file means the user updated in
-        // place from a build that predates onboarding. Pretend they already
-        // finished so the overlay doesn't ambush them; the Settings → Onboarding
-        // page still exposes "Replay onboarding" for anyone who wants it.
-        onboardingCompletedVersion = try container.decodeIfPresent(Int.self, forKey: .onboardingCompletedVersion)
-            ?? PickyOnboardingVersion.current
         // Missing field on existing settings files (including users who
         // updated in place from a build before auto-install existed) decodes
         // to `false` so the launch trigger gets one chance to silently add the

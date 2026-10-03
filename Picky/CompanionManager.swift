@@ -72,35 +72,6 @@ final class CompanionManager: ObservableObject {
     /// Owner of the macOS permission flags. Observe it directly from views;
     /// CompanionManager only reacts to its transitions (event tap, cursor overlay).
     let permissions: PickyPermissionMonitor
-    /// Non-nil for the whole onboarding demo. Installing it suppresses the real
-    /// shortcut handlers, routes submissions through the interceptor, and keeps
-    /// the cursor overlay visible; clearing it restores production behavior in
-    /// one step. Owned by `OnboardingFlowController`.
-    @Published var onboardingOverrides: PickyOnboardingOverrides? {
-        didSet {
-            let isActive = onboardingOverrides != nil
-            guard (oldValue != nil) != isActive else { return }
-            setLocalOverlayReason(.onboardingActive, visible: isActive)
-        }
-    }
-
-    /// Programmatically arm ink capture so the next click-and-drag becomes a
-    /// drawing. Used by the onboarding flow to invite the user to circle a
-    /// region on the page without first going through the Quick Input panel
-    /// path. No-op if ink capture is already running.
-    func beginOnboardingInkCapture() {
-        guard !inkCaptureCoordinator.isActive else { return }
-        beginInkCapture(source: .text)
-    }
-
-    /// Cancels onboarding ink capture if the user abandons the gesture or the
-    /// flow is skipped. Mirrors `beginOnboardingInkCapture()` so teardown can
-    /// leave ink state clean.
-    func cancelOnboardingInkCapture() {
-        if inkCaptureCoordinator.isActive {
-            cancelInkCapture()
-        }
-    }
     @Published private(set) var screenContextTargetSessionID: String?
     private var screenContextTargetLabel: String?
 
@@ -1228,7 +1199,6 @@ final class CompanionManager: ObservableObject {
         // PTT-in-progress and the input panel are mutually exclusive: voice and
         // typed quick input share the same submission lane and we don't want a
         // floating focus stealer mid-utterance.
-        if onboardingOverrides != nil { return }
         guard activeShortcutCaptureCount == 0,
               !isPushToTalkShortcutHeld,
               !buddyDictationManager.isDictationInProgress else { return }
@@ -1345,7 +1315,6 @@ final class CompanionManager: ObservableObject {
         // its callback while paused, swallowing transitions here too keeps any
         // already-queued event from slipping through and dismissing the panel.
         if activeShortcutCaptureCount > 0 { return }
-        if onboardingOverrides != nil { return }
         switch transition {
         case .pressed:
             isPushToTalkShortcutHeld = true
@@ -1558,21 +1527,15 @@ final class CompanionManager: ObservableObject {
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         case .submitToMain:
             print("🎙️ Picky voice route — SUBMIT Picky (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
-            return try await submitOrIntercept(PickyAgentSubmission(transcript: transcript, context: contextPacket))
+            return try await submitToMainAgent(PickyAgentSubmission(transcript: transcript, context: contextPacket))
         }
     }
 
-    /// Routes a submission through the onboarding interceptor when one is
-    /// installed; falls back to the real agent client otherwise. Centralising
-    /// the check keeps every submit call site honest — onboarding doesn't have
-    /// to know about voice vs text vs follow-up paths, and production code
-    /// keeps its existing behavior when no interceptor is attached.
-    private func submitOrIntercept(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
+    /// Single funnel for main-agent submissions. Recording the overlay context
+    /// here keeps every submit call site honest, so the voice, text, and
+    /// follow-up paths cannot forget it.
+    private func submitToMainAgent(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
         noteMainOverlayContext(submission.context)
-        if let interceptor = onboardingOverrides?.submissionInterceptor,
-           let receipt = await interceptor(submission) {
-            return receipt
-        }
         return try await agentClient.submit(submission)
     }
 
@@ -1967,7 +1930,7 @@ final class CompanionManager: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                _ = try await submitOrIntercept(PickyAgentSubmission(transcript: text, context: context))
+                _ = try await submitToMainAgent(PickyAgentSubmission(transcript: text, context: context))
                 PickyAnalytics.trackUserMessageSent(transcript: text)
                 interactionCoordinator.effectCompleted(
                     .textSubmissionAccepted(contextID: context.id, inputID: inputID),
@@ -1989,7 +1952,7 @@ final class CompanionManager: ObservableObject {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let receipt = try await submitOrIntercept(PickyAgentSubmission(transcript: transcript, context: context))
+                let receipt = try await submitToMainAgent(PickyAgentSubmission(transcript: transcript, context: context))
                 guard !Task.isCancelled else {
                     finishCancelledVoiceEffect(inputID: inputID)
                     return

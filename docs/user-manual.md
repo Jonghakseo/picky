@@ -31,12 +31,6 @@ Setup actions shown in Hub include:
 
 When all prerequisites are satisfied, Picky shows Hub's Dashboard and its seven-page sidebar.
 
-### 1.1 Guided onboarding
-
-On fresh installs, after prerequisites are satisfied, Picky may run a short guided onboarding. The walkthrough uses Picky cursor-bubble narration to introduce the main interactions: Push-to-Talk, drawing screen highlights, the Pickle dock, opening a Pickle, and archiving.
-
-You can skip onboarding at any beat by pressing Escape or clicking **Skip**.
-
 ## 2. Picky Hub
 
 Click the Picky menu bar icon to open Hub. It is a resizable macOS window with a seven-page sidebar, not a transient companion panel.
@@ -771,7 +765,7 @@ Hub Settings is one scrollable page with jump links for seven groups. The catego
 
 | Group | Contents |
 | --- | --- |
-| General | App language, appearance, Hub/report/terminal font scales, update controls, and onboarding replay. |
+| General | App language, appearance, Hub/report/terminal font scales, and update controls. |
 | Accounts and agents | Pi OAuth accounts, Main Agent settings, and the expandable built-in-tools list. |
 | Voice and input | Speech-to-text, text-to-speech, and global shortcuts. |
 | Screen and overlays | Cursor and speech-bubble controls. |
@@ -789,7 +783,6 @@ Hub Settings is one scrollable page with jump links for seven groups. The catego
 | Update channel preference | Stable or Beta | Kept for settings-file compatibility. The installed app bundle determines which updates are eligible, so this setting does not move an installed app between release channels. |
 | Check automatically / Check now | Toggle / button | Controls Sparkle update checks where the installed build supports them. |
 | Download updates automatically | Toggle | Downloads new versions in the background for the Dashboard's one-click **Update and Restart**. |
-| Replay onboarding | Button | Shows the guided introduction again after confirmation. |
 
 #### Pi accounts (Accounts and agents)
 

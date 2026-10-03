@@ -73,17 +73,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var openSessionRequest: PickyHUDOpenSessionRequest? {
         didSet { publishDockStateImmediately() }
     }
-    /// Fires every time a dock card is opened (the user clicked it to expand).
-    /// Distinct from `selectedSessionID` so subscribers can react to repeated
-    /// open gestures on the same session. Used by the onboarding flow to
-    /// detect when the user inspects the demo Pickle's contents.
-    @Published private(set) var lastOpenedSessionToken: UUID = UUID()
-    private(set) var lastOpenedSessionID: String?
     private(set) var lastActualConversationCardOpenedID: String?
-    /// Symmetric counterpart of `lastOpenedSessionToken`, used by onboarding to
-    /// split the close and long-press-to-archive beats.
-    @Published private(set) var lastClosedSessionToken: UUID = UUID()
-    private(set) var lastClosedSessionID: String?
 
     var selectedSession: SessionCard? {
         guard let selectedSessionID else { return sessions.first }
@@ -659,34 +649,6 @@ final class PickySessionListViewModel: ObservableObject {
         clearScreenContextTargetState()
     }
 
-    /// Purge a locally-created demo session entirely — active list, archive,
-    /// and every per-session tracking map. Used by the onboarding flow when
-    /// the user skips mid-tour; we don't want the fake Pickle lingering in
-    /// archive search where clicking it would do nothing because the daemon
-    /// has never heard of it. Distinct from `archive(sessionID:)` (which
-    /// sends a daemon command) since the demo session is purely client-side.
-    func removeOnboardingDemoSession(sessionID: String) {
-        beginDockStateMutation()
-        defer { endDockStateMutation() }
-
-        removeSession(id: sessionID)
-        unreadSessionIDs.remove(sessionID)
-        pendingDoneFlashSessionIDs.remove(sessionID)
-        deliveredNotificationKeys.remove("\(sessionID):completed")
-        deliveredNotificationKeys.remove("\(sessionID):failed")
-        todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
-        subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
-        slashCommandController.clear(sessionID: sessionID)
-        syncSlashCommands()
-        lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
-        pendingTerminalMetaBySessionID.removeValue(forKey: sessionID)
-        releasedArchivedChildSessionIDs.remove(sessionID)
-        if screenContextTargetSessionID == sessionID {
-            clearScreenContextTargetState()
-        }
-        reconcileDockLayout()
-    }
-
     private func clearScreenContextTargetState() {
         guard screenContextTargetSessionID != nil || selectionStore.screenContextTargetSessionID != nil else { return }
         let cleared = screenContextTargetSessionID ?? selectionStore.screenContextTargetSessionID ?? "<nil>"
@@ -936,21 +898,11 @@ final class PickySessionListViewModel: ObservableObject {
         unreadSessionIDs.remove(sessionID)
     }
 
-    /// Records only a confirmed held conversation card open. This drives both
-    /// onboarding and the no-unread fallback for the global Focus Pickle shortcut.
+    /// Records only a confirmed held conversation card open. This drives the
+    /// no-unread fallback for the global Focus Pickle shortcut.
     func markConversationCardOpened(sessionID: String) {
         lastActualConversationCardOpenedID = sessionID
-        lastOpenedSessionID = sessionID
-        lastOpenedSessionToken = UUID()
         markSessionRead(sessionID: sessionID)
-    }
-
-    /// Mirror of `markConversationCardOpened` for the close gesture: HUDView calls this
-    /// when a previously-open dock card is toggled back closed. Onboarding
-    /// uses it to split the open / close / archive CTAs into separate beats.
-    func markSessionClosed(sessionID: String) {
-        lastClosedSessionID = sessionID
-        lastClosedSessionToken = UUID()
     }
 
     func followUp(text: String, sessionID: String? = nil) async throws {
@@ -1632,8 +1584,9 @@ final class PickySessionListViewModel: ObservableObject {
         archiveCoordinator.setMembership(sessionID, archived: false, store: archiveStore)
         childSessionReleaser?.releaseChild(sessionId: sessionID)
 
-        // Mirror removeOnboardingDemoSession's cleanup, without rebuilding v2
-        // membership from cards while other archived records are still loading.
+        // Purge the session from every per-session tracking map, without
+        // rebuilding v2 membership from cards while other archived records are
+        // still loading.
         if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
             storage.removeSessions(ids: [sessionID])
         } else {

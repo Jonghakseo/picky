@@ -131,14 +131,13 @@ struct PickyHUDView: View {
     }
 
     /// Close the expanded HUD card for `sessionID`, mirroring the manual
-    /// close path (clear held/hover state, mark the session closed).
+    /// close path (clear held/hover state).
     private func closeOpenedSession(_ sessionID: String) {
         cancelPendingClose()
         pendingManualAutoOpenSessionID = nil
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
         suppressedHoverSessionID = sessionID
-        viewModel.markSessionClosed(sessionID: sessionID)
     }
 
     /// Full active session-card universe, including members represented by
@@ -985,9 +984,6 @@ struct PickyHUDView: View {
         if nextHeldSession == nil {
             if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
             suppressedHoverSessionID = sessionID
-            // Notify subscribers (e.g. onboarding) that the card was toggled
-            // back closed so they can advance to the next CTA.
-            viewModel.markSessionClosed(sessionID: sessionID)
         } else {
             hoverPreviewSessionID = nil
             suppressedHoverSessionID = nil

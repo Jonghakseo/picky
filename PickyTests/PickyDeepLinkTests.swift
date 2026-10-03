@@ -61,7 +61,6 @@ struct PickyDeepLinkTests {
             PickySettingsRouteExpectation(path: "tools", route: .builtinTools, leaf: .builtinTools),
             PickySettingsRouteExpectation(path: "voice", route: .voice, leaf: nil),
             PickySettingsRouteExpectation(path: "overlayAndNotifications", route: .overlayAndNotifications, leaf: nil),
-            PickySettingsRouteExpectation(path: "onboarding", route: .onboarding, leaf: nil),
             PickySettingsRouteExpectation(path: "index", route: .index, leaf: nil)
         ]
         for expectation in expected {

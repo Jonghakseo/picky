@@ -943,26 +943,6 @@ struct PickySettingsPolishTests {
         #expect(clampedApp == PickyFontScales.appMaximum)
     }
 
-    @Test func settingsRoundTripPreservesOnboardingCompletedVersion() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
-        let project = root.appendingPathComponent("project", isDirectory: true)
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        let store = PickySettingsStore(appSupportRoot: root)
-        var settings = PickySettings.defaults(appSupportRoot: root)
-        settings.defaultCwd = project.path
-        settings.worktreeParent = project.path
-        // Fresh install path: defaults() seeds zero, the reset button restores zero, and
-        // markOnboardingComplete writes the current build's revision. Round-trip each.
-        #expect(settings.onboardingCompletedVersion == 0)
-        settings.onboardingCompletedVersion = PickyOnboardingVersion.current
-        try store.save(settings)
-        #expect(store.load().onboardingCompletedVersion == PickyOnboardingVersion.current)
-
-        settings.onboardingCompletedVersion = 0
-        try store.save(settings)
-        #expect(store.load().onboardingCompletedVersion == 0)
-    }
-
     @Test func settingsRoundTripPreservesShellCommandAutoInstallOptOut() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -1005,29 +985,6 @@ struct PickySettingsPolishTests {
         let store = PickySettingsStore(url: url)
 
         #expect(store.load().shellCommandAutoInstallOptedOut == false)
-    }
-
-    @Test func settingsDecodeTreatsLegacyFileAsOnboardingAlreadyCompleted() throws {
-        // Pre-onboarding settings files have no `onboardingCompletedVersion` key. Updating
-        // users should not get ambushed by the takeover demo, so the decoder treats the
-        // missing field as "this install already finished the latest onboarding".
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root.appendingPathComponent("Settings", isDirectory: true), withIntermediateDirectories: true)
-        let url = root.appendingPathComponent("Settings", isDirectory: true).appendingPathComponent("settings.json")
-        let legacyJSON = """
-        {
-          "defaultCwd": "/tmp",
-          "worktreeParent": "",
-          "preferredToolVisibility": "visible in context only",
-          "readOnlyInvestigationPreference": true,
-          "daemonPath": "/tmp/agentd",
-          "logPath": "/tmp/logs"
-        }
-        """
-        try legacyJSON.data(using: .utf8)!.write(to: url)
-        let store = PickySettingsStore(url: url)
-
-        #expect(store.load().onboardingCompletedVersion == PickyOnboardingVersion.current)
     }
 
     @Test func settingsRoundTripPreservesAppearanceMode() throws {

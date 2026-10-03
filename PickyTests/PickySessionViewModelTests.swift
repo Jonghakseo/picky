@@ -4024,7 +4024,6 @@ struct PickySessionViewModelTests {
         viewModel.markConversationCardOpened(sessionID: "pickle-1")
 
         #expect(viewModel.lastActualConversationCardOpenedID == "pickle-1")
-        #expect(viewModel.lastOpenedSessionID == "pickle-1")
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 

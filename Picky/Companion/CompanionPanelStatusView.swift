@@ -66,9 +66,9 @@ struct CompanionPanelStatusView: View {
                     updaterController: updaterController
                 )
             } else {
-                // Feedback affordance during onboarding lives in the footer
-                // bug glyph; the prerequisites surface no longer competes
-                // with it for attention here.
+                // The feedback affordance lives in the footer bug glyph; the
+                // prerequisites surface no longer competes with it for
+                // attention here.
                 CompanionPanelPrerequisitesCopyView()
                     .padding(.bottom, 14)
                 CompanionPanelPrerequisitesView(permissions: permissions)

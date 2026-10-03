@@ -10,7 +10,7 @@ import XCTest
 final class LocaleManagerTests: XCTestCase {
     /// `apply(.korean)` updates the published values and the nonisolated
     /// snapshots together. Snapshot mirroring is what lets L10n.t work from
-    /// background contexts (e.g. OnboardingAgentClient's scenario builder).
+    /// background contexts (e.g. notification bodies built off the main actor).
     func testApplyKoreanUpdatesLocaleAndSnapshots() {
         let manager = LocaleManager.shared
         let previousChoice = manager.choice

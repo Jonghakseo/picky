@@ -27,7 +27,7 @@ enum PickyHubSettingsGroup: String, CaseIterable, Identifiable {
     /// hosts that route's controls.
     static func hosting(_ route: CompanionPanelSettingsRoute) -> PickyHubSettingsGroup {
         switch route {
-        case .index, .general, .onboarding: .general
+        case .index, .general: .general
         case .oauth, .mainAgent, .builtinTools: .agents
         case .voice, .shortcuts: .voice
         case .overlayAndNotifications: .overlay

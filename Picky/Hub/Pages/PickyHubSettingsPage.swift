@@ -13,8 +13,6 @@ struct PickyHubSettingsPage: View {
     @EnvironmentObject private var navigator: PickyHubNavigator
     @EnvironmentObject private var modalHost: PickyHubModalHost
     @State private var statisticsResetState: PickyHubStatisticsResetState = .idle
-    @State private var onboardingReplayState: PickyHubOnboardingReplayState = .idle
-    @State private var onboardingReplayTransaction: PickyHubOnboardingReplaySaveTransaction?
     @State private var settingsNavigationState = PickyHubSettingsNavigationState()
     @State private var pendingDisclosureScrollTarget: String?
     @State private var activeSettingsGroup: PickyHubSettingsGroup = .general
@@ -172,9 +170,7 @@ struct PickyHubSettingsPage: View {
                 settingsViewModel: settingsViewModel,
                 appearanceStore: dependencies.appearanceStore,
                 fontScaleStore: dependencies.fontScaleStore,
-                updaterController: dependencies.updaterController,
-                focusedControl: $focusedSettingsControl,
-                replayOnboarding: presentOnboardingConfirmation
+                updaterController: dependencies.updaterController
             )
         case .agents:
             embedded(.oauth)
@@ -310,59 +306,6 @@ struct PickyHubSettingsPage: View {
         }
     }
 
-    private func presentOnboardingConfirmation() {
-        onboardingReplayState = .idle
-        onboardingReplayTransaction = nil
-        modalHost.present(
-            width: 430,
-            accessibilityLabel: L10n.t("hub.settings.onboarding.dialog.title"),
-            canDismiss: { !onboardingReplayState.isSaving },
-            onWillDismiss: cancelOnboardingReplayIfNeeded,
-            onDismiss: restoreOnboardingTrigger
-        ) {
-            PickyHubOnboardingReplayConfirmation(
-                state: $onboardingReplayState,
-                onCancel: { modalHost.dismiss() },
-                onConfirm: startOnboardingReplay
-            )
-        }
-    }
-
-    private func startOnboardingReplay() {
-        guard !onboardingReplayState.isSaving, let presentationID = modalHost.presentationID else { return }
-        let transaction = PickyHubOnboardingReplaySaveTransaction.begin(in: &settingsViewModel.settings)
-        onboardingReplayTransaction = transaction
-        onboardingReplayState = .saving
-        settingsViewModel.save { succeeded in
-            guard self.onboardingReplayTransaction == transaction,
-                  self.modalHost.presentationID == presentationID
-            else { return }
-            if succeeded {
-                self.onboardingReplayTransaction = nil
-                self.onboardingReplayState = .idle
-                self.modalHost.dismiss()
-                self.dependencies.requestOnboardingReplay()
-            } else {
-                transaction.restoreAfterFailedSave(in: &self.settingsViewModel.settings)
-                self.onboardingReplayTransaction = nil
-                self.onboardingReplayState = .failed(
-                    self.settingsViewModel.validationError ?? L10n.t("settings.onboarding.saveFailed")
-                )
-            }
-        }
-    }
-
-    private func cancelOnboardingReplayIfNeeded() {
-        guard let transaction = onboardingReplayTransaction else { return }
-        transaction.restoreAfterFailedSave(in: &settingsViewModel.settings)
-        onboardingReplayTransaction = nil
-        onboardingReplayState = .idle
-    }
-
-    private func restoreOnboardingTrigger() {
-        focusedSettingsControl = "onboarding"
-    }
-
     private func presentStatisticsResetConfirmation() {
         modalHost.present(
             width: 430,
@@ -389,47 +332,6 @@ struct PickyHubSettingsPage: View {
             await dependencies.statisticsStore.resetClassifications()
             guard !Task.isCancelled else { return }
             statisticsResetState = PickyHubStatisticsResetState.completed(with: dependencies.statisticsStore.state)
-        }
-    }
-}
-
-enum PickyHubOnboardingReplayState: Equatable {
-    case idle
-    case saving
-    case failed(String)
-
-    var isSaving: Bool {
-        if case .saving = self { return true }
-        return false
-    }
-
-    var errorMessage: String? {
-        guard case .failed(let message) = self else { return nil }
-        return message
-    }
-}
-
-private struct PickyHubOnboardingReplayConfirmation: View {
-    @Binding var state: PickyHubOnboardingReplayState
-    let onCancel: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PickyHubConfirmDialog(
-                title: L10n.t("hub.settings.onboarding.dialog.title"),
-                message: L10n.t("hub.settings.onboarding.dialog.message"),
-                confirmTitle: "hub.settings.onboarding.dialog.confirm",
-                confirmRole: .primary,
-                isBusy: state.isSaving,
-                onCancel: onCancel,
-                onConfirm: onConfirm
-            )
-            if let errorMessage = state.errorMessage {
-                PickyHubInlineStatus(tone: .error, message: errorMessage)
-                    .padding(.horizontal, PickyHubTheme.Spacing.cardInset)
-                    .padding(.bottom, PickyHubTheme.Spacing.cardInset)
-            }
         }
     }
 }
@@ -666,8 +568,6 @@ private struct PickyHubGeneralControls: View {
     @ObservedObject var appearanceStore: PickyAppearanceStore
     @ObservedObject var fontScaleStore: PickyAppFontScaleStore
     @ObservedObject var updaterController: PickyUpdaterController
-    let focusedControl: FocusState<String?>.Binding
-    let replayOnboarding: () -> Void
 
     var body: some View {
         PickyHubSettingsList {
@@ -721,10 +621,6 @@ private struct PickyHubGeneralControls: View {
             }
             PickyHubSettingsRow(title: "hub.settings.checkUpdates", detail: "hub.settings.checkUpdates.detail") {
                 PickyHubButton(title: "hub.settings.checkUpdates.action", role: .secondary, isEnabled: updaterController.isAvailable && updaterController.canCheckForUpdates, action: updaterController.checkForUpdates)
-            }
-            PickyHubSettingsRow(title: "hub.settings.onboarding", detail: "hub.settings.onboarding.detail") {
-                PickyHubButton(title: "hub.settings.onboarding.action", role: .secondary, action: replayOnboarding)
-                    .focused(focusedControl, equals: "onboarding")
             }
         }
     }

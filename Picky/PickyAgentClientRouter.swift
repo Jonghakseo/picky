@@ -184,16 +184,6 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         }
     }
 
-    /// Injects a synthetic event into the same fan-out path the daemon uses.
-    /// Lives here — not on the underlying transport — so callers don't have
-    /// to round-trip through the websocket to surface UI-only events. The
-    /// onboarding overlay uses this to drive a scripted Pickle into the real
-    /// HUD dock without making any actual LLM calls; tests can also exercise
-    /// HUD paths the daemon would normally emit.
-    func injectScriptedEvent(_ event: PickyClientEvent) {
-        broadcast(event)
-    }
-
     /// Hook the user (or PickySessionViewModel in the wiring follow-up) can subscribe to so it
     /// can mark the session as failed when its child daemon disappears. The router itself
     /// releases the cached websocket client; this closure is for additional UI signalling.

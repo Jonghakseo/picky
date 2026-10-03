@@ -583,10 +583,6 @@ enum PickyOverlayReason: String, Equatable, Codable, Hashable {
     case activeInkCapture
     case screenContextTarget
     case transientPointerDisplay
-    /// Onboarding flow is active. Independent of the user's cursor preference
-    /// so the demo can guide a fresh user even if they have the cursor turned
-    /// off, then revert to their preferred visibility once the demo finishes.
-    case onboardingActive
 }
 
 enum PickySpeechStopReason: String, Equatable, Codable {

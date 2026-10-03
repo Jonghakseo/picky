@@ -12,7 +12,7 @@ import Foundation
 final class PickyInkOverlayStore: ObservableObject {
     @Published private(set) var state: PickyInkOverlayState = .inactive
 
-    /// Capture and onboarding must never read a delayed display snapshot.
+    /// Capture consumers must never read a delayed display snapshot.
     var latestState: PickyInkOverlayState { captureSubject.value }
     var captureStates: AnyPublisher<PickyInkOverlayState, Never> {
         captureSubject.eraseToAnyPublisher()

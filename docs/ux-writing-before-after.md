@@ -47,7 +47,7 @@
 식별자는 `Picky/Resources/Localizable.xcstrings`의 키다. `%@`, `%lld` 등은 실행 중 이름·숫자로 바뀌는 자리표시자이며 인자 계약을 유지했다.
 
 <details>
-<summary>한국어 before/after (408개 키)</summary>
+<summary>한국어 before/after (382개 키)</summary>
 
 | 식별자 | Before | After |
 |---|---|---|
@@ -174,10 +174,6 @@
 | `hub.settings.fontScale.detail` | Picky 전체에 적용할 글자 크기를 조정합니다. | Picky 전체에 적용할 글자 크기를 조정해요. |
 | `hub.settings.group.general.subtitle` | 표시와 업데이트 | 언어, 화면 모양, 업데이트 |
 | `hub.settings.notification.detail` | Picky가 알릴 시점을 선택합니다. | Picky가 알릴 시점을 선택하세요. |
-| `hub.settings.onboarding` | 온보딩 다시 보기 | 처음 사용 안내 다시 보기 |
-| `hub.settings.onboarding.detail` | 처음 사용 안내를 처음 단계부터 다시 확인합니다. | 처음 사용 안내를 첫 단계부터 다시 확인해요. |
-| `hub.settings.onboarding.dialog.message` | 처음 사용 안내의 진행 상태가 처음 단계로 돌아갑니다. | 지금 바로 처음부터 안내 데모를 시작해요. 데모 중에는 눌러서 말하기와 빠른 입력을 사용할 수 없어요. |
-| `hub.settings.onboarding.dialog.title` | 온보딩을 다시 시작할까요? | 처음 사용 안내를 다시 시작할까요? |
 | `hub.settings.permission.detail` | 이 권한은 시스템 설정에서 관리할 수 있습니다. | 이 권한은 시스템 설정에서 관리할 수 있어요. |
 | `hub.settings.pinnedFolders.detail` | Pickle 폴더 선택기 위쪽에 유지할 폴더입니다. | Pickle 작업 폴더를 고를 때 목록 위쪽에 표시할 폴더예요. |
 | `hub.settings.privacy.notice` | 대화, Pickle 기록, 설정은 기본적으로 이 Mac의 Picky 앱 데이터에 보관됩니다. 선택한 AI·음성 제공업체를 사용할 때 요청 텍스트, 음성 또는 선택한 화면 맥락이 해당 제공업체로 전송될 수 있습니다. | 대화, Pickle 기록, 설정은 기본적으로 이 Mac에 보관돼요. AI·음성 제공업체를 사용하면 요청 텍스트, 음성 또는 선택한 화면 맥락이 해당 제공업체로 전송될 수 있어요. |
@@ -335,24 +331,6 @@
 | `messages.newSession.starting` | 새 세션 시작 중 | 새 대화 시작 중 |
 | `messages.subtitle` | 최근 프롬프트와 응답 100개. | 최근 메시지와 답변, 최대 100개 |
 | `notif.session.completed.title` | 분석이 끝났어요 | 작업이 끝났어요 |
-| `onboarding.bubble.awaitingArchive` | 이제 데모 Pickle을 **길게 눌러** 아카이브해 보세요. | 이제 데모 Pickle을 **길게 눌러** 보관해 보세요. |
-| `onboarding.bubble.awaitingPickleOpen` | **도크의 Pickle을 열어** 서 계속 진행해 주세요. | 계속하려면 **도크의 Pickle을 열어 주세요.** |
-| `onboarding.bubble.delegatingToPickle` | '**Hey Pickle** — 이 페이지 요약해서 정리해 줄래요? 표시한 부분 위주로요.' | '**Hey Pickle**, 이 페이지를 요약해서 정리해 줄래요? 표시한 부분 위주로요.' |
-| `onboarding.bubble.explainingDelegation` | 이런 페이지는 제가 바로 답할 수도 있고, 도크의 **Pickle** 에 작업을 맡길 수도 있어요. | 이런 페이지는 제가 바로 답할 수도 있고, 도크의 **Pickle**에 작업을 맡길 수도 있어요. |
-| `onboarding.bubble.explainingPickle` | Pickle은 도크에서 도는 독립된 **Pi 세션** 이에요 — 긴 작업을 위한 백그라운드 탭 같은 거죠. | Pickle은 도크에서 **독립적으로 작업하는 Pi 대화**예요. 오래 걸리는 일을 맡기고 다른 작업을 계속할 수 있어요. |
-| `onboarding.bubble.explainingTriggers` | 저를 부를 때는 **눌러서 말하기(Control+Option)** 또는 **퀵 인풋(Control 더블탭)을** 쓰면 돼요. **이번 데모는 제가 진행할 테니 편하게 보세요.** | 설정한 **눌러서 말하기**나 **빠른 입력** 단축키로 저를 부를 수 있어요. **이번 데모는 제가 진행할 테니 편하게 보세요.** |
-| `onboarding.bubble.introducing` | 안녕하세요! 저는 **Picky** 예요. 작업하는 바로 그 자리에서 커서를 따라다니며 도와드릴게요. | 안녕하세요! 저는 **Picky**예요. 커서를 따라다니며 지금 하는 일을 도와드릴게요. |
-| `onboarding.bubble.inviteArchive` | Pickle을 다 썼다면 **길게 누르기** 로 아카이브할 수 있어요. | 작업이 끝난 Pickle은 **길게 눌러** 보관할 수 있어요. |
-| `onboarding.bubble.inviteClose` | 이제 **도크의 Pickle을 다시 클릭** 해서 닫아주세요. | 이제 **도크의 Pickle을 다시 클릭해서** 닫아 주세요. |
-| `onboarding.bubble.openedPickle` | Pickle 안에서는 후속 메시지를 보내거나, **터미널 UI로도 전환(⌘T)** 해서 사용할 수 있어요. | Pickle 안에서 메시지를 더 보내거나 **터미널로 전환(⌘T)**해 작업을 이어갈 수 있어요. |
-| `onboarding.bubble.openingPatchNotes` | **Pi 0.73.1 릴리즈 노트** 를 브라우저에서 열고 있어요… | 브라우저에서 **Pi 0.73.1 릴리스 노트**를 열고 있어요… |
-| `onboarding.bubble.outro` | 좋아요. Picky 사용법이 궁금하면 언제든 저에게 물어보세요. Picky의 내장 가이드를 바탕으로 알려드릴게요. **눌러서 말하기(Control+Option)** 또는 **퀵 인풋(Control 더블탭)** 으로 저를 불러주세요. | Picky 사용법이 궁금하면 언제든 물어보세요. 내장 가이드를 참고해 알려드릴게요. 설정한 **눌러서 말하기**나 **빠른 입력** 단축키로 저를 불러 주세요. |
-| `onboarding.bubble.pickleCompleted` | Pickle이 끝났어요! 도크에서 **Pickle을 클릭** 해서 결과를 확인해 보세요. | Pickle 작업이 끝났어요! 도크에서 **Pickle을 클릭해** 결과를 확인해 보세요. |
-| `onboarding.bubble.pickleRunning` | Pickle이 일하는 동안 **표시해 둔 영역** 이 컨텍스트로 같이 따라가는걸 위 미리보기에서 확인할 수 있어요. | 위 미리보기에서 **표시한 영역**이 Pickle에 함께 전달되는 모습을 확인해 보세요. |
-| `onboarding.bubble.preWelcome` | 이 온보딩은 **실제 LLM 호출을 하지 않아요**. 편하게 따라와 주세요. | 이 사용 안내 데모에서는 **AI 모델을 실제로 호출하지 않아요**. 편하게 따라와 주세요. |
-| `onboarding.bubble.showingCapabilities` | 저는 여러 가지 일을 할 수 있어요. 예를 들면 Pi의 릴리즈 노트를 띄워줄 수 있죠. | 저는 여러 가지 일을 할 수 있어요. 예를 들어 Pi의 릴리스 노트를 열어볼게요. |
-| `onboarding.highlight.header` | 이게 컨텍스트로 전송되는 내용이에요 | 작업과 함께 전달되는 내용이에요 |
-| `onboarding.skip.button` | 온보딩 건너뛰기 | 사용 안내 건너뛰기 |
 | `overlay.captureBorder.contextLabel` | 이 화면이 맥락으로 전달됩니다 | 다음 요청에 이 화면을 포함해요 |
 | `overlay.captureBorder.notIncludedLabel` | 이 화면은 맥락에 포함되지 않습니다 | 다음 요청에 이 화면을 포함하지 않아요 |
 | `prereq.copy.contextHandoff` | 단축키를 누르면 중립적인 데스크톱 컨텍스트를 캡처해서 로컬 에이전트 클라이언트에 전달해요. | 음성이나 텍스트로 요청하면 화면과 선택한 텍스트 등 작업에 참고할 정보를 수집해 Pi에 전달해요. |
@@ -407,10 +385,6 @@
 | `settings.section.cursorBubbles.title` | 커서 &amp; 말풍선 | 커서와 말풍선 |
 | `settings.section.feedback.subtitle` | 버그·아이디어·하고 싶은 말 무엇이든. | 문제나 아이디어를 개발자에게 보내 주세요. |
 | `settings.section.notification.subtitle` | 세션 이벤트에 대한 배너 알림. | 작업 완료·실패·입력 요청을 알려줘요. |
-| `settings.section.onboarding.body` | Picky를 다음에 실행하면 데모를 다시 보여줘요. 실제 LLM 호출은 없어요. | Picky를 다음에 실행하면 사용 안내 데모를 다시 보여줘요. AI 모델을 실제로 호출하지 않아요. |
-| `settings.section.onboarding.replay` | 다음 실행 시 온보딩 다시 재생 | 다음 실행 시 사용 안내 다시 보기 |
-| `settings.section.onboarding.subtitle` | 인터랙티브 인트로 데모를 다시 재생해요. | 기능을 직접 체험하는 사용 안내를 다시 봐요. |
-| `settings.section.onboarding.title` | 온보딩 | 사용 안내 |
 | `settings.section.overlayAndNotifications.subtitle` | 커서, 음성 버블, macOS 배너 알림. | 커서, 말풍선, macOS 배너 알림을 설정해요. |
 | `settings.section.picky.subtitle` | 런타임, 작업 폴더, 추론, 캡처 컨텍스트. | 작업 폴더, 모델과 추론, 화면 전송을 설정해요. |
 | `settings.section.shortcuts.subtitle` | 눌러서 말하기와 퀵 인풋 단축키 바인딩. | 눌러서 말하기와 빠른 입력 단축키를 설정해요. |
@@ -463,7 +437,7 @@
 </details>
 
 <details>
-<summary>영어 before/after (408개 키)</summary>
+<summary>영어 before/after (382개 키)</summary>
 
 | 식별자 | Before | After |
 |---|---|---|
@@ -590,10 +564,6 @@
 | `hub.settings.fontScale.detail` | Adjust the size used across Picky. | Adjust the size used across Picky. |
 | `hub.settings.group.general.subtitle` | Language, appearance, and updates | Language, appearance, and updates |
 | `hub.settings.notification.detail` | Choose when Picky should notify you. | Choose when Picky should notify you. |
-| `hub.settings.onboarding` | Replay onboarding | Replay setup guide |
-| `hub.settings.onboarding.detail` | Start the first-use guide again. | Start the first-use guide again. |
-| `hub.settings.onboarding.dialog.message` | Your onboarding progress will return to the first step. | Start the guide now from the beginning. Push to Talk and Quick Input are unavailable during the demo. |
-| `hub.settings.onboarding.dialog.title` | Replay onboarding? | Replay setup guide? |
 | `hub.settings.permission.detail` | Manage this permission in System Settings. | Manage this permission in System Settings. |
 | `hub.settings.pinnedFolders.detail` | Folders kept at the top of the Pickle folder picker. | Folders kept at the top of the Pickle folder picker. |
 | `hub.settings.privacy.notice` | Conversations, Pickle history, and settings stay on this Mac by default. When you use an AI or voice provider, the selected request text, audio, or screen context may be sent to that provider. | Conversations, Pickle history, and settings stay on this Mac by default. When you use an AI or voice provider, the selected request text, audio, or screen context may be sent to that provider. |
@@ -751,24 +721,6 @@
 | `messages.newSession.starting` | Starting new session | Starting a new conversation |
 | `messages.subtitle` | Latest 100 prompts and replies. | Up to 100 recent messages and replies. |
 | `notif.session.completed.title` | Analysis finished | Task completed |
-| `onboarding.bubble.awaitingArchive` | Now **long-press** the demo pickle to archive it. | Now **long-press** the demo pickle to archive it. |
-| `onboarding.bubble.awaitingPickleOpen` | **Open the dock pickle** to keep going. | **Open the dock pickle** to keep going. |
-| `onboarding.bubble.delegatingToPickle` | '**Hey Pickle** — can you summarize this page and write it up for me? Focus on the part they marked.' | '**Hey Pickle**, can you summarize this page and write it up for me? Focus on the part they marked.' |
-| `onboarding.bubble.explainingDelegation` | For a page like this I can answer inline, or I can hand the work off to a **Pickle** in the dock. | For a page like this I can answer inline, or I can hand the work off to a **Pickle** in the dock. |
-| `onboarding.bubble.explainingPickle` | A Pickle is an independent **Pi session** that runs in your dock — like a background tab for long work. | A Pickle is an **independent Pi conversation** in your dock. Give it a longer task while you keep working. |
-| `onboarding.bubble.explainingTriggers` | You can talk to me with **Push-to-Talk (Control+Option)** or **Quick Input (double-tap Control)**. **For this demo I'll drive — just watch.** | Use your configured **Push to Talk** or **Quick Input** shortcut to call me. **For this demo, just watch.** |
-| `onboarding.bubble.introducing` | Hi! I'm **Picky**. I follow your cursor and help you get things done — right where you're working. | Hi! I'm **Picky**. I follow your cursor and help you where you're working. |
-| `onboarding.bubble.inviteArchive` | When you're done with a Pickle, **long-press** it to archive. | When you're done with a Pickle, **long-press** it to archive. |
-| `onboarding.bubble.inviteClose` | Now **click the pickle in the dock again** to close it. | Now **click the pickle in the dock again** to close it. |
-| `onboarding.bubble.openedPickle` | Inside a Pickle you can send follow-up messages or **switch to the terminal UI (⌘T)** to keep working. | Inside a Pickle, send more messages or **switch to the terminal (⌘T)** to keep working. |
-| `onboarding.bubble.openingPatchNotes` | Opening **Pi 0.73.1 release notes** in your browser… | Opening **Pi 0.73.1 release notes** in your browser… |
-| `onboarding.bubble.outro` | Nice. If you’re unsure how to use Picky, just ask me — I can answer from Picky’s built-in guide. Call me anytime with **Push-to-Talk (Control+Option)** or **Quick Input (double-tap Control)**. | Ask me whenever you need help with Picky. I can refer to the built-in guide. Use your **Push to Talk** or **Quick Input** shortcut to call me. |
-| `onboarding.bubble.pickleCompleted` | Pickle is done! **Click the pickle** in your dock to inspect what it produced. | Pickle is done! **Click the pickle** in your dock to inspect what it produced. |
-| `onboarding.bubble.pickleRunning` | While the Pickle works, notice how **your highlighted area** gets carried along as context — see the preview above. | The preview above shows how **your highlighted area** is included with the Pickle’s task. |
-| `onboarding.bubble.preWelcome` | This onboarding **never makes real LLM calls**. Relax and follow along. | This demo **does not make real AI model calls**. Follow along at your own pace. |
-| `onboarding.bubble.showingCapabilities` | There is a bunch of things I can do. For example, I can pull up Pi's release notes. | I can help with many tasks. For example, I can open Pi's release notes. |
-| `onboarding.highlight.header` | This is what gets sent as context | This is included with your request |
-| `onboarding.skip.button` | Skip onboarding | Skip introduction |
 | `overlay.captureBorder.contextLabel` | This screen is being shared as context | Include this screen with the next request |
 | `overlay.captureBorder.notIncludedLabel` | This screen is not included as context | Do not include this screen with the next request |
 | `prereq.copy.contextHandoff` | It captures neutral desktop context when you press the hot key, then hands that context to your local agent client. | When you send a voice or text request, Picky captures desktop context such as your screen and selected text for Pi. |
@@ -823,10 +775,6 @@
 | `settings.section.cursorBubbles.title` | Cursor &amp; Bubbles | Cursor &amp; Bubbles |
 | `settings.section.feedback.subtitle` | Bug, idea, or anything to the dev. | Send problems or ideas to the developer. |
 | `settings.section.notification.subtitle` | Banners for session events. | Banners for completion, failures, and input requests. |
-| `settings.section.onboarding.body` | Picky will replay the takeover demo the next time it launches, with no real LLM calls. | Picky will replay the introduction the next time it launches, without making real AI model calls. |
-| `settings.section.onboarding.replay` | Replay onboarding on next launch | Replay introduction on next launch |
-| `settings.section.onboarding.subtitle` | Replay the interactive intro demo. | Replay the interactive introduction. |
-| `settings.section.onboarding.title` | Onboarding | Introduction |
 | `settings.section.overlayAndNotifications.subtitle` | Cursor, speech bubbles, and macOS banners. | Cursor, speech bubbles, and macOS banners. |
 | `settings.section.picky.subtitle` | Runtime, cwd, reasoning, and captured screen context. | Configure the working folder, model and reasoning, and screen sharing. |
 | `settings.section.shortcuts.subtitle` | Push to Talk and Quick Input bindings. | Push to Talk and Quick Input bindings. |
@@ -1065,7 +1013,6 @@ Before는 기존 코드에 직접 적힌 문구다. 기존 지역화가 없던 �
 | `settings.oauth.disconnected` | picky-agentd disconnected during Pi OAuth. | 로그인 중 로컬 서비스 연결이 끊겼어요. 다시 로그인해 주세요. | The local service disconnected during sign-in. Try signing in again. |
 | `settings.oauth.invalidURL` | Pi OAuth returned an invalid URL: \(value) | 제공업체가 올바르지 않은 로그인 URL을 반환했어요: %@ | The provider returned an invalid sign-in URL: %@ |
 | `settings.oauth.timedOut` | Timed out waiting for picky-agentd OAuth response. | 로그인 응답 시간이 초과됐어요. 다시 로그인해 주세요. | Sign-in timed out. Try signing in again. |
-| `settings.onboarding.saveFailed` | Unable to save the onboarding preference. | 시작 안내 설정을 저장하지 못했어요. | Could not save the onboarding setting. |
 | `settings.shortcut.conflict` | That shortcut conflicts with another action. | 다른 동작에서 사용하는 단축키예요. 다른 단축키를 입력해 주세요. | This shortcut is used by another action. Choose another shortcut. |
 | `settings.shortcut.invalid` | That shortcut combination isn’t valid. | 지원하지 않는 단축키 조합이에요. 다른 단축키를 입력해 주세요. | This shortcut combination isn’t supported. Choose another shortcut. |
 | `settings.validation.mainFolder` | Picky cwd does not exist or is not a directory: \(path) | Picky 작업 폴더가 없거나 폴더가 아닌 경로예요: %@ | Picky’s working folder does not exist or is not a folder: %@ |

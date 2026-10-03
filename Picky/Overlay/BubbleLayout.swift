@@ -23,13 +23,6 @@ struct VoicePromptBubbleSizePreferenceKey: PreferenceKey {
     }
 }
 
-struct OnboardingBubbleSizePreferenceKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
-    }
-}
-
 struct ShakeReactionBubbleSizePreferenceKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
@@ -205,29 +198,12 @@ enum PickyBubbleMarkdown {
     /// companion panel chat). The cursor speech bubble shares this renderer
     /// but can't be clicked, so the link styling (blue underline) reads as
     /// visual noise. Strip the link attribute on `picky://` runs only —
-    /// other schemes (https, mailto) keep their styling for cases like the
-    /// onboarding bubble.
+    /// other schemes (https, mailto) keep their styling.
     private static func stripPickyDeepLinkAttributes(_ attributed: inout AttributedString) {
         for run in attributed.runs {
             guard let link = run.link, link.scheme?.lowercased() == "picky" else { continue }
             attributed[run.range].link = nil
         }
-    }
-
-    /// Like `attributedText(for:)` but every `**bold**` run also gets a tinted
-    /// foreground color. Used by the onboarding bubble where the markdown
-    /// strong-emphasis weight alone wasn't visible enough on top of the bubble's
-    /// medium base weight — the color difference makes action words pop.
-    static func highlightedAttributedText(
-        for text: String,
-        highlightColor: Color
-    ) -> AttributedString {
-        var attributed = attributedText(for: text)
-        for run in attributed.runs {
-            guard let intent = run.inlinePresentationIntent, intent.contains(.stronglyEmphasized) else { continue }
-            attributed[run.range].foregroundColor = highlightColor
-        }
-        return attributed
     }
 
     static func displayString(for text: String) -> String {

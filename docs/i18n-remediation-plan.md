@@ -184,7 +184,7 @@ a localized format style, not a `String` passed to `Text`.
    - semantic agentd presentation code -> Swift localized rendering;
    - plural/list formatting and language-specific TTS substitutions.
 3. Run the existing catalog validator and a two-language UI smoke pass over:
-   onboarding, Quick Input, main-agent question form, HUD dock/conversation,
+   Quick Input, main-agent question form, HUD dock/conversation,
    terminal, archive, notification, feedback, shortcut capture, shell command
    dialog, right-click menus, and watchdog alert.
 4. Test both language changes at runtime and after a cold launch. Verify that

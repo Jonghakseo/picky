@@ -810,12 +810,11 @@ function checkFileSizeRatchet() {
     ts: 1500,
   };
   const allowlist = new Map([
-    ["Picky/PickySessionViewModel.swift", 2860],
-    ["Picky/CompanionManager.swift", 2522],
+    ["Picky/PickySessionViewModel.swift", 2654],
+    ["Picky/CompanionManager.swift", 2485],
     ["Picky/Interaction/PickyInteractionReducer.swift", 1400],
-    ["Picky/Companion/CompanionPanelSettingsView.swift", 2150],
-    ["Picky/Overlay/BlueCursorView.swift", 1830],
-    ["Picky/App/Settings/PickySettings.swift", 1550],
+    ["Picky/Companion/CompanionPanelSettingsView.swift", 1982],
+    ["Picky/Overlay/BlueCursorView.swift", 1700],
     ["Picky/PickyAgentProtocol.swift", 1509],
     ["agentd/src/session-supervisor.ts", 1992],
     ["agentd/src/runtime/pi-sdk-runtime.ts", 1539],
@@ -852,11 +851,11 @@ function swiftTypeGroupStem(relativePath) {
 }
 
 const SWIFT_TYPE_GROUP_RATCHET = new Map([
-  ["CompanionManager", 4014],
-  ["PickySessionViewModel", 3667],
+  ["CompanionManager", 3976],
+  ["PickySessionViewModel", 3473],
   ["PickyHUDOverlayManager", 2449],
   ["PickyHUDDockRailView", 1771],
-  ["PickyAgentClientRouter", 1356],
+  ["PickyAgentClientRouter", 1346],
 ]);
 
 function swiftExtensionBlockLineCount(source, stem) {

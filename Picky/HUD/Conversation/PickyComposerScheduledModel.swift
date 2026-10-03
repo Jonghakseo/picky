@@ -34,6 +34,8 @@ final class PickyComposerScheduledModel: ObservableObject {
     @Published private(set) var sendTimingMenu: SendTimingMenu?
     @Published private(set) var isInstallingPlugin = false
     @Published private(set) var installError: String?
+    /// Non-nil while the custom date/time screen replaces the timing list.
+    @Published var customSendTime: PickyCustomSendTimeDraft?
 
     func reset() {
         isPanelExpanded = false
@@ -44,6 +46,7 @@ final class PickyComposerScheduledModel: ObservableObject {
         isSendTimingMenuPresented = false
         sendTimingMenu = nil
         installError = nil
+        customSendTime = nil
     }
 
     func togglePanel() {
@@ -198,7 +201,20 @@ final class PickyComposerScheduledModel: ObservableObject {
             commands: commands
         )
         installError = nil
+        customSendTime = nil
         isSendTimingMenuPresented = true
+    }
+
+    func openCustomSendTime(now: Date = Date(), calendar: Calendar = .current) {
+        customSendTime = PickyCustomSendTimePolicy.makeDraft(
+            now: now,
+            calendar: calendar,
+            locale: LocaleManager.nonisolatedEffectiveLocale
+        )
+    }
+
+    func closeCustomSendTime() {
+        customSendTime = nil
     }
 
     func installPlugin(

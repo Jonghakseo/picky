@@ -158,41 +158,71 @@ struct PickyScheduledMessagesPresentationTests {
 
     // MARK: - Send timing menu
 
+    private static var seoul: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        return calendar
+    }
+
     @Test func sendTimingMenuDisablesTimedRowsUntilTheDelayedActionPluginIsInstalled() {
         let withoutPlugin = PickySendTimingPolicy.options(
-            now: now, canSendAfterCurrentReply: true, isPluginInstalled: false
+            now: now, canSendAfterCurrentReply: true, isPluginInstalled: false, calendar: Self.seoul
         )
         let withPlugin = PickySendTimingPolicy.options(
-            now: now, canSendAfterCurrentReply: true, isPluginInstalled: true
+            now: now, canSendAfterCurrentReply: true, isPluginInstalled: true, calendar: Self.seoul
         )
+        let tomorrowNine = PickySendTimingPolicy.tomorrowPresetDate(now: now, calendar: Self.seoul)!
 
         #expect(withoutPlugin.map(\.timing) == [
             .afterCurrentReply,
             .delay(seconds: 5 * 60),
-            .delay(seconds: 8 * 3600),
-            .delay(seconds: 2 * 86_400),
+            .delay(seconds: 3600),
+            .at(tomorrowNine),
+            .custom,
         ])
-        #expect(withoutPlugin.map(\.isEnabled) == [true, false, false, false])
-        #expect(withPlugin.map(\.isEnabled) == [true, true, true, true])
+        #expect(withoutPlugin.map(\.isEnabled) == [true, false, false, false, false])
+        #expect(withPlugin.map(\.isEnabled) == [true, true, true, true, true])
         // No "send now" row: the split button's left half already does that.
-        #expect(withPlugin.count == 4)
+        #expect(withPlugin.count == 5)
     }
 
     @Test func sendTimingMenuDisablesTheFollowUpRowWhenTheSessionCannotQueueOne() {
         let options = PickySendTimingPolicy.options(
-            now: now, canSendAfterCurrentReply: false, isPluginInstalled: true
+            now: now, canSendAfterCurrentReply: false, isPluginInstalled: true, calendar: Self.seoul
         )
 
         #expect(options[0].timing == .afterCurrentReply)
         #expect(!options[0].isEnabled)
         #expect(options[0].shortcut == "⌥↵")
-        #expect(options.dropFirst().map(\.isEnabled) == [true, true, true])
+        #expect(options.dropFirst().map(\.isEnabled) == [true, true, true, true])
+        // Every preset shows when it lands; the custom row has nothing to show yet.
         #expect(options.dropFirst().compactMap(\.detail).count == 3)
     }
 
+    /// "Tomorrow" means the next calendar day at 9:00, even right after midnight.
+    @Test func tomorrowPresetIsNineOnTheNextCalendarDay() throws {
+        let calendar = Self.seoul
+        let lateNight = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 23, minute: 50)))
+        let afterMidnight = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 0, minute: 30)))
+
+        #expect(PickySendTimingPolicy.tomorrowPresetDate(now: lateNight, calendar: calendar)
+            == calendar.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 9)))
+        #expect(PickySendTimingPolicy.tomorrowPresetDate(now: afterMidnight, calendar: calendar)
+            == calendar.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9)))
+    }
+
     @Test func timedOptionsCarryTheDelayTheDaemonCommandNeeds() {
-        #expect(PickySendTiming.afterCurrentReply.delayMilliseconds == nil)
-        #expect(PickySendTiming.delay(seconds: 5 * 60).delayMilliseconds == 300_000)
+        #expect(PickySendTiming.afterCurrentReply.delayMilliseconds(now: now) == nil)
+        #expect(PickySendTiming.custom.delayMilliseconds(now: now) == nil)
+        #expect(PickySendTiming.delay(seconds: 5 * 60).delayMilliseconds(now: now) == 300_000)
+        // Absolute times are measured when picked, so a menu left open does not
+        // push "tomorrow 9:00" later.
+        let target = now.addingTimeInterval(3600)
+        #expect(PickySendTiming.at(target).delayMilliseconds(now: now) == 3_600_000)
+        #expect(PickySendTiming.at(target).delayMilliseconds(now: now.addingTimeInterval(600)) == 3_000_000)
+        // A time that just passed still sends instead of producing a zero delay
+        // the daemon rejects.
+        #expect(PickySendTiming.at(now).delayMilliseconds(now: now.addingTimeInterval(5)) == 1000)
     }
 
     /// A timed message is stored as plain text, so a screenshot or an armed
@@ -205,7 +235,7 @@ struct PickyScheduledMessagesPresentationTests {
             carriesScreenContext: true
         )
 
-        #expect(options.map(\.isEnabled) == [true, false, false, false])
+        #expect(options.map(\.isEnabled) == [true, false, false, false, false])
         #expect(options.dropFirst().allSatisfy { $0.disabledReason != nil })
         // The missing-plugin case keeps its own install affordance instead.
         #expect(PickySendTimingPolicy.options(

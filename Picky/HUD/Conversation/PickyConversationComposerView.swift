@@ -959,7 +959,10 @@ struct PickyConversationComposerView: View {
                         carriesScreenContext: carriesScreenContext,
                         commands: commands
                     )
-                }
+                },
+                customTime: customSendTimeBinding,
+                onCustomBack: { scheduled.closeCustomSendTime() },
+                onCustomCancel: { scheduled.isSendTimingMenuPresented = false }
             )
         }
     }
@@ -977,13 +980,29 @@ struct PickyConversationComposerView: View {
         !attachments.isEmpty || isScreenContextArmed
     }
 
+    private var customSendTimeBinding: Binding<PickyCustomSendTimeDraft>? {
+        guard let draft = scheduled.customSendTime else { return nil }
+        return Binding(
+            get: { scheduled.customSendTime ?? draft },
+            set: { scheduled.customSendTime = $0 }
+        )
+    }
+
     private func selectSendTiming(_ timing: PickySendTiming) {
+        if timing == .custom {
+            scheduled.openCustomSendTime()
+            return
+        }
         scheduled.isSendTimingMenuPresented = false
         switch timing {
         case .afterCurrentReply:
             submit(.followUp)
-        case .delay(let seconds):
-            submitScheduled(delayMs: seconds * 1000)
+        case .delay, .at:
+            if let delayMs = timing.delayMilliseconds() {
+                submitScheduled(delayMs: delayMs)
+            }
+        case .custom:
+            break
         }
     }
 

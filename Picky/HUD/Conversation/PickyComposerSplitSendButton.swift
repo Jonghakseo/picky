@@ -85,8 +85,28 @@ struct PickySendTimingMenuView: View {
     let installError: String?
     let onSelect: (PickySendTiming) -> Void
     let onInstallPlugin: () -> Void
+    /// Non-nil while the custom-time screen replaces the list.
+    var customTime: Binding<PickyCustomSendTimeDraft>?
+    var onCustomBack: () -> Void = {}
+    var onCustomCancel: () -> Void = {}
 
     var body: some View {
+        Group {
+            if let customTime {
+                PickyCustomSendTimeView(
+                    draft: customTime,
+                    onBack: onCustomBack,
+                    onCancel: onCustomCancel,
+                    onSchedule: { onSelect(.at($0)) }
+                )
+            } else {
+                list
+            }
+        }
+        .frame(width: Self.width, alignment: .leading)
+    }
+
+    private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(L10n.t("hud.composer.sendTiming.title"))
                 .font(PickyHUDTypography.status)
@@ -95,7 +115,7 @@ struct PickySendTimingMenuView: View {
                 .padding(.top, DS.Spacing.space2)
                 .padding(.bottom, DS.Spacing.space1)
             ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                if index == 1 {
+                if index == 1 || option.timing == .custom {
                     Divider().padding(.vertical, DS.Spacing.space1)
                 }
                 row(option)
@@ -105,7 +125,6 @@ struct PickySendTimingMenuView: View {
             }
             Spacer().frame(height: DS.Spacing.space2)
         }
-        .frame(width: Self.width, alignment: .leading)
     }
 
     private func row(_ option: PickySendTimingOption) -> some View {
@@ -123,6 +142,11 @@ struct PickySendTimingMenuView: View {
                 if let shortcut = option.shortcut {
                     Text(shortcut)
                         .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.textTertiary)
+                }
+                if option.timing == .custom {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(DS.Colors.textTertiary)
                 }
             }

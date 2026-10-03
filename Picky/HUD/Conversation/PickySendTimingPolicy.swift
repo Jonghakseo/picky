@@ -11,20 +11,31 @@ import Foundation
 enum PickySendTiming: Equatable, Identifiable, Hashable {
     /// Today's follow-up: delivered as soon as the current reply ends.
     case afterCurrentReply
-    /// Delayed-action timed send.
+    /// Delayed-action timed send, relative to the moment it is picked.
     case delay(seconds: Int)
+    /// Delayed-action timed send at a wall-clock time ("tomorrow 9:00", custom).
+    case at(Date)
+    /// Opens the custom date/time editor instead of sending.
+    case custom
 
     var id: String {
         switch self {
         case .afterCurrentReply: "after-current-reply"
         case .delay(let seconds): "delay-\(seconds)"
+        case .at(let date): "at-\(Int(date.timeIntervalSince1970))"
+        case .custom: "custom"
         }
     }
 
-    var delayMilliseconds: Int? {
+    /// Delay for the daemon's `scheduleMessage`, measured when the row is picked
+    /// so a menu left open does not shift an absolute time. `nil` for rows that
+    /// do not schedule. An absolute time that has just passed still sends
+    /// (after one second) rather than being dropped.
+    func delayMilliseconds(now: Date = Date()) -> Int? {
         switch self {
-        case .afterCurrentReply: nil
+        case .afterCurrentReply, .custom: nil
         case .delay(let seconds): seconds * 1000
+        case .at(let date): max(1000, Int((date.timeIntervalSince(now) * 1000).rounded()))
         }
     }
 }
@@ -61,9 +72,9 @@ struct PickySendTimingOption: Equatable, Identifiable {
 }
 
 enum PickySendTimingPolicy {
-    /// Fixed presets. Spacing them this far apart keeps the menu to three rows
-    /// instead of a picker; the agent itself can schedule anything finer.
-    static let presetDelays: [Int] = [5 * 60, 8 * 60 * 60, 2 * 24 * 60 * 60]
+    /// Relative presets; "tomorrow at 9:00" and the custom row follow them.
+    static let presetDelays: [Int] = [5 * 60, 60 * 60]
+    static let tomorrowPresetHour = 9
 
     /// The chevron is inert while a scheduled message is being edited: picking a
     /// send time there would create a second message instead of saving the edit.
@@ -92,6 +103,10 @@ enum PickySendTimingPolicy {
                 isEnabled: canSendAfterCurrentReply
             )
         ]
+        let isTimedEnabled = isPluginInstalled && !carriesScreenContext
+        let timedDisabledReason = isPluginInstalled && carriesScreenContext
+            ? L10n.t("hud.composer.sendTiming.textOnly")
+            : nil
         for seconds in presetDelays {
             let dueAt = now.addingTimeInterval(TimeInterval(seconds))
             options.append(
@@ -104,14 +119,44 @@ enum PickySendTimingPolicy {
                         calendar: calendar,
                         locale: locale
                     ),
-                    isEnabled: isPluginInstalled && !carriesScreenContext,
-                    disabledReason: isPluginInstalled && carriesScreenContext
-                        ? L10n.t("hud.composer.sendTiming.textOnly")
-                        : nil
+                    isEnabled: isTimedEnabled,
+                    disabledReason: timedDisabledReason
                 )
             )
         }
+        if let tomorrow = tomorrowPresetDate(now: now, calendar: calendar) {
+            options.append(
+                PickySendTimingOption(
+                    timing: .at(tomorrow),
+                    title: L10n.t(
+                        "hud.composer.sendTiming.tomorrowAt",
+                        PickyCustomSendTimePolicy.timeText(for: tomorrow, calendar: calendar, locale: locale)
+                    ),
+                    detail: PickyCustomSendTimePolicy.dateText(for: tomorrow, calendar: calendar, locale: locale),
+                    isEnabled: isTimedEnabled,
+                    disabledReason: timedDisabledReason
+                )
+            )
+        }
+        options.append(
+            PickySendTimingOption(
+                timing: .custom,
+                title: L10n.t("hud.composer.sendTiming.custom"),
+                detail: nil,
+                isEnabled: isTimedEnabled,
+                disabledReason: timedDisabledReason
+            )
+        )
         return options
+    }
+
+    /// Tomorrow at 9:00 in the user's calendar, even shortly after midnight;
+    /// Slack's "tomorrow" preset behaves the same way.
+    static func tomorrowPresetDate(now: Date, calendar: Calendar) -> Date? {
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) else {
+            return nil
+        }
+        return calendar.date(bySettingHour: tomorrowPresetHour, minute: 0, second: 0, of: tomorrow)
     }
 }
 

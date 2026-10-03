@@ -14,11 +14,11 @@
 
 - 태그에는 `v` 접두사를 붙이지 않는다.
 - stable 태그에 `-stable`을 붙이지 않는다.
-- beta 번호 `N`은 1부터 시작하고 같은 버전 트레인에서 1씩 증가시킨다.
+- beta 번호 `N`은 1부터 시작하고 같은 버전 트레인에서 1씩 증가시킨다. 어느 자리를 올릴지는 2절의 버전 증가 규칙을 따른다.
 - `CFBundleVersion`/build number는 같은 채널의 후속 소스에서 감소하면 안 된다. 같은 커밋을 beta에서 stable로 승격할 때는 명시적으로 같은 build number를 공유할 수 있다.
 - 이미 존재하는 숫자형 beta 태그와 `*-stable` 태그·릴리즈는 이름을 바꾸거나 삭제하지 않는다.
 - 과거 태그를 수동 재실행할 때만 workflow의 `allow_legacy_tag=true`와 `create_release_if_missing=false`를 함께 사용한다. 새 릴리즈 생성에는 절대 사용하지 않는다.
-- 공개된 태그는 이동하거나 덮어쓰지 않는다. 추가 수정이 필요하면 다음 patch 버전을 사용한다.
+- 공개된 태그는 이동하거나 덮어쓰지 않는다. 추가 수정이 필요하면 2절 규칙으로 다음 버전을 정한다.
 
 예시:
 
@@ -43,17 +43,55 @@ git fetch --tags origin
 git tag --sort=-v:refname | head -20
 ```
 
-### Beta 버전 결정
+### Beta 버전 결정 (버전 증가 규칙)
 
-- 새 버전 트레인을 시작하면 patch를 올리고 `-beta.1`을 붙인다. 예: `0.8.4` 이후 `0.8.5-beta.1`.
-- 같은 트레인의 후속 beta는 beta 번호만 올린다. 예: `0.8.5-beta.1 → 0.8.5-beta.2`.
-- 사용자가 "마이너"라고 말해도 기존 프로젝트 관습상 patch bump를 의미한다.
+직전 릴리즈 태그(beta든 stable이든 가장 최근 태그) 이후 커밋을 모아 아래 표의 **가장 높은 단계 하나**를 적용한다. 판단은 사람의 감이 아니라 커밋 타입과 diff로 한다.
+
+```bash
+git log <previous-release-tag>..HEAD --oneline --no-merges
+git diff --stat <previous-release-tag>..HEAD
+```
+
+| 단계 | 조건 | 다음 태그 |
+| --- | --- | --- |
+| minor | 호환성 영향이 하나라도 있음 | `X.(Y+1).0-beta.1` |
+| patch | 호환성 영향은 없고 `feat:` 커밋이 하나라도 있음 | `X.Y.(Z+1)-beta.1` |
+| beta.N | 위 둘 다 없음 (`fix`, `perf`, `refactor`, `docs`, `test`, `chore`, `ci`, `build`, `style`만 있음) | `X.Y.Z-beta.(N+1)` |
+
+호환성 영향으로 보는 경우:
+
+- `feat!:`·`fix!:` 같은 `!` 표기나 `BREAKING CHANGE` 푸터가 있는 커밋
+- Picky.app ↔ picky-agentd 프로토콜 비호환(구버전 앱과 신버전 daemon, 또는 그 반대가 함께 동작하지 않음)
+- 저장 데이터·설정 파일·세션 형식이 바뀌어 마이그레이션이 필요하거나 이전 버전으로 되돌리면 읽지 못함
+- 최소 macOS 버전 상향, 번들 Node/Pi SDK 변경으로 기존 사용자 확장·플러그인·MCP 구성이 깨짐
+- 업데이트 경로 변경(appcast URL, Sparkle 키, 번들 identifier, 채널 판정)
+- `picky` CLI, Pi handoff 확장, 플러그인/스킬이 의존하는 공개 계약의 비호환 변경
+
+세부 규칙:
+
+- 섞여 있으면 높은 단계가 이긴다: minor > patch > beta.N.
+- 올린 자리 아래는 초기화한다. minor면 patch는 `0`, beta 번호는 `1`. patch면 beta 번호는 `1`.
+- 내부 구조 변경(리팩터링, 모듈 분리, 의존성 정리)은 위 호환성 목록에 해당하지 않으면 minor 사유가 아니다. 커밋 타입대로 판단한다.
+- 커밋 타입만 보고 끝내지 않는다. 프로토콜(`agentd/src/protocol.ts`, `Picky/PickyAgentProtocol.swift`, `contracts/`), 저장 형식·마이그레이션, `Info.plist`의 Sparkle 키, 최소 OS·런타임 버전 파일이 바뀌었으면 diff를 열어 호환성 영향을 확인한다.
+- 사용자가 버전을 직접 지정하거나 "마이너"·"patch"를 명시하면 그 지시를 따른다. 단, 호환성 영향이 있는데 minor보다 낮게 요청하면 근거를 들어 한 번 알린다.
+- 애매하면 낮은 단계를 고르고, 릴리즈 노트 Highlights 아래에 버전 결정 근거(해당 커밋)를 한 줄 적는다.
+
+예시:
+
+```text
+0.12.0-beta.1 이후 fix만 있음            → 0.12.0-beta.2
+0.12.0-beta.2 이후 feat 1개 + fix 3개     → 0.12.1-beta.1
+0.12.1-beta.1 이후 protocol 비호환 변경   → 0.13.0-beta.1
+0.12.1 stable 이후 fix만 있음            → 0.12.2-beta.1
+```
+
+- 직전 태그가 stable이면 beta.N 단계라도 같은 숫자 버전을 재사용할 수 없으므로 patch를 올린다.
 
 ### Stable 버전 결정
 
 - 검증을 마친 beta의 숫자 버전을 그대로 사용하되 suffix를 제거한다. 예: `0.8.5-beta.2 → 0.8.5`.
 - stable 태그는 선택한 최종 beta와 같은 커밋을 가리켜야 한다.
-- beta 이후 코드나 문서가 바뀌었다면 기존 버전을 재사용하지 말고 다음 patch beta부터 다시 검증한다.
+- beta 이후 코드나 문서가 바뀌었다면 기존 버전을 재사용하지 말고, 위 버전 증가 규칙으로 다음 beta를 내 다시 검증한다.
 
 ## 3. 릴리즈 노트 작성
 

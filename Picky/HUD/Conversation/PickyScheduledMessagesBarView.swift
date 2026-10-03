@@ -260,12 +260,17 @@ struct PickyScheduledMessagesPanelView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if isHovered && row.isActionable {
-                rowToolbar(row)
-            }
         }
         .padding(.horizontal, DS.Spacing.space2)
         .padding(.vertical, DS.Spacing.space1)
+        // An overlay, not a sibling in the HStack: the toolbar is taller than a
+        // text line, and laying it out would grow the row on every hover.
+        .overlay(alignment: .trailing) {
+            if isHovered && row.isActionable {
+                rowToolbar(row)
+                    .padding(.trailing, DS.Spacing.space1)
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
                 .fill(isEditing ? DS.Colors.accentSubtle : (isHovered ? DS.Colors.surface3 : Color.clear))

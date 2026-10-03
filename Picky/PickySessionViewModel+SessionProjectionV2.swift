@@ -110,7 +110,16 @@ extension PickySessionListViewModel {
         } else if !shouldArchive {
             deliverNotificationIfNeeded(for: card)
         }
-        syncSelectionAfterSessionListChange(skippingRedundantPublishedAssignments: true)
+        // A snapshot only ever adds or replaces one session, so it cannot
+        // prove that the selected session is gone. Membership is settled once,
+        // in `applySessionProjectionBootstrapCompletion`.
+        syncSelectionAfterSessionListChange(
+            skippingRedundantPublishedAssignments: true,
+            deferringUnknownSessionDemotion: true
+        )
+        // The other three targets are process-transient and every setter
+        // already requires the session to be in `sessions`, so they can never
+        // name a session that has not arrived yet.
         syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
         syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: true)

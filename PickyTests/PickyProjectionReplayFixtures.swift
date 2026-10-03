@@ -18,16 +18,32 @@ enum PickyProjectionReplayFixtures {
         selectedSessionID: String? = nil,
         sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil
     ) -> PickySessionListViewModel {
-        PickySessionListViewModel(
+        makeViewModelWithSelectionStore(
+            notificationCenter: notificationCenter,
+            selectedSessionID: selectedSessionID,
+            sessionProjectionStorage: sessionProjectionStorage
+        ).viewModel
+    }
+
+    /// Exposes the injected store so a test can observe the persisted
+    /// selection, not just the view model's published mirror.
+    static func makeViewModelWithSelectionStore(
+        notificationCenter: PickyNoopNotificationCenter = PickyNoopNotificationCenter(),
+        selectedSessionID: String? = nil,
+        sessionProjectionStorage: (any PickySessionProjectionStorage)? = nil
+    ) -> (viewModel: PickySessionListViewModel, selectionStore: ProjectionReplaySelectionStore) {
+        let selectionStore = ProjectionReplaySelectionStore(selectedSessionID: selectedSessionID)
+        let viewModel = PickySessionListViewModel(
             client: FakePickyAgentClient(),
             notificationCenter: notificationCenter,
-            selectionStore: ProjectionReplaySelectionStore(selectedSessionID: selectedSessionID),
+            selectionStore: selectionStore,
             archiveStore: ProjectionReplayArchiveStore(),
             manualOrderStore: ProjectionReplayManualOrderStore(),
             composerDraftStore: ProjectionReplayComposerDraftStore(),
             composerAttachmentDraftStore: ProjectionReplayComposerAttachmentDraftStore(),
             sessionProjectionStorage: sessionProjectionStorage
         )
+        return (viewModel, selectionStore)
     }
 
     static func apply(_ envelope: PickyEventEnvelope, to viewModel: PickySessionListViewModel) {
@@ -219,7 +235,7 @@ enum PickyProjectionReplayFixtures {
     }
 }
 
-private final class ProjectionReplaySelectionStore: PickySessionSelectionStoring {
+final class ProjectionReplaySelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var hoveredVoiceFollowUpSessionID: String?
     var screenContextTargetSessionID: String?

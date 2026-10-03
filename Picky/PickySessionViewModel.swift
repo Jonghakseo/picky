@@ -2149,9 +2149,27 @@ final class PickySessionListViewModel: ObservableObject {
         return true
     }
 
-    func syncSelectionAfterSessionListChange(skippingRedundantPublishedAssignments: Bool = false) {
+    /// `deferringUnknownSessionDemotion` is set by the projection snapshot
+    /// seam. Applying a snapshot can move a *known* session between active and
+    /// archived membership, but it can never turn a known session into an
+    /// unknown one. So a selection naming a session this app has not received
+    /// yet means "not delivered yet", not "does not exist", and dropping it
+    /// there erased the persisted choice on every cold bootstrap whose
+    /// selected Pickle was not the first snapshot in the wave.
+    /// `applySessionProjectionBootstrapCompletion` is the one caller holding
+    /// authoritative membership, so it stays the single place that demotes a
+    /// selection for a session the daemon never sent.
+    func syncSelectionAfterSessionListChange(
+        skippingRedundantPublishedAssignments: Bool = false,
+        deferringUnknownSessionDemotion: Bool = false
+    ) {
         if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
             selectionStore.selectedSessionID = selectedSessionID
+        } else if deferringUnknownSessionDemotion,
+                  hasExplicitSelection,
+                  let selectedSessionID,
+                  !archivedSessions.contains(where: { $0.id == selectedSessionID }) {
+            // Unknown to this app so far: wait for authoritative membership.
         } else {
             hasExplicitSelection = false
             let defaultSessionID = defaultSelectionID()

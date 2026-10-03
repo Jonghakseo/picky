@@ -3,9 +3,9 @@
 //  Picky
 //
 //  A queued steer: an ordinary user bubble, dimmed until the Pickle takes it.
-//  Hovering shows a Slack-style toolbar over the bubble's top edge so the
-//  message can be pulled back for editing or its send cancelled, the same
-//  per-item control scheduled messages have.
+//  Low-emphasis "수정 · 전송 취소" links stay under the bubble the whole time,
+//  so the message can be pulled back or cancelled without hunting for a hover
+//  target.
 //
 
 import SwiftUI
@@ -16,97 +16,75 @@ struct PickyPendingSteerBubbleView: View {
     let sessionID: String
     let commands: any PickySessionCommands
 
-    @State private var isHovered = false
     @State private var isConfirmingCancel = false
     @State private var isWorking = false
     @State private var errorText: String?
 
     var body: some View {
-        PickyUserBubbleView(message: message, timestamp: .sent(at: item.enqueuedAt))
-            .opacity(Self.dimmedOpacity)
-            .overlay(alignment: .topTrailing) {
-                if item.id != nil, isHovered || isConfirmingCancel || errorText != nil {
-                    controls
-                        .offset(y: -Self.toolbarLift)
-                }
+        VStack(alignment: .trailing, spacing: Self.linkRowSpacing) {
+            PickyUserBubbleView(message: message, timestamp: .sent(at: item.enqueuedAt))
+                .opacity(Self.dimmedOpacity)
+                .accessibilityValue(L10n.t("hud.queue.pending.steer"))
+            if item.id != nil {
+                controls
+                    .font(PickyHUDTypography.status)
+                    .lineLimit(1)
+                    .padding(.trailing, DS.Spacing.space1)
             }
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                isHovered = hovering
-                if !hovering, !isWorking { errorText = nil }
-            }
-            .accessibilityValue(L10n.t("hud.queue.pending.steer"))
-            .accessibilityAction(named: Text(L10n.t("hud.queue.steer.cancel"))) { cancel() }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     /// Dimming is the only difference from a delivered message, so the bubble
     /// keeps its identity when agentd materializes the real `user_text`.
     static let dimmedOpacity: Double = 0.6
-    private static let toolbarLift: CGFloat = 12
-    /// Same compact toolbar metric as the scheduled-message rows.
-    private static let toolbarVerticalPadding: CGFloat = 3
+    /// Pulls the link row close to the bubble so it reads as its caption.
+    private static let linkRowSpacing: CGFloat = 2
 
     @ViewBuilder
     private var controls: some View {
-        if let errorText {
-            pill {
+        HStack(spacing: DS.Spacing.space1) {
+            if let errorText {
                 Text(errorText)
                     .foregroundColor(DS.Colors.destructiveText)
-                    .lineLimit(1)
-            }
-        } else if isConfirmingCancel {
-            pill {
+            } else if isConfirmingCancel {
                 Text(L10n.t("hud.queue.steer.cancel.confirm"))
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .lineLimit(1)
-                Button(L10n.t("hud.queue.steer.cancel.keep")) { isConfirmingCancel = false }
-                    .buttonStyle(.plain)
                     .foregroundColor(DS.Colors.textSecondary)
-                    .hoverAffordance()
-                Button(L10n.t("hud.queue.steer.cancel")) { cancel() }
-                    .buttonStyle(.plain)
-                    .foregroundColor(DS.Colors.destructiveText)
-                    .hoverAffordance()
-                    .disabled(isWorking)
-            }
-            .font(PickyHUDTypography.statusSemibold)
-        } else {
-            pill {
+                separator
+                link(L10n.t("hud.queue.steer.cancel.keep"), color: DS.Colors.textTertiary) {
+                    isConfirmingCancel = false
+                }
+                separator
+                link(L10n.t("hud.queue.steer.cancel"), color: DS.Colors.destructiveText) { cancel() }
+            } else {
                 // Screen context cannot be put back into the composer, so a
                 // screen-attached steer can only be cancelled, not edited.
                 if (item.attachedImagesCount ?? 0) == 0 {
-                    iconButton("pencil", labelKey: "hud.queue.steer.edit") { edit() }
+                    link(L10n.t("hud.queue.steer.edit.short"), color: DS.Colors.textTertiary, help: "hud.queue.steer.edit") {
+                        edit()
+                    }
+                    separator
                 }
-                iconButton("xmark", labelKey: "hud.queue.steer.cancel") { isConfirmingCancel = true }
+                link(L10n.t("hud.queue.steer.cancel"), color: DS.Colors.textTertiary) {
+                    isConfirmingCancel = true
+                }
             }
-            .font(PickyHUDTypography.bodyCompact)
         }
     }
 
-    private func pill<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: DS.Spacing.space3) { content() }
-            .padding(.horizontal, DS.Spacing.space2)
-            .padding(.vertical, Self.toolbarVerticalPadding)
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .fill(DS.Colors.surface1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
-            )
+    private var separator: some View {
+        Text("·")
+            .foregroundColor(DS.Colors.textTertiary)
+            .accessibilityHidden(true)
     }
 
-    private func iconButton(_ systemImage: String, labelKey: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundColor(DS.Colors.textSecondary)
-        .hoverAffordance()
-        .disabled(isWorking)
-        .help(L10n.t(labelKey))
-        .accessibilityLabel(L10n.t(labelKey))
+    private func link(_ title: String, color: Color, help: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .foregroundColor(color)
+            .hoverAffordance(brightness: 0.18)
+            .disabled(isWorking)
+            .help(help.map { L10n.t($0) } ?? title)
     }
 
     /// Removes the steer first and only then moves its text into the composer,
@@ -134,7 +112,11 @@ struct PickyPendingSteerBubbleView: View {
             } catch {
                 isConfirmingCancel = false
                 errorText = L10n.t("hud.queue.steer.cancel.failed")
+                try? await Task.sleep(for: Self.errorDisplayDuration)
+                errorText = nil
             }
         }
     }
+
+    private static let errorDisplayDuration: Duration = .seconds(4)
 }

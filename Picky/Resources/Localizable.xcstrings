@@ -27942,6 +27942,22 @@
           }
         }
       }
+    },
+    "hud.queue.steer.edit.short": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수정"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

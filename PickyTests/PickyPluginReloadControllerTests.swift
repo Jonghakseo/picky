@@ -10,7 +10,7 @@ import Testing
 @MainActor
 struct PickyPluginReloadControllerTests {
 
-    @Test func notePluginsChangedFlagsBannerVisible() async throws {
+    @Test func notePluginsChangedMarksChangePending() async throws {
         let client = LocalStubPickyAgentClient()
         let controller = PickyPluginReloadController(client: client)
 
@@ -19,6 +19,52 @@ struct PickyPluginReloadControllerTests {
         #expect(controller.hasPendingChanges == true)
         #expect(controller.lastResult == nil)
         #expect(controller.lastError == nil)
+    }
+
+    @Test func pluginChangeAppliesWithoutUserReload() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+
+        controller.notePluginsChanged()
+        try await waitUntil(timeoutMs: 2_000) { client.sentCommands.contains(where: { $0.type == .reloadPlugins }) }
+        // An apply in flight is silent; nothing asks the user to act.
+        #expect(controller.needsAttention == false)
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 1))
+        try await waitUntil(timeoutMs: 2_000) { controller.hasPendingChanges == false }
+        #expect(controller.needsAttention == false)
+        #expect(client.sentCommands.filter { $0.type == .reloadPlugins }.count == 1)
+    }
+
+    @Test func sessionReloadFailureAsksForRetryWithoutLooping() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        controller.notePluginsChanged()
+        try await waitUntil(timeoutMs: 2_000) { controller.isReloading }
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 0, aborted: 0, deferred: 0, failed: 1, requestId: client.sentCommands[0].id))
+        try await waitUntil(timeoutMs: 2_000) { controller.needsAttention }
+        #expect(controller.lastError == L10n.t("status.extensions.reload.error.sessions"))
+        try await Task.sleep(nanoseconds: 80_000_000)
+        #expect(client.sentCommands.filter { $0.type == .reloadPlugins }.count == 1)
+
+        await controller.reload()
+        #expect(client.sentCommands.filter { $0.type == .reloadPlugins }.count == 2)
+    }
+
+    @Test func failedApplyAsksForRetryAndReappliesAfterReconnect() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        controller.notePluginsChanged()
+        try await waitUntil(timeoutMs: 2_000) { controller.isReloading }
+
+        client.emit(.disconnected)
+        try await waitUntil(timeoutMs: 2_000) { controller.needsAttention }
+        #expect(controller.lastError == L10n.t("status.extensions.reload.error.disconnected"))
+
+        client.emit(.connected)
+        try await waitUntil(timeoutMs: 2_000) { client.sentCommands.filter { $0.type == .reloadPlugins }.count == 2 }
+        #expect(controller.needsAttention == false)
     }
 
     @Test func reloadSendsReloadPluginsCommand() async throws {
@@ -51,18 +97,22 @@ struct PickyPluginReloadControllerTests {
         #expect(controller.lastResult?.pickleDeferredCount == 0)
     }
 
-    @Test func pluginsReloadedKeepsBannerWhenChangedDuringReload() async throws {
+    @Test func changeDuringApplyIsAppliedByOneMoreReload() async throws {
         let client = RecordingPickyAgentClient()
         let controller = PickyPluginReloadController(client: client)
         controller.notePluginsChanged()
         await controller.reload()
         controller.notePluginsChanged()
+        // The in-flight apply may have read files before the second change landed.
+        #expect(client.sentCommands.filter { $0.type == .reloadPlugins }.count == 1)
 
-        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 0))
-        try await waitUntil(timeoutMs: 2_000) { controller.lastResult != nil }
-
+        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 0, requestId: client.sentCommands[0].id))
+        try await waitUntil(timeoutMs: 2_000) { client.sentCommands.filter { $0.type == .reloadPlugins }.count == 2 }
         #expect(controller.hasPendingChanges == true)
-        #expect(controller.isReloading == false)
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 0, requestId: client.sentCommands[1].id))
+        try await waitUntil(timeoutMs: 2_000) { controller.hasPendingChanges == false }
+        #expect(client.sentCommands.filter { $0.type == .reloadPlugins }.count == 2)
     }
 
     @Test func reloadStoresErrorWhenClientThrows() async throws {
@@ -290,13 +340,14 @@ struct PickyPluginReloadControllerTests {
         }
     }
 
-    private func makeReloadedEvent(picky: Bool, reloaded: Int, aborted: Int, deferred: Int, requestId: String? = nil) -> PickyEventEnvelope {
+    private func makeReloadedEvent(picky: Bool, reloaded: Int, aborted: Int, deferred: Int, failed: Int? = nil, requestId: String? = nil) -> PickyEventEnvelope {
         let summary = PickyPluginsReloadedEvent(
             requestId: requestId,
             pickyReloaded: picky,
             pickleReloadedCount: reloaded,
             pickleAbortedCount: aborted,
-            pickleDeferredCount: deferred
+            pickleDeferredCount: deferred,
+            failedCount: failed
         )
         return PickyEventEnvelope(
             id: "evt-\(UUID().uuidString)",

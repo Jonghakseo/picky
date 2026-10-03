@@ -2,18 +2,16 @@
 //  PickyPluginReloadController.swift
 //  Picky
 //
-//  Owns the "pending plugin reload" state for the plugin manager and exposes
-//  a single async action that sends `reloadPlugins` to picky-agentd. The
+//  Applies plugin changes as soon as an install, update, removal, or MCP
+//  change succeeds by sending `reloadPlugins` to picky-agentd. The daemons
+//  reload idle sessions right away and busy ones at their next safe point
+//  without interrupting them, so the user never has to reload by hand. Each
 //  daemon answers with a broadcast `pluginsReloaded` event; this controller
-//  listens for it on the shared agent client to clear the pending flag and
-//  surface a summary the View can render.
+//  merges them to clear the pending state.
 //
-//  The controller is intentionally minimal:
-//    * No knowledge of session counts. The View computes busy snapshots from
-//      `PickySessionListViewModel` and `CompanionManager` so the controller
-//      stays decoupled from those view models.
-//    * No retries. A failed `send` clears `isReloading` and stores the error
-//      so the View can show it; the user re-clicks Reload.
+//  Changes made while a reload is in flight are applied by one more reload
+//  after it finishes. Failures are not retried automatically: the View shows
+//  the error with a retry action.
 //
 
 import Combine
@@ -22,8 +20,7 @@ import Foundation
 @MainActor
 final class PickyPluginReloadController: ObservableObject {
     /// True after the user installs/uninstalls a plugin, until the daemon
-    /// confirms a successful `pluginsReloaded`. The View uses this to gate the
-    /// reload banner on the plugin page header.
+    /// confirms a successful `pluginsReloaded`.
     @Published private(set) var hasPendingChanges = false
     /// True while a reload is in flight. Disables the Reload button so a
     /// double-click cannot enqueue two reloads.
@@ -42,6 +39,9 @@ final class PickyPluginReloadController: ObservableObject {
     private var changeGeneration = 0
     private var inFlightGeneration = 0
     private var inFlightCommandId: String?
+    /// The last apply failed because the daemon was unreachable, not because a session failed
+    /// to reload. Only that kind is re-applied automatically when the daemon reconnects.
+    private var lastFailureWasTransport = false
     /// Running aggregation for the in-flight reload. Picky's router fans the
     /// `reloadPlugins` command out to the primary daemon and every active
     /// child daemon, so we receive one `pluginsReloaded` event per daemon.
@@ -59,9 +59,12 @@ final class PickyPluginReloadController: ObservableObject {
         var pickleReloadedCount: Int = 0
         var pickleAbortedCount: Int = 0
         var pickleDeferredCount: Int = 0
+        var failedCount: Int = 0
     }
 
-    init(client: any PickyAgentClient, reloadTimeoutSeconds: TimeInterval = 15) {
+    // Daemons reload every live session one by one; the apply is automatic, so a
+    // tight timeout would surface a false failure while the work still finishes.
+    init(client: any PickyAgentClient, reloadTimeoutSeconds: TimeInterval = 60) {
         self.client = client
         self.reloadTimeoutSeconds = reloadTimeoutSeconds
         let stream = client.events
@@ -103,14 +106,22 @@ final class PickyPluginReloadController: ObservableObject {
         await PickyCuratedPluginInstaller.setup(source: source, client: client)
     }
 
+    /// The automatic apply failed and the change is still pending; the View
+    /// offers a retry. In-flight applies stay silent because they finish fast.
+    var needsAttention: Bool {
+        hasPendingChanges && !isReloading && lastError != nil
+    }
+
     /// Called by the plugin manager when an install/uninstall completes
-    /// successfully. Idempotent: re-noting while the banner is already showing
-    /// just keeps it visible.
+    /// successfully. Applies the change right away; a change made while an
+    /// apply is in flight is picked up by one more apply when it finishes.
     func notePluginsChanged() {
         changeGeneration += 1
         hasPendingChanges = true
         lastResult = nil
         lastError = nil
+        guard !isReloading else { return }
+        Task { await reload() }
     }
 
     /// Send `reloadPlugins` to the daemon. Returns immediately after `send`
@@ -120,6 +131,7 @@ final class PickyPluginReloadController: ObservableObject {
         isReloading = true
         inFlightGeneration = changeGeneration
         lastError = nil
+        lastFailureWasTransport = false
         let command = PickyCommandEnvelope(type: .reloadPlugins)
         let myCommandId = command.id
         inFlightCommandId = myCommandId
@@ -155,6 +167,7 @@ final class PickyPluginReloadController: ObservableObject {
             isReloading = false
             inFlightCommandId = nil
             lastError = error.localizedDescription
+            lastFailureWasTransport = true
         }
     }
 
@@ -181,6 +194,7 @@ final class PickyPluginReloadController: ObservableObject {
         isReloading = false
         inFlightCommandId = nil
         lastError = L10n.t("status.extensions.reload.error.timeout")
+        lastFailureWasTransport = true
         watchdogTask = nil
     }
 
@@ -195,14 +209,21 @@ final class PickyPluginReloadController: ObservableObject {
             pickyReloaded: agg.pickyReloaded,
             pickleReloadedCount: agg.pickleReloadedCount,
             pickleAbortedCount: agg.pickleAbortedCount,
-            pickleDeferredCount: agg.pickleDeferredCount
+            pickleDeferredCount: agg.pickleDeferredCount,
+            failedCount: agg.failedCount
         )
         aggregation = nil
-        hasPendingChanges = changeGeneration > inFlightGeneration
+        let changedDuringApply = changeGeneration > inFlightGeneration
+        // A session that failed to reload still runs the old plugins: keep the change pending
+        // and ask the user to retry instead of looping on a persistent failure.
+        hasPendingChanges = changedDuringApply || agg.failedCount > 0
         isReloading = false
         inFlightCommandId = nil
         lastResult = summary
-        lastError = nil
+        lastError = agg.failedCount > 0 ? L10n.t("status.extensions.reload.error.sessions") : nil
+        if changedDuringApply {
+            Task { await reload() }
+        }
     }
 
     private func handle(_ event: PickyClientEvent) {
@@ -216,6 +237,7 @@ final class PickyPluginReloadController: ObservableObject {
             isReloading = false
             inFlightCommandId = nil
             lastError = L10n.t("status.extensions.reload.error.disconnected")
+            lastFailureWasTransport = true
         case .recoverableError(let message):
             guard isReloading else { return }
             cancelWatchdog()
@@ -223,7 +245,14 @@ final class PickyPluginReloadController: ObservableObject {
             isReloading = false
             inFlightCommandId = nil
             lastError = message
-        case .connected, .sessionProjectionBootstrapCompletion:
+            lastFailureWasTransport = true
+        case .connected:
+            // A change that failed to apply because the daemon went away is
+            // applied once it is back, without waiting for the user to retry.
+            if hasPendingChanges && !isReloading && lastFailureWasTransport {
+                Task { await reload() }
+            }
+        case .sessionProjectionBootstrapCompletion:
             break
         }
     }
@@ -253,6 +282,7 @@ final class PickyPluginReloadController: ObservableObject {
         agg.pickleReloadedCount += summary.pickleReloadedCount
         agg.pickleAbortedCount += summary.pickleAbortedCount
         agg.pickleDeferredCount += summary.pickleDeferredCount
+        agg.failedCount += summary.failedCount ?? 0
         aggregation = agg
         if agg.expectedReplies > 0 && agg.receivedReplies >= agg.expectedReplies {
             finishReloadFromAggregation()

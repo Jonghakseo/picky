@@ -116,6 +116,15 @@ final class PickySessionSlashCommandController {
         }
     }
 
+    /// Plugin changes can add or remove commands for every session, including sessions whose
+    /// commands come from the main runtime fallback.
+    func invalidateAll(refreshIfPreviouslyRequested: Bool) {
+        let sessionIDs = Set(commandsBySessionID.keys).union(requestedSessionIDs)
+        for sessionID in sessionIDs {
+            invalidate(sessionID: sessionID, refreshIfPreviouslyRequested: refreshIfPreviouslyRequested)
+        }
+    }
+
     func clear(sessionID: String) {
         commandsBySessionID.removeValue(forKey: sessionID)
         requestedSessionIDs.remove(sessionID)

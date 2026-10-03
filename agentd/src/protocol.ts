@@ -1000,6 +1000,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     pickleReloadedCount: z.number().int().nonnegative(),
     pickleAbortedCount: z.number().int().nonnegative(),
     pickleDeferredCount: z.number().int().nonnegative(),
+    failedCount: z.number().int().nonnegative().optional(),
   }),
   EventBaseSchema.extend({
     type: z.literal("hubStatisticsResult"),

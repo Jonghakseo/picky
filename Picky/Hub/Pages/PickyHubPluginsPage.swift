@@ -65,9 +65,9 @@ struct PickyHubPluginsPage: View {
 
                 PickyHubPluginReloadBanner(
                     controller: dependencies.pluginReloadController,
-                    onReload: handleReloadTapped
+                    onRetry: retryApplyingChanges
                 )
-                .padding(.bottom, dependencies.pluginReloadController.hasPendingChanges || dependencies.pluginReloadController.lastResult != nil ? PickyHubTheme.Spacing.field : 0)
+                .padding(.bottom, dependencies.pluginReloadController.needsAttention ? PickyHubTheme.Spacing.field : 0)
 
                 sectionPicker
                     .padding(.bottom, PickyHubTheme.Spacing.field)
@@ -264,50 +264,8 @@ struct PickyHubPluginsPage: View {
         catalog.remove(item)
     }
 
-    private func handleReloadTapped() {
-        let snapshot = busySnapshot()
-        guard snapshot.hasAny else {
-            triggerReload()
-            return
-        }
-        modalHost.present(width: 390, accessibilityLabel: L10n.t("hub.plugins.reload.confirm.title"), onDismiss: {
-            restoreFocus(nil)
-        }) {
-            PickyHubConfirmDialog(
-                title: L10n.t("hub.plugins.reload.confirm.title"),
-                message: reloadConfirmationMessage(for: snapshot),
-                confirmTitle: "hub.plugins.reload.confirm.proceed",
-                onCancel: { modalHost.dismiss() },
-                onConfirm: {
-                    modalHost.dismiss()
-                    triggerReload()
-                }
-            )
-        }
-    }
-
-    private func triggerReload() {
+    private func retryApplyingChanges() {
         Task { await dependencies.pluginReloadController.reload() }
-    }
-
-    private func busySnapshot() -> BusySnapshot {
-        BusySnapshot(
-            runningPickles: dependencies.sessionListViewModel.sessionRegistry.runningSessionCount,
-            mainBusy: dependencies.companionManager.voiceState != .idle
-        )
-    }
-
-    private func reloadConfirmationMessage(for snapshot: BusySnapshot) -> String {
-        if snapshot.runningPickles > 0, snapshot.mainBusy {
-            return L10n.t("hub.plugins.reload.confirm.message.both", Int64(snapshot.runningPickles))
-        }
-        if snapshot.runningPickles > 0 {
-            return L10n.t("hub.plugins.reload.confirm.message.pickles", Int64(snapshot.runningPickles))
-        }
-        if snapshot.mainBusy {
-            return L10n.t("hub.plugins.reload.confirm.message.main")
-        }
-        return L10n.t("hub.plugins.reload.confirm.message.generic")
     }
 
     private func restoreFocus(_ control: String?) {
@@ -337,12 +295,6 @@ struct PickyHubPluginsPage: View {
             NSEvent.removeMonitor(commandFMonitor)
             self.commandFMonitor = nil
         }
-    }
-
-    private struct BusySnapshot {
-        let runningPickles: Int
-        let mainBusy: Bool
-        var hasAny: Bool { runningPickles > 0 || mainBusy }
     }
 }
 

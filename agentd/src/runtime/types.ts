@@ -171,6 +171,8 @@ export type RuntimeEvent =
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "extension_ui_cancelled"; requestId: string }
   | { type: "session_info"; name: string }
+  /** Adapter-only: a requested plugin resource reload finished without a visible turn. */
+  | { type: "resources_reloaded" }
   | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
 
 export interface RuntimeSteerResult {
@@ -187,8 +189,30 @@ export interface AnswerExtensionUiOptions {
   ignoreUnknown?: boolean;
 }
 
+/**
+ * `reloaded`: resources were reloaded now. `deferred`: the session is busy (responding,
+ * compacting, async work) and reloads itself at the next safe point. `unchanged`: nothing pending.
+ * `failed`: Pi could not reload (error, unsupported, or timed out); current plugins stay active.
+ */
+export type RuntimeResourceReloadOutcome = "reloaded" | "deferred" | "unchanged" | "failed";
+
+export interface RuntimeResourceReloadHost {
+  /** Runs held user input through the host's normal input admission (async admission reopen). */
+  runInput(effect: () => Promise<void>): Promise<void>;
+}
+
 export interface RuntimeSessionHandle {
   readonly asyncTasks?: RuntimeAsyncTaskControl;
+  /**
+   * Ask the runtime to pick up changed plugins (extensions, skills, MCP servers) without
+   * interrupting the user. Idle sessions reload immediately; busy sessions hold new follow-ups
+   * and reload before delivering them, so they see the new resources.
+   */
+  requestResourceReload?(): Promise<RuntimeResourceReloadOutcome>;
+  /** Completes a pending or in-flight resource reload before new input. Never requests one. */
+  settleResourceReload?(): Promise<RuntimeResourceReloadOutcome>;
+  readonly hasPendingResourceReload?: boolean;
+  setResourceReloadHost?(host: RuntimeResourceReloadHost): void;
   id: string;
   /** Resolves when the follow-up is accepted/queued, not when the agent finishes the turn. */
   followUp(prompt: BuiltPrompt): Promise<void>;

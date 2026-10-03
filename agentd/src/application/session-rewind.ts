@@ -28,6 +28,9 @@ export async function rewindToEntry(deps: RewindDeps, sessionId: string, entryId
   logAgentd("session rewind requested", { sessionId, entryId, streaming: handle.isStreaming });
 
   if (handle.isStreaming) {
+    // Clear queued input before aborting, as a full abort does, so input held for a pending
+    // plugin reload cannot be delivered when the aborted turn settles.
+    await deps.drainQueue(sessionId, handle);
     await handle.abort();
     await deps.waitSettled(sessionId);
   }

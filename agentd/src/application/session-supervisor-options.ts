@@ -7,6 +7,8 @@ export interface ReloadPluginsSummary {
   pickleReloadedCount: number;
   pickleAbortedCount: number;
   pickleDeferredCount: number;
+  /** Sessions (main or Pickle) whose reload failed; they keep running with the previous plugins. */
+  failedCount: number;
 }
 
 /** Configuration seams for SessionSupervisor runtime orchestration. */

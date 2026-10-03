@@ -647,6 +647,7 @@ export class AgentdServer {
           pickleReloadedCount: summary.pickleReloadedCount,
           pickleAbortedCount: summary.pickleAbortedCount,
           pickleDeferredCount: summary.pickleDeferredCount,
+          failedCount: summary.failedCount,
         });
       },
       listMcpServers: async (cmd) => this.sendMcpServerList(ws, cmd.id),
@@ -1358,7 +1359,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "sessionResourcesReloaded":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "pluginsReloaded":
-      return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
+      return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount, failedCount: event.failedCount ?? 0 };
     case "hubStatisticsResult":
       return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, records: event.snapshot?.records.length, samples: event.snapshot?.usageSamples.length, errorChars: event.errorMessage?.length };
     case "mcpServerList": return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, servers: event.servers.length, configErrors: event.configErrors.length };

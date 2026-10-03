@@ -1740,6 +1740,9 @@ final class PickySessionListViewModel: ObservableObject {
             pickySessionLog("session resources reloaded session=\(sessionId)")
             invalidateSlashCommandCache(sessionID: sessionId, refreshIfPreviouslyRequested: true)
             autocompleteEvents.send(.resourcesReloaded(sessionID: sessionId))
+        case .pluginsReloaded:
+            slashCommandController.invalidateAll(refreshIfPreviouslyRequested: true)
+            syncSlashCommands()
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             applySlashCommandsSnapshot(sessionID: sessionId, requestID: requestId, commands: commands)
         case .autocompleteCapabilitiesSnapshot(let snapshot):
@@ -1782,7 +1785,7 @@ final class PickySessionListViewModel: ObservableObject {
              .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
-             .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .hello, .pluginsReloaded,
+             .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .hello,
              .hubStatisticsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted, .ack, .unknown:
             break
         }

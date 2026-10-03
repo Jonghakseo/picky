@@ -38,11 +38,8 @@ struct PickyHubCalendarPage: View {
                         PickyHubInlineStatus(tone: .error, message: error)
                     }
                     if plugin.isInstalled {
-                        if reloadController.hasPendingChanges {
-                            PickyHubInlineStatus(
-                                tone: .warning, message: L10n.t("hub.plugins.reload.message"),
-                                actionTitle: "hub.calendar.apply", action: { navigator.select(.plugins) }
-                            )
+                        PickyHubPluginReloadBanner(controller: reloadController) {
+                            Task { await reloadController.reload() }
                         }
                         installedContent
                     } else {

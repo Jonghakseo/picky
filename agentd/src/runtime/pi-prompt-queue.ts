@@ -25,15 +25,23 @@ interface FlushCompactionQueueOptions {
   queuePrompt: (prompt: BuiltPrompt, streamingBehavior: PiPromptStreamingBehavior) => Promise<void>;
   onQueueChanged: () => void;
   onError: (error: unknown) => void;
+  /**
+   * Keeps matching entries held (in order) instead of delivering them. Used while a plugin
+   * reload waits for the active turn: follow-ups must reach Pi only after the reload.
+   */
+  retain?: (streamingBehavior: PiPromptStreamingBehavior) => boolean;
 }
 
 /**
  * Owns the adapter-only queue state that Pi does not expose directly: prompts held during
- * compaction and reverse mappings for slash commands that Pi expands before enqueueing.
+ * compaction or a pending plugin reload, and reverse mappings for slash commands that Pi
+ * expands before enqueueing.
  */
 export class PiPromptQueue {
   private compactionPrompts: CompactionQueuedPrompt[] = [];
   private isFlushingCompactionQueue = false;
+  // Bumped when held prompts are discarded (abort, /new) so an in-flight flush stops delivering.
+  private heldEpoch = 0;
   private slashExpansions = new Map<string, { raw: string; count: number }>();
   private pendingSlashSubmissions: PendingSlashSubmission[] = [];
 
@@ -41,6 +49,10 @@ export class PiPromptQueue {
     private readonly sessionId: string,
     private readonly slashExpansionCap: number,
   ) {}
+
+  get isFlushing(): boolean {
+    return this.isFlushingCompactionQueue;
+  }
 
   get hasCompactionPrompts(): boolean {
     return this.compactionPrompts.length > 0;
@@ -51,6 +63,7 @@ export class PiPromptQueue {
   }
 
   discardCompactionPrompts(): boolean {
+    this.heldEpoch += 1;
     if (this.compactionPrompts.length === 0) return false;
     this.compactionPrompts = [];
     return true;
@@ -72,6 +85,7 @@ export class PiPromptQueue {
   clear(clearedPiQueues: PiQueueSnapshot): { steering: string[]; followUp: string[] } {
     const queuedDuringCompaction = this.compactionPrompts;
     this.compactionPrompts = [];
+    this.heldEpoch += 1;
     for (const entry of [...clearedPiQueues.steering, ...clearedPiQueues.followUp]) {
       this.slashExpansions.delete(this.normalizedExpansionKey(entry));
     }
@@ -155,12 +169,24 @@ export class PiPromptQueue {
     if (this.isFlushingCompactionQueue || this.compactionPrompts.length === 0) return;
     this.isFlushingCompactionQueue = true;
     let restoredAfterPreflightFailure = false;
-    const queuedPrompts = this.compactionPrompts;
-    this.compactionPrompts = [];
+    const retained = options.retain
+      ? this.compactionPrompts.filter((entry) => options.retain!(entry.streamingBehavior))
+      : [];
+    const queuedPrompts = options.retain
+      ? this.compactionPrompts.filter((entry) => !options.retain!(entry.streamingBehavior))
+      : this.compactionPrompts;
+    this.compactionPrompts = retained;
+    if (queuedPrompts.length === 0) {
+      this.isFlushingCompactionQueue = false;
+      return;
+    }
     options.onQueueChanged();
+    const epoch = this.heldEpoch;
 
     try {
       for (let index = 0; index < queuedPrompts.length; index += 1) {
+        // The user cleared the queue mid-flush; the rest was cancelled with it.
+        if (this.heldEpoch !== epoch) return;
         const queued = queuedPrompts[index]!;
         try {
           if (options.willRetry || index > 0) {
@@ -169,6 +195,8 @@ export class PiPromptQueue {
             await options.startPrompt(queued.prompt, queued.streamingBehavior);
           }
         } catch (error) {
+          if (this.heldEpoch !== epoch) return;
+          // Undelivered entries were submitted before anything held later, so they go first.
           this.compactionPrompts = [...queuedPrompts.slice(index), ...this.compactionPrompts];
           restoredAfterPreflightFailure = true;
           options.onQueueChanged();
@@ -178,7 +206,8 @@ export class PiPromptQueue {
       }
     } finally {
       this.isFlushingCompactionQueue = false;
-      if (!restoredAfterPreflightFailure && !options.isCompacting() && this.compactionPrompts.length > 0) {
+      // Retained entries wait for their owner (the reload drain); re-flushing them here would spin.
+      if (!options.retain && !restoredAfterPreflightFailure && !options.isCompacting() && this.compactionPrompts.length > 0) {
         queueMicrotask(() => void this.flushCompactionQueue(options));
       }
     }

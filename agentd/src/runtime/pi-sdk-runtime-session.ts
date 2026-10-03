@@ -14,7 +14,7 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage,subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
+import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeResourceReloadHost,RuntimeResourceReloadOutcome,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
@@ -69,6 +69,8 @@ textFromPiMessageContent,
 import { createBaseAutocompleteProvider,PICKY_BUILTIN_SLASH_COMMANDS } from "./pi-autocomplete-provider.js";
 import { isRegisteredExtensionCommand,PiPromptQueue,type PiQueueSnapshot } from "./pi-prompt-queue.js";
 import { WriteFileMetadataTracker } from "./write-file-path.js";
+import { ResourceReloadScheduler } from "./pi-resource-reload.js";
+import { handlePiBuiltinSlashCommand } from "./pi-builtin-slash-commands.js";
 import { compactionResultFromPiEvent } from "./pi-compaction-result.js";
 
 // Soft cap for the per-session `slashExpansions` map. A long-lived Pi session can submit many
@@ -125,6 +127,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private asyncSettled = true;
   private disposed = false;
   private disposePromise?: Promise<void>;
+  private readonly resourceReload: ResourceReloadScheduler;
 
   constructor(
     readonly id: string,
@@ -137,6 +140,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     private readonly asyncFence?: AsyncTaskModelFence,
   ) {
     this.promptQueue = new PiPromptQueue(id, SLASH_EXPANSION_MAP_CAP);
+    this.resourceReload = this.createResourceReloadScheduler();
     this.uiBridge = this.createBridge();
     this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
     this.runtime.setRebindSession(async () => this.bindCurrentSession());
@@ -146,7 +150,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         await retry();
         // A failed settled-hook save leaves the idle latch closed. Recovery must
         // refresh it without waiting for another model turn to emit agent_settled.
-        if (!this.disposed) { this.asyncSettled = this.runtime.session.isIdle; this.emit({ type: "async_task_idle" }); }
+        if (!this.disposed) { this.asyncSettled = this.runtime.session.isIdle; this.emit({ type: "async_task_idle" }); this.resourceReload.schedule(); }
       };
     }
   }
@@ -177,6 +181,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.assertNotDisposed();
     logAgentd("pi prompt", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     if (await this.handleBuiltinSlashCommand(prompt.text)) return;
+    if (await this.holdWhileReloading(prompt)) return;
     const wasStreaming = this.runtime.session.isStreaming;
     const agentStartsBefore = this.agentStartCount;
     const expected = this.expectInputDelivery(prompt.text);
@@ -262,6 +267,8 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       this.initialPromptTimer = undefined;
     }
     if (hadActiveTurn) this.pendingAbortAcknowledgements += 1;
+    // A full abort also cancels input held for a plugin reload or compaction (main agent PTT abort).
+    if (this.promptQueue.discardCompactionPrompts()) this.emitCombinedQueueUpdate();
     this.uiBridge.cancelAll();
     this.runtime.session.abortCompaction();
     await this.runtime.session.abort();
@@ -280,6 +287,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     logAgentd("pi runtime dispose", { sessionId: this.id });
     if (this.initialPromptTimer) clearTimeout(this.initialPromptTimer);
     this.initialPromptTimer = undefined;
+    this.resourceReload.dispose();
     this.autocompleteQueryController?.abort();
     this.autocompleteQueryController = undefined;
     this.cancelDeferredTerminalError();
@@ -778,9 +786,10 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
         // Settled hooks have returned, but deferred actions may still be in preflight.
         // Their tickets and the SDK/host queues remain completion obligations.
         void this.asyncFence.drain().then(() => {
-          if (!this.disposed && this.runtime.session === session) { this.asyncSettled = session.isIdle; this.emit({ type: "async_task_idle" }); }
+          if (!this.disposed && this.runtime.session === session) { this.asyncSettled = session.isIdle; this.emit({ type: "async_task_idle" }); this.resourceReload.schedule(); }
         }).catch((error) => this.emit({ type: "log", line: `Async task idle persistence blocked: ${messageOf(error)}` }));
       }
+      if (record.type === "agent_settled" || record.type === "compaction_end") this.resourceReload.schedule();
       // General pi's footer recomputes context usage on every render. It therefore advances at
       // intermediate transcript boundaries (assistant/tool-result message_end), not only when the
       // whole agent run becomes terminal. Mirror those stable boundaries here so Picky's HUD keeps
@@ -1187,13 +1196,17 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.pendingTerminalErrorTimer = undefined;
   }
 
-  private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<boolean> {
+  private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp", options: { fromHeldQueue?: boolean } = {}): Promise<boolean> {
     if (await this.handleBuiltinSlashCommand(prompt.text)) return true;
+    if (!options.fromHeldQueue && await this.holdWhileReloading(prompt)) return false;
     const extensionCommands = this.runtime.session.extensionRunner.getRegisteredCommands();
     if (streamingBehavior && piIsCompacting(this.runtime.session) && !isRegisteredExtensionCommand(prompt.text, extensionCommands)) {
       this.promptQueue.enqueueDuringCompaction(prompt, streamingBehavior);
       this.emitCombinedQueueUpdate();
       return false;
+    }
+    if (!options.fromHeldQueue && this.shouldHoldForResourceReload(prompt, streamingBehavior, extensionCommands)) {
+      return !this.holdForReload(prompt, "before"); // Pi expands /skill: at enqueue and drains its queue in-turn.
     }
     return this.promptUntilAccepted(prompt.text, {
       images: await imageOptions(prompt.imagePaths),
@@ -1221,94 +1234,88 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   private async flushCompactionQueue(willRetry: boolean): Promise<void> {
+    if (this.resourceReload.pending) {
+      // Idle: reload, then the drain delivers held prompts. Busy: steering stays in this turn.
+      if (!this.runtime.session.isStreaming && !piIsCompacting(this.runtime.session)) await this.resourceReload.run();
+      await this.flushHeldPromptQueue(willRetry, (behavior) => behavior === "followUp");
+      return;
+    }
+    await this.flushHeldPromptQueue(willRetry);
+  }
+
+  private async flushHeldPromptQueue(willRetry: boolean, retain?: (behavior: "steer" | "followUp") => boolean): Promise<void> {
     await this.promptQueue.flushCompactionQueue({
       willRetry,
       isCompacting: () => piIsCompacting(this.runtime.session),
-      startPrompt: async (prompt, behavior) => { await this.promptWithOptions(prompt, behavior); },
+      startPrompt: async (prompt, behavior) => { await this.promptWithOptions(prompt, behavior, { fromHeldQueue: true }); },
       queuePrompt: (prompt, behavior) => this.queuePromptForActiveTurn(prompt, behavior),
       onQueueChanged: () => this.emitCombinedQueueUpdate(),
       onError: (error) => this.emitPromptFailureStatus(error),
+      ...(retain ? { retain } : {}),
     });
   }
 
-  // Pi exposes session.setSessionName(), runtime.newSession(), and session.compact() as public
-  // APIs but only its TUI interactive-mode wires them to /name, /new, and /compact slash commands.
-  // Picky doesn't run that mode, so we intercept the built-in slash commands here before they would otherwise be
-  // forwarded to the LLM as ordinary user text. The synthetic completed/noTurnRan status keeps
-  // higher layers from treating the call as a real agent turn (no Pickle-completion notification,
-  // no artifact materialization).
-  private async handleBuiltinSlashCommand(text: string): Promise<boolean> {
-    const trimmed = text.trim();
-    if (trimmed === "/new") {
-      try {
-        const result = await this.newSession();
-        if (result.cancelled) {
-          this.emit({ type: "log", line: "/new cancelled by extension" });
-          this.emit({ type: "status", status: "completed", summary: "/new cancelled", noTurnRan: true, preserveSessionState: true });
-        }
-      } catch (error) {
-        const message = messageOf(error);
-        logAgentd("slash /new failed", { sessionId: this.id, error: message });
-        this.emit({ type: "status", status: "failed", summary: `/new failed: ${message}`, noTurnRan: true });
-      }
-      return true;
-    }
-    if (trimmed === "/name" || trimmed.startsWith("/name ")) {
-      const name = trimmed.replace(/^\/name\s*/, "").trim();
-      if (!name) {
-        this.emit({ type: "log", line: "/name requires a name argument (usage: /name <session name>)" });
-        this.emit({ type: "status", status: "completed", summary: "/name: missing argument", noTurnRan: true, preserveSessionState: true });
-        return true;
-      }
-      try {
-        this.runtime.session.setSessionName(name);
-        this.emit({ type: "log", line: `session renamed to "${name}"` });
-        // Pi emits session_info_changed internally, so the title flips via the normalized event.
-        this.emit({ type: "status", status: "completed", summary: `Session renamed to ${name}`, noTurnRan: true, preserveSessionState: true });
-      } catch (error) {
-        const message = messageOf(error);
-        logAgentd("slash /name failed", { sessionId: this.id, error: message });
-        this.emit({ type: "log", line: `/name failed: ${message}` });
-        this.emit({ type: "status", status: "completed", summary: `/name failed: ${message}`, noTurnRan: true, preserveSessionState: true });
-      }
-      return true;
-    }
-    if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
-      const instructions = trimmed.replace(/^\/compact\s*/, "").trim() || undefined;
-      await this.compact(instructions);
-      return true;
-    }
-    if (trimmed === "/reload") {
-      if (this.runtime.session.isStreaming) {
-        this.emit({ type: "log", line: "/reload rejected: wait for the current response to finish" });
-        this.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
-        return true;
-      }
-      if (piIsCompacting(this.runtime.session)) {
-        this.emit({ type: "log", line: "/reload rejected: wait for compaction to finish" });
-        this.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the session is compacting", noTurnRan: true, preserveSessionState: true });
-        return true;
-      }
-      await this.asyncTasks?.prepareReplacement();
-      this.pendingExtensionUiRequestIds.clear();
-      this.emit({ type: "status", status: "running", summary: "Reloading Pi resources…" });
-      try {
-        const outcome = await piTryReload(this.runtime.session, this.id, this.asyncTasks ? { beforeSessionStart: () => this.bindAsyncTasks(this.runtime.session) } : undefined);
-        if (!outcome.supported) {
-          this.emit({ type: "status", status: "failed", summary: "/reload is not supported by this Pi runtime", noTurnRan: true });
-          return true;
-        }
-        this.emit({ type: "log", line: "pi resources reloaded" });
-        this.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true });
-        await this.waitForAsyncReloadReadiness();
-      } catch (error) {
-        const message = messageOf(error);
-        logAgentd("slash /reload failed", { sessionId: this.id, error: message });
-        this.emit({ type: "status", status: "failed", summary: `/reload failed: ${message}`, noTurnRan: true });
-      }
-      return true;
-    }
-    return false;
+  get hasPendingResourceReload(): boolean { return this.resourceReload.pending; }
+  setResourceReloadHost(host: RuntimeResourceReloadHost): void { this.resourceReload.setHost(host); }
+  requestResourceReload(): Promise<RuntimeResourceReloadOutcome> { return this.resourceReload.request(); }
+  settleResourceReload(): Promise<RuntimeResourceReloadOutcome> { return this.resourceReload.finishBeforeInput(); }
+
+  private createResourceReloadScheduler(): ResourceReloadScheduler {
+    return new ResourceReloadScheduler({
+      sessionId: this.id, isDisposed: () => this.disposed,
+      isBusy: () => this.runtime.session.isStreaming || piIsCompacting(this.runtime.session),
+      isAdapterIdle: () => this.initialPromptTimer === undefined && this.pendingPromptPreflightDeliveryIds.size === 0
+        && this.pendingExtensionUiRequestIds.size === 0 && !this.promptQueue.isFlushing,
+      hasPendingExtensionUi: () => this.pendingExtensionUiRequestIds.size > 0, reload: () => this.reloadPiResources(),
+      prepareReplacement: async () => { await this.asyncTasks?.prepareReplacement(); }, waitForReadiness: () => this.waitForAsyncReloadReadiness(),
+      hasHeldPrompts: () => this.promptQueue.hasCompactionPrompts, flushHeldPrompts: () => this.flushHeldPromptQueue(false), log: (line) => this.emit({ type: "log", line }), emitReloaded: () => this.emit({ type: "resources_reloaded" }),
+    });
+  }
+
+  private shouldHoldForResourceReload(prompt: BuiltPrompt, streamingBehavior: "steer" | "followUp" | undefined, extensionCommands: readonly { invocationName: string }[]): boolean {
+    // Steering keeps its meaning only inside the current turn; extension commands run immediately.
+    return streamingBehavior === "followUp" && this.resourceReload.pending && this.runtime.session.isStreaming
+      && !isRegisteredExtensionCommand(prompt.text, extensionCommands);
+  }
+
+  // Reload before idle input (async hosts do it before reopening admission); hold input mid-reload.
+  private async holdWhileReloading(prompt: BuiltPrompt): Promise<boolean> {
+    if (!this.asyncTasks) await this.resourceReload.finishBeforeInput();
+    // Keep submission order: idle input queues behind held prompts or a drain delivering them.
+    const idle = !this.runtime.session.isStreaming && !piIsCompacting(this.runtime.session);
+    if (!this.resourceReload.reloading && !(idle && (this.resourceReload.draining || this.promptQueue.hasCompactionPrompts))) return false;
+    this.holdForReload(prompt, "during");
+    this.resourceReload.schedule();
+    return true;
+  }
+
+  private holdForReload(prompt: BuiltPrompt, phase: "before" | "during"): true {
+    this.promptQueue.enqueueDuringCompaction(prompt, "followUp");
+    this.emitCombinedQueueUpdate();
+    logAgentd("pi input held for plugin reload", { sessionId: this.id, phase, promptChars: prompt.text.length });
+    return true;
+  }
+
+  private reloadPiResources(): Promise<{ supported: boolean }> {
+    this.pendingExtensionUiRequestIds.clear();
+    return piTryReload(this.runtime.session, this.id, this.asyncTasks ? { beforeSessionStart: () => this.bindAsyncTasks(this.runtime.session) } : undefined);
+  }
+
+  private handleBuiltinSlashCommand(text: string): Promise<boolean> {
+    return handlePiBuiltinSlashCommand(text, {
+      sessionId: this.id,
+      emit: (event) => this.emit(event),
+      newSession: () => this.newSession(),
+      setSessionName: (name) => this.runtime.session.setSessionName(name),
+      compact: (instructions) => this.compact(instructions),
+      isStreaming: () => this.runtime.session.isStreaming,
+      isCompacting: () => piIsCompacting(this.runtime.session),
+      prepareReplacement: async () => { await this.asyncTasks?.prepareReplacement(); },
+      reloadGeneration: () => this.resourceReload.currentGeneration,
+      reload: () => this.reloadPiResources(),
+      markReloadApplied: (generation) => this.resourceReload.markApplied(generation),
+      waitForReloadReadiness: () => this.waitForAsyncReloadReadiness(),
+    });
   }
 
   private async waitForAsyncReloadReadiness(): Promise<void> {

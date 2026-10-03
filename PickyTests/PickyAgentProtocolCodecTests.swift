@@ -78,3 +78,22 @@ extension PickyAgentProtocolCodecTests {
         #expect(result.reason == nil)
     }
 }
+
+extension PickyAgentProtocolCodecTests {
+    @Test func decodesPluginsReloadedFromDaemonsWithAndWithoutFailedCount() throws {
+        func decode(_ extra: [String: Any]) throws -> PickyPluginsReloadedEvent? {
+            var payload: [String: Any] = [
+                "id": "event", "protocolVersion": pickyAgentProtocolVersion,
+                "timestamp": "2026-10-02T00:00:00Z", "type": "pluginsReloaded", "requestId": "r",
+                "pickyReloaded": true, "pickleReloadedCount": 1, "pickleAbortedCount": 0, "pickleDeferredCount": 0,
+            ]
+            payload.merge(extra) { _, new in new }
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            guard case .pluginsReloaded(let summary) = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data).event else { return nil }
+            return summary
+        }
+        // Older daemons omit failedCount; that must still decode as a successful apply.
+        #expect(try decode([:])?.failedCount == nil)
+        #expect(try decode(["failedCount": 2])?.failedCount == 2)
+    }
+}

@@ -803,6 +803,8 @@ struct PickyPluginsReloadedEvent: Decodable, Equatable {
     let pickleReloadedCount: Int
     let pickleAbortedCount: Int
     let pickleDeferredCount: Int
+    /// Sessions whose reload failed. Absent from older daemons.
+    var failedCount: Int? = nil
 }
 
 /// Reply to `getHubStatistics` / `resetHubStatistics`. `snapshot` is present

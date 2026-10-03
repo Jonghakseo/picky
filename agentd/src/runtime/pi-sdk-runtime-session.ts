@@ -69,6 +69,7 @@ textFromPiMessageContent,
 import { createBaseAutocompleteProvider,listSessionSlashCommands } from "./pi-autocomplete-provider.js";
 import { isRegisteredExtensionCommand,PiPromptQueue,type PiQueueSnapshot } from "./pi-prompt-queue.js";
 import { movePiFollowUpToSteering,removePiQueuedMessage,replacePiQueuedFollowUpText } from "./pi-queue-mutation.js";
+import { dropExpectedInputs, retargetExpectedInput, syncedQueueEdit, type ExpectedInputDelivery } from "./pi-expected-input-sync.js";
 import { PiExtensionInvoker } from "./pi-extension-invocation.js";
 import { WriteFileMetadataTracker } from "./write-file-path.js";
 import { ResourceReloadScheduler } from "./pi-resource-reload.js";
@@ -82,15 +83,6 @@ import { compactionResultFromPiEvent } from "./pi-compaction-result.js";
 const SLASH_EXPANSION_MAP_CAP = 64;
 const AUTOCOMPLETE_MAX_ITEMS = 20;
 const AUTOCOMPLETE_QUERY_TIMEOUT_MS = 2_000;
-
-interface ExpectedInputDelivery {
-  id: string;
-  text: string;
-  originatedBy: "user" | "main_agent" | "internal" | "pi_extension";
-  suppress: boolean;
-  queueKind?: "steering" | "followUp";
-  aliases?: Set<string>;
-}
 
 export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
@@ -581,6 +573,8 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   clearQueue(): { steering: string[]; followUp: string[] } {
     const cleared = this.runtime.session.clearQueue();
     for (const entry of [...cleared.steering, ...cleared.followUp]) this.skillEchoSuppressions.consume(entry);
+    dropExpectedInputs(this.expectedInputDeliveries, cleared.steering, "steering");
+    dropExpectedInputs(this.expectedInputDeliveries, cleared.followUp, "followUp");
     const result = this.promptQueue.clear(cleared);
     this.emitCombinedQueueUpdate();
     return result;
@@ -628,9 +622,9 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // Per-item edits address Pi's own queue positions, so an entry Picky is still holding for a
   // compaction flush is out of range and reports as "already gone" rather than editing a neighbour.
   private readonly onQueueMutated = (): void => this.emitCombinedQueueUpdate();
-  removeQueuedMessage(kind: "steering" | "followUp", index: number): boolean { return removePiQueuedMessage(this.runtime.session, kind, index, this.onQueueMutated); }
-  replaceQueuedFollowUpText(index: number, text: string): boolean { return replacePiQueuedFollowUpText(this.runtime.session, index, text, this.onQueueMutated); }
-  moveFollowUpToSteering(index: number): boolean { return movePiFollowUpToSteering(this.runtime.session, index, this.onQueueMutated); }
+  removeQueuedMessage(kind: "steering" | "followUp", index: number): boolean { return syncedQueueEdit(this.expectedInputDeliveries, this.piQueueSnapshot()[kind][index], () => removePiQueuedMessage(this.runtime.session, kind, index, this.onQueueMutated), (list, text) => dropExpectedInputs(list, [text], kind)); }
+  replaceQueuedFollowUpText(index: number, text: string): boolean { return syncedQueueEdit(this.expectedInputDeliveries, this.piQueueSnapshot().followUp[index], () => replacePiQueuedFollowUpText(this.runtime.session, index, text, this.onQueueMutated), (list, previous) => retargetExpectedInput(list, previous, "followUp", { text })); }
+  moveFollowUpToSteering(index: number): boolean { return syncedQueueEdit(this.expectedInputDeliveries, this.piQueueSnapshot().followUp[index], () => movePiFollowUpToSteering(this.runtime.session, index, this.onQueueMutated), (list, moved) => retargetExpectedInput(list, moved, "followUp", { queueKind: "steering" })); }
 
   private piQueueSnapshot(): PiQueueSnapshot {
     return {
@@ -1282,13 +1276,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return true;
   }
 
-  /**
-   * Picky reloads every live session on its own when plugins change. Extensions greet a
-   * reload like a fresh session (claude-hooks-bridge posts "loaded N hooks" and its
-   * SessionStart output), and each greeting would land in every Pickle's transcript.
-   * Drop info-level notifications for that background reload only; warnings and errors
-   * still surface, and a user-typed `/reload` keeps every notification.
-   */
+  /** Background plugin reloads drop extension info greetings; warnings and a typed `/reload` still show. */
   private async reloadPiResourcesQuietly(): Promise<{ supported: boolean }> {
     this.quietReloadDepth += 1;
     try {

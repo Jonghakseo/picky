@@ -187,3 +187,26 @@ it("keeps extension greetings out of the transcript during a background plugin r
     "[greeter] settings could not be parsed",
   ]));
 });
+
+it("shows an extension message whose text matches a queued follow-up the user removed", async () => {
+  let extensionApi: ExtensionAPI | undefined;
+  const f = await fixture({ extraExtension: (pi) => { extensionApi = pi; } });
+  const release = f.holdNextResponse();
+  await f.handle.followUp({ text: "first task", imagePaths: [] });
+  await vi.waitFor(() => expect(f.requests).toHaveLength(1));
+  await f.handle.followUp({ text: "check the deploy logs", imagePaths: [] });
+  expect(f.handle.getFollowUpMessages()).toEqual(["check the deploy logs"]);
+
+  // The user deletes the queued follow-up, then schedules the same words for later.
+  expect(f.handle.removeQueuedMessage!("followUp", 0)).toBe(true);
+  release();
+  await vi.waitFor(() => expect(f.handle.isStreaming).toBe(false));
+  f.events.length = 0;
+
+  // delayed-action fires and submits the text as an extension user message.
+  await extensionApi!.sendUserMessage("check the deploy logs");
+  await vi.waitFor(() => expect(f.events).toContainEqual(expect.objectContaining({
+    type: "input_message", role: "user", text: "check the deploy logs", originatedBy: "pi_extension",
+  })));
+  expect(f.events).not.toContainEqual(expect.objectContaining({ type: "input_delivery", text: "check the deploy logs" }));
+});

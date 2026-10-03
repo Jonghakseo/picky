@@ -1059,6 +1059,8 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     type: z.literal("packageUpdatesAvailable"),
     commandId: z.string().min(1),
     sources: z.array(z.string().min(1)),
+    /** Registry version each source would update to, when agentd could resolve it. */
+    latestVersions: z.record(z.string().min(1), z.string().min(1)).optional(),
     failed: z.boolean().optional(),
   }),
   EventBaseSchema.extend({

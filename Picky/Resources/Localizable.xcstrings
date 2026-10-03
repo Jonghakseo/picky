@@ -28278,6 +28278,227 @@
           }
         }
       }
+    },
+    "hub.plugins.updates.checking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking for plugin updates…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플러그인 업데이트 확인 중…"
+          }
+        }
+      },
+      "comment": "Plugins page: loading row while the first update lookup runs."
+    },
+    "hub.plugins.updates.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updates available: %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트 %lld개"
+          }
+        }
+      },
+      "comment": "Plugins page: header of the pending-updates card. Argument is the number of plugins that can update."
+    },
+    "hub.plugins.updates.extensionCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld extensions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "익스텐션 %lld개"
+          }
+        }
+      },
+      "comment": "Plugins page: pending-updates card summary, extension count."
+    },
+    "hub.plugins.updates.skillCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld skills"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스킬 %lld개"
+          }
+        }
+      },
+      "comment": "Plugins page: pending-updates card summary, skill count."
+    },
+    "hub.plugins.updates.updateAll": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update All"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 업데이트"
+          }
+        }
+      },
+      "comment": "Plugins page: updates every listed plugin one after another."
+    },
+    "hub.plugins.updates.updatingAll": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updating %lld/%lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트 중 %lld/%lld"
+          }
+        }
+      },
+      "comment": "Plugins page: Update All progress. Arguments are finished and total counts."
+    },
+    "hub.plugins.updates.updating": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updating"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트 중"
+          }
+        }
+      },
+      "comment": "Plugins page: one plugin row while its update runs."
+    },
+    "hub.plugins.updates.queued": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기 중"
+          }
+        }
+      },
+      "comment": "Plugins page: row waiting for its turn during Update All."
+    },
+    "hub.plugins.updates.done": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
+          }
+        }
+      },
+      "comment": "Plugins page: row whose update finished."
+    },
+    "hub.plugins.updates.allUpdated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %lld plugins."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플러그인 %lld개를 업데이트했어요."
+          }
+        }
+      },
+      "comment": "Plugins page: shown after every listed update finished."
+    },
+    "hub.plugins.updates.bundledVersion": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Newer version included with Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky에 포함된 새 버전"
+          }
+        }
+      },
+      "comment": "Plugins page: version line for a bundled plugin that the app update replaced."
+    },
+    "hub.plugins.updates.updateItem": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 업데이트"
+          }
+        }
+      },
+      "comment": "Accessibility label for a row update button. Argument is the plugin name."
+    },
+    "hub.plugins.updates.retryItem": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry updating %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 업데이트 다시 시도"
+          }
+        }
+      },
+      "comment": "Accessibility label for a failed row retry button. Argument is the plugin name."
     }
   },
   "version": "1.0"

@@ -192,7 +192,7 @@ enum PickyCuratedPluginInstaller {
     static func checkUpdates(
         client: any PickyAgentClient,
         timeoutNanoseconds: UInt64 = 30_000_000_000
-    ) async -> Result<Set<String>, CommandError> {
+    ) async -> Result<PickyAvailablePackageUpdates, CommandError> {
         await query(
             PickyCommandEnvelope(type: .checkPackageUpdates),
             client: client,
@@ -200,7 +200,7 @@ enum PickyCuratedPluginInstaller {
         ) { event, commandID in
             guard case .packageUpdatesAvailable(let result) = event, result.commandId == commandID else { return nil }
             if result.failed == true { throw CommandError.failed("Package update check failed.") }
-            return Set(result.sources)
+            return PickyAvailablePackageUpdates(sources: Set(result.sources), latestVersions: result.latestVersions ?? [:])
         }
     }
 

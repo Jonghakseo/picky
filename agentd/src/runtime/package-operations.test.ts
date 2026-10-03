@@ -92,6 +92,37 @@ describe("PackageOperations Cron lifecycle sequencing", () => {
     expect(events).toContainEqual({ type: "packageUpdatesAvailable", commandId: "safety-check", sources: ["npm:@example/plugin"] });
   });
 
+  it("reports the registry version for unranged npm updates and omits it when unresolvable", async () => {
+    const getLatestNpmVersion = vi.fn(async (name: string) => {
+      if (name === "@example/offline") throw new Error("registry unavailable");
+      return "0.3.1";
+    });
+    const manager = createDefaultPackageManager({ cwd: "/tmp", agentDir: "/tmp/unused-version-agent" }, {
+      createSettingsManager: () => SettingsManager.inMemory({}),
+      createPackageManager: () => ({
+        ...packageManager(),
+        getLatestNpmVersion,
+        checkForAvailableUpdates: async () => [
+          { source: "npm:@example/plugin", type: "npm", displayName: "@example/plugin" },
+          { source: "npm:@example/ranged@^1.0.0", type: "npm", displayName: "@example/ranged" },
+          { source: "npm:@example/offline", type: "npm", displayName: "@example/offline" },
+          { source: "git:github.com/example/repo", type: "git", displayName: "repo" },
+        ],
+      }),
+    });
+    const { operations, events } = subject({ packageManager: manager });
+
+    await operations.runUpdateCheck({} as WebSocket, "version-check");
+
+    expect(events).toContainEqual({
+      type: "packageUpdatesAvailable",
+      commandId: "version-check",
+      sources: ["npm:@example/plugin", "npm:@example/ranged@^1.0.0", "npm:@example/offline", "git:github.com/example/repo"],
+      latestVersions: { "npm:@example/plugin": "0.3.1" },
+    });
+    expect(getLatestNpmVersion).not.toHaveBeenCalledWith("@example/ranged");
+  });
+
   it("resolves setup only from existing configured package files without installing", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-cron-existing-"));
     const packageRoot = join(root, "npm", "node_modules", "@ryan_nookpi", "pi-extension-cron");

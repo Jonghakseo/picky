@@ -270,6 +270,8 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         var isBusy: Bool
         /// Other installed tools or skills with the same names. Blocks install; warns when installed.
         var conflicts: [PickyPackageConflict] = []
+        /// Registry version the update moves to, when agentd resolved it.
+        var latestVersion: String? = nil
 
         var id: String { plugin.id }
     }
@@ -290,8 +292,15 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
     private let installedVersionForSource: (String) -> String?
     private let trashItem: (URL) throws -> Void
     private var availableUpdateSources: Set<String> = []
-    private var hasCheckedForUpdates = false
-    private var isCheckingForUpdates = false
+    private var latestVersionsBySource: [String: String] = [:]
+    /// A successful registry lookup is reused for this long; later appearances
+    /// re-query so a release published while Picky stays open still surfaces.
+    static let updateCheckFreshness: TimeInterval = 10 * 60
+    private let now: () -> Date
+    private var lastSuccessfulUpdateCheck: Date?
+    /// The first lookup since launch, when nothing is known yet. Later re-checks stay silent.
+    @Published private(set) var isCheckingForUpdates = false
+    var hasCompletedUpdateCheck: Bool { lastSuccessfulUpdateCheck != nil }
     private var conflictsBySource: [String: [PickyPackageConflict]] = [:]
     private var conflictInspectionGeneration = 0
     var onPluginStateChanged: (() -> Void)?
@@ -303,12 +312,14 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
             guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return nil }
             return PickyCuratedPluginInstaller.installedVersion(source: source)
         },
-        trashItem: @escaping (URL) throws -> Void = PickyDuplicateResourceTrash.moveToTrash
+        trashItem: @escaping (URL) throws -> Void = PickyDuplicateResourceTrash.moveToTrash,
+        now: @escaping () -> Date = Date.init
     ) {
         self.plugins = plugins
         self.statusForSource = statusForSource
         self.installedVersionForSource = installedVersionForSource
         self.trashItem = trashItem
+        self.now = now
         refresh()
     }
 
@@ -322,7 +333,8 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
                 installedVersion: status.isInstalled ? installedVersionForSource(plugin.source) : nil,
                 hasUpdate: status.isInstalled && !status.isPinned && availableUpdateSources.contains(plugin.source),
                 isBusy: busyIDs.contains(plugin.id),
-                conflicts: conflictsBySource[plugin.source] ?? []
+                conflicts: conflictsBySource[plugin.source] ?? [],
+                latestVersion: latestVersionsBySource[plugin.source]
             )
         }
     }
@@ -348,7 +360,11 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
     }
 
     func checkUpdatesIfNeeded(pluginReloadController: PickyPluginReloadController) {
-        guard !hasCheckedForUpdates, !isCheckingForUpdates else { return }
+        guard !isCheckingForUpdates else { return }
+        if let lastSuccessfulUpdateCheck,
+           now().timeIntervalSince(lastSuccessfulUpdateCheck) < Self.updateCheckFreshness {
+            return
+        }
         isCheckingForUpdates = true
         Task { [weak self] in
             let result = await pluginReloadController.checkCuratedPackageUpdates()
@@ -356,11 +372,11 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
             self.isCheckingForUpdates = false
             guard !Task.isCancelled else { return }
             switch result {
-            case .success(let sources):
-                self.hasCheckedForUpdates = true
-                self.applyAvailableUpdates(sources)
+            case .success(let updates):
+                self.lastSuccessfulUpdateCheck = self.now()
+                self.applyAvailableUpdates(updates.sources, latestVersions: updates.latestVersions)
             case .failure:
-                self.hasCheckedForUpdates = false
+                break
             }
         }
     }
@@ -524,10 +540,12 @@ final class PickyCuratedPluginsViewModel: ObservableObject {
         mutationOutcome = MutationOutcome(pluginID: pluginID, result: result)
     }
 
-    func applyAvailableUpdates(_ sources: Set<String>) {
+    func applyAvailableUpdates(_ sources: Set<String>, latestVersions: [String: String] = [:]) {
         availableUpdateSources = sources
+        latestVersionsBySource = latestVersions
         for index in rows.indices {
             rows[index].hasUpdate = rows[index].status.isInstalled && !rows[index].status.isPinned && sources.contains(rows[index].plugin.source)
+            rows[index].latestVersion = latestVersions[rows[index].plugin.source]
         }
     }
 }

@@ -93,6 +93,8 @@ struct PickyHubPluginItem: Identifiable, Equatable {
     var bundledStatus: PickyBundledPluginStatus?
     /// Other installed copies of this plugin's tools or skills (curated packages only).
     var conflicts: [PickyPackageConflict] = []
+    /// Registry version an available update moves to (curated packages only, when known).
+    var latestVersion: String? = nil
 
     var canInstall: Bool {
         guard let bundledStatus else { return !isInstalled && conflicts.isEmpty }
@@ -156,6 +158,7 @@ struct PickyHubPluginItem: Identifiable, Equatable {
             && lhs.isBusy == rhs.isBusy
             && lhs.bundledStatus == rhs.bundledStatus
             && lhs.conflicts == rhs.conflicts
+            && lhs.latestVersion == rhs.latestVersion
     }
 }
 
@@ -180,6 +183,17 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
     private var failedRetriesByPluginID: [String: () -> Void] = [:]
     @Published private var errorsByPluginID: [String: String] = [:]
     @Published private var successesByPluginID: [String: String] = [:]
+    /// Plugins updated since the page appeared, so their row reads "Done" instead of vanishing.
+    @Published private var updatedPluginIDs: [String] = []
+    @Published private var bulkUpdate: BulkUpdate?
+
+    /// "Update All" runs one update at a time; agentd serializes package mutations anyway.
+    private struct BulkUpdate {
+        var queue: [String]
+        var currentID: String?
+        let total: Int
+        var finished = 0
+    }
 
     private struct PendingFeedback {
         let successKey: String
@@ -231,7 +245,8 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
                 progressMessage: pendingFeedbackByPluginID[row.id]?.progressMessage,
                 hasUpdate: row.hasUpdate,
                 isBusy: row.isBusy,
-                conflicts: row.conflicts
+                conflicts: row.conflicts,
+                latestVersion: row.hasUpdate ? row.latestVersion : nil
             )
         }
     }
@@ -294,7 +309,64 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
         items.first { $0.id == id }
     }
 
+    /// The section above the Plugins tabs, or `nil` when there is nothing to show.
+    var updatesSection: PickyHubPluginUpdates? {
+        let entries = items.compactMap { item -> PickyHubPluginUpdates.Entry? in
+            let wasUpdated = updatedPluginIDs.contains(item.id) && !item.hasUpdate
+            guard item.hasUpdate || wasUpdated else { return nil }
+            return PickyHubPluginUpdates.Entry(item: item, state: updateState(for: item, wasUpdated: wasUpdated))
+        }
+        let pendingCount = entries.filter { $0.state != .updated }.count
+        if let bulkUpdate {
+            return PickyHubPluginUpdates(phase: .updatingAll(done: bulkUpdate.finished, total: bulkUpdate.total), entries: entries)
+        }
+        if entries.isEmpty {
+            guard curated.isCheckingForUpdates, !curated.hasCompletedUpdateCheck else { return nil }
+            return PickyHubPluginUpdates(phase: .checking, entries: [])
+        }
+        if pendingCount == 0 {
+            return PickyHubPluginUpdates(phase: .allUpdated(count: entries.count), entries: entries)
+        }
+        return PickyHubPluginUpdates(phase: .ready, entries: entries)
+    }
+
+    private func updateState(for item: PickyHubPluginItem, wasUpdated: Bool) -> PickyHubPluginUpdates.State {
+        if wasUpdated { return .updated }
+        if item.isBusy || pendingFeedbackByPluginID[item.id] != nil { return .updating }
+        if bulkUpdate?.queue.contains(item.id) == true { return .queued }
+        if let error = errorsByPluginID[item.id] { return .failed(error) }
+        return .idle
+    }
+
+    func updateAll() {
+        guard bulkUpdate == nil else { return }
+        let ids = items.filter { $0.hasUpdate && !$0.isBusy && pendingFeedbackByPluginID[$0.id] == nil }.map(\.id)
+        guard !ids.isEmpty else { return }
+        bulkUpdate = BulkUpdate(queue: ids, total: ids.count)
+        advanceBulkUpdate()
+    }
+
+    private func advanceBulkUpdate() {
+        guard var bulk = bulkUpdate else { return }
+        while !bulk.queue.isEmpty {
+            let id = bulk.queue.removeFirst()
+            guard let item = item(id: id), item.hasUpdate else {
+                bulk.finished += 1
+                continue
+            }
+            bulk.currentID = id
+            bulkUpdate = bulk
+            update(item)
+            if pendingFeedbackByPluginID[id] != nil { return }
+            // The update could not start (already busy or gone); count it and move on.
+            bulk.currentID = nil
+            bulk.finished += 1
+        }
+        bulkUpdate = nil
+    }
+
     func refresh() {
+        if bulkUpdate == nil { updatedPluginIDs = [] }
         bundled?.refresh()
         curated.refresh()
         curated.checkUpdatesIfNeeded(pluginReloadController: pluginReloadController)
@@ -416,6 +488,10 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
             errorsByPluginID[outcome.pluginID] = nil
             failedRetriesByPluginID[outcome.pluginID] = nil
             lastError = nil
+            if pending?.successKey == "hub.plugins.feedback.updated", !updatedPluginIDs.contains(outcome.pluginID) {
+                updatedPluginIDs.append(outcome.pluginID)
+            }
+            finishBulkStep(for: outcome.pluginID)
             guard let pending else { return }
             feedbackPluginID = outcome.pluginID
             let message = L10n.t(pending.successKey, pending.title)
@@ -426,6 +502,7 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
             let message = error.localizedDescription
             errorsByPluginID[outcome.pluginID] = message
             lastError = message
+            finishBulkStep(for: outcome.pluginID)
             guard let pending else { return }
             failedRetriesByPluginID[outcome.pluginID] = pending.retry
             feedbackPluginID = outcome.pluginID
@@ -433,4 +510,43 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
             feedbackIsError = true
         }
     }
+
+    /// A failed step does not stop the run; its row keeps the error and a retry.
+    private func finishBulkStep(for pluginID: String) {
+        guard var bulk = bulkUpdate, bulk.currentID == pluginID else { return }
+        bulk.currentID = nil
+        bulk.finished += 1
+        bulkUpdate = bulk
+        advanceBulkUpdate()
+    }
+}
+
+/// What the Plugins page shows above its tabs.
+struct PickyHubPluginUpdates: Equatable {
+    enum Phase: Equatable {
+        /// First lookup since launch; nothing is known yet.
+        case checking
+        case ready
+        case updatingAll(done: Int, total: Int)
+        case allUpdated(count: Int)
+    }
+
+    enum State: Equatable {
+        case idle
+        case queued
+        case updating
+        case updated
+        case failed(String)
+    }
+
+    struct Entry: Identifiable, Equatable {
+        let item: PickyHubPluginItem
+        let state: State
+        var id: String { item.id }
+    }
+
+    let phase: Phase
+    let entries: [Entry]
+
+    var pendingEntries: [Entry] { entries.filter { $0.state != .updated } }
 }

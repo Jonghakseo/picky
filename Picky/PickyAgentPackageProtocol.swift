@@ -17,8 +17,24 @@ enum PickyPackageOperation: String, Decodable, Equatable {
 struct PickyPackageUpdatesAvailableEvent: Decodable, Equatable {
     let commandId: String
     let sources: [String]
+    /// Registry version each source would update to. Older daemons omit it, and
+    /// agentd leaves out sources whose version it could not resolve.
+    let latestVersions: [String: String]?
     /// `true` means agentd could not query the registry; callers may retry silently.
     let failed: Bool?
+
+    init(commandId: String, sources: [String], latestVersions: [String: String]? = nil, failed: Bool? = nil) {
+        self.commandId = commandId
+        self.sources = sources
+        self.latestVersions = latestVersions
+        self.failed = failed
+    }
+}
+
+/// Curated package sources with an available update and, when known, the target version.
+struct PickyAvailablePackageUpdates: Equatable, Sendable {
+    var sources: Set<String>
+    var latestVersions: [String: String] = [:]
 }
 
 /// Another installed tool or skill with the same name as one a curated package provides.

@@ -28,7 +28,8 @@ export class PackageOperationError extends Error {
 export interface PackageManager {
   installAndPersist(source: string): Promise<void>;
   removeAndPersist(source: string): Promise<boolean>;
-  checkAvailableUpdates(): Promise<Array<{ source: string }>>;
+  /** `latestVersion` is best effort; absent when the registry lookup is unavailable. */
+  checkAvailableUpdates(): Promise<Array<{ source: string; latestVersion?: string }>>;
   update(source: string): Promise<void>;
   resolveInstalledExtension?(source: string): Promise<string>;
   setProgressCallback(callback: ((event: ProgressEvent) => void) | undefined): void;
@@ -96,8 +97,14 @@ export function createDefaultPackageManager(
       await packageManager.installAndPersist(packageSource);
     },
     removeAndPersist: (packageSource) => packageManager.removeAndPersist(packageSource),
-    checkAvailableUpdates: async () => (await (packageManager as DefaultPackageManager).checkForAvailableUpdates())
-      .filter(({ source }) => !curatedPackageSafetyError(source)),
+    checkAvailableUpdates: async () => {
+      const updates = (await (packageManager as DefaultPackageManager).checkForAvailableUpdates())
+        .filter(({ source }) => !curatedPackageSafetyError(source));
+      return Promise.all(updates.map(async (update) => ({
+        source: update.source,
+        latestVersion: await lookupLatestNpmVersion(packageManager, update),
+      })));
+    },
     update: async (packageSource) => {
       const safetyError = curatedPackageSafetyError(packageSource);
       if (safetyError) throw new PackageOperationError("held", safetyError);
@@ -116,9 +123,31 @@ export function createDefaultPackageManager(
   };
 }
 
+/**
+ * Pi reports which packages are outdated but not the version they would move to.
+ * Its private `getLatestNpmVersion` resolves that with the same npm command and
+ * registry configuration as the update check, so the Hub can show `v0.3.0 → v0.3.1`.
+ * The seam is guarded: a missing method or failed lookup only drops the version.
+ */
+async function lookupLatestNpmVersion(
+  packageManager: object,
+  update: { source: string; type?: string; displayName?: string },
+): Promise<string | undefined> {
+  const lookup = (packageManager as { getLatestNpmVersion?: (spec: string) => Promise<string> }).getLatestNpmVersion;
+  if (typeof lookup !== "function" || update.type !== "npm" || !update.displayName) return undefined;
+  // Ranged or pinned sources may not move to the registry's latest version.
+  if (update.source !== `npm:${update.displayName}`) return undefined;
+  try {
+    const version = await lookup.call(packageManager, update.displayName);
+    return typeof version === "string" && version.length > 0 ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 type PackageOperation = "install" | "remove" | "update" | "setup";
 type PackageOperationEvent =
-  | { type: "packageUpdatesAvailable"; commandId: string; sources: string[]; failed?: boolean }
+  | { type: "packageUpdatesAvailable"; commandId: string; sources: string[]; latestVersions?: Record<string, string>; failed?: boolean }
   | { type: "packageConflicts"; commandId: string; conflicts: CuratedPackageConflict[]; failed?: boolean }
   | { type: "packageOperationProgress"; requestId: string; operation: Exclude<PackageOperation, "setup">; source: string; message: string }
   | { type: "packageOperationCompleted"; requestId: string; operation: PackageOperation; source: string; ok: boolean; errorMessage?: string; errorCode?: PackageOperationErrorCode; packageChanged?: boolean };
@@ -184,7 +213,15 @@ export class PackageOperations {
       try {
         try {
           const updates = await packageManager.checkAvailableUpdates();
-          this.dependencies.send(ws, { type: "packageUpdatesAvailable", commandId, sources: updates.map(({ source }) => source) });
+          const latestVersions = Object.fromEntries(updates.flatMap(({ source, latestVersion }) => (
+            latestVersion ? [[source, latestVersion] as const] : []
+          )));
+          this.dependencies.send(ws, {
+            type: "packageUpdatesAvailable",
+            commandId,
+            sources: updates.map(({ source }) => source),
+            ...(Object.keys(latestVersions).length > 0 ? { latestVersions } : {}),
+          });
         } catch (error) {
           logAgentd("package update check failed", {
             error: error instanceof Error ? error.message : String(error),

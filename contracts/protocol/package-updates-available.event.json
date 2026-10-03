@@ -4,6 +4,11 @@
   "timestamp": "2026-07-19T00:00:01.000Z",
   "type": "packageUpdatesAvailable",
   "commandId": "cmd-package-check-updates-001",
-  "sources": ["npm:@example/pi-extension"],
+  "sources": [
+    "npm:@example/pi-extension"
+  ],
+  "latestVersions": {
+    "npm:@example/pi-extension": "1.2.0"
+  },
   "failed": false
 }

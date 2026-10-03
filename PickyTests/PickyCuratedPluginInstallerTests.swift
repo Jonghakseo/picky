@@ -239,13 +239,13 @@ struct PickyCuratedPluginInstallerTests {
         var sentCommand: PickyCommandEnvelope?
         client.sendHandler = { command in
             sentCommand = command
-            client.availableUpdates(commandId: command.id, sources: [self.source])
+            client.availableUpdates(commandId: command.id, sources: [self.source], latestVersions: [self.source: "1.4.0"])
         }
 
         let result = await PickyCuratedPluginInstaller.checkUpdates(client: client)
 
         #expect(sentCommand?.type == .checkPackageUpdates)
-        #expect((try? result.get()) == Set([source]))
+        #expect((try? result.get()) == PickyAvailablePackageUpdates(sources: [source], latestVersions: [source: "1.4.0"]))
     }
 
     @Test func checkUpdatesReturnsFailureWhenDisconnected() async {
@@ -311,6 +311,111 @@ struct PickyCuratedPluginInstallerTests {
         viewModel.applyAvailableUpdates([source])
 
         #expect(viewModel.rows.first?.hasUpdate == false)
+    }
+
+    @Test @MainActor func updateAllRunsOneUpdateAtATimeAndContinuesPastAFailure() async throws {
+        let first = PickyCuratedPlugin.bashAsync
+        let second = PickyCuratedPlugin.webAccess
+        let client = FakeCuratedPluginAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        var updateCommands: [PickyCommandEnvelope] = []
+        var versions = [first.source: "0.3.0", second.source: "0.9.0"]
+        client.sendHandler = { command in
+            switch command.type {
+            case .checkPackageUpdates:
+                client.availableUpdates(
+                    commandId: command.id,
+                    sources: [first.source, second.source],
+                    latestVersions: [first.source: "0.3.1"]
+                )
+            case .inspectPackageConflicts:
+                client.conflicts(commandId: command.id, conflicts: [])
+            case .updatePackage:
+                updateCommands.append(command)
+            default:
+                break
+            }
+        }
+        let curated = PickyCuratedPluginsViewModel(
+            plugins: [first, second],
+            statusForSource: { _ in .installed(isPinned: false) },
+            installedVersionForSource: { versions[$0] }
+        )
+        let catalog = PickyHubPluginCatalogViewModel(curated: curated, pluginReloadController: controller)
+
+        catalog.refresh()
+        try await waitUntil { catalog.updatesSection?.phase == .ready }
+        let ready = try #require(catalog.updatesSection)
+        #expect(ready.entries.map(\.id) == [first.id, second.id])
+        #expect(ready.entries[0].item.latestVersion == "0.3.1")
+        #expect(ready.entries[1].item.latestVersion == nil)
+
+        catalog.updateAll()
+        try await waitUntil { updateCommands.count == 1 }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(updateCommands.count == 1, "The next update must wait for the current one to finish")
+        #expect(updateCommands[0].source == first.source)
+        #expect(catalog.updatesSection?.phase == .updatingAll(done: 0, total: 2))
+        #expect(catalog.updatesSection?.entries.map(\.state) == [.updating, .queued])
+
+        client.complete(requestId: updateCommands[0].id, operation: .update, source: first.source, ok: false, errorMessage: "registry unavailable")
+        try await waitUntil { updateCommands.count == 2 }
+        #expect(updateCommands[1].source == second.source)
+        versions[second.source] = "0.9.1"
+        client.complete(requestId: updateCommands[1].id, operation: .update, source: second.source, ok: true)
+
+        try await waitUntil { catalog.updatesSection?.phase == .ready }
+        let finished = try #require(catalog.updatesSection)
+        if case .failed = finished.entries[0].state {} else {
+            Issue.record("The failed update must stay listed with its error: \(finished.entries)")
+        }
+        #expect(finished.entries[1].state == .updated)
+        #expect(finished.entries[1].item.installedVersion == "0.9.1")
+        #expect(finished.pendingEntries.map(\.id) == [first.id])
+    }
+
+    @Test @MainActor func reopeningPluginsAfterTheFreshnessWindowFindsANewRelease() async throws {
+        let plugin = PickyCuratedPlugin.bashAsync
+        let client = FakeCuratedPluginAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        var published: [String] = []
+        var checks = 0
+        client.sendHandler = { command in
+            switch command.type {
+            case .checkPackageUpdates:
+                checks += 1
+                client.availableUpdates(commandId: command.id, sources: published)
+            case .inspectPackageConflicts:
+                client.conflicts(commandId: command.id, conflicts: [])
+            default:
+                break
+            }
+        }
+        var clock = Date(timeIntervalSince1970: 1_790_000_000)
+        let curated = PickyCuratedPluginsViewModel(
+            plugins: [plugin],
+            statusForSource: { _ in .installed(isPinned: false) },
+            installedVersionForSource: { _ in "0.3.0" },
+            now: { clock }
+        )
+        let catalog = PickyHubPluginCatalogViewModel(curated: curated, pluginReloadController: controller)
+
+        catalog.refresh()
+        try await waitUntil { curated.hasCompletedUpdateCheck }
+        #expect(catalog.updatesSection == nil)
+
+        published = [plugin.source]
+        clock.addTimeInterval(60)
+        catalog.refresh()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(checks == 1, "A recent result is reused")
+        #expect(catalog.updatesSection == nil)
+
+        clock.addTimeInterval(PickyCuratedPluginsViewModel.updateCheckFreshness)
+        catalog.refresh()
+        try await waitUntil { catalog.item(id: plugin.id)?.hasUpdate == true }
+        #expect(checks == 2)
+        #expect(catalog.updatesSection?.entries.map(\.id) == [plugin.id])
     }
 
     @Test @MainActor func duplicateOwnersBlockCatalogInstallUntilTheOtherCopyIsGone() async throws {
@@ -611,7 +716,7 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
         emit(.disconnected)
     }
 
-    func availableUpdates(commandId: String, sources: [String], failed: Bool? = nil) {
+    func availableUpdates(commandId: String, sources: [String], latestVersions: [String: String]? = nil, failed: Bool? = nil) {
         emit(.protocolEvent(PickyEventEnvelope(
             id: "event-package-updates-\(commandId)",
             protocolVersion: pickyAgentProtocolVersion,
@@ -619,6 +724,7 @@ private final class FakeCuratedPluginAgentClient: PickyAgentClient {
             event: .packageUpdatesAvailable(PickyPackageUpdatesAvailableEvent(
                 commandId: commandId,
                 sources: sources,
+                latestVersions: latestVersions,
                 failed: failed
             ))
         )))

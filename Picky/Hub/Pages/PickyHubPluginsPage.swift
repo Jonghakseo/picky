@@ -69,6 +69,15 @@ struct PickyHubPluginsPage: View {
                 )
                 .padding(.bottom, dependencies.pluginReloadController.needsAttention ? PickyHubTheme.Spacing.field : 0)
 
+                if let updates = catalog.updatesSection {
+                    PickyHubPluginUpdatesSection(
+                        updates: updates,
+                        onUpdateAll: { catalog.updateAll() },
+                        onUpdate: { update($0) }
+                    )
+                    .padding(.bottom, PickyHubTheme.Spacing.group)
+                }
+
                 sectionPicker
                     .padding(.bottom, PickyHubTheme.Spacing.field)
 

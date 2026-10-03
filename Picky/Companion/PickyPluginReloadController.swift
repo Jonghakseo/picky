@@ -90,7 +90,7 @@ final class PickyPluginReloadController: ObservableObject {
         await PickyCuratedPluginInstaller.remove(source: source, client: client)
     }
 
-    func checkCuratedPackageUpdates() async -> Result<Set<String>, PickyCuratedPluginInstaller.CommandError> {
+    func checkCuratedPackageUpdates() async -> Result<PickyAvailablePackageUpdates, PickyCuratedPluginInstaller.CommandError> {
         await PickyCuratedPluginInstaller.checkUpdates(client: client)
     }
 

@@ -58,7 +58,7 @@ The sidebar contains these eight destinations:
 - **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
 - **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.
 - **Scheduled jobs**: a read-only calendar of schedules registered with the Cron plugin. Week or month view shows recorded runs and dashed projections for recurring jobs, with an agenda list and filters; click a day entry to read or copy the instructions of that run. Create or manage schedules on the Plugins page by talking to Picky.
-- **Plugins**: three tabs. **Extensions** and **Skills** list the curated Pi plugin catalog by type; search or filter by category, view details, then install, update, remove, or set up supported plugins. **MCP servers** manages MCP servers. Changes that require Pi to reload are surfaced in Hub, with confirmation when work is active.
+- **Plugins**: three tabs. **Extensions** and **Skills** list the curated Pi plugin catalog by type; search or filter by category, view details, then install, update, remove, or set up supported plugins. **MCP servers** manages MCP servers. Changes apply to main Picky and live Pickles automatically.
 - **Recent Conversation**: the Picky main-agent timeline and composer.
 - **Settings**: grouped controls for Picky's behavior, accounts, local data, and diagnostics.
 
@@ -86,6 +86,8 @@ Before installing, Hub checks your Pi directory for another copy that registers 
 
 When an install, update, or removal fails, Hub shows a short explanation of the cause instead of raw npm output.
 
+A successful install, update, or removal applies to main Picky and every live Pickle without a manual reload. Idle sessions reload right away; a session that is working reloads when its current turn ends, so no work is aborted. Follow-ups sent while a reload is waiting are delivered after it; steers stay in the current turn. If a reload fails or times out, sessions keep the previous plugins and Hub shows the error with **Retry**.
+
 Hub checks npm for newer versions of installed curated plugins. When an installed, non-pinned plugin has an update available, **Update** appears with its other actions.
 
 Memory Layer and Cron installs and updates are temporarily blocked while the safe migration is validated; their update offers are hidden. Existing installations are not automatically changed. Plugin reload alone does not replace every Picky or external Pi runtime. Before upgrading these packages outside Hub, stop old writers and active scheduled work, back up memory/session/cron data, and follow the [extension safety cutover](extension-safety-cutover.md). Do not assume restarting Picky also stops external Pi terminals.
@@ -101,7 +103,7 @@ The **MCP servers** tab on the Plugins page connects [Model Context Protocol](ht
 - Each row shows the connection state and tool count. HTTP servers that use OAuth show **Sign in**, which opens the authorization page in the browser; Pi stores the tokens in `~/.pi/agent/mcp-auth.json`.
 - The **Enabled** switch and **Remove** edit the shared `mcp.json`, so they affect Pi terminals too.
 
-Adding, removing, enabling, or changing a server's scope applies after the plugin reload that Hub offers, or in new sessions. MCP tools are reached through Pi's `codemode` tool by default; a server's `exposure` setting in `mcp.json` changes that. Every Pickle starts its own connections to the stdio servers in its scope.
+Adding, removing, enabling, or changing a server's scope applies to live sessions through the same automatic reload. MCP tools are reached through Pi's `codemode` tool by default; a server's `exposure` setting in `mcp.json` changes that. Every Pickle starts its own connections to the stdio servers in its scope.
 
 ### 2.4 Settings
 
@@ -458,6 +460,27 @@ Keyboard behavior inside the composer:
 | Up / Down | Navigate autocomplete. |
 | Option + Up | Pull queued messages back into the composer and clear the queue. |
 
+#### Queued steers and scheduled messages
+
+A steer sent while the Pickle is busy appears in the thread right away as your message, dimmed until the Pickle takes it. Under it, **Edit in composer** pulls it back into the composer and **Cancel send** removes it after a confirmation.
+
+Follow-ups and timed messages wait outside the thread, in a one-line **scheduled** bar above the composer that shows the count and the next delivery. Click it to open the list grouped by when each message goes out. Each row offers **Send now**, **Edit** (the text moves into the composer; Return saves), and **Delete** with an inline confirmation.
+
+#### Send when
+
+The chevron on the right of the send button opens **Send when**:
+
+| Option | Delivery |
+| --- | --- |
+| After this reply (`Option + Return`) | Queued as a follow-up for when the current reply ends. |
+| In 5 min / In 1 h | That long after you pick it. |
+| Tomorrow at 9:00 AM | The next calendar day at 9:00, even shortly after midnight. |
+| Custom time | Opens a date and time picker in the same menu. |
+
+In **Custom time**, the date menu lists the next two weeks; **Other date…** opens a month calendar for dates up to a year ahead. Type the time (for example `15:30`, `1530`, `3pm`, or `오후 3시`) or pick it from 15-minute steps. A time typed without AM/PM means the next time it occurs on the chosen day. **Schedule** stays disabled for an unreadable or past time.
+
+Timed options need the delayed action plugin; without it they stay visible but disabled, with an **Install** link. Timed messages send text only, so they are disabled while the draft has attachments or armed screen context. The menu is unavailable while you edit a scheduled message. A timed message keeps its exact time; if the Mac is asleep then, it is sent shortly after the Mac wakes.
+
 ### 8.4 Steer vs follow-up
 
 - **Steer**: changes or directs what the currently running/failed/cancelled agent should do next.
@@ -560,6 +583,8 @@ The footer above the composer shows the number of running tasks. Expand it to se
 ### 8.12 Extension message bubbles
 
 Other Pi extension messages, such as `web-search-content-ready` or `prompt-suggest-lite-status`, can appear in the conversation with their `customType` label. Long messages start collapsed with a preview of each blank-line separated block, up to ten lines. Click the header to expand the full output, or right-click to copy it or open it in the report viewer.
+
+Extension notices show up to four lines or 180 characters; **Expand** shows the rest in the bubble.
 
 ### 8.13 Tool History viewer
 

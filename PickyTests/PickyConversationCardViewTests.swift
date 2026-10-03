@@ -810,19 +810,25 @@ struct PickyConversationCardViewTests {
         #expect(bubble.displayedMarkdownPreview == "/Users/me/project 확인해줘")
     }
 
-    @Test func extensionNotifySystemMessageRendersSeverityBubbleAndReportGate() {
-        let longText = Array(repeating: "\u{001B}[38;5;214mPi extension produced a detailed warning.\u{001B}[39m", count: 30).joined(separator: "\n")
+    @Test func extensionNotifySystemMessageShowsFourLinesAndExpandsInPlace() {
+        let longText = Array(repeating: "\u{001B}[38;5;214mPi extension warning.\u{001B}[39m", count: 30).joined(separator: "\n")
         let notifyMessage = message("m-notify", kind: .system, text: longText, notifyType: .warning)
         let session = makeConversationSession(status: .running, messages: [notifyMessage])
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
-        let bubble = PickyNotifyBubbleView(message: notifyMessage, onOpenAsReport: {})
+        let bubble = PickyNotifyBubbleView(message: notifyMessage)
 
         #expect(snapshot.notifyBubbleCount == 1)
-        #expect(bubble.shouldOfferReport)
+        #expect(bubble.isExpandable)
         #expect(bubble.previewMarkdown.hasSuffix("..."))
+        #expect(bubble.previewMarkdown.split(separator: "\n").count == PickyNotifyBubbleView.previewMaxLines)
         #expect(!bubble.previewMarkdown.contains("[38;5;214m"))
         #expect(notifyMessage.openAsReportMarkdown?.contains("[38;5;214m") == false)
+
+        // A short notice shows whole, with nothing to expand.
+        let short = PickyNotifyBubbleView(message: message("m-short", kind: .system, text: "loaded 5 hook(s)", notifyType: .info))
+        #expect(!short.isExpandable)
+        #expect(short.displayedMarkdown == "loaded 5 hook(s)")
     }
 
     @Test func compactFailureSystemMessageRendersDedicatedBubble() {

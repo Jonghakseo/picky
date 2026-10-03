@@ -84,9 +84,16 @@ struct PickyAgentBubbleView: View {
 
 struct PickyNotifyBubbleView: View {
     let message: PickySessionMessage
-    var onOpenAsReport: (() -> Void)? = nil
 
+    @State private var isExpanded = false
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
+
+    /// Extension notices are side information, so they stay short in the
+    /// transcript and open in place instead of in the report window.
+    static let previewMaxLines = 4
+    /// One source line can wrap into several on screen. About four wrapped
+    /// lines of the bubble's width fit in this many characters.
+    static let previewMaxCharacters = 180
 
     var body: some View {
         let _ = PickyPerf.event("notify_bubble_body")
@@ -107,10 +114,21 @@ struct PickyNotifyBubbleView: View {
                         .background(Capsule(style: .continuous).fill(notifyType.tintColor.opacity(0.12)))
                         .overlay(Capsule(style: .continuous).strokeBorder(notifyType.tintColor.opacity(0.28), lineWidth: 0.6))
                 }
-                PickyConversationMarkdownText(
-                    markdown: previewMarkdown,
-                    onOpenAsReport: hoverIconAction
-                )
+                PickyConversationMarkdownText(markdown: displayedMarkdown)
+                if isExpandable {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.16)) { isExpanded.toggle() }
+                    } label: {
+                        Label(
+                            L10n.t(isExpanded ? "common.collapse" : "common.expand"),
+                            systemImage: isExpanded ? "chevron.up" : "chevron.down"
+                        )
+                        .font(PickyHUDTypography.statusSemibold)
+                        .foregroundColor(DS.Colors.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .hoverAffordance()
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -131,23 +149,26 @@ struct PickyNotifyBubbleView: View {
                     .stroke(notifyType.tintColor.opacity(0.34), lineWidth: 0.7)
             )
             .clipShape(notifyBubbleShape)
-            .openAsReportHoverIcon(onOpen: hoverIconAction, alignment: .topTrailing)
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: message.id) { _, _ in isExpanded = false }
     }
 
     var previewMarkdown: String {
-        PickyAgentResponsePreview.truncatedMarkdown(displayText)
+        PickyAgentResponsePreview.truncatedMarkdown(
+            displayText, maxLines: Self.previewMaxLines, maxCharacters: Self.previewMaxCharacters
+        )
     }
 
-    var shouldOfferReport: Bool {
-        PickyAgentResponsePreview.isTruncated(displayText)
+    var isExpandable: Bool {
+        PickyAgentResponsePreview.isTruncated(
+            displayText, maxLines: Self.previewMaxLines, maxCharacters: Self.previewMaxCharacters
+        )
     }
 
-    private var hoverIconAction: (() -> Void)? {
-        guard shouldOfferReport else { return nil }
-        return onOpenAsReport
+    var displayedMarkdown: String {
+        isExpanded ? displayText : previewMarkdown
     }
 
     private var displayText: String {

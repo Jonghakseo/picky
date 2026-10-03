@@ -553,10 +553,7 @@ struct PickyConversationListView: View {
         case .compactFailure:
             PickyCompactFailureBubbleView(message: message)
         case .notify:
-            PickyNotifyBubbleView(
-                message: message,
-                onOpenAsReport: openMessageReportAction(for: message)
-            )
+            PickyNotifyBubbleView(message: message)
         case .extensionCustomMessage(let presentation):
             PickyExtensionCustomMessageBubbleView(
                 presentation: presentation,

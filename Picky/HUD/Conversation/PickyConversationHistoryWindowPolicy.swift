@@ -9,6 +9,11 @@
 //  `userText` message id). Because the anchor is an absolute message id,
 //  newly streamed turns never push already-expanded history back out of view.
 //
+//  The list pins the window it showed when the Pickle opened (see
+//  `pinnedAnchorID`), so the base window only trims history on the next open.
+//  Trimming while the card is open moved every turn up the moment a new
+//  request crossed the base-window limit.
+//
 
 import Foundation
 
@@ -49,6 +54,24 @@ enum PickyConversationHistoryWindowPolicy {
             return 0
         }
         return messages[..<start].filter { $0.kind == .userText }.count
+    }
+
+    /// Anchor that keeps the currently shown window in place while the Pickle
+    /// stays open. A valid anchor (a `userText` still present in `messages`) is
+    /// kept; otherwise it pins to the oldest user turn of the default window,
+    /// which is exactly what is rendered right now, so pinning never moves rows.
+    /// Returns nil only when there is no `userText` to pin to yet.
+    static func pinnedAnchorID(
+        messages: [PickySessionMessage],
+        currentAnchorID: String?
+    ) -> String? {
+        if let currentAnchorID,
+           messages.contains(where: { $0.id == currentAnchorID && $0.kind == .userText }) {
+            return currentAnchorID
+        }
+        let userIndices = messages.indices.filter { messages[$0].kind == .userText }
+        guard let start = userIndices.suffix(baseTurnCount).first else { return nil }
+        return messages[start].id
     }
 
     /// Anchor id after expanding the window one step further into the past.

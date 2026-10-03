@@ -2410,6 +2410,42 @@ struct PickyConversationCardViewTests {
         #expect(start.map { messages[$0].id } == "u11")
     }
 
+    @Test func historyWindowPinnedAtOpenDoesNotTrimWhenNewTurnsArrive() {
+        // Opened with 10 turns: everything is visible. An 11th turn sent while
+        // the card stays open must not hide u1 (that shifted every row up).
+        var messages = turnMessages(count: 10)
+        let openAnchor = PickyConversationHistoryWindowPolicy.pinnedAnchorID(messages: messages, currentAnchorID: nil)
+        messages += turnMessages(count: 1, startingAt: 11)
+        let anchor = PickyConversationHistoryWindowPolicy.pinnedAnchorID(messages: messages, currentAnchorID: openAnchor)
+
+        #expect(PickyConversationHistoryWindowPolicy.visibleStartIndex(messages: messages, expandedAnchorID: anchor) == nil)
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: anchor) == 0)
+
+        // Reopening (no carried anchor) trims back to the default window.
+        let reopenAnchor = PickyConversationHistoryWindowPolicy.pinnedAnchorID(messages: messages, currentAnchorID: nil)
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: reopenAnchor) == 1)
+    }
+
+    @Test func historyWindowPinnedAtOpenKeepsHiddenCountWhenNewTurnsArrive() {
+        var messages = turnMessages(count: 70)
+        let openAnchor = PickyConversationHistoryWindowPolicy.pinnedAnchorID(messages: messages, currentAnchorID: nil)
+        #expect(openAnchor == "u61")
+
+        messages += turnMessages(count: 3, startingAt: 71)
+        let anchor = PickyConversationHistoryWindowPolicy.pinnedAnchorID(messages: messages, currentAnchorID: openAnchor)
+
+        #expect(anchor == "u61")
+        #expect(PickyConversationHistoryWindowPolicy.hiddenTurnCount(messages: messages, expandedAnchorID: anchor) == 60)
+    }
+
+    @Test func historyWindowPinRecoversFromVanishedAnchor() {
+        // Compaction can rewrite ids; a stale anchor re-pins to the default window.
+        let messages = turnMessages(count: 20)
+
+        #expect(PickyConversationHistoryWindowPolicy.pinnedAnchorID(messages: messages, currentAnchorID: "missing-id") == "u11")
+        #expect(PickyConversationHistoryWindowPolicy.pinnedAnchorID(messages: [], currentAnchorID: nil) == nil)
+    }
+
     @Test func historyWindowPolicyFallsBackToBaseWindowForUnknownAnchor() {
         let messages = turnMessages(count: 20)
 

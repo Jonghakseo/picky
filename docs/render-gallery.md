@@ -127,6 +127,8 @@ The gallery intentionally has no byte-for-byte golden images. Dashboard greeting
 
 Artifacts have a 2× pixel grid tagged 144 dpi, so a viewer shows them at their intended point size. Their detail is still 1 pixel per point: an offscreen `NSHostingView` composites layer contents at `contentsScale == 1`, and the alternatives that do rasterize at 2× lose fidelity (`ImageRenderer` ignores the host appearance and placeholder-fills AppKit-backed views, `dataWithPDF(inside:)` drops layer-drawn surfaces and symbols). Judge geometry, state, and contrast from these artifacts, not glyph antialiasing.
 
+A bare SwiftUI `Image(systemName:)` in a fixture or mockup view can be missing from these renders. Wrap it as `Text(Image(systemName:))`, which renders reliably. Production views that draw symbols through AppKit are unaffected.
+
 Offscreen material rendering can differ from a displayed child panel. The gallery does not prove live material/vibrancy, native menu/popover behavior, hover/press transitions, drag monitors, accessibility focus, Reduce Transparency fallback, or actual child-`NSPanel` anchoring. Inspect those behaviors separately when the relevant change requires it.
 
 ## Local-data dashboard audit

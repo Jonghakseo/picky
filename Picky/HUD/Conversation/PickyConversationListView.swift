@@ -85,9 +85,11 @@ struct PickyConversationListView: View {
     /// streaming update growing the content and its requested bottom scroll.
     @State private var isAwaitingProgrammaticBottomPin = false
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
-    /// Oldest visible `userText` message id once the user has loaded earlier
-    /// turns. nil = default window (last 10 user turns). Absolute id so newly
-    /// streamed turns never push expanded history back out of view.
+    /// Oldest visible `userText` message id. Pinned to the default window's
+    /// first turn when the Pickle opens and moved back by "load earlier turns".
+    /// Absolute id so newly streamed turns never push shown history out of view
+    /// while the card stays open; the default window trims again on next open.
+    /// nil only until the first `userText` arrives.
     @State private var expandedHistoryAnchorID: String?
     /// One-shot `scrollPosition` target used to keep the previously-top turn
     /// anchored while older turns are prepended in the same transaction
@@ -228,7 +230,10 @@ struct PickyConversationListView: View {
                 updatePinnedStateFromViewportGeometry(proxy: proxy)
             }
             .task(id: session.id) {
-                expandedHistoryAnchorID = nil
+                expandedHistoryAnchorID = PickyConversationHistoryWindowPolicy.pinnedAnchorID(
+                    messages: orderedMessages,
+                    currentAnchorID: nil
+                )
                 focusedQuestionMessageID = nil
                 pendingNavigationRequest = nil
                 activeNavigationRequestToken = 0
@@ -255,6 +260,7 @@ struct PickyConversationListView: View {
             .onAppear { reportViewportState() }
             .onChange(of: bottomScrollTrigger) { oldValue, newValue in
                 PickyPerf.event("conversation_bottom_scroll_trigger_changed")
+                pinHistoryWindow()
                 let shouldAutoScroll = PickyConversationScrollPolicy.shouldAutoScroll(
                     from: oldValue,
                     to: newValue,
@@ -920,6 +926,19 @@ struct PickyConversationListView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Freezes the shown window before the next turn can trim it. Runs after
+    /// each message change; the anchor matches what is already rendered, so
+    /// setting it does not move any row.
+    private func pinHistoryWindow() {
+        let pinned = PickyConversationHistoryWindowPolicy.pinnedAnchorID(
+            messages: orderedMessages,
+            currentAnchorID: expandedHistoryAnchorID
+        )
+        if pinned != expandedHistoryAnchorID {
+            expandedHistoryAnchorID = pinned
         }
     }
 

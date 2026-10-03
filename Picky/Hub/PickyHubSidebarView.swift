@@ -122,6 +122,7 @@ struct PickyHubSidebarFooter: View {
     let onFeedbackTapped: () -> Void
     @EnvironmentObject private var visibilityStore: PickyHUDVisibilityStore
     @EnvironmentObject private var appearanceStore: PickyAppearanceStore
+    @EnvironmentObject private var updaterController: PickyUpdaterController
     @State private var isQuitConfirmationPresented = false
     @State private var isDockPickerPresented = false
     @State private var screens = NSScreen.screens
@@ -157,6 +158,19 @@ struct PickyHubSidebarFooter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // Same action as Settings > Check for Updates. Builds without
+            // Sparkle (alpha) hide it instead of showing a dead control.
+            if updaterController.isAvailable {
+                footerRow(
+                    systemImage: "arrow.down.circle",
+                    title: "hub.settings.checkUpdates.action",
+                    foreground: PickyHubTheme.Colors.textSecondary,
+                    focusID: "checkUpdates",
+                    isEnabled: updaterController.canCheckForUpdates,
+                    action: updaterController.checkForUpdates
+                )
+            }
+
             footerRow(
                 systemImage: dockPresentation.systemImage,
                 title: LocalizedStringKey(dockPresentation.titleKey),
@@ -227,6 +241,7 @@ struct PickyHubSidebarFooter: View {
         title: LocalizedStringKey,
         foreground: Color,
         focusID: String,
+        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         PickyHubFooterButton(
@@ -237,6 +252,8 @@ struct PickyHubSidebarFooter: View {
             focusID: focusID,
             action: action
         )
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.5)
     }
 
     private func appearanceButton(systemName: String, target: PickyAppearanceMode, label: LocalizedStringKey) -> some View {

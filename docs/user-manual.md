@@ -115,6 +115,7 @@ The **Accounts and agents** group includes Pi OAuth connections for OpenAI Codex
 
 The controls at the bottom of the sidebar are always available:
 
+- **Check for updates**: runs the same check as **Settings → General → Check now**. Hidden in builds without automatic updates (Alpha), and dimmed while a check is in progress.
 - **Dock**: with one connected display, toggles that display's HUD dock. With multiple displays, opens a picker with a visibility checkbox for every connected display. Each choice persists independently; opening a Pickle from a notification restores the required dock.
 - **Send feedback (bug glyph)**: opens a feedback dialog from any Hub page. It supports Bug, Idea, or Other; text; up to 5 attachments (100 MB each, 250 MB total); and optional masked diagnostics. If feedback is unavailable in the build/environment, sending is disabled.
 - **Quit**: asks for confirmation before terminating Picky. When saved settings require a fresh process, this becomes **Restart**.

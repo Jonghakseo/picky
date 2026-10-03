@@ -31,7 +31,9 @@ GitHub의 이미지 구성은 변할 수 있다. 따라서 `PICKY_DEVELOPER_DIR`
 
 ## 릴리즈 게이트
 
-`beta-notarized-release.yml`은 `isolated-ui-tests.yml`을 재사용하고, `build-notarized-release`는 UI gate가 성공한 뒤에만 시작한다. 따라서 서명, notarization, DMG 업로드, Sparkle appcast 갱신은 실제 WindowServer 검증 실패 또는 측정 불가 상태에서 진행되지 않는다.
+`beta-notarized-release.yml`은 `isolated-ui-tests.yml`을 재사용한다. 빌드·서명·notarization(`build-notarized-release`)은 UI gate와 병렬로 실행되지만, 배포(`publish-release`)는 UI gate와 빌드가 모두 성공해야 시작한다. 따라서 GitHub Release 업로드, Sparkle appcast 갱신, 릴리즈 노트·Slack 알림은 실제 WindowServer 검증 실패 또는 측정 불가 상태에서 진행되지 않는다. gate가 실패해도 Apple notarization 제출은 이미 끝났을 수 있으나, 그 산출물은 workflow artifact로만 남는다.
+
+UI-effect 모드는 `build-for-testing`으로 한 번만 컴파일하고, 각 UI 계약을 `test-without-building`으로 따로 실행한다. 호출마다 새 테스트 호스트가 뜨므로 "계약마다 새 호스트에서 한 번" 규칙은 그대로다.
 
 격리 VM은 키보드 탐색 계약에 필요한 `AppleKeyboardUIMode=3`을 설정하고 정확한 Xcode 16.3 빌드 번호를 확인한다. 각 UI 계약은 새 호스트에서 한 번만 실행하며, 해당 테스트·suite·1건 실행의 실제 통과 로그를 모두 요구한다. skipped 또는 0건 실행은 실패다. 성능 검사는 7회 전환, 300ms 대조군, 새 JSON·PNG 증거를 유지한다. 렌더 준비 p95는 로컬 기준 100ms와 GitHub-hosted CI 기준 250ms로 분리하고, 포커스 획득 예산은 동일하게 유지한다. 조정 근거와 원시 샘플은 [성능 예산 기록](hub-focus-perf.md)에 남긴다.
 

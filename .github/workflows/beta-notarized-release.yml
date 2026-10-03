@@ -64,11 +64,31 @@ jobs:
       # historical release tags predate the isolated UI-test command.
       ref: ${{ github.event.release.tag_name || inputs.tag_name }}
 
+  # Building and notarizing does not publish anything, so it runs alongside the
+  # UI gate. `publish-release` needs both jobs, so a failed or unmeasurable gate
+  # still blocks every GitHub Release, appcast, and Slack side effect.
   build-notarized-release:
-    name: Build, notarize, and publish dmg
-    needs: isolated-ui
+    name: Build and notarize dmg
     runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 90
+    outputs:
+      meta_create_release_if_missing: ${{ steps.release_meta.outputs.create_release_if_missing }}
+      meta_prerelease: ${{ steps.release_meta.outputs.prerelease }}
+      meta_release_channel: ${{ steps.release_meta.outputs.release_channel }}
+      meta_release_name: ${{ steps.release_meta.outputs.release_name }}
+      meta_target_ref: ${{ steps.release_meta.outputs.target_ref }}
+      meta_target_tag: ${{ steps.release_meta.outputs.target_tag }}
+      package_build_label: ${{ steps.package.outputs.build_label }}
+      package_build_number: ${{ steps.package.outputs.build_number }}
+      package_dmg_submission_id: ${{ steps.package.outputs.dmg_submission_id }}
+      package_final_dmg_name: ${{ steps.package.outputs.final_dmg_name }}
+      package_git_sha: ${{ steps.package.outputs.git_sha }}
+      package_marketing_version: ${{ steps.package.outputs.marketing_version }}
+      package_release_channel: ${{ steps.package.outputs.release_channel }}
+      package_sha256: ${{ steps.package.outputs.sha256 }}
+      sparkle_ed_signature: ${{ steps.sparkle.outputs.ed_signature }}
+      sparkle_length_bytes: ${{ steps.sparkle.outputs.length_bytes }}
+      sparkle_update_zip_name: ${{ steps.sparkle.outputs.update_zip_name }}
 
     steps:
       - name: Check out release ref
@@ -474,15 +494,47 @@ jobs:
             echo "length_bytes=${length_bytes}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Upload workflow artifact copy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: picky-notarized-release-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            build/package/*.dmg
+            build/package/*-update.zip
+            build/package/dmg-notary-submit-result.json
+
+  publish-release:
+    name: Publish release after UI gate
+    needs: [isolated-ui, build-notarized-release]
+    runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
+    timeout-minutes: 30
+
+    steps:
+      # Publishing helpers such as update-sparkle-appcast.py come from the
+      # release ref, exactly as when this ran inside the build job.
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-notarized-release.outputs.meta_target_ref }}
+          fetch-depth: 1
+
+      - name: Download notarized release payload
+        uses: actions/download-artifact@v4
+        with:
+          name: picky-notarized-release-${{ github.run_id }}
+          path: build/package
+
       - name: Ensure GitHub Release exists
         id: github_release
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          RELEASE_NAME: ${{ steps.release_meta.outputs.release_name }}
-          CREATE_RELEASE_IF_MISSING: ${{ steps.release_meta.outputs.create_release_if_missing }}
-          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
-          RELEASE_CHANNEL: ${{ steps.release_meta.outputs.release_channel }}
+          TARGET_TAG: ${{ needs.build-notarized-release.outputs.meta_target_tag }}
+          RELEASE_NAME: ${{ needs.build-notarized-release.outputs.meta_release_name }}
+          CREATE_RELEASE_IF_MISSING: ${{ needs.build-notarized-release.outputs.meta_create_release_if_missing }}
+          PRERELEASE: ${{ needs.build-notarized-release.outputs.meta_prerelease }}
+          RELEASE_CHANNEL: ${{ needs.build-notarized-release.outputs.meta_release_channel }}
         run: |
           set -euo pipefail
           if gh release view "${TARGET_TAG}" >/dev/null 2>&1; then
@@ -516,33 +568,33 @@ jobs:
       - name: Upload dmg to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          FINAL_DMG: ${{ steps.package.outputs.final_dmg }}
+          TARGET_TAG: ${{ needs.build-notarized-release.outputs.meta_target_tag }}
+          FINAL_DMG: build/package/${{ needs.build-notarized-release.outputs.package_final_dmg_name }}
         run: |
           set -euo pipefail
           gh release upload "${TARGET_TAG}" "${FINAL_DMG}" --clobber
 
       - name: Upload Sparkle update zip to release
-        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        if: ${{ needs.build-notarized-release.outputs.meta_release_channel != 'alpha' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          UPDATE_ZIP: ${{ steps.sparkle.outputs.update_zip }}
+          TARGET_TAG: ${{ needs.build-notarized-release.outputs.meta_target_tag }}
+          UPDATE_ZIP: build/package/${{ needs.build-notarized-release.outputs.sparkle_update_zip_name }}
         run: |
           set -euo pipefail
           gh release upload "${TARGET_TAG}" "${UPDATE_ZIP}" --clobber
 
       - name: Update Sparkle appcast.xml
-        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        if: ${{ needs.build-notarized-release.outputs.meta_release_channel != 'alpha' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          UPDATE_ZIP_NAME: ${{ steps.sparkle.outputs.update_zip_name }}
-          ED_SIGNATURE: ${{ steps.sparkle.outputs.ed_signature }}
-          LENGTH_BYTES: ${{ steps.sparkle.outputs.length_bytes }}
-          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
-          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
-          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
+          TARGET_TAG: ${{ needs.build-notarized-release.outputs.meta_target_tag }}
+          UPDATE_ZIP_NAME: ${{ needs.build-notarized-release.outputs.sparkle_update_zip_name }}
+          ED_SIGNATURE: ${{ needs.build-notarized-release.outputs.sparkle_ed_signature }}
+          LENGTH_BYTES: ${{ needs.build-notarized-release.outputs.sparkle_length_bytes }}
+          MARKETING_VERSION: ${{ needs.build-notarized-release.outputs.package_marketing_version }}
+          BUILD_NUMBER: ${{ needs.build-notarized-release.outputs.package_build_number }}
+          RELEASE_CHANNEL: ${{ needs.build-notarized-release.outputs.package_release_channel }}
         run: |
           set -euo pipefail
           appcast_dir="${RUNNER_TEMP}/picky-appcast"
@@ -569,15 +621,15 @@ jobs:
       - name: Update release notes with notarized build metadata
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          FINAL_DMG_NAME: ${{ steps.package.outputs.final_dmg_name }}
-          SHA256: ${{ steps.package.outputs.sha256 }}
-          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
-          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
-          BUILD_LABEL: ${{ steps.package.outputs.build_label }}
-          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
-          GIT_SHA: ${{ steps.package.outputs.git_sha }}
-          DMG_SUBMISSION_ID: ${{ steps.package.outputs.dmg_submission_id }}
+          TARGET_TAG: ${{ needs.build-notarized-release.outputs.meta_target_tag }}
+          FINAL_DMG_NAME: ${{ needs.build-notarized-release.outputs.package_final_dmg_name }}
+          SHA256: ${{ needs.build-notarized-release.outputs.package_sha256 }}
+          MARKETING_VERSION: ${{ needs.build-notarized-release.outputs.package_marketing_version }}
+          BUILD_NUMBER: ${{ needs.build-notarized-release.outputs.package_build_number }}
+          BUILD_LABEL: ${{ needs.build-notarized-release.outputs.package_build_label }}
+          RELEASE_CHANNEL: ${{ needs.build-notarized-release.outputs.package_release_channel }}
+          GIT_SHA: ${{ needs.build-notarized-release.outputs.package_git_sha }}
+          DMG_SUBMISSION_ID: ${{ needs.build-notarized-release.outputs.package_dmg_submission_id }}
         run: |
           set -euo pipefail
           current_notes="${RUNNER_TEMP}/release-notes-current.md"
@@ -627,26 +679,26 @@ jobs:
           gh release edit "${TARGET_TAG}" --notes-file "${updated_notes}"
 
       - name: Mark stable release as Latest
-        if: ${{ steps.release_meta.outputs.release_channel == 'stable' }}
+        if: ${{ needs.build-notarized-release.outputs.meta_release_channel == 'stable' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          TARGET_TAG: ${{ needs.build-notarized-release.outputs.meta_target_tag }}
         run: gh release edit "${TARGET_TAG}" --latest
 
       - name: Notify Slack that notarized DMG is ready
         env:
           SLACK_BOT_TOKEN: ${{ secrets.PICKY_SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ env.PICKY_RELEASE_SLACK_CHANNEL_ID }}
-          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          RELEASE_NAME: ${{ steps.release_meta.outputs.release_name }}
+          TARGET_TAG: ${{ needs.build-notarized-release.outputs.meta_target_tag }}
+          RELEASE_NAME: ${{ needs.build-notarized-release.outputs.meta_release_name }}
           RELEASE_URL: ${{ steps.github_release.outputs.release_url }}
-          FINAL_DMG_NAME: ${{ steps.package.outputs.final_dmg_name }}
-          SHA256: ${{ steps.package.outputs.sha256 }}
-          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
-          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
-          BUILD_LABEL: ${{ steps.package.outputs.build_label }}
-          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
-          GIT_SHA: ${{ steps.package.outputs.git_sha }}
+          FINAL_DMG_NAME: ${{ needs.build-notarized-release.outputs.package_final_dmg_name }}
+          SHA256: ${{ needs.build-notarized-release.outputs.package_sha256 }}
+          MARKETING_VERSION: ${{ needs.build-notarized-release.outputs.package_marketing_version }}
+          BUILD_NUMBER: ${{ needs.build-notarized-release.outputs.package_build_number }}
+          BUILD_LABEL: ${{ needs.build-notarized-release.outputs.package_build_label }}
+          RELEASE_CHANNEL: ${{ needs.build-notarized-release.outputs.package_release_channel }}
+          GIT_SHA: ${{ needs.build-notarized-release.outputs.package_git_sha }}
         run: |
           set -euo pipefail
           if [[ -z "${SLACK_BOT_TOKEN}" ]]; then
@@ -729,13 +781,3 @@ jobs:
             --data @"${payload_path}")"
 
           python3 -c 'import json, sys; data = json.load(sys.stdin); ok = data.get("ok"); err = data.get("error", "unknown_error"); sys.exit(0 if ok else f"Slack notification failed: {err}")' <<<"${response}"
-
-      - name: Upload workflow artifact copy
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: picky-notarized-release-${{ github.run_id }}
-          if-no-files-found: ignore
-          path: |
-            build/package/*.dmg
-            build/package/dmg-notary-submit-result.json

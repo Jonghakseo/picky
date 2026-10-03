@@ -29,6 +29,7 @@ type NormalizedPiEvent =
   | { kind: "log"; line: string }
   | { kind: "assistantDelta"; delta: string }
   | { kind: "thinkingDelta"; delta: string }
+  | { kind: "toolCallPreparing" }
   | { kind: "status"; status: SessionStatus; summary?: string; finalAnswer?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { kind: "tool"; tool: PickyToolActivity }
   | { kind: "todoState"; todoState: PickyTodoState }
@@ -53,6 +54,11 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     if (assistantEvent.type === "thinking_delta" && typeof assistantEvent.delta === "string") {
       return { kind: "thinkingDelta", delta: assistantEvent.delta };
     }
+    // The model is streaming a tool call's arguments. A long `write` or `edit`
+    // spends most of its step here, before tool_execution_start. Deltas map to
+    // the same signal so preparation comes back if an interleaved thinking or
+    // text event cleared it in the daemon; the handler reports only transitions.
+    if (assistantEvent.type === "toolcall_start" || assistantEvent.type === "toolcall_delta") return { kind: "toolCallPreparing" };
     if (assistantEvent.type === "error") {
       return { kind: "status", status: "failed", summary: stringValue(asRecord(assistantEvent.error).errorMessage) ?? stringValue(assistantEvent.error) ?? "Agent error" };
     }
@@ -167,6 +173,7 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
   if (normalized.kind === "log") return { type: "log", line: normalized.line };
   if (normalized.kind === "assistantDelta") return { type: "assistant_delta", delta: normalized.delta };
   if (normalized.kind === "thinkingDelta") return { type: "thinking_delta", delta: normalized.delta };
+  if (normalized.kind === "toolCallPreparing") return { type: "tool_call_preparing" };
   if (normalized.kind === "status") {
     return {
       type: "status",
@@ -176,19 +183,7 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
       ...(normalized.assistantRun ? { assistantRun: normalized.assistantRun } : {}),
     };
   }
-  if (normalized.kind === "tool") return {
-    type: "tool",
-    toolCallId: normalized.tool.toolCallId,
-    name: normalized.tool.name,
-    status: normalized.tool.status,
-    preview: normalized.tool.preview,
-    argsPreview: normalized.tool.argsPreview,
-    resultPreview: normalized.tool.resultPreview,
-    ...(normalized.tool.resultJSONPreview ? { resultJSONPreview: normalized.tool.resultJSONPreview } : {}),
-    ...(normalized.tool.resultPreviewTruncated ? { resultPreviewTruncated: true } : {}),
-    ...(normalized.tool.resultPreviewRepaired ? { resultPreviewRepaired: true } : {}),
-    ...(normalized.tool.subagentSummary ? { subagentSummary: normalized.tool.subagentSummary } : {}),
-  };
+  if (normalized.kind === "tool") return runtimeToolEvent(normalized.tool);
   if (normalized.kind === "todoState") return { type: "todo_state", todoState: normalized.todoState };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   if (normalized.kind === "sessionInfo") return { type: "session_info", name: normalized.name };
@@ -200,6 +195,22 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
     };
   }
   return undefined;
+}
+
+function runtimeToolEvent(tool: PickyToolActivity): RuntimeEvent {
+  return {
+    type: "tool",
+    toolCallId: tool.toolCallId,
+    name: tool.name,
+    status: tool.status,
+    preview: tool.preview,
+    argsPreview: tool.argsPreview,
+    resultPreview: tool.resultPreview,
+    ...(tool.resultJSONPreview ? { resultJSONPreview: tool.resultJSONPreview } : {}),
+    ...(tool.resultPreviewTruncated ? { resultPreviewTruncated: true } : {}),
+    ...(tool.resultPreviewRepaired ? { resultPreviewRepaired: true } : {}),
+    ...(tool.subagentSummary ? { subagentSummary: tool.subagentSummary } : {}),
+  };
 }
 
 function completionStatusFromContext(context: PiEventNormalizationContext): NormalizedPiEvent {

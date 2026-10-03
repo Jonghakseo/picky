@@ -27159,6 +27159,22 @@
         }
       }
     },
+    "hud.presence.preparing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing next step"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 작업 준비 중"
+          }
+        }
+      }
+    },
     "hud.presence.skill": {
       "localizations": {
         "en": {

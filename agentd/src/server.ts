@@ -168,6 +168,11 @@ export class AgentdServer {
       sessionId,
       writing,
     }));
+    this.options.supervisor.on("toolCallPreparing", (sessionId: string, preparing: boolean) => this.broadcast({
+      type: "sessionToolCallPreparingUpdated",
+      sessionId,
+      preparing,
+    }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
       type: "terminalSessionSyncOutcome",
       sessionId,
@@ -1453,6 +1458,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, seq: event.seq };
     case "sessionReplyWritingUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, writing: event.writing ? 1 : 0 };
+    case "sessionToolCallPreparingUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, preparing: event.preparing ? 1 : 0 };
     case "terminalSessionSyncOutcome":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, baselineFound: event.baselineFound ? 1 : 0, importedMessageCount: event.importedMessageCount };
     case "error":

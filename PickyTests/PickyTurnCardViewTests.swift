@@ -698,6 +698,15 @@ struct PickyTurnCardViewTests {
         #expect(stabilizer.displayed == writing)
         #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(18.6)) == nil)
         #expect(stabilizer.displayed == thinking)
+
+        // Streaming tool-call arguments is a step as well, so a long `write`
+        // reads as preparing instead of dropping to "thinking" after 5 seconds.
+        let preparing = PickyConversationPresencePresentation(phase: .preparing, detail: nil, startedAt: nil)
+        #expect(stabilizer.update(target: preparing, now: t0.addingTimeInterval(19)) == nil)
+        #expect(stabilizer.displayed == preparing)
+        #expect(preparing.title != "hud.presence.preparing")
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(19.5)) != nil)
+        #expect(stabilizer.displayed == preparing)
     }
 
     @Test func dateDividerTitlesUseTodayYesterdayAndDates() {

@@ -33,6 +33,9 @@ interface RuntimeMessageJournal {
   recordSubagentInvocation?(sessionId: string, invocation: PickySubagentInvocation): Promise<void>;
 }
 
+type LiveOutput = "idle" | "writing" | "preparing_tool";
+export type LiveOutputSignal = "replyWriting" | "toolCallPreparing";
+
 interface RuntimeEventHandlerDependencies {
   reconcileAsyncWork?(sessionId: string): Promise<void>;
   getSession(sessionId: string): PickyAgentSession;
@@ -58,8 +61,12 @@ interface RuntimeEventHandlerDependencies {
   sanitizeAssistantText?(sessionId: string, text: string): string;
   finishAssistantMessage?(sessionId: string): void;
   finishAssistantRun?(sessionId: string, finalAnswer?: string): void;
-  /** Broadcasts the live "model is writing its reply" transition. Never persisted. */
-  setReplyWriting?(sessionId: string, writing: boolean): void;
+  /**
+   * Broadcasts a live streaming transition: "replyWriting" while the model streams
+   * reply text, "toolCallPreparing" while it streams a tool call's arguments.
+   * Never persisted.
+   */
+  setLiveOutput?(sessionId: string, signal: LiveOutputSignal, active: boolean): void;
   messageBuilder: RuntimeMessageJournal;
 }
 
@@ -91,8 +98,8 @@ export class RuntimeEventHandler {
   private readonly assistantDrafts = new Map<string, string>();
   private readonly thinkingDrafts = new Map<string, string>();
   private readonly thinkingActive = new Map<string, boolean>();
-  /** Live "streaming reply text" state per session; never persisted. */
-  private readonly replyWriting = new Map<string, boolean>();
+  /** Live streaming output per session (reply text or tool-call arguments); never persisted. */
+  private readonly liveOutput = new Map<string, LiveOutput>();
   private readonly pendingThinkingFlushes = new Map<string, PendingThinkingFlush>();
   private readonly activeThinkingFlushes = new Map<string, Promise<void>>();
   private readonly seenToolCallIds = new Map<string, Set<string>>();
@@ -116,7 +123,7 @@ export class RuntimeEventHandler {
 
   resetAssistantDraft(sessionId: string): void {
     this.assertTerminalPersistenceReady(sessionId);
-    this.setReplyWriting(sessionId, false);
+    this.setLiveOutput(sessionId, "idle");
     this.assistantDrafts.set(sessionId, "");
     this.processedTerminalRuns.delete(sessionId);
     this.loggedTerminalDrops.delete(sessionId);
@@ -144,7 +151,7 @@ export class RuntimeEventHandler {
   }
 
   /** Individual post-commit reset hooks map one-for-one to the transient ownership manifest. */
-  resetTerminalAssistantDraft(sessionId: string): void { this.setReplyWriting(sessionId, false); this.assistantDrafts.set(sessionId, ""); }
+  resetTerminalAssistantDraft(sessionId: string): void { this.setLiveOutput(sessionId, "idle"); this.assistantDrafts.set(sessionId, ""); }
   resetTerminalThinkingDraft(sessionId: string): void { this.thinkingDrafts.set(sessionId, ""); }
   resetTerminalThinkingActive(sessionId: string): void { this.thinkingActive.set(sessionId, false); }
   clearTerminalPendingThinkingFlush(sessionId: string): void { this.clearPendingThinkingFlush(sessionId); }
@@ -209,7 +216,7 @@ export class RuntimeEventHandler {
       if (isIgnoredFireAndForgetExtensionUi(event)) return;
       await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
-      this.setReplyWriting(sessionId, false);
+      this.setLiveOutput(sessionId, "idle");
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
@@ -221,17 +228,18 @@ export class RuntimeEventHandler {
       if (delta) {
         this.dependencies.messageBuilder.appendAssistantDelta(sessionId, delta);
         this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${delta}`);
-        this.setReplyWriting(sessionId, true);
+        this.setLiveOutput(sessionId, "writing");
       }
       return;
     }
     if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
+    if (event.type === "tool_call_preparing") return this.setLiveOutput(sessionId, "preparing_tool");
     if (event.type === "queue_update") return this.dependencies.applyQueueUpdate(sessionId, event.steering, event.followUp);
     if (event.type === "status") {
       const terminal = ["completed", "failed", "cancelled"].includes(event.status);
       // A terminal event owns its entire staged operation. Draining or clearing drafts before
       // SessionSupervisor saves would leak transient state when that sole save rejects.
-      this.setReplyWriting(sessionId, false);
+      this.setLiveOutput(sessionId, "idle");
       if (!terminal) {
         await this.drainPendingThinkingFlush(sessionId);
         this.thinkingActive.set(sessionId, false);
@@ -507,24 +515,30 @@ export class RuntimeEventHandler {
   }
 
   /**
-   * Reports whether the model is streaming reply text, the only thing that
-   * separates "writing a reply" from "thinking" in the HUD presence line:
-   * assistant deltas are buffered and journaled only when the segment ends.
+   * Reports what the model is streaming, the only thing that separates "writing
+   * a reply" and "preparing a tool call" from "thinking" in the HUD presence
+   * line: assistant deltas are buffered and journaled only when the segment
+   * ends, and tool-call arguments stream for seconds before the tool runs.
    *
-   * This is a live broadcast, not a session patch. Streaming a reply must stay
-   * free of durable session writes (see the terminal durability contract), and
-   * the writing state of a finished turn means nothing after a reconnect. Only
-   * transitions are reported, never one notification per delta.
+   * These are live broadcasts, not session patches. Streaming must stay free
+   * of durable session writes (see the terminal durability contract), and a
+   * finished turn's streaming state means nothing after a reconnect. The two
+   * states are mutually exclusive, and only transitions are reported, never one
+   * notification per delta.
    */
-  private setReplyWriting(sessionId: string, writing: boolean): void {
-    if ((this.replyWriting.get(sessionId) ?? false) === writing) return;
-    this.replyWriting.set(sessionId, writing);
-    this.dependencies.setReplyWriting?.(sessionId, writing);
+  private setLiveOutput(sessionId: string, next: LiveOutput): void {
+    const previous = this.liveOutput.get(sessionId) ?? "idle";
+    if (previous === next) return;
+    this.liveOutput.set(sessionId, next);
+    // Clear the outgoing signal before raising the incoming one so the app never
+    // holds both at once.
+    if (previous !== "idle") this.dependencies.setLiveOutput?.(sessionId, previous === "writing" ? "replyWriting" : "toolCallPreparing", false);
+    if (next !== "idle") this.dependencies.setLiveOutput?.(sessionId, next === "writing" ? "replyWriting" : "toolCallPreparing", true);
   }
 
   private async applyThinkingEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "thinking_delta" }>): Promise<void> {
     if (!event.delta) return;
-    this.setReplyWriting(sessionId, false);
+    this.setLiveOutput(sessionId, "idle");
 
     const shouldIncrementThinking = this.thinkingActive.get(sessionId) !== true;
     if (shouldIncrementThinking) this.thinkingActive.set(sessionId, true);
@@ -649,7 +663,7 @@ export class RuntimeEventHandler {
     const current = this.dependencies.getSession(sessionId);
     if (current.pendingExtensionUiRequest?.id !== requestId) return;
     await this.dependencies.messageBuilder.cancelExtensionQuestion(sessionId, requestId);
-    this.setReplyWriting(sessionId, false);
+    this.setLiveOutput(sessionId, "idle");
     const patch: Partial<PickyAgentSession> = { pendingExtensionUiRequest: undefined, thinkingPreview: undefined };
     if (current.status === "waiting_for_input") {
       patch.status = "running";
@@ -661,7 +675,7 @@ export class RuntimeEventHandler {
   // eslint-disable-next-line complexity -- Tool lifecycle ordering is kept atomic so late-event and activity accounting guards cannot drift apart.
   private async applyToolEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "tool" }>): Promise<void> {
     this.thinkingActive.set(sessionId, false);
-    this.setReplyWriting(sessionId, false);
+    this.setLiveOutput(sessionId, "idle");
     const seen = this.seenToolCallIds.get(sessionId) ?? new Set<string>();
     const shouldIncrementActivity = event.status === "running" && !seen.has(event.toolCallId);
     if (shouldIncrementActivity) {

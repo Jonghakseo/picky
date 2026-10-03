@@ -21,6 +21,10 @@ struct PickySessionCard: Equatable, Identifiable {
     /// (`sessionReplyWritingUpdated`). It has no projection owner, so it is
     /// never hydrated from a snapshot and older daemons simply leave it false.
     var isWritingReply: Bool = false
+    /// Live-only: true while the daemon reports the model streaming a tool
+    /// call's arguments (`sessionToolCallPreparingUpdated`). Same ownership as
+    /// `isWritingReply`.
+    var isPreparingToolCall: Bool = false
     var logPreview: String
     var lastRequestText: String?
     // When the latest REQUEST row content was observed/sent locally. Used to render the
@@ -286,6 +290,7 @@ extension PickySessionCard {
         // Reply writing has no projection owner, so a daemon snapshot never
         // carries it. Only `sessionReplyWritingUpdated` may change it.
         if shouldCarryPreviousSessionState && !result.isWritingReply { result.isWritingReply = isWritingReply }
+        if shouldCarryPreviousSessionState && !result.isPreparingToolCall { result.isPreparingToolCall = isPreparingToolCall }
         if shouldCarryPreviousSessionState && result.tools.isEmpty { result.tools = tools }
         if shouldCarryPreviousSessionState && result.artifacts.isEmpty { result.artifacts = artifacts }
         if shouldCarryPreviousSessionState && result.changedFiles.isEmpty { result.changedFiles = changedFiles }

@@ -307,6 +307,22 @@ struct ProtocolContractTests {
             == .sessionReplyWritingUpdated(sessionId: "session-001", writing: false))
     }
 
+    @Test func decodesSessionToolCallPreparingUpdatedEvent() throws {
+        let json = """
+        {
+          "id":"event-tool-call-preparing",
+          "protocolVersion":"2026-07-23",
+          "timestamp":"2026-05-01T00:00:00.000Z",
+          "type":"sessionToolCallPreparingUpdated",
+          "sessionId":"session-001",
+          "preparing":true
+        }
+        """.data(using: .utf8)!
+
+        #expect(try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json).event
+            == .sessionToolCallPreparingUpdated(sessionId: "session-001", preparing: true))
+    }
+
     @Test func preservesUnknownEventTypeForLogging() throws {
         let json = """
         {

@@ -145,6 +145,8 @@ export type RuntimeEvent =
   | { type: "log"; line: string }
   | { type: "assistant_delta"; delta: string; inputId?: string }
   | { type: "thinking_delta"; delta: string }
+  /** The model began streaming a tool call's arguments; the tool has not started executing yet. */
+  | { type: "tool_call_preparing" }
   // Adapter-only proof that Pi is streaming a new assistant response, not an idle transcript replay.
   | { type: "assistant_turn_start" }
   | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }

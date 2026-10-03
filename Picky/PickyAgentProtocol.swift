@@ -486,6 +486,10 @@ enum PickyEvent: Equatable {
     /// daemon deliberately does not persist this, so it is never hydrated from
     /// a snapshot and an older daemon simply never sends it.
     case sessionReplyWritingUpdated(sessionId: String, writing: Bool)
+    /// Live-only presence signal: the model is streaming a tool call's
+    /// arguments, which can take far longer than running the tool. Same
+    /// contract as `sessionReplyWritingUpdated`.
+    case sessionToolCallPreparingUpdated(sessionId: String, preparing: Bool)
     case terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome)
     case error(PickyErrorEvent)
     case ack(PickyAckEvent)
@@ -631,6 +635,9 @@ enum PickyEvent: Equatable {
         case "sessionReplyWritingUpdated":
             let payload = try PickySessionReplyWritingUpdatedPayload(from: decoder)
             return .sessionReplyWritingUpdated(sessionId: payload.sessionId, writing: payload.writing)
+        case "sessionToolCallPreparingUpdated":
+            let payload = try PickySessionToolCallPreparingUpdatedPayload(from: decoder)
+            return .sessionToolCallPreparingUpdated(sessionId: payload.sessionId, preparing: payload.preparing)
         case "terminalSessionSyncOutcome":
             return .terminalSessionSyncOutcome(try PickyTerminalSessionSyncOutcome(from: decoder))
         default: return nil
@@ -983,6 +990,11 @@ struct PickyPushToTalkControlRequest: Decodable, Equatable {
 struct PickySessionReplyWritingUpdatedPayload: Decodable, Equatable {
     let sessionId: String
     let writing: Bool
+}
+
+struct PickySessionToolCallPreparingUpdatedPayload: Decodable, Equatable {
+    let sessionId: String
+    let preparing: Bool
 }
 
 struct PickyTerminalSessionSyncOutcome: Decodable, Equatable {

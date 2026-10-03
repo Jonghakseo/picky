@@ -1257,6 +1257,11 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   // assistant deltas must not trigger a durable session write, and a dead turn's
   // writing state has no meaning after reconnect or restart.
   EventBaseSchema.extend({ type: z.literal("sessionReplyWritingUpdated"), sessionId: z.string(), writing: z.boolean() }),
+  // Live-only presence signal, same contract as sessionReplyWritingUpdated: true
+  // while the model streams a tool call's arguments, false once the tool starts,
+  // the model streams text or thinking, or the turn ends. A separate event so an
+  // app that predates it ignores it instead of misreading it as reply writing.
+  EventBaseSchema.extend({ type: z.literal("sessionToolCallPreparingUpdated"), sessionId: z.string(), preparing: z.boolean() }),
   EventBaseSchema.extend({
     type: z.literal("terminalSessionSyncOutcome"),
     sessionId: z.string(),

@@ -1108,6 +1108,40 @@ struct PickySessionProjectionV2ApplicationTests {
         )?.phase == .thinking)
     }
 
+    /// A long `write` or `edit` spends most of its step streaming arguments
+    /// before the tool runs. The daemon's live signal has to reach the rendered
+    /// presence line, survive a projection rebuild, and hand over to "working"
+    /// once the tool starts.
+    @Test func toolCallPreparingSignalReachesTheRenderedPresenceLine() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(sessionID: "session-a", title: "Preparing", status: .running, revision: 1), to: viewModel)
+        #expect(try #require(viewModel.sessions.first).isPreparingToolCall == false)
+        func phase(_ card: PickySessionCard, activeTool: PickyToolActivity? = nil) -> PickyConversationPresencePresentation.Phase? {
+            PickyConversationPresencePresentation.make(
+                isRunning: card.status == .running, isWaitingForInput: false, activeTool: activeTool,
+                activeTodoForm: nil, isWritingReply: card.isWritingReply,
+                isPreparingToolCall: card.isPreparingToolCall, startedAt: nil
+            )?.phase
+        }
+
+        // The preamble hands over to tool-call preparation.
+        applyReplyWriting(sessionID: "session-a", writing: true, to: viewModel)
+        applyReplyWriting(sessionID: "session-a", writing: false, to: viewModel)
+        applyToolCallPreparing(sessionID: "session-a", preparing: true, to: viewModel)
+        #expect(phase(try #require(viewModel.sessions.first)) == .preparing)
+
+        apply(transaction(sessionID: "session-a", baseRevision: 1, revision: 2, mutations: #"[{"type":"metaPatch","patch":{"lastSummary":"Still preparing"}}]"#), to: viewModel)
+        let rebuilt = try #require(viewModel.sessions.first)
+        #expect(rebuilt.isPreparingToolCall)
+        // A running tool outranks preparation.
+        let write = PickyToolActivity(toolCallId: "w", name: "write", status: "running", argsPreview: nil)
+        #expect(phase(rebuilt, activeTool: write) == .working)
+
+        applyToolCallPreparing(sessionID: "session-a", preparing: false, to: viewModel)
+        #expect(phase(try #require(viewModel.sessions.first)) == .thinking)
+    }
+
     @Test func metaPatchDistinguishesExplicitClearFromAbsentField() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
@@ -1386,6 +1420,14 @@ struct PickySessionProjectionV2ApplicationTests {
     private func applyReplyWriting(sessionID: String, writing: Bool, to viewModel: PickySessionListViewModel) {
         let json = """
         {"id":"reply-writing-\(sessionID)-\(writing)","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-08-25T00:00:01.000Z","type":"sessionReplyWritingUpdated","sessionId":"\(sessionID)","writing":\(writing)}
+        """
+        let envelope = try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
+        viewModel.apply(.protocolEvent(envelope))
+    }
+
+    private func applyToolCallPreparing(sessionID: String, preparing: Bool, to viewModel: PickySessionListViewModel) {
+        let json = """
+        {"id":"tool-call-preparing-\(sessionID)-\(preparing)","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-08-25T00:00:01.000Z","type":"sessionToolCallPreparingUpdated","sessionId":"\(sessionID)","preparing":\(preparing)}
         """
         let envelope = try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
         viewModel.apply(.protocolEvent(envelope))

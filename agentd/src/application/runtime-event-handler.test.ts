@@ -369,8 +369,9 @@ describe("RuntimeEventHandler", () => {
     const harness = inputHarness();
     harness.handler.resetAssistantDraft("pickle-1");
     harness.patchSession.mockClear();
-    harness.setReplyWriting.mockClear();
-    const reported = () => harness.setReplyWriting.mock.calls.map(([, writing]) => writing);
+    harness.setLiveOutput.mockClear();
+    const live = () => harness.setLiveOutput.mock.calls.map(([, signal, active]) => [signal, active]);
+    const reported = () => live().map(([, active]) => active);
 
     // One notification for the whole streamed segment, not one per delta, and
     // streaming must not write to the session store at all.
@@ -392,6 +393,39 @@ describe("RuntimeEventHandler", () => {
     await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "final" });
     await harness.handler.handle("pickle-1", { type: "status", status: "completed", summary: "Done" });
     expect(reported()).toEqual([true, false, true, false, true, false]);
+    // Pure reply streaming never reports tool-call preparation.
+    expect(live().every(([signal]) => signal === "replyWriting")).toBe(true);
+  });
+
+  it("reports tool-call preparation until the tool runs, exclusive with reply writing", async () => {
+    const harness = inputHarness();
+    harness.handler.resetAssistantDraft("pickle-1");
+    harness.patchSession.mockClear();
+    harness.setLiveOutput.mockClear();
+    const live = () => harness.setLiveOutput.mock.calls.map(([, signal, active]) => [signal, active]);
+
+    // A short preamble, then the model streams a long tool call's arguments:
+    // writing hands over to preparing, and a second start in the same step is not re-reported.
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "Writing the file." });
+    await harness.handler.handle("pickle-1", { type: "tool_call_preparing" });
+    await harness.handler.handle("pickle-1", { type: "tool_call_preparing" });
+    expect(live()).toEqual([["replyWriting", true], ["replyWriting", false], ["toolCallPreparing", true]]);
+    expect(harness.patchSession).not.toHaveBeenCalled();
+
+    // Reply text after the arguments clears preparation before writing is raised.
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "and then" });
+    expect(live().slice(-2)).toEqual([["toolCallPreparing", false], ["replyWriting", true]]);
+    await harness.handler.handle("pickle-1", { type: "tool_call_preparing" });
+    expect(live().slice(-2)).toEqual([["replyWriting", false], ["toolCallPreparing", true]]);
+
+    // The tool starting ends preparation.
+    await harness.handler.handle("pickle-1", { type: "tool", toolCallId: "tool-1", name: "write", status: "running" });
+    expect(live().at(-1)).toEqual(["toolCallPreparing", false]);
+
+    // A terminal status clears a preparation that never reached its tool.
+    await harness.handler.handle("pickle-1", { type: "tool_call_preparing" });
+    await harness.handler.handle("pickle-1", { type: "status", status: "cancelled", summary: "Stopped" });
+    expect(live().slice(-2)).toEqual([["toolCallPreparing", true], ["toolCallPreparing", false]]);
   });
 
   it("returns an isolated runtime terminal snapshot without flushing drafts", async () => {
@@ -422,7 +456,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     current = { ...current, ...patch };
   });
   const onInputMessage = vi.fn(async () => {});
-  const setReplyWriting = vi.fn();
+  const setLiveOutput = vi.fn();
   const recordExtensionText = vi.fn(async () => {});
   const recordUserText = vi.fn(async () => {});
   const materializeTerminalArtifacts = vi.fn(async () => {});
@@ -458,7 +492,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     isPickleSession: () => true,
     emitExtensionUiRequest: () => {},
     onInputMessage,
-    setReplyWriting,
+    setLiveOutput,
     messageBuilder,
   });
   return {
@@ -467,7 +501,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     setCurrent: (patch: Partial<PickyAgentSession>) => { current = { ...current, ...patch }; },
     patchSession,
     onInputMessage,
-    setReplyWriting,
+    setLiveOutput,
     recordExtensionText,
     recordUserText,
     materializeTerminalArtifacts,

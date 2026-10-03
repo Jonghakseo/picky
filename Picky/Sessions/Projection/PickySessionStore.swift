@@ -114,6 +114,7 @@ final class PickySessionStore {
             lastSummary: metadata.lastSummary ?? "",
             thinkingPreview: metadata.thinkingPreview,
             isWritingReply: presentation.isWritingReply,
+            isPreparingToolCall: presentation.isPreparingToolCall,
             logPreview: presentation.logPreview,
             lastRequestText: presentation.lastRequestText,
             lastRequestAt: presentation.lastRequestAt,
@@ -319,12 +320,17 @@ final class PickySessionStore {
         presentation.isWritingReply = writing
     }
 
+    func replaceToolCallPreparing(_ preparing: Bool) {
+        presentation.isPreparingToolCall = preparing
+    }
+
     /// A `session_replaced` transaction is an explicit daemon reset, unlike a
     /// recovery snapshot. Its fresh session must not retain local UI state.
     func clearLocallyOwnedProjectionPresentation() {
         presentation.lastRequestAt = nil
         presentation.lastTerminalSyncOutcome = nil
         presentation.isWritingReply = false
+        presentation.isPreparingToolCall = false
     }
 }
 
@@ -335,6 +341,7 @@ private struct PickySessionCardPresentation {
     var piSessionFilePath: String?
     var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
     var isWritingReply: Bool
+    var isPreparingToolCall: Bool
 
     static let empty = Self(
         logPreview: "",
@@ -342,7 +349,8 @@ private struct PickySessionCardPresentation {
         lastRequestAt: nil,
         piSessionFilePath: nil,
         lastTerminalSyncOutcome: nil,
-        isWritingReply: false
+        isWritingReply: false,
+        isPreparingToolCall: false
     )
 
     init(card: PickySessionListViewModel.SessionCard) {
@@ -352,6 +360,7 @@ private struct PickySessionCardPresentation {
         piSessionFilePath = card.piSessionFilePath
         lastTerminalSyncOutcome = card.lastTerminalSyncOutcome
         isWritingReply = card.isWritingReply
+        isPreparingToolCall = card.isPreparingToolCall
     }
 
     private init(
@@ -360,7 +369,8 @@ private struct PickySessionCardPresentation {
         lastRequestAt: Date?,
         piSessionFilePath: String?,
         lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?,
-        isWritingReply: Bool
+        isWritingReply: Bool,
+        isPreparingToolCall: Bool
     ) {
         self.logPreview = logPreview
         self.lastRequestText = lastRequestText
@@ -368,6 +378,7 @@ private struct PickySessionCardPresentation {
         self.piSessionFilePath = piSessionFilePath
         self.lastTerminalSyncOutcome = lastTerminalSyncOutcome
         self.isWritingReply = isWritingReply
+        self.isPreparingToolCall = isPreparingToolCall
     }
 }
 

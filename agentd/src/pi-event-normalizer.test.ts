@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { normalizePiEvent } from "./domain/pi-event-normalizer.js";
+import { normalizePiEvent, runtimeEventFromPiEvent } from "./domain/pi-event-normalizer.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "pi-events");
 
@@ -132,6 +132,13 @@ describe("normalizePiEvent", () => {
 
   it("maps message deltas to assistant answer fragments", async () => {
     expect(normalizePiEvent(await fixture("message-text-delta.json"))).toEqual({ kind: "assistantDelta", delta: "Hello" });
+  });
+
+  it("maps a streamed tool call start to tool-call preparation, before the tool runs", async () => {
+    expect(runtimeEventFromPiEvent(await fixture("message-toolcall-start.json"))).toEqual({ type: "tool_call_preparing" });
+    // Argument chunks keep reporting preparation, so it re-arms if something cleared it mid-stream.
+    expect(normalizePiEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_delta", contentIndex: 1, delta: "{\"path\"" } })).toEqual({ kind: "toolCallPreparing" });
+    expect(normalizePiEvent({ type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 1 } })).toEqual({ kind: "none" });
   });
 
   it("maps thinking deltas to current-work thinking previews", async () => {

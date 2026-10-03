@@ -16,6 +16,10 @@ struct PickyConversationPresencePresentation: Equatable {
         /// `isWritingReply`. The app cannot infer this: assistant deltas are
         /// buffered and only journaled when the segment ends.
         case writing
+        /// The model is streaming a tool call's arguments, reported by the
+        /// daemon as `isPreparingToolCall`. A long `write` or `edit` spends most
+        /// of its step here, before the tool starts and the line reads "working".
+        case preparing
         case working
         case waitingForInput
     }
@@ -40,6 +44,7 @@ struct PickyConversationPresencePresentation: Equatable {
         switch phase {
         case .thinking: L10n.t("hud.presence.thinking")
         case .writing: L10n.t(Self.writingTitleKey(forTurnStartedAt: startedAt))
+        case .preparing: L10n.t("hud.presence.preparing")
         case .working: L10n.t("hud.liveStep.working")
         case .waitingForInput: L10n.t("hud.conversation.status.waiting")
         }
@@ -53,8 +58,9 @@ struct PickyConversationPresencePresentation: Equatable {
 
     var isAnimated: Bool { phase != .waitingForInput }
 
-    /// A running tool makes the live value "working" and streaming reply text
-    /// makes it "writing"; otherwise it is "thinking".
+    /// A running tool makes the live value "working", streaming tool-call
+    /// arguments make it "preparing", and streaming reply text makes it
+    /// "writing"; otherwise it is "thinking".
     /// `PickyConversationPresenceStabilizer` holds the last step on screen
     /// through short gaps, so "thinking" shows only for long pauses. Once the agent has finished responding, the line
     /// disappears even if the session stays running for background work
@@ -66,6 +72,7 @@ struct PickyConversationPresencePresentation: Equatable {
         activeTool: PickyToolActivity?,
         activeTodoForm: String?,
         isWritingReply: Bool = false,
+        isPreparingToolCall: Bool = false,
         startedAt: Date?,
         isAgentResponding: Bool = true
     ) -> Self? {
@@ -76,6 +83,9 @@ struct PickyConversationPresencePresentation: Equatable {
         let todo = activeTodoForm.flatMap(nonEmptyLine)
         if let activeTool, activeTool.isActive {
             return Self(phase: .working, detail: todo ?? detail(for: activeTool), startedAt: startedAt)
+        }
+        if isPreparingToolCall {
+            return Self(phase: .preparing, detail: todo, startedAt: startedAt)
         }
         if isWritingReply {
             return Self(phase: .writing, detail: nil, startedAt: startedAt)
@@ -112,7 +122,7 @@ struct PickyConversationPresencePresentation: Equatable {
 /// Keeps the last step on screen between tool calls. Most tools finish in
 /// well under a second while the model spends most of a turn choosing the next
 /// one, so a strict live value read "thinking" nearly all the time. Entering
-/// "working" or "writing", changing a detail, waiting for input, and any other
+/// a step ("working", "preparing", or "writing"), changing a detail, waiting for input, and any other
 /// change apply at once. Falling back to "thinking" waits until the step has
 /// been gone for `workingGrace` (and shown for `minimumWorkingDuration`): the
 /// next tool or reply inside that window only swaps the line, and only a pause
@@ -123,7 +133,7 @@ struct PickyConversationPresenceStabilizer: Equatable {
 
     private(set) var displayed: PickyConversationPresencePresentation?
     private var stepSince: Date?
-    /// When the live value first stopped reporting a step (working or writing).
+    /// When the live value first stopped reporting a step (working, preparing, or writing).
     private var leftStepAt: Date?
 
     /// Applies `target` at `now` and returns how long to wait before calling
@@ -155,7 +165,7 @@ struct PickyConversationPresenceStabilizer: Equatable {
 
     /// Phases that report actual progress, so they hold the line through a gap.
     private static func isStep(_ phase: PickyConversationPresencePresentation.Phase?) -> Bool {
-        phase == .working || phase == .writing
+        phase == .working || phase == .preparing || phase == .writing
     }
 
     private mutating func reset(to target: PickyConversationPresencePresentation) {

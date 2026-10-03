@@ -669,6 +669,8 @@ private extension PickyEventEnvelope {
             return "type=sessionActivityUpdated id=\(id) session=\(sessionId) edit=\(activitySummary.edit) bash=\(activitySummary.bash) todo=\(activitySummary.todo) subagent=\(activitySummary.subagent) thinking=\(activitySummary.thinking) other=\(activitySummary.other) seq=\(seq)"
         case .sessionReplyWritingUpdated(let sessionId, let writing):
             return "type=sessionReplyWritingUpdated id=\(id) session=\(sessionId) writing=\(writing)"
+        case .sessionToolCallPreparingUpdated(let sessionId, let preparing):
+            return "type=sessionToolCallPreparingUpdated id=\(id) session=\(sessionId) preparing=\(preparing)"
         case .terminalSessionSyncOutcome(let outcome):
             return "type=terminalSessionSyncOutcome id=\(id) session=\(outcome.sessionId) baselineFound=\(outcome.baselineFound) imported=\(outcome.importedMessageCount)"
         case .error(let error):

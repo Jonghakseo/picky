@@ -1053,6 +1053,21 @@ describe("protocol contract fixtures", () => {
     expect(Object.keys(PickyAgentSessionSchema.shape)).not.toContain("isWritingReply");
   });
 
+  it("carries the live tool-call preparing signal without a session revision", () => {
+    const event = {
+      id: "event-tool-call-preparing",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-08-24T00:00:00.000Z",
+      type: "sessionToolCallPreparingUpdated" as const,
+      sessionId: "session-001",
+      preparing: true,
+    };
+
+    expect(EventEnvelopeSchema.parse(event)).toMatchObject(event);
+    expect(EventEnvelopeSchema.parse({ ...event, preparing: false })).toMatchObject({ preparing: false });
+    expect(() => EventEnvelopeSchema.parse({ ...event, preparing: "yes" })).toThrow();
+  });
+
   it("validates session projection bootstrap membership completion", () => {
     const completion = {
       id: "event-projection-bootstrap-complete",

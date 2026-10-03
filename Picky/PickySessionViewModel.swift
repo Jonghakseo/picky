@@ -1856,6 +1856,8 @@ final class PickySessionListViewModel: ObservableObject {
             handleArchiveIntentFailure(commandID: error.commandId)
         case .sessionReplyWritingUpdated(let sessionId, let writing):
             applySessionReplyWriting(sessionID: sessionId, writing: writing)
+        case .sessionToolCallPreparingUpdated(let sessionId, let preparing):
+            applySessionToolCallPreparing(sessionID: sessionId, preparing: preparing)
         case .terminalSessionSyncOutcome(let outcome):
             applyTerminalSessionSyncOutcome(outcome)
         case .externalEntryAccepted(let accepted):
@@ -2227,6 +2229,17 @@ final class PickySessionListViewModel: ObservableObject {
             }
         } else {
             mutateSession(sessionID: sessionID) { $0.isWritingReply = writing }
+        }
+    }
+
+    /// Same live, locally-owned slot as `applySessionReplyWriting`.
+    private func applySessionToolCallPreparing(sessionID: String, preparing: Bool) {
+        if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
+            _ = storage.updateProjectionPresentation(sessionID: sessionID) {
+                $0.replaceToolCallPreparing(preparing)
+            }
+        } else {
+            mutateSession(sessionID: sessionID) { $0.isPreparingToolCall = preparing }
         }
     }
 

@@ -30,8 +30,42 @@ SCAN_ROOTS = (
     "Picky/Companion",
     "Picky/App/Settings",
     "Picky/Overlay",
-    "Picky/PointerOverlay",
+    # Settings/plugin UI that used to live under Picky/Companion, the main-agent
+    # transcript store, and the dock layout model split out of Picky/HUD. They
+    # stay in scope so a directory move cannot drop a file out of the guard.
+    # (`Picky/PointerOverlay` moved under `Picky/Overlay`, which already covers it.)
+    "Picky/Hub/Settings",
+    "Picky/Hub/Plugins",
+    "Picky/MainAgent",
+    "Picky/Sessions/Dock",
 )
+
+# Files that moved after the baseline commit. A fingerprint is derived from the
+# repository-relative path, so without this map a pure move would drop the
+# file's legacy entries and re-report every occurrence as new. Mapping the
+# current path back to the recorded one keeps the violation set identical
+# without rewriting `design/ui-design-token-baseline.json`, so --verify-baseline
+# still reproduces that file from the committed baseline tree.
+#
+# Only moved files that carry baseline debt belong here; `check_aliases` rejects
+# an entry whose source is gone or whose target the baseline never recorded.
+BASELINE_PATH_ALIASES = {
+    "Picky/HUD/Archive/PickyHUDArchiveUndoToast.swift": "Picky/HUD/PickyHUDArchiveUndoToast.swift",
+    "Picky/HUD/Artifacts/PickyReportViewer.swift": "Picky/HUD/PickyReportViewer.swift",
+    "Picky/HUD/Artifacts/PickySessionChangesView.swift": "Picky/HUD/PickySessionChangesView.swift",
+    "Picky/HUD/Dock/PickyDockGroupCreatorView.swift": "Picky/HUD/PickyDockGroupCreatorView.swift",
+    "Picky/HUD/Dock/PickyHUDDockGroupViews.swift": "Picky/HUD/PickyHUDDockGroupViews.swift",
+    "Picky/HUD/Dock/PickyHUDDockIconView.swift": "Picky/HUD/PickyHUDDockIconView.swift",
+    "Picky/HUD/Dock/PickyRecentPickleFolderPicker.swift": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
+    "Picky/HUD/ToolHistory/PickyToolActivityRow.swift": "Picky/HUD/PickyToolActivityRow.swift",
+    "Picky/HUD/ToolHistory/PickyToolJSONResultView.swift": "Picky/HUD/PickyToolJSONResultView.swift",
+    "Picky/Hub/Plugins/CompanionPanelExtensionsView.swift": "Picky/Companion/CompanionPanelExtensionsView.swift",
+    "Picky/Hub/Settings/CompanionPanelExtensionsSection.swift": "Picky/Companion/CompanionPanelExtensionsSection.swift",
+    "Picky/Hub/Settings/CompanionPanelMessagesView.swift": "Picky/Companion/CompanionPanelMessagesView.swift",
+    "Picky/Hub/Settings/CompanionPanelPrerequisitesView.swift": "Picky/Companion/CompanionPanelPrerequisitesView.swift",
+    "Picky/Hub/Settings/CompanionPanelSettingsView.swift": "Picky/Companion/CompanionPanelSettingsView.swift",
+    "Picky/Hub/Settings/PickyMainAgentTranscriptRow.swift": "Picky/Companion/PickyMainAgentTranscriptRow.swift",
+}
 EXCLUDED_FILES = frozenset(
     {
         "Picky/DesignSystem.swift",
@@ -62,10 +96,12 @@ class Occurrence:
     normalized_expression: str
     ordinal: int
     exception_reason: str | None
+    baseline_path: str = ""
 
     @property
     def fingerprint(self) -> str:
-        payload = f"{self.path}\0{self.normalized_expression}\0{self.ordinal}".encode()
+        path = self.baseline_path or self.path
+        payload = f"{path}\0{self.normalized_expression}\0{self.ordinal}".encode()
         return hashlib.sha256(payload).hexdigest()
 
 
@@ -182,7 +218,12 @@ def paths_for(root: Path, scan_roots: Iterable[str] = SCAN_ROOTS) -> list[Path]:
     return sorted(path for path in files if path.relative_to(root).as_posix() not in EXCLUDED_FILES)
 
 
-def scan(root: Path, scan_roots: Iterable[str] = SCAN_ROOTS) -> list[Occurrence]:
+def scan(
+    root: Path,
+    scan_roots: Iterable[str] = SCAN_ROOTS,
+    aliases: dict[str, str] | None = None,
+) -> list[Occurrence]:
+    aliases = BASELINE_PATH_ALIASES if aliases is None else aliases
     provisional: list[Occurrence] = []
     for path in paths_for(root, scan_roots):
         source = path.read_text(encoding="utf-8")
@@ -206,13 +247,14 @@ def scan(root: Path, scan_roots: Iterable[str] = SCAN_ROOTS) -> list[Occurrence]
                     normalized_expression=normalize_expression(expression),
                     ordinal=0,
                     exception_reason=reason,
+                    baseline_path=aliases.get(relative_path, relative_path),
                 )
             )
 
     ordinals: Counter[tuple[str, str]] = Counter()
     occurrences: list[Occurrence] = []
     for occurrence in provisional:
-        key = (occurrence.path, occurrence.normalized_expression)
+        key = (occurrence.baseline_path, occurrence.normalized_expression)
         ordinals[key] += 1
         occurrences.append(
             Occurrence(
@@ -223,13 +265,17 @@ def scan(root: Path, scan_roots: Iterable[str] = SCAN_ROOTS) -> list[Occurrence]
                 normalized_expression=occurrence.normalized_expression,
                 ordinal=ordinals[key],
                 exception_reason=occurrence.exception_reason,
+                baseline_path=occurrence.baseline_path,
             )
         )
     return occurrences
 
 
 def baseline_document(root: Path, baseline_commit: str, scan_roots: Iterable[str] = SCAN_ROOTS) -> dict:
-    entries = scan(root, scan_roots)
+    # The baseline is always generated from the committed baseline tree, where
+    # the pre-move paths are the real ones. Aliases must never reach it, or
+    # --verify-baseline would start depending on today's directory layout.
+    entries = scan(root, scan_roots, aliases={})
     return {
         "schemaVersion": 1,
         "baselineCommit": baseline_commit,
@@ -319,14 +365,32 @@ def load_baseline(path: Path) -> set[str]:
     return {entry["fingerprint"] for entry in document.get("entries", [])}
 
 
+def check_aliases(root: Path, baseline_path: Path, aliases: dict[str, str]) -> list[str]:
+    """Reject aliases that no longer describe a real move of real baseline debt."""
+    document = json.loads(baseline_path.read_text(encoding="utf-8"))
+    recorded_paths = {entry["path"] for entry in document.get("entries", [])}
+    failures: list[str] = []
+    for current, recorded in sorted(aliases.items()):
+        if not (root / current).is_file():
+            failures.append(f"{current}: aliased to {recorded} but the file no longer exists; drop the alias.")
+        if recorded not in recorded_paths:
+            failures.append(f"{current}: aliased to {recorded}, which {baseline_path.name} never recorded; drop the alias.")
+    return failures
+
+
 def valid_exception(reason: str | None) -> bool:
     return reason is not None and reason.strip().lower() not in GENERIC_EXCEPTION_REASONS
 
 
-def lint(root: Path, baseline_path: Path, scan_roots: Iterable[str] = SCAN_ROOTS) -> list[str]:
+def lint(
+    root: Path,
+    baseline_path: Path,
+    scan_roots: Iterable[str] = SCAN_ROOTS,
+    aliases: dict[str, str] | None = None,
+) -> list[str]:
     known_fingerprints = load_baseline(baseline_path)
     failures: list[str] = []
-    for occurrence in scan(root, scan_roots):
+    for occurrence in scan(root, scan_roots, aliases):
         if occurrence.fingerprint in known_fingerprints:
             continue
         if occurrence.exception_reason is not None:
@@ -375,7 +439,7 @@ def main() -> int:
         print(f"UI design-token baseline error: {error}", file=sys.stderr)
         return 1
 
-    failures = lint(root, baseline)
+    failures = check_aliases(root, baseline, BASELINE_PATH_ALIASES) + lint(root, baseline)
     if failures:
         print("UI design-token guard failed:", file=sys.stderr)
         print("\n".join(failures), file=sys.stderr)

@@ -229,9 +229,11 @@ of expanding the rail. Full names remain available through help and accessibilit
 
 ## UI design-token guard
 
-새 UI 코드의 raw typography, spacing, radius, shadow는 빠른 정적 guard로 막는다. 기존 제품 코드를 일괄 마이그레이션하지 않기 위해 `ce27595f` 이전 발생은 `design/ui-design-token-baseline.json`에 stable fingerprint로 보존한다. fingerprint는 repository-relative path, 공백 정규화된 source expression, 같은 expression의 occurrence ordinal로 구성하며 line number를 사용하지 않는다. 따라서 legacy code는 이동하거나 사라져도 실패하지 않지만 새 raw occurrence와 값 변경은 실패한다.
+새 UI 코드의 raw typography, spacing, radius, shadow는 빠른 정적 guard로 막는다. 기존 제품 코드를 일괄 마이그레이션하지 않기 위해 `ce27595f` 이전 발생은 `design/ui-design-token-baseline.json`에 stable fingerprint로 보존한다. fingerprint는 repository-relative path, 공백 정규화된 source expression, 같은 expression의 occurrence ordinal로 구성하며 line number를 사용하지 않는다. 따라서 파일 안에서 legacy code가 위아래로 움직여도 실패하지 않지만 새 raw occurrence와 값 변경은 실패한다.
 
-검사 roots는 `Picky/HUD`, `Picky/QuickInput`, `Picky/Companion`, `Picky/App/Settings`, `Picky/Overlay`, `Picky/PointerOverlay`다. primitive 정의가 필요한 `Picky/DesignSystem.swift`, `Picky/HUD/PickyHUDTypography.swift`, 그리고 문서화된 Dock component metric인 `Picky/HUD/PickyHUDLayoutPolicy.swift`만 제외한다. 디렉터리 전체나 일반 policy 파일은 제외하지 않는다.
+파일을 다른 디렉터리로 옮기면 path가 바뀌어 fingerprint도 바뀐다. baseline 을 다시 생성하면 `--verify-baseline`의 provenance(= `ce27595f` 커밋 트리에서 그대로 재현되는지)가 깨지므로, 이동한 파일은 `scripts/lint-ui-design-tokens.py`의 `BASELINE_PATH_ALIASES`에 `현재 경로 → baseline 에 기록된 경로`로 등록한다. alias 는 lint 경로에서만 쓰이고 baseline 생성 경로에는 들어가지 않는다. `check_aliases`가 원본 파일이 사라졌거나 baseline 에 없던 경로를 가리키는 alias 를 거부하므로 목록이 썩지 않는다.
+
+검사 roots는 `Picky/HUD`, `Picky/QuickInput`, `Picky/Companion`, `Picky/App/Settings`, `Picky/Overlay`, `Picky/Hub/Settings`, `Picky/Hub/Plugins`, `Picky/MainAgent`, `Picky/Sessions/Dock`다(`Picky/PointerOverlay`는 `Picky/Overlay/Pointer`로 이동해 상위 root가 덮는다). UI 파일을 옮길 때는 옮긴 위치가 이 목록에 들어 있는지 확인한다. primitive 정의가 필요한 `Picky/DesignSystem.swift`, `Picky/HUD/PickyHUDTypography.swift`, 그리고 문서화된 Dock component metric인 `Picky/HUD/PickyHUDLayoutPolicy.swift`만 제외한다. 디렉터리 전체나 일반 policy 파일은 제외하지 않는다.
 
 ```bash
 pnpm run lint:ui-design-tokens

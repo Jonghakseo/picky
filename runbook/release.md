@@ -72,7 +72,7 @@ git diff --stat <previous-release-tag>..HEAD
 - 섞여 있으면 높은 단계가 이긴다: minor > patch > beta.N.
 - 올린 자리 아래는 초기화한다. minor면 patch는 `0`, beta 번호는 `1`. patch면 beta 번호는 `1`.
 - 내부 구조 변경(리팩터링, 모듈 분리, 의존성 정리)은 위 호환성 목록에 해당하지 않으면 minor 사유가 아니다. 커밋 타입대로 판단한다.
-- 커밋 타입만 보고 끝내지 않는다. 프로토콜(`agentd/src/protocol.ts`, `Picky/PickyAgentProtocol.swift`, `contracts/`), 저장 형식·마이그레이션, `Info.plist`의 Sparkle 키, 최소 OS·런타임 버전 파일이 바뀌었으면 diff를 열어 호환성 영향을 확인한다.
+- 커밋 타입만 보고 끝내지 않는다. 프로토콜(`agentd/src/protocol.ts`, `Picky/Protocol/PickyAgentProtocol.swift`, `contracts/`), 저장 형식·마이그레이션, `Info.plist`의 Sparkle 키, 최소 OS·런타임 버전 파일이 바뀌었으면 diff를 열어 호환성 영향을 확인한다.
 - 사용자가 버전을 직접 지정하거나 "마이너"·"patch"를 명시하면 그 지시를 따른다. 단, 호환성 영향이 있는데 minor보다 낮게 요청하면 근거를 들어 한 번 알린다.
 - 애매하면 낮은 단계를 고르고, 릴리즈 노트 Highlights 아래에 버전 결정 근거(해당 커밋)를 한 줄 적는다.
 

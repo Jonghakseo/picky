@@ -19,8 +19,8 @@ FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "ui-design-tokens"
 
 
 class UIDesignTokenLintTests(unittest.TestCase):
-    def copy_fixture(self, fixture_name: str, destination: Path) -> Path:
-        target = destination / "Picky" / "HUD" / "Example.swift"
+    def copy_fixture(self, fixture_name: str, destination: Path, relative_path: str = "Picky/HUD/Example.swift") -> Path:
+        target = destination / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(FIXTURE_ROOT / fixture_name, target)
         return target
@@ -175,6 +175,65 @@ class UIDesignTokenLintTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Unable to resolve baseline commit"):
                 lint_ui_design_tokens.write_baseline(root, root / "baseline.json", "does-not-exist", scan_roots=("Picky/HUD",))
+
+    def test_moved_file_keeps_its_baseline_coverage_through_an_alias(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.copy_fixture("legacy.swift", root)
+            baseline = self.baseline_for(root)
+            moved = "Picky/HUD/Dock/Example.swift"
+            (root / moved).parent.mkdir(parents=True, exist_ok=True)
+            (root / "Picky" / "HUD" / "Example.swift").rename(root / moved)
+            aliases = {moved: "Picky/HUD/Example.swift"}
+
+            self.assertEqual(lint_ui_design_tokens.lint(root, baseline, ("Picky/HUD",), aliases), [])
+            self.assertEqual(lint_ui_design_tokens.check_aliases(root, baseline, aliases), [])
+            # Without the alias the same legacy values would be rejected as new,
+            # which is what makes the alias load-bearing rather than cosmetic.
+            self.assertNotEqual(lint_ui_design_tokens.lint(root, baseline, ("Picky/HUD",), {}), [])
+
+    def test_aliases_never_reach_the_committed_baseline_document(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.copy_fixture("legacy.swift", root)
+            baseline = self.baseline_for(root)
+            commit = json.loads(baseline.read_text(encoding="utf-8"))["baselineCommit"]
+            moved = "Picky/HUD/Dock/Example.swift"
+            (root / moved).parent.mkdir(parents=True, exist_ok=True)
+            (root / "Picky" / "HUD" / "Example.swift").rename(root / moved)
+
+            lint_ui_design_tokens.verify_baseline(root, baseline, commit)
+
+    def test_check_aliases_rejects_a_stale_entry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.copy_fixture("legacy.swift", root)
+            baseline = self.baseline_for(root)
+
+            missing_source = lint_ui_design_tokens.check_aliases(
+                root, baseline, {"Picky/HUD/Dock/Gone.swift": "Picky/HUD/Example.swift"}
+            )
+            unknown_target = lint_ui_design_tokens.check_aliases(
+                root, baseline, {"Picky/HUD/Example.swift": "Picky/HUD/NeverRecorded.swift"}
+            )
+
+            self.assertEqual(len(missing_source), 1)
+            self.assertIn("no longer exists", missing_source[0])
+            self.assertEqual(len(unknown_target), 1)
+            self.assertIn("never recorded", unknown_target[0])
+
+    def test_repository_scan_roots_and_aliases_are_current(self):
+        missing_roots = [root for root in lint_ui_design_tokens.SCAN_ROOTS if not (REPO_ROOT / root).exists()]
+
+        self.assertEqual(missing_roots, [], "A scan root disappeared; moved UI files would silently leave the guard.")
+        self.assertEqual(
+            lint_ui_design_tokens.check_aliases(
+                REPO_ROOT,
+                REPO_ROOT / lint_ui_design_tokens.BASELINE_PATH,
+                lint_ui_design_tokens.BASELINE_PATH_ALIASES,
+            ),
+            [],
+        )
 
     def test_agentd_lint_checkout_keeps_history_for_baseline_provenance(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "agentd-lint.yml").read_text(encoding="utf-8")

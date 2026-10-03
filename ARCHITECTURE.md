@@ -76,15 +76,21 @@ Picky/
   PickyApp.swift                         app entry and lifecycle
   AppBundleConfiguration.swift           bundle/config helpers
   DesignSystem.swift                     DS tokens, styles, view helpers (deferred split)
-  PickyAgentProtocol.swift               Codable app-daemon protocol models
   PickyAgentClient.swift                 client protocol + WebSocket/stub pieces (deferred split)
+  PickyAgentClientRouter.swift           per-Pickle daemon client routing
   PickyAgentDaemonLauncher.swift         child-process daemon launch/stop
+  PickyAgentDaemonPool.swift             per-Pickle daemon pool and ownership
   PickyAdvancedContext.swift             browser/window/selection providers
   CompanionManager.swift                 voice pipeline orchestration and event presentation
+  CompanionManager+*.swift               voice/event lifecycle extensions (deferred ownership split)
   BuddyDictationManager.swift            audio capture + transcription lifecycle
-  CompanionPanelView.swift               menu panel composition
   PickySessionViewModel.swift            HUD session state facade (deferred rename/split)
   PickyAskUserQuestionForm.swift         extension UI form rendering
+
+  Protocol/                              Codable app-daemon protocol models and codecs
+    PickyAgentProtocol.swift             core command/event envelope and version
+    PickyAgentProtocolCodec.swift        shared encode/decode helpers
+    Picky*Protocol.swift                 projection, async task, package, MCP, CLI, narration, settings
 
   App/
     MenuBarPanelManager.swift            menu bar panel lifecycle
@@ -97,7 +103,11 @@ Picky/
   Shortcuts/                             shortcut specs, capture recorder, settings rows
   QuickInput/                            quick text input panel and double-tap detector
   Interaction/                           interaction state/effects/reducer/runtime/journal
-  PointerOverlay/                        pointer overlay coordinate validation/resolution
+  MainAgent/                             always-on main-agent transcript store
+  Localization/                          locale manager and localized string helpers
+  Feedback/                              feedback capture and HUD perf instrumentation
+  Updates/                               Sparkle update controller and UI
+  Watchdog/                              crash watchdog and its alert helper target
   Domain/                                shared app-domain helpers such as log prefixes
 
   Context/
@@ -107,21 +117,36 @@ Picky/
     PickyVoiceContextCaptureCoordinator.swift
     CompanionScreenCaptureUtility.swift
 
-  Companion/
-    CompanionPanel*.swift                panel sections/status/permissions/settings
+  Companion/                             voice pipeline only (settings UI moved to Hub/Settings)
+    CompanionVoicePolicies.swift         pure voice routing/eligibility policy
+    PickyVoice*.swift                    voice input target and transcript routing policy
+    PickyPermissionMonitor.swift         mic/speech/accessibility permission observation
     Dictation/                           shortcut, transcription provider, permissions, audio conversion
+    Input/                               IME-aware AppKit text view shared by composers
     AzureOpenAI/                         Azure STT/TTS provider and Keychain config
     ElevenLabs/                          ElevenLabs TTS provider
+    OpenAI/                              OpenAI STT/TTS provider
     Speech/                              macOS speech playback abstractions
+
+  Hub/
+    PickyHubRootView.swift               Hub window shell and navigation
+    Pages/                               dashboard, settings, plugins, conversation pages
+    Components/                          shared Hub controls and modals
+    Settings/                            settings/prerequisite/cron/main-agent settings UI
+    Plugins/                             curated plugin catalog, MCP server admin
+    Statistics/, Guides/, QuickStart/    supporting Hub surfaces
 
   HUD/
     PickyHUDOverlayManager.swift         NSPanel overlay lifecycle and sizing
     PickyHUDLayoutPolicy.swift           pure HUD layout/animation policy
-    PickyHUDView.swift                   session cards, follow-up controls, extension UI rendering
-    PickyToolActivityRow.swift           tool row rendering
-    PickyArtifactReporter.swift          report generation helpers
-    PickyReportViewer.swift              markdown report viewer
-    PickyDiffPreview.swift               diff preview helpers
+    PickyHUDView.swift                   panel shell and session card composition
+    PickyHUDPanel.swift, PickyHUDPlacement.swift, PickyHUDVisibilityStore.swift
+                                         panel shell, placement, visibility
+    Conversation/                        conversation card, composer, list, bubbles
+    Dock/                                dock rail, dock icons, group list/folder UI, drag-drop
+    ToolHistory/                         tool activity rows, history viewer, result rendering
+    Archive/                             archive action controller and undo toast
+    Artifacts/                           report viewer, artifacts/changes views, diff preview
 
   Overlay/
     OverlayWindow.swift                  overlay NSWindow
@@ -129,11 +154,14 @@ Picky/
     BlueCursorView.swift                 cursor/bubble SwiftUI rendering
     BubbleLayout.swift                   pure bubble layout calculations
     CompanionResponseOverlay.swift       transient response overlay
+    Pointer/                             pointer overlay coordinate validation/resolution
 
   Sessions/
     PickySessionSelectionStore.swift     selected/voice-target/archive stores
     PickySessionArchive.swift            archive helpers
     PickyTerminalOverlay.swift           shared SwiftTerm view/process adapters and resume command builder
+    Dock/PickyDockLayout.swift           persisted dock layout model (groups, entries, colors)
+    Projection/                          v2 session projection stores and ownership ledger
 ```
 
 ## 6. picky-agentd responsibility map
@@ -193,7 +221,7 @@ agentd/src/
 
 The app-daemon protocol is owned in both languages:
 
-- Swift: `Picky/PickyAgentProtocol.swift`
+- Swift: `Picky/Protocol/PickyAgentProtocol.swift`
 - TypeScript: `agentd/src/protocol.ts`
 - Fixtures/contracts: `contracts/`
 

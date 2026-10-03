@@ -259,6 +259,11 @@ _2026-09-06 완료: `PickyProjectionOwnershipLedger`(순수 struct)가 owner 배
 - `docs/plans/` 아래에 상태별(`active/`, `done/`, `superseded/`)로 plan 문서를 옮긴다.
 - `AGENTS.md`의 navigation index는 유지하되 `ARCHITECTURE.md`와 중복되는 부분은 한쪽만 남긴다.
 
+진행 상황 (Phase 0-d 시점):
+
+- `ARCHITECTURE.md` §5 책임 맵은 실제 디렉터리 기준으로 다시 썼다. 이번 폴더 재배치로 루트 Codable 프로토콜 12파일이 `Picky/Protocol/`로, `Picky/PointerOverlay/`가 `Picky/Overlay/Pointer/`로, Companion 설정 UI가 `Picky/Hub/Settings/`·`Picky/Hub/Plugins/`로, dock 영속 모델이 `Picky/Sessions/Dock/`로 옮겨갔고 `Picky/HUD/` 루트는 `Dock/`·`ToolHistory/`·`Archive/`·`Artifacts/` 하위로 나뉘었다. `AGENTS.md` navigation index 경로도 같이 갱신했다.
+- `docs/plans/` 상태별 재배치와 `AGENTS.md`↔`ARCHITECTURE.md` 중복 제거는 미착수.
+
 ## 5. 실행 순서 제안
 
 ```mermaid
@@ -306,7 +311,7 @@ git log --since="90 days ago" --name-only --pretty=format: -- Picky agentd/src \
 
 # 프로토콜 메시지 수
 rg -c 'z\.literal\("' agentd/src/protocol.ts
-rg -c '^\s+case [a-zA-Z]+' Picky/PickyAgentProtocol.swift
+rg -c '^\s+case [a-zA-Z]+' Picky/Protocol/PickyAgentProtocol.swift
 
 # SDK 누수
 rg -l 'from "@earendil-works/pi-coding-agent"' agentd/src --glob '!*.test.ts'

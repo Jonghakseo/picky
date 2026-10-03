@@ -116,7 +116,7 @@ Preferred outcomes:
 
 Any app-daemon protocol change must update the whole contract set:
 
-- Swift model in `Picky/PickyAgentProtocol.swift`;
+- Swift model in `Picky/Protocol/PickyAgentProtocol.swift`;
 - TypeScript schema in `agentd/src/protocol.ts`;
 - fixtures under `contracts/protocol`;
 - Swift tests in `PickyTests/ProtocolContractTests.swift`;

@@ -90,24 +90,29 @@ If Pi is mid-turn, the command first aborts the current turn and waits for it to
 When the user asks about a feature, start here before broad searching:
 
 - UX writing / labels / errors / localization: `design/UX_WRITING.md`, `.agents/skills/picky-ux-writing/SKILL.md`, `docs/i18n.md`, `Picky/Resources/Localizable.xcstrings`. Use the local `picky-ux-writing` skill when adding, changing, or auditing user-facing copy, including copy in new UI.
-- App lifecycle / menu bar / permissions: `Picky/PickyApp.swift`, `Picky/App/`, `Picky/Companion/CompanionPanel*.swift`
+- App lifecycle / menu bar / permissions: `Picky/PickyApp.swift`, `Picky/App/`, `Picky/Companion/PickyPermissionMonitor.swift`
+- Hub settings / prerequisites / plugin + main-agent settings UI: `Picky/Hub/Settings/`, `Picky/Hub/Plugins/`, `Picky/Hub/Pages/PickyHubSettingsPage.swift`
+- Always-on main-agent transcript state: `Picky/MainAgent/PickyMainAgentConversationStore.swift`
 - Settings / default cwd / local paths: `Picky/App/Settings/`, `Picky/App/Settings/PickySettingsStore.swift`
 - Voice / push-to-talk / dictation: `Picky/CompanionManager.swift`, `Picky/BuddyDictationManager.swift`, `Picky/Companion/Dictation/`
 - Global shortcut semantics/settings: `Picky/Shortcuts/`, `Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift`, `Picky/Companion/Dictation/BuddyPushToTalkShortcut.swift`, `Picky/QuickInput/QuickInputDoubleTapDetector.swift`
 - Quick text input: `Picky/QuickInput/`
 - Speech transcription/playback providers: `Picky/Companion/Dictation/AppleSpeechTranscriptionProvider.swift`, `Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`, `Picky/Companion/AzureOpenAI/`, `Picky/Companion/ElevenLabs/`, `Picky/Companion/Speech/`
 - Screen/context capture: `Picky/Context/`, `Picky/PickyAdvancedContext.swift`, `Picky/Context/PickyContextPacketAssembler.swift`
-- HUD shell / dock / Pickle container: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
-- HUD dock rail / dock icon / size reporting / recent-folder picker: `Picky/HUD/PickyHUDDockRailView.swift`, `Picky/HUD/PickyHUDDockIconView.swift`, `Picky/HUD/PickyHUDSizeReporting.swift`, `Picky/HUD/PickyRecentPickleFolderPicker.swift`
-- HUD presentation policies (status tone, artifact badges, slash-command autocomplete): `Picky/HUD/PickySessionStatusPresentation.swift`, `Picky/HUD/PickyArtifactPresentation.swift`, `Picky/HUD/PickySlashCommandAutocompletePolicy.swift`
+- HUD shell / panel placement / visibility: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
+- HUD dock rail / dock icon / recent-folder picker / dock render projection: `Picky/HUD/Dock/`, in particular `PickyHUDDockRailView.swift`, `PickyHUDDockIconView.swift`, `PickyRecentPickleFolderPicker.swift`, `PickyDockGrouping.swift`. HUD size reporting stays at `Picky/HUD/PickyHUDSizeReporting.swift`
+- Persisted dock layout model (groups, entries, colors; also mutated by the Picky CLI): `Picky/Sessions/Dock/PickyDockLayout.swift`
+- Tool history / tool activity rendering: `Picky/HUD/ToolHistory/`
+- Session archive UI: `Picky/HUD/Archive/`
+- HUD presentation policies (status tone, artifact badges, slash-command autocomplete): `Picky/HUD/PickySessionStatusPresentation.swift`, `Picky/HUD/Artifacts/PickyArtifactPresentation.swift`, `Picky/HUD/PickySlashCommandAutocompletePolicy.swift`
 - Conversation card UI: `Picky/HUD/Conversation/`, particularly `PickyConversationCardView`, `PickyConversationListView`, `PickyConversationComposerView`, `PickyConversationMenu`
 - Conversation bubble components: `Picky/HUD/Conversation/Bubbles/`
 - Session selection/archive state: `Picky/Sessions/PickySessionSelectionStore.swift`, `Picky/Sessions/`
 - Shared SwiftTerm plumbing / resume command / Pi session sync: `Picky/Sessions/PickyTerminalOverlay.swift`, `Picky/HUD/Conversation/PickySessionExtendedTerminalView.swift`, `Picky/PickySessionViewModel.swift`, search `copyTerminalResumeCommand` or `syncTerminalSessionOnce`
 - Interaction state/effects: `Picky/Interaction/`
 - Per-Pickle daemon topology and session ownership rules: `docs/per-pickle-daemon-topology.md`, `Picky/Sessions/Projection/PickyProjectionOwnershipLedger.swift`, `Picky/PickyAgentDaemonPool.swift`
-- Pointer overlay validation/resolution: `Picky/PointerOverlay/`, `agentd/src/application/pointer-overlay-request.ts`, `agentd/src/application/overlay-context-resolver.ts`, `agentd/src/domain/pointer-validation.ts`
-- App-daemon protocol/client: `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, `Picky/PickyAgentClientRouter.swift`, `Picky/PickyAgentDaemonLauncher.swift`, `Picky/PickyAgentDaemonPool.swift`
+- Pointer overlay validation/resolution: `Picky/Overlay/Pointer/`, `agentd/src/application/pointer-overlay-request.ts`, `agentd/src/application/overlay-context-resolver.ts`, `agentd/src/domain/pointer-validation.ts`
+- App-daemon protocol/client: `Picky/Protocol/` (all Codable protocol models; `Picky/Protocol/PickyAgentProtocol.swift` holds the envelope and version), `Picky/PickyAgentClient.swift`, `Picky/PickyAgentClientRouter.swift`, `Picky/PickyAgentDaemonLauncher.swift`, `Picky/PickyAgentDaemonPool.swift`
 - agentd entry/composition: `agentd/src/index.ts`
 - agentd WebSocket protocol handling: `agentd/src/server.ts`, `agentd/src/protocol.ts`
 - agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts` (Pickle sessions), `agentd/src/application/main-agent-coordinator.ts` (always-on main agent: handle lifecycle, turn/interrupt guards, idle compaction, Pickle completion delivery), `agentd/src/session-store.ts`
@@ -122,7 +127,7 @@ When the user asks about a feature, start here before broad searching:
 - Pi SDK adapters (tools, extension UI, OAuth, package manager, RPC runner): `agentd/src/runtime/`. Only `runtime/` and `bootstrap.ts` may import `@earendil-works/*`; application code depends on `agentd/src/runtime/types.ts` (guard-enforced)
 - Pi session sync: `agentd/src/application/pi-session-syncer.ts`
 - MCP servers (Pi built-in MCP, per-server `pickyScope`, Hub management): `agentd/src/runtime/picky-mcp.ts`, `agentd/src/runtime/mcp-server-admin.ts`, `Picky/Hub/Plugins/PickyHubMcpServers*.swift`, `Picky/Hub/Plugins/PickyMcpServerClient.swift`
-- Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/PickyArtifactReporter.swift`, `Picky/HUD/PickyReportViewer.swift`
+- Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/Artifacts/` (`PickyArtifactReporter.swift`, `PickyReportViewer.swift`)
 - Pi extension handoff command: `pi-extensions/picky-handoff/`
 - HUD perf instrumentation / profiling playbook: `Picky/Feedback/PickyPerf.swift`, `docs/perf-profiling.md` (use this before guessing at HUD lag root causes)
 - Swift Concurrency guidelines (MainActor-first, measure before optimizing, GCD migration): `docs/swift-concurrency.md` (follow this when adding/refactoring async Swift code)

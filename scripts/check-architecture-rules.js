@@ -236,7 +236,7 @@ function checkPermissionPromptAPIUsage() {
 }
 
 function checkProtocolParity() {
-  const swift = read("Picky/PickyAgentProtocol.swift").match(/pickyAgentProtocolVersion\s*=\s*"([^"]+)"/);
+  const swift = read("Picky/Protocol/PickyAgentProtocol.swift").match(/pickyAgentProtocolVersion\s*=\s*"([^"]+)"/);
   const ts = read("agentd/src/protocol.ts").match(/PROTOCOL_VERSION\s*=\s*"([^"]+)"/);
   if (!swift) addError("Could not find Swift pickyAgentProtocolVersion.");
   if (!ts) addError("Could not find TypeScript PROTOCOL_VERSION.");
@@ -346,13 +346,13 @@ function swiftDecodedEventTypes(source) {
 
 function checkProtocolMessageSetParity() {
   const ts = read("agentd/src/protocol.ts");
-  const swift = read("Picky/PickyAgentProtocol.swift");
+  const swift = read("Picky/Protocol/PickyAgentProtocol.swift");
   const tsCommands = zodUnionTypeLiterals(ts, "CommandEnvelopeSchema");
   const tsEvents = zodUnionTypeLiterals(ts, "EventEnvelopeVariantSchema");
   const swiftCommands = swiftStringEnumRawValues(swift, "PickyCommandType");
   const swiftEvents = swiftDecodedEventTypes(swift);
   if (!tsCommands || !tsEvents) addError("Could not locate CommandEnvelopeSchema/EventEnvelopeVariantSchema in agentd/src/protocol.ts.");
-  if (!swiftCommands || !swiftEvents) addError("Could not locate PickyCommandType or the PickyEvent decoder in Picky/PickyAgentProtocol.swift.");
+  if (!swiftCommands || !swiftEvents) addError("Could not locate PickyCommandType or the PickyEvent decoder in Picky/Protocol/PickyAgentProtocol.swift.");
   if (!tsCommands || !tsEvents || !swiftCommands || !swiftEvents) return;
 
   const compare = (kind, tsSet, swiftSet, externalOnly) => {
@@ -361,7 +361,7 @@ function checkProtocolMessageSetParity() {
       if (externalOnly.has(type)) addError(`Protocol ${kind} "${type}" is listed as external-only but Picky.app defines it; remove it from the external-only allowlist.`);
     }
     for (const type of tsSet) {
-      if (!swiftSet.has(type) && !externalOnly.has(type)) addError(`TypeScript ${kind} "${type}" is missing from Picky/PickyAgentProtocol.swift. Mirror it in Swift, or add it to the external-only allowlist if only the CLI uses it.`);
+      if (!swiftSet.has(type) && !externalOnly.has(type)) addError(`TypeScript ${kind} "${type}" is missing from Picky/Protocol/PickyAgentProtocol.swift. Mirror it in Swift, or add it to the external-only allowlist if only the CLI uses it.`);
     }
     for (const type of externalOnly) {
       if (!tsSet.has(type)) addError(`External-only ${kind} "${type}" no longer exists in agentd/src/protocol.ts; remove it from the allowlist.`);
@@ -813,9 +813,9 @@ function checkFileSizeRatchet() {
     ["Picky/PickySessionViewModel.swift", 2654],
     ["Picky/CompanionManager.swift", 2485],
     ["Picky/Interaction/PickyInteractionReducer.swift", 1400],
-    ["Picky/Companion/CompanionPanelSettingsView.swift", 1982],
+    ["Picky/Hub/Settings/CompanionPanelSettingsView.swift", 1982],
     ["Picky/Overlay/BlueCursorView.swift", 1700],
-    ["Picky/PickyAgentProtocol.swift", 1509],
+    ["Picky/Protocol/PickyAgentProtocol.swift", 1509],
     ["agentd/src/session-supervisor.ts", 1992],
     ["agentd/src/runtime/pi-sdk-runtime.ts", 1539],
   ]);
@@ -1104,7 +1104,7 @@ function main() {
     return;
   }
 
-  if (!exists("Picky/PickyAgentProtocol.swift") || !exists("agentd/src/protocol.ts")) {
+  if (!exists("Picky/Protocol/PickyAgentProtocol.swift") || !exists("agentd/src/protocol.ts")) {
     addError("Run this script from the repository root.");
   } else {
     checkGuardPatternFixtures();

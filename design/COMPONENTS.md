@@ -90,8 +90,8 @@
 
 주요 구현:
 
-- `Picky/HUD/PickyHUDDockRailView.swift`
-- `Picky/HUD/PickyHUDDockIconView.swift`
+- `Picky/HUD/Dock/PickyHUDDockRailView.swift`
+- `Picky/HUD/Dock/PickyHUDDockIconView.swift`
 - `Picky/HUD/PickyHUDLayoutPolicy.swift`
 
 Dock group folder/list의 시각 변경은 앱을 실행하지 않는 render gallery로도 확인한다.
@@ -169,7 +169,7 @@ state owners and receive only Hub-local framing.
 
 주요 구현:
 
-- `Picky/Companion/`
+- `Picky/Hub/Settings/`
 - `Picky/App/Settings/`
 - `Picky/Shortcuts/`
 

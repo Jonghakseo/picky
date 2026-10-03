@@ -365,6 +365,35 @@ describe("RuntimeEventHandler", () => {
     expect(harness.onInputMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("reports reply writing once per segment without persisting anything", async () => {
+    const harness = inputHarness();
+    harness.handler.resetAssistantDraft("pickle-1");
+    harness.patchSession.mockClear();
+    harness.setReplyWriting.mockClear();
+    const reported = () => harness.setReplyWriting.mock.calls.map(([, writing]) => writing);
+
+    // One notification for the whole streamed segment, not one per delta, and
+    // streaming must not write to the session store at all.
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "Writing " });
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "a reply" });
+    expect(reported()).toEqual([true]);
+    expect(harness.patchSession).not.toHaveBeenCalled();
+
+    // A tool call ends the segment; the next segment reports again.
+    await harness.handler.handle("pickle-1", { type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "more" });
+    expect(reported()).toEqual([true, false, true]);
+
+    // Reasoning output is not reply text.
+    await harness.handler.handle("pickle-1", { type: "thinking_delta", delta: "deciding" });
+    expect(reported()).toEqual([true, false, true, false]);
+
+    // A terminal status leaves it cleared.
+    await harness.handler.handle("pickle-1", { type: "assistant_delta", delta: "final" });
+    await harness.handler.handle("pickle-1", { type: "status", status: "completed", summary: "Done" });
+    expect(reported()).toEqual([true, false, true, false, true, false]);
+  });
+
   it("returns an isolated runtime terminal snapshot without flushing drafts", async () => {
     const harness = inputHarness();
     harness.handler.resetAssistantDraft("pickle-1");
@@ -393,6 +422,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     current = { ...current, ...patch };
   });
   const onInputMessage = vi.fn(async () => {});
+  const setReplyWriting = vi.fn();
   const recordExtensionText = vi.fn(async () => {});
   const recordUserText = vi.fn(async () => {});
   const materializeTerminalArtifacts = vi.fn(async () => {});
@@ -428,6 +458,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     isPickleSession: () => true,
     emitExtensionUiRequest: () => {},
     onInputMessage,
+    setReplyWriting,
     messageBuilder,
   });
   return {
@@ -436,6 +467,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     setCurrent: (patch: Partial<PickyAgentSession>) => { current = { ...current, ...patch }; },
     patchSession,
     onInputMessage,
+    setReplyWriting,
     recordExtensionText,
     recordUserText,
     materializeTerminalArtifacts,

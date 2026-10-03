@@ -12,9 +12,23 @@ import SwiftUI
 struct PickyConversationPresencePresentation: Equatable {
     enum Phase: Equatable {
         case thinking
+        /// The model is streaming its reply text, reported by the daemon as
+        /// `isWritingReply`. The app cannot infer this: assistant deltas are
+        /// buffered and only journaled when the segment ends.
+        case writing
         case working
         case waitingForInput
     }
+
+    /// Friendly wordings for `.writing`. One is chosen from the turn start so a
+    /// single turn never rotates its label while the line is on screen, and
+    /// consecutive turns still read differently.
+    static let writingTitleKeys = [
+        "hud.presence.writing.choosingWords",
+        "hud.presence.writing.writingBack",
+        "hud.presence.writing.polishing",
+        "hud.presence.writing.puttingIntoWords",
+    ]
 
     let phase: Phase
     /// Human-written description of the current step. Never a raw command,
@@ -25,16 +39,24 @@ struct PickyConversationPresencePresentation: Equatable {
     var title: String {
         switch phase {
         case .thinking: L10n.t("hud.presence.thinking")
+        case .writing: L10n.t(Self.writingTitleKey(forTurnStartedAt: startedAt))
         case .working: L10n.t("hud.liveStep.working")
         case .waitingForInput: L10n.t("hud.conversation.status.waiting")
         }
     }
 
+    static func writingTitleKey(forTurnStartedAt startedAt: Date?) -> String {
+        guard let startedAt, startedAt.timeIntervalSince1970.isFinite else { return writingTitleKeys[0] }
+        let seconds = Int(startedAt.timeIntervalSince1970.rounded(.down))
+        return writingTitleKeys[((seconds % writingTitleKeys.count) + writingTitleKeys.count) % writingTitleKeys.count]
+    }
+
     var isAnimated: Bool { phase != .waitingForInput }
 
-    /// Only a running tool makes the live value "working"; between tools it is
-    /// "thinking". `PickyConversationPresenceStabilizer` holds the last step on
-    /// screen through short gaps, so "thinking" shows only for long pauses. Once the agent has finished responding, the line
+    /// A running tool makes the live value "working" and streaming reply text
+    /// makes it "writing"; otherwise it is "thinking".
+    /// `PickyConversationPresenceStabilizer` holds the last step on screen
+    /// through short gaps, so "thinking" shows only for long pauses. Once the agent has finished responding, the line
     /// disappears even if the session stays running for background work
     /// (`bash_async`, subagents): the Pickle can take a new message, and the
     /// running-task footer already shows that work.
@@ -43,6 +65,7 @@ struct PickyConversationPresencePresentation: Equatable {
         isWaitingForInput: Bool,
         activeTool: PickyToolActivity?,
         activeTodoForm: String?,
+        isWritingReply: Bool = false,
         startedAt: Date?,
         isAgentResponding: Bool = true
     ) -> Self? {
@@ -53,6 +76,9 @@ struct PickyConversationPresencePresentation: Equatable {
         let todo = activeTodoForm.flatMap(nonEmptyLine)
         if let activeTool, activeTool.isActive {
             return Self(phase: .working, detail: todo ?? detail(for: activeTool), startedAt: startedAt)
+        }
+        if isWritingReply {
+            return Self(phase: .writing, detail: nil, startedAt: startedAt)
         }
         return Self(phase: .thinking, detail: nil, startedAt: startedAt)
     }
@@ -86,38 +112,38 @@ struct PickyConversationPresencePresentation: Equatable {
 /// Keeps the last step on screen between tool calls. Most tools finish in
 /// well under a second while the model spends most of a turn choosing the next
 /// one, so a strict live value read "thinking" nearly all the time. Entering
-/// "working", changing its detail, waiting for input, and any non-working
-/// change apply at once. Leaving "working" for "thinking" waits until the step
-/// has been gone for `workingGrace` (and shown for `minimumWorkingDuration`):
-/// the next tool inside that window only swaps the detail, and only a pause
+/// "working" or "writing", changing a detail, waiting for input, and any other
+/// change apply at once. Falling back to "thinking" waits until the step has
+/// been gone for `workingGrace` (and shown for `minimumWorkingDuration`): the
+/// next tool or reply inside that window only swaps the line, and only a pause
 /// longer than the grace reads as "thinking" again.
 struct PickyConversationPresenceStabilizer: Equatable {
     static let workingGrace: TimeInterval = 5
     static let minimumWorkingDuration: TimeInterval = 0.6
 
     private(set) var displayed: PickyConversationPresencePresentation?
-    private var workingSince: Date?
-    /// When the live value first stopped being "working" (the step ended).
-    private var leftWorkingAt: Date?
+    private var stepSince: Date?
+    /// When the live value first stopped reporting a step (working or writing).
+    private var leftStepAt: Date?
 
     /// Applies `target` at `now` and returns how long to wait before calling
     /// again, or nil when the displayed value already matches the target.
     mutating func update(target: PickyConversationPresencePresentation, now: Date) -> TimeInterval? {
-        if target.phase == .working {
-            if displayed?.phase != .working { workingSince = now }
-            leftWorkingAt = nil
+        if Self.isStep(target.phase) {
+            if !Self.isStep(displayed?.phase) { stepSince = now }
+            leftStepAt = nil
             displayed = target
             return nil
         }
-        guard displayed?.phase == .working, target.phase == .thinking, let workingSince else {
+        guard Self.isStep(displayed?.phase), target.phase == .thinking, let stepSince else {
             reset(to: target)
             return nil
         }
-        let leftAt = leftWorkingAt ?? now
-        leftWorkingAt = leftAt
+        let leftAt = leftStepAt ?? now
+        leftStepAt = leftAt
         let releaseAt = max(
             leftAt.addingTimeInterval(Self.workingGrace),
-            workingSince.addingTimeInterval(Self.minimumWorkingDuration)
+            stepSince.addingTimeInterval(Self.minimumWorkingDuration)
         )
         let remaining = releaseAt.timeIntervalSince(now)
         guard remaining > 0 else {
@@ -127,10 +153,15 @@ struct PickyConversationPresenceStabilizer: Equatable {
         return remaining
     }
 
+    /// Phases that report actual progress, so they hold the line through a gap.
+    private static func isStep(_ phase: PickyConversationPresencePresentation.Phase?) -> Bool {
+        phase == .working || phase == .writing
+    }
+
     private mutating func reset(to target: PickyConversationPresencePresentation) {
         displayed = target
-        workingSince = nil
-        leftWorkingAt = nil
+        stepSince = nil
+        leftStepAt = nil
     }
 }
 

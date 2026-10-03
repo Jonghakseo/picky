@@ -482,6 +482,10 @@ enum PickyEvent: Equatable {
     /// this event; the app then keeps the scheduled projection it already has.
     case sessionQueueUpdated(sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], scheduled: [PickyScheduledMessage]?, steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int)
     case sessionActivityUpdated(sessionId: String, activitySummary: PickyActivitySummary, seq: Int)
+    /// Live-only presence signal: the model is streaming its reply text. The
+    /// daemon deliberately does not persist this, so it is never hydrated from
+    /// a snapshot and an older daemon simply never sends it.
+    case sessionReplyWritingUpdated(sessionId: String, writing: Bool)
     case terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome)
     case error(PickyErrorEvent)
     case ack(PickyAckEvent)
@@ -624,6 +628,9 @@ enum PickyEvent: Equatable {
         case "sessionActivityUpdated":
             let payload = try PickySessionActivityUpdatedPayload(from: decoder)
             return .sessionActivityUpdated(sessionId: payload.sessionId, activitySummary: payload.activitySummary, seq: payload.seq)
+        case "sessionReplyWritingUpdated":
+            let payload = try PickySessionReplyWritingUpdatedPayload(from: decoder)
+            return .sessionReplyWritingUpdated(sessionId: payload.sessionId, writing: payload.writing)
         case "terminalSessionSyncOutcome":
             return .terminalSessionSyncOutcome(try PickyTerminalSessionSyncOutcome(from: decoder))
         default: return nil
@@ -971,6 +978,11 @@ enum PickyPushToTalkControlAction: String, Codable, Equatable {
 struct PickyPushToTalkControlRequest: Decodable, Equatable {
     let requestId: String
     let action: PickyPushToTalkControlAction
+}
+
+struct PickySessionReplyWritingUpdatedPayload: Decodable, Equatable {
+    let sessionId: String
+    let writing: Bool
 }
 
 struct PickyTerminalSessionSyncOutcome: Decodable, Equatable {

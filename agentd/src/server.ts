@@ -163,6 +163,11 @@ export class AgentdServer {
 
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("annotationOverlayRequested", (request) => this.broadcast({ type: "annotationOverlayRequested", request }));
+    this.options.supervisor.on("replyWriting", (sessionId: string, writing: boolean) => this.broadcast({
+      type: "sessionReplyWritingUpdated",
+      sessionId,
+      writing,
+    }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
       type: "terminalSessionSyncOutcome",
       sessionId,
@@ -1446,6 +1451,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "sessionQueueUpdated":
     case "sessionActivityUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, seq: event.seq };
+    case "sessionReplyWritingUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, writing: event.writing ? 1 : 0 };
     case "terminalSessionSyncOutcome":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, baselineFound: event.baselineFound ? 1 : 0, importedMessageCount: event.importedMessageCount };
     case "error":

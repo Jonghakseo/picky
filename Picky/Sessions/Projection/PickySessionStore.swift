@@ -113,6 +113,7 @@ final class PickySessionStore {
             updatedAt: metadata.updatedAt,
             lastSummary: metadata.lastSummary ?? "",
             thinkingPreview: metadata.thinkingPreview,
+            isWritingReply: presentation.isWritingReply,
             logPreview: presentation.logPreview,
             lastRequestText: presentation.lastRequestText,
             lastRequestAt: presentation.lastRequestAt,
@@ -314,11 +315,16 @@ final class PickySessionStore {
         presentation.lastTerminalSyncOutcome = outcome
     }
 
+    func replaceReplyWriting(_ writing: Bool) {
+        presentation.isWritingReply = writing
+    }
+
     /// A `session_replaced` transaction is an explicit daemon reset, unlike a
     /// recovery snapshot. Its fresh session must not retain local UI state.
     func clearLocallyOwnedProjectionPresentation() {
         presentation.lastRequestAt = nil
         presentation.lastTerminalSyncOutcome = nil
+        presentation.isWritingReply = false
     }
 }
 
@@ -328,13 +334,15 @@ private struct PickySessionCardPresentation {
     var lastRequestAt: Date?
     var piSessionFilePath: String?
     var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
+    var isWritingReply: Bool
 
     static let empty = Self(
         logPreview: "",
         lastRequestText: nil,
         lastRequestAt: nil,
         piSessionFilePath: nil,
-        lastTerminalSyncOutcome: nil
+        lastTerminalSyncOutcome: nil,
+        isWritingReply: false
     )
 
     init(card: PickySessionListViewModel.SessionCard) {
@@ -343,6 +351,7 @@ private struct PickySessionCardPresentation {
         lastRequestAt = card.lastRequestAt
         piSessionFilePath = card.piSessionFilePath
         lastTerminalSyncOutcome = card.lastTerminalSyncOutcome
+        isWritingReply = card.isWritingReply
     }
 
     private init(
@@ -350,13 +359,15 @@ private struct PickySessionCardPresentation {
         lastRequestText: String?,
         lastRequestAt: Date?,
         piSessionFilePath: String?,
-        lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
+        lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?,
+        isWritingReply: Bool
     ) {
         self.logPreview = logPreview
         self.lastRequestText = lastRequestText
         self.lastRequestAt = lastRequestAt
         self.piSessionFilePath = piSessionFilePath
         self.lastTerminalSyncOutcome = lastTerminalSyncOutcome
+        self.isWritingReply = isWritingReply
     }
 }
 

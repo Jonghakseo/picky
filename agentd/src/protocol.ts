@@ -1250,6 +1250,11 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   // optional so both shapes decode.
   EventBaseSchema.extend({ type: z.literal("sessionQueueUpdated"), sessionId: z.string(), steering: z.array(PickyQueueItemSchema), followUp: z.array(PickyQueueItemSchema), scheduledMessages: z.array(PickyScheduledMessageSchema).optional(), steeringMode: PickyQueueModeSchema.optional(), followUpMode: PickyQueueModeSchema.optional(), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionActivityUpdated"), sessionId: z.string(), activitySummary: PickyActivitySummarySchema, seq: z.number().int() }),
+  // Live-only presence signal: true while the model streams reply text, false at
+  // the end of that segment. Deliberately not a persisted session field, because
+  // assistant deltas must not trigger a durable session write, and a dead turn's
+  // writing state has no meaning after reconnect or restart.
+  EventBaseSchema.extend({ type: z.literal("sessionReplyWritingUpdated"), sessionId: z.string(), writing: z.boolean() }),
   EventBaseSchema.extend({
     type: z.literal("terminalSessionSyncOutcome"),
     sessionId: z.string(),

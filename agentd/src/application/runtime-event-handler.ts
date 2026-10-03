@@ -58,6 +58,8 @@ interface RuntimeEventHandlerDependencies {
   sanitizeAssistantText?(sessionId: string, text: string): string;
   finishAssistantMessage?(sessionId: string): void;
   finishAssistantRun?(sessionId: string, finalAnswer?: string): void;
+  /** Broadcasts the live "model is writing its reply" transition. Never persisted. */
+  setReplyWriting?(sessionId: string, writing: boolean): void;
   messageBuilder: RuntimeMessageJournal;
 }
 
@@ -89,6 +91,8 @@ export class RuntimeEventHandler {
   private readonly assistantDrafts = new Map<string, string>();
   private readonly thinkingDrafts = new Map<string, string>();
   private readonly thinkingActive = new Map<string, boolean>();
+  /** Live "streaming reply text" state per session; never persisted. */
+  private readonly replyWriting = new Map<string, boolean>();
   private readonly pendingThinkingFlushes = new Map<string, PendingThinkingFlush>();
   private readonly activeThinkingFlushes = new Map<string, Promise<void>>();
   private readonly seenToolCallIds = new Map<string, Set<string>>();
@@ -112,6 +116,7 @@ export class RuntimeEventHandler {
 
   resetAssistantDraft(sessionId: string): void {
     this.assertTerminalPersistenceReady(sessionId);
+    this.setReplyWriting(sessionId, false);
     this.assistantDrafts.set(sessionId, "");
     this.processedTerminalRuns.delete(sessionId);
     this.loggedTerminalDrops.delete(sessionId);
@@ -139,7 +144,7 @@ export class RuntimeEventHandler {
   }
 
   /** Individual post-commit reset hooks map one-for-one to the transient ownership manifest. */
-  resetTerminalAssistantDraft(sessionId: string): void { this.assistantDrafts.set(sessionId, ""); }
+  resetTerminalAssistantDraft(sessionId: string): void { this.setReplyWriting(sessionId, false); this.assistantDrafts.set(sessionId, ""); }
   resetTerminalThinkingDraft(sessionId: string): void { this.thinkingDrafts.set(sessionId, ""); }
   resetTerminalThinkingActive(sessionId: string): void { this.thinkingActive.set(sessionId, false); }
   clearTerminalPendingThinkingFlush(sessionId: string): void { this.clearPendingThinkingFlush(sessionId); }
@@ -204,6 +209,7 @@ export class RuntimeEventHandler {
       if (isIgnoredFireAndForgetExtensionUi(event)) return;
       await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
+      this.setReplyWriting(sessionId, false);
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
@@ -215,6 +221,7 @@ export class RuntimeEventHandler {
       if (delta) {
         this.dependencies.messageBuilder.appendAssistantDelta(sessionId, delta);
         this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${delta}`);
+        this.setReplyWriting(sessionId, true);
       }
       return;
     }
@@ -224,6 +231,7 @@ export class RuntimeEventHandler {
       const terminal = ["completed", "failed", "cancelled"].includes(event.status);
       // A terminal event owns its entire staged operation. Draining or clearing drafts before
       // SessionSupervisor saves would leak transient state when that sole save rejects.
+      this.setReplyWriting(sessionId, false);
       if (!terminal) {
         await this.drainPendingThinkingFlush(sessionId);
         this.thinkingActive.set(sessionId, false);
@@ -498,8 +506,25 @@ export class RuntimeEventHandler {
       && isTransientAgentBusyError(event.summary);
   }
 
+  /**
+   * Reports whether the model is streaming reply text, the only thing that
+   * separates "writing a reply" from "thinking" in the HUD presence line:
+   * assistant deltas are buffered and journaled only when the segment ends.
+   *
+   * This is a live broadcast, not a session patch. Streaming a reply must stay
+   * free of durable session writes (see the terminal durability contract), and
+   * the writing state of a finished turn means nothing after a reconnect. Only
+   * transitions are reported, never one notification per delta.
+   */
+  private setReplyWriting(sessionId: string, writing: boolean): void {
+    if ((this.replyWriting.get(sessionId) ?? false) === writing) return;
+    this.replyWriting.set(sessionId, writing);
+    this.dependencies.setReplyWriting?.(sessionId, writing);
+  }
+
   private async applyThinkingEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "thinking_delta" }>): Promise<void> {
     if (!event.delta) return;
+    this.setReplyWriting(sessionId, false);
 
     const shouldIncrementThinking = this.thinkingActive.get(sessionId) !== true;
     if (shouldIncrementThinking) this.thinkingActive.set(sessionId, true);
@@ -624,6 +649,7 @@ export class RuntimeEventHandler {
     const current = this.dependencies.getSession(sessionId);
     if (current.pendingExtensionUiRequest?.id !== requestId) return;
     await this.dependencies.messageBuilder.cancelExtensionQuestion(sessionId, requestId);
+    this.setReplyWriting(sessionId, false);
     const patch: Partial<PickyAgentSession> = { pendingExtensionUiRequest: undefined, thinkingPreview: undefined };
     if (current.status === "waiting_for_input") {
       patch.status = "running";
@@ -635,6 +661,7 @@ export class RuntimeEventHandler {
   // eslint-disable-next-line complexity -- Tool lifecycle ordering is kept atomic so late-event and activity accounting guards cannot drift apart.
   private async applyToolEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "tool" }>): Promise<void> {
     this.thinkingActive.set(sessionId, false);
+    this.setReplyWriting(sessionId, false);
     const seen = this.seenToolCallIds.get(sessionId) ?? new Set<string>();
     const shouldIncrementActivity = event.status === "running" && !seen.has(event.toolCallId);
     if (shouldIncrementActivity) {

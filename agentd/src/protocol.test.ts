@@ -1036,6 +1036,23 @@ describe("protocol contract fixtures", () => {
     expect(() => EventEnvelopeSchema.parse({ ...snapshot, omittedFields: ["messages", "messages"] })).toThrow();
   });
 
+  it("carries the live reply-writing signal without a session revision", () => {
+    const event = {
+      id: "event-reply-writing",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-08-24T00:00:00.000Z",
+      type: "sessionReplyWritingUpdated" as const,
+      sessionId: "session-001",
+      writing: true,
+    };
+
+    expect(EventEnvelopeSchema.parse(event)).toMatchObject(event);
+    expect(EventEnvelopeSchema.parse({ ...event, writing: false })).toMatchObject({ writing: false });
+    expect(() => EventEnvelopeSchema.parse({ ...event, writing: "yes" })).toThrow();
+    // Deliberately not a persisted session field: streaming must stay free of durable writes.
+    expect(Object.keys(PickyAgentSessionSchema.shape)).not.toContain("isWritingReply");
+  });
+
   it("validates session projection bootstrap membership completion", () => {
     const completion = {
       id: "event-projection-bootstrap-complete",

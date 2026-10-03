@@ -236,6 +236,7 @@ export class SessionSupervisor extends EventEmitter {
         this.pickleVisualDslCoordinator.completeAssistantRun(sessionId, finalAnswer);
         this.pickleVisualDslCoordinator.deactivate(sessionId, "runtime terminal");
       },
+      setReplyWriting: (sessionId, writing) => this.emit("replyWriting", sessionId, writing),
       messageBuilder: this.messageBuilder,
     });
     this.terminalManualCompactionCoordinator = new TerminalManualCompactionCoordinator({

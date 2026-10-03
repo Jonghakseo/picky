@@ -286,6 +286,27 @@ struct ProtocolContractTests {
         #expect(event.event == .sessionLogAppended(sessionId: "session-001", line: "hello"))
     }
 
+    @Test func decodesSessionReplyWritingUpdatedEvent() throws {
+        let json = { (writing: String) in
+            """
+            {
+              "id":"event-reply-writing",
+              "protocolVersion":"2026-07-23",
+              "timestamp":"2026-05-01T00:00:00.000Z",
+              "type":"sessionReplyWritingUpdated",
+              "sessionId":"session-001",
+              "writing":\(writing)
+            }
+            """.data(using: .utf8)!
+        }
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+
+        #expect(try decoder.decode(PickyEventEnvelope.self, from: json("true")).event
+            == .sessionReplyWritingUpdated(sessionId: "session-001", writing: true))
+        #expect(try decoder.decode(PickyEventEnvelope.self, from: json("false")).event
+            == .sessionReplyWritingUpdated(sessionId: "session-001", writing: false))
+    }
+
     @Test func preservesUnknownEventTypeForLogging() throws {
         let json = """
         {

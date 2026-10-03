@@ -27207,6 +27207,70 @@
         }
       }
     },
+    "hud.presence.writing.choosingWords": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choosing words"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "할 말을 고르는 중"
+          }
+        }
+      }
+    },
+    "hud.presence.writing.polishing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Polishing sentences"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문장을 다듬는 중"
+          }
+        }
+      }
+    },
+    "hud.presence.writing.puttingIntoWords": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Putting it into words"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말을 정리하는 중"
+          }
+        }
+      }
+    },
+    "hud.presence.writing.writingBack": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Writing back"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답장 쓰는 중"
+          }
+        }
+      }
+    },
     "hud.conversation.dateDivider.today": {
       "localizations": {
         "en": {

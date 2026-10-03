@@ -616,6 +616,40 @@ struct PickyTurnCardViewTests {
             isRunning: false, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil, startedAt: nil) == nil)
     }
 
+    /// Reply text is its own phase so a long answer no longer reads as
+    /// "thinking". Tool activity still wins, and the friendly wording is fixed
+    /// for the turn so the line never rotates while it is on screen.
+    @Test func presenceReadsAsWritingWhileTheReplyStreams() {
+        let bash = PickyToolActivity(toolCallId: "b", name: "bash", status: "running",
+                                     argsPreview: #"{"command":"ls","title":"목록 확인"}"#)
+        let turnStart = Date(timeIntervalSince1970: 1_000_002)
+
+        let writing = PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: "HUD 정리 중",
+            isWritingReply: true, startedAt: turnStart)
+        #expect(writing?.phase == .writing)
+        // The reply itself is already on screen, so the line carries no detail.
+        #expect(writing?.detail == nil)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil,
+            isWritingReply: true, startedAt: turnStart)?.phase == .working)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: false, isWaitingForInput: true, activeTool: nil, activeTodoForm: nil,
+            isWritingReply: true, startedAt: turnStart)?.phase == .waitingForInput)
+
+        let key = PickyConversationPresencePresentation.writingTitleKey(forTurnStartedAt: turnStart)
+        #expect(PickyConversationPresencePresentation.writingTitleKeys.contains(key))
+        #expect(PickyConversationPresencePresentation.writingTitleKey(forTurnStartedAt: turnStart.addingTimeInterval(0.4)) == key)
+        #expect(writing?.title == L10n.t(key))
+        // A missing catalog entry falls back to the raw key; the wording must be real copy.
+        #expect(writing?.title != key)
+        // Consecutive turns do not all read the same.
+        let variants = (0..<PickyConversationPresencePresentation.writingTitleKeys.count).map {
+            PickyConversationPresencePresentation.writingTitleKey(forTurnStartedAt: Date(timeIntervalSince1970: Double(1_000_000 + $0)))
+        }
+        #expect(Set(variants) == Set(PickyConversationPresencePresentation.writingTitleKeys))
+    }
+
     /// Tools are short and the model's pauses between them are long, so the
     /// line keeps the last step for 5 seconds after it ends and reads
     /// "thinking" only when a pause runs longer than that.
@@ -654,6 +688,16 @@ struct PickyTurnCardViewTests {
         #expect(stabilizer.update(target: working, now: t0.addingTimeInterval(12)) == nil)
         #expect(stabilizer.update(target: waiting, now: t0.addingTimeInterval(12.1)) == nil)
         #expect(stabilizer.displayed == waiting)
+
+        // Streaming reply text is a step too: it applies at once and holds the
+        // line for the same 5 seconds before "thinking" comes back.
+        let writing = PickyConversationPresencePresentation(phase: .writing, detail: nil, startedAt: nil)
+        #expect(stabilizer.update(target: writing, now: t0.addingTimeInterval(13)) == nil)
+        #expect(stabilizer.displayed == writing)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(13.5)) != nil)
+        #expect(stabilizer.displayed == writing)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(18.6)) == nil)
+        #expect(stabilizer.displayed == thinking)
     }
 
     @Test func dateDividerTitlesUseTodayYesterdayAndDates() {

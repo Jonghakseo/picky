@@ -1854,6 +1854,8 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = error.message
             handleSessionProjectionRecoveryFailure(commandID: error.commandId)
             handleArchiveIntentFailure(commandID: error.commandId)
+        case .sessionReplyWritingUpdated(let sessionId, let writing):
+            applySessionReplyWriting(sessionID: sessionId, writing: writing)
         case .terminalSessionSyncOutcome(let outcome):
             applyTerminalSessionSyncOutcome(outcome)
         case .externalEntryAccepted(let accepted):
@@ -2213,6 +2215,19 @@ final class PickySessionListViewModel: ObservableObject {
         // successful import.
         guard PickyTerminalSyncOutcomePolicy.shouldSurfaceBanner(for: outcome) else { return }
         updateTerminalSessionSyncOutcome(sessionID: outcome.sessionId, outcome: outcome)
+    }
+
+    /// The daemon reports reply streaming as a live signal with no projection
+    /// owner, so it lands in the same locally-owned presentation slot as the
+    /// terminal-sync banner rather than in the persisted projection.
+    private func applySessionReplyWriting(sessionID: String, writing: Bool) {
+        if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
+            _ = storage.updateProjectionPresentation(sessionID: sessionID) {
+                $0.replaceReplyWriting(writing)
+            }
+        } else {
+            mutateSession(sessionID: sessionID) { $0.isWritingReply = writing }
+        }
     }
 
     func dismissTerminalSyncOutcome(sessionID: String) {

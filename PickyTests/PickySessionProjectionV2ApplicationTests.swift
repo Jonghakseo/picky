@@ -1076,6 +1076,38 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.sessions.first?.lastTerminalSyncOutcome == nil)
     }
 
+    /// The app cannot tell "writing a reply" from "thinking" on its own. The
+    /// daemon's live signal has no projection owner, so it has to reach the
+    /// rendered presence line without a revision and survive a later
+    /// projection transaction that rebuilds the card.
+    @Test func replyWritingSignalReachesTheRenderedPresenceLine() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(sessionID: "session-a", title: "Writing", status: .running, revision: 1), to: viewModel)
+        // An older daemon never sends the signal at all.
+        #expect(try #require(viewModel.sessions.first).isWritingReply == false)
+
+        applyReplyWriting(sessionID: "session-a", writing: true, to: viewModel)
+        let writing = try #require(viewModel.sessions.first)
+        #expect(writing.isWritingReply)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: writing.status == .running, isWaitingForInput: false, activeTool: nil,
+            activeTodoForm: nil, isWritingReply: writing.isWritingReply, startedAt: nil
+        )?.phase == .writing)
+
+        // A daemon patch for other metadata must not drop the live signal.
+        apply(transaction(sessionID: "session-a", baseRevision: 1, revision: 2, mutations: #"[{"type":"metaPatch","patch":{"lastSummary":"Still writing"}}]"#), to: viewModel)
+        #expect(try #require(viewModel.sessions.first).isWritingReply)
+
+        applyReplyWriting(sessionID: "session-a", writing: false, to: viewModel)
+        let cleared = try #require(viewModel.sessions.first)
+        #expect(cleared.isWritingReply == false)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: cleared.status == .running, isWaitingForInput: false, activeTool: nil,
+            activeTodoForm: nil, isWritingReply: cleared.isWritingReply, startedAt: nil
+        )?.phase == .thinking)
+    }
+
     @Test func metaPatchDistinguishesExplicitClearFromAbsentField() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
@@ -1349,6 +1381,14 @@ struct PickySessionProjectionV2ApplicationTests {
         {"sessionId":"\(sessionID)","baselineFound":true,"importedMessageCount":\(importedMessageCount)}
         """
         return try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyTerminalSessionSyncOutcome.self, from: Data(json.utf8))
+    }
+
+    private func applyReplyWriting(sessionID: String, writing: Bool, to viewModel: PickySessionListViewModel) {
+        let json = """
+        {"id":"reply-writing-\(sessionID)-\(writing)","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-08-25T00:00:01.000Z","type":"sessionReplyWritingUpdated","sessionId":"\(sessionID)","writing":\(writing)}
+        """
+        let envelope = try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
+        viewModel.apply(.protocolEvent(envelope))
     }
 
     private func transaction(sessionID: String, baseRevision: Int, revision: Int, mutations: String) -> PickySessionProjectionTransaction {

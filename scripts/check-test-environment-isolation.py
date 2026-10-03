@@ -356,10 +356,12 @@ def validate_pre_push_gate() -> None:
 
     swift_test_commands = [
         line for line in pre_push.splitlines()
-        if "xcodebuild" in line and re.search(r"\btest\b", line)
+        if "xcodebuild" in line and re.search(r"\btest\b|\$XCODE_TEST_ACTION\b", line)
     ]
     if len(swift_test_commands) != 1:
         fail("pre-push must keep one shared Swift test command implementation for regular and performance selectors")
+    if "XCODE_TEST_ACTION=test-without-building" not in pre_push or "build-for-testing" not in pre_push:
+        fail("isolated UI mode must compile once and launch each contract with test-without-building")
     if "-only-testing:PickyTests/PickyHubFocusPerformanceTests" not in pre_push:
         fail("pre-push --hub-focus-perf mode must select only the Hub focus performance suite")
     if "-skip-testing:PickyTests/PickyHubFocusPerformanceTests" not in pre_push:

@@ -92,6 +92,9 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
     def xcode_calls(self):
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
+    def test_runs(self):
+        return [call for call in self.xcode_calls() if "test-without-building" in call["args"]]
+
     def test_default_push_never_enables_ui_even_with_leaked_flags(self):
         result = self.run_runner(PICKY_PRE_PUSH_UI_EFFECT_TESTS="1", PICKY_UI_TEST_SESSION="isolated",
                                  TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS="1",
@@ -118,7 +121,14 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
     def test_isolated_mode_executes_every_ui_contract_in_its_own_host(self):
         result = self.run_runner("--ui-effects", GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted")
         self.assertEqual(result.returncode, 0, result.stdout)
-        calls = self.xcode_calls()
+        # Compile exactly once, first; every contract then launches its own host
+        # without rebuilding, and nothing falls back to a building `test` action.
+        all_calls = self.xcode_calls()
+        self.assertIn("build-for-testing", all_calls[0]["args"])
+        self.assertEqual(sum("build-for-testing" in call["args"] for call in all_calls), 1)
+        self.assertFalse(any("test" in call["args"] for call in all_calls))
+        calls = self.test_runs()
+        self.assertEqual(len(calls), len(all_calls) - 1)
         expected_suites = {
             "PickyHUDUnreadFocusRoutingTests": 1,
             "PickyHubFocusPerformanceTests": 1, "PickyHubNativeFocusTests": 1,
@@ -153,7 +163,7 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
                                 env=dict(self.env, GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted"),
                                 input="", text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout)
-        calls = self.xcode_calls()
+        calls = self.test_runs()
         self.assertEqual(len(calls), 2)
         self.assertTrue(any("-only-testing:PickyTests/HistoricalWindowTests/windowContract()" in call["args"]
                             for call in calls))
@@ -167,7 +177,7 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
         result = self.run_runner("--ui-effects", GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted",
                                  FAKE_EMPTY_RUN="1")
         self.assertNotEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(len(self.xcode_calls()), 1)
+        self.assertEqual(len(self.test_runs()), 1)
 
     def test_log_validator_rejects_a_skipped_or_different_contract(self):
         for log in ("Executed 0 tests. TEST SUCCEEDED", "✔ Test wanted() skipped",

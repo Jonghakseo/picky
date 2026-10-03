@@ -91,6 +91,11 @@ if [ "$UI_EFFECTS" = true ]; then
   )
 fi
 
+# Isolated UI mode compiles once with build-for-testing and then launches each
+# contract with test-without-building, which still starts a fresh test host per
+# invocation but skips the per-run build graph check.
+XCODE_TEST_ACTION=test
+
 run_picky_tests() {
   local selected_test="${1:-}"
   local selector=("-skip-testing:PickyTests/PickyHubFocusPerformanceTests")
@@ -115,7 +120,7 @@ run_picky_tests() {
   echo
   echo "▶ $label"
   set +e
-  env "${UI_EFFECT_TEST_ENV[@]}" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" -parallel-testing-enabled NO test "${selector[@]}" 2>&1 | tee "$PICKY_TEST_LOG"
+  env "${UI_EFFECT_TEST_ENV[@]}" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" -parallel-testing-enabled NO "$XCODE_TEST_ACTION" "${selector[@]}" 2>&1 | tee "$PICKY_TEST_LOG"
   local xcode_status=${PIPESTATUS[0]}
   set -e
   if [ "$xcode_status" -ne 0 ]; then return "$xcode_status"; fi
@@ -187,6 +192,9 @@ if [ "$UI_EFFECTS" = true ]; then
     # Read all selectors before running any test; discovery failure cannot be
     # masked by process substitution. Each contract gets a fresh test host.
     ui_selectors="$(python3 "$SCRIPT_ROOT/scripts/check-test-environment-isolation.py" --ui-effect-selectors --source-root "$ROOT")"
+    run_step "Build Picky tests once for isolated UI contracts" \
+      xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" build-for-testing
+    XCODE_TEST_ACTION=test-without-building
     while IFS= read -r selected_test; do
       if [[ "$selected_test" == PickyHubFocusPerformanceTests/* ]]; then
         HUB_FOCUS_PERF_ONLY=true run_picky_tests "$selected_test"

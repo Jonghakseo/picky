@@ -40,7 +40,7 @@ export const AsyncTaskSchema = AsyncTaskOwnerSchema.extend({
   registration: RegistrationStateSchema, grantId: id.optional(),
   providerRevision: revision, controlGeneration: revision,
   createdAt: timestamp, updatedAt: timestamp,
-  details: z.record(z.unknown()).refine((value) => {
+  details: z.record(z.string(), z.unknown()).refine((value) => {
     try { return Buffer.byteLength(JSON.stringify(value), "utf8") <= 16_384; } catch { return false; }
   }, "Task details exceed 16384 bytes").optional(),
 }).strict();

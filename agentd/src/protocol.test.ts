@@ -15,7 +15,7 @@ function commandVariantSchema(fixture: Fixture) {
   if (!(commandVariants instanceof z.ZodDiscriminatedUnion)) {
     throw new Error("Command envelope must remain a discriminated union");
   }
-  const schema = commandVariants.options.find((option: z.ZodDiscriminatedUnionOption<"type">) => (
+  const schema = (commandVariants.options as z.ZodObject[]).find((option) => (
     option.shape.type instanceof z.ZodLiteral && option.shape.type.value === fixture.type
   ));
   if (!schema) throw new Error(`No command schema for fixture type ${String(fixture.type)}`);
@@ -28,32 +28,34 @@ function eventVariantSchema(fixture: Fixture) {
   return schema;
 }
 
-function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
+function unwrapSchema(schema: z.ZodType): z.ZodType {
   while (true) {
     if (
       schema instanceof z.ZodOptional
       || schema instanceof z.ZodNullable
       || schema instanceof z.ZodDefault
     ) {
-      schema = schema._def.innerType;
+      schema = schema.def.innerType as z.ZodType;
       continue;
     }
-    if (schema instanceof z.ZodEffects) {
-      schema = schema._def.schema;
+    // zod 4 keeps refinements on the schema itself; only preprocess and
+    // transform wrap it, as a pipe whose non-transform side holds the shape.
+    if (schema instanceof z.ZodPipe) {
+      schema = (schema.def.out instanceof z.ZodTransform ? schema.def.in : schema.def.out) as z.ZodType;
       continue;
     }
     return schema;
   }
 }
 
-function unknownFixtureKeys(schema: z.ZodTypeAny, fixture: unknown, path = ""): string[] {
+function unknownFixtureKeys(schema: z.ZodType, fixture: unknown, path = ""): string[] {
   schema = unwrapSchema(schema);
 
   if (schema instanceof z.ZodRecord) return [];
 
   if (schema instanceof z.ZodArray) {
     if (!Array.isArray(fixture)) return [];
-    return fixture.flatMap((item, index) => unknownFixtureKeys(schema.element, item, `${path}[${index}]`));
+    return fixture.flatMap((item, index) => unknownFixtureKeys(schema.element as z.ZodType, item, `${path}[${index}]`));
   }
 
   if (!(schema instanceof z.ZodObject) || !fixture || typeof fixture !== "object" || Array.isArray(fixture)) return [];
@@ -1143,7 +1145,9 @@ describe("protocol contract fixtures", () => {
   });
 
   it("rejects invalid protocol versions", () => {
-    expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listMainMessages" })).toThrow(/Invalid literal value/);
+    const result = CommandEnvelopeSchema.safeParse({ id: "bad", protocolVersion: "old", type: "listMainMessages" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toContainEqual(expect.objectContaining({ code: "invalid_value", path: ["protocolVersion"] }));
   });
 });
 

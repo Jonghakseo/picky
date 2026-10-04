@@ -162,17 +162,19 @@ describe("normalizePiEvent", () => {
     expect(result.tool.argsPreview?.startsWith('{"path":"src/foo.swift"')).toBe(true);
   });
 
-  it("hoists command field to the head of argsPreview for bash-like tools", () => {
+  it("keeps the bash title and the command head when a long command is truncated", () => {
     const event = {
       type: "tool_execution_start",
       toolCallId: "call-bash",
       toolName: "bash",
-      args: { title: "build", command: "xcodebuild -scheme Picky" },
+      args: { command: `xcodebuild -scheme Picky ${"--flag ".repeat(120)}`, timeout: 600, title: "앱 빌드" },
     };
     const result = normalizePiEvent(event);
     expect(result.kind).toBe("tool");
     if (result.kind !== "tool") return;
-    expect(result.tool.argsPreview?.startsWith('{"command":"xcodebuild')).toBe(true);
+    expect(result.tool.argsPreview?.length).toBe(500);
+    expect(result.tool.argsPreview).toContain('"title":"앱 빌드"');
+    expect(result.tool.argsPreview).toContain('"command":"xcodebuild -scheme Picky');
   });
 
   it("preserves every agent alongside long subagent batch previews", () => {

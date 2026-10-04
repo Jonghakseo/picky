@@ -128,8 +128,10 @@ function boundedPlainText(text: string, maxChars: number): ToolResultPreview {
 
 /// Reorders object keys so high-signal fields remain near the start of both
 /// argument and result previews when the shared character budget is reached.
+/// `title` precedes `command`: the HUD reads a bash step's label from it, and a
+/// long command would otherwise push it past the cut.
 export function reorderForPreview(obj: Record<string, unknown>): Record<string, unknown> {
-  const priorityKeys = ["path", "file_path", "filePath", "file", "command"];
+  const priorityKeys = ["path", "file_path", "filePath", "file", "title", "command"];
   const out: Record<string, unknown> = {};
   for (const key of priorityKeys) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) out[key] = obj[key];

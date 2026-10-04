@@ -75,8 +75,6 @@ struct PickyToolImageBubbleView: View {
     private var caption: some View {
         HStack(spacing: DS.Spacing.space1) {
             Image(systemName: "photo")
-            Text("hud.toolImage.title")
-                .fontWeight(.semibold)
             Text(fileName)
                 .lineLimit(1)
                 .truncationMode(.middle)

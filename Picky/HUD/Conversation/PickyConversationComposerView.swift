@@ -61,6 +61,7 @@ struct PickyConversationComposerView: View {
         nonmutating set { if let sharedStopError { sharedStopError.wrappedValue = newValue } else { localStopError = newValue } }
     }
     @State private var isStopping = false
+    @State private var stopChoiceRequest: PickyStopChoiceRequest?
     @StateObject private var runtimeControls = PickyComposerRuntimeControlsModel()
     @State private var isAttachmentPickerPresented = false
 
@@ -230,6 +231,10 @@ struct PickyConversationComposerView: View {
         }
         .onReceive(commands.autocompleteEvents) { event in
             applyAutocompleteEvent(event)
+        }
+        .pickyStopChoiceAlert($stopChoiceRequest) { sessionID, scope in
+            guard sessionID == session.id else { return }
+            stop(scope: scope)
         }
         .fileImporter(
             isPresented: $isAttachmentPickerPresented,
@@ -1360,11 +1365,21 @@ struct PickyConversationComposerView: View {
 
     private func stopIfPossible() {
         guard PickyComposerStopPolicy.canStop(session.status), !isStopping else { return }
+        let choice = commands.stopChoice(sessionID: session.id)
+        guard choice == .immediate else {
+            stopChoiceRequest = PickyStopChoiceRequest(sessionID: session.id, choice: choice)
+            return
+        }
+        stop(scope: .all)
+    }
+
+    private func stop(scope: PickyAbortScope) {
+        guard !isStopping else { return }
         isStopping = true
         stopError = nil
         Task { @MainActor in
             defer { isStopping = false }
-            do { try await commands.abortRestoringQueuedInputs(sessionID: session.id) } catch { stopError = PickyComposerStopPolicy.message(for: error, at: session.status) }
+            do { try await commands.abortRestoringQueuedInputs(sessionID: session.id, scope: scope) } catch { stopError = PickyComposerStopPolicy.message(for: error, at: session.status) }
         }
     }
 }

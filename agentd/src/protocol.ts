@@ -750,7 +750,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("setTerminalSessionTailEnabled"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("followUp"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional(), visualDslEnabled: z.boolean().optional() }),
   CommandBaseSchema.extend({ type: z.literal("steer"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional(), visualDslEnabled: z.boolean().optional() }),
-  CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),
+  // `response` stops only the model turn and leaves background async tasks running;
+  // omitted or `all` also stops them (the original abort contract).
+  CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string(), scope: z.enum(["response", "all"]).optional() }),
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
   CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
   ...piOAuthCommandSchemas,

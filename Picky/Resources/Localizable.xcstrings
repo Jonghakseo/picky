@@ -28395,6 +28395,118 @@
         }
       },
       "comment": "Note when the selected main agent model has no fast mode; the toggle is disabled."
+    },
+    "hud.stopChoice.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background tasks are still running"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 작업이 진행 중이에요"
+          }
+        }
+      }
+    },
+    "hud.stopChoice.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If you stop only the response, background tasks keep running."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답만 중단하면 백그라운드 작업은 계속 실행돼요."
+          }
+        }
+      }
+    },
+    "hud.stopChoice.stopResponse": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop response only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답만 중단"
+          }
+        }
+      }
+    },
+    "hud.stopChoice.stopAll": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also stop background tasks"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 작업도 함께 종료"
+          }
+        }
+      }
+    },
+    "hud.stopChoice.backgroundOnly.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping ends every running background task."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료하면 진행 중인 백그라운드 작업이 모두 중지돼요."
+          }
+        }
+      }
+    },
+    "hud.stopChoice.stopBackground": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop background tasks"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 작업 종료"
+          }
+        }
+      }
+    },
+    "hud.stopChoice.cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -22,4 +22,28 @@ enum PickyComposerStopPolicy {
     static func message(for error: Error, at status: PickySessionStatus) -> String? {
         stopErrorExpires(at: status) ? nil : error.localizedDescription
     }
+
+    /// Whether a stop needs the user to decide what happens to running background tasks.
+    /// Without background tasks a stop ends everything right away, as before.
+    static func choice(activeBackgroundTaskCount: Int, agentPhase: PickyAgentCycle.Phase?) -> PickyStopChoice {
+        guard activeBackgroundTaskCount > 0 else { return .immediate }
+        switch agentPhase {
+        case .responding, .compacting: return .responseOrAll
+        case .idle, .settled, nil: return .backgroundOnly
+        }
+    }
+}
+
+enum PickyStopChoice: Equatable {
+    /// No background tasks: stop everything without asking.
+    case immediate
+    /// A response is in flight and background tasks run: stop only the response, or both.
+    case responseOrAll
+    /// Only background tasks remain: confirm before stopping them.
+    case backgroundOnly
+}
+
+struct PickyStopChoiceRequest: Equatable {
+    let sessionID: String
+    let choice: PickyStopChoice
 }

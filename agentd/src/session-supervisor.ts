@@ -1699,6 +1699,16 @@ export class SessionSupervisor extends EventEmitter {
     return this.asyncControls.abort(sessionId, this.pendingAbortOperations, () => this.performAbort(sessionId));
   }
 
+  /** Stops only the model turn. Background async tasks keep running and deliver their results later. */
+  async abortResponse(sessionId: string): Promise<PickyAgentSession> {
+    const existing = this.pendingAbortOperations.get(sessionId);
+    if (existing) return existing;
+    const operation = this.performAbort(sessionId);
+    this.pendingAbortOperations.set(sessionId, operation);
+    try { return await operation; }
+    finally { if (this.pendingAbortOperations.get(sessionId) === operation) this.pendingAbortOperations.delete(sessionId); }
+  }
+
   private async performAbort(sessionId: string): Promise<PickyAgentSession> {
     const beforeAbort = this.mustGet(sessionId);
     if (beforeAbort.archived === true) throw new Error("Cannot abort an archived session");

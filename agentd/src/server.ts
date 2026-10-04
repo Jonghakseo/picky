@@ -595,7 +595,8 @@ export class AgentdServer {
         return this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context, cmd.visualDslEnabled === true);
       },
       abort: async (cmd) => {
-        if (this.options.supervisor.get(cmd.sessionId)?.asyncControl) {
+        if (cmd.scope === "response") await this.options.supervisor.abortResponse(cmd.sessionId);
+        else if (this.options.supervisor.get(cmd.sessionId)?.asyncControl) {
           this.send(ws, { type: "asyncTaskCommandResult", result: await this.options.supervisor.asyncControls.stop(cmd.sessionId, cmd.id) });
         } else await this.options.supervisor.abort(cmd.sessionId);
       },

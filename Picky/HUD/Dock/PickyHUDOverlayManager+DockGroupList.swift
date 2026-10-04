@@ -538,7 +538,7 @@ extension PickyHUDOverlayManager {
                     self?.archiveDockGroupListSession(displayID: displayID, sessionID: sessionID)
                 },
                 onStopSession: { [weak self] sessionID in
-                    Task { try? await self?.viewModel.abortRestoringQueuedInputs(sessionID: sessionID) }
+                    self?.panelsByDisplayID[displayID]?.placement.dockGroupListStopRequestSessionID = sessionID
                 },
                 onMoveSessionToGroup: { [weak self] sessionID, groupID in
                     guard let self,

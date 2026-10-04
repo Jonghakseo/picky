@@ -42,6 +42,9 @@ final class PickyHUDPlacement: ObservableObject {
     /// One-shot request from a display's child list panel to the HUD root,
     /// which owns the existing group-targeted folder creation flow.
     @Published var dockGroupListCreateRequestGroupID: String?
+    /// One-shot stop request from a child list panel. The HUD root owns the stop choice alert,
+    /// which cannot attach to the small borderless list panel.
+    @Published var dockGroupListStopRequestSessionID: String?
     /// Folder whose list is pinned open on this display. A hover peek stays
     /// `nil` here, so the rail marks only the deliberate, persistent state.
     @Published var pinnedDockGroupListGroupID: String?

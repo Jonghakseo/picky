@@ -78,6 +78,7 @@ struct PickyHUDView: View {
     @State private var dockGroupInteractionFrames: [String: CGRect] = [:]
     @State private var dockRailFrame: CGRect = .zero
     @StateObject private var archiveActions = PickyHUDArchiveActionController()
+    @State private var stopChoiceRequest: PickyStopChoiceRequest?
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
@@ -202,6 +203,9 @@ struct PickyHUDView: View {
             } message: {
                 Text("hud.asyncTasks.archiveChoice.message")
             }
+            .pickyStopChoiceAlert($stopChoiceRequest) { sessionID, scope in
+                performStop(sessionID: sessionID, scope: scope)
+            }
             .alert(Text(L10n.t(archiveActions.errorTitleKey)), isPresented: Binding(
                 get: { archiveActions.error != nil }, set: { if !$0 { archiveActions.dismissError() } }
             )) {
@@ -259,6 +263,11 @@ struct PickyHUDView: View {
                 guard let groupID else { return }
                 placement.dockGroupListCreateRequestGroupID = nil
                 dockGroupPickerRelay.request(groupID: groupID)
+            }
+            .onChange(of: placement.dockGroupListStopRequestSessionID) { _, sessionID in
+                guard let sessionID else { return }
+                placement.dockGroupListStopRequestSessionID = nil
+                stopSession(sessionID)
             }
             .onAppear {
                 installCloseShortcutMonitor()
@@ -1028,8 +1037,17 @@ struct PickyHUDView: View {
 
     private func stopSession(_ sessionID: String) {
         cancelPendingClose()
+        let choice = viewModel.stopChoice(sessionID: sessionID)
+        guard choice == .immediate else {
+            stopChoiceRequest = PickyStopChoiceRequest(sessionID: sessionID, choice: choice)
+            return
+        }
+        performStop(sessionID: sessionID, scope: .all)
+    }
+
+    private func performStop(sessionID: String, scope: PickyAbortScope) {
         Task { @MainActor in
-            do { try await viewModel.abortRestoringQueuedInputs(sessionID: sessionID) } catch {
+            do { try await viewModel.abortRestoringQueuedInputs(sessionID: sessionID, scope: scope) } catch {
                 archiveActions.presentStopError(error)
             }
         }

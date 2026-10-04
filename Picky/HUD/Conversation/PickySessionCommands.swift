@@ -54,7 +54,9 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     /// installed. Reads Pi's package layout, so callers must not poll it.
     func isScheduledSendPluginInstalled() -> Bool
     func installScheduledSendPlugin() async throws
-    func abortRestoringQueuedInputs(sessionID: String) async throws
+    func abortRestoringQueuedInputs(sessionID: String, scope: PickyAbortScope) async throws
+    /// Read at press time so the stop decision does not add observed state to the card.
+    func stopChoice(sessionID: String) -> PickyStopChoice
     func steer(text: String, sessionID: String?) async throws
     func followUp(text: String, sessionID: String?) async throws
     func listSessionRuntimeOptions(sessionID: String) async throws -> PickySessionRuntimeOptions

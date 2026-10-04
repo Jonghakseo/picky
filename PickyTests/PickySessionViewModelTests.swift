@@ -862,6 +862,36 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.status == .cancelled)
     }
 
+    @MainActor @Test func stopWithBackgroundTasksOffersResponseOnlyStopThatKeepsTasksRunning() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        let activeWork = #"{"tracking":"ready","activeRootCount":2,"pendingCompletionCount":0,"uncertainExecutionCount":0,"attentionCount":0,"workRevision":1,"canReleaseRuntime":false}"#
+        let responding = #"{"cycleId":"cycle-1","runtimeInstanceId":"runtime-1","phase":"responding","controlGeneration":0}"#
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(
+            id: "async-session", status: "running", asyncWorkSummaryJSON: activeWork, agentCycleJSON: responding
+        ))))
+
+        #expect(viewModel.stopChoice(sessionID: "async-session") == .responseOrAll)
+
+        try await viewModel.abortRestoringQueuedInputs(sessionID: "async-session", scope: .response)
+
+        let abortCommand = try #require(client.sentCommands.last)
+        #expect(abortCommand.type == .abort)
+        #expect(abortCommand.sessionId == "async-session")
+        let wire = try #require(String(data: JSONEncoder().encode(abortCommand), encoding: .utf8))
+        #expect(wire.contains(#""scope":"response""#))
+        // Background tasks keep the Pickle running; only the daemon may settle its status.
+        #expect(viewModel.sessions.first?.status == .running)
+    }
+
+    @MainActor @Test func stopChoiceAsksBeforeStoppingBackgroundTasksAndSkipsAskingWithoutThem() {
+        #expect(PickyComposerStopPolicy.choice(activeBackgroundTaskCount: 0, agentPhase: .responding) == .immediate)
+        #expect(PickyComposerStopPolicy.choice(activeBackgroundTaskCount: 1, agentPhase: .responding) == .responseOrAll)
+        #expect(PickyComposerStopPolicy.choice(activeBackgroundTaskCount: 1, agentPhase: .compacting) == .responseOrAll)
+        #expect(PickyComposerStopPolicy.choice(activeBackgroundTaskCount: 1, agentPhase: .settled) == .backgroundOnly)
+        #expect(PickyComposerStopPolicy.choice(activeBackgroundTaskCount: 1, agentPhase: nil) == .backgroundOnly)
+    }
+
     @MainActor @Test func extensionUiAnswersEmitConfirmValueAndCancellationCommands() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
@@ -5835,6 +5865,7 @@ private final class EventJSON {
         pinned: Bool? = nil,
         lastRequest: String? = nil,
         asyncWorkSummaryJSON: String? = nil,
+        agentCycleJSON: String? = nil,
         seq: Int? = nil
     ) -> String {
         let scalars = scalarFields(
@@ -5850,7 +5881,8 @@ private final class EventJSON {
             notifyMacOSOnCompletion: notifyMacOSOnCompletion,
             pinned: pinned,
             lastRequest: lastRequest,
-            asyncWorkSummaryJSON: asyncWorkSummaryJSON
+            asyncWorkSummaryJSON: asyncWorkSummaryJSON,
+            agentCycleJSON: agentCycleJSON
         )
         if !builder.hasSnapshottedSession(id) {
             return builder.snapshotEventJSON(
@@ -6264,7 +6296,8 @@ private final class EventJSON {
         notifyMacOSOnCompletion: Bool?,
         pinned: Bool?,
         lastRequest: String?,
-        asyncWorkSummaryJSON: String?
+        asyncWorkSummaryJSON: String?,
+        agentCycleJSON: String? = nil
     ) -> String {
         var fields = """
         "id":\(encode(id)),"title":\(encode(title)),"status":\(encode(status)),"cwd":\(encode(cwd)),\
@@ -6276,6 +6309,7 @@ private final class EventJSON {
         if let pinned { fields += ",\"pinned\":\(pinned)" }
         if let lastRequest { fields += ",\"lastRequest\":{\"source\":\"steer\",\"text\":\(encode(lastRequest))}" }
         if let asyncWorkSummaryJSON { fields += ",\"asyncWorkSummary\":\(asyncWorkSummaryJSON)" }
+        if let agentCycleJSON { fields += ",\"agentCycle\":\(agentCycleJSON)" }
         return fields
     }
 

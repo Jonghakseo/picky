@@ -249,6 +249,31 @@ it("serves context and correlated operations through the real WebSocket dispatch
   }
 });
 
+it("stops only the response over the wire and leaves background tasks running", async () => {
+  const f = await fixture(); await f.addTask();
+  const server = new AgentdServer({ port: 0, token: "response-abort", supervisor: f.supervisor });
+  const port = await server.start();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=response-abort`);
+  const events: EventEnvelope[] = [];
+  ws.on("message", (data) => events.push(JSON.parse(String(data)) as EventEnvelope));
+  try {
+    await once(ws, "open");
+    ws.send(JSON.stringify({ id: "abort-response", protocolVersion: PROTOCOL_VERSION, type: "abort", sessionId: "session-1", scope: "response" }));
+    await vi.waitFor(() => expect(f.supervisor.get("session-1")?.messages?.some((message) => message.text === "Cancelled by user")).toBe(true));
+    await f.supervisor.withSessionProjectionBarrier("session-1", async () => {});
+    // The Pickle's whole-work status stays running while its background task runs.
+    expect(f.supervisor.get("session-1")?.status).toBe("running");
+    expect(events.some((event) => event.type === "asyncTaskCommandResult")).toBe(false);
+    expect(f.calls.map((call) => call.action)).not.toContain("cancel");
+    const disk = await f.store.loadReadOnly("session-1");
+    expect(disk?.asyncTasks?.[0]).toMatchObject({ execution: "running", presence: "active" });
+    expect(disk?.asyncControl?.admissionState).not.toBe("closed");
+    expect(disk?.asyncWorkSummary?.activeRootCount).toBe(1);
+  } finally {
+    ws.close(); await server.stop();
+  }
+});
+
 it("persists an unknown delivery outcome on lost close ACK while still stopping observed execution", async () => {
   const f = await fixture({ noReply: "closeAdmission" }); await f.addTask(false);
   const result = await f.supervisor.asyncControls.stop("session-1", "lost-close");

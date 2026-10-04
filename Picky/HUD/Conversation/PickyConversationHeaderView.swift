@@ -118,6 +118,7 @@ struct PickyConversationHeaderView: View {
     @State private var isStickyHolding = false
     @State private var stickyHoldProgress: Double = 0
     @State private var didCompleteStickyHold = false
+    @State private var stopChoiceRequest: PickyStopChoiceRequest?
     @FocusState private var isTitleFieldFocused: Bool
 
     private var isVoiceFollowUpTarget: Bool {
@@ -140,6 +141,22 @@ struct PickyConversationHeaderView: View {
         singleRowHeaderLayout
             .frame(width: PickyHUDDockLayout.detailContentWidth(for: pickyHUDDetailWidth), alignment: .leading)
             .frame(minHeight: 26, alignment: .leading)
+            .pickyStopChoiceAlert($stopChoiceRequest) { sessionID, scope in
+                stopSession(sessionID: sessionID, scope: scope)
+            }
+    }
+
+    private func requestStop() {
+        let choice = commands.stopChoice(sessionID: session.id)
+        guard choice == .immediate else {
+            stopChoiceRequest = PickyStopChoiceRequest(sessionID: session.id, choice: choice)
+            return
+        }
+        stopSession(sessionID: session.id, scope: .all)
+    }
+
+    private func stopSession(sessionID: String, scope: PickyAbortScope) {
+        Task { try? await commands.abortRestoringQueuedInputs(sessionID: sessionID, scope: scope) }
     }
 
     /// Keep metadata in the title row. Context usage and thinking level retain
@@ -344,7 +361,8 @@ struct PickyConversationHeaderView: View {
                 session: session,
                 viewModel: commands,
                 onArchive: { onArchiveSession(session.id) },
-                onRewind: onRewind
+                onRewind: onRewind,
+                onStop: requestStop
             )
         } label: {
             Image(systemName: "ellipsis")

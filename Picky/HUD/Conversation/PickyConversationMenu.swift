@@ -12,6 +12,8 @@ struct PickyConversationMenu: View {
     let viewModel: any PickySessionCommands
     var onArchive: (() -> Void)?
     var onRewind: (() -> Void)?
+    /// Lets the host ask what to stop when background tasks run. Without it the menu stops everything.
+    var onStop: (() -> Void)?
 
     var canCopyResumeCommand: Bool { session.piSessionFilePath != nil }
     /// `syncTerminalSession` reads the on-disk Pi JSONL, so the action needs a session file.
@@ -64,7 +66,11 @@ struct PickyConversationMenu: View {
             .disabled(!canCompact)
 
             Button("hud.menu.stopSession") {
-                Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: session.id) }
+                if let onStop {
+                    onStop()
+                } else {
+                    Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: session.id, scope: .all) }
+                }
             }
             .disabled(!canStop)
             .help(L10n.t("hud.menu.stopSession.help"))
@@ -83,12 +89,14 @@ struct PickyConversationMenu: View {
         session: PickyConversationHeaderProjection,
         viewModel: any PickySessionCommands,
         onArchive: (() -> Void)? = nil,
-        onRewind: (() -> Void)? = nil
+        onRewind: (() -> Void)? = nil,
+        onStop: (() -> Void)? = nil
     ) {
         self.session = session
         self.viewModel = viewModel
         self.onArchive = onArchive
         self.onRewind = onRewind
+        self.onStop = onStop
     }
 
     /// Compatibility entry point for callers that still carry the legacy card

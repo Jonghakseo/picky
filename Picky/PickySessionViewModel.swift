@@ -840,6 +840,18 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func abortRestoringQueuedInputs(sessionID: String) async throws {
+        try await abortRestoringQueuedInputs(sessionID: sessionID, scope: .all)
+    }
+
+    func stopChoice(sessionID: String) -> PickyStopChoice {
+        let session = card(sessionID: sessionID)
+        return PickyComposerStopPolicy.choice(
+            activeBackgroundTaskCount: session?.asyncWorkSummary?.activeRootCount ?? 0,
+            agentPhase: session?.agentCycle?.phase
+        )
+    }
+
+    func abortRestoringQueuedInputs(sessionID: String, scope: PickyAbortScope) async throws {
         if let session = card(sessionID: sessionID),
            let queuedText = PickyQueuedInputDraftPolicy.queuedInputText(
                visibleQueue: visibleQueue(for: session),
@@ -849,7 +861,7 @@ final class PickySessionListViewModel: ObservableObject {
             appendComposerDraftText(queuedText, sessionID: sessionID)
             try? await clearQueue(sessionID: sessionID, kind: .all)
         }
-        try await abort(sessionID: sessionID)
+        try await abort(sessionID: sessionID, scope: scope)
     }
 
     private func visibleQueue(for session: SessionCard) -> PickyVisibleQueue {
@@ -1037,8 +1049,13 @@ final class PickySessionListViewModel: ObservableObject {
             client: client, store: sessionStore(sessionID: owner.sessionId))
     }
 
-    func abort(sessionID: String) async throws {
-        pickySessionLog("abort session=\(sessionID)")
+    func abort(sessionID: String, scope: PickyAbortScope = .all) async throws {
+        pickySessionLog("abort session=\(sessionID) scope=\(scope.rawValue)")
+        if scope == .response {
+            // Background tasks keep the Pickle running, so the daemon owns the resulting status.
+            try await client.send(PickyCommandEnvelope(type: .abort, sessionId: sessionID, scope: .response))
+            return
+        }
         if (sessions + archivedSessions).first(where: { $0.id == sessionID })?.hasAsyncTracking == true {
             guard let control = client.asyncTaskControl else { throw PickyAsyncControlError.unsupported }
             _ = try await control.stopAsyncWork(sessionID: sessionID)

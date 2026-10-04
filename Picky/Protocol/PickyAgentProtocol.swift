@@ -78,6 +78,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var mainAgentModelPattern: String?
     var direction: PickyModelCycleDirection?
     var kind: PickyQueueClearKind?
+    /// `abort` only. `.response` stops the model turn and keeps background async tasks running.
+    var scope: PickyAbortScope?
     /// `PickyQueueItem.id` targeted by a per-item queue command.
     var itemId: String?
     /// `PickyScheduledMessage.id` targeted by a scheduled-message command.
@@ -164,6 +166,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         mainAgentModelPattern: String? = nil,
         direction: PickyModelCycleDirection? = nil,
         kind: PickyQueueClearKind? = nil,
+        scope: PickyAbortScope? = nil,
         itemId: String? = nil,
         scheduledId: String? = nil,
         delayMs: Int? = nil,
@@ -239,6 +242,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.mainAgentModelPattern = mainAgentModelPattern
         self.direction = direction
         self.kind = kind
+        self.scope = scope
         self.itemId = itemId
         self.scheduledId = scheduledId
         self.delayMs = delayMs
@@ -279,6 +283,11 @@ struct PickyCommandEnvelope: Codable, Equatable {
 
 enum PickyQueueClearKind: String, Codable, Equatable {
     case steering, followUp, all
+}
+
+/// What a Pickle stop ends. `.all` also stops background async tasks (the default abort).
+enum PickyAbortScope: String, Codable, Equatable {
+    case response, all
 }
 
 enum PickyModelCycleDirection: String, Codable, Equatable {

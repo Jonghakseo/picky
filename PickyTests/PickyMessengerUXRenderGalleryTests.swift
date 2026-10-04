@@ -132,7 +132,6 @@ struct PickyMessengerUXRenderGalleryTests {
             isRunning: true,
             isWaitingForInput: false,
             activeTool: tool("bash", args: #"{"command":"pnpm vitest run login","title":"로그인 테스트 실행"}"#),
-            activeTodoForm: nil,
             startedAt: Date().addingTimeInterval(-42)
         )
         func timestamp(_ message: PickySessionMessage) -> PickyBubbleTimestamp {
@@ -169,24 +168,24 @@ struct PickyMessengerUXRenderGalleryTests {
     private func presenceStates() -> some View {
         let started = Date().addingTimeInterval(-75)
         let rows: [PickyConversationPresencePresentation?] = [
-            .make(isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: nil, startedAt: started),
+            .make(isRunning: true, isWaitingForInput: false, activeTool: nil, startedAt: started),
             .make(isRunning: true, isWaitingForInput: false,
                   activeTool: tool("read", args: #"{"path":"/repo/Picky/HUD/PickyHUDView.swift"}"#),
-                  activeTodoForm: "HUD 레이아웃 정리 중", startedAt: started),
+                  startedAt: started),
             .make(isRunning: true, isWaitingForInput: false,
                   activeTool: tool("bash_async", args: #"{"command":"xcodebuild test","title":"Swift 테스트 실행"}"#),
-                  activeTodoForm: nil, startedAt: started),
+                  startedAt: started),
             .make(isRunning: true, isWaitingForInput: false,
                   activeTool: tool("read", args: #"{"path":"/Users/me/.pi/agent/skills/picky-design-guide/SKILL.md"}"#),
-                  activeTodoForm: nil, startedAt: started),
+                  startedAt: started),
             .make(isRunning: true, isWaitingForInput: false,
                   activeTool: tool("subagent", args: #"{"command":"subagent run worker"}"#,
                                    subagent: PickySubagentToolSummary(action: "run", agents: ["worker"])),
-                  activeTodoForm: nil, startedAt: started),
+                  startedAt: started),
             .make(isRunning: true, isWaitingForInput: false,
                   activeTool: tool("grep", args: #"{"pattern":"PickyToolCallInlineRow","path":"Picky"}"#),
-                  activeTodoForm: nil, startedAt: started),
-            .make(isRunning: true, isWaitingForInput: true, activeTool: nil, activeTodoForm: nil, startedAt: started),
+                  startedAt: started),
+            .make(isRunning: true, isWaitingForInput: true, activeTool: nil, startedAt: started),
         ]
         return VStack(alignment: .leading, spacing: DS.Spacing.space1) {
             ForEach(Array(rows.compactMap { $0 }.enumerated()), id: \.offset) { _, presentation in

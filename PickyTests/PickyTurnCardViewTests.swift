@@ -593,27 +593,74 @@ struct PickyTurnCardViewTests {
                                      argsPreview: #"{"pattern":"secret"}"#)
 
         let working = PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil, startedAt: nil)
+            isRunning: true, isWaitingForInput: false, activeTool: bash, startedAt: nil)
         #expect(working?.phase == .working)
         #expect(working?.detail == "테스트 실행")
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: untitled, activeTodoForm: nil, startedAt: nil)?.detail == nil)
-        // A finished tool drops back to thinking even with an in-progress todo.
+            isRunning: true, isWaitingForInput: false, activeTool: untitled, startedAt: nil)?.detail == nil)
+        // A finished tool drops back to thinking.
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: grep, activeTodoForm: "HUD 정리 중", startedAt: nil)?.phase == .thinking)
+            isRunning: true, isWaitingForInput: false, activeTool: grep, startedAt: nil)?.phase == .thinking)
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: bash, activeTodoForm: "HUD 정리 중", startedAt: nil)?.detail == "HUD 정리 중")
-        #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: nil, startedAt: nil)?.phase == .thinking)
+            isRunning: true, isWaitingForInput: false, activeTool: nil, startedAt: nil)?.phase == .thinking)
         // Agent finished responding; the session runs only for bash_async/subagent work
         // and can take a new message, so no presence line.
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: "CI 대기", startedAt: nil,
+            isRunning: true, isWaitingForInput: false, activeTool: nil, startedAt: nil,
             isAgentResponding: false) == nil)
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: false, isWaitingForInput: true, activeTool: bash, activeTodoForm: nil, startedAt: nil)?.phase == .waitingForInput)
+            isRunning: false, isWaitingForInput: true, activeTool: bash, startedAt: nil)?.phase == .waitingForInput)
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: false, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil, startedAt: nil) == nil)
+            isRunning: false, isWaitingForInput: false, activeTool: bash, startedAt: nil) == nil)
+    }
+
+    /// File tools name the file they touch: the last path component with its
+    /// extension, never the directory prefix. The full path stays in the tooltip.
+    @Test func presenceNamesTheFileForReadEditAndWrite() {
+        func presence(_ name: String, _ args: String) -> PickyConversationPresencePresentation? {
+            PickyConversationPresencePresentation.make(
+                isRunning: true, isWaitingForInput: false,
+                activeTool: PickyToolActivity(toolCallId: name, name: name, status: "running", argsPreview: args),
+                startedAt: nil)
+        }
+        let read = presence("read", #"{"path":"/Users/me/picky/Picky/HUD/PickyHUDView.swift","offset":10}"#)
+        #expect(read?.phase == .readingFile)
+        #expect(read?.detail == "PickyHUDView.swift")
+        #expect(read?.detailHelp == "/Users/me/picky/Picky/HUD/PickyHUDView.swift")
+        #expect(read?.title != "hud.presence.readingFile")
+
+        let edit = presence("edit", #"{"path":"Picky/Sessions/PickySessionStore.swift","edits":[]}"#)
+        #expect(edit?.phase == .editingFile)
+        #expect(edit?.detail == "PickySessionStore.swift")
+        #expect(presence("multiedit", #"{"file_path":"a/b/c.ts"}"#)?.detail == "c.ts")
+
+        let write = presence("write", #"{"path":"~/notes/design-notes.md","content":"notes"}"#)
+        #expect(write?.phase == .writingFile)
+        #expect(write?.detail == "design-notes.md")
+
+        // No usable file name: the phase still reads as a file step, title only.
+        let directory = presence("write", #"{"path":"build/out/"}"#)
+        #expect(directory?.phase == .writingFile)
+        #expect(directory?.detail == nil)
+        #expect(presence("read", #"{}"#)?.detail == nil)
+
+        // Loading a skill manifest stays a skill step, not a file read.
+        let skill = presence("read", #"{"path":"/Users/me/.pi/agent/skills/picky-ux-writing/SKILL.md"}"#)
+        #expect(skill?.phase == .working)
+        #expect(skill?.detail?.contains("picky-ux-writing") == true)
+    }
+
+    /// A file step holds the line through a short gap like any other step, so
+    /// back-to-back reads do not flash "thinking" between them.
+    @Test func fileStepHoldsThroughShortGapsBeforeThinking() {
+        let read = PickyConversationPresencePresentation(phase: .readingFile, detail: "A.swift", startedAt: nil)
+        let thinking = PickyConversationPresencePresentation(phase: .thinking, detail: nil, startedAt: nil)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        var stabilizer = PickyConversationPresenceStabilizer()
+        _ = stabilizer.update(target: read, now: t0)
+        let wait = stabilizer.update(target: thinking, now: t0.addingTimeInterval(2))
+        #expect(stabilizer.displayed == read)
+        #expect(wait == PickyConversationPresenceStabilizer.workingGrace)
     }
 
     /// Reply text is its own phase so a long answer no longer reads as
@@ -625,17 +672,14 @@ struct PickyTurnCardViewTests {
         let turnStart = Date(timeIntervalSince1970: 1_000_002)
 
         let writing = PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: nil, activeTodoForm: "HUD 정리 중",
-            isWritingReply: true, startedAt: turnStart)
+            isRunning: true, isWaitingForInput: false, activeTool: nil, isWritingReply: true, startedAt: turnStart)
         #expect(writing?.phase == .writing)
         // The reply itself is already on screen, so the line carries no detail.
         #expect(writing?.detail == nil)
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: true, isWaitingForInput: false, activeTool: bash, activeTodoForm: nil,
-            isWritingReply: true, startedAt: turnStart)?.phase == .working)
+            isRunning: true, isWaitingForInput: false, activeTool: bash, isWritingReply: true, startedAt: turnStart)?.phase == .working)
         #expect(PickyConversationPresencePresentation.make(
-            isRunning: false, isWaitingForInput: true, activeTool: nil, activeTodoForm: nil,
-            isWritingReply: true, startedAt: turnStart)?.phase == .waitingForInput)
+            isRunning: false, isWaitingForInput: true, activeTool: nil, isWritingReply: true, startedAt: turnStart)?.phase == .waitingForInput)
 
         let key = PickyConversationPresencePresentation.writingTitleKey(forTurnStartedAt: turnStart)
         #expect(PickyConversationPresencePresentation.writingTitleKeys.contains(key))
@@ -803,7 +847,6 @@ private struct DelayedTurnBoundaryHarness: View {
                 isRunning: true,
                 isWaitingForInput: false,
                 activeTool: staleTool,
-                activeTodoForm: nil,
                 startedAt: nil
             ) : nil,
             onOpenActiveToolHistory: {}

@@ -623,9 +623,10 @@ struct PickyConversationListView: View {
         group.hasUserMessage
     }
 
-    /// Presence line for the current turn only. A running tool makes it
-    /// "working", streaming tool-call arguments make it "preparing", streaming
-    /// reply text makes it "writing", and otherwise it reads "thinking". It disappears once the
+    /// Presence line for the current turn only. A running file tool makes it
+    /// "reading/editing/writing file", another running tool "working", streaming
+    /// tool-call arguments "preparing", streaming reply text "writing", and
+    /// otherwise it reads "thinking". It disappears once the
     /// agent finishes responding, even while background work keeps the session
     /// running (same idle/settled rule as `PickyConversationComposerProjection.submitStatus`).
     private func presence(for group: PickyTurnGroup) -> PickyConversationPresencePresentation? {
@@ -635,7 +636,6 @@ struct PickyConversationListView: View {
             isRunning: session.status == .running || session.status == .queued,
             isWaitingForInput: session.status == .waiting_for_input,
             activeTool: session.activeTool,
-            activeTodoForm: session.todoState?.tasks.first { $0.status == .inProgress }?.displayText,
             isWritingReply: session.isWritingReply,
             isPreparingToolCall: session.isPreparingToolCall,
             autoRetry: session.autoRetry,

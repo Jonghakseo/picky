@@ -20,6 +20,11 @@ struct PickyConversationPresencePresentation: Equatable {
         /// daemon as `isPreparingToolCall`. A long `write` or `edit` spends most
         /// of its step here, before the tool starts and the line reads "working".
         case preparing
+        /// A running `read`, `edit`/`multiedit`, or `write` call. The detail is the
+        /// file name, so the user sees which file the step touches.
+        case readingFile
+        case editingFile
+        case writingFile
         case working
         /// Pi is waiting to re-send a failed model request. The detail carries
         /// the provider's code and message: without them a user cannot tell a
@@ -43,12 +48,18 @@ struct PickyConversationPresencePresentation: Equatable {
     /// path, or JSON argument.
     let detail: String?
     let startedAt: Date?
+    /// Tooltip for the detail when it is shortened, such as the full path
+    /// behind a file name. Defaults to the detail itself.
+    var detailHelp: String? = nil
 
     var title: String {
         switch phase {
         case .thinking: L10n.t("hud.presence.thinking")
         case .writing: L10n.t(Self.writingTitleKey(forTurnStartedAt: startedAt))
         case .preparing: L10n.t("hud.presence.preparing")
+        case .readingFile: L10n.t("hud.presence.readingFile")
+        case .editingFile: L10n.t("hud.presence.editingFile")
+        case .writingFile: L10n.t("hud.presence.writingFile")
         case .working: L10n.t("hud.liveStep.working")
         case .retrying(let attempt, let maxAttempts): L10n.t("hud.presence.retrying", attempt, maxAttempts)
         case .waitingForInput: L10n.t("hud.conversation.status.waiting")
@@ -63,9 +74,11 @@ struct PickyConversationPresencePresentation: Equatable {
 
     var isAnimated: Bool { phase != .waitingForInput }
 
-    /// A running tool makes the live value "working", streaming tool-call
+    /// A running file tool makes the live value "reading/editing/writing file",
+    /// any other running tool makes it "working", streaming tool-call
     /// arguments make it "preparing", and streaming reply text makes it
-    /// "writing"; otherwise it is "thinking".
+    /// "writing"; otherwise it is "thinking". The in-progress todo is deliberately
+    /// not shown: it replaced the step's own detail and hid what was running.
     /// `PickyConversationPresenceStabilizer` holds the last step on screen
     /// through short gaps, so "thinking" shows only for long pauses. Once the agent has finished responding, the line
     /// disappears even if the session stays running for background work
@@ -75,7 +88,6 @@ struct PickyConversationPresencePresentation: Equatable {
         isRunning: Bool,
         isWaitingForInput: Bool,
         activeTool: PickyToolActivity?,
-        activeTodoForm: String?,
         isWritingReply: Bool = false,
         isPreparingToolCall: Bool = false,
         autoRetry: PickyAutoRetryStatus? = nil,
@@ -96,12 +108,14 @@ struct PickyConversationPresencePresentation: Equatable {
             )
         }
         guard isAgentResponding else { return nil }
-        let todo = activeTodoForm.flatMap(nonEmptyLine)
         if let activeTool, activeTool.isActive {
-            return Self(phase: .working, detail: todo ?? detail(for: activeTool), startedAt: startedAt)
+            if let file = fileStep(for: activeTool) {
+                return Self(phase: file.phase, detail: file.name, startedAt: startedAt, detailHelp: file.path)
+            }
+            return Self(phase: .working, detail: detail(for: activeTool), startedAt: startedAt)
         }
         if isPreparingToolCall {
-            return Self(phase: .preparing, detail: todo, startedAt: startedAt)
+            return Self(phase: .preparing, detail: nil, startedAt: startedAt)
         }
         if isWritingReply {
             return Self(phase: .writing, detail: nil, startedAt: startedAt)
@@ -118,8 +132,31 @@ struct PickyConversationPresencePresentation: Equatable {
         return detail.isEmpty ? nil : detail
     }
 
-    /// Detail priority after the active todo: bash/bash_async title, skill name,
-    /// delegated subagent. Everything else shows the bare phase title.
+    /// File phase for `read`, `edit`/`multiedit`, and `write`. The name is the
+    /// last path component, extension included; a `SKILL.md` read stays a skill
+    /// step. Without a usable file name the phase still applies, title only.
+    static func fileStep(for tool: PickyToolActivity) -> (phase: Phase, name: String?, path: String?)? {
+        let phase: Phase
+        switch tool.name.lowercased() {
+        case "read":
+            guard PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) == nil
+            else { return nil }
+            phase = .readingFile
+        case "edit", "multiedit": phase = .editingFile
+        case "write": phase = .writingFile
+        default: return nil
+        }
+        let path = ["path", "file_path", "filePath", "file"].lazy
+            .compactMap { PickyToolHistoryRenderer.recoverStringValue(from: tool.argsPreview, key: $0) }
+            .compactMap(nonEmptyLine)
+            .first
+        guard let path, !path.hasSuffix("/") else { return (phase, nil, nil) }
+        let name = (path as NSString).lastPathComponent
+        return name.isEmpty ? (phase, nil, nil) : (phase, name, path)
+    }
+
+    /// Detail for other tools: bash/bash_async title, skill name, delegated
+    /// subagent. Everything else shows the bare phase title.
     static func detail(for tool: PickyToolActivity) -> String? {
         if let skill = PickyToolActivityPresentation.skillName(forToolNamed: tool.name, argsPreview: tool.argsPreview) {
             return L10n.t("hud.presence.skill", skill)
@@ -196,7 +233,7 @@ struct PickyConversationPresenceStabilizer: Equatable {
     /// Phases that report actual progress, so they hold the line through a gap.
     private static func isStep(_ phase: PickyConversationPresencePresentation.Phase?) -> Bool {
         switch phase {
-        case .working, .preparing, .writing, .retrying: true
+        case .working, .preparing, .writing, .retrying, .readingFile, .editingFile, .writingFile: true
         case .thinking, .waitingForInput, nil: false
         }
     }
@@ -240,7 +277,7 @@ struct PickyConversationPresenceRow: View {
                             .foregroundStyle(DS.Colors.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .help(detail)
+                            .help(presentation.detailHelp ?? detail)
                     }
                 }
                 // Elapsed time sits right after the status, like a bubble's send

@@ -23437,6 +23437,22 @@
         }
       }
     },
+    "hud.presence.writingFile": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Writing file"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 쓰는 중"
+          }
+        }
+      }
+    },
     "hud.question.allow": {
       "localizations": {
         "en": {
@@ -26669,6 +26685,22 @@
         }
       }
     },
+    "hud.presence.editingFile": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editing file"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 수정 중"
+          }
+        }
+      }
+    },
     "hud.presence.preparing": {
       "localizations": {
         "en": {
@@ -26681,6 +26713,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "다음 작업 준비 중"
+          }
+        }
+      }
+    },
+    "hud.presence.readingFile": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading file"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 읽는 중"
           }
         }
       }

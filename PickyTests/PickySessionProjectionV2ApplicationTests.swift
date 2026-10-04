@@ -1156,7 +1156,7 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(writing.isWritingReply)
         #expect(PickyConversationPresencePresentation.make(
             isRunning: writing.status == .running, isWaitingForInput: false, activeTool: nil,
-            activeTodoForm: nil, isWritingReply: writing.isWritingReply, startedAt: nil
+            isWritingReply: writing.isWritingReply, startedAt: nil
         )?.phase == .writing)
 
         // A daemon patch for other metadata must not drop the live signal.
@@ -1168,13 +1168,13 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(cleared.isWritingReply == false)
         #expect(PickyConversationPresencePresentation.make(
             isRunning: cleared.status == .running, isWaitingForInput: false, activeTool: nil,
-            activeTodoForm: nil, isWritingReply: cleared.isWritingReply, startedAt: nil
+            isWritingReply: cleared.isWritingReply, startedAt: nil
         )?.phase == .thinking)
     }
 
     /// A long `write` or `edit` spends most of its step streaming arguments
     /// before the tool runs. The daemon's live signal has to reach the rendered
-    /// presence line, survive a projection rebuild, and hand over to "working"
+    /// presence line, survive a projection rebuild, and hand over to the tool step
     /// once the tool starts.
     @Test func toolCallPreparingSignalReachesTheRenderedPresenceLine() throws {
         let storage = PickyRegistrySessionProjectionStorage()
@@ -1184,7 +1184,7 @@ struct PickySessionProjectionV2ApplicationTests {
         func phase(_ card: PickySessionCard, activeTool: PickyToolActivity? = nil) -> PickyConversationPresencePresentation.Phase? {
             PickyConversationPresencePresentation.make(
                 isRunning: card.status == .running, isWaitingForInput: false, activeTool: activeTool,
-                activeTodoForm: nil, isWritingReply: card.isWritingReply,
+                isWritingReply: card.isWritingReply,
                 isPreparingToolCall: card.isPreparingToolCall, startedAt: nil
             )?.phase
         }
@@ -1200,7 +1200,7 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(rebuilt.isPreparingToolCall)
         // A running tool outranks preparation.
         let write = PickyToolActivity(toolCallId: "w", name: "write", status: "running", argsPreview: nil)
-        #expect(phase(rebuilt, activeTool: write) == .working)
+        #expect(phase(rebuilt, activeTool: write) == .writingFile)
 
         applyToolCallPreparing(sessionID: "session-a", preparing: false, to: viewModel)
         #expect(phase(try #require(viewModel.sessions.first)) == .thinking)
@@ -1216,7 +1216,7 @@ struct PickySessionProjectionV2ApplicationTests {
         func presence(_ card: PickySessionCard) -> PickyConversationPresencePresentation? {
             PickyConversationPresencePresentation.make(
                 isRunning: card.status == .running, isWaitingForInput: false, activeTool: nil,
-                activeTodoForm: nil, isWritingReply: card.isWritingReply,
+                isWritingReply: card.isWritingReply,
                 isPreparingToolCall: card.isPreparingToolCall, autoRetry: card.autoRetry, startedAt: nil,
                 isAgentResponding: true
             )

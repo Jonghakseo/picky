@@ -1,0 +1,23 @@
+{
+  "name": "transaction-before-snapshot",
+  "description": "A transaction for a session the client has never hydrated is dropped whole; it must not conjure a half-built session from mutations alone. Recovery is the client's job above the reducer, so no section is written and no revision is recorded.",
+  "events": [
+    {
+      "id": "event-conformance-orphan-transaction",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 3,
+      "revision": 4,
+      "mutations": [
+        { "type": "metaPatch", "patch": { "status": "completed" } },
+        { "type": "logAppend", "line": "ignored" }
+      ]
+    }
+  ],
+  "expect": {
+    "sessionPresent": false
+  }
+}

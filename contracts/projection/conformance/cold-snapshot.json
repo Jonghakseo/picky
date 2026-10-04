@@ -1,0 +1,135 @@
+{
+  "name": "cold-snapshot",
+  "description": "A complete snapshot hydrates every section. Nothing may stay unavailable, and revision comes from the snapshot envelope rather than the projection body.",
+  "events": [
+    {
+      "id": "event-conformance-cold-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 4,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-conformance",
+        "revision": 0,
+        "title": "Cold hydration",
+        "status": "running",
+        "cwd": "/Users/creatrip/Documents/picky",
+        "piSessionFilePath": "/Users/creatrip/.pi/sessions/cold.jsonl",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:01:00.000Z",
+        "lastSummary": "Hydrated from a cold snapshot.",
+        "finalAnswer": "Hydrated from a cold snapshot.",
+        "logs": ["daemon ready", "runtime attached"],
+        "tools": [
+          { "toolCallId": "tool-1", "name": "Read", "status": "succeeded", "preview": "AGENTS.md" }
+        ],
+        "todoState": {
+          "tasks": [{ "id": "todo-1", "content": "Pin the reducer", "status": "in_progress" }],
+          "updatedAt": "2026-08-24T00:01:00.000Z"
+        },
+        "subagentRuns": [
+          { "runId": 1, "agent": "worker", "task": "fold projections", "status": "running" }
+        ],
+        "asyncTasks": [
+          {
+            "sessionId": "session-conformance",
+            "piSessionId": "pi-session-1",
+            "runtimeInstanceId": "runtime-1",
+            "providerId": "provider-1",
+            "providerInstanceId": "provider-instance-1",
+            "taskId": "task-1",
+            "rootTaskId": "task-1",
+            "kind": "async",
+            "title": "Background build",
+            "execution": "running",
+            "presence": "active",
+            "registration": "spawned",
+            "providerRevision": 1,
+            "controlGeneration": 1,
+            "createdAt": "2026-08-24T00:00:30.000Z",
+            "updatedAt": "2026-08-24T00:00:40.000Z"
+          }
+        ],
+        "completionTickets": [],
+        "asyncControl": { "controlGeneration": 1, "admissionState": "open", "operations": [] },
+        "artifacts": [
+          { "id": "artifact-1", "kind": "report", "title": "Reducer notes", "updatedAt": "2026-08-24T00:01:00.000Z" }
+        ],
+        "changedFiles": [{ "path": "agentd/src/domain/session-projection-reducer.ts", "status": "added" }],
+        "messages": [
+          { "id": "m1", "kind": "user_text", "createdAt": "2026-08-24T00:00:10.000Z", "text": "fold this" },
+          { "id": "m2", "kind": "agent_text", "createdAt": "2026-08-24T00:00:20.000Z", "text": "folding" }
+        ],
+        "messageJournalAvailable": true,
+        "queuedSteers": [{ "text": "prefer tests", "enqueuedAt": "2026-08-24T00:00:50.000Z" }],
+        "queuedFollowUps": [],
+        "scheduledMessages": [
+          { "id": "sched-1", "text": "report back", "dueAt": "2026-08-24T01:00:00.000Z", "createdAt": "2026-08-24T00:00:55.000Z" }
+        ],
+        "steeringMode": "all",
+        "followUpMode": "one-at-a-time",
+        "activitySummary": { "read": 2, "bash": 1, "edit": 0, "write": 0, "thinking": 3, "other": 0 },
+        "contextUsage": { "tokens": 1200, "contextWindow": 200000, "percent": 0.6 },
+        "pendingExtensionUiRequest": {
+          "id": "request-1",
+          "sessionId": "session-conformance",
+          "method": "confirm",
+          "prompt": "Apply the patch?",
+          "createdAt": "2026-08-24T00:01:00.000Z"
+        },
+        "notifyMainOnCompletion": true,
+        "pinned": true
+      }
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": {
+      "localPresentationResets": 0,
+      "progressOnlyTransactions": 0,
+      "ignoredTransactions": 0,
+      "ignoredSnapshots": 0
+    },
+    "queueModes": { "steeringMode": "all", "followUpMode": "one-at-a-time" },
+    "sections": {
+      "meta": {
+        "state": "loaded",
+        "value": {
+          "id": "session-conformance",
+          "revision": 4,
+          "title": "Cold hydration",
+          "status": "running",
+          "cwd": "/Users/creatrip/Documents/picky",
+          "piSessionFilePath": "/Users/creatrip/.pi/sessions/cold.jsonl",
+          "finalAnswer": "Hydrated from a cold snapshot.",
+          "notifyMainOnCompletion": true,
+          "pinned": true
+        }
+      },
+      "logs": { "state": "loaded", "value": ["daemon ready", "runtime attached"] },
+      "tools": { "state": "loaded", "value": [{ "toolCallId": "tool-1", "status": "succeeded" }] },
+      "todo": { "state": "loaded", "value": { "tasks": [{ "id": "todo-1", "status": "in_progress" }] } },
+      "subagentRuns": { "state": "loaded", "value": [{ "runId": 1, "status": "running" }] },
+      "asyncTaskDetail": { "state": "loaded", "value": { "tasks": [{ "taskId": "task-1" }], "tickets": [] } },
+      "asyncControl": { "state": "loaded", "value": { "admissionState": "open" } },
+      "artifacts": { "state": "loaded", "value": [{ "id": "artifact-1" }] },
+      "changedFiles": { "state": "loaded", "value": [{ "path": "agentd/src/domain/session-projection-reducer.ts" }] },
+      "messages": { "state": "loaded", "value": [{ "id": "m1" }, { "id": "m2" }] },
+      "messageJournalAvailable": { "state": "loaded", "value": true },
+      "queue": {
+        "state": "loaded",
+        "value": {
+          "steers": [{ "text": "prefer tests" }],
+          "followUps": [],
+          "scheduled": [{ "id": "sched-1" }]
+        }
+      },
+      "activity": { "state": "loaded", "value": { "read": 2, "bash": 1, "thinking": 3 } },
+      "extensionUiRequest": { "state": "loaded", "value": { "id": "request-1", "method": "confirm" } }
+    }
+  }
+}

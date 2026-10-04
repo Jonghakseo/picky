@@ -1,0 +1,116 @@
+{
+  "name": "collection-and-scalar-set-mutations",
+  "description": "The remaining replace-style mutations, applied onto a snapshot that omitted their sections. Each one promotes its section from unavailable to loaded, including the explicit 'loaded but empty/none' values (todoSet null, extensionUiRequestSet null). artifactUpsert and changedFilesSet share one owner, so writing either also loads the other with an empty collection. messageAppend upserts by id, so the second append updates in place instead of duplicating.",
+  "events": [
+    {
+      "id": "event-conformance-sets-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 1,
+      "complete": false,
+      "omittedFields": [
+        "messages",
+        "artifacts",
+        "changedFiles",
+        "todoState",
+        "subagentRuns",
+        "activitySummary",
+        "pendingExtensionUiRequest"
+      ],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Set-style mutations",
+        "status": "running",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "event-conformance-sets-first",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:01.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 1,
+      "revision": 2,
+      "mutations": [
+        {
+          "type": "todoSet",
+          "todoState": {
+            "tasks": [{ "id": "todo-1", "content": "Fold the projection", "status": "in_progress" }],
+            "updatedAt": "2026-08-24T00:00:01.000Z"
+          }
+        },
+        {
+          "type": "subagentRunsSet",
+          "runs": [{ "runId": 7, "agent": "worker", "task": "write fixtures", "status": "running" }]
+        },
+        { "type": "activitySet", "activitySummary": { "read": 4, "bash": 1, "edit": 2, "write": 0, "thinking": 5, "other": 0 } },
+        { "type": "finalAnswerSet", "finalAnswer": "Fixtures written." },
+        {
+          "type": "messageAppend",
+          "message": { "id": "m1", "kind": "agent_text", "createdAt": "2026-08-24T00:00:01.000Z", "text": "drafting" }
+        },
+        {
+          "type": "artifactUpsert",
+          "artifact": { "id": "artifact-1", "kind": "report", "title": "Draft", "updatedAt": "2026-08-24T00:00:01.000Z" }
+        },
+        {
+          "type": "changedFilesSet",
+          "changedFiles": [{ "path": "contracts/projection/conformance/README.md", "status": "added" }]
+        },
+        {
+          "type": "extensionUiRequestSet",
+          "request": {
+            "id": "request-1",
+            "sessionId": "session-conformance",
+            "method": "input",
+            "prompt": "Which fixture next?",
+            "createdAt": "2026-08-24T00:00:01.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-conformance-sets-second",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:02.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 2,
+      "revision": 3,
+      "mutations": [
+        { "type": "todoSet", "todoState": null },
+        { "type": "extensionUiRequestSet", "request": null },
+        {
+          "type": "messageAppend",
+          "message": { "id": "m1", "kind": "agent_text", "createdAt": "2026-08-24T00:00:01.000Z", "text": "drafted" }
+        },
+        {
+          "type": "artifactUpsert",
+          "artifact": { "id": "artifact-1", "kind": "report", "title": "Final", "updatedAt": "2026-08-24T00:00:02.000Z" }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": { "localPresentationResets": 0, "progressOnlyTransactions": 0, "ignoredTransactions": 0 },
+    "sections": {
+      "meta": { "state": "loaded", "value": { "revision": 3, "finalAnswer": "Fixtures written." } },
+      "todo": { "state": "loaded", "value": null },
+      "subagentRuns": { "state": "loaded", "value": [{ "runId": 7, "status": "running" }] },
+      "activity": { "state": "loaded", "value": { "read": 4, "bash": 1, "edit": 2, "write": 0, "thinking": 5, "other": 0 } },
+      "messages": { "state": "loaded", "value": [{ "id": "m1", "text": "drafted" }] },
+      "messageJournalAvailable": { "state": "unavailable" },
+      "artifacts": { "state": "loaded", "value": [{ "id": "artifact-1", "title": "Final" }] },
+      "changedFiles": { "state": "loaded", "value": [{ "path": "contracts/projection/conformance/README.md", "status": "added" }] },
+      "extensionUiRequest": { "state": "loaded", "value": null }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "name": "meta-patch-field-updates",
+  "description": "metaPatch has three branches per field: an absent key leaves the value alone, null clears it, any other value sets it. The patch never rekeys the session (`id` is ignored), journal availability is owned by the conversation section rather than metadata, and the transaction's revision replaces the stored one outright.",
+  "events": [
+    {
+      "id": "event-conformance-meta-patch-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 2,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Before the patch",
+        "status": "running",
+        "cwd": "/Users/creatrip/Documents/picky",
+        "piSessionFilePath": "/Users/creatrip/.pi/sessions/before.jsonl",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:00:00.000Z",
+        "thinkingPreview": "still thinking",
+        "messageJournalAvailable": true,
+        "lastRequest": { "source": "followUp", "text": "keep going" },
+        "notifyMacOSOnCompletion": true
+      }
+    },
+    {
+      "id": "event-conformance-meta-patch-transaction",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:05.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 2,
+      "revision": 7,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "id": "someone-elses-session",
+            "title": "After the patch",
+            "status": "completed",
+            "piSessionFilePath": null,
+            "thinkingPreview": null,
+            "messageJournalAvailable": null,
+            "archived": true,
+            "updatedAt": "2026-08-24T00:00:05.000Z"
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": { "localPresentationResets": 0, "progressOnlyTransactions": 0, "ignoredTransactions": 0 },
+    "sections": {
+      "meta": {
+        "state": "loaded",
+        "value": {
+          "id": "session-conformance",
+          "revision": 7,
+          "title": "After the patch",
+          "status": "completed",
+          "cwd": "/Users/creatrip/Documents/picky",
+          "piSessionFilePath": null,
+          "thinkingPreview": null,
+          "updatedAt": "2026-08-24T00:00:05.000Z",
+          "archived": true,
+          "notifyMacOSOnCompletion": true,
+          "lastRequest": { "source": "followUp", "text": "keep going" }
+        }
+      },
+      "messageJournalAvailable": { "state": "loaded", "value": null }
+    }
+  }
+}

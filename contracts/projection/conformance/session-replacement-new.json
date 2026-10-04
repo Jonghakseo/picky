@@ -1,0 +1,80 @@
+{
+  "name": "session-replacement-new",
+  "description": "`/new` reaches the client as authoritative empty replacements for logs, tools and artifacts in one transaction. Only that exact combination counts as a session replacement and resets locally-owned presentation. The first two transactions are the control group: clearing two of the three collections, or artifacts alone, must not reset anything, so the final reset count stays at one.",
+  "events": [
+    {
+      "id": "event-conformance-replacement-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 1,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Replacement detection",
+        "status": "running",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:00:00.000Z",
+        "logs": ["daemon ready"],
+        "tools": [{ "toolCallId": "tool-a", "name": "Read", "status": "succeeded" }],
+        "artifacts": [
+          { "id": "artifact-1", "kind": "report", "title": "Old report", "updatedAt": "2026-08-24T00:00:00.000Z" }
+        ]
+      }
+    },
+    {
+      "id": "event-conformance-replacement-control-two-of-three",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:01.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 1,
+      "revision": 2,
+      "mutations": [
+        { "type": "logsSet", "logs": [] },
+        { "type": "toolsSet", "tools": [] }
+      ]
+    },
+    {
+      "id": "event-conformance-replacement-control-artifacts-only",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:02.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 2,
+      "revision": 3,
+      "mutations": [{ "type": "artifactsSet", "artifacts": [] }]
+    },
+    {
+      "id": "event-conformance-replacement-all-three",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:03.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 3,
+      "revision": 4,
+      "mutations": [
+        { "type": "logsSet", "logs": [] },
+        { "type": "toolsSet", "tools": [] },
+        { "type": "artifactsSet", "artifacts": [] }
+      ]
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": { "localPresentationResets": 1, "progressOnlyTransactions": 0, "ignoredTransactions": 0 },
+    "sections": {
+      "meta": { "state": "loaded", "value": { "revision": 4 } },
+      "logs": { "state": "loaded", "value": [] },
+      "tools": { "state": "loaded", "value": [] },
+      "artifacts": { "state": "loaded", "value": [] },
+      "changedFiles": { "state": "loaded", "value": [] }
+    }
+  }
+}

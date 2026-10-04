@@ -1,0 +1,68 @@
+{
+  "name": "partial-snapshot-omitted-sections",
+  "description": "A bounded snapshot must distinguish 'omitted' from 'empty'. Omitted sections stay unavailable while present-but-empty sections load an empty value. Artifacts and changed files share one owner, so omitting either leaves both unavailable; queue delivery modes survive an omitted queue collection.",
+  "events": [
+    {
+      "id": "event-conformance-partial-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 9,
+      "complete": false,
+      "omittedFields": [
+        "logs",
+        "tools",
+        "todoState",
+        "changedFiles",
+        "messages",
+        "queuedFollowUps",
+        "asyncControl",
+        "scheduledMessages"
+      ],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Bounded hydration",
+        "status": "waiting_for_input",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:02:00.000Z",
+        "logs": [],
+        "tools": [],
+        "messages": [],
+        "subagentRuns": [],
+        "artifacts": [],
+        "changedFiles": [],
+        "queuedSteers": [],
+        "queuedFollowUps": [],
+        "scheduledMessages": [
+          { "id": "sched-1", "text": "ignored", "dueAt": "2026-08-24T01:00:00.000Z", "createdAt": "2026-08-24T00:00:55.000Z" }
+        ],
+        "steeringMode": "all",
+        "followUpMode": "all",
+        "activitySummary": { "read": 0, "bash": 0, "edit": 0, "write": 0, "thinking": 0, "other": 0 }
+      }
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": { "localPresentationResets": 0, "ignoredSnapshots": 0 },
+    "queueModes": { "steeringMode": "all", "followUpMode": "all" },
+    "sections": {
+      "meta": { "state": "loaded", "value": { "revision": 9, "status": "waiting_for_input" } },
+      "logs": { "state": "unavailable" },
+      "tools": { "state": "unavailable" },
+      "todo": { "state": "unavailable" },
+      "subagentRuns": { "state": "loaded", "value": [] },
+      "asyncTaskDetail": { "state": "unavailable" },
+      "asyncControl": { "state": "unavailable" },
+      "artifacts": { "state": "unavailable" },
+      "changedFiles": { "state": "unavailable" },
+      "messages": { "state": "unavailable" },
+      "messageJournalAvailable": { "state": "unavailable" },
+      "queue": { "state": "unavailable" },
+      "activity": { "state": "loaded", "value": { "read": 0, "bash": 0, "edit": 0, "write": 0, "thinking": 0, "other": 0 } },
+      "extensionUiRequest": { "state": "loaded", "value": null }
+    }
+  }
+}

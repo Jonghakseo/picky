@@ -227,6 +227,8 @@ The app-daemon protocol is owned in both languages:
 
 Protocol changes must update fixtures and both Swift/TypeScript tests in the same PR.
 
+How a client folds a v2 projection stream into session state is pinned separately by `contracts/projection/conformance/`: ordered snapshot/transaction scenarios with the per-section state they must produce, including the `unavailable` vs loaded-but-empty distinction a flattened session card erases. The Swift storage reducer (`Picky/Sessions/PickyRegistrySessionProjectionStorage+V2.swift`) is normative; `agentd/src/domain/session-projection-reducer.ts` is the TypeScript reference a web client reuses instead of re-reading the protocol, and its test also asserts that `buildSessionProjectionMutations` round-trips through it. The matching Swift conformance test is a following step.
+
 Session status values:
 
 ```text

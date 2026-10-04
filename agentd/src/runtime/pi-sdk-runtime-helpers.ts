@@ -6,10 +6,19 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { RewindBranchMessage, RuntimeBashExecutionResult, RuntimeEvent } from "./types.js";
 import type { PiUserBashEvent } from "./pi-capabilities.js";
 import { buildToolResultPreview, isJSONObjectOrArrayText, type ToolResultPreview } from "../domain/tool-result-preview.js";
+import { autoRetryStatus } from "../domain/provider-error-summary.js";
 
 // Pure helpers extracted from pi-sdk-runtime.ts to keep that file focused on the
 // runtime/session classes. These are stateless (aside from the cached fd path)
 // transcript/message/bash normalization utilities used by PiSdkRuntimeSession.
+
+export function autoRetryStartEvent(event: Record<string, unknown>): Extract<RuntimeEvent, { type: "status" }> {
+  const attempt = numberValue(event.attempt);
+  const maxAttempts = numberValue(event.maxAttempts);
+  const summary = attempt && maxAttempts ? `Retrying after transient Pi error (${attempt}/${maxAttempts})…` : "Retrying after transient Pi error…";
+  const autoRetry = autoRetryStatus(attempt, maxAttempts, stringValue(event.errorMessage));
+  return { type: "status", status: "running", summary, ...(autoRetry ? { autoRetry } : {}) };
+}
 
 let cachedAutocompleteFdPath: string | null | undefined;
 

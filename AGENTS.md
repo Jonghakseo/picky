@@ -4,6 +4,10 @@
 
 Picky is a local-first macOS command center for Pi sessions. It captures neutral desktop context, sends it to local Pi through `picky-agentd`, and shows long-running Pickles in the Picky dock. Picky should stay thin: context capture, overlay/session UI, and session control. Pi remains responsible for interpreting intent, choosing skills/tools/MCPs, and doing the work.
 
+## Response language
+
+- Always answer the user in Korean.
+
 ## Autonomous execution
 
 These defaults follow OpenAI's [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model#initiative-and-follow-through) on initiative and [testing and verification](https://developers.openai.com/api/docs/guides/latest-model#testing-and-verification). They govern agent workflow, not the app's model selection or API configuration.

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>룸 리스트 · Picky 원격 PWA 시안</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="room-list.css">
+</head>
+<body>
+  <!-- PickleLogoGlyph (PickyConversationHeaderView.swift:825), traced from the Swift Shape. -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <symbol id="pickle-glyph" viewBox="0 0 512 512">
+      <path fill="currentColor" fill-rule="evenodd" d="M481 195.71L435.32 152.47L420.72 91.29L359.54 76.69L316.3 31.01L256.01 48.95L195.72 31.01L152.48 76.69L91.3 91.29L76.7 152.47L31.02 195.71L48.96 256L31.02 316.29L76.7 359.53L91.3 420.71L152.48 435.31L195.72 480.99L256.01 463.05L316.3 480.99L359.54 435.31L420.72 420.71L435.32 359.53L481 316.29L463.06 256L481 195.71Z M179.1 291.39C158.16 291.39 141.19 270.17 141.19 244C141.19 217.83 158.16 196.61 179.1 196.61C200.04 196.61 217.01 217.83 217.01 244C217.01 270.17 200.04 291.39 179.1 291.39Z M332.9 291.39C311.96 291.39 294.99 270.17 294.99 244C294.99 217.83 311.96 196.61 332.9 196.61C353.84 196.61 370.81 217.83 370.81 244C370.81 270.17 353.84 291.39 332.9 291.39Z"/>
+    </symbol>
+    <symbol id="st-running" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" fill="currentColor"/></symbol>
+    <symbol id="st-waiting" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4v5" stroke="var(--ds-color-surface1)" stroke-width="2" stroke-linecap="round"/><circle cx="8" cy="11.6" r="1.1" fill="var(--ds-color-surface1)"/></symbol>
+    <symbol id="st-completed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.8 8.3l2.2 2.2 4.2-4.6" fill="none" stroke="var(--ds-color-surface1)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="st-failed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" fill="none" stroke="var(--ds-color-surface1)" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="st-cancelled" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5.2 8h5.6" fill="none" stroke="var(--ds-color-surface1)" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <main class="proto-page">
+    <div class="proto-title">방 목록 · Picky 고정 + Pickle 방</div>
+    <p class="proto-note">HUD source: <code>Picky/HUD/Dock/PickyHUDDockIconView.swift</code>, <code>Picky/HUD/Conversation/PickyConversationHeaderView.swift</code> (상태 라벨·톤) · reference PNG: <code>build/render-gallery/dock-chrome/m-{dark,light}-vertical-group.png</code> (아이콘 아이덴티티 한정)</p>
+
+    <section class="proto-state">
+      <div class="proto-caption">1. 전체 목록 (Picky 고정 · 실행 중 · 입력 대기 · 완료+안 읽음 · 실패 · 취소됨 · 보관함)</div>
+      <div class="proto-room">
+        <div class="list-screen">
+          <div class="list-topbar">
+            <span class="list-topbar-title" data-l10n="messages.title">메시지</span>
+            <button class="list-new" type="button">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" data-sf-symbol="plus"><path d="M8 3v10M3 8h10"/></svg>
+              <span data-l10n-new="pwa.roomList.newPickle">새 Pickle</span>
+            </button>
+          </div>
+
+          <div class="list-filters">
+            <button class="filter-chip selected" type="button"><span data-l10n-new="pwa.roomList.filter.all">전체</span></button>
+            <button class="filter-chip group-teal" type="button"><span class="filter-dot"></span>제품</button>
+            <button class="filter-chip group-amber" type="button"><span class="filter-dot"></span>실험</button>
+          </div>
+
+          <div class="list-rows">
+            <a class="room-row pinned is-running" href="#">
+              <span class="avatar picky">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">Picky</span>
+                  <svg class="row-pin" width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-sf-symbol="pin.fill"><path d="M9.6 1.6l4.8 4.8-1.4 1.4-1-.2-3 3 .3 2.1-1.2 1.2-3-3-3 3-.8-.8 3-3-3-3L2.5 5.9l2.1.3 3-3-.2-1z"/></svg>
+                  <span class="sr-only" data-l10n-new="pwa.roomList.pinned">고정됨</span>
+                  <span class="row-time">14:21</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="circle.fill"><use href="#st-running"/></svg><span data-l10n="hud.conversation.status.running">실행 중</span></span>
+                  <span class="row-summary">보관 플로우 점검 결과를 정리하는 중이에요</span>
+                </span>
+              </span>
+            </a>
+
+            <a class="room-row is-running" href="#">
+              <span class="avatar is-running">
+                <span class="avatar-ring"></span>
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">보관 플로우 회귀 점검</span>
+                  <span class="row-time">14:02</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="circle.fill"><use href="#st-running"/></svg><span data-l10n="hud.conversation.status.running">실행 중</span></span>
+                  <span class="row-summary">PickySessionStoreTests 142건 실행 중</span>
+                </span>
+              </span>
+            </a>
+
+            <a class="room-row is-waiting unread" href="#">
+              <span class="avatar">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+                <span class="avatar-unread"></span>
+                <span class="sr-only" data-l10n="dock.unread">읽지 않음</span>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">결제 웹훅 재시도 설계</span>
+                  <span class="row-time">13:48</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="exclamationmark.circle.fill"><use href="#st-waiting"/></svg><span data-l10n="hud.conversation.status.waiting">입력 대기</span></span>
+                  <span class="row-summary">재시도 간격을 지수형으로 둘까요?</span>
+                </span>
+              </span>
+            </a>
+
+            <a class="room-row is-completed unread" href="#">
+              <span class="avatar">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+                <span class="avatar-unread"></span>
+                <span class="sr-only" data-l10n="dock.unread">읽지 않음</span>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">릴리즈 노트 초안</span>
+                  <span class="row-time">12:30</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="checkmark.circle.fill"><use href="#st-completed"/></svg><span data-l10n="hud.conversation.status.completed">완료</span></span>
+                  <span class="row-summary">0.9.3-beta.2 변경 12건 정리</span>
+                </span>
+              </span>
+            </a>
+
+            <a class="room-row is-failed" href="#">
+              <span class="avatar">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">알림 큐 마이그레이션</span>
+                  <span class="row-time">11:05</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="xmark.circle.fill"><use href="#st-failed"/></svg><span data-l10n="hud.conversation.status.failed">실패</span></span>
+                  <span class="row-summary">pnpm build 종료 코드 1</span>
+                </span>
+              </span>
+            </a>
+
+            <a class="room-row is-cancelled" href="#">
+              <span class="avatar">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">문서 링크 점검</span>
+                  <span class="row-time">어제</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="minus.circle.fill"><use href="#st-cancelled"/></svg><span data-l10n="hud.conversation.status.cancelled">취소됨</span></span>
+                  <span class="row-summary">사용자가 중지했어요</span>
+                </span>
+              </span>
+            </a>
+
+            <button class="archived-row" type="button">
+              <span class="archived-icon">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="archivebox"><path d="M1.8 4.6h12.4v8.1a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><path d="M1.2 2.3h13.6v2.3H1.2z"/><path d="M6.4 7.6h3.2"/></svg>
+              </span>
+              <span class="archived-label" data-l10n="hud.archivedList.title">보관된 Pickle</span>
+              <span class="archived-count">7</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">2. 그룹 필터 '제품' 선택</div>
+      <div class="proto-room">
+        <div class="list-screen">
+          <div class="list-topbar">
+            <span class="list-topbar-title" data-l10n="messages.title">메시지</span>
+            <button class="list-new" type="button">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" data-sf-symbol="plus"><path d="M8 3v10M3 8h10"/></svg>
+              <span data-l10n-new="pwa.roomList.newPickle">새 Pickle</span>
+            </button>
+          </div>
+
+          <div class="list-filters">
+            <button class="filter-chip" type="button"><span data-l10n-new="pwa.roomList.filter.all">전체</span></button>
+            <button class="filter-chip group-teal selected" type="button"><span class="filter-dot"></span>제품</button>
+            <button class="filter-chip group-amber" type="button"><span class="filter-dot"></span>실험</button>
+          </div>
+
+          <div class="list-rows">
+            <a class="room-row pinned is-running" href="#">
+              <span class="avatar picky">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">Picky</span>
+                  <svg class="row-pin" width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-sf-symbol="pin.fill"><path d="M9.6 1.6l4.8 4.8-1.4 1.4-1-.2-3 3 .3 2.1-1.2 1.2-3-3-3 3-.8-.8 3-3-3-3L2.5 5.9l2.1.3 3-3-.2-1z"/></svg>
+                  <span class="sr-only" data-l10n-new="pwa.roomList.pinned">고정됨</span>
+                  <span class="row-time">14:21</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="circle.fill"><use href="#st-running"/></svg><span data-l10n="hud.conversation.status.running">실행 중</span></span>
+                  <span class="row-summary">보관 플로우 점검 결과를 정리하는 중이에요</span>
+                </span>
+              </span>
+            </a>
+
+            <a class="room-row is-running" href="#">
+              <span class="avatar is-running">
+                <span class="avatar-ring"></span>
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">보관 플로우 회귀 점검</span>
+                  <span class="row-time">14:02</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="circle.fill"><use href="#st-running"/></svg><span data-l10n="hud.conversation.status.running">실행 중</span></span>
+                  <span class="row-summary">PickySessionStoreTests 142건 실행 중</span>
+                </span>
+              </span>
+            </a>
+
+            <a class="room-row is-completed unread" href="#">
+              <span class="avatar">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+                <span class="avatar-unread"></span>
+                <span class="sr-only" data-l10n="dock.unread">읽지 않음</span>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">릴리즈 노트 초안</span>
+                  <span class="row-time">12:30</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="checkmark.circle.fill"><use href="#st-completed"/></svg><span data-l10n="hud.conversation.status.completed">완료</span></span>
+                  <span class="row-summary">0.9.3-beta.2 변경 12건 정리</span>
+                </span>
+              </span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">3. Pickle이 없을 때 (Picky 방은 그대로 고정)</div>
+      <div class="proto-room">
+        <div class="list-screen">
+          <div class="list-topbar">
+            <span class="list-topbar-title" data-l10n="messages.title">메시지</span>
+            <button class="list-new" type="button">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" data-sf-symbol="plus"><path d="M8 3v10M3 8h10"/></svg>
+              <span data-l10n-new="pwa.roomList.newPickle">새 Pickle</span>
+            </button>
+          </div>
+
+          <div class="list-rows">
+            <a class="room-row pinned is-completed" href="#">
+              <span class="avatar picky">
+                <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+              </span>
+              <span class="row-main">
+                <span class="row-top">
+                  <span class="row-title">Picky</span>
+                  <svg class="row-pin" width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-sf-symbol="pin.fill"><path d="M9.6 1.6l4.8 4.8-1.4 1.4-1-.2-3 3 .3 2.1-1.2 1.2-3-3-3 3-.8-.8 3-3-3-3L2.5 5.9l2.1.3 3-3-.2-1z"/></svg>
+                  <span class="sr-only" data-l10n-new="pwa.roomList.pinned">고정됨</span>
+                  <span class="row-time">09:12</span>
+                </span>
+                <span class="row-bottom">
+                  <span class="row-status"><svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true" data-sf-symbol="checkmark.circle.fill"><use href="#st-completed"/></svg><span data-l10n="hud.conversation.status.completed">완료</span></span>
+                  <span class="row-summary">무엇을 맡겨 볼까요?</span>
+                </span>
+              </span>
+            </a>
+
+            <div class="list-empty">
+              <span class="list-empty-title" data-l10n-new="pwa.roomList.empty.title">아직 Pickle이 없어요</span>
+              <button class="list-new" type="button">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" data-sf-symbol="plus"><path d="M8 3v10M3 8h10"/></svg>
+                <span data-l10n-new="pwa.roomList.newPickle">새 Pickle</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

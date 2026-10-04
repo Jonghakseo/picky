@@ -1,0 +1,76 @@
+/* Shared scaffolding for the remote PWA review prototypes.
+ * Page layout and review captions only. Component styles live in each part's own CSS file.
+ * Every value comes from tokens.css; no raw colors here.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ds-color-background);
+  color: var(--ds-color-text-primary);
+  font: var(--hud-type-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* One phone-width column. 390pt is a current iPhone portrait width; the HUD card
+ * itself supports 360pt and up (PickyHUDCardSize.widthRange). Left-aligned on
+ * purpose: headless Chrome keeps a layout viewport wider than 390px, so a centered
+ * column would be cut off in the 390px screenshot. */
+.proto-page {
+  width: 390px;
+  margin: 0;
+  padding: var(--ds-space-4) 0 var(--ds-space-8);
+}
+
+.proto-title {
+  font: var(--hud-type-title);
+  padding: 0 var(--ds-space-4) var(--ds-space-1);
+}
+
+.proto-note {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+  padding: 0 var(--ds-space-4) var(--ds-space-3);
+}
+
+.proto-state {
+  margin: 0 0 var(--ds-space-5);
+}
+
+/* Review caption for each rendered state. Not part of the product UI. */
+.proto-caption {
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-tertiary);
+  padding: 0 var(--ds-space-4) var(--ds-space-1);
+}
+
+/* The room surface: the HUD conversation card fill (surface1) without the
+ * desktop-overlay translucency, because nothing sits behind a phone screen. */
+.proto-room {
+  background: var(--ds-color-surface1);
+  border-top: 1px solid var(--ds-color-border-subtle);
+  border-bottom: 1px solid var(--ds-color-border-subtle);
+}

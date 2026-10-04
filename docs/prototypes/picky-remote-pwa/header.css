@@ -1,0 +1,284 @@
+/* Room header: the HUD conversation header ported to the phone room view.
+ * Source: Picky/HUD/Conversation/PickyConversationHeaderView.swift
+ *   - singleRowHeaderLayout      (:154) HStack spacing DS.Spacing.sm, minHeight 26
+ *   - piBadgeSlot / piBadge      (:362, :517)
+ *   - statusLabel                (:301)
+ *   - PickyHeaderSessionMetaPill (:972)
+ *   - PickyHeaderContextUsageBar (:1112)
+ * Status tone + label: PickyConversationStatusTone / PickyConversationStatusPresentation (:730-:823).
+ * Every color, radius and font comes from tokens.css. Raw px only where the Swift
+ * source itself uses a literal; the Swift file:line sits next to each one.
+ */
+
+/* missing DS token: the header's own row padding. The Swift header inherits the
+ * conversation card's content inset instead of declaring one, so the phone row
+ * uses DS spacing directly. */
+
+.room-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2); /* DS.Spacing.sm (PickyConversationHeaderView.swift:155) */
+  padding: var(--ds-space-2) var(--ds-space-3);
+  /* Swift uses minHeight 26 (PickyConversationHeaderView.swift:148); the phone row
+   * grows to 44 so every control in it can reach the 44pt tap minimum. */
+  min-height: 44px;
+  border-bottom: 1px solid var(--ds-color-border-subtle);
+}
+
+/* ---- status tone ------------------------------------------------------- */
+/* --status      = fill-grade token (PickyConversationStatusTone.color)
+ * --status-text = foreground-grade token (PickyConversationStatusTone.textColor)
+ * --status-fill = piBadge statusFillOpacity (PickyConversationHeaderView.swift:575) */
+.is-running {
+  --status: var(--ds-color-info);
+  --status-text: var(--ds-color-info);
+  --status-fill: 22%;
+}
+
+.is-waiting {
+  --status: var(--ds-color-warning);
+  --status-text: var(--ds-color-warning-text);
+  --status-fill: 18%;
+}
+
+.is-completed {
+  --status: var(--ds-color-success);
+  --status-text: var(--ds-color-success-text);
+  --status-fill: 18%;
+}
+
+.is-failed {
+  --status: var(--ds-color-destructive-text);
+  --status-text: var(--ds-color-destructive-text);
+  --status-fill: 18%;
+}
+
+.is-blocked {
+  --status: var(--ds-color-warning-text);
+  --status-text: var(--ds-color-warning-text);
+  --status-fill: 18%;
+}
+
+.is-queued,
+.is-cancelled {
+  --status: var(--ds-color-text-tertiary);
+  --status-text: var(--ds-color-text-tertiary);
+  --status-fill: 13%;
+}
+
+/* ---- back control (phone only) ----------------------------------------- */
+/* The HUD has no back control: its card is always the one open Pickle. On the
+ * phone this is how you return to the room list. 24x24 visual like the other
+ * header buttons, hit area extended to 44pt by the ::before. */
+.hdr-back {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-inline-start: calc(-1 * var(--ds-space-1));
+  border-radius: var(--ds-radius-compact); /* DS.CornerRadius.small */
+  color: var(--ds-color-text-secondary);
+}
+
+.hdr-back::before,
+.hdr-icon::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* ---- pi badge ----------------------------------------------------------- */
+/* piBadgeSlot frame 26x26, piBadge 22x22 (PickyConversationHeaderView.swift:379, :524).
+ * Tap-to-arm is Mac-only (screen-context target), so the phone badge is a static
+ * status avatar. */
+.pi-badge {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+}
+
+.pi-badge-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0.8px solid color-mix(in srgb, var(--status) 38%, transparent);
+  border-radius: var(--ds-radius-control); /* DS.CornerRadius.medium */
+  background: color-mix(in srgb, var(--status) var(--status-fill), transparent);
+}
+
+.pi-glyph {
+  display: block;
+  width: 15px; /* PickyConversationHeaderView.swift:536 */
+  height: 15px;
+  color: var(--status);
+}
+
+/* statusCornerIndicator (PickyConversationHeaderView.swift:547) */
+.pi-badge-corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ds-radius-circle);
+  background: var(--status);
+  /* Swift strokes the dot with surface1 at lineWidth 1.4 (:555). */
+  box-shadow: 0 0 0 1.4px var(--ds-color-surface1);
+}
+
+.is-running .pi-badge-corner {
+  width: 7.5px;
+  height: 7.5px;
+  transform: translate(calc(2.8px - 2px), calc(-2.8px + 2px));
+}
+
+.pi-badge-corner.attention {
+  width: 10px;
+  height: 10px;
+  font: var(--hud-type-badge-monospaced-bold);
+  color: var(--ds-color-text-on-accent);
+  transform: translate(calc(3.2px - 2px), calc(-3.2px + 2px));
+}
+
+/* ---- title and status --------------------------------------------------- */
+.hdr-title {
+  flex: 1 1 auto;
+  min-width: 96px; /* PickyConversationHeaderView.swift:169 */
+  overflow: hidden;
+  padding: 2px 5px; /* PickyConversationHeaderView.swift:215-216 */
+  font: var(--hud-type-title);
+  color: var(--ds-color-text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hdr-status {
+  flex: none;
+  font: var(--hud-type-status-semibold);
+  color: var(--status-text);
+  white-space: nowrap;
+}
+
+/* ---- context usage control --------------------------------------------- */
+/* PickyHeaderSessionMetaPill.contextControl (:1000-:1012): bar 24x5, gap xs,
+ * padding space1, radius compact. Tap opens the compaction popover. */
+.ctx {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-1);
+  border-radius: var(--ds-radius-compact);
+}
+
+.ctx::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 100%;
+  height: 44px;
+  min-width: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.ctx-bar {
+  position: relative;
+  flex: none;
+  width: 24px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: var(--ds-radius-pill);
+  background: color-mix(in srgb, var(--ds-color-surface2) 85%, transparent);
+  box-shadow: inset 0 0 0 0.6px color-mix(in srgb, var(--band) 42%, transparent);
+}
+
+.ctx-fill {
+  display: block;
+  width: var(--ctx, 0%);
+  height: 100%;
+  border-radius: var(--ds-radius-pill);
+  background: var(--band);
+}
+
+.ctx-label {
+  font: var(--hud-type-meta-monospaced-semibold);
+  /* PickyHeaderSessionMetaPill applies .opacity(0.88) to the pill text (:995). */
+  color: color-mix(in srgb, var(--band-text) 88%, transparent);
+}
+
+/* PickyHeaderContextUsageDisplay bands (PickyConversationHeaderView.swift:1155-:1170) */
+.band-low {
+  --band: var(--ds-color-text-tertiary);
+  --band-text: var(--ds-color-text-secondary);
+}
+
+.band-caution {
+  --band: var(--ds-color-caution);
+  --band-text: var(--ds-color-caution-text);
+}
+
+.band-warning {
+  --band: var(--ds-color-warning);
+  --band-text: var(--ds-color-warning-text);
+}
+
+.band-critical {
+  --band: var(--ds-color-destructive);
+  --band-text: var(--ds-color-destructive-text);
+}
+
+/* ---- trailing icon buttons ---------------------------------------------- */
+/* Archive 24x24 / icon 11pt (:639-:644), menu 18x18 / icon 12pt (:350-:354).
+ * The menu keeps its HUD size but gets the same 44pt hit area as the rest. */
+.hdr-icon {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ds-radius-compact);
+  color: var(--ds-color-text-tertiary);
+}
+
+.hdr-archive {
+  width: 24px;
+  height: 24px;
+}
+
+.hdr-menu {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---- context band ramp state ------------------------------------------- */
+.ctx-ramp {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
+}
+
+/* Review-only helper: keeps an accessible name in the DOM without showing it. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

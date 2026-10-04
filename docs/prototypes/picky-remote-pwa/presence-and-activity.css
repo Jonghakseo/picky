@@ -1,0 +1,189 @@
+/* Presence row and tool-activity summary for the remote PWA room view.
+ * Ported 1:1 from Picky/HUD/Conversation/Bubbles/PickyConversationPresenceRow.swift
+ * and PickyActivitySummaryView.swift. Literal px values repeat the Swift
+ * literal; the file:line is in the comment next to each.
+ */
+
+/* Room interior. Picky/HUD/PickyHUDLayoutPolicy.swift:274
+ * detailHorizontalPadding = 12 */
+.room {
+  padding: var(--ds-space-2) 12px;
+}
+
+/* ---------- presence row ----------
+ * PickyConversationPresenceRow.swift:247-279 */
+.presence {
+  display: flex;
+  align-items: center;
+  /* HStack(spacing: DS.Spacing.space2) */
+  gap: var(--ds-space-2);
+  /* padding(.trailing, DS.Spacing.space1) */
+  padding-right: var(--ds-space-1);
+  /* frame(minHeight: 28) */
+  min-height: 28px;
+  /* Phone adaptation: the Mac row is 28pt tall. The visual height is kept and
+   * the tap target is grown to 44pt with vertical padding, because the row is
+   * a real button (it opens the tool history). */
+  padding-block: 8px;
+}
+
+/* Three dots in a small agent-side bubble.
+ * PickyPresenceTypingIndicator: PickyConversationPresenceRow.swift:292-317 */
+.presence-dots {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px; /* HStack(spacing: 3) */
+  padding: var(--ds-space-2);
+  background: var(--ds-color-surface2);
+  /* bubbleShape(side: .agent): PickyConversationBubbleLayout.swift:34-41 */
+  border-radius: var(--ds-radius-extra-large) var(--ds-radius-extra-large) var(--ds-radius-extra-large) 4px;
+}
+
+.presence-dots i {
+  width: 5px; /* dotSize = 5 */
+  height: 5px;
+  border-radius: var(--ds-radius-circle);
+  background: var(--ds-color-text-tertiary);
+  /* staticOpacity when the pulse is running. The Mac fades the three dots in
+   * sequence; a still frame of that loop is what a screenshot can show. */
+  opacity: 0.8;
+}
+
+/* waiting for input: no animation, dimmer dots (staticOpacity 0.45) */
+.presence--waiting .presence-dots i {
+  opacity: 0.45;
+}
+
+.presence-text {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: var(--ds-space-1); /* HStack(spacing: DS.Spacing.space1) */
+}
+
+.presence-title {
+  flex: none;
+  font: var(--hud-type-label-medium);
+  color: var(--ds-color-text-secondary);
+}
+
+.presence-sep,
+.presence-detail {
+  font: var(--hud-type-label-medium);
+  color: var(--ds-color-text-tertiary);
+}
+
+.presence-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Elapsed time. Keeps its slot while hidden so the status text never shifts
+ * (PickyConversationPresenceRow.swift:274-279 opacity(isHovered ? 1 : 0)). */
+.presence-elapsed {
+  flex: none;
+  font: var(--hud-type-meta-monospaced-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-color-text-tertiary);
+  opacity: 0;
+}
+
+.presence--tapped .presence-elapsed {
+  opacity: 1;
+}
+
+/* ---------- tool activity summary ----------
+ * PickyActivitySummaryView.swift:28-36 VStack(spacing: DS.Spacing.space1) */
+.activity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ds-space-1);
+}
+
+/* disclosureButton: PickyActivitySummaryView.swift:38-72 */
+.activity-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-1);
+  /* Phone adaptation: the Mac control is ~22pt tall. Visual size kept, tap
+   * target grown to 44pt. */
+  min-height: 44px;
+}
+
+.activity-dot {
+  flex: none;
+  /* Circle().frame(width: DS.Spacing.space1, height: DS.Spacing.space1) */
+  width: var(--ds-space-1);
+  height: var(--ds-space-1);
+  border-radius: var(--ds-radius-circle);
+  background: var(--ds-color-success);
+}
+
+.activity-head > svg {
+  flex: none;
+  width: var(--hud-size-status);
+  height: var(--hud-size-status);
+  color: var(--ds-color-text-secondary);
+}
+
+.activity-title {
+  font: var(--hud-type-status-semibold);
+  color: var(--ds-color-text-primary);
+  white-space: nowrap;
+}
+
+.activity-state {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+}
+
+.activity-state svg {
+  width: var(--hud-size-meta);
+  height: var(--hud-size-meta);
+  /* chevron.right, rotated 90° once expanded:
+   * PickyActivitySummaryView.swift:57-59 */
+  transform: rotate(0deg);
+}
+
+.activity--expanded .activity-state svg {
+  transform: rotate(90deg);
+}
+
+/* detailGrid: PickyActivitySummaryView.swift:92-121.
+ * Grid(horizontalSpacing: space4, verticalSpacing: space1), three columns,
+ * padding h space3 / v space2, surface2, radius control. */
+.activity-grid {
+  display: inline-grid;
+  grid-template-columns: repeat(3, max-content);
+  column-gap: var(--ds-space-4);
+  row-gap: var(--ds-space-1);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  background: var(--ds-color-surface2);
+  border-radius: var(--ds-radius-control);
+}
+
+.activity-grid > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ds-space-1);
+  white-space: nowrap;
+}
+
+.activity-grid .k {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+}
+
+.activity-grid .v {
+  font: var(--hud-type-status-monospaced-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-color-text-primary);
+}

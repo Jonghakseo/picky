@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>진행 표시 · 도구 활동 · Picky 원격 PWA 시안</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="presence-and-activity.css">
+</head>
+<body>
+  <main class="proto-page">
+    <div class="proto-title">진행 표시 · 도구 활동</div>
+    <p class="proto-note">HUD source: <code>Bubbles/PickyConversationPresenceRow.swift</code>, <code>Bubbles/PickyActivitySummaryView.swift</code> · reference PNG: <code>messenger-ux/pickle-presence-states-*-ko.png</code>, <code>conversation-activity/activity-summary-*-ko.png</code></p>
+
+    <section class="proto-state">
+      <div class="proto-caption">1. 진행 표시 전체 상태 (평소 상태, 경과 시간은 자리만 차지하고 숨김)</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="presence">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.presence.thinking">생각 중</span>
+            </div>
+            <span class="presence-elapsed">1:15</span>
+          </div>
+
+          <div class="presence">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.presence.readingFile">파일 읽는 중</span>
+              <span class="presence-sep" aria-hidden="true">·</span>
+              <span class="presence-detail" title="/repo/Picky/HUD/PickyHUDView.swift">PickyHUDView.swift</span>
+            </div>
+            <span class="presence-elapsed">1:15</span>
+          </div>
+
+          <div class="presence">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.liveStep.working">작업 중</span>
+              <span class="presence-sep" aria-hidden="true">·</span>
+              <span class="presence-detail">Swift 테스트 실행</span>
+            </div>
+            <span class="presence-elapsed">1:15</span>
+          </div>
+
+          <div class="presence">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.liveStep.working">작업 중</span>
+              <span class="presence-sep" aria-hidden="true">·</span>
+              <span class="presence-detail" data-l10n="hud.presence.skill">picky-design-guide 스킬 사용</span>
+            </div>
+            <span class="presence-elapsed">1:15</span>
+          </div>
+
+          <div class="presence">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.liveStep.working">작업 중</span>
+              <span class="presence-sep" aria-hidden="true">·</span>
+              <span class="presence-detail" data-l10n="hud.presence.subagent">worker에게 맡김</span>
+            </div>
+            <span class="presence-elapsed">1:15</span>
+          </div>
+
+          <div class="presence">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.liveStep.working">작업 중</span>
+            </div>
+            <span class="presence-elapsed">1:15</span>
+          </div>
+
+          <div class="presence presence--waiting">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.conversation.status.waiting">입력 대기</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">2. 탭한 상태 (Mac의 호버에 해당, 경과 시간 노출)</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="presence presence--tapped">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.liveStep.working">작업 중</span>
+              <span class="presence-sep" aria-hidden="true">·</span>
+              <span class="presence-detail">Swift 테스트 실행</span>
+            </div>
+            <span class="presence-elapsed">1:15</span>
+          </div>
+
+          <div class="presence presence--tapped">
+            <div class="presence-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="presence-text">
+              <span class="presence-title" data-l10n="hud.presence.thinking">생각 중</span>
+            </div>
+            <span class="presence-elapsed">0:42</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">3. 도구 활동 요약 접힘</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="activity">
+            <button class="activity-head" type="button">
+              <span class="activity-dot" aria-hidden="true"></span>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" data-sf-symbol="list.bullet" aria-hidden="true">
+                <path d="M5.5 4h8.5M5.5 8h8.5M5.5 12h8.5M2.2 4h.01M2.2 8h.01M2.2 12h.01" stroke-linecap="round"></path>
+              </svg>
+              <span class="activity-title" data-l10n="hud.activity.summary.toolsUsed.many">도구 20회 사용</span>
+              <span class="activity-state">
+                <span data-l10n="hud.activity.summary.completed">완료</span>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" data-sf-symbol="chevron.right" aria-hidden="true">
+                  <path d="M6 3.5L10.5 8 6 12.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">4. 도구 활동 요약 펼침</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="activity activity--expanded">
+            <button class="activity-head" type="button">
+              <span class="activity-dot" aria-hidden="true"></span>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" data-sf-symbol="list.bullet" aria-hidden="true">
+                <path d="M5.5 4h8.5M5.5 8h8.5M5.5 12h8.5M2.2 4h.01M2.2 8h.01M2.2 12h.01" stroke-linecap="round"></path>
+              </svg>
+              <span class="activity-title" data-l10n="hud.activity.summary.toolsUsed.many">도구 20회 사용</span>
+              <span class="activity-state">
+                <span data-l10n="hud.activity.summary.completed">완료</span>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" data-sf-symbol="chevron.right" aria-hidden="true">
+                  <path d="M6 3.5L10.5 8 6 12.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </span>
+            </button>
+            <button class="activity-grid" type="button">
+              <div><span class="k" data-l10n="hud.activity.category.read">읽기</span><span class="v">6</span></div>
+              <div><span class="k" data-l10n="hud.activity.category.bash">실행</span><span class="v">10</span></div>
+              <div><span class="k" data-l10n="hud.activity.category.edit">수정</span><span class="v">1</span></div>
+              <div><span class="k" data-l10n="hud.activity.category.write">쓰기</span><span class="v">1</span></div>
+              <div><span class="k" data-l10n="hud.activity.category.subagent">서브에이전트</span><span class="v">2</span></div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

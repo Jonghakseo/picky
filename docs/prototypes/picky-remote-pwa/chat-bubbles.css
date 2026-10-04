@@ -1,0 +1,344 @@
+/* Chat bubbles for the remote PWA room view.
+ * Ported 1:1 from the HUD conversation bubbles. Every literal px below is the
+ * literal the Swift source uses for that same piece; the Swift file:line is in
+ * the comment next to it.
+ */
+
+/* VoiceOver-only label for an icon-only control. Carries the catalog string so
+ * the copy check can see it without drawing text the HUD does not draw. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Room interior. HUD card content inset.
+ * Picky/HUD/PickyHUDLayoutPolicy.swift:274 detailHorizontalPadding = 12 */
+.room {
+  padding: var(--ds-space-2) 12px var(--ds-space-3);
+}
+
+/* Message column. Picky/HUD/Conversation/PickyConversationListView.swift:132
+ * VStack(alignment: .leading, spacing: 8) */
+.msgs {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--ds-space-2);
+}
+
+/* ---------- date divider ----------
+ * Picky/HUD/Conversation/Bubbles/PickyConversationDateDivider.swift:50-66 */
+.date-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-2) 0;
+}
+
+.date-divider::before,
+.date-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px; /* Rectangle().frame(height: 1): PickyConversationDateDivider.swift:69 */
+  background: var(--ds-color-border-subtle);
+}
+
+.date-divider > span {
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* ---------- bubble row ---------- */
+.row {
+  display: flex;
+  align-items: flex-end;
+  /* gap between a bubble and its send time.
+   * PickyBubbleTimestamp.swift:63 gap = DS.Spacing.space1 */
+  gap: var(--ds-space-1);
+}
+
+.row--agent {
+  justify-content: flex-start;
+}
+
+.row--user {
+  justify-content: flex-end;
+}
+
+/* Width policy: min(96% of the content column, column - 16pt opposite reserve).
+ * PickyConversationBubbleLayout.swift:19-24 defaultMaxWidthFraction = 0.96,
+ * oppositeSideReserve = 16 */
+.bubble {
+  position: relative;
+  box-sizing: border-box;
+  max-width: min(96%, calc(100% - 16px));
+  /* horizontalPadding 10 / verticalPadding 8:
+   * PickyAgentBubbleSurfaceView.swift:63-64, PickyUserBubbleSurfaceView.swift:71-72 */
+  padding: 8px 10px;
+  color: var(--ds-color-text-body);
+  font: var(--hud-type-body);
+  /* bubbleLineHeightMultiple = 1.19: PickyMarkdownInlineTextView.swift:506 */
+  line-height: 1.19;
+  overflow-wrap: anywhere;
+}
+
+/* Corner anchor points to the sender.
+ * PickyConversationBubbleLayout.swift:17-18 bubbleRadius = extraLarge (12),
+ * bubbleAnchorRadius = 4 */
+.bubble--agent {
+  border-radius: var(--ds-radius-extra-large) var(--ds-radius-extra-large) var(--ds-radius-extra-large) 4px;
+  /* surface3 @ 0.84 fill, borderSubtle @ 0.72 hairline:
+   * PickyAgentBubbleSurfaceView.swift:270, 274 */
+  background: color-mix(in srgb, var(--ds-color-surface3) 84%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--ds-color-border-subtle) 72%, transparent);
+}
+
+.bubble--user {
+  border-radius: var(--ds-radius-extra-large) var(--ds-radius-extra-large) 4px var(--ds-radius-extra-large);
+  /* accentSubtle @ 0.95: PickyUserBubbleSurfaceView.swift:312 */
+  background: color-mix(in srgb, var(--ds-color-accent-subtle) 95%, transparent);
+}
+
+.bubble p {
+  margin: 0;
+}
+
+/* ---------- markdown inside a bubble ----------
+ * Gaps come from PickyMarkdownBlockSpacing.bubble
+ * (Picky/HUD/PickyMarkdownBlockSpacing.swift:41-48):
+ * paragraph 10, bullet 3, listLeading 7, headingLeading 18, headingTrailing 4,
+ * embedded 8. They are "spacing before", so they map to margin-top. */
+.md > * {
+  margin: 0;
+}
+
+.md > * + p {
+  margin-top: 10px;
+}
+
+.md > h1,
+.md > h2,
+.md > h3 {
+  margin-top: 18px;
+  margin-bottom: 4px;
+  color: var(--ds-color-text-primary);
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > h1 {
+  font: var(--hud-type-heading1);
+}
+
+.md > h2 {
+  font: var(--hud-type-heading2);
+}
+
+.md > h3 {
+  font: var(--hud-type-heading3);
+}
+
+.md ul {
+  margin: 7px 0 0; /* listLeading */
+  padding: 0;
+  list-style: none;
+}
+
+.md li {
+  /* bulletLeaderIndent = 14: PickyMarkdownInlineTextView.swift:84 */
+  padding-left: 14px;
+  position: relative;
+}
+
+.md li + li {
+  margin-top: 3px; /* bullet */
+}
+
+.md li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  /* leader is drawn semibold at body size: PickyMarkdownInlineTextView.swift:224 */
+  font: var(--hud-type-body-semibold);
+  color: var(--ds-color-text-body);
+}
+
+.md strong {
+  font-weight: 600;
+  color: var(--ds-color-text-primary);
+}
+
+.md a {
+  color: var(--ds-color-accent-text);
+  text-decoration: none;
+}
+
+.md code {
+  font: var(--hud-type-body-compact-monospaced);
+  color: var(--ds-color-code-text);
+}
+
+/* Fenced code. PickyBubbleMarkdownContentView.swift:421-422 padding 8,
+ * cornerRadius 7; fill surface2 with a borderSubtle stroke (line 526-528). */
+.md pre {
+  margin: 8px 0 0; /* embedded */
+  padding: 8px;
+  border-radius: 7px;
+  background: var(--ds-color-surface2);
+  box-shadow: inset 0 0 0 1px var(--ds-color-border-subtle);
+  overflow-x: auto;
+  /* code block text: supporting monospaced in codeText:
+   * PickyBubbleMarkdownContentView.swift:449-450 */
+  font: var(--hud-type-supporting-monospaced);
+  color: var(--ds-color-code-text);
+  line-height: 1.45;
+}
+
+.md pre code {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------- in-place expand control ("더 보기" / "접기") ----------
+ * PickyUserBubbleSurfaceView.swift:74-75 expansionSpacing 7, button height 22;
+ * title is supporting/medium in textSecondary (line 170-175). */
+.bubble-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  margin-top: 7px;
+  height: 22px;
+  font: var(--hud-type-supporting-medium);
+  color: var(--ds-color-text-secondary);
+}
+
+/* The control keeps its 22pt visual height; the hit area is grown to 44pt
+ * for touch without changing layout. */
+.bubble-expand::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 44px;
+}
+
+.bubble-expand svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---------- send time beside the bubble ----------
+ * PickyBubbleTimestamp.swift:97 meta size, monospaced digits, textTertiary;
+ * bottomInset 1 keeps it on the bubble's last text baseline. */
+.sendtime {
+  flex: none;
+  padding-bottom: 1px;
+  font: var(--hud-type-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+  /* Hover-only on the Mac; on the phone it appears on tap. */
+  visibility: hidden;
+}
+
+/* "보내는 중": pinned, shown without any interaction.
+ * PickyBubbleTimestamp.swift:42 isPinned = true */
+.sendtime--pinned,
+.row--tapped .sendtime {
+  visibility: visible;
+}
+
+.sendtime svg {
+  display: block;
+  width: var(--hud-size-meta);
+  height: var(--hud-size-meta);
+}
+
+/* ---------- open as report ----------
+ * PickyAgentBubbleSurfaceView.swift:75-77 hoverIconSize 22, inset 5,
+ * cornerRadius 6; surface1 @ 0.78 fill, borderSubtle @ 0.55 stroke (139-141). */
+.open-report {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ds-color-surface1) 78%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-color-border-subtle) 55%, transparent);
+  color: var(--ds-color-text-secondary);
+}
+
+.row--tapped .open-report {
+  display: grid;
+}
+
+/* 22pt is below the 44pt touch minimum; grow the hit area, keep the visual. */
+.open-report::after {
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+
+.open-report svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---------- pending steer ----------
+ * PickyPendingSteerBubbleView.swift:26-36 dimmed bubble + caption link row,
+ * linkRowSpacing 2, status font, trailing inset space1. */
+.steer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.steer .row {
+  /* frame(maxWidth: .infinity, alignment: .trailing):
+   * PickyPendingSteerBubbleView.swift:36 */
+  width: 100%;
+  opacity: 0.6; /* dimmedOpacity: PickyPendingSteerBubbleView.swift:40 */
+}
+
+.steer-links {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  padding-right: var(--ds-space-1);
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+}
+
+/* Link text stays 11pt as on the Mac; the tap target is extended vertically. */
+.steer-links button {
+  position: relative;
+  color: inherit;
+}
+
+.steer-links button::after {
+  content: "";
+  position: absolute;
+  inset: -16px -8px;
+}
+
+/* ---------- presence row reused as the room footer in state 1 ----------
+ * Kept minimal here; the full set lives in presence-and-activity.html. */
+.room-note {
+  padding-top: var(--ds-space-2);
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+}

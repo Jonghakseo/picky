@@ -1,0 +1,160 @@
+/* Review board layout only. Not part of the PWA design. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: var(--ds-space-6);
+  background: var(--ds-color-background);
+  color: var(--ds-color-text-primary);
+  font: var(--hud-type-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+code {
+  font: var(--hud-type-supporting-monospaced);
+  color: var(--ds-color-code-text);
+}
+
+a {
+  color: var(--ds-color-accent-text);
+}
+
+.board-header {
+  max-width: 960px;
+  margin-bottom: var(--ds-space-6);
+}
+
+.board-header h1 {
+  font: var(--hud-type-heading1);
+  margin: 0 0 var(--ds-space-2);
+}
+
+.board-header p {
+  color: var(--ds-color-text-secondary);
+  margin: 0 0 var(--ds-space-2);
+}
+
+.board-checklist {
+  margin: 0 0 var(--ds-space-3);
+  padding-left: var(--ds-space-5);
+  color: var(--ds-color-text-secondary);
+}
+
+.board-checklist li {
+  margin-bottom: var(--ds-space-1);
+}
+
+.board-toggle {
+  display: inline-flex;
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-1);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-surface2);
+}
+
+.board-toggle button {
+  font: var(--hud-type-label-medium);
+  color: var(--ds-color-text-secondary);
+  background: none;
+  border: 0;
+  padding: var(--ds-space-1) var(--ds-space-3);
+  border-radius: var(--ds-radius-pill);
+  cursor: pointer;
+}
+
+.board-toggle button[aria-pressed="true"] {
+  color: var(--ds-color-text-on-accent);
+  background: var(--ds-color-accent);
+}
+
+.board-part {
+  margin: 0 0 var(--ds-space-8);
+  padding-top: var(--ds-space-4);
+  border-top: 1px solid var(--ds-color-border-subtle);
+}
+
+.board-part h2 {
+  font: var(--hud-type-title);
+  margin: 0 0 var(--ds-space-3);
+}
+
+.board-part h2 a {
+  font: var(--hud-type-meta);
+  margin-left: var(--ds-space-2);
+}
+
+/* Narrow windows wrap the references below the prototype instead of clipping them. */
+.board-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ds-space-6);
+}
+
+.board-row iframe {
+  flex: 0 0 390px;
+  width: 390px;
+  border: 1px solid var(--ds-color-border-subtle);
+  border-radius: var(--ds-radius-surface);
+  background: var(--ds-color-background);
+}
+
+.board-pending {
+  flex: 0 0 390px;
+  width: 390px;
+  margin: 0;
+  padding: var(--ds-space-6) var(--ds-space-4);
+  border: 1px dashed var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-surface);
+  font: var(--hud-type-supporting);
+  color: var(--ds-color-text-secondary);
+}
+
+.board-refs {
+  flex: 1 1 360px;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ds-space-4);
+}
+
+.board-refs figure {
+  margin: 0;
+  max-width: 100%;
+}
+
+.board-refs img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.board-refs figure.is-missing img {
+  display: none;
+}
+
+.board-refs figure.is-missing::before {
+  content: "기준 이미지 없음: 렌더 갤러리를 먼저 실행하세요";
+  display: block;
+  font: var(--hud-type-meta);
+  color: var(--ds-color-warning-text);
+}
+
+.board-refs figcaption {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+  margin-top: var(--ds-space-1);
+}
+
+.board-missing {
+  max-width: 320px;
+  font: var(--hud-type-supporting);
+  color: var(--ds-color-text-secondary);
+  margin: 0;
+}

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>대화 말풍선 · Picky 원격 PWA 시안</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="chat-bubbles.css">
+</head>
+<body>
+  <main class="proto-page">
+    <div class="proto-title">대화 말풍선</div>
+    <p class="proto-note">HUD source: <code>Picky/HUD/Conversation/Bubbles/</code> · reference PNG: <code>build/render-gallery/messenger-ux/pickle-chat-{working,hover}-{dark,light}-ko.png</code></p>
+
+    <section class="proto-state">
+      <div class="proto-caption">1. 날짜 구분선 · 사용자 · 에이전트 (평소 상태, 보낸 시각 숨김)</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="msgs">
+            <div class="date-divider"><span data-l10n="hud.conversation.dateDivider.yesterday">어제</span></div>
+
+            <div class="row row--user">
+              <div class="bubble bubble--user">
+                <p>어제 배포 결과 요약해줘</p>
+              </div>
+              <div class="sendtime">오전 9:41</div>
+            </div>
+
+            <div class="row row--agent">
+              <div class="bubble bubble--agent">
+                <div class="md"><p>어제 배포는 문제없이 끝났어요. 웹·API·워커 모두 오류율 변화가 없었습니다.</p></div>
+              </div>
+              <div class="sendtime">오전 9:42</div>
+            </div>
+
+            <div class="date-divider"><span data-l10n="hud.conversation.dateDivider.today">오늘</span></div>
+
+            <div class="row row--user">
+              <div class="bubble bubble--user">
+                <p>로그인 페이지 테스트가 깨져. 고쳐줘</p>
+              </div>
+              <div class="sendtime">오전 10:14</div>
+            </div>
+
+            <div class="row row--agent">
+              <div class="bubble bubble--agent">
+                <div class="md"><p>원인 찾았어요. 세션 쿠키 이름이 바뀌었는데 테스트 픽스처가 옛 이름을 쓰고 있었어요.</p></div>
+              </div>
+              <div class="sendtime">오전 10:15</div>
+            </div>
+
+            <div class="row row--user">
+              <div class="sendtime sendtime--pinned">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" data-sf-symbol="clock" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.2"></circle>
+                  <path d="M8 4.6V8l2.4 1.6" stroke-linecap="round"></path>
+                </svg>
+                <span class="sr-only" data-l10n="common.sending">보내는 중</span>
+              </div>
+              <div class="bubble bubble--user">
+                <p>PR 설명도 짧게 써줘</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">2. 마크다운 답변 (제목·목록·굵게·인라인 코드·코드 블록·링크)</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="msgs">
+            <div class="row row--agent">
+              <div class="bubble bubble--agent">
+                <div class="md">
+                  <h2>로그인 테스트 수정 결과</h2>
+                  <p>픽스처가 참조하던 쿠키 이름을 <strong>현재 값</strong>으로 맞췄습니다.</p>
+                  <ul>
+                    <li><code>tests/fixtures/session.ts</code> 쿠키 키 교체</li>
+                    <li>로그인 스펙 4건 모두 통과</li>
+                    <li>CI 재실행 대기 중</li>
+                  </ul>
+                  <pre><code>$ pnpm vitest run tests/login.spec.ts
+ ✓ tests/login.spec.ts (4)
+ Test Files  1 passed (1)</code></pre>
+                  <p>자세한 실행 로그는 <a href="#">CI 실행 기록</a>에서 볼 수 있어요.</p>
+                </div>
+              </div>
+              <div class="sendtime">오전 10:21</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">3-1. 긴 사용자 메시지 접힘 (더 보기). HUD는 에이전트 답변은 접지 않고, 사용자 메시지만 8줄 또는 500자를 넘으면 접습니다</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="msgs">
+            <div class="row row--user">
+              <div class="bubble bubble--user">
+                <div class="md">
+                  <p>배포 전에 아래 순서로 확인해줘.</p>
+                  <ul>
+                    <li>웹 오류율이 0.5%를 넘는지</li>
+                    <li>API p95 응답 시간이 200ms 안쪽인지</li>
+                    <li>워커 큐 적체가 1,000건을 넘지 않는지</li>
+                    <li>마이그레이션 2건이 모두 적용됐는지</li>
+                    <li>결제 웹훅 재시도 간격이 60초로 바뀌었는지</li>
+                    <li>슬랙 #deploy 채널에 요약이 올라갔는지</li>
+                    <li>롤백 스크립트가 …</li>
+                  </ul>
+                </div>
+                <button class="bubble-expand" type="button">
+                  <span data-l10n="common.showMore">더 보기</span>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" data-sf-symbol="chevron.down" aria-hidden="true">
+                    <path d="M3.5 6l4.5 4.5L12.5 6" stroke-linecap="round" stroke-linejoin="round"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">3-2. 같은 메시지 펼침 (접기)</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="msgs">
+            <div class="row row--user">
+              <div class="bubble bubble--user">
+                <div class="md">
+                  <p>배포 전에 아래 순서로 확인해줘.</p>
+                  <ul>
+                    <li>웹 오류율이 0.5%를 넘는지</li>
+                    <li>API p95 응답 시간이 200ms 안쪽인지</li>
+                    <li>워커 큐 적체가 1,000건을 넘지 않는지</li>
+                    <li>마이그레이션 2건이 모두 적용됐는지</li>
+                    <li>결제 웹훅 재시도 간격이 60초로 바뀌었는지</li>
+                    <li>슬랙 #deploy 채널에 요약이 올라갔는지</li>
+                    <li>롤백 스크립트가 스테이징에서 도는지</li>
+                    <li>모니터링 대시보드 링크가 리포트에 있는지</li>
+                    <li>끝나면 PR 설명도 같이 정리해줘</li>
+                  </ul>
+                </div>
+                <button class="bubble-expand" type="button">
+                  <span data-l10n="common.collapse">접기</span>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" data-sf-symbol="chevron.up" aria-hidden="true">
+                    <path d="M3.5 10l4.5-4.5L12.5 10" stroke-linecap="round" stroke-linejoin="round"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">4. 전송 대기 중인 작업 지시</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="msgs">
+            <div class="row row--agent">
+              <div class="bubble bubble--agent">
+                <div class="md"><p>픽스처를 고치고 로그인 테스트를 다시 돌리고 있어요.</p></div>
+              </div>
+            </div>
+            <div class="steer">
+              <span class="sr-only" data-l10n="hud.queue.pending.steer">작업 지시 대기</span>
+              <div class="row row--user">
+                <div class="sendtime sendtime--pinned" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" data-sf-symbol="clock">
+                    <circle cx="8" cy="8" r="6.2"></circle>
+                    <path d="M8 4.6V8l2.4 1.6" stroke-linecap="round"></path>
+                  </svg>
+                </div>
+                <div class="bubble bubble--user">
+                  <p>끝나면 CI도 확인해줘</p>
+                </div>
+              </div>
+              <div class="steer-links">
+                <button type="button" data-l10n="hud.queue.steer.edit.short">수정</button>
+                <span aria-hidden="true">·</span>
+                <button type="button" data-l10n="hud.queue.steer.cancel">전송 취소</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">5. 탭한 상태 (Mac의 호버에 해당, 보낸 시각, 보고서로 열기)</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="msgs">
+            <div class="row row--user row--tapped">
+              <div class="bubble bubble--user">
+                <p>로그인 페이지 테스트가 깨져. 고쳐줘</p>
+              </div>
+              <div class="sendtime">오전 10:14</div>
+            </div>
+
+            <div class="row row--agent row--tapped">
+              <div class="bubble bubble--agent">
+                <div class="md"><p>원인 찾았어요. 세션 쿠키 이름이 바뀌었는데 테스트 픽스처가 옛 이름을 쓰고 있었어요.</p></div>
+                <button class="open-report" type="button">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" data-sf-symbol="arrow.up.right.square" aria-hidden="true">
+                    <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="3"></rect>
+                    <path d="M6.2 9.8l3.6-3.6M6.6 6.2h3.2v3.2" stroke-linecap="round" stroke-linejoin="round"></path>
+                  </svg>
+                  <span class="sr-only" data-l10n="hud.message.openReport.help">이 메시지를 보고서로 열기</span>
+                </button>
+              </div>
+              <div class="sendtime">오전 10:15</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

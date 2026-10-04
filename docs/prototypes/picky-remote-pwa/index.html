@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>검수 보드 · Picky 원격 PWA 컴포넌트 시안</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="board.css">
+  <script src="board.js" defer></script>
+</head>
+<body>
+  <header class="board-header">
+    <h1>Picky 원격 PWA · 컴포넌트 시안 검수 보드</h1>
+    <p>왼쪽은 폰 시안(390pt), 오른쪽은 같은 부분의 HUD 렌더 갤러리 이미지입니다. 대화방은 HUD와 똑같이 보여야 하고, 방 목록만 새 디자인입니다. 계획: <code>docs/remote-pwa-plan.md</code> "화면" 절.</p>
+    <p>검수 때 볼 것</p>
+    <ul class="board-checklist">
+      <li>대화방 파트에서 HUD와 다른 점. 폰에 맞춰 일부러 바꾼 것은 세 가지입니다. hover 대신 탭으로 보이는 시각과 아이콘, 44pt 터치 영역, Option+Return 대신 보낼 시점 메뉴입니다.</li>
+      <li>방 목록 기본안: Picky 방 고정, 최근 활동 순, 그룹 필터, 맥과 읽음 공유. Picky 방에도 상태 줄을 보여 줄지.</li>
+      <li>새 문구와 빌려 쓴 문구: <a href="new-strings.md">new-strings.md</a>. 방 목록 제목은 지금 Hub 메시지 화면의 "메시지"를 빌려 씁니다.</li>
+      <li>질문 머리줄의 <code>⌑ 입력이 필요해요 · confirm</code>처럼 내부 method 이름이 보이는 것은 HUD도 같습니다. 바꾸려면 HUD와 함께 바꿉니다.</li>
+    </ul>
+    <p>오른쪽 이미지는 저장소에 없습니다. 먼저 <code>./scripts/render-ui-gallery.sh messenger-ux</code>, <code>conversation-composer</code>, <code>conversation-activity</code>, <code>conversation-context</code>, <code>dock-group</code>을 실행하세요.</p>
+    <div class="board-toggle" role="group" aria-label="모양">
+      <button type="button" data-theme-choice="light">라이트</button>
+      <button type="button" data-theme-choice="dark">다크</button>
+    </div>
+  </header>
+
+  <section class="board-part" id="chat-bubbles">
+    <h2>말풍선 <a href="chat-bubbles.html">chat-bubbles.html</a></h2>
+    <div class="board-row">
+      <iframe data-part="chat-bubbles" title="말풍선 시안" style="height: 1900px"></iframe>
+      <div class="board-refs">
+        <figure><img alt="HUD 말풍선" data-src-template="messenger-ux/pickle-chat-working-{theme}-ko.png"><figcaption>messenger-ux · pickle-chat-working</figcaption></figure>
+        <figure><img alt="HUD 말풍선 hover" data-src-template="messenger-ux/pickle-chat-hover-{theme}-ko.png"><figcaption>messenger-ux · pickle-chat-hover (폰에서는 탭)</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="board-part" id="presence-and-activity">
+    <h2>작업 중 표시 · 도구 활동 <a href="presence-and-activity.html">presence-and-activity.html</a></h2>
+    <div class="board-row">
+      <iframe data-part="presence-and-activity" title="작업 중 표시와 도구 활동 시안" style="height: 1300px"></iframe>
+      <div class="board-refs">
+        <figure><img alt="HUD 작업 중 표시" data-src-template="messenger-ux/pickle-presence-states-{theme}-ko.png"><figcaption>messenger-ux · pickle-presence-states</figcaption></figure>
+        <figure><img alt="HUD 도구 활동 접힘" data-src-template="conversation-activity/activity-summary-collapsed-{theme}-ko.png"><figcaption>conversation-activity · collapsed</figcaption></figure>
+        <figure><img alt="HUD 도구 활동 펼침" data-src-template="conversation-activity/activity-summary-expanded-{theme}-ko.png"><figcaption>conversation-activity · expanded</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="board-part" id="question">
+    <h2>질문 · 오류 <a href="question.html">question.html</a></h2>
+    <div class="board-row">
+      <iframe data-part="question" title="질문과 오류 시안" style="height: 1900px"></iframe>
+      <div class="board-refs">
+        <p class="board-missing">HUD 렌더 갤러리에 이 부분이 없습니다. Swift 소스(<code>PickyQuestionBubbleView.swift</code>, <code>PickyErrorBubbleView.swift</code>)에서 옮겼습니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="board-part" id="composer">
+    <h2>입력창 <a href="composer.html">composer.html</a></h2>
+    <div class="board-row">
+      <iframe data-part="composer" title="입력창 시안" style="height: 1700px"></iframe>
+      <div class="board-refs">
+        <figure><img alt="HUD 입력창 한 줄" data-src-fixed="conversation-composer/composer-one-line-dark-ko.png"><figcaption>composer-one-line (다크만 있음)</figcaption></figure>
+        <figure><img alt="HUD 입력창 네 줄" data-src-template="conversation-composer/composer-four-lines-{theme}-ko.png"><figcaption>composer-four-lines</figcaption></figure>
+        <figure><img alt="HUD 입력창 실행 중" data-src-fixed="conversation-composer/composer-empty-running-dark-ko.png"><figcaption>composer-empty-running (다크만 있음)</figcaption></figure>
+        <figure><img alt="HUD 답 끝나면 보내기" data-src-fixed="conversation-composer/composer-option-follow-up-dark-ko.png"><figcaption>composer-option-follow-up (다크만 있음)</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="board-part" id="header">
+    <h2>대화방 머리줄 <a href="header.html">header.html</a></h2>
+    <div class="board-row">
+      <iframe data-part="header" title="대화방 머리줄 시안" style="height: 1100px"></iframe>
+      <div class="board-refs">
+        <figure><img alt="HUD 컨텍스트 컨트롤" data-src-fixed="conversation-context/context-control-ready-dark-ko.png"><figcaption>context-control-ready (다크만 있음)</figcaption></figure>
+        <figure><img alt="HUD 컨텍스트 구간" data-src-template="conversation-context/context-band-ramp-{theme}-ko.png"><figcaption>context-band-ramp</figcaption></figure>
+        <p class="board-missing">제목 줄은 갤러리에 없어 <code>PickyConversationHeaderView.swift</code>에서 옮겼습니다. 뒤로 가기는 폰에만 있는 요소입니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="board-part" id="room-list">
+    <h2>방 목록 (새 디자인) <a href="room-list.html">room-list.html</a></h2>
+    <div class="board-row">
+      <iframe data-part="room-list" title="방 목록 시안" style="height: 1500px"></iframe>
+      <div class="board-refs">
+        <figure><img alt="Mac Dock 그룹" data-src-template="dock-chrome/m-{theme}-vertical-group.png"><figcaption>dock-chrome · 아이콘과 그룹 색 비교용</figcaption></figure>
+        <p class="board-missing">HUD에 같은 화면이 없습니다. 기본안(Picky 방 고정, 최근 활동 순, 그룹 필터, 읽음 공유)은 이 검수에서 확정합니다.</p>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

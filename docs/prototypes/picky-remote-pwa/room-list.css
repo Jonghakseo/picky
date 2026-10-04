@@ -1,0 +1,347 @@
+/* Room list: new phone screen with no HUD equivalent.
+ * The identity is borrowed, not invented:
+ *   - avatar tile  = Picky/HUD/Dock/PickyHUDDockIconView.swift dockIconBackground (:298)
+ *                    surface2 fill, running tile stroked accentText @0.5 / 0.75 (:399-:406)
+ *   - avatar glyph = normalPickleGlyph (:345) PickleLogoGlyph filled with statusColor
+ *   - running ring = runningDockGlyph (:262) statusColor @0.72, logo side x 1.18
+ *   - unread dot   = unreadDot (:196) notification fill, 7pt, background stroke 1.2
+ *   - status word  = PickyConversationStatusPresentation.label + PickyConversationStatusTone.textColor
+ *                    (PickyConversationHeaderView.swift:799-:822)
+ * Dock tile metrics are 54pt wide / 9pt radius / 24pt logo (PickyHUDLayoutPolicy.swift:156-:161).
+ * The phone avatar keeps those ratios at 44pt so the row itself meets the 44pt tap minimum.
+ */
+
+.list-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- top bar ------------------------------------------------------------ */
+.list-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: 44px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+}
+
+.list-topbar-title {
+  flex: 1 1 auto;
+  font: var(--hud-type-heading1);
+  color: var(--ds-color-text-primary);
+}
+
+.list-new {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ds-space-1);
+  height: 28px;
+  padding: 0 var(--ds-space-3);
+  border-radius: var(--ds-radius-pill);
+  font: var(--hud-type-status-semibold);
+  color: var(--ds-color-accent-text);
+  background: var(--ds-color-accent-subtle);
+}
+
+.list-new::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 100%;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* ---- group filter chips -------------------------------------------------- */
+.list-filters {
+  display: flex;
+  gap: var(--ds-space-2);
+  padding: 0 var(--ds-space-3) var(--ds-space-3);
+  overflow-x: auto;
+}
+
+.filter-chip {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ds-space-1);
+  height: 28px;
+  padding: 0 var(--ds-space-3);
+  border: 1px solid var(--ds-color-border-subtle);
+  border-radius: var(--ds-radius-pill);
+  font: var(--hud-type-status-medium);
+  color: var(--ds-color-text-secondary);
+}
+
+.filter-chip::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 100%;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* Group accent dot, the same hue the Mac Dock group uses (PickyDockLayout.swift:44-:55). */
+.filter-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--ds-radius-circle);
+  background: var(--group, var(--ds-color-text-tertiary));
+}
+
+.filter-chip.selected {
+  border-color: color-mix(in srgb, var(--group, var(--ds-color-accent-text)) 55%, transparent);
+  color: var(--group, var(--ds-color-accent-text));
+  background: color-mix(in srgb, var(--group, var(--ds-color-accent-text)) 12%, transparent);
+}
+
+.group-teal { --group: var(--ds-group-teal); }
+.group-amber { --group: var(--ds-group-amber); }
+.group-blue { --group: var(--ds-group-blue); }
+.group-purple { --group: var(--ds-group-purple); }
+
+/* ---- rows ---------------------------------------------------------------- */
+.list-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.room-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  /* 64pt row: 44pt avatar + 10pt padding above and below. */
+  min-height: 64px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  text-decoration: none;
+  color: inherit;
+  text-align: start;
+  width: 100%;
+}
+
+.room-row + .room-row {
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle);
+}
+
+.room-row.pinned {
+  background: color-mix(in srgb, var(--ds-color-surface2) 55%, transparent);
+}
+
+/* ---- avatar -------------------------------------------------------------- */
+.avatar {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  /* Dock tile radius 9 at a 54pt tile (PickyHUDLayoutPolicy.swift:156,:160),
+   * kept proportional at 44pt. */
+  border-radius: 7.3px;
+  background: var(--ds-color-surface2);
+}
+
+.avatar.is-running {
+  box-shadow: inset 0 0 0 0.75px color-mix(in srgb, var(--ds-color-accent-text) 50%, transparent);
+}
+
+.avatar-glyph {
+  display: block;
+  /* Dock logo 24 at a 54pt tile, kept proportional. */
+  width: 20px;
+  height: 20px;
+  color: var(--status);
+}
+
+/* runningDockGlyph ring: logo side x 1.18, statusColor @0.72. */
+.avatar-ring {
+  position: absolute;
+  width: 23.6px;
+  height: 23.6px;
+  border: 1.25px solid color-mix(in srgb, var(--status) 72%, transparent);
+  border-radius: var(--ds-radius-circle);
+}
+
+.avatar.picky {
+  background: var(--ds-color-accent-subtle);
+}
+
+.avatar.picky .avatar-glyph {
+  color: var(--ds-color-accent-text);
+}
+
+/* unreadDot (PickyHUDDockIconView.swift:196) sits on the tile's top-trailing corner. */
+.avatar-unread {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--ds-radius-circle);
+  background: var(--ds-color-notification);
+  box-shadow: 0 0 0 1.2px var(--ds-color-surface1);
+}
+
+/* ---- row text ------------------------------------------------------------ */
+.row-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.row-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ds-space-2);
+}
+
+.row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--hud-type-body-medium);
+  color: var(--ds-color-text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.unread .row-title {
+  font: var(--hud-type-body-semibold);
+}
+
+.row-pin {
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.row-time {
+  flex: none;
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+}
+
+.row-bottom {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+/* Status is icon plus word, never color alone. */
+.row-status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ds-space-1);
+  font: var(--hud-type-status-semibold);
+  color: var(--status-text);
+}
+
+.row-status svg {
+  display: block;
+}
+
+.row-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row-summary::before {
+  content: "·";
+  padding-inline-end: var(--ds-space-1);
+}
+
+/* ---- status tones (same mapping as header.css) --------------------------- */
+.is-running {
+  --status: var(--ds-color-info);
+  --status-text: var(--ds-color-info);
+}
+
+.is-waiting {
+  --status: var(--ds-color-warning);
+  --status-text: var(--ds-color-warning-text);
+}
+
+.is-completed {
+  --status: var(--ds-color-success);
+  --status-text: var(--ds-color-success-text);
+}
+
+.is-failed {
+  --status: var(--ds-color-destructive-text);
+  --status-text: var(--ds-color-destructive-text);
+}
+
+.is-cancelled {
+  --status: var(--ds-color-text-tertiary);
+  --status-text: var(--ds-color-text-tertiary);
+}
+
+/* ---- archived entry ------------------------------------------------------ */
+.archived-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle);
+  color: var(--ds-color-text-secondary);
+  text-align: start;
+}
+
+.archived-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  color: var(--ds-color-text-tertiary);
+}
+
+.archived-label {
+  flex: 1 1 auto;
+  font: var(--hud-type-body);
+}
+
+.archived-count {
+  flex: none;
+  font: var(--hud-type-meta-monospaced-medium);
+  color: var(--ds-color-text-tertiary);
+}
+
+/* ---- empty state --------------------------------------------------------- */
+.list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-8) var(--ds-space-4);
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle);
+}
+
+.list-empty-title {
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-tertiary);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

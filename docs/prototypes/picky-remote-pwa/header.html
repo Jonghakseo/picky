@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>룸 헤더 · Picky 원격 PWA 시안</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="header.css">
+</head>
+<body>
+  <!-- PickleLogoGlyph (PickyConversationHeaderView.swift:825), traced from the
+       Swift Shape: 24-point rosette plus two eye holes, even-odd filled. -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <symbol id="pickle-glyph" viewBox="0 0 512 512">
+      <path fill="currentColor" fill-rule="evenodd" d="M481 195.71L435.32 152.47L420.72 91.29L359.54 76.69L316.3 31.01L256.01 48.95L195.72 31.01L152.48 76.69L91.3 91.29L76.7 152.47L31.02 195.71L48.96 256L31.02 316.29L76.7 359.53L91.3 420.71L152.48 435.31L195.72 480.99L256.01 463.05L316.3 480.99L359.54 435.31L420.72 420.71L435.32 359.53L481 316.29L463.06 256L481 195.71Z M179.1 291.39C158.16 291.39 141.19 270.17 141.19 244C141.19 217.83 158.16 196.61 179.1 196.61C200.04 196.61 217.01 217.83 217.01 244C217.01 270.17 200.04 291.39 179.1 291.39Z M332.9 291.39C311.96 291.39 294.99 270.17 294.99 244C294.99 217.83 311.96 196.61 332.9 196.61C353.84 196.61 370.81 217.83 370.81 244C370.81 270.17 353.84 291.39 332.9 291.39Z"/>
+    </symbol>
+  </svg>
+
+  <main class="proto-page">
+    <div class="proto-title">대화방 머리줄 · HUD 대화 헤더를 폰으로 옮김</div>
+    <p class="proto-note">HUD source: <code>Picky/HUD/Conversation/PickyConversationHeaderView.swift</code> · reference PNG: <code>build/render-gallery/conversation-context/context-control-ready-dark-ko.png</code>, <code>context-band-ramp-{dark,light}-ko.png</code></p>
+
+    <section class="proto-state">
+      <div class="proto-caption">1. 실행 중 (제목 · 상태 · 컨텍스트 42%)</div>
+      <div class="proto-room">
+        <header class="room-header is-running">
+          <button class="hdr-back" type="button">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="chevron.left"><path d="M10 2.5L4.5 8l5.5 5.5"/></svg>
+            <span class="sr-only" data-l10n-new="pwa.room.back.accessibilityLabel">Pickle 목록으로 돌아가기</span>
+          </button>
+          <span class="pi-badge">
+            <span class="pi-badge-tile"><svg class="pi-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg></span>
+            <span class="pi-badge-corner"></span>
+            <span class="sr-only" data-l10n="hud.header.target.accessibilityLabel">Pickle 상태: 실행 중</span>
+          </span>
+          <span class="hdr-title">보관 플로우 회귀 점검</span>
+          <span class="hdr-status" data-l10n="hud.conversation.status.running">실행 중</span>
+          <button class="ctx band-low" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 42%"></span></span>
+            <span class="ctx-label">42%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 42%</span>
+          </button>
+          <button class="hdr-icon hdr-archive" type="button">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="archivebox"><path d="M1.8 4.6h12.4v8.1a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><path d="M1.2 2.3h13.6v2.3H1.2z"/><path d="M6.4 7.6h3.2"/></svg>
+            <span class="sr-only" data-l10n="hud.header.archive.accessibilityLabel">Pickle 보관</span>
+          </button>
+          <button class="hdr-icon hdr-menu" type="button">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-sf-symbol="ellipsis"><circle cx="3.2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="12.8" cy="8" r="1.5"/></svg>
+            <span class="sr-only" data-l10n="hud.header.menu.accessibilityLabel">대화 메뉴</span>
+          </button>
+        </header>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">2. 입력 대기 (배지 코너에 ! 표시)</div>
+      <div class="proto-room">
+        <header class="room-header is-waiting">
+          <button class="hdr-back" type="button">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="chevron.left"><path d="M10 2.5L4.5 8l5.5 5.5"/></svg>
+            <span class="sr-only" data-l10n-new="pwa.room.back.accessibilityLabel">Pickle 목록으로 돌아가기</span>
+          </button>
+          <span class="pi-badge">
+            <span class="pi-badge-tile"><svg class="pi-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg></span>
+            <span class="pi-badge-corner attention">!</span>
+            <span class="sr-only" data-l10n="hud.header.target.accessibilityLabel">Pickle 상태: 입력 대기</span>
+          </span>
+          <span class="hdr-title">결제 웹훅 재시도 설계</span>
+          <span class="hdr-status" data-l10n="hud.conversation.status.waiting">입력 대기</span>
+          <button class="ctx band-caution" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 68%"></span></span>
+            <span class="ctx-label">68%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 68%</span>
+          </button>
+          <button class="hdr-icon hdr-archive" type="button">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="archivebox"><path d="M1.8 4.6h12.4v8.1a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><path d="M1.2 2.3h13.6v2.3H1.2z"/><path d="M6.4 7.6h3.2"/></svg>
+            <span class="sr-only" data-l10n="hud.header.archive.accessibilityLabel">Pickle 보관</span>
+          </button>
+          <button class="hdr-icon hdr-menu" type="button">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-sf-symbol="ellipsis"><circle cx="3.2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="12.8" cy="8" r="1.5"/></svg>
+            <span class="sr-only" data-l10n="hud.header.menu.accessibilityLabel">대화 메뉴</span>
+          </button>
+        </header>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">3. 완료 (코너 표시 없음)</div>
+      <div class="proto-room">
+        <header class="room-header is-completed">
+          <button class="hdr-back" type="button">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="chevron.left"><path d="M10 2.5L4.5 8l5.5 5.5"/></svg>
+            <span class="sr-only" data-l10n-new="pwa.room.back.accessibilityLabel">Pickle 목록으로 돌아가기</span>
+          </button>
+          <span class="pi-badge">
+            <span class="pi-badge-tile"><svg class="pi-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg></span>
+            <span class="sr-only" data-l10n="hud.header.target.accessibilityLabel">Pickle 상태: 완료</span>
+          </span>
+          <span class="hdr-title">릴리즈 노트 초안</span>
+          <span class="hdr-status" data-l10n="hud.conversation.status.completed">완료</span>
+          <button class="ctx band-warning" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 84%"></span></span>
+            <span class="ctx-label">84%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 84%</span>
+          </button>
+          <button class="hdr-icon hdr-archive" type="button">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="archivebox"><path d="M1.8 4.6h12.4v8.1a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><path d="M1.2 2.3h13.6v2.3H1.2z"/><path d="M6.4 7.6h3.2"/></svg>
+            <span class="sr-only" data-l10n="hud.header.archive.accessibilityLabel">Pickle 보관</span>
+          </button>
+          <button class="hdr-icon hdr-menu" type="button">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-sf-symbol="ellipsis"><circle cx="3.2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="12.8" cy="8" r="1.5"/></svg>
+            <span class="sr-only" data-l10n="hud.header.menu.accessibilityLabel">대화 메뉴</span>
+          </button>
+        </header>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">4. 실패 (배지 코너에 × 표시)</div>
+      <div class="proto-room">
+        <header class="room-header is-failed">
+          <button class="hdr-back" type="button">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="chevron.left"><path d="M10 2.5L4.5 8l5.5 5.5"/></svg>
+            <span class="sr-only" data-l10n-new="pwa.room.back.accessibilityLabel">Pickle 목록으로 돌아가기</span>
+          </button>
+          <span class="pi-badge">
+            <span class="pi-badge-tile"><svg class="pi-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg></span>
+            <span class="pi-badge-corner attention">×</span>
+            <span class="sr-only" data-l10n="hud.header.target.accessibilityLabel">Pickle 상태: 실패</span>
+          </span>
+          <span class="hdr-title">알림 큐 마이그레이션</span>
+          <span class="hdr-status" data-l10n="hud.conversation.status.failed">실패</span>
+          <button class="ctx band-critical" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 96%"></span></span>
+            <span class="ctx-label">96%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 96%</span>
+          </button>
+          <button class="hdr-icon hdr-archive" type="button">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-sf-symbol="archivebox"><path d="M1.8 4.6h12.4v8.1a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/><path d="M1.2 2.3h13.6v2.3H1.2z"/><path d="M6.4 7.6h3.2"/></svg>
+            <span class="sr-only" data-l10n="hud.header.archive.accessibilityLabel">Pickle 보관</span>
+          </button>
+          <button class="hdr-icon hdr-menu" type="button">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-sf-symbol="ellipsis"><circle cx="3.2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="12.8" cy="8" r="1.5"/></svg>
+            <span class="sr-only" data-l10n="hud.header.menu.accessibilityLabel">대화 메뉴</span>
+          </button>
+        </header>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">5. 컨텍스트 사용량 밴드 (context-band-ramp 대조)</div>
+      <div class="proto-room">
+        <div class="ctx-ramp">
+          <button class="ctx band-low" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 42%"></span></span>
+            <span class="ctx-label">42%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 42%</span>
+          </button>
+          <button class="ctx band-caution" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 68%"></span></span>
+            <span class="ctx-label">68%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 68%</span>
+          </button>
+          <button class="ctx band-warning" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 84%"></span></span>
+            <span class="ctx-label">84%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 84%</span>
+          </button>
+          <button class="ctx band-critical" type="button">
+            <span class="ctx-bar"><span class="ctx-fill" style="--ctx: 96%"></span></span>
+            <span class="ctx-label">96%</span>
+            <span class="sr-only" data-l10n="hud.conversation.meta.context">컨텍스트: 96%</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

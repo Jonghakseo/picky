@@ -1,0 +1,343 @@
+/* Conversation composer, ported from
+ * Picky/HUD/Conversation/PickyConversationComposerView.swift,
+ * PickyComposerSplitSendButton.swift, PickySendTimingPolicy.swift,
+ * PickyComposerAttachmentChipView.swift and PickyRunningComposerBorder.swift.
+ * References: build/render-gallery/conversation-composer/composer-*.png,
+ * build/render-gallery/steer-followup/9-send-menu-dark.png.
+ */
+
+/* missing DS token: PickyComposerToolbarMetrics.controlSize = DS.Spacing.space6 + space1
+ * (Picky/HUD/Conversation/PickyConversationRuntimeControlsView.swift:708) */
+:root {
+  --composer-control-size: 28px;
+}
+
+/* The composer sits at the bottom of the room, above the home indicator. The
+ * card inset is PickyHUDLayoutPolicy.detailHorizontalPadding = 12
+ * (Picky/HUD/PickyHUDLayoutPolicy.swift:274). */
+.room-composer {
+  position: relative;
+  padding: var(--ds-space-3) var(--ds-space-3)
+    calc(var(--ds-space-3) + env(safe-area-inset-bottom));
+}
+
+/* composerSurface (PickyConversationComposerView.swift:381-394):
+ * VStack(spacing: space1), padding leading 12 / trailing 8 / top 12 / bottom 8,
+ * surface2 @ 0.55 fill on DS.CornerRadius.medium. */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-3) var(--ds-space-2) var(--ds-space-2) var(--ds-space-3);
+  border-radius: var(--ds-radius-control);
+  background: color-mix(in srgb, var(--ds-color-surface2) 55%, transparent);
+  /* composerBorderState .rest: borderSubtle, lineWidth 0.5 */
+  box-shadow: inset 0 0 0 0.5px var(--ds-color-border-subtle);
+}
+
+/* .focused: borderStrong, lineWidth 1 */
+.composer.is-focused {
+  box-shadow: inset 0 0 0 1px var(--ds-color-border-strong);
+}
+
+/* .running: PickyRunningComposerBorder = info @ 0.7, lineWidth 1 */
+.composer.is-running {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-color-info) 70%, transparent);
+}
+
+/* PickyComposerEditorHeightPolicy: two-line canvas (space6 * 2 = 48), grows by
+ * an 18pt line to a 78pt maximum; text inset height 2
+ * (PickyFocusStackComposerPresentation.swift:124-127). */
+.composer-editor {
+  min-height: 48px;
+  padding-top: 2px;
+  font: var(--hud-type-body-compact);
+  line-height: 18px;
+  color: var(--ds-color-text-primary);
+}
+
+.composer-editor.is-four-lines {
+  /* 4 * 18 + 2 * 2 = 76 */
+  min-height: 76px;
+}
+
+.composer-placeholder {
+  color: var(--ds-color-text-tertiary);
+}
+
+/* actionBar: HStack(spacing: DS.Spacing.xs), fixed control-row height. */
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  height: var(--composer-control-size);
+}
+
+/* leadingActions: HStack(spacing: space2) around an inner HStack(spacing: space1). */
+.actions-leading {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+.actions-group {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+}
+
+/* Divider().frame(height: 18) (PickyConversationComposerView.swift:417) */
+.actions-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--ds-color-border-subtle);
+  flex: none;
+}
+
+.actions-trailing {
+  display: flex;
+  align-items: center;
+  /* trailingActions: HStack(spacing: space2) */
+  gap: var(--ds-space-2);
+  margin-left: auto;
+}
+
+/* toolbarIcon: 10.5pt semibold glyph in a controlSize square
+ * (PickyConversationComposerView.swift:509-518). The square is 28pt, below the
+ * 44pt phone minimum, so the hit area is extended without changing the visual. */
+.toolbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--composer-control-size);
+  height: var(--composer-control-size);
+  border-radius: var(--ds-radius-compact);
+  color: var(--ds-color-text-secondary);
+  position: relative;
+  flex: none;
+}
+
+.toolbar-icon::after {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 22px) calc(50% - 22px);
+  width: 44px;
+  height: 44px;
+}
+
+/* PickyComposerToolbarGhostButtonStyle(isActive: true) */
+.toolbar-icon.is-active {
+  color: var(--ds-color-accent-text);
+  background: var(--ds-color-accent-subtle);
+}
+
+.toolbar-icon.is-stop {
+  color: var(--ds-color-destructive-text);
+}
+
+/* controlLabel: meta, textSecondary, padding horizontal space2, controlSize tall
+ * (PickyConversationRuntimeControlsView.swift:659-669). Closed state only. */
+.runtime-controls {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.runtime-label {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-secondary);
+  padding: 0 var(--ds-space-2);
+  height: var(--composer-control-size);
+  display: inline-flex;
+  align-items: center;
+  max-width: 126px; /* PickyComposerToolbarMetrics.modelLabelMaximumWidth */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* PickyComposerSplitSendButton: send 28 + divider 1 + chevron 20, controlSize
+ * tall, DS.CornerRadius.small, filled with Action Blue. */
+.send {
+  display: inline-flex;
+  align-items: center;
+  height: var(--composer-control-size);
+  border-radius: var(--ds-radius-compact);
+  background: var(--ds-color-accent-text);
+  color: var(--ds-color-text-on-accent);
+  flex: none;
+  position: relative;
+}
+
+/* isEnabled == false: surface3 fill at 0.6 opacity. */
+.send.is-disabled {
+  background: var(--ds-color-surface3);
+  opacity: 0.6;
+}
+
+/* The halves carry the rounded corners themselves: clipping the control would
+ * also clip the extended tap area below. */
+.send-main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  border-radius: var(--ds-radius-compact) 0 0 var(--ds-radius-compact);
+}
+
+.send-divider {
+  width: 1px;
+  height: 14px;
+  background: color-mix(in srgb, var(--ds-color-text-on-accent) 35%, transparent);
+}
+
+.send-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 100%;
+  border-radius: 0 var(--ds-radius-compact) var(--ds-radius-compact) 0;
+}
+
+/* .background(Color.black.opacity(0.18)) while the menu is open. */
+.send.is-menu-open .send-chevron {
+  background: rgb(0 0 0 / 0.18);
+}
+
+/* The 28 + 20 split control is shorter than 44pt; both halves keep their visual
+ * width and grow their hit area vertically. */
+.send::after {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 22px) 0 auto 0;
+  height: 44px;
+}
+
+/* PickySendTimingMenuView, presented from the chevron. On the phone it sits
+ * above the composer (the HUD popover opens with arrowEdge .top). */
+.send-timing-anchor {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: var(--ds-space-2);
+}
+
+.send-timing-menu {
+  width: 250px; /* PickySendTimingMenuView.width */
+  padding-bottom: var(--ds-space-2);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-color-surface2);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  box-shadow: 0 var(--ds-elevation-floating-panel-shadow-yoffset)
+    var(--ds-elevation-floating-panel-shadow-radius)
+    rgb(0 0 0 / var(--ds-elevation-floating-panel-shadow-opacity));
+}
+
+.send-timing-title {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+  padding: var(--ds-space-2) var(--ds-space-3) var(--ds-space-1);
+}
+
+/* row(): padding horizontal space2 / vertical 5, inside a space1 outer inset.
+ * Phone: the 23pt HUD row grows to the 44pt minimum tap height. */
+.send-timing-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: calc(100% - var(--ds-space-2));
+  min-height: 44px;
+  margin: 0 var(--ds-space-1);
+  padding: 5px var(--ds-space-2);
+  border-radius: var(--ds-radius-compact);
+  text-align: left;
+}
+
+.send-timing-row-title {
+  font: var(--hud-type-body-compact);
+  color: var(--ds-color-text-primary);
+}
+
+.send-timing-row-detail {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+  margin-left: auto;
+}
+
+.send-timing-row-chevron {
+  color: var(--ds-color-text-tertiary);
+  margin-left: auto;
+  flex: none;
+}
+
+/* Divider().padding(.vertical, space1) after the first row and before 사용자 지정. */
+.send-timing-divider {
+  height: 1px;
+  margin: var(--ds-space-1) 0;
+  background: var(--ds-color-border-subtle);
+}
+
+/* PickyComposerAttachmentsRow: space6 tall, 2pt content inset. */
+.composer-attachments {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  /* The HUD row is DS.Spacing.space6 (24) tall; on the phone it grows to 44pt
+   * so the chip's remove button reaches the minimum tap height. */
+  height: 44px;
+  padding: 0 2px;
+}
+
+/* PickyComposerAttachmentChipView: HStack(spacing: 5), padding leading 4 /
+ * trailing 2 / vertical 3, surface2 @ 0.75 capsule with a 0.5 subtle stroke. */
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 2px 3px 4px;
+  border-radius: var(--ds-radius-pill);
+  background: color-mix(in srgb, var(--ds-color-surface2) 75%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--ds-color-border-subtle) 55%, transparent);
+  max-width: 100%;
+}
+
+.attachment-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--ds-color-text-secondary);
+  flex: none;
+}
+
+.attachment-name {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-primary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The 14pt remove button keeps its size; the hit area grows around it. */
+.attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--ds-color-text-tertiary);
+  position: relative;
+  flex: none;
+}
+
+.attachment-remove::after {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 22px) calc(50% - 22px);
+  width: 44px;
+  height: 44px;
+}

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>컴포저 · Picky 원격 PWA 시안</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="composer.css">
+</head>
+<body>
+  <main class="proto-page">
+    <div class="proto-title">컴포저</div>
+    <p class="proto-note">HUD source: <code>Picky/HUD/Conversation/PickyConversationComposerView.swift</code>, <code>PickyComposerSplitSendButton.swift</code>, <code>PickySendTimingPolicy.swift</code>, <code>PickyComposerAttachmentChipView.swift</code> · reference PNG: <code>build/render-gallery/conversation-composer/composer-*.png</code>, <code>build/render-gallery/steer-followup/9-send-menu-dark.png</code></p>
+
+    <section class="proto-state">
+      <div class="proto-caption">비어 있음 · 완료된 Pickle (placeholder)</div>
+      <div class="proto-room">
+        <div class="room-composer">
+          <div class="composer">
+            <div class="composer-editor">
+              <span class="composer-placeholder" data-l10n="hud.composer.placeholder.followUp">후속 요청 보내기…</span>
+            </div>
+            <div class="composer-actions">
+              <div class="actions-leading">
+                <div class="actions-group">
+                  <button class="toolbar-icon" type="button" aria-label="파일이나 스크린샷 첨부">
+                    <svg data-sf-symbol="paperclip" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M8.6 3.1 4.3 7.4a1.4 1.4 0 0 0 2 2l4.3-4.3a2.6 2.6 0 0 0-3.7-3.7L2.3 5.9a3.8 3.8 0 0 0 5.4 5.4l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="toolbar-icon" type="button" aria-label="완료 알림 끄기">
+                    <svg data-sf-symbol="bell.slash" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M3 5.2a3 3 0 0 1 6 0c0 2.2.7 3 .7 3H2.3s.7-.8.7-3Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+                      <path d="M4.9 10.2a1.2 1.2 0 0 0 2.2 0" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                      <path d="M1.6 1.6 10.4 10.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="actions-divider" aria-hidden="true"></span>
+                <div class="runtime-controls">
+                  <span class="runtime-label">gpt-5.6</span>
+                  <span class="runtime-label">high</span>
+                </div>
+              </div>
+              <div class="actions-trailing">
+                <div class="send is-disabled">
+                  <span class="send-main">
+                    <svg data-sf-symbol="arrow.turn.down.right" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M2 2.4v3.1a1.6 1.6 0 0 0 1.6 1.6H9.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7.6 5.1 9.9 7.1 7.6 9.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="send-divider" aria-hidden="true"></span>
+                  <span class="send-chevron">
+                    <svg data-sf-symbol="chevron.down" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                      <path d="M2.2 3.8 5 6.5 7.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">한 줄 입력 (전송 활성)</div>
+      <div class="proto-room">
+        <div class="room-composer">
+          <div class="composer is-focused">
+            <div class="composer-editor">
+              <span class="composer-text">배포 로그 다시 확인해줘</span>
+            </div>
+            <div class="composer-actions">
+              <div class="actions-leading">
+                <div class="actions-group">
+                  <button class="toolbar-icon" type="button" aria-label="파일이나 스크린샷 첨부">
+                    <svg data-sf-symbol="paperclip" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M8.6 3.1 4.3 7.4a1.4 1.4 0 0 0 2 2l4.3-4.3a2.6 2.6 0 0 0-3.7-3.7L2.3 5.9a3.8 3.8 0 0 0 5.4 5.4l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="toolbar-icon" type="button" aria-label="완료 알림 끄기">
+                    <svg data-sf-symbol="bell.slash" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M3 5.2a3 3 0 0 1 6 0c0 2.2.7 3 .7 3H2.3s.7-.8.7-3Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+                      <path d="M4.9 10.2a1.2 1.2 0 0 0 2.2 0" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                      <path d="M1.6 1.6 10.4 10.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="actions-divider" aria-hidden="true"></span>
+                <div class="runtime-controls">
+                  <span class="runtime-label">gpt-5.6</span>
+                  <span class="runtime-label">high</span>
+                </div>
+              </div>
+              <div class="actions-trailing">
+                <div class="send">
+                  <span class="send-main">
+                    <svg data-sf-symbol="arrow.up" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M6 10V2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                      <path d="M2.8 5.6 6 2.3l3.2 3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="send-divider" aria-hidden="true"></span>
+                  <span class="send-chevron">
+                    <svg data-sf-symbol="chevron.down" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                      <path d="M2.2 3.8 5 6.5 7.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">네 줄 입력 (에디터 최대 높이 78pt 직전)</div>
+      <div class="proto-room">
+        <div class="room-composer">
+          <div class="composer is-focused">
+            <div class="composer-editor is-four-lines">
+              <span class="composer-text">첫 번째 줄<br>두 번째 줄<br>세 번째 줄<br>네 번째 줄</span>
+            </div>
+            <div class="composer-actions">
+              <div class="actions-leading">
+                <div class="actions-group">
+                  <button class="toolbar-icon" type="button" aria-label="파일이나 스크린샷 첨부">
+                    <svg data-sf-symbol="paperclip" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M8.6 3.1 4.3 7.4a1.4 1.4 0 0 0 2 2l4.3-4.3a2.6 2.6 0 0 0-3.7-3.7L2.3 5.9a3.8 3.8 0 0 0 5.4 5.4l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="toolbar-icon" type="button" aria-label="완료 알림 끄기">
+                    <svg data-sf-symbol="bell.slash" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M3 5.2a3 3 0 0 1 6 0c0 2.2.7 3 .7 3H2.3s.7-.8.7-3Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+                      <path d="M4.9 10.2a1.2 1.2 0 0 0 2.2 0" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                      <path d="M1.6 1.6 10.4 10.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="actions-divider" aria-hidden="true"></span>
+                <div class="runtime-controls">
+                  <span class="runtime-label">gpt-5.6</span>
+                  <span class="runtime-label">high</span>
+                </div>
+              </div>
+              <div class="actions-trailing">
+                <div class="send">
+                  <span class="send-main">
+                    <svg data-sf-symbol="arrow.up" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M6 10V2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                      <path d="M2.8 5.6 6 2.3l3.2 3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="send-divider" aria-hidden="true"></span>
+                  <span class="send-chevron">
+                    <svg data-sf-symbol="chevron.down" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                      <path d="M2.2 3.8 5 6.5 7.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">실행 중 · 중지 버튼과 running border</div>
+      <div class="proto-room">
+        <div class="room-composer">
+          <div class="composer is-running">
+            <div class="composer-editor">
+              <span class="composer-placeholder" data-l10n-new="hud.composer.placeholder.steer.touch">메시지 보내기</span>
+            </div>
+            <div class="composer-actions">
+              <div class="actions-leading">
+                <div class="actions-group">
+                  <button class="toolbar-icon" type="button" aria-label="파일이나 스크린샷 첨부">
+                    <svg data-sf-symbol="paperclip" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M8.6 3.1 4.3 7.4a1.4 1.4 0 0 0 2 2l4.3-4.3a2.6 2.6 0 0 0-3.7-3.7L2.3 5.9a3.8 3.8 0 0 0 5.4 5.4l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="toolbar-icon is-active" type="button" aria-label="완료 알림 켜기">
+                    <svg data-sf-symbol="bell.fill" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M3 5.2a3 3 0 0 1 6 0c0 2.2.7 3 .7 3H2.3s.7-.8.7-3Z" fill="currentColor"/>
+                      <path d="M4.9 10.2a1.2 1.2 0 0 0 2.2 0" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="actions-divider" aria-hidden="true"></span>
+                <div class="runtime-controls">
+                  <span class="runtime-label">gpt-5.6</span>
+                  <span class="runtime-label">high</span>
+                </div>
+              </div>
+              <div class="actions-trailing">
+                <div class="send is-disabled">
+                  <span class="send-main">
+                    <svg data-sf-symbol="arrow.up" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M6 10V2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                      <path d="M2.8 5.6 6 2.3l3.2 3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="send-divider" aria-hidden="true"></span>
+                  <span class="send-chevron">
+                    <svg data-sf-symbol="chevron.down" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                      <path d="M2.2 3.8 5 6.5 7.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </div>
+                <button class="toolbar-icon is-stop" type="button" aria-label="중지">
+                  <svg data-sf-symbol="stop.fill" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                    <rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1.1" fill="currentColor"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">보낼 시점 메뉴 (전송 버튼 위에 붙는 시트)</div>
+      <div class="proto-room">
+        <div class="room-composer">
+          <div class="send-timing-anchor">
+            <div class="send-timing-menu" role="menu">
+              <div class="send-timing-title" data-l10n="hud.composer.sendTiming.title">보낼 시점</div>
+              <button class="send-timing-row" type="button" role="menuitem">
+                <span class="send-timing-row-title" data-l10n="hud.scheduled.group.afterCurrentReply">이번 응답이 끝나면</span>
+              </button>
+              <div class="send-timing-divider" role="separator"></div>
+              <button class="send-timing-row" type="button" role="menuitem">
+                <span class="send-timing-row-title">5분 후</span>
+                <span class="send-timing-row-detail">오전 10:21</span>
+              </button>
+              <button class="send-timing-row" type="button" role="menuitem">
+                <span class="send-timing-row-title">1시간 후</span>
+                <span class="send-timing-row-detail">오전 11:16</span>
+              </button>
+              <button class="send-timing-row" type="button" role="menuitem">
+                <span class="send-timing-row-title">내일 오전 9:00</span>
+                <span class="send-timing-row-detail">10월 5일 (일)</span>
+              </button>
+              <div class="send-timing-divider" role="separator"></div>
+              <button class="send-timing-row" type="button" role="menuitem">
+                <span class="send-timing-row-title" data-l10n="hud.composer.sendTiming.custom">사용자 지정 시간</span>
+                <svg class="send-timing-row-chevron" data-sf-symbol="chevron.right" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                  <path d="M3.5 2.2 6.3 5 3.5 7.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="composer is-focused">
+            <div class="composer-editor">
+              <span class="composer-text">배포 로그 다시 확인해줘</span>
+            </div>
+            <div class="composer-actions">
+              <div class="actions-leading">
+                <div class="actions-group">
+                  <button class="toolbar-icon" type="button" aria-label="파일이나 스크린샷 첨부">
+                    <svg data-sf-symbol="paperclip" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M8.6 3.1 4.3 7.4a1.4 1.4 0 0 0 2 2l4.3-4.3a2.6 2.6 0 0 0-3.7-3.7L2.3 5.9a3.8 3.8 0 0 0 5.4 5.4l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="toolbar-icon" type="button" aria-label="완료 알림 끄기">
+                    <svg data-sf-symbol="bell.slash" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M3 5.2a3 3 0 0 1 6 0c0 2.2.7 3 .7 3H2.3s.7-.8.7-3Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+                      <path d="M4.9 10.2a1.2 1.2 0 0 0 2.2 0" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                      <path d="M1.6 1.6 10.4 10.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="actions-divider" aria-hidden="true"></span>
+                <div class="runtime-controls">
+                  <span class="runtime-label">gpt-5.6</span>
+                  <span class="runtime-label">high</span>
+                </div>
+              </div>
+              <div class="actions-trailing">
+                <div class="send is-menu-open">
+                  <span class="send-main">
+                    <svg data-sf-symbol="arrow.up" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M6 10V2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                      <path d="M2.8 5.6 6 2.3l3.2 3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="send-divider" aria-hidden="true"></span>
+                  <span class="send-chevron">
+                    <svg data-sf-symbol="chevron.down" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                      <path d="M2.2 3.8 5 6.5 7.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">첨부 1개</div>
+      <div class="proto-room">
+        <div class="room-composer">
+          <div class="composer is-focused">
+            <div class="composer-editor">
+              <span class="composer-text">이 스크린샷 기준으로 간격 맞춰줘</span>
+            </div>
+            <div class="composer-attachments">
+              <div class="attachment-chip">
+                <span class="attachment-thumb">
+                  <svg data-sf-symbol="photo" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+                    <rect x="1.2" y="2.4" width="9.6" height="7.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/>
+                    <circle cx="4.1" cy="5" r="0.8" fill="currentColor"/>
+                    <path d="M2 8.6 4.6 6.4 7 8.2 8.8 6.9l1.6 1.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+                <span class="attachment-name">dock-spacing-2x.png</span>
+                <button class="attachment-remove" type="button" aria-label="첨부 파일 dock-spacing-2x.png 제거">
+                  <svg data-sf-symbol="xmark" viewBox="0 0 10 10" width="8" height="8" aria-hidden="true">
+                    <path d="M2.4 2.4 7.6 7.6M7.6 2.4 2.4 7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="composer-actions">
+              <div class="actions-leading">
+                <div class="actions-group">
+                  <button class="toolbar-icon" type="button" aria-label="파일이나 스크린샷 첨부">
+                    <svg data-sf-symbol="paperclip" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M8.6 3.1 4.3 7.4a1.4 1.4 0 0 0 2 2l4.3-4.3a2.6 2.6 0 0 0-3.7-3.7L2.3 5.9a3.8 3.8 0 0 0 5.4 5.4l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="toolbar-icon" type="button" aria-label="완료 알림 끄기">
+                    <svg data-sf-symbol="bell.slash" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M3 5.2a3 3 0 0 1 6 0c0 2.2.7 3 .7 3H2.3s.7-.8.7-3Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+                      <path d="M4.9 10.2a1.2 1.2 0 0 0 2.2 0" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                      <path d="M1.6 1.6 10.4 10.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="actions-divider" aria-hidden="true"></span>
+                <div class="runtime-controls">
+                  <span class="runtime-label">gpt-5.6</span>
+                  <span class="runtime-label">high</span>
+                </div>
+              </div>
+              <div class="actions-trailing">
+                <div class="send">
+                  <span class="send-main">
+                    <svg data-sf-symbol="arrow.up" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <path d="M6 10V2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                      <path d="M2.8 5.6 6 2.3l3.2 3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                  <span class="send-divider" aria-hidden="true"></span>
+                  <span class="send-chevron">
+                    <svg data-sf-symbol="chevron.down" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+                      <path d="M2.2 3.8 5 6.5 7.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

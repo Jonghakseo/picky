@@ -17,7 +17,7 @@ Pi interprets intent and chooses skills, extensions, MCPs, and tools.
 
 - Do not hard-code task routing in Picky. No URL/app-name rules such as "Sentry URL => Sentry flow".
 - Do not duplicate Pi skills, MCP bridge behavior, or tool policy in Picky.
-- Keep local-first behavior. No SaaS backend, auth, billing, remote analytics, or remote STT/TTS requirement for v1.
+- Keep local-first behavior. No Picky-operated SaaS backend, account auth, billing, remote analytics, or remote STT/TTS requirement for v1. Remote access from the user's own devices is an opt-in exception: off by default, carried only over a network path the user sets up (their own Tailscale tailnet or Cloudflare Tunnel), and limited to devices paired by the local app. Opt-in Web Push may use the platform push service. Picky must work fully with remote access off. See `docs/remote-pwa-plan.md`.
 - Long-running agents are first-class: multiple sessions, statuses, tool activity, logs, follow-up, abort, notifications, artifacts, persistence/reconnect.
 - Do not restart the running Picky app unless the user explicitly asks.
 - Do not change Xcode project defaults to always sign. Use `./scripts/package-signed-app.sh` when a signed local app bundle is needed.

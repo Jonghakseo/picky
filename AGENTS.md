@@ -30,7 +30,7 @@ These defaults follow OpenAI's [GPT-6 Astra guidance](https://developers.openai.
 
 ## Non-negotiable architecture rules
 
-- Keep local-first behavior. No SaaS backend, auth, billing, remote analytics, or remote STT/TTS requirement for v1.
+- Keep local-first behavior. No Picky-operated SaaS backend, account auth, billing, remote analytics, or remote STT/TTS requirement for v1. Remote access from the user's own devices is an opt-in exception: off by default, carried only over a network path the user sets up (their own Tailscale tailnet or Cloudflare Tunnel), and limited to devices paired by the local app. Opt-in Web Push may use the platform push service. Picky must work fully with remote access off. See `docs/remote-pwa-plan.md`.
 
 - Preserve long-running Pickle UX: multiple sessions, states, tool activity, logs, follow-up, abort, completion notification, artifacts, persistence/reconnect.
 
@@ -132,6 +132,7 @@ When the user asks about a feature, start here before broad searching:
 - MCP servers (Pi built-in MCP, per-server `pickyScope`, Hub management): `agentd/src/runtime/picky-mcp.ts`, `agentd/src/runtime/mcp-server-admin.ts`, `Picky/Hub/Plugins/PickyHubMcpServers*.swift`, `Picky/Hub/Plugins/PickyMcpServerClient.swift`
 - Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/Artifacts/` (`PickyArtifactReporter.swift`, `PickyReportViewer.swift`)
 - Pi extension handoff command: `pi-extensions/picky-handoff/`
+- Remote phone access through a PWA (plan, not implemented): `docs/remote-pwa-plan.md` holds the decisions, security layers, UX parity rules, and phase pass criteria. Overlapping Telegram plan: `docs/telegram-remote-main-mvp-plan.md`
 - HUD perf instrumentation / profiling playbook: `Picky/Feedback/PickyPerf.swift`, `docs/perf-profiling.md` (use this before guessing at HUD lag root causes)
 - Swift Concurrency guidelines (MainActor-first, measure before optimizing, GCD migration): `docs/swift-concurrency.md` (follow this when adding/refactoring async Swift code)
 - Refactoring principles and safety gates: `docs/refactoring-principles.md` (follow this before structural splits; establish characterization coverage first, reusing existing tests where sufficient, extract pure policies before splitting facades, keep line-count checks warning-first, and preserve the Picky neutral-context / Pi-intent boundary)

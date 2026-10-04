@@ -190,7 +190,7 @@ struct PickyConversationRuntimeControlsView: View {
                     .frame(width: PickyComposerToolbarMetrics.controlSize, height: PickyComposerToolbarMetrics.controlSize)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: fastMode.isEnabled))
+            .buttonStyle(PickyComposerToolbarGhostButtonStyle())
             .disabled(fastMode.isUpdating)
             .nativeTooltip(L10n.t(fastMode.isEnabled ? "hud.composer.fastMode.on.help" : "hud.composer.fastMode.off.help"))
             .accessibilityLabel(L10n.t("hud.composer.fastMode.accessibilityLabel"))

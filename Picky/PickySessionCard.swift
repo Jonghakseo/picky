@@ -55,6 +55,8 @@ struct PickySessionCard: Equatable, Identifiable {
     var piSessionFilePath: String?
     var notifyMainOnCompletion: Bool?
     var notifyMacOSOnCompletion: Bool? = nil
+    var fastMode: Bool? = nil
+    var fastModeSupported: Bool? = nil
     var pinned: Bool
     /// Daemon-side archive flag mirrored from `PickyAgentSession.archived`.
     /// Snapshot hydration hoists this into the local `manuallyArchivedSessionIDs`
@@ -254,6 +256,8 @@ extension PickySessionCard {
         self.piSessionFilePath = session.piSessionFilePath ?? session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
         self.notifyMacOSOnCompletion = session.notifyMacOSOnCompletion
+        self.fastMode = session.fastMode
+        self.fastModeSupported = session.fastModeSupported
         self.pinned = session.pinned ?? false
         self.archived = session.archived ?? false
         self.archivedAt = session.archivedAt

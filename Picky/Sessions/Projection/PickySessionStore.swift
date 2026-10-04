@@ -147,6 +147,8 @@ final class PickySessionStore {
             piSessionFilePath: presentation.piSessionFilePath ?? metadata.piSessionFilePath,
             notifyMainOnCompletion: metadata.notifyMainOnCompletion,
             notifyMacOSOnCompletion: metadata.notifyMacOSOnCompletion,
+            fastMode: metadata.fastMode,
+            fastModeSupported: metadata.fastModeSupported,
             pinned: metadata.pinned ?? false,
             archived: metadata.archived ?? false,
             archivedAt: metadata.archivedAt
@@ -208,6 +210,8 @@ final class PickySessionStore {
             pendingExtensionUiRequest: pendingExtensionUiRequest,
             notifyMainOnCompletion: metadata.notifyMainOnCompletion,
             notifyMacOSOnCompletion: metadata.notifyMacOSOnCompletion,
+            fastMode: metadata.fastMode,
+            fastModeSupported: metadata.fastModeSupported,
             archived: metadata.archived,
             archivedAt: metadata.archivedAt,
             pinned: metadata.pinned,

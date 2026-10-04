@@ -41,6 +41,8 @@ export function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): 
     archived: session.archived,
     archivedAt: session.archivedAt,
     pinned: session.pinned,
+    fastMode: session.fastMode,
+    fastModeSupported: session.fastModeSupported,
   });
 }
 

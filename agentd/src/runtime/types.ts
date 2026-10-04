@@ -70,6 +70,12 @@ export interface RuntimeAssistantRunMetadata {
   thinkingLevel?: ThinkingLevel;
 }
 
+/** Provider fast mode for one session: the user's choice and whether the current model honours it. */
+export interface RuntimeFastModeState {
+  enabled: boolean;
+  supported: boolean;
+}
+
 export interface RuntimeTodoStateResolution {
   resolved: boolean;
   todoState?: PickyTodoState;
@@ -88,6 +94,8 @@ export interface RuntimeModelOption {
   modelId: string;
   displayName: string;
   pattern: string;
+  /** Whether provider fast mode applies to this model (see domain/fast-mode-policy.ts). */
+  fastModeSupported?: boolean;
 }
 
 /** Small, non-session model call used by local background maintenance tasks. */
@@ -267,6 +275,9 @@ export interface RuntimeSessionHandle {
   injectInitialBootstrap?(messages: { user: string; assistant: string }): Promise<void>;
   setThinkingLevel?(level: ThinkingLevel): void;
   getAssistantRunMetadata?(): RuntimeAssistantRunMetadata | undefined;
+  /** Applies from the next provider request; requests to unsupported models are left unchanged. */
+  setFastMode?(enabled: boolean): void;
+  getFastModeState?(): RuntimeFastModeState;
   cycleThinkingLevel?(): RuntimeAssistantRunMetadata | undefined;
   setModel?(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined>;
   /** Direct selection keeps Pi's existing scopedModels unchanged. */

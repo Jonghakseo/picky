@@ -694,6 +694,9 @@ struct PickySettings: Codable, Equatable {
     /// provider/model pattern returned by picky-agentd, for example `anthropic/claude-sonnet-4-5`.
     var mainAgentModelPattern: String
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
+    /// Provider fast mode for the main agent. Off by default because it costs more;
+    /// it applies only while the main model supports it.
+    var mainAgentFastMode: Bool
     /// Empty/automatic means new Pickles follow Pi's global defaults. Non-empty values are
     /// initial overrides applied only when a Pickle runtime is created; users can still cycle
     /// model/thinking level inside the running Pickle afterward.
@@ -844,6 +847,7 @@ struct PickySettings: Codable, Equatable {
         fontScales: PickyFontScales = .defaults,
         mainAgentModelPattern: String = "",
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .off,
+        mainAgentFastMode: Bool = false,
         pickleAgentModelPattern: String = "",
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
         screenContextScope: PickyScreenContextScope = .focusedScreen,
@@ -915,6 +919,7 @@ struct PickySettings: Codable, Equatable {
         self.fontScales = fontScales
         self.mainAgentModelPattern = mainAgentModelPattern
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.mainAgentFastMode = mainAgentFastMode
         self.pickleAgentModelPattern = pickleAgentModelPattern
         self.pickleAgentThinkingLevel = pickleAgentThinkingLevel
         self.screenContextScope = screenContextScope
@@ -1012,6 +1017,7 @@ struct PickySettings: Codable, Equatable {
             fontScales: .defaults,
             mainAgentModelPattern: "",
             mainAgentThinkingLevel: .off,
+            mainAgentFastMode: false,
             pickleAgentModelPattern: "",
             pickleAgentThinkingLevel: .automatic,
             screenContextScope: .focusedScreen,
@@ -1135,6 +1141,7 @@ struct PickySettings: Codable, Equatable {
         case fontScales
         case mainAgentModelPattern
         case mainAgentThinkingLevel
+        case mainAgentFastMode
         case pickleAgentModelPattern
         case pickleAgentThinkingLevel
         case screenContextScope
@@ -1211,6 +1218,7 @@ struct PickySettings: Codable, Equatable {
         overlayBubbles = try container.decodeIfPresent(PickyOverlayBubblePreferences.self, forKey: .overlayBubbles) ?? defaults.overlayBubbles
         mainAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .mainAgentModelPattern) ?? defaults.mainAgentModelPattern
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
+        mainAgentFastMode = try container.decodeIfPresent(Bool.self, forKey: .mainAgentFastMode) ?? defaults.mainAgentFastMode
         pickleAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .pickleAgentModelPattern) ?? defaults.pickleAgentModelPattern
         pickleAgentThinkingLevel = try container.decodeIfPresent(PickyPickleAgentThinkingLevel.self, forKey: .pickleAgentThinkingLevel) ?? defaults.pickleAgentThinkingLevel
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope

@@ -76,7 +76,9 @@
               "workRevision": 9,
               "canReleaseRuntime": true
             },
-            "messageJournalAvailable": false
+            "messageJournalAvailable": false,
+            "fastMode": false,
+            "fastModeSupported": false
           }
         }
       ]
@@ -136,7 +138,9 @@
             "attentionCount": 1,
             "workRevision": 9,
             "canReleaseRuntime": true
-          }
+          },
+          "fastMode": false,
+          "fastModeSupported": false
         }
       },
       "messageJournalAvailable": {

@@ -791,9 +791,10 @@ final class CompanionManager: ObservableObject {
                     type: .setMainAgentThinkingLevel,
                     mainAgentThinkingLevel: settings.mainAgentThinkingLevel
                 ))
-                print("🎛️ Picky thinking level applied — \(settings.mainAgentThinkingLevel.rawValue)")
+                try await agentClient.send(PickyCommandEnvelope(type: .setMainAgentFastMode, enabled: settings.mainAgentFastMode))
+                print("🎛️ Picky thinking level and fast mode applied — \(settings.mainAgentThinkingLevel.rawValue), fast \(settings.mainAgentFastMode)")
             } catch {
-                print("⚠️ Failed to apply Picky thinking level: \(error.localizedDescription)")
+                print("⚠️ Failed to apply Picky thinking level or fast mode: \(error.localizedDescription)")
             }
             do {
                 try await agentClient.send(PickyCommandEnvelope(

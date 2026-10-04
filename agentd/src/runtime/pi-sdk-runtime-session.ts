@@ -14,7 +14,7 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import { subagentGroupRunUpdatesFromCustomMessage,subagentRunUpdateFromCustomMessage } from "../domain/subagent-run-state.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeExtensionCommandResult,RuntimeExtensionToolResult,RuntimeResourceReloadHost,RuntimeResourceReloadOutcome,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
+import type { AnswerExtensionUiOptions,RewindBranchMessage,RewindResult,RewindTarget,RuntimeAssistantRunMetadata,RuntimeAutocompleteApplyRequest,RuntimeAutocompleteCapabilities,RuntimeAutocompleteCompletion,RuntimeAutocompleteQuery,RuntimeAutocompleteSuggestions,RuntimeBashExecutionResult,RuntimeEvent,RuntimeExtensionCommandResult,RuntimeExtensionToolResult,RuntimeFastModeState,RuntimeResourceReloadHost,RuntimeResourceReloadOutcome,RuntimeSessionHandle,RuntimeSessionOptions,RuntimeSlashCommand,RuntimeSteerResult,ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
@@ -24,6 +24,7 @@ type ScopedModelOption,
 applyScopedModelsForCycling,
 automaticModelFromServices,
 availableModelsFromServices,
+currentAssistantRunMetadata,
 currentModelId,
 currentThinkingLevel,
 modelFromServices,
@@ -75,6 +76,7 @@ import { WriteFileMetadataTracker } from "./write-file-path.js";
 import { ResourceReloadScheduler } from "./pi-resource-reload.js";
 import { handlePiBuiltinSlashCommand } from "./pi-builtin-slash-commands.js";
 import { compactionResultFromPiEvent } from "./pi-compaction-result.js";
+import { PickyFastModeSwitch } from "./picky-fast-mode-extension.js";
 
 // Soft cap for the per-session `slashExpansions` map. A long-lived Pi session can submit many
 // slash commands; in pathological cases Pi may never emit the matching role="custom" echo (e.g.
@@ -135,6 +137,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     private readonly setExternalDeliveryPausedState: (paused: boolean) => void = () => {},
     readonly asyncTasks?: AsyncTaskHostBridge,
     private readonly asyncFence?: AsyncTaskModelFence,
+    private readonly fastMode: PickyFastModeSwitch = new PickyFastModeSwitch(),
   ) {
     this.promptQueue = new PiPromptQueue(id, SLASH_EXPANSION_MAP_CAP);
     this.resourceReload = this.createResourceReloadScheduler();
@@ -411,6 +414,14 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return this.currentAssistantRunMetadata();
   }
 
+  setFastMode(enabled: boolean): void {
+    this.fastMode.setEnabled(enabled, this.id);
+  }
+
+  getFastModeState(): RuntimeFastModeState {
+    return this.fastMode.state(piReadModelMetadata(this.runtime.session));
+  }
+
   cycleThinkingLevel(): RuntimeAssistantRunMetadata | undefined {
     const level = piTryCycleThinkingLevel(this.runtime.session, this.id);
     if (level === undefined) {
@@ -504,13 +515,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   private currentAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
-    const model = currentModelId(this.runtime.session);
-    const thinkingLevel = currentThinkingLevel(this.runtime.session) ?? this.configuredThinkingLevel;
-    const metadata = {
-      ...(model ? { model } : {}),
-      ...(thinkingLevel ? { thinkingLevel } : {}),
-    };
-    return metadata.model || metadata.thinkingLevel ? metadata : undefined;
+    return currentAssistantRunMetadata(this.runtime.session, this.configuredThinkingLevel);
   }
 
   getAutocompleteCapabilities(): RuntimeAutocompleteCapabilities {

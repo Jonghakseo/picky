@@ -1,0 +1,6 @@
+{
+  "id": "cmd-main-fast-001",
+  "protocolVersion": "2026-08-25",
+  "type": "setMainAgentFastMode",
+  "enabled": false
+}

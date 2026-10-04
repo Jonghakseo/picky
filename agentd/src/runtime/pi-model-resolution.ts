@@ -5,10 +5,11 @@ import {
   type AgentSessionServices,
   type CreateAgentSessionFromServicesOptions,
 } from "@earendil-works/pi-coding-agent";
-import type { RuntimeModelOption, RuntimeModelScope, RuntimeSessionOptions, ThinkingLevel } from "./types.js";
+import type { RuntimeAssistantRunMetadata, RuntimeModelOption, RuntimeModelScope, RuntimeSessionOptions, ThinkingLevel } from "./types.js";
 import { readModelMetadata as piReadModelMetadata, readThinkingLevel as piReadThinkingLevel } from "./pi-capabilities.js";
 import { logAgentd } from "../local-log.js";
 import { refreshModelCatalog } from "./pi-model-catalog-refresh.js";
+import { isFastModeSupported } from "../domain/fast-mode-policy.js";
 
 export type ScopedModelOption = NonNullable<CreateAgentSessionFromServicesOptions["scopedModels"]>[number];
 type RuntimeModel = ScopedModelOption["model"];
@@ -143,6 +144,7 @@ export function runtimeModelOptionFromModel(model: RuntimeModel): RuntimeModelOp
     modelId: model.id,
     displayName: pattern,
     pattern,
+    fastModeSupported: isFastModeSupported(model),
   };
 }
 
@@ -179,4 +181,15 @@ export function currentModelId(session: AgentSession): string | undefined {
 
 export function currentThinkingLevel(session: AgentSession): ThinkingLevel | undefined {
   return piReadThinkingLevel(session);
+}
+
+/** Model and thinking level of the session's next run; `configuredThinkingLevel` fills a level Pi does not expose. */
+export function currentAssistantRunMetadata(session: AgentSession, configuredThinkingLevel?: ThinkingLevel): RuntimeAssistantRunMetadata | undefined {
+  const model = currentModelId(session);
+  const thinkingLevel = currentThinkingLevel(session) ?? configuredThinkingLevel;
+  const metadata = {
+    ...(model ? { model } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
+  };
+  return metadata.model || metadata.thinkingLevel ? metadata : undefined;
 }

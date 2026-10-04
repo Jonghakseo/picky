@@ -743,7 +743,7 @@ describe("AgentdServer", () => {
   it("returns correlated session runtime options only to the requesting client", async () => {
     const requester = await connectWithHello();
     const observer = await connectWithHello();
-    const options = vi.spyOn(supervisor, "listSessionRuntimeOptions").mockResolvedValue({
+    const options = vi.spyOn(supervisor.runtimeControls, "listOptions").mockResolvedValue({
       models: [{ provider: "openai-codex", modelId: "gpt-5.5", displayName: "GPT-5.5", pattern: "openai-codex/gpt-5.5" }],
       thinkingLevels: ["low", "high"],
       currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },

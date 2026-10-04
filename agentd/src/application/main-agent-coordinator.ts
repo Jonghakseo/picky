@@ -53,6 +53,8 @@ export class MainAgentCoordinator {
   private mainExternalDeliveryPaused = false;
   private mainReuseBarrier: Promise<void> = Promise.resolve();
   private mainThinkingLevel?: ThinkingLevel;
+  /** Settings choice, applied to every main handle; the app re-sends it on connect. */
+  private mainFastMode = false;
   private mainDraft = "";
   private mainAssistantDeltaSeen = false;
   private mainFirstAssistantDeltaLogged = false;
@@ -293,6 +295,12 @@ export class MainAgentCoordinator {
     this.deps.options.mainRuntime?.setThinkingLevel?.(level);
     logAgentd("main thinking level configured", { level, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0 });
     this.applyMainThinkingLevel(this.mainHandle, level);
+  }
+
+  setMainAgentFastMode(enabled: boolean): void {
+    this.mainFastMode = enabled;
+    logAgentd("main fast mode configured", { enabled: enabled ? 1 : 0, hadHandle: this.mainHandle ? 1 : 0 });
+    this.mainHandle?.setFastMode?.(enabled);
   }
 
   async listMainAgentModels(): Promise<PickyMainAgentModelOption[]> {
@@ -803,6 +811,7 @@ export class MainAgentCoordinator {
     this.mainHandleAwaitingPostAbortInput = this.mainExternalDeliveryPaused;
     handle.setExternalDeliveryPaused?.(this.mainExternalDeliveryPaused);
     this.applyMainThinkingLevel(handle);
+    handle.setFastMode?.(this.mainFastMode);
     this.bindMainHandleEvents(handle);
     return handle;
   }

@@ -425,6 +425,8 @@ Interactions:
 
 The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with the editor in the middle and actions along the bottom, where the model and thinking controls sit beside the other actions. Click either value to open its picker; `Control + P` and `Shift + Tab` still cycle them without opening a picker. Each picker can save the current value as the default for new Pickles. Resumed Pickles keep the model and thinking level stored in their Pi transcript instead.
 
+When the Pickle's current model supports provider fast mode, a lightning button appears to the right of the thinking level. Turning it on asks the provider for faster replies at a higher price: `service_tier: "priority"` for OpenAI GPT-5.4 and later (including the Codex subscription), and `speed: "fast"` for Claude Opus 4.8, 5, and 5.5 on the Claude API (a research preview that needs access from Anthropic). The choice belongs to that Pickle only, survives restarts, and stays when you switch to a model without fast mode, where the button hides and requests go out unchanged. New and duplicated Pickles always start with fast mode off.
+
 Picky refreshes Pi's remote model catalog before initial model selection and when loading an active Pickle's model picker. Updating the standalone Pi installation does not update Picky's bundled SDK. Catalog requests respect Pi's cache and `PI_OFFLINE` setting; if a refresh fails or reaches its five-second deadline, existing models remain available. Repeated picker requests share an in-flight refresh and wait at least one minute between attempts.
 
 The model picker follows Pi's effective `enabledModels` scope. **All models…** edits the global scope in `~/.pi/agent/settings.json` with an explicit Apply action. A project override is identified but left unchanged, and scopes containing globs, thinking suffixes, or unresolved model IDs remain read-only to avoid destructive rewrites. A configured default model may start outside the scope; Picky marks it as outside while still allowing it as the initial model.
@@ -837,6 +839,7 @@ Existing consumers of `.sessions[].id`, title, status, or artifact links should 
 | `cursor.visible` | bool, `toggle` | Shows or hides the Pi cursor overlay. |
 | `mainAgent.model` | string pattern | Applied to the running main session; the CLI reports `saved but not applied: <reason>` if the daemon rejects or times out. |
 | `mainAgent.thinkingLevel` | enum | Same applied/pending semantics as the model key. |
+| `mainAgent.fastMode` | bool, `toggle` | Provider fast mode for the main agent: faster replies at a higher price, supported models only. Because it costs more, only you can change it; the main agent cannot. |
 | `pickleAgent.model` | string pattern | Affects newly created Pickles only. |
 | `pickleAgent.thinkingLevel` | enum | Affects newly created Pickles only. |
 | `notifications.newPicklesNotifyMainOnCompletion` | bool, read-only | New-Pickle default for reporting completion to Main Picky; change it in Settings. |
@@ -867,6 +870,7 @@ Main Agent is split into cards for **workspace and instructions**, **model and r
 | PI_CODING_AGENT_DIR | Optional Pi coding-agent directory for Pi sessions and extension/skill installs. Leave empty to use the launch environment's `PI_CODING_AGENT_DIR`, then fallback to `~/.pi/agent`. Must be an existing directory when set. Extension/skill installs pick it up immediately; running Picky/Pi sessions apply it after restarting Picky. |
 | Pi model | Automatic or a pinned model pattern. |
 | Reasoning level | Off, Minimal, Low, Medium, High, Extra High, Maximum. Maximum appears only for Pi models that support it. |
+| Fast mode | Off (default) or On. Asks the provider for faster replies at a higher price, and applies only while the main model supports fast mode (the same models as the Pickle lightning button). Disabled when the selected model is known not to support it. |
 | Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on — plus any display you draw on during that turn. |
 | Armed Pickle delivery | Follow-up (default) or Steer. Controls how Push-to-Talk and Quick Input are delivered when a Pickle is explicitly armed as the screen-context target. Follow-up waits until the Pickle is idle; Steer interrupts the current turn at the next steering point. |
 | Send screenshots only when drawn | Off (default) or On. When **On**, Picky attaches a screenshot to the model turn only if you marked the screen with click and drag during Push-to-Talk or Quick Input. Screen capture still runs locally so the ink overlay can render on top, but the screenshot is omitted from what the model sees. Off keeps the always-attach behavior. |

@@ -318,6 +318,7 @@ export const PickyMainAgentModelOptionSchema = z.object({
   modelId: z.string().min(1),
   displayName: z.string().min(1),
   pattern: z.string().min(1),
+  fastModeSupported: z.boolean().optional(),
 });
 export type PickyMainAgentModelOption = z.infer<typeof PickyMainAgentModelOptionSchema>;
 export const PickySessionRuntimeModelOptionSchema = PickyMainAgentModelOptionSchema;
@@ -466,6 +467,11 @@ export const PickyAgentSessionSchema = z.object({
   // Newest user-authored input the daemon accepted for this session, typed so
   // clients never reconstruct it from log-line prefixes.
   lastRequest: PickySessionLastRequestSchema.optional(),
+  // Provider fast mode chosen for this Pickle. Absent means off; a new Pickle
+  // always starts off. `fastModeSupported` reports whether the current model
+  // honours it, so clients only offer the toggle where it has an effect.
+  fastMode: z.boolean().optional(),
+  fastModeSupported: z.boolean().optional(),
 });
 
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
@@ -726,6 +732,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   }),
   CommandBaseSchema.extend({ type: z.literal("setSessionModel"), sessionId: z.string(), provider: z.string().min(1), modelId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("setSessionThinkingLevel"), sessionId: z.string(), thinkingLevel: ThinkingLevelSchema }),
+  CommandBaseSchema.extend({ type: z.literal("setSessionFastMode"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionModel"), sessionId: z.string(), direction: ModelCycleDirectionSchema.default("forward") }),
   CommandBaseSchema.extend({ type: z.literal("clearQueue"), sessionId: z.string(), kind: z.enum(["steering", "followUp", "all"]) }),
   // Per-item queue edits. `itemId` is the `PickyQueueItem.id` the daemon projected; the
@@ -754,6 +761,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("resetMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("abortMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentThinkingLevel"), mainAgentThinkingLevel: ThinkingLevelSchema }),
+  CommandBaseSchema.extend({ type: z.literal("setMainAgentFastMode"), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("listSlashCommands"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("getAutocompleteCapabilities"), sessionId: z.string() }),
   CommandBaseSchema.extend({

@@ -168,6 +168,9 @@ final class PickySettingsControlHandler {
                 return "Picky saved an invalid main agent thinking level."
             }
             command = PickyCommandEnvelope(type: .setMainAgentThinkingLevel, mainAgentThinkingLevel: thinkingLevel)
+        case "mainAgent.fastMode":
+            guard case .bool(let enabled) = persistedValue else { return "Picky saved an invalid main agent fast mode value." }
+            command = PickyCommandEnvelope(type: .setMainAgentFastMode, enabled: enabled)
         default:
             return nil
         }

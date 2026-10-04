@@ -235,7 +235,7 @@ struct PickySessionProjectionSnapshot: Decodable, Equatable {
         "subagentRuns", "artifacts", "changedFiles", "messages", "messageJournalAvailable",
         "queuedSteers", "queuedFollowUps", "scheduledMessages", "steeringMode", "followUpMode", "activitySummary",
         "contextUsage", "currentAssistantRun", "pendingExtensionUiRequest", "notifyMainOnCompletion", "notifyMacOSOnCompletion",
-        "archived", "archivedAt", "pinned",
+        "archived", "archivedAt", "pinned", "fastMode", "fastModeSupported",
     ]
 
     private enum CodingKeys: String, CodingKey {

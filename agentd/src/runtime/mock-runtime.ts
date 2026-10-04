@@ -1,7 +1,7 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { STEER_PREFIX } from "../domain/log-prefixes.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
-import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, RuntimeTextCompleter, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeFastModeState, RuntimeGlobalModelScopeChange, RuntimeModelOption, RuntimeSessionHandle, RuntimeSessionOptions, RuntimeSlashCommand, RuntimeSteerResult, RuntimeTextCompleter, ThinkingLevel } from "./types.js";
 import { modelScopeRevision, validateExactModelScope } from "./pi-model-resolution.js";
 import { PiModelScopeConflictError } from "./model-scope-errors.js";
 
@@ -67,8 +67,10 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   private followUpQueue: string[] = [];
   private modelIndex = 0;
   private thinkingIndex = 3;
+  private fastModeEnabled = false;
   private readonly models: RuntimeModelOption[] = [
-    { provider: "mock", modelId: "gpt-5.5", displayName: "mock/gpt-5.5", pattern: "mock/gpt-5.5" },
+    // Simulates a fast-mode-capable model so the toggle path is exercisable without a provider.
+    { provider: "mock", modelId: "gpt-5.5", displayName: "mock/gpt-5.5", pattern: "mock/gpt-5.5", fastModeSupported: true },
     { provider: "mock", modelId: "opus-4-7", displayName: "mock/opus-4-7", pattern: "mock/opus-4-7" },
   ];
   private readonly thinkingLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -129,6 +131,14 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
 
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingIndex = this.thinkingLevels.indexOf(level);
+  }
+
+  setFastMode(enabled: boolean): void {
+    this.fastModeEnabled = enabled;
+  }
+
+  getFastModeState(): RuntimeFastModeState {
+    return { enabled: this.fastModeEnabled, supported: this.models[this.modelIndex]!.fastModeSupported === true };
   }
 
   cycleThinkingLevel(): RuntimeAssistantRunMetadata {

@@ -27,6 +27,8 @@ struct PickySessionMetaPatch: Decodable, Equatable {
     let lastRequest: FieldUpdate<PickySessionLastRequest>
     let agentCycle: FieldUpdate<PickyAgentCycle>
     let asyncWorkSummary: FieldUpdate<PickyAsyncWorkSummary>
+    let fastMode: FieldUpdate<Bool>
+    let fastModeSupported: FieldUpdate<Bool>
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -49,6 +51,8 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         case lastRequest
         case agentCycle
         case asyncWorkSummary
+        case fastMode
+        case fastModeSupported
     }
 
     init(from decoder: Decoder) throws {
@@ -83,6 +87,8 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         lastRequest = try FieldUpdate.decode(from: container, forKey: .lastRequest, allowsClear: true)
         agentCycle = try FieldUpdate.decode(from: container, forKey: .agentCycle, allowsClear: true)
         asyncWorkSummary = try FieldUpdate.decode(from: container, forKey: .asyncWorkSummary, allowsClear: true)
+        fastMode = try FieldUpdate.decode(from: container, forKey: .fastMode, allowsClear: true)
+        fastModeSupported = try FieldUpdate.decode(from: container, forKey: .fastModeSupported, allowsClear: true)
     }
 }
 
@@ -116,6 +122,8 @@ extension PickySessionMetaPatch {
         lastRequest.apply(to: &metadata.lastRequest)
         agentCycle.apply(to: &metadata.agentCycle)
         asyncWorkSummary.apply(to: &metadata.asyncWorkSummary)
+        fastMode.apply(to: &metadata.fastMode)
+        fastModeSupported.apply(to: &metadata.fastModeSupported)
     }
 }
 

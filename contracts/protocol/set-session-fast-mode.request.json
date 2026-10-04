@@ -1,0 +1,7 @@
+{
+  "id": "cmd-session-fast-001",
+  "protocolVersion": "2026-08-25",
+  "type": "setSessionFastMode",
+  "sessionId": "session-001",
+  "enabled": true
+}

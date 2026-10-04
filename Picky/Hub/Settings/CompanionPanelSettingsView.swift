@@ -642,12 +642,7 @@ struct CompanionPanelSettingsView: View {
             mainAgentCwdDraft: $mainAgentCwdDraft,
             piBinaryPathDraft: $piBinaryPathDraft,
             piCodingAgentDirDraft: $piCodingAgentDirDraft,
-            mainAgentModelPattern: $viewModel.settings.mainAgentModelPattern,
-            mainAgentThinkingLevel: $viewModel.settings.mainAgentThinkingLevel,
-            screenContextScope: $viewModel.settings.screenContextScope,
-            attachScreenshotsOnlyWhenInked: $viewModel.settings.attachScreenshotsOnlyWhenInked,
-            screenshotQuality: $viewModel.settings.screenshotQuality,
-            armedPickleDispatchMode: $viewModel.settings.armedPickleDispatchMode,
+            settings: $viewModel.settings,
             onMainAgentCwdChanged: { newValue in
                 updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(mainAgentCwd: newValue))
             },

@@ -399,6 +399,7 @@ export class AgentdServer {
       },
       abortMainAgent: (cmd) => this.options.supervisor.abortMainAgent(),
       setMainAgentThinkingLevel: (cmd) => this.options.supervisor.setMainAgentThinkingLevel(cmd.mainAgentThinkingLevel),
+      setMainAgentFastMode: (cmd) => this.options.supervisor.setMainAgentFastMode(cmd.enabled),
       listSlashCommands: async (cmd) => {
         const commands = await this.options.supervisor.listSlashCommands(cmd.sessionId);
         this.send(ws, { type: "slashCommandsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, commands });
@@ -561,15 +562,16 @@ export class AgentdServer {
       notifyMainOfPickleCompletion: (cmd) => deliverPickleCompletion(this.options.supervisor, cmd),
       setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived, cmd.archiveMode, cmd.id),
       deleteSession: (cmd) => this.options.supervisor.deleteSession(cmd.sessionId),
-      cycleSessionThinkingLevel: (cmd) => this.options.supervisor.cycleSessionThinkingLevel(cmd.sessionId),
+      cycleSessionThinkingLevel: (cmd) => this.options.supervisor.runtimeControls.cycleThinkingLevel(cmd.sessionId),
       listSessionRuntimeOptions: async (cmd) => {
-        const options = await this.options.supervisor.listSessionRuntimeOptions(cmd.sessionId);
+        const options = await this.options.supervisor.runtimeControls.listOptions(cmd.sessionId);
         this.send(ws, { type: "sessionRuntimeOptionsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, ...options });
       },
       setGlobalModelScope: (cmd) => this.options.supervisor.setGlobalModelScope(cmd.mode, cmd.patterns, cmd.expectedRevision),
-      setSessionModel: (cmd) => this.options.supervisor.setSessionModel(cmd.sessionId, cmd.provider, cmd.modelId),
-      setSessionThinkingLevel: (cmd) => this.options.supervisor.setSessionThinkingLevel(cmd.sessionId, cmd.thinkingLevel),
-      cycleSessionModel: (cmd) => this.options.supervisor.cycleSessionModel(cmd.sessionId, cmd.direction),
+      setSessionModel: (cmd) => this.options.supervisor.runtimeControls.setModel(cmd.sessionId, cmd.provider, cmd.modelId),
+      setSessionThinkingLevel: (cmd) => this.options.supervisor.runtimeControls.setThinkingLevel(cmd.sessionId, cmd.thinkingLevel),
+      setSessionFastMode: (cmd) => this.options.supervisor.runtimeControls.setFastMode(cmd.sessionId, cmd.enabled),
+      cycleSessionModel: (cmd) => this.options.supervisor.runtimeControls.cycleModel(cmd.sessionId, cmd.direction),
       clearQueue: (cmd) => this.options.supervisor.clearQueue(cmd.sessionId, cmd.kind),
       removeQueuedInput: (cmd) => this.options.supervisor.removeQueuedInput(cmd.sessionId, cmd.itemId),
       editQueuedFollowUp: (cmd) => this.options.supervisor.editQueuedFollowUp(cmd.sessionId, cmd.itemId, cmd.text),
@@ -1126,7 +1128,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, action: command.pickleAction, textChars: command.text?.length, caller: command.caller };
     case "setPickleArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0, caller: command.caller };
-    case "cycleSessionThinkingLevel": case "listSessionRuntimeOptions": case "setSessionModel": case "setSessionThinkingLevel": case "cycleSessionModel":
+    case "cycleSessionThinkingLevel": case "listSessionRuntimeOptions": case "setSessionModel": case "setSessionThinkingLevel": case "setSessionFastMode": case "cycleSessionModel":
       return runtimeControlCommandLogFields(command);
     case "clearQueue":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, kind: command.kind };
@@ -1204,6 +1206,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type };
     case "setMainAgentThinkingLevel":
       return { commandId: command.id, type: command.type, mainAgentThinkingLevel: command.mainAgentThinkingLevel };
+    case "setMainAgentFastMode":
+      return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
   }
 }
 

@@ -23,6 +23,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
     @Binding var piCodingAgentDirDraft: String
     @Binding var mainAgentModelPattern: String
     @Binding var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
+    @Binding var mainAgentFastMode: Bool
     @Binding var screenContextScope: PickyScreenContextScope
     @Binding var attachScreenshotsOnlyWhenInked: Bool
     @Binding var screenshotQuality: PickyScreenshotQuality
@@ -35,12 +36,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
         mainAgentCwdDraft: Binding<String>,
         piBinaryPathDraft: Binding<String>,
         piCodingAgentDirDraft: Binding<String>,
-        mainAgentModelPattern: Binding<String>,
-        mainAgentThinkingLevel: Binding<PickyMainAgentThinkingLevel>,
-        screenContextScope: Binding<PickyScreenContextScope>,
-        attachScreenshotsOnlyWhenInked: Binding<Bool>,
-        screenshotQuality: Binding<PickyScreenshotQuality>,
-        armedPickleDispatchMode: Binding<PickyArmedPickleDispatchMode>,
+        settings: Binding<PickySettings>,
         onMainAgentCwdChanged: @escaping (String) -> Void,
         onPiBinaryPathChanged: @escaping (String) -> Void,
         onPiCodingAgentDirChanged: @escaping (String) -> Void,
@@ -59,12 +55,13 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
         _mainAgentCwdDraft = mainAgentCwdDraft
         _piBinaryPathDraft = piBinaryPathDraft
         _piCodingAgentDirDraft = piCodingAgentDirDraft
-        _mainAgentModelPattern = mainAgentModelPattern
-        _mainAgentThinkingLevel = mainAgentThinkingLevel
-        _screenContextScope = screenContextScope
-        _attachScreenshotsOnlyWhenInked = attachScreenshotsOnlyWhenInked
-        _screenshotQuality = screenshotQuality
-        _armedPickleDispatchMode = armedPickleDispatchMode
+        _mainAgentModelPattern = settings.mainAgentModelPattern
+        _mainAgentThinkingLevel = settings.mainAgentThinkingLevel
+        _mainAgentFastMode = settings.mainAgentFastMode
+        _screenContextScope = settings.screenContextScope
+        _attachScreenshotsOnlyWhenInked = settings.attachScreenshotsOnlyWhenInked
+        _screenshotQuality = settings.screenshotQuality
+        _armedPickleDispatchMode = settings.armedPickleDispatchMode
         self.onMainAgentCwdChanged = onMainAgentCwdChanged
         self.onPiBinaryPathChanged = onPiBinaryPathChanged
         self.onPiCodingAgentDirChanged = onPiCodingAgentDirChanged
@@ -135,6 +132,8 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .onChange(of: mainAgentThinkingLevel) { _, _ in save() }
                     }
+
+                    fastModeField
                 }
             }
 
@@ -254,6 +253,29 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
 
     private var supportingTextColor: Color {
         presentation.showsNavigationChrome ? DS.Colors.textTertiary : PickyHubTheme.Colors.textSecondary
+    }
+
+    private var isFastModeUnavailable: Bool {
+        PickyMainAgentFastModeAvailability.isKnownUnsupported(modelPattern: mainAgentModelPattern, options: modelOptions)
+    }
+
+    private var fastModeField: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            HStack(spacing: DS.Spacing.space2) {
+                Text("settings.field.mainAgentFastMode")
+                    .font(PickyHUDTypography.labelMedium)
+                    .foregroundColor(DS.Colors.textPrimary)
+                Spacer(minLength: DS.Spacing.space2)
+                Toggle("settings.field.mainAgentFastMode", isOn: $mainAgentFastMode)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(DS.Colors.accent)
+                    .controlSize(.small)
+                    .disabled(isFastModeUnavailable)
+                    .onChange(of: mainAgentFastMode) { _, _ in save() }
+            }
+            standaloneNote(isFastModeUnavailable ? "settings.field.mainAgentFastMode.unsupported" : "settings.field.mainAgentFastMode.note")
+        }
     }
 
     private var modelPicker: some View {
@@ -395,5 +417,17 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
         Text(text)
             .font(presentation.showsNavigationChrome ? PickyHUDTypography.metaSemibold : PickyHUDTypography.labelSemibold)
             .foregroundColor(presentation.showsNavigationChrome ? DS.Colors.textTertiary : PickyHubTheme.Colors.textPrimary)
+    }
+}
+
+/// Settings-side read of the daemon's fast mode support flag on model options.
+enum PickyMainAgentFastModeAvailability {
+    /// True only when the selected model is listed and reported unsupported. Automatic
+    /// selection, an unlisted pattern, or a daemon that predates the flag stay enabled,
+    /// because the daemon still applies fast mode only to supported models.
+    static func isKnownUnsupported(modelPattern: String, options: [PickyMainAgentModelOption]) -> Bool {
+        let pattern = modelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty, let option = options.first(where: { $0.pattern == pattern }) else { return false }
+        return option.fastModeSupported == false
     }
 }

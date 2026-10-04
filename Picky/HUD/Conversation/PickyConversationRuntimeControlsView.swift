@@ -48,6 +48,9 @@ struct PickyConversationRuntimeControlsView: View {
     let onSetStagedScopePattern: (String, Bool) -> Void
     let onReloadGlobalScope: () -> Void
     let onApplyGlobalScope: () -> Void
+    /// Nil hides the control: the current model has no provider fast mode.
+    let fastMode: PickyComposerFastModeControlState?
+    let onToggleFastMode: () -> Void
 
     @State private var modelQuery = ""
     @State private var pickerScreen: PickyComposerRuntimePickerScreen = .quick
@@ -80,7 +83,9 @@ struct PickyConversationRuntimeControlsView: View {
         onSetAllModelsEnabled: @escaping (Bool, String?) -> Void,
         onSetStagedScopePattern: @escaping (String, Bool) -> Void,
         onReloadGlobalScope: @escaping () -> Void,
-        onApplyGlobalScope: @escaping () -> Void
+        onApplyGlobalScope: @escaping () -> Void,
+        fastMode: PickyComposerFastModeControlState? = nil,
+        onToggleFastMode: @escaping () -> Void = {}
     ) {
         self.presentation = presentation
         self.actionError = actionError
@@ -107,11 +112,13 @@ struct PickyConversationRuntimeControlsView: View {
         self.onSetStagedScopePattern = onSetStagedScopePattern
         self.onReloadGlobalScope = onReloadGlobalScope
         self.onApplyGlobalScope = onApplyGlobalScope
+        self.fastMode = fastMode
+        self.onToggleFastMode = onToggleFastMode
     }
 
     @ViewBuilder
     var body: some View {
-        if presentation.hasControls || actionError != nil {
+        if presentation.hasControls || fastMode != nil || actionError != nil {
             controls
         }
     }
@@ -120,6 +127,7 @@ struct PickyConversationRuntimeControlsView: View {
         HStack(spacing: DS.Spacing.space1) {
             modelControl
             thinkingControl
+            fastModeControl
             runtimeError
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -160,6 +168,24 @@ struct PickyConversationRuntimeControlsView: View {
             .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
             .disabled((runtimeOptions?.thinkingLevels.isEmpty ?? true) || isThinkingActionInFlight)
             .pickyInstantPopover(isPresented: $isThinkingPickerPresented, arrowEdge: .bottom) { thinkingPicker }
+        }
+    }
+
+    @ViewBuilder
+    private var fastModeControl: some View {
+        if let fastMode {
+            Button(action: onToggleFastMode) {
+                Image(systemName: fastMode.isEnabled ? "bolt.fill" : "bolt")
+                    .pickyFont(size: 10.5, weight: .semibold)
+                    .foregroundColor(fastMode.isEnabled ? DS.Colors.accentText : DS.Colors.textTertiary)
+                    .frame(width: PickyComposerToolbarMetrics.controlSize, height: PickyComposerToolbarMetrics.controlSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: fastMode.isEnabled))
+            .disabled(fastMode.isUpdating)
+            .help(L10n.t(fastMode.isEnabled ? "hud.composer.fastMode.on.help" : "hud.composer.fastMode.off.help"))
+            .accessibilityLabel(L10n.t("hud.composer.fastMode.accessibilityLabel"))
+            .accessibilityValue(fastMode.isEnabled ? "On" : "Off")
         }
     }
 
@@ -602,6 +628,20 @@ struct PickyConversationRuntimeControlsView: View {
             .padding(.horizontal, DS.Spacing.space2)
             .frame(height: PickyComposerToolbarMetrics.controlSize)
             .contentShape(Rectangle())
+    }
+}
+
+/// Fast mode toggle shown only while the current model supports provider fast mode.
+struct PickyComposerFastModeControlState: Equatable {
+    let isEnabled: Bool
+    let isUpdating: Bool
+
+    /// Hidden when the model has no fast mode, so a stored choice for another
+    /// model never shows as a dead control.
+    init?(enabled: Bool, supported: Bool, isUpdating: Bool) {
+        guard supported else { return nil }
+        isEnabled = enabled
+        self.isUpdating = isUpdating
     }
 }
 

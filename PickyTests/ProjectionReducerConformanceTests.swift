@@ -306,6 +306,8 @@ private indirect enum ConformanceJSON: Equatable {
             "currentAssistantRun": encoded(metadata.currentAssistantRun),
             "notifyMainOnCompletion": encoded(metadata.notifyMainOnCompletion),
             "notifyMacOSOnCompletion": encoded(metadata.notifyMacOSOnCompletion),
+            "fastMode": encoded(metadata.fastMode),
+            "fastModeSupported": encoded(metadata.fastModeSupported),
             "archived": encoded(metadata.archived),
             "archivedAt": encoded(metadata.archivedAt),
             "pinned": encoded(metadata.pinned),

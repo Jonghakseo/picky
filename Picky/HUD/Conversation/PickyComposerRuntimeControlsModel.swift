@@ -103,6 +103,7 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
     @Published var isModelPickerPresented = false
     @Published var isModelActionInFlight = false
     @Published var isThinkingActionInFlight = false
+    @Published var isFastModeActionInFlight = false
     @Published var isGlobalScopeActionInFlight = false
     @Published private(set) var pickleRuntimeDefaults: (modelPattern: String, thinkingLevel: PickyPickleAgentThinkingLevel) = ("", .automatic)
     @Published private(set) var scopeStaging = PickyComposerRuntimeScopeStaging()
@@ -129,6 +130,7 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
         isModelPickerPresented = false
         isModelActionInFlight = false
         isThinkingActionInFlight = false
+        isFastModeActionInFlight = false
         isGlobalScopeActionInFlight = false
         pickleRuntimeDefaults = ("", .automatic)
         scopeStaging = PickyComposerRuntimeScopeStaging()
@@ -189,6 +191,16 @@ final class PickyComposerRuntimeControlsModel: ObservableObject {
             try await commands.setSessionThinkingLevel(sessionID: sessionID, thinkingLevel: thinkingLevel)
         } finish: { [weak self] in
             self?.isThinkingActionInFlight = false
+        }
+    }
+
+    func setFastMode(_ enabled: Bool, commands: PickySessionCommands, sessionID: String) {
+        let token = SessionToken(sessionID: sessionID, generation: sessionGeneration)
+        isFastModeActionInFlight = true
+        runMutation(token: token, commands: commands, dismissPickerOnSuccess: false) {
+            try await commands.setSessionFastMode(sessionID: sessionID, enabled: enabled)
+        } finish: { [weak self] in
+            self?.isFastModeActionInFlight = false
         }
     }
 

@@ -336,11 +336,13 @@ enum PickyCommandType: String, Codable, Equatable {
     case resetMainAgent
     case abortMainAgent
     case setMainAgentThinkingLevel
+    case setMainAgentFastMode
     case cycleSessionThinkingLevel
     case listSessionRuntimeOptions
     case setGlobalModelScope
     case setSessionModel
     case setSessionThinkingLevel
+    case setSessionFastMode
     case cycleSessionModel
     case listSlashCommands
     case getAutocompleteCapabilities
@@ -1013,14 +1015,6 @@ struct PickyMainAgentMessage: Codable, Equatable, Identifiable {
     let role: Role
     let text: String
     let createdAt: Date
-}
-
-struct PickyMainAgentModelOption: Codable, Equatable, Identifiable {
-    var id: String { pattern }
-    let provider: String
-    let modelId: String
-    let displayName: String
-    let pattern: String
 }
 
 /// Snapshot of where Picky's always-on main agent currently has its Pi

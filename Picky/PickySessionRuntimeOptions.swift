@@ -2,8 +2,18 @@
 //  PickySessionRuntimeOptions.swift
 //  Picky
 //
-//  Value types for the per-session runtime model/thinking selectors.
+//  Value types for the main-agent and per-session runtime model/thinking selectors.
 //
+
+struct PickyMainAgentModelOption: Codable, Equatable, Identifiable {
+    var id: String { pattern }
+    let provider: String
+    let modelId: String
+    let displayName: String
+    let pattern: String
+    /// Whether provider fast mode applies to this model. Absent from older daemons.
+    var fastModeSupported: Bool? = nil
+}
 
 struct PickySessionRuntimeModelOption: Codable, Equatable, Identifiable {
     var id: String { "\(provider)/\(modelId)" }
@@ -11,6 +21,7 @@ struct PickySessionRuntimeModelOption: Codable, Equatable, Identifiable {
     let modelId: String
     let displayName: String
     let pattern: String
+    var fastModeSupported: Bool? = nil
 }
 
 struct PickySessionRuntimeModelIdentity: Codable, Equatable {

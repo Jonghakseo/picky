@@ -367,7 +367,13 @@ struct PickyConversationComposerView: View {
             onSetAllModelsEnabled: { runtimeControls.setAllModelsEnabled($0, firstAvailablePattern: $1) },
             onSetStagedScopePattern: { runtimeControls.setStagedScopePattern($0, selected: $1) },
             onReloadGlobalScope: { runtimeControls.reloadGlobalScope(commands: commands, sessionID: session.id) },
-            onApplyGlobalScope: { runtimeControls.applyStagedGlobalScope(commands: commands, sessionID: session.id) }
+            onApplyGlobalScope: { runtimeControls.applyStagedGlobalScope(commands: commands, sessionID: session.id) },
+            fastMode: PickyComposerFastModeControlState(
+                enabled: session.fastMode,
+                supported: session.fastModeSupported,
+                isUpdating: runtimeControls.isFastModeActionInFlight
+            ),
+            onToggleFastMode: { runtimeControls.setFastMode(!session.fastMode, commands: commands, sessionID: session.id) }
         )
     }
 

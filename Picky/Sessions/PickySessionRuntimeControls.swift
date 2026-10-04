@@ -65,6 +65,14 @@ extension PickySessionListViewModel {
         ))
     }
 
+    func setSessionFastMode(sessionID: String, enabled: Bool) async throws {
+        try await sendRuntimeControlCommand(PickyCommandEnvelope(
+            type: .setSessionFastMode,
+            sessionId: sessionID,
+            enabled: enabled
+        ))
+    }
+
     func cycleThinkingLevel(sessionID: String) async throws {
         pickySessionLog("cycle thinking level session=\(sessionID)")
         try await sendRuntimeControlCommand(PickyCommandEnvelope(type: .cycleSessionThinkingLevel, sessionId: sessionID))

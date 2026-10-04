@@ -40,6 +40,10 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     /// System notification on completion, independent of `notifyMainOnCompletion`.
     /// Wire name kept for persisted sessions; see agentd `PickyAgentSessionSchema`.
     var notifyMacOSOnCompletion: Bool? = nil
+    /// Provider fast mode chosen for this Pickle (absent = off) and whether the
+    /// current model honours it; the composer offers the toggle only when supported.
+    var fastMode: Bool? = nil
+    var fastModeSupported: Bool? = nil
     var archived: Bool? = nil, archivedAt: Date? = nil
     var pinned: Bool? = nil
     /// Newest user-authored input the daemon accepted, typed by the daemon so the
@@ -50,6 +54,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         case agentCycle, asyncWorkSummary, asyncTasks, completionTickets, asyncControl
         case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, scheduledMessages, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
         case pendingExtensionUiRequest, notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
+        case fastMode, fastModeSupported
     }
     init(
         id: String,
@@ -86,6 +91,8 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
         notifyMainOnCompletion: Bool? = nil,
         notifyMacOSOnCompletion: Bool? = nil,
+        fastMode: Bool? = nil,
+        fastModeSupported: Bool? = nil,
         archived: Bool? = nil, archivedAt: Date? = nil,
         pinned: Bool? = nil,
         lastRequest: PickySessionLastRequest? = nil
@@ -124,6 +131,8 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.pendingExtensionUiRequest = pendingExtensionUiRequest
         self.notifyMainOnCompletion = notifyMainOnCompletion
         self.notifyMacOSOnCompletion = notifyMacOSOnCompletion
+        self.fastMode = fastMode
+        self.fastModeSupported = fastModeSupported
         self.archived = archived
         self.archivedAt = archivedAt
         self.pinned = pinned
@@ -166,6 +175,8 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         pendingExtensionUiRequest = try container.decodeIfPresent(PickyExtensionUiRequest.self, forKey: .pendingExtensionUiRequest)
         notifyMainOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletion)
         notifyMacOSOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMacOSOnCompletion)
+        fastMode = try container.decodeIfPresent(Bool.self, forKey: .fastMode)
+        fastModeSupported = try container.decodeIfPresent(Bool.self, forKey: .fastModeSupported)
         archived = try container.decodeIfPresent(Bool.self, forKey: .archived)
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned)

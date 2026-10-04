@@ -2630,10 +2630,45 @@ describe("PiSdkRuntime", () => {
     };
 
     // Pickle runtimes supply nothing and keep the exact factory list they always had.
-    expect(await captureFactoryNames({})).toEqual(["picky-input-rewrite-observer"]);
+    expect(await captureFactoryNames({})).toEqual(["picky-fast-mode", "picky-input-rewrite-observer"]);
     expect(await captureFactoryNames({
       resourceLoaderOptions: { extensionFactories: [createPickyRuntimeContractExtension(() => "contract") as never] },
-    })).toEqual(["picky-runtime-contract", "picky-input-rewrite-observer"]);
+    })).toEqual(["picky-runtime-contract", "picky-fast-mode", "picky-input-rewrite-observer"]);
+  });
+
+  it("applies fast mode only to requests of the handle that enabled it", async () => {
+    // Pickles share one PiSdkRuntime per daemon; each handle must own its switch.
+    type ProviderRequestHandler = (event: { payload: unknown }, ctx: { model?: { provider: string; id: string } }) => unknown;
+    const handlers: ProviderRequestHandler[] = [];
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async (serviceOptions) => {
+        const factories: Array<{ name?: string; factory?: (pi: unknown) => void }> = serviceOptions.resourceLoaderOptions?.extensionFactories ?? [];
+        factories.find((entry) => entry.name === "picky-fast-mode")?.factory?.({
+          on: (event: string, handler: ProviderRequestHandler) => { if (event === "before_provider_request") handlers.push(handler); },
+        });
+        return { diagnostics: [] };
+      }) as never,
+      createSessionFromServices: vi.fn(async () => ({ session: new FakeSession(), extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+      createRuntime: vi.fn(async (factory, createOptions) => {
+        const result = await factory({ cwd: createOptions.cwd, agentDir: createOptions.agentDir, sessionManager: createOptions.sessionManager });
+        return { session: result.session, services: result.services, diagnostics: result.diagnostics, setRebindSession: vi.fn(), cwd: createOptions.cwd, newSession: vi.fn(async () => ({ cancelled: false })) };
+      }) as never,
+    });
+    const fast = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "pickle-fast" });
+    const standard = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "pickle-standard" });
+    expect(handlers).toHaveLength(2);
+
+    fast.setFastMode?.(true);
+    const codex = { model: { provider: "openai-codex", id: "gpt-5.5" } };
+    const payload = { model: "gpt-5.5", input: [] };
+    expect(await handlers[0]!({ payload }, codex)).toEqual({ ...payload, service_tier: "priority" });
+    expect(await handlers[1]!({ payload }, codex)).toBeUndefined();
+    expect(fast.getFastModeState?.()).toEqual({ enabled: true, supported: false });
+    expect(standard.getFastModeState?.()).toEqual({ enabled: false, supported: false });
+
+    fast.setFastMode?.(false);
+    expect(await handlers[0]!({ payload }, codex)).toBeUndefined();
   });
 
   it("skips bootstrap injection when the session already has messages", async () => {
@@ -2982,8 +3017,8 @@ describe("PiSdkRuntime", () => {
 
     await expect(handle.listRuntimeOptions?.()).resolves.toEqual({
       models: [
-        { provider: "anthropic", modelId: "claude-haiku", displayName: "anthropic/claude-haiku", pattern: "anthropic/claude-haiku" },
-        { provider: "openai-codex", modelId: "gpt-5.5", displayName: "openai-codex/gpt-5.5", pattern: "openai-codex/gpt-5.5" },
+        { provider: "anthropic", modelId: "claude-haiku", displayName: "anthropic/claude-haiku", pattern: "anthropic/claude-haiku", fastModeSupported: false },
+        { provider: "openai-codex", modelId: "gpt-5.5", displayName: "openai-codex/gpt-5.5", pattern: "openai-codex/gpt-5.5", fastModeSupported: true },
       ],
       thinkingLevels: ["low", "high"],
       currentModel: { provider: "openai-codex", modelId: "gpt-5.5" },

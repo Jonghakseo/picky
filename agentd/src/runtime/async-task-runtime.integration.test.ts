@@ -328,7 +328,7 @@ it.each(["waiting_for_input", "blocked", "completed", "blocked-completed"] as co
   expect(projections.at(-1)?.status).toBe(expectedStatus);
   console.log("EMPTY_REENTRY_BEFORE", JSON.stringify({ persistedStatus, disk: [disk?.status, disk?.lastSummary, disk?.asyncWorkSummary], saved: f.saved.slice(savedBefore).map(s => [s.status, s.asyncWorkSummary?.tracking]), v2: [snapshot?.type, projections.at(-1)?.status], notifications: f.notifications.length }));
   expect(f.notifications).toEqual([]);
-  await restarted.setSessionModel("session-sdk", "w3-offline", "finite");
+  await restarted.runtimeControls.setModel("session-sdk", "w3-offline", "finite");
   ws.send(JSON.stringify({ type: "followUp", id: "first-input", protocolVersion: PROTOCOL_VERSION, sessionId: "session-sdk", text: "First input after restart" }));
   await vi.waitFor(() => expect(wire.some(event => event.type === "ack" && event.commandId === "first-input" || event.type === "error" && event.commandId === "first-input")).toBe(true));
   expect(wire.some(event => event.type === "error" && event.commandId === "first-input")).toBe(false);
@@ -349,7 +349,7 @@ it.each(["waiting_for_input", "completed"] as const)("reopens admission for an i
   const restarted = new SessionSupervisor(f.runtime, f.store, { enableAsyncTasksForSession: (id) => id === "session-sdk" });
   await restarted.load();
   await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncControl?.admissionState).toBe("open"), { timeout: 5_000 });
-  await restarted.setSessionModel("session-sdk", "w3-offline", "finite");
+  await restarted.runtimeControls.setModel("session-sdk", "w3-offline", "finite");
   // Pi extensions (e.g. scheduled session delivery) inject prompts without any Picky input command.
   f.currentApi().sendUserMessage("Scheduled delivery after restart");
   await vi.waitFor(() => expect(JSON.stringify(f.requests.at(-1))).toContain("Scheduled delivery after restart"));
@@ -366,7 +366,7 @@ it("keeps admission closed after restart while async work from the previous owne
   await restarted.load();
   await vi.waitFor(() => expect(restarted.asyncControls.context("session-sdk").tracking).toBe("ready"));
   await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
-  await restarted.setSessionModel("session-sdk", "w3-offline", "finite");
+  await restarted.runtimeControls.setModel("session-sdk", "w3-offline", "finite");
   const requestsBefore = f.requests.length;
   f.currentApi().sendUserMessage("Scheduled delivery while work is unknown");
   // The model fence still rejects the injected prompt; the rejection is persisted instead of reaching the model.

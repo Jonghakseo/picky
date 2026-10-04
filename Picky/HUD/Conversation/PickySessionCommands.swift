@@ -63,6 +63,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func setPickleRuntimeDefaults(modelPattern: String?, thinkingLevel: PickyPickleAgentThinkingLevel?) async throws
     func setSessionModel(sessionID: String, provider: String, modelID: String) async throws
     func setSessionThinkingLevel(sessionID: String, thinkingLevel: PickyMainAgentThinkingLevel) async throws
+    func setSessionFastMode(sessionID: String, enabled: Bool) async throws
     func cycleThinkingLevel(sessionID: String) async throws
     func cycleModel(sessionID: String, direction: PickyModelCycleDirection) async throws
     func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws
@@ -230,6 +231,8 @@ struct PickyConversationComposerProjection {
     let notifyMainOnCompletion: Bool?
     let notifyMacOSOnCompletion: Bool?
     let currentAssistantRun: PickyAssistantRunMetadata?
+    let fastMode: Bool
+    let fastModeSupported: Bool
     let messageContext: PickyComposerMessageContext
     let queuedSteers: [PickyQueueItem]
     let queuedFollowUps: [PickyQueueItem]
@@ -252,6 +255,8 @@ struct PickyConversationComposerProjection {
         notifyMainOnCompletion = metadata.notifyMainOnCompletion
         notifyMacOSOnCompletion = metadata.notifyMacOSOnCompletion
         currentAssistantRun = metadata.currentAssistantRun
+        fastMode = metadata.fastMode == true
+        fastModeSupported = metadata.fastModeSupported == true
         messageContext = conversationStore.composerMessageContext
         let queue = queueStore.queueState.loadedValue
         queuedSteers = queue?.steers ?? []
@@ -270,6 +275,8 @@ struct PickyConversationComposerProjection {
         notifyMainOnCompletion = card.notifyMainOnCompletion
         notifyMacOSOnCompletion = card.notifyMacOSOnCompletion
         currentAssistantRun = card.currentAssistantRun
+        fastMode = card.fastMode == true
+        fastModeSupported = card.fastModeSupported == true
         messageContext = PickyComposerMessageContext(messages: card.messages)
         queuedSteers = card.queuedSteers
         queuedFollowUps = card.queuedFollowUps

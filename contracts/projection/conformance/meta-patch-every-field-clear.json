@@ -55,7 +55,9 @@
           "workRevision": 4,
           "canReleaseRuntime": false
         },
-        "messageJournalAvailable": true
+        "messageJournalAvailable": true,
+        "fastMode": true,
+        "fastModeSupported": true
       }
     },
     {
@@ -85,7 +87,9 @@
             "lastRequest": null,
             "agentCycle": null,
             "asyncWorkSummary": null,
-            "messageJournalAvailable": null
+            "messageJournalAvailable": null,
+            "fastMode": null,
+            "fastModeSupported": null
           }
         }
       ]
@@ -121,7 +125,9 @@
           "pinned": null,
           "lastRequest": null,
           "agentCycle": null,
-          "asyncWorkSummary": null
+          "asyncWorkSummary": null,
+          "fastMode": null,
+          "fastModeSupported": null
         }
       },
       "messageJournalAvailable": {

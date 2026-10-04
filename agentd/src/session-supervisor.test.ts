@@ -6429,7 +6429,7 @@ describe("SessionSupervisor", () => {
 
     await supervisor.listSlashCommands("viewed");
     await supervisor.getAutocompleteCapabilities("viewed");
-    await supervisor.listSessionRuntimeOptions("viewed");
+    await supervisor.runtimeControls.listOptions("viewed");
     // Match the SDK's resume diagnostic sequence after the supervisor binds the handle.
     const diagnostics = [
       "pi transcript repaired: skipped 1 interrupted tool call(s) (bash) from a previous runtime",
@@ -6465,11 +6465,44 @@ describe("SessionSupervisor", () => {
     const session = await supervisor.create(context("runtime controls"));
     runtime.handle!.assistantRunMetadata = { model: "openai-codex/gpt-5.5", thinkingLevel: "low" };
 
-    await expect(supervisor.listSessionRuntimeOptions(session.id)).resolves.toEqual(runtime.handle!.runtimeOptions);
-    await expect(supervisor.setSessionModel(session.id, "openai-codex", "gpt-5.5")).resolves.toMatchObject({ currentAssistantRun: { model: "openai-codex/gpt-5.5" } });
-    await expect(supervisor.setSessionThinkingLevel(session.id, "high")).resolves.toMatchObject({ currentAssistantRun: { thinkingLevel: "low" } });
+    await expect(supervisor.runtimeControls.listOptions(session.id)).resolves.toEqual(runtime.handle!.runtimeOptions);
+    await expect(supervisor.runtimeControls.setModel(session.id, "openai-codex", "gpt-5.5")).resolves.toMatchObject({ currentAssistantRun: { model: "openai-codex/gpt-5.5" } });
+    await expect(supervisor.runtimeControls.setThinkingLevel(session.id, "high")).resolves.toMatchObject({ currentAssistantRun: { thinkingLevel: "low" } });
     expect(runtime.handle!.exactModels).toEqual([{ provider: "openai-codex", modelId: "gpt-5.5" }]);
     expect(runtime.handle!.modelPatterns).toEqual([]);
+  });
+
+  it("persists a Pickle's fast mode choice, follows model support, and restores it on resume", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-fast-mode-"));
+    const store = new SessionStore(dir);
+    const runtime = new MockRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    const created = await supervisor.create(context("fast mode"));
+    await waitUntil(() => supervisor.get(created.id)?.fastModeSupported === true);
+    expect(supervisor.get(created.id)?.fastMode).toBeUndefined();
+
+    await expect(supervisor.runtimeControls.setFastMode(created.id, true)).resolves.toMatchObject({ fastMode: true, fastModeSupported: true });
+    expect((await store.loadReadOnly(created.id))?.fastMode).toBe(true);
+
+    // The choice survives a model without fast mode; only availability changes.
+    await expect(supervisor.runtimeControls.setModel(created.id, "mock", "opus-4-7")).resolves.toMatchObject({ fastMode: true, fastModeSupported: false });
+
+    await store.save({ ...(await store.loadReadOnly(created.id))!, status: "completed", logs: ["pi session: /tmp/fast-mode.jsonl"] });
+    const resumedHandles: RuntimeSessionHandle[] = [];
+    const resumingRuntime = new MockRuntime();
+    Object.assign(resumingRuntime, {
+      resume: async () => {
+        const handle = await resumingRuntime.prewarm();
+        resumedHandles.push(handle);
+        return handle;
+      },
+    });
+    const restarted = new SessionSupervisor(resumingRuntime, store);
+    await restarted.load();
+    await expect(restarted.runtimeControls.setModel(created.id, "mock", "gpt-5.5")).resolves.toMatchObject({ fastMode: true, fastModeSupported: true });
+    expect(resumedHandles).toHaveLength(1);
+    expect(resumedHandles[0]!.getFastModeState?.()).toEqual({ enabled: true, supported: true });
   });
 
   it("resolves a detached runtime before serializing direct model mutations", async () => {
@@ -6491,7 +6524,7 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, store);
     await supervisor.load();
 
-    const selection = supervisor.setSessionModel("restored-runtime-control-session", "openai-codex", "gpt-5.5");
+    const selection = supervisor.runtimeControls.setModel("restored-runtime-control-session", "openai-codex", "gpt-5.5");
     await waitUntil(() => runtime.resumeCalls.length === 1);
     runtime.resolvePendingResume();
 
@@ -6518,9 +6551,9 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, store);
     await supervisor.load();
 
-    const first = supervisor.setSessionModel("restored-runtime-control-fifo-session", "provider", "first");
+    const first = supervisor.runtimeControls.setModel("restored-runtime-control-fifo-session", "provider", "first");
     await waitUntil(() => runtime.resumeCalls.length === 1);
-    const second = supervisor.setSessionModel("restored-runtime-control-fifo-session", "provider", "second");
+    const second = supervisor.runtimeControls.setModel("restored-runtime-control-fifo-session", "provider", "second");
     runtime.resolvePendingResume();
 
     await Promise.all([first, second]);
@@ -6548,9 +6581,9 @@ describe("SessionSupervisor", () => {
       if (!firstCompleted) secondStartedBeforeFirstCompleted = true;
     };
 
-    const first = supervisor.setSessionModel(session.id, "provider", "first");
+    const first = supervisor.runtimeControls.setModel(session.id, "provider", "first");
     await waitUntil(() => runtime.handle!.exactModels.length === 1);
-    const second = supervisor.setSessionModel(session.id, "provider", "second");
+    const second = supervisor.runtimeControls.setModel(session.id, "provider", "second");
 
     releaseFirst();
     await Promise.all([first, second]);
@@ -6585,7 +6618,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.slashCommands = [{ name: "skill:general-click-event-insight", description: "Product insight", source: "skill" }];
     runtime.handle!.modelCycleResults = [{ model: "anthropic/claude-opus-4-7", thinkingLevel: "high" }];
 
-    const cycling = supervisor.cycleSessionModel("restored-product-session", "forward");
+    const cycling = supervisor.runtimeControls.cycleModel("restored-product-session", "forward");
     await settle();
 
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/product-pi-session.jsonl", cwd: "/tmp/product", sessionId: "restored-product-session" }]);

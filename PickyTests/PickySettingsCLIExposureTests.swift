@@ -15,6 +15,7 @@ struct PickySettingsCLIExposureTests {
             "hud.dockSizePreset",
             "mainAgent.model",
             "mainAgent.thinkingLevel",
+            "mainAgent.fastMode",
             "pickleAgent.model",
             "pickleAgent.thinkingLevel",
             "notifications.newPicklesNotifyMainOnCompletion",
@@ -97,6 +98,24 @@ struct PickySettingsCLIExposureTests {
         )
         do {
             try PickySettingsCLIExposure.validateAccess(for: mainAgentDenied, caller: "mainAgent")
+            Issue.record("Expected main-agent policy denial")
+        } catch let error as PickySettingsCLIExposureError {
+            #expect(error.code == "SETTINGS_KEY_NOT_ALLOWED_FOR_MAIN_AGENT")
+        }
+    }
+
+    /// Fast mode costs more, so the user can toggle it but the main agent may not change it.
+    @Test func letsOnlyTheUserToggleMainAgentFastMode() throws {
+        var settings = PickySettings.defaults()
+        #expect(try PickySettingsCLIExposure.currentValue(for: "mainAgent.fastMode", in: settings) == .bool(false))
+        let toggled = try PickySettingsCLIExposure.apply(key: "mainAgent.fastMode", value: .string("toggle"), toggle: true, displayId: nil, to: &settings)
+        #expect(toggled == .bool(true))
+        #expect(settings.mainAgentFastMode)
+
+        let entry = try PickySettingsCLIExposure.entry(for: "mainAgent.fastMode")
+        try PickySettingsCLIExposure.validateAccess(for: entry, caller: nil)
+        do {
+            try PickySettingsCLIExposure.validateAccess(for: entry, caller: "mainAgent")
             Issue.record("Expected main-agent policy denial")
         } catch let error as PickySettingsCLIExposureError {
             #expect(error.code == "SETTINGS_KEY_NOT_ALLOWED_FOR_MAIN_AGENT")

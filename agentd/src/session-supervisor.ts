@@ -39,14 +39,7 @@ import { executeUserBash as runUserBash, type UserBashDeps } from "./application
 import { UserOperationTracker } from "./application/user-operation-tracker.js";
 import { cancelPendingExtensionUiForUserInput } from "./application/pending-extension-ui-cancellation.js";
 import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
-import {
-  cycleModel as cycleRuntimeModel,
-  cycleThinkingLevel as cycleRuntimeThinkingLevel,
-  listRuntimeOptions as listRuntimeControlOptions,
-  setModel as setRuntimeModel,
-  setThinkingLevel as setRuntimeThinkingLevel,
-  type RuntimeControlDeps,
-} from "./application/session-runtime-controls.js";
+import { SessionRuntimeControls } from "./application/session-runtime-controls.js";
 import type { SessionDiffView } from "./domain/git-diff.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { diffQueueRemovedItems, dropAlreadyMaterializedQueueEntries, extractPickyPromptUserInstruction, queueItems, queueSubmissionSummary, queueTextMatchesUserText, sameQueueItems, type PendingQueueDelivery } from "./domain/queue-policy.js";
@@ -96,7 +89,6 @@ export class SessionSupervisor extends EventEmitter {
   private readonly sessionProjectionEpoch = randomUUID();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
-  private runtimeControlQueue = new KeyedSerialQueue();
   private turnActivity = new Map<string, PickyActivitySummary>();
   private runtimeEventChains = new Map<string, Promise<void>>();
   private emitChains = new Map<string, Promise<void>>();
@@ -378,6 +370,7 @@ export class SessionSupervisor extends EventEmitter {
   async resetMainAgent(): Promise<void> { await this.mainAgent.resetMainAgent(); }
   async abortMainAgent(): Promise<void> { await this.mainAgent.abortMainAgent(); }
   async setMainAgentThinkingLevel(level: ThinkingLevel): Promise<void> { await this.mainAgent.setMainAgentThinkingLevel(level); }
+  setMainAgentFastMode(enabled: boolean): void { this.mainAgent.setMainAgentFastMode(enabled); }
   async listMainAgentModels(): Promise<PickyMainAgentModelOption[]> { return this.mainAgent.listMainAgentModels(); }
   async setMainAgentModel(pattern: string): Promise<void> { await this.mainAgent.setMainAgentModel(pattern); }
   async setDisabledBuiltinTools(names: readonly string[]): Promise<void> { await this.mainAgent.setDisabledBuiltinTools(names); }
@@ -962,48 +955,24 @@ export class SessionSupervisor extends EventEmitter {
     return this.asyncControls.archive(sessionId, archived, archiveMode, requestId);
   }
 
-  async listSessionRuntimeOptions(sessionId: string) {
-    return listRuntimeControlOptions(this.runtimeControlDeps(), sessionId);
-  }
-
-  async setSessionModel(sessionId: string, provider: string, modelId: string): Promise<PickyAgentSession> {
-    return this.runRuntimeControlMutation(sessionId, () => setRuntimeModel(this.runtimeControlDeps(), sessionId, provider, modelId));
-  }
-
   async setGlobalModelScope(mode: "all" | "exact", patterns: string[] | undefined, expectedRevision: string): Promise<void> {
     if (!this.runtime.setGlobalModelScope) throw new Error("Runtime does not support global model scope changes");
     await this.runtime.setGlobalModelScope({ mode, patterns, expectedRevision });
   }
 
-  async setSessionThinkingLevel(sessionId: string, thinkingLevel: ThinkingLevel): Promise<PickyAgentSession> {
-    return this.runRuntimeControlMutation(sessionId, () => setRuntimeThinkingLevel(this.runtimeControlDeps(), sessionId, thinkingLevel));
-  }
+  /** Model, thinking level, and fast mode controls for one Pickle's live runtime. */
+  readonly runtimeControls = new SessionRuntimeControls({
+    handle: (id, action) => this.runtimeHandleForSessionCommand(id, action),
+    session: (id) => this.mustGet(id),
+    patch: (id, patch) => this.patch(id, patch),
+    commit: (id, work) => this.runSessionWrite(id, work),
+    // Runtime controls already hold runSessionWrite; reuse the same commit without relocking.
+    commitPatch: async (id, patch) => {
+      const commit = await commitSessionProjection({ ...this.sessionCommitDependencies(), runWrite: (_id, work) => work() }, id, (before) => ({ ...before, ...patch, updatedAt: new Date().toISOString() }));
+      this.emit("sessionMeta", commit.after);
+    },
+  });
 
-  async cycleSessionThinkingLevel(sessionId: string): Promise<PickyAgentSession> {
-    return this.runRuntimeControlMutation(sessionId, () => cycleRuntimeThinkingLevel(this.runtimeControlDeps(), sessionId));
-  }
-
-  async cycleSessionModel(sessionId: string, direction: ModelCycleDirection): Promise<PickyAgentSession> {
-    return this.runRuntimeControlMutation(sessionId, () => cycleRuntimeModel(this.runtimeControlDeps(), sessionId, direction));
-  }
-
-  private runtimeControlDeps(): RuntimeControlDeps {
-    return {
-      handle: (id, action) => this.runtimeHandleForSessionCommand(id, action),
-      session: (id) => this.mustGet(id),
-      patch: (id, patch) => this.patch(id, patch),
-      commit: (id, work) => this.runSessionWrite(id, work),
-      // Runtime controls already hold runSessionWrite; reuse the same commit without relocking.
-      applyAssistantRun: async (id, currentAssistantRun) => {
-        const commit = await commitSessionProjection({ ...this.sessionCommitDependencies(), runWrite: (_id, work) => work() }, id, (before) => ({ ...before, currentAssistantRun, updatedAt: new Date().toISOString() }));
-        this.emit("sessionMeta", commit.after);
-      },
-    };
-  }
-
-  private runRuntimeControlMutation<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
-    return this.runtimeControlQueue.run(sessionId, work);
-  }
   async listRewindTargets(sessionId: string): Promise<RewindTarget[]> {
     return rewindListTargets(this.rewindDeps(), sessionId);
   }
@@ -1817,6 +1786,8 @@ export class SessionSupervisor extends EventEmitter {
     // no question bubble for the user to answer.
     handle.setHostPendingExtensionUiPresent?.(() => Boolean(this.sessions.get(sessionId)?.pendingExtensionUiRequest));
     handle.setResourceReloadHost?.({ runInput: (effect) => this.asyncControls.input(sessionId, effect) });
+    // The session field owns the fast mode choice; a fresh handle starts off.
+    handle.setFastMode?.(this.sessions.get(sessionId)?.fastMode === true);
     await this.scheduledMessages.track(sessionId, handle.getPiSessionId?.());
     const todoResolution = handle.getTodoStateResolution?.();
     if (todoResolution?.resolved) await this.updateTodoState(sessionId, todoResolution.todoState);
@@ -1967,8 +1938,16 @@ export class SessionSupervisor extends EventEmitter {
   }
   private aggregateSession(before: PickyAgentSession, proposed: PickyAgentSession): PickyAgentSession {
     const pendingInput = (this.pendingQueueDeliveries.get(proposed.id)?.length ?? 0) > 0 || this.userOperations.isActive(proposed.id);
-    return aggregateAsyncSession(before, proposed, this.options.enableAsyncTasksForSession?.(proposed.id) === true,
-      this.runtimeHandles.get(proposed.id), pendingInput);
+    const handle = this.runtimeHandles.get(proposed.id);
+    const aggregated = aggregateAsyncSession(before, proposed, this.options.enableAsyncTasksForSession?.(proposed.id) === true,
+      handle, pendingInput);
+    // Every commit after a model change (picker, cycle, Pi /model, reattach)
+    // passes here, so support follows the live model without per-path hooks.
+    // Without a live handle the last known value is kept.
+    const fastModeSupported = handle?.getFastModeState?.().supported;
+    return fastModeSupported === undefined || fastModeSupported === aggregated.fastModeSupported
+      ? aggregated
+      : { ...aggregated, fastModeSupported };
   }
 
   private async runSessionWrite(sessionId: string, work: () => Promise<void>): Promise<void> {

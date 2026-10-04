@@ -36,6 +36,8 @@ struct PickySessionMetadata: Equatable {
     var currentAssistantRun: PickyAssistantRunMetadata?
     var notifyMainOnCompletion: Bool?
     var notifyMacOSOnCompletion: Bool?
+    var fastMode: Bool?
+    var fastModeSupported: Bool?
     var archived: Bool?
     var archivedAt: Date?
     var pinned: Bool?
@@ -61,6 +63,8 @@ struct PickySessionMetadata: Equatable {
         currentAssistantRun = session.currentAssistantRun
         notifyMainOnCompletion = session.notifyMainOnCompletion
         notifyMacOSOnCompletion = session.notifyMacOSOnCompletion
+        fastMode = session.fastMode
+        fastModeSupported = session.fastModeSupported
         archived = session.archived
         self.archivedAt = session.archivedAt ?? archivedAt
         pinned = session.pinned
@@ -88,6 +92,8 @@ struct PickySessionMetadata: Equatable {
         currentAssistantRun = card.currentAssistantRun
         notifyMainOnCompletion = card.notifyMainOnCompletion
         notifyMacOSOnCompletion = card.notifyMacOSOnCompletion
+        fastMode = card.fastMode
+        fastModeSupported = card.fastModeSupported
         archived = card.archived
         self.archivedAt = card.archivedAt ?? archivedAt
         pinned = card.pinned

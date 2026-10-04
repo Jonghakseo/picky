@@ -38,6 +38,8 @@ enum PickySettingsCLIExposure {
         .init(key: "hud.dockSizePreset", type: .enum, choices: PickyHUDDockSizePreset.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Pickle dock size preset."),
         .init(key: "mainAgent.model", type: .string, choices: nil, writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Main agent model pattern."),
         .init(key: "mainAgent.thinkingLevel", type: .enum, choices: PickyMainAgentThinkingLevel.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Main agent thinking level."),
+        // Fast mode costs more, so only the user may change it, never the main agent itself.
+        .init(key: "mainAgent.fastMode", type: .bool, choices: nil, writable: true, mainAgentAllowed: false, supportsToggle: true, restartRequired: false, description: "Main agent provider fast mode (faster replies at a higher price, supported models only)."),
         .init(key: "pickleAgent.model", type: .string, choices: nil, writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Default model pattern for new Pickles."),
         .init(key: "pickleAgent.thinkingLevel", type: .enum, choices: PickyPickleAgentThinkingLevel.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Default thinking level for new Pickles."),
         .init(key: "notifications.newPicklesNotifyMainOnCompletion", type: .bool, choices: nil, writable: false, mainAgentAllowed: false, supportsToggle: false, restartRequired: false, description: "Whether new Pickles report completion to Main Picky."),
@@ -74,6 +76,7 @@ enum PickySettingsCLIExposure {
         case "hud.dockSizePreset": return .string(settings.hudDockSizePreset.rawValue)
         case "mainAgent.model": return .string(settings.mainAgentModelPattern)
         case "mainAgent.thinkingLevel": return .string(settings.mainAgentThinkingLevel.rawValue)
+        case "mainAgent.fastMode": return .bool(settings.mainAgentFastMode)
         case "pickleAgent.model": return .string(settings.pickleAgentModelPattern)
         case "pickleAgent.thinkingLevel": return .string(settings.pickleAgentThinkingLevel.rawValue)
         case "notifications.newPicklesNotifyMainOnCompletion": return .bool(settings.notifications.notifyMainOnCompletionForNewPickles)
@@ -138,6 +141,9 @@ enum PickySettingsCLIExposure {
             }
             settings.mainAgentThinkingLevel = level
             return .string(level.rawValue)
+        case "mainAgent.fastMode":
+            settings.mainAgentFastMode = toggle ? !settings.mainAgentFastMode : try bool(value, for: key)
+            return .bool(settings.mainAgentFastMode)
         case "pickleAgent.model":
             settings.pickleAgentModelPattern = try string(value, for: key)
             return .string(settings.pickleAgentModelPattern)

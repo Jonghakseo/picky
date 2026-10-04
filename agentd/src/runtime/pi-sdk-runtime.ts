@@ -36,6 +36,7 @@ import { writeFilePathFromRawArgs } from "./write-file-path.js";
 import { PiSdkRuntimeSession } from "./pi-sdk-runtime-session.js";
 import { keepPickyImageInputEnabled } from "./picky-image-input-policy.js";
 import { pickyMcpExtensions, type PickyMcpRuntimeTarget } from "./picky-mcp.js";
+import { PickyFastModeSwitch } from "./picky-fast-mode-extension.js";
 
 // Re-exported so existing importers keep working.
 export { branchTranscriptFromEntries, writeFilePathFromRawArgs };
@@ -180,6 +181,8 @@ export class PiSdkRuntime implements AgentRuntime {
     const inputRewriteObserver = new PiInputRewriteObserver((deliveryID, finalText) => {
       sessionHandle?.recordExpectedInputAlias(deliveryID, finalText);
     });
+    // Owned by this handle only; the host restores a persisted choice after attach.
+    const fastMode = new PickyFastModeSwitch();
     const createServices = this.options.createServices ?? createAgentSessionServices;
     const createSessionFromServices = this.options.createSessionFromServices ?? createAgentSessionFromServices;
     const createRuntimeImpl = this.options.createRuntime ?? createAgentSessionRuntime;
@@ -194,7 +197,7 @@ export class PiSdkRuntime implements AgentRuntime {
       // The rewrite observer must be the last `input` handler to see every transform. The composed
       // loader runs owned providers after ordinary extensions, so it ends whichever loader runs last.
       const loadsOwnedProviders = refresh !== undefined && settingsManager !== undefined;
-      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), ...mcpFactories, ...(loadsOwnedProviders ? [] : [inputRewriteObserver.inlineExtension])];
+      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), ...mcpFactories, fastMode.extension, ...(loadsOwnedProviders ? [] : [inputRewriteObserver.inlineExtension])];
       const normalOptions = {
         ...resourceLoaderOptions, ...providerOptions,
         eventBus: ordinaryBus,
@@ -292,6 +295,7 @@ export class PiSdkRuntime implements AgentRuntime {
       setExternalDeliveryPaused,
       asyncTasks,
       asyncFence,
+      fastMode,
     );
     sessionHandle = handle;
     await handle.bindCurrentSession().catch(async (error) => { await handle.dispose(); throw error; });

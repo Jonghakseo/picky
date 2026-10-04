@@ -28144,6 +28144,108 @@
           }
         }
       }
+    },
+    "hud.composer.fastMode.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast 모드"
+          }
+        }
+      },
+      "comment": "Accessibility label of the composer toggle for provider fast mode."
+    },
+    "hud.composer.fastMode.on.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast mode on: faster replies at a higher price"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast 모드 켜짐: 응답이 빨라지는 대신 요금이 더 나와요"
+          }
+        }
+      },
+      "comment": "Help for the composer fast mode toggle while it is on. Clicking turns it off."
+    },
+    "hud.composer.fastMode.off.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on Fast mode: faster replies at a higher price"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast 모드 켜기: 응답이 빨라지는 대신 요금이 더 나와요"
+          }
+        }
+      },
+      "comment": "Help for the composer fast mode toggle while it is off."
+    },
+    "settings.field.mainAgentFastMode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast 모드"
+          }
+        }
+      },
+      "comment": "Main agent settings toggle for provider fast mode."
+    },
+    "settings.field.mainAgentFastMode.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gets faster replies at a higher price. Applies only to models that support it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답이 빨라지는 대신 요금이 더 나와요. 지원하는 모델에서만 적용돼요."
+          }
+        }
+      },
+      "comment": "Note under the main agent fast mode toggle."
+    },
+    "settings.field.mainAgentFastMode.unsupported": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected model doesn't support Fast mode."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 모델은 Fast 모드를 지원하지 않아요."
+          }
+        }
+      },
+      "comment": "Note when the selected main agent model has no fast mode; the toggle is disabled."
     }
   },
   "version": "1.0"

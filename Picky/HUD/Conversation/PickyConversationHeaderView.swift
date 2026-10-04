@@ -157,7 +157,10 @@ struct PickyConversationHeaderView: View {
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible
             )
             conversationMenuButton
-            PickyConversationCloseButton(onClose: requestClose)
+            PickyConversationCloseButton(
+                onClose: requestClose,
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible
+            )
         }
     }
 
@@ -660,6 +663,7 @@ struct PickyConversationCloseButton: View {
     static var helpText: String { L10n.t("hud.header.close.help") }
 
     let onClose: () -> Void
+    var isCommandShortcutHintVisible = false
 
     var body: some View {
         Button(action: onClose) {
@@ -669,6 +673,14 @@ struct PickyConversationCloseButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(PickyConversationCloseButtonStyle())
+        .overlay(alignment: .topTrailing) {
+            PickyShortcutKeyBadge(label: "W")
+                .offset(x: 9, y: -7)
+                .opacity(isCommandShortcutHintVisible ? 1 : 0)
+                .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
+                .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
+                .allowsHitTesting(false)
+        }
         .help(Self.helpText)
         .accessibilityLabel(L10n.t("hud.header.close.accessibilityLabel"))
         .accessibilityHint(L10n.t("hud.header.close.accessibilityHint"))

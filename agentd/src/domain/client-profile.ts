@@ -10,6 +10,11 @@
  * Only `broadcast` is gated. Unicast replies to a requesting socket stay
  * ungated so a CLI never loses the answer to its own command.
  */
+import type { EventEnvelope } from "../protocol.js";
+
+/** Every event type the daemon can put on the wire. */
+type PickyEventType = EventEnvelope["type"];
+
 export const PICKY_CLIENT_PROFILES = ["core", "desktop"] as const;
 export type PickyClientProfile = (typeof PICKY_CLIENT_PROFILES)[number];
 
@@ -31,13 +36,18 @@ export const DESKTOP_BRIDGE_CAPABILITIES: readonly string[] = [
  * single classification point: a new event defaults to `core` (delivered to
  * everyone, which is the pre-gate behavior) until it is listed here.
  *
+ * The `satisfies` clause ties every entry to the protocol's event union, so a
+ * renamed or deleted event fails `tsc` here instead of silently un-gating
+ * itself at runtime. The import is type-only, so this stays a pure domain
+ * module with no dependency on the wire schema at runtime.
+ *
  * Deliberately absent:
  * - `quickReply`: the CLI waits for it (`cli.ts` `matchMainReplyForContext`),
  *   so gating it would hang `picky submit --wait`.
  * - `sessionReplyWritingUpdated` / `sessionToolCallPreparingUpdated`: neutral
  *   per-session status that any client could render.
  */
-export const DESKTOP_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set([
+export const DESKTOP_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set<string>([
   // Overlay windows drawn by the app over the user's screen.
   "pointerOverlayRequested",
   "annotationOverlayRequested",
@@ -48,7 +58,7 @@ export const DESKTOP_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set([
   "mainVisualNarrationSegmentCommitted",
   // Result of syncing the app's embedded SwiftTerm terminal with a Pi session.
   "terminalSessionSyncOutcome",
-]);
+] satisfies readonly PickyEventType[]);
 
 /**
  * Resolves the profile of a socket that just registered.

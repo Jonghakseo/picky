@@ -553,16 +553,43 @@ function checkPiSdkImportBoundaryFixtures() {
 // command handlers, and the services that have no other owner. It must not pull
 // the session supervisor in as a value: supervisor capabilities arrive through a
 // narrow port on the slice's context object, so the slice stays a leaf of the
-// graph and server.ts keeps deciding what a slice may reach. Type-only imports
-// are fine; they are erased and cannot start a session.
+// graph and server.ts keeps deciding what a slice may reach. That covers every
+// form that survives type erasure: value imports, re-exports (`export { X }
+// from`, `export * from`), and side-effect imports, which run the module even
+// though they bind nothing. Type-only imports are fine, whether they use
+// `import type` or inline `{ type X }`.
 const IMPORT_STATEMENT_PATTERN = /\bimport\s+(type\s+)?((?:[^;'"]|'[^']*'|"[^"]*")*?)from\s*["']([^"']+)["']/g;
+const REEXPORT_STATEMENT_PATTERN = /\bexport\s+(type\s+)?((?:[^;'"]|'[^']*'|"[^"]*")*?)from\s*["']([^"']+)["']/g;
+// `import "x";` with no binding clause: erased by nothing, runs the module.
+const SIDE_EFFECT_IMPORT_PATTERN = /\bimport\s*["']([^"']+)["']/g;
 const SESSION_SUPERVISOR_MODULE_PATTERN = /(?:^|\/)session-supervisor(?:\.js)?$/;
+
+/// Whether an import/export clause binds anything that survives type erasure.
+/// `{ type A }` does not; `{ type A, b }`, `A`, `* as ns`, and `{}` (a module
+/// that is still evaluated) do.
+function clauseBindsValue(clause) {
+  const text = clause.trim();
+  const braced = text.match(/^\{([\s\S]*)\}$/);
+  if (!braced) return true;
+  const specifiers = braced[1]
+    .split(",")
+    .map((specifier) => specifier.trim())
+    .filter(Boolean);
+  if (specifiers.length === 0) return true;
+  return specifiers.some((specifier) => !/^type\s+\S/.test(specifier));
+}
 
 function sessionSupervisorValueImport(source) {
   const text = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  for (const match of text.matchAll(IMPORT_STATEMENT_PATTERN)) {
-    if (match[1]) continue;
-    if (SESSION_SUPERVISOR_MODULE_PATTERN.test(match[3])) return match[3];
+  for (const pattern of [IMPORT_STATEMENT_PATTERN, REEXPORT_STATEMENT_PATTERN]) {
+    for (const match of text.matchAll(pattern)) {
+      if (match[1]) continue;
+      if (!SESSION_SUPERVISOR_MODULE_PATTERN.test(match[3])) continue;
+      if (clauseBindsValue(match[2])) return match[3];
+    }
+  }
+  for (const match of text.matchAll(SIDE_EFFECT_IMPORT_PATTERN)) {
+    if (SESSION_SUPERVISOR_MODULE_PATTERN.test(match[1])) return match[1];
   }
   const dynamic = text.match(/\bimport\s*\(\s*["']([^"']*session-supervisor(?:\.js)?)["']\s*\)/);
   if (dynamic) return dynamic[1];
@@ -586,10 +613,27 @@ function checkFeatureSliceSupervisorBoundaryFixtures() {
     'import {\n  SessionSupervisor,\n} from "../../session-supervisor.js";',
     'const { SessionSupervisor } = await import("../../session-supervisor.js");',
     'const supervisor = require("../../session-supervisor.js");',
+    // Re-exports hand the value to every importer of the slice.
+    'export { SessionSupervisor } from "../../session-supervisor.js";',
+    'export {\n  SessionSupervisor,\n} from "../../session-supervisor.js";',
+    'export * from "../../session-supervisor.js";',
+    'export * as supervisor from "../../session-supervisor.js";',
+    // Side-effect import: nothing is bound, but the module still runs.
+    'import "../../session-supervisor.js";',
+    'import {} from "../../session-supervisor.js";',
+    // A mixed clause still binds one value.
+    'import { type SessionSupervisor, startSession } from "../../session-supervisor.js";',
+    'import SessionSupervisor from "../../session-supervisor.js";',
+    'import * as supervisor from "../../session-supervisor.js";',
   ];
   const allowed = [
     'import type { SessionSupervisor } from "../../session-supervisor.js";',
     'import type {\n  SessionSupervisor,\n} from "../../session-supervisor.js";',
+    // Inline type specifiers are erased the same way the `import type` form is.
+    'import { type SessionSupervisor } from "../../session-supervisor.js";',
+    'import {\n  type SessionSupervisor,\n  type SessionSupervisorPort,\n} from "../../session-supervisor.js";',
+    'export type { SessionSupervisor } from "../../session-supervisor.js";',
+    'export { type SessionSupervisor } from "../../session-supervisor.js";',
     'import { logAgentd } from "../../local-log.js";',
     'import { reloadPlugins } from "../../application/plugin-reload.js";',
     '// import { SessionSupervisor } from "../../session-supervisor.js";',

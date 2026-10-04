@@ -359,28 +359,35 @@ Decisions worth keeping:
 The pilot is worth continuing only if changing one of these features stops
 spreading across the tree. Re-measure in 4-6 weeks with
 `scripts/measure-slice-cochange.sh` (`SINCE="42 days ago"` narrows the window to
-the post-split period). It walks this `git log` over the slice folders and the
-pre-slice service paths:
+the post-split period). It walks the slice folders plus the pre-slice service
+paths and judges each commit on its own:
 
-```bash
-git log --since="90 days ago" --format=%H -- \
-  agentd/src/features/settings agentd/src/features/package \
-  agentd/src/features/pi-oauth agentd/src/features/hub \
-  agentd/src/application/settings-control-broker.ts \
-  agentd/src/runtime/package-operations.ts \
-  agentd/src/runtime/pi-oauth-service.ts \
-  agentd/src/runtime/mcp-server-admin.ts \
-  agentd/src/application/hub-statistics-service.ts
-```
+- `slice`: which feature the commit belongs to. Two slices in one commit is not
+  closed.
+- `outside`: agentd files the commit touched that the slice does not own.
+- `protocol` / `server` / `swift`: whether it touched `agentd/src/protocol.ts`,
+  `agentd/src/server.ts`, or the Swift protocol models (`Picky/Protocol/`, or the
+  pre-move `Picky/Picky*Protocol.swift`).
+- `closed`: one slice, nothing outside it, and none of those three.
 
-Baseline at the time of the split (90 days before the pilot, 12 commits): the
-average commit touched **8.0 directories**, and **33%** (4 of 12) changed
-`protocol.ts` and `server.ts` in the same commit.
+The script excludes commits that are the restructuring itself rather than a
+feature change: the split (`4b4aed2e7`) and the Pi SDK import confinement
+(`e357adf34`, 11 renames). `EXCLUDE="<sha> ..."` adds more. `avg_dirs` is kept
+as a reference number only; it counts directories, not coupling. With fewer
+than five measurable commits the script prints `verdict=inconclusive` instead of
+a percentage, because one commit either way swings the rate by 20 points.
 
-Decision rule: if a later change to one of these features closes inside its slice
-folder plus that feature's UI folder, extend slicing to the next feature. If
-commits keep fanning out across `protocol.ts`, `server.ts`, and unrelated folders,
-stop slicing rather than adding more `features/` directories.
+Baseline in the 90 days before the split (11 measurable commits, 2 excluded):
+**1 of 11 closed (9%)**, **36%** (4 of 11) changed `protocol.ts` and `server.ts`
+together, **64%** (7 of 11) also changed the Swift protocol models, and the
+average commit touched 8.2 directories. The one closed commit (`ad0b408a0`) was a
+one-file import fix, so in practice no Hub feature change stayed inside its
+feature before the split.
+
+Decision rule: if the post-split window has at least five measurable commits and
+the closed rate clears 50% while `protocol.ts` + `server.ts` co-change drops
+below the 36% baseline, extend slicing to the next feature. If commits keep
+fanning out, stop slicing rather than adding more `features/` directories.
 
 ## 13. Pi integration references
 

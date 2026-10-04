@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { canDeliverEventToProfile, DEFAULT_CLIENT_PROFILE, resolveClientProfile } from "./client-profile.js";
+import { EventEnvelopeVariantSchema } from "../protocol.js";
+import { canDeliverEventToProfile, DEFAULT_CLIENT_PROFILE, DESKTOP_ONLY_EVENT_TYPES, resolveClientProfile } from "./client-profile.js";
 
 /** The capability set Picky.app registers today (PickyAgentClientRouter.registerAppCapabilities). */
 const PICKY_APP_CAPABILITIES = ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2"];
@@ -28,20 +29,20 @@ describe("client profile resolution", () => {
 });
 
 describe("desktop-only event gating", () => {
-  const desktopOnly = [
-    "pointerOverlayRequested",
-    "annotationOverlayRequested",
-    "mainNarrationChunk",
-    "mainVisualNarrationSegmentPrepared",
-    "mainVisualNarrationSegmentSentence",
-    "mainVisualNarrationSegmentCommitted",
-    "terminalSessionSyncOutcome",
-  ];
+  it("withholds every classified event from core clients and delivers it to desktop", () => {
+    expect(DESKTOP_ONLY_EVENT_TYPES.size).toBeGreaterThan(0);
+    for (const type of DESKTOP_ONLY_EVENT_TYPES) {
+      expect(canDeliverEventToProfile(type, "core"), type).toBe(false);
+      expect(canDeliverEventToProfile(type, "desktop"), type).toBe(true);
+    }
+  });
 
-  it("withholds events that need a macOS surface from core clients", () => {
-    for (const type of desktopOnly) {
-      expect(canDeliverEventToProfile(type, "core")).toBe(false);
-      expect(canDeliverEventToProfile(type, "desktop")).toBe(true);
+  // The classification is only worth anything if it names events that exist.
+  // `tsc` pins this too, but a widened type would silently lose that check.
+  it("classifies only event types the protocol can actually emit", () => {
+    const protocolEventTypes = new Set<string>(EventEnvelopeVariantSchema.options.map((option) => option.shape.type.value));
+    for (const type of DESKTOP_ONLY_EVENT_TYPES) {
+      expect(protocolEventTypes.has(type), `${type} is not a protocol event type`).toBe(true);
     }
   });
 

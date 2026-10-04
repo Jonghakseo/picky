@@ -367,6 +367,7 @@ final class CompanionManager: ObservableObject {
     private var settingsChangeCancellable: AnyCancellable?
     private var permissionCancellables = Set<AnyCancellable>()
     var sessionProjectionTransitionCancellables = Set<AnyCancellable>()
+    var sessionProjectionTransitionSource: PickySessionProjectionTransitionPublisher?
     private var mainConversationCancellable: AnyCancellable?
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
     // Lifecycle task state is mutable only through CompanionManager's extensions.
@@ -517,6 +518,7 @@ final class CompanionManager: ObservableObject {
         bindQuickInputDoubleTap()
         bindFocusPickleShortcut()
         screenContextTarget.bind()
+        subscribeToSessionProjectionTransitions()
         bindSettingsChanges()
         // Show the cursor as soon as all permissions are available and the
         // cursor preference is enabled.
@@ -538,7 +540,8 @@ final class CompanionManager: ObservableObject {
         cancelInkCapture()
         inkCaptureCoordinator.teardownEventTap()
         buddyDictationManager.cancelCurrentDictation()
-        overlayWindowManager.hideOverlay()
+        // Through the owner, so `isOverlayVisible` cannot disagree with the window.
+        overlayVisibility.clearAllReasons(animatedHide: false)
         overlayVisibility.cancelTransientHide()
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil

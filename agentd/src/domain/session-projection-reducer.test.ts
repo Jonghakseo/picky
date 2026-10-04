@@ -90,8 +90,11 @@ function matchPartial(actual: unknown, expected: unknown, path: string): void {
 const scenarios = loadScenarios();
 
 describe("projection conformance scenarios", () => {
-  it("finds the shared contract directory", () => {
-    expect(scenarios.length).toBeGreaterThan(0);
+  // Same floor as the Swift runner (ProjectionReducerConformanceTests): zero
+  // executed scenarios is not a pass, and a deleted scenario is a silently
+  // dropped regression guard on one side of the contract only.
+  it("runs at least the 16 pinned conformance scenarios", () => {
+    expect(scenarios.length, `found ${scenarios.map(({ file }) => file).join(", ")}`).toBeGreaterThanOrEqual(16);
   });
 
   for (const { file, scenario } of scenarios) {

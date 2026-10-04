@@ -123,7 +123,7 @@ extension PickySessionListViewModel {
         syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
         syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: true)
-        sessionProjectionTransitions.publish(previous: previous, applied: card, frame: .snapshot)
+        sessionProjectionTransitions.publish(snapshot: snapshot, applied: card)
     }
 
     /// Source identity is retained only at the router boundary. This hook is
@@ -177,7 +177,7 @@ extension PickySessionListViewModel {
         if !shouldArchive {
             deliverNotificationIfNeeded(for: card)
         }
-        sessionProjectionTransitions.publish(previous: previous, applied: card, frame: .transaction)
+        sessionProjectionTransitions.publish(transaction: transaction, applied: card)
     }
 
     private func transactionContainsPiSessionPathLog(_ transaction: PickySessionProjectionTransaction) -> Bool {

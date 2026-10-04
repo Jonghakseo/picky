@@ -1591,14 +1591,14 @@ final class PickySessionListViewModel: ObservableObject {
         archiveCoordinator.setMembership(sessionID, archived: false, store: archiveStore)
         childSessionReleaser?.releaseChild(sessionId: sessionID)
 
-        // Purge the session from every per-session tracking map, without
-        // rebuilding v2 membership from cards while other archived records are
-        // still loading.
+        // Purge every per-session tracking map without rebuilding v2 membership
+        // from cards while other archived records are still loading.
         if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
             storage.removeSessions(ids: [sessionID])
         } else {
             removeSession(id: sessionID)
         }
+        sessionProjectionTransitions.forgetSessions([sessionID])
         unreadSessionIDs.remove(sessionID)
         pendingDoneFlashSessionIDs.remove(sessionID)
         deliveredNotificationKeys.remove("\(sessionID):completed")
@@ -1666,6 +1666,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func clearAuthoritativelyRemovedSessionState(sessionID: String) {
+        sessionProjectionTransitions.forgetSessions([sessionID])
         archiveCoordinator.cancelCommit(sessionID: sessionID)
         clearPendingArchiveIntent(sessionID: sessionID)
         sessionProjectionRecoveryCoordinator?.remove(sessionID: sessionID)

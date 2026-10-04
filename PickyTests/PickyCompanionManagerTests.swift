@@ -572,6 +572,47 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
+    @Test func stopHidesTheOverlayThroughItsVisibilityOwner() {
+        // `stop()` used to hide the overlay window directly, which left the
+        // visibility owner reporting a visible overlay that no longer existed.
+        let ink = FakeInkCaptureCoordinator()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            inkCaptureCoordinator: ink
+        )
+        ink.onStateChange(PickyInkOverlayState(
+            isActive: true, source: .text, virtualCursorGlobalPoint: CGPoint(x: 1, y: 2),
+            strokes: [], didCrossThreshold: false, thresholdFeedbackGlobalPoint: nil, cursorTrailPoints: []
+        ))
+        #expect(manager.overlayVisibility.isOverlayVisible)
+
+        manager.stop()
+
+        #expect(!manager.overlayVisibility.isOverlayVisible)
+        #expect(manager.overlayVisibility.overlayVisibilityReasons.isEmpty)
+    }
+
+    @Test func restartedCompanionStillReleasesTheCursorOnATerminalTransition() throws {
+        // `stop()` drops the projection subscription, so a Companion that is
+        // stopped and started again must re-subscribe. The app binds the
+        // publisher once, before the view model consumes its first event.
+        let (manager, viewModel) = makeProjectionWiredCompanion()
+        apply(events.snapshotEnvelope(session: session(id: "pickle-restart", status: .running)), to: viewModel)
+        manager.stop()
+        manager.start()
+
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-restart")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "진행 상황")
+        #expect(manager.voiceState == .processing)
+
+        apply(statusTransactionEnvelope(sessionID: "pickle-restart", status: .completed), to: viewModel)
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+        manager.stop()
+    }
+
     @Test func pointerUpdatesDoNotInvalidateGlobalCompanionObservers() {
         let ink = FakeInkCaptureCoordinator()
         let manager = CompanionManager(
@@ -3244,6 +3285,64 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
+    @Test func locallyAbortedSessionStillReleasesCursorWhenTheDaemonReportsItCancelled() async throws {
+        // Regression: `abort` optimistically marks the local card `.cancelled`
+        // right after sending the command. When the "first terminal arrival"
+        // rule read that card, the daemon's own cancelled frame looked like a
+        // repeat, so the cursor stayed in `.processing` and the passive summary
+        // never refreshed. The rule reads the daemon frame instead.
+        let viewModelClient = FakeVoiceClient()
+        let (manager, viewModel) = makeProjectionWiredCompanion(viewModelClient: viewModelClient)
+        apply(events.snapshotEnvelope(session: session(id: "pickle-abort", status: .running)), to: viewModel)
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-abort")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "그만")
+        #expect(manager.voiceState == .processing)
+
+        try await viewModel.abort(sessionID: "pickle-abort")
+        #expect(viewModelClient.commands.contains { $0.type == .abort })
+        #expect(viewModel.sessions.first { $0.id == "pickle-abort" }?.status == .cancelled,
+                "the optimistic local write is the precondition this regression needs")
+
+        apply(statusTransactionEnvelope(sessionID: "pickle-abort", status: .cancelled), to: viewModel)
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+        #expect(manager.latestAgentSessionSummary == "Pickle \u{B7} cancelled")
+        manager.stop()
+    }
+
+    @Test func terminalTransactionBufferedBehindARevisionGapReleasesCursorOnlyAfterRecovery() async throws {
+        // A frame the view model never applies must have no side effects. A
+        // terminal transaction that arrives behind a revision gap is buffered by
+        // the recovery coordinator, so the cursor stays where it is until the
+        // correlated recovery snapshot lets the buffered frame replay.
+        let viewModelClient = FakeVoiceClient()
+        let (manager, viewModel) = makeProjectionWiredCompanion(viewModelClient: viewModelClient)
+        apply(events.snapshotEnvelope(session: session(id: "pickle-gap", status: .running), revision: 1), to: viewModel)
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-gap")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "상태 알려줘")
+        #expect(manager.voiceState == .processing)
+
+        apply(statusTransactionEnvelope(sessionID: "pickle-gap", status: .cancelled, baseRevision: 5, revision: 6), to: viewModel)
+        #expect(manager.voiceState == .processing, "a buffered frame must not release the cursor")
+
+        try await waitUntil { viewModelClient.commands.contains { $0.type == .getSessionProjectionSnapshot } }
+        let request = try #require(viewModelClient.commands.last { $0.type == .getSessionProjectionSnapshot })
+        apply(
+            recoverySnapshotEnvelope(
+                session: session(id: "pickle-gap", status: .running),
+                revision: 5,
+                requestID: request.requestId
+            ),
+            to: viewModel
+        )
+
+        #expect(viewModel.sessions.first { $0.id == "pickle-gap" }?.status == .cancelled)
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+        manager.stop()
+    }
+
     @Test func speechSanitizerRemovesAsciiAndFullWidthParentheticals() async throws {
         let asciiInput = "배포는 완료됐어요 (https://example.com/run/123)."
         #expect(sanitizedTextForSpeech(asciiInput) == "배포는 완료됐어요.")
@@ -3641,10 +3740,11 @@ struct PickyCompanionManagerTests {
     /// exist once a projection frame is actually folded into session state
     /// (first-terminal-arrival dedupe, non-terminal frames publishing nothing).
     private func makeProjectionWiredCompanion(
-        selectionStore: FakeVoiceSelectionStore = FakeVoiceSelectionStore()
+        selectionStore: FakeVoiceSelectionStore = FakeVoiceSelectionStore(),
+        viewModelClient: FakeVoiceClient? = nil
     ) -> (CompanionManager, PickySessionListViewModel) {
         let viewModel = PickySessionListViewModel(
-            client: FakeVoiceClient(),
+            client: viewModelClient ?? FakeVoiceClient(),
             notificationCenter: PickyNoopNotificationCenter(),
             notificationPreferencesProvider: PickyStubNotificationPreferences(),
             selectionStore: selectionStore,
@@ -3663,6 +3763,40 @@ struct PickyCompanionManagerTests {
         events.transactionEnvelope(
             sessionID: sessionID,
             mutations: [PickyProjectionEventFixtures.metaPatchMutation("\"status\":\"\(status.rawValue)\"")]
+        )
+    }
+
+    /// A status transaction with hand-picked revisions, so a test can create the
+    /// revision gap that makes the recovery coordinator buffer the frame.
+    private func statusTransactionEnvelope(
+        sessionID: String,
+        status: PickySessionStatus,
+        baseRevision: Int,
+        revision: Int
+    ) -> PickyEventEnvelope {
+        let json = """
+        {"sessionId":"\(sessionID)","epoch":"\(events.epoch)","baseRevision":\(baseRevision),"revision":\(revision),"mutations":[{"type":"metaPatch","patch":{"status":"\(status.rawValue)"}}]}
+        """
+        let transaction = try! JSONDecoder.pickyAgentProtocolDecoder()
+            .decode(PickySessionProjectionTransaction.self, from: Data(json.utf8))
+        return PickyEventEnvelope(
+            id: "transaction-\(sessionID)-\(revision)",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: PickyProjectionEventFixtures.defaultTimestamp,
+            event: .sessionProjectionTransaction(transaction)
+        )
+    }
+
+    private func recoverySnapshotEnvelope(
+        session: PickyAgentSession,
+        revision: Int,
+        requestID: String?
+    ) -> PickyEventEnvelope {
+        PickyEventEnvelope(
+            id: "recovery-snapshot-\(session.id)-\(revision)",
+            protocolVersion: pickyAgentProtocolVersion,
+            timestamp: PickyProjectionEventFixtures.defaultTimestamp,
+            event: .sessionProjectionSnapshot(events.snapshot(session: session, revision: revision, requestID: requestID))
         )
     }
 

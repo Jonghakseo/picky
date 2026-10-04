@@ -27,6 +27,7 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
     /// the body — the rebuild happens inside `PickyBubbleMarkdownContentView`
     /// via its own `cachedFontScale` gate.
     @Environment(\.pickyAppFontScale) private var appFontScale
+    @Environment(\.pickyMarkdownLinkContext) private var linkContext
 
     func makeNSView(context: Context) -> PickyAgentBubbleSurfaceNSView {
         PickyPerf.event("agent_bubble_make_nsview")
@@ -36,6 +37,7 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
     func updateNSView(_ view: PickyAgentBubbleSurfaceNSView, context: Context) {
         PickyPerf.event("agent_bubble_update_nsview")
         _ = appFontScale
+        view.linkContext = linkContext
         view.configure(
             markdown: markdown,
             maxBubbleWidth: maxBubbleWidth,
@@ -78,6 +80,10 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
     }
 
     private let markdownView = PickyBubbleMarkdownContentView()
+    var linkContext: PickyMarkdownLinkContext {
+        get { markdownView.linkContext }
+        set { markdownView.linkContext = newValue }
+    }
     private let hoverButton = NSButton(title: "", target: nil, action: nil)
     private let timestampAccessory = PickyBubbleTimestampAccessory()
 

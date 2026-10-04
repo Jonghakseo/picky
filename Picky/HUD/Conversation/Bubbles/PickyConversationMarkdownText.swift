@@ -35,6 +35,8 @@ struct PickyConversationMarkdownText: View {
     /// `.contextMenu` does on the bubble surround.
     var onOpenAsReport: (() -> Void)?
 
+    @Environment(\.pickyMarkdownLinkContext) private var linkContext
+
     private let renderer = PickyReportMarkdownRenderer()
 
     var body: some View {
@@ -48,21 +50,10 @@ struct PickyConversationMarkdownText: View {
         }
     }
 
-    /// Intercepts `picky://...` clicks so a deep link in the assistant
-    /// reply opens the right companion panel screen instead of bouncing
-    /// to the browser. Other schemes (https, mailto) fall through to the
-    /// system handler unchanged.
-    ///
-    /// Still applied even though inline text is now rendered through an
-    /// NSTextView (the wrapper's coordinator handles links there); table
-    /// cells and any future SwiftUI fragment still rely on
-    /// `Environment(\.openURL)` for deep-link routing.
+    /// Use the same link routing as the AppKit bubble renderers.
     private var pickyDeepLinkOpenURL: OpenURLAction {
         OpenURLAction { url in
-            if PickyDeepLinkDispatcher.shared.handle(url) {
-                return .handled
-            }
-            return .systemAction
+            linkContext.handle(url) ? .handled : .systemAction
         }
     }
 

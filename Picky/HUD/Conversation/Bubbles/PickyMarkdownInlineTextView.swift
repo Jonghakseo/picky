@@ -58,6 +58,7 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     /// attributed-string builder so the rebuilt NSTextView storage actually
     /// reflects the new scale.
     @Environment(\.pickyAppFontScale) private var appFontScale
+    @Environment(\.pickyMarkdownLinkContext) private var linkContext
 
     /// Per-pair vertical rhythm. See `PickyMarkdownBlockSpacing` for why a
     /// single constant does not work. Values are multiplied by the live app
@@ -92,6 +93,7 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: SelfSizingMarkdownTextView, context: Context) {
+        context.coordinator.linkContext = linkContext
         let key = Self.cacheKey(blocks, scale: appFontScale)
         if context.coordinator.lastCacheKey != key {
             let attributed = Self.buildAttributedString(from: blocks, scale: appFontScale)
@@ -148,28 +150,8 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
         return CGSize(width: width, height: ceil(measured.height))
     }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: PickyMarkdownLinkTextViewDelegate {
         var lastCacheKey: String?
-
-        /// Routes `picky://...` clicks through the dispatcher (so deep links
-        /// open the right companion panel screen). Any other scheme returns
-        /// `false` so AppKit falls back to `NSWorkspace.open(url)`.
-        func textView(
-            _ textView: NSTextView,
-            clickedOnLink link: Any,
-            at charIndex: Int
-        ) -> Bool {
-            let resolved: URL?
-            if let url = link as? URL {
-                resolved = url
-            } else if let string = link as? String {
-                resolved = URL(string: string)
-            } else {
-                resolved = nil
-            }
-            guard let url = resolved else { return false }
-            return PickyDeepLinkDispatcher.shared.handle(url)
-        }
     }
 }
 

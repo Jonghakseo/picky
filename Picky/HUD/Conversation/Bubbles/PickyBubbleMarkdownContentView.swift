@@ -46,6 +46,10 @@ final class PickyBubbleMarkdownContentView: NSView {
 
     private let renderer = PickyReportMarkdownRenderer()
     private let linkDelegate = PickyMarkdownLinkTextViewDelegate()
+    var linkContext: PickyMarkdownLinkContext {
+        get { linkDelegate.linkContext }
+        set { linkDelegate.linkContext = newValue }
+    }
     private var blockViews: [PickyMarkdownBlockNSView] = []
     private var cachedBlocks: [RenderBlock] = []
     /// Last per-code-block line cap used to build block views. `0` means no
@@ -318,21 +322,6 @@ final class PickyBubbleMarkdownContentView: NSView {
         view.onCopyText = onCopyText
         view.onEditText = onEditText
         return view
-    }
-}
-
-final class PickyMarkdownLinkTextViewDelegate: NSObject, NSTextViewDelegate {
-    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-        let resolved: URL?
-        if let url = link as? URL {
-            resolved = url
-        } else if let string = link as? String {
-            resolved = URL(string: string)
-        } else {
-            resolved = nil
-        }
-        guard let url = resolved else { return false }
-        return PickyDeepLinkDispatcher.shared.handle(url)
     }
 }
 

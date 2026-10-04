@@ -29,6 +29,7 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     /// app font scale changes, which lets the underlying markdown view's
     /// `cachedFontScale` gate rebuild its block subviews at the new size.
     @Environment(\.pickyAppFontScale) private var appFontScale
+    @Environment(\.pickyMarkdownLinkContext) private var linkContext
 
     func makeNSView(context: Context) -> PickyUserBubbleSurfaceNSView {
         PickyPerf.event("user_bubble_make_nsview")
@@ -38,6 +39,7 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     func updateNSView(_ view: PickyUserBubbleSurfaceNSView, context: Context) {
         PickyPerf.event("user_bubble_update_nsview")
         _ = appFontScale
+        view.linkContext = linkContext
         view.configure(
             markdown: markdown,
             header: header,
@@ -87,6 +89,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     }
 
     private let markdownView = PickyBubbleMarkdownContentView()
+    var linkContext: PickyMarkdownLinkContext {
+        get { markdownView.linkContext }
+        set { markdownView.linkContext = newValue }
+    }
     private let attachedImagesField = NSTextField(labelWithString: "")
     private let originField = NSTextField(labelWithString: "")
     private let expansionButton = NSButton(title: "", target: nil, action: nil)

@@ -100,6 +100,7 @@ struct PickyConversationListView: View {
     @State private var questionFocusRequestID = 0
     @State private var pendingNavigationRequest: PickyConversationNavigationRequest?
     @State private var activeNavigationRequestToken = 0
+    @State private var linkFailure: PickyMarkdownLinkFailure?
 
     var body: some View {
         let _ = onBodyEvaluation()
@@ -295,6 +296,18 @@ struct PickyConversationListView: View {
                 delayedQuestionCollapseScrollTask = nil
                 isAwaitingProgrammaticBottomPin = false
             }
+        }
+        .environment(\.pickyMarkdownLinkContext, PickyMarkdownLinkContext(
+            workingDirectory: session.cwd,
+            onFailure: { linkFailure = $0 }
+        ))
+        .alert(linkFailure?.title ?? "", isPresented: Binding(
+            get: { linkFailure != nil },
+            set: { if !$0 { linkFailure = nil } }
+        )) {
+            Button(L10n.t("common.close"), role: .cancel) { linkFailure = nil }
+        } message: {
+            Text(linkFailure?.message ?? "")
         }
     }
 

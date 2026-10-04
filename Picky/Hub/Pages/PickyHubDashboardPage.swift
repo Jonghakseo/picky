@@ -36,12 +36,7 @@ struct PickyHubDashboardPage: View {
             VStack(alignment: .leading, spacing: 0) {
                 greetingCard
 
-                PickyHubDashboardUpdateCard(
-                    updaterController: dependencies.updaterController,
-                    interruptedPickleCount: { [sessionList = dependencies.sessionListViewModel] in
-                        PickyUpdateRestartPolicy.interruptedPickleCount(statuses: sessionList.sessions.map(\.status))
-                    }
-                )
+                PickyHubDashboardUpdateCard(updaterController: dependencies.updaterController)
                 .padding(.top, PickyHubTheme.Spacing.field)
 
                 if needsPrerequisitesCard {

@@ -107,6 +107,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             self?.daemonLauncher.stopAndWaitForExit()
             self?.lifecycleDiagnosticsStore.markCurrentRunClean(reason: .update)
         }
+        controller.confirmReadyUpdateInstall = { [weak self] in
+            self?.confirmReadyUpdateInstall()
+        }
         return controller
     }()
     /// Shared press-time resolver. HUD cards register live AppKit hit regions;
@@ -380,6 +383,20 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             self?.hubWindowController?.show()
         }
         return false
+    }
+
+    /// Every "install the downloaded update" entry point lands here so the
+    /// relaunch always asks first when Pickles are mid-response. The Hub hosts
+    /// the dialog, so bring it forward (an open Hub keeps its position).
+    private func confirmReadyUpdateInstall() {
+        hubWindowController?.show()
+        PickyHubUpdateInstallConfirmation.present(
+            updaterController: updaterController,
+            modalHost: hubModalHost,
+            interruptedPickleCount: PickyUpdateRestartPolicy.interruptedPickleCount(
+                statuses: hudSessionViewModel.sessions.map(\.status)
+            )
+        )
     }
 
     /// Try to drop the `/usr/local/bin/picky` wrapper into place silently. We

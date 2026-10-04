@@ -114,18 +114,25 @@ final class PickyUpdaterController: NSObject, ObservableObject {
         controller.checkForUpdates(nil)
     }
 
+    /// Set by the host to confirm before installing a downloaded update (the
+    /// relaunch interrupts Pickles mid-response). Without it, installing from
+    /// the update buttons stays disabled rather than relaunching unasked.
+    var confirmReadyUpdateInstall: (@MainActor () -> Void)?
+
     var updateButtonAction: PickyDashboardUpdateState.UpdateButtonAction? {
         guard isAvailable else { return nil }
-        return dashboardUpdate.updateButtonAction(sparkleCanCheckForUpdates: canCheckForUpdates)
+        let action = dashboardUpdate.updateButtonAction(sparkleCanCheckForUpdates: canCheckForUpdates)
+        if action == .installReadyUpdate, confirmReadyUpdateInstall == nil { return nil }
+        return action
     }
 
     var canRunUpdateButtonAction: Bool { updateButtonAction != nil }
 
-    /// Shared action for the Hub sidebar and Settings update buttons.
+    /// Shared action for the dashboard card, Hub sidebar, Settings, and app menu.
     func runUpdateButtonAction() {
         switch updateButtonAction {
         case .checkForUpdates: checkForUpdates()
-        case .installReadyUpdate: installReadyUpdateNow()
+        case .installReadyUpdate: confirmReadyUpdateInstall?()
         case nil: break
         }
     }

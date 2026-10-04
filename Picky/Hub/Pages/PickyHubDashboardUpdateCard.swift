@@ -11,25 +11,33 @@ import SwiftUI
 
 struct PickyHubDashboardUpdateCard: View {
     @ObservedObject var updaterController: PickyUpdaterController
-    /// Read at click time only; the card must not observe session updates.
-    let interruptedPickleCount: () -> Int
-    @EnvironmentObject private var modalHost: PickyHubModalHost
 
     var body: some View {
         PickyHubUpdateNoticeView(
             state: updaterController.dashboardUpdate,
             currentVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
             actions: .init(
-                install: install,
+                // Same path as the Check for Updates buttons, including the
+                // restart confirmation owned by the app delegate.
+                install: updaterController.runUpdateButtonAction,
                 openUpdateWindow: updaterController.openUpdateWindow,
                 openReleaseNotes: updaterController.openReleaseNotes,
                 dismiss: updaterController.dismissDashboardUpdate
             )
         )
     }
+}
 
-    private func install() {
-        let count = interruptedPickleCount()
+/// Installs the downloaded update, asking first when the relaunch would cut
+/// off Pickles mid-response. Every install entry point goes through this.
+@MainActor
+enum PickyHubUpdateInstallConfirmation {
+    static func present(
+        updaterController: PickyUpdaterController,
+        modalHost: PickyHubModalHost,
+        interruptedPickleCount: Int
+    ) {
+        let count = interruptedPickleCount
         guard count > 0 else {
             updaterController.installReadyUpdateNow()
             return

@@ -32,8 +32,8 @@ struct PickyShortcutKeyBadge: View {
         .foregroundColor(DS.Colors.textPrimary)
         .padding(.horizontal, 4.5)
         .frame(height: 15)
-        .background(PickyHUDMaterialFill(shape: Capsule(style: .continuous), fallback: DS.Colors.surface1))
-        .overlay(Capsule(style: .continuous).fill(DS.Colors.surface1.opacity(0.70)))
+        // Solid so the key stays legible over tiles, the Dock shell, or a dark wallpaper.
+        .background(Capsule(style: .continuous).fill(DS.Colors.surface1))
         .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7))
         .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
         .accessibilityHidden(true)

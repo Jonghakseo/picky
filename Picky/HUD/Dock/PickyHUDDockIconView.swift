@@ -295,8 +295,13 @@ struct PickyHUDDockIconView: View {
     private var dockIconBackground: some View {
         // The approved study uses a quiet filled tile, with blue for running
         // work. Keep selection, hover and archive feedback on that same surface.
+        // The running tint sits on the solid tile so it never shows the shell through it.
         RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
-            .fill(hidesCaptionForGroup ? Color.clear : (session.status == .running ? DS.Colors.accentSubtle : DS.Colors.surface2))
+            .fill(hidesCaptionForGroup ? Color.clear : DS.Colors.surface2)
+            .overlay(
+                RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
+                    .fill(!hidesCaptionForGroup && session.status == .running ? DS.Colors.accentSubtle : Color.clear)
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .fill(tileFillColor)

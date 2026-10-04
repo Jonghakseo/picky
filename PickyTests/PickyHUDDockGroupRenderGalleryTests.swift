@@ -1072,7 +1072,9 @@ struct PickyHUDDockGroupRenderGalleryTests {
     /// shadow remains inspectable instead of touching the transparent edge.
     private var externalDragGalleryCanvasInsets: EdgeInsets {
         EdgeInsets(
-            top: galleryCanvasInsets.top + DS.Spacing.space4,
+            // The drag preview's 14pt shadow now falls from a solid running tile and
+            // bleeds above the cell, so reserve one more step of transparent canvas.
+            top: galleryCanvasInsets.top + (DS.Spacing.space4 * 2),
             leading: galleryCanvasInsets.leading,
             bottom: galleryCanvasInsets.bottom,
             trailing: galleryCanvasInsets.trailing

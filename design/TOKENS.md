@@ -171,8 +171,11 @@ running tiles use the subtle action fill and keep their status ring. A folder
 shows two 13pt member glyphs in a 20pt row, followed by a 2pt gap and its title.
 That whole block is centered vertically, including empty and single-member
 groups. Group color remains a faint 4% tint. The shell uses the study's native
-`hudWindow` material (`withinWindow`, active), with a solid semantic fallback
-for Reduce Transparency and a 12% black shadow (8pt radius, 3pt offset).
+`hudWindow` material (`withinWindow`, active) under a 94% `surface1` scrim
+(`DS.Colors.dockShellScrim`), so the shell does not take on the wallpaper color
+through the transparent HUD panel. Running tiles layer the action tint over the
+solid tile surface, and shortcut key badges are solid `surface1`. Reduce
+Transparency uses a solid semantic fallback and a 12% black shadow (8pt radius, 3pt offset).
 
 
 The dual-notch Dock uses fixed utility geometry across S/M/L so small controls

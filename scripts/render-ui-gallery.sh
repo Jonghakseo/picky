@@ -505,13 +505,15 @@ expected = {f'{size}-{appearance}-{orientation}-{state}.png'
             for orientation in ['vertical', 'horizontal']
             for state in ['group', 'empty-group', 'empty-dock', 'overflow']}
 expected |= {'minimized-light.png', 'minimized-dark.png'}
+expected |= {f'backdrop-{appearance}-{backdrop}.png'
+             for appearance in ['light', 'dark'] for backdrop in ['white', 'black']}
 if set(files) != expected:
-    raise SystemExit('Dock chrome gallery does not contain the expected 50 scenes')
+    raise SystemExit('Dock chrome gallery does not contain the expected 54 scenes')
 for name in files:
     data = (output / name).read_bytes()
     if data[:8] != b'\x89PNG\r\n\x1a\n' or min(struct.unpack('>II', data[16:24])) <= 0:
         raise SystemExit(f'Invalid dock chrome image: {name}')
-print('Validated 50 production dock chrome PNGs.')
+print('Validated 54 production dock chrome PNGs.')
 PY
 
 python3 - "$OUTPUT" "${EXPECTED[@]}" <<'PY'

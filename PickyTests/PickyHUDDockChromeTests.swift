@@ -87,6 +87,23 @@ struct PickyHUDDockChromeTests {
                     }
                 }
             }
+            // The live HUD panel is transparent, so the shell must read the same over any wallpaper.
+            let metrics = PickyHUDDockMetrics(preset: .medium)
+            for dark in [false, true] {
+                for blackBackdrop in [false, true] {
+                    let view = fixture(side: .right, metrics: metrics)
+                    let size = NSHostingView(rootView: view).fittingSize
+                    let canvas = CGSize(width: ceil(size.width) + 40, height: ceil(size.height) + 40)
+                    let content = view.padding(20)
+                        .background(blackBackdrop ? Color.black : Color.white)
+                        .environment(\.colorScheme, dark ? .dark : .light)
+                    let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(content,
+                        logicalSize: canvas, scale: 2, appearance: dark ? .darkAqua : .aqua))
+                    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                    let name = "backdrop-\(dark ? "dark" : "light")-\(blackBackdrop ? "black" : "white").png"
+                    try png.write(to: directory.appendingPathComponent(name)); files.append(name)
+                }
+            }
             for dark in [false, true] {
                 let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(
                     PickyHUDDockMinimizedButton(onRestore: {}).padding(20).environment(\.colorScheme, dark ? .dark : .light),
@@ -97,7 +114,7 @@ struct PickyHUDDockChromeTests {
             }
         }
         try JSONEncoder().encode(files).write(to: directory.appendingPathComponent("manifest.json"))
-        #expect(files.count == 50)
+        #expect(files.count == 54)
     }
 
     private func fixture(side: PickyHUDDockSide, metrics: PickyHUDDockMetrics,

@@ -49,11 +49,12 @@ The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-emp
 
 ### Full dock chrome
 
-The `dock-group` command also writes 50 production Dock images to
+The `dock-group` command also writes 54 production Dock images to
 `build/render-gallery/dock-chrome/` through `PickyHUDDockChromeTests`.
 The matrix covers S/M/L, light/dark, vertical/horizontal, populated groups,
 empty groups, an empty dock, and overflow, plus the two 32pt restore-button
-appearances. These mount `PickyHUDDockRailView`, including its actual inset
+appearances and four `backdrop-*` scenes that place the M dock over white and
+black in each appearance (the live HUD panel is transparent). These mount `PickyHUDDockRailView`, including its actual inset
 notches, internal group labels, utility controls, and archive access. They do
 not recreate the standalone design-study app.
 

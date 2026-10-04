@@ -44,7 +44,7 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
         let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
         return Group {
             if reduceTransparency { DS.Colors.surface1 }
-            else { PickyHUDDockNativeMaterial() }
+            else { PickyHUDDockNativeMaterial().overlay(DS.Colors.dockShellScrim) }
         }
         .clipShape(shape)
         .overlay(shape.strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5))

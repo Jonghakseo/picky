@@ -121,6 +121,12 @@ enum DS {
         /// in the sidebar). Light bumps opacity slightly so the tint stays readable on white.
         static let accentSubtle = Color(light: blue500.opacity(0.18), dark: blue500.opacity(0.10))
 
+        /// Near-solid layer over the Dock shell material. The HUD panel is transparent, so the
+        /// material alone lets the desktop color through (a light Dock turns gray on a black
+        /// wallpaper). This layer keeps the shell close to `surface1` on any backdrop.
+        static let dockShellScrim = Color(light: Color(hex: "#FFFFFF").opacity(0.94),
+                                          dark: Color(hex: "#171918").opacity(0.94))
+
         // ── Semantic Colors ──────────────────────────────────────────
 
         /// Destructive/error actions — delete buttons, error messages, close button hover.

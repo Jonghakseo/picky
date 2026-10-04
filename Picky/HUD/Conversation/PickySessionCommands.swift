@@ -13,15 +13,11 @@ import Foundation
 
 @MainActor
 protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
-    var activeVoiceFollowUpSessionID: String? { get }
     var screenContextTargetSessionID: String? { get }
     var screenContextTargetSticky: Bool { get }
-    var voiceFollowUpHoverState: PickyVoiceFollowUpHoverState { get }
     var slashCommandsBySessionID: [String: [PickySlashCommand]] { get }
     var autocompleteEvents: PassthroughSubject<PickyAutocompleteClientEvent, Never> { get }
 
-    func beginHoveredVoiceFollowUp(sessionID: String)
-    func endHoveredVoiceFollowUp(sessionID: String)
     func toggleScreenContextTarget(sessionID: String)
     func armScreenContextTarget(sessionID: String, sticky: Bool)
     func clearScreenContextTarget(sessionID: String?)

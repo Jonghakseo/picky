@@ -120,9 +120,7 @@ extension PickySessionListViewModel {
         // The other three targets are process-transient and every setter
         // already requires the session to be in `sessions`, so they can never
         // name a session that has not arrived yet.
-        syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
-        syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: true)
         sessionProjectionTransitions.publish(snapshot: snapshot, applied: card)
     }
 
@@ -153,9 +151,7 @@ extension PickySessionListViewModel {
         let isActive = storage.registry.activeSessionIDs.contains(transaction.sessionId)
         if wasActive != isActive {
             syncSelectionAfterSessionListChange()
-            syncVoiceFollowUpAfterSessionListChange()
             syncScreenContextTargetAfterSessionListChange()
-            syncActiveVoiceFollowUpAfterSessionListChange()
         }
         // V2 no longer routes through `upsert`, so retain its cache warming
         // side effect without making card materialization globally observable.

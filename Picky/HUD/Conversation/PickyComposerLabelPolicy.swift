@@ -69,22 +69,4 @@ enum PickyComposerLabelPolicy {
         case .none: return DS.Colors.borderSubtle
         }
     }
-
-    static func notifyMainOnCompletionHelpText(
-        enabled: Bool,
-        localizer: (String) -> String = { L10n.t($0) }
-    ) -> String {
-        localizer(enabled ? "hud.composer.notifyMain.on.help" : "hud.composer.notifyMain.off.help")
-    }
-
-    static func notifyMacOSOnCompletionIconName(enabled: Bool) -> String {
-        enabled ? "bell.fill" : "bell.slash"
-    }
-
-    static func notifyMacOSOnCompletionHelpText(
-        enabled: Bool,
-        localizer: (String) -> String = { L10n.t($0) }
-    ) -> String {
-        localizer(enabled ? "hud.composer.notifyMacOS.on.help" : "hud.composer.notifyMacOS.off.help")
-    }
 }

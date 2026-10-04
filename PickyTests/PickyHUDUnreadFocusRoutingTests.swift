@@ -49,8 +49,7 @@ struct PickyHUDUnreadFocusRoutingTests {
             appearanceStore: PickyAppearanceStore(settingsStore: settingsStore),
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settingsStore),
             visibilityStore: visibilityStore,
-            settingsStore: settingsStore,
-            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry()
+            settingsStore: settingsStore
         )
         let displayID: CGDirectDisplayID = 777
 
@@ -88,7 +87,6 @@ struct PickyHUDUnreadFocusRoutingTests {
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settings),
             visibilityStore: visibility,
             settingsStore: settings,
-            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry(),
             presentSessionPanels: { displayID in
                 PickyHUDSessionFocusPresenter.present(
                     targetDisplayID: displayID,
@@ -141,7 +139,6 @@ struct PickyHUDUnreadFocusRoutingTests {
             appearanceStore: PickyAppearanceStore(settingsStore: settings),
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settings),
             visibilityStore: visibility, settingsStore: settings,
-            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry(),
             presentSessionPanels: { displayID in
                 PickyHUDSessionFocusPresenter.present(
                     targetDisplayID: displayID, panelsByDisplayID: [777: target, 888: other]
@@ -172,8 +169,7 @@ struct PickyHUDUnreadFocusRoutingTests {
         let manager = PickyHUDOverlayManager(
             viewModel: viewModel, appearanceStore: appearance,
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settings),
-            visibilityStore: PickyHUDVisibilityStore(settingsStore: settings), settingsStore: settings,
-            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry()
+            visibilityStore: PickyHUDVisibilityStore(settingsStore: settings), settingsStore: settings
         )
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 80, y: 80, width: 640, height: 600),

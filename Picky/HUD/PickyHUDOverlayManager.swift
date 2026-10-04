@@ -24,7 +24,7 @@ final class PickyHUDOverlayManager {
     private let screenReconfigurationEffectExecutor = PickyHUDScreenReconfigExecutor()
     private let settingsStore: PickySettingsStore
     private let settingsPersistence: PickySettingsPersistenceCoordinator
-    private let voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry
+    private let composerDictation: PickyComposerDictationController?
     private let presentSessionPanels: ((CGDirectDisplayID?) -> Void)?
     private var visibilityCancellable: AnyCancellable?
     private var dockSnapshotCancellable: AnyCancellable?
@@ -132,7 +132,7 @@ final class PickyHUDOverlayManager {
         visibilityStore: PickyHUDVisibilityStore,
         actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore? = nil,
         settingsStore: PickySettingsStore,
-        voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry,
+        composerDictation: PickyComposerDictationController? = nil,
         presentSessionPanels: ((CGDirectDisplayID?) -> Void)? = nil
     ) {
         self.viewModel = viewModel
@@ -142,7 +142,7 @@ final class PickyHUDOverlayManager {
         self.actualPanelVisibilityStore = actualPanelVisibilityStore ?? PickyHUDActualPanelVisibilityStore()
         self.settingsStore = settingsStore
         self.settingsPersistence = .shared(for: settingsStore)
-        self.voiceTargetHitTestRegistry = voiceTargetHitTestRegistry
+        self.composerDictation = composerDictation
         self.presentSessionPanels = presentSessionPanels
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
@@ -577,7 +577,7 @@ final class PickyHUDOverlayManager {
             closeRequests: closeRequests.eraseToAnyPublisher(),
             displayID: displayID,
             placement: placement,
-            voiceTargetHitTestRegistry: voiceTargetHitTestRegistry,
+            composerDictation: composerDictation,
             openPerformanceTracker: openPerformanceTracker,
             onSizeChange: { [weak self] size, activeSessionID in
                 // SwiftUI animates the card reveal itself. Grow the transparent NSPanel

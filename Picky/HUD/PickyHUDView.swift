@@ -24,7 +24,7 @@ struct PickyHUDView: View {
     /// configuration changes; the conversation card binds to it so it grows or
     /// shrinks within whatever space remains below the dock's top edge.
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
-    var voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry? = nil
+    var composerDictation: PickyComposerDictationController? = nil
     var openPerformanceTracker: PickyHUDOpenPerformanceTracker? = nil
     var onSizeChange: (_ size: CGSize, _ activeSessionID: String?) -> Void = { _, _ in }
     /// Live delta callback for the dock anchor handle. Argument is the cursor's
@@ -183,6 +183,7 @@ struct PickyHUDView: View {
     var body: some View {
         let _ = PickyPerf.event("hud_root_body")
         hudContent
+            .environment(\.pickyComposerDictation, composerDictation)
             // Use a native alert: confirmationDialog dims the transparent HUD window,
             // including the desktop visible around the conversation card.
             .alert(
@@ -483,15 +484,6 @@ struct PickyHUDView: View {
                     }
                 )
                 .background(PickyHUDCardSizeReader())
-                .background {
-                    if let voiceTargetHitTestRegistry {
-                        PickyVoiceTargetHitRegionHost(
-                            sessionID: activeSession.id,
-                            isEligible: true,
-                            registry: voiceTargetHitTestRegistry
-                        )
-                    }
-                }
                 .overlay(alignment: resizeHandleAlignment) {
                     PickyHUDCardResizeHandleHost(
                         onHoverChanged: { hovering in cardResizeInteraction.setHovered(hovering) },

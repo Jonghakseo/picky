@@ -56,7 +56,8 @@ local Pi environment
 ### Follow-up
 
 - Text follow-up from a HUD card sends `followUp(sessionId, text)`.
-- Voice follow-up uses an explicit target snapshot at hotkey press time. Priority is: active voice target, hovered HUD card voice target, otherwise new/main request.
+- Voice follow-up uses an explicit target snapshot at hotkey press time: the armed input target if one is set, otherwise the main agent. The pointer position and card hover are ignored.
+- Per-Pickle voice input is the composer microphone button (`PickyComposerDictationController`). It reuses the dictation engine but appends the transcript to that composer's draft instead of dispatching a turn.
 - Follow-up context source is `voice-follow-up` or `text-follow-up` when a session target is known.
 
 ### Extension UI

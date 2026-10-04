@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -63,6 +64,8 @@ struct PickyConversationComposerView: View {
     @State private var isStopping = false
     @State private var stopChoiceRequest: PickyStopChoiceRequest?
     @StateObject private var runtimeControls = PickyComposerRuntimeControlsModel()
+    /// Nil outside the live HUD; the mic button and voice status are hidden then.
+    @Environment(\.pickyComposerDictation) private var composerDictation
     @State private var isAttachmentPickerPresented = false
 
     init(
@@ -170,6 +173,9 @@ struct PickyConversationComposerView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             screenContextAttachmentChip
+            if let composerDictation {
+                PickyComposerVoiceStatusRow(controller: composerDictation, sessionID: session.id)
+            }
             // The custom layout reports only the composer's size, so opening
             // suggestions never reflows the card. It measures the popup itself
             // and places its bottom edge 4pt above the composer's top edge.
@@ -191,7 +197,11 @@ struct PickyConversationComposerView: View {
             synchronizeAutocompleteInput(text: draft)
             runtimeControls.loadOptions(commands: commands, sessionID: session.id)
         }
+        .onReceive(composerDictationTranscripts) { transcript in
+            appendDictatedTranscript(transcript)
+        }
         .onDisappear {
+            composerDictation?.cancel(sessionID: session.id)
             commands.updateComposerDraft(draft, sessionID: session.id)
             persistAttachments()
             removeKeyDownMonitor()
@@ -378,7 +388,13 @@ struct PickyConversationComposerView: View {
                 supported: session.fastModeSupported,
                 isUpdating: runtimeControls.isFastModeActionInFlight
             ),
-            onToggleFastMode: { runtimeControls.setFastMode(!session.fastMode, commands: commands, sessionID: session.id) }
+            onToggleFastMode: { runtimeControls.setFastMode(!session.fastMode, commands: commands, sessionID: session.id) },
+            completionNotifications: PickyComposerCompletionNotificationState(
+                notifyMain: session.notifyMainOnCompletion == true,
+                notifyMacOS: session.notifyMacOSOnCompletion == true
+            ),
+            onToggleNotifyMain: toggleMainPickyCompletion,
+            onToggleNotifyMacOS: toggleMacOSCompletionNotification
         )
     }
 
@@ -406,35 +422,34 @@ struct PickyConversationComposerView: View {
         .frame(height: PickyComposerToolbarMetrics.controlSize)
     }
 
+    /// Left: what goes into the message, then this Pickle's settings chip.
+    /// It yields width first (the chip's model name shrinks) so the trailing
+    /// send/stop actions are never clipped.
     private var leadingActions: some View {
-        HStack(spacing: DS.Spacing.space2) {
-            HStack(spacing: DS.Spacing.space1) {
-                attachmentButton
-                if effectiveBashMode != .none {
-                    bashModeBadge
-                } else {
-                    completionNotificationOrDropControls
-                    terminalButton
-                }
+        HStack(spacing: DS.Spacing.space1) {
+            attachmentButton
+            if effectiveBashMode != .none {
+                bashModeBadge
             }
-            if runtimePresentation.hasControls || runtimeControls.actionError != nil {
-                Divider()
-                    .frame(height: 18) // design-token-exception: optical divider height inside the composer action row
-                runtimeControlsBar
-            }
+            runtimeControlsBar
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(-1)
     }
 
     private var attachmentButton: some View {
         Button {
             isAttachmentPickerPresented = true
         } label: {
-            toolbarIcon(systemName: "paperclip", color: DS.Colors.textSecondary)
+            // While a file is dragged over the card, the attach button doubles
+            // as the drop indicator.
+            toolbarIcon(
+                systemName: isFileDropTargeted ? "doc.badge.plus" : "paperclip",
+                color: isFileDropTargeted ? DS.Colors.accentText : DS.Colors.textSecondary
+            )
         }
-        .buttonStyle(PickyComposerToolbarGhostButtonStyle())
-        .help(L10n.t("hud.composer.attachment.help"))
-        .accessibilityLabel(L10n.t("hud.composer.attachment.accessibilityLabel"))
+        .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: isFileDropTargeted))
+        .help(L10n.t(isFileDropTargeted ? "hud.composer.drop.help" : "hud.composer.attachment.help"))
+        .accessibilityLabel(L10n.t(isFileDropTargeted ? "hud.composer.drop.accessibilityLabel" : "hud.composer.attachment.accessibilityLabel"))
     }
 
     /// Replaces the notify/terminal actions when the draft is in bash-execution
@@ -463,30 +478,6 @@ struct PickyConversationComposerView: View {
             ? L10n.t("hud.composer.bash.private.help")
             : L10n.t("hud.composer.bash.shared.help"))
         .accessibilityLabel(effectiveBashMode == .private ? L10n.t("hud.composer.bash.private.accessibility") : L10n.t("hud.composer.bash.accessibility"))
-    }
-
-    @ViewBuilder
-    private var completionNotificationOrDropControls: some View {
-        if isFileDropTargeted {
-            toolbarIcon(
-                systemName: "doc.badge.plus",
-                color: DS.Colors.accentText
-            )
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                        .fill(DS.Colors.accentSubtle)
-                )
-                .help(L10n.t("hud.composer.drop.help"))
-                .accessibilityLabel(L10n.t("hud.composer.drop.accessibilityLabel"))
-        } else {
-            PickyCompletionNotificationControlsView(
-                notifyMainOnCompletion: session.notifyMainOnCompletion == true,
-                notifyMacOSOnCompletion: session.notifyMacOSOnCompletion == true,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                onToggleMain: toggleMainPickyCompletion,
-                onToggleMacOS: toggleMacOSCompletionNotification
-            )
-        }
     }
 
     private var terminalButton: some View {
@@ -887,9 +878,28 @@ struct PickyConversationComposerView: View {
         return modifiers
     }
 
-    // Voice input is intentionally not exposed in the composer. Global PTT
-    // resolves the live card under the pointer at press time; SwiftUI hover is
-    // presentation-only. The header shows the captured target with mic.fill.
+    /// Finished transcripts for this composer's Pickle. Other Pickles' results
+    /// are filtered out here so they never touch this draft.
+    private var composerDictationTranscripts: AnyPublisher<PickyComposerDictationTranscript, Never> {
+        guard let composerDictation else { return Empty().eraseToAnyPublisher() }
+        let sessionID = session.id
+        return composerDictation.$pendingTranscript
+            .compactMap { $0 }
+            .filter { $0.sessionID == sessionID }
+            .eraseToAnyPublisher()
+    }
+
+    /// Dictation never sends: the transcript is appended to the draft so the
+    /// user can review and edit it first.
+    private func appendDictatedTranscript(_ transcript: PickyComposerDictationTranscript) {
+        composerDictation?.consumeTranscript(id: transcript.id)
+        let updated = PickyComposerDictationDraftPolicy.draft(draft, appending: transcript.text)
+        guard updated != draft else { return }
+        draft = updated
+        composerSelectionOverride = NSRange(location: (updated as NSString).length, length: 0)
+        synchronizeAutocompleteInput(text: updated)
+        focusComposerIfPossible()
+    }
 
     private var editorHeight: CGFloat {
         max(
@@ -927,11 +937,21 @@ struct PickyConversationComposerView: View {
 
     private static let editorTextInsetHeight: CGFloat = 2
 
+    /// Right: panel toggle and voice, then the primary send/stop actions.
     private var trailingActions: some View {
-        HStack(spacing: DS.Spacing.space2) {
-            sendButton
-            if isStopButtonVisible {
-                stopButton
+        HStack(spacing: DS.Spacing.space1) {
+            HStack(spacing: DS.Spacing.space1) {
+                terminalButton
+                if let composerDictation {
+                    PickyComposerMicButton(controller: composerDictation, sessionID: session.id)
+                }
+            }
+            .padding(.trailing, DS.Spacing.space1)
+            HStack(spacing: DS.Spacing.space2) {
+                sendButton
+                if isStopButtonVisible {
+                    stopButton
+                }
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -1340,6 +1360,13 @@ struct PickyConversationComposerView: View {
         guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
         guard keyDownMonitor == nil else { return }
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == Self.escapeKeyCode,
+               let composerDictation,
+               composerDictation.phase.isActive,
+               composerDictation.phase.sessionID == session.id {
+                composerDictation.cancel(sessionID: session.id)
+                return nil
+            }
             guard isFocused, !isComposerInputDisabled else { return event }
             if event.keyCode == Self.tabKeyCode, event.modifierFlags.contains(.shift) {
                 runtimeControls.cycleThinkingLevel(commands: commands, sessionID: session.id)
@@ -1360,6 +1387,7 @@ struct PickyConversationComposerView: View {
     }
 
     private static let tabKeyCode: UInt16 = 48
+    private static let escapeKeyCode: UInt16 = 53
     private static let pKeyCode: UInt16 = 35
     private static let autocompleteDebounceNanoseconds: UInt64 = 80_000_000
 

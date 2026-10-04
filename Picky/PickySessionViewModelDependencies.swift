@@ -140,15 +140,3 @@ struct PickySettingsDockLayoutStore: PickyDockLayoutStoring {
     }
 }
 
-/// Owns the "which Pickle is the cursor hovering over for voice follow-up"
-/// flag in its own ObservableObject so the SwiftUI subscription is scoped to
-/// the one view that actually reads it (the conversation header's pi-badge).
-/// When this flag lived on `PickySessionListViewModel.@Published` directly,
-/// every conversation subview observing the viewModel re-evaluated its body
-/// on every cursor enter/exit of the card, which cascaded into per-bubble
-/// markdown re-parsing and TextKit re-measurement and showed up as visible
-/// hover lag.
-@MainActor
-final class PickyVoiceFollowUpHoverState: ObservableObject {
-    @Published var sessionID: String?
-}

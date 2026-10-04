@@ -837,8 +837,7 @@ final class PickyHubRenderGalleryFixture {
             initialSettings: settingsStore.load(),
             appearanceStore: PickyAppearanceStore(settingsStore: settingsStore),
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settingsStore),
-            permissions: permissionMonitor,
-            pointerLocationProvider: { .zero }
+            permissions: permissionMonitor
         )
         companionManager.mainConversation.replaceMessages([
             PickyMainAgentMessage(role: .user, text: "Summarize this week's work.", createdAt: Date(timeIntervalSince1970: 1_784_000_000)),

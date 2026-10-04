@@ -329,7 +329,6 @@ private struct PickySessionExtendedTerminalContentView: View {
 
     private func handleAppear() {
         commands.activateShellTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
-        commands.endHoveredVoiceFollowUp(sessionID: sessionID)
     }
 
     private func handleDisappear() {

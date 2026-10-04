@@ -2883,7 +2883,7 @@ struct PickySessionViewModelTests {
         #expect(!panel.clickHitsFocusedControl(outsideEvent))
     }
 
-    @MainActor @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForHoveredVoiceFollowUp() {
+    @MainActor @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersists() {
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
 
@@ -2892,14 +2892,6 @@ struct PickySessionViewModelTests {
 
         #expect(viewModel.selectedSession?.id == "newer")
         #expect(selection.selectedSessionID == nil)
-
-        viewModel.beginHoveredVoiceFollowUp(sessionID: "older")
-        #expect(viewModel.hoveredVoiceFollowUpSessionID == "older")
-        #expect(selection.hoveredVoiceFollowUpSessionID == "older")
-
-        viewModel.endHoveredVoiceFollowUp(sessionID: "older")
-        #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
-        #expect(selection.hoveredVoiceFollowUpSessionID == nil)
 
         viewModel.select(sessionID: "older")
         #expect(selection.selectedSessionID == "older")
@@ -3087,60 +3079,6 @@ struct PickySessionViewModelTests {
         #expect(viewModel.screenContextTargetSticky == false)
         #expect(selection.screenContextTargetSessionID == nil)
         #expect(selection.screenContextTargetSticky == false)
-    }
-
-    @Test func activeVoiceFollowUpTargetPersistsAfterHoverEndsUntilVoiceInputClears() async throws {
-        let client = FakePickyAgentClient()
-        let selection = FakeSelectionStore()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.start()
-        defer {
-            NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
-        }
-
-        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-voice", status: "running"))))
-        try await settle()
-        viewModel.beginHoveredVoiceFollowUp(sessionID: "pickle-voice")
-        NotificationCenter.default.post(
-            name: .pickyVoiceFollowUpTargetChanged,
-            object: nil,
-            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "pickle-voice"]
-        )
-        try await settle()
-
-        viewModel.endHoveredVoiceFollowUp(sessionID: "pickle-voice")
-
-        #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
-        #expect(viewModel.activeVoiceFollowUpSessionID == "pickle-voice")
-
-        NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
-        try await settle()
-
-        #expect(viewModel.activeVoiceFollowUpSessionID == nil)
-    }
-
-    @Test func activeVoiceFollowUpTargetClearsWhenSessionDisappears() async throws {
-        let client = FakePickyAgentClient()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        viewModel.start()
-        defer {
-            NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
-        }
-
-        client.emit(.protocolEvent(.fixture(eventJSON: events.sessionUpdated(id: "pickle-voice", status: "running"))))
-        try await settle()
-        NotificationCenter.default.post(
-            name: .pickyVoiceFollowUpTargetChanged,
-            object: nil,
-            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "pickle-voice"]
-        )
-        try await wait { viewModel.activeVoiceFollowUpSessionID == "pickle-voice" }
-        #expect(viewModel.activeVoiceFollowUpSessionID == "pickle-voice")
-
-        client.emit(.sessionProjectionBootstrapCompletion(removedSessionIDs: ["pickle-voice"], isPrimary: true))
-        try await settle()
-
-        #expect(viewModel.activeVoiceFollowUpSessionID == nil)
     }
 
     @Test func archivedSessionsStayHiddenAcrossSnapshots() async throws {

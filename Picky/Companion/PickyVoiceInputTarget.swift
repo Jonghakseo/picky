@@ -32,7 +32,8 @@ struct PickyScreenContextTargetSnapshot: Equatable {
 
 struct PickyVoiceInputTargetSnapshot: Equatable {
     enum PickleOrigin: Equatable {
-        case pointer
+        /// A Pickle chosen without an armed target snapshot. Dispatches as follow-up.
+        case unarmed
         case armed(
             dispatchMode: PickyArmedPickleDispatchMode,
             sticky: Bool,
@@ -58,7 +59,6 @@ enum PickyVoiceInputTargetPolicy {
     static func resolve(
         inputID: UUID,
         armedTarget: PickyScreenContextTargetSnapshot?,
-        pointerSessionID: String?,
         armedDispatchMode: PickyArmedPickleDispatchMode
     ) -> PickyVoiceInputTargetSnapshot {
         if let armedTarget,
@@ -73,12 +73,6 @@ enum PickyVoiceInputTargetPolicy {
                         revision: armedTarget.revision
                     )
                 )
-            )
-        }
-        if let sessionID = PickyVoiceTranscriptRoutingPolicy.normalizedSessionID(pointerSessionID) {
-            return PickyVoiceInputTargetSnapshot(
-                inputID: inputID,
-                target: .pickle(sessionID: sessionID, origin: .pointer)
             )
         }
         return PickyVoiceInputTargetSnapshot(inputID: inputID, target: .main)

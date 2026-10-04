@@ -255,21 +255,6 @@ private final class FakeVoiceSelectionStore: PickySessionSelectionStoring {
 }
 
 @MainActor
-private final class FakeVoiceTargetResolver: PickyVoiceTargetResolving {
-    var sessionID: String?
-    private(set) var requestedScreenPoints: [CGPoint] = []
-
-    init(sessionID: String? = nil) {
-        self.sessionID = sessionID
-    }
-
-    func sessionID(at screenPoint: CGPoint) -> String? {
-        requestedScreenPoints.append(screenPoint)
-        return sessionID
-    }
-}
-
-@MainActor
 private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     let displayName = "Fake Speech"
     var supportsIncrementalPlayback = false
@@ -733,7 +718,7 @@ struct PickyCompanionManagerTests {
         )
         manager.bindAgentEvents()
 
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
         let inputID = try #require(manager.interactionVoiceInputID)
         client.emit(.sessionProjectionBootstrapCompletion(
             removedSessionIDs: ["removed-pickle"],
@@ -763,7 +748,7 @@ struct PickyCompanionManagerTests {
             armedPickleDispatchMode: .followUp
         )
 
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
         let inputID = try #require(manager.interactionVoiceInputID)
         manager.submitTranscriptToPickyAgent(transcript: "늦은 캡처")
         try await captureGate.waitUntilEntered()
@@ -792,7 +777,7 @@ struct PickyCompanionManagerTests {
             armedPickleDispatchMode: .followUp
         )
 
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
         let inputID = try #require(manager.interactionVoiceInputID)
         manager.applyAgentClientEvent(.sessionProjectionBootstrapCompletion(
             removedSessionIDs: ["unrelated-pickle"],
@@ -828,7 +813,7 @@ struct PickyCompanionManagerTests {
         manager.interactionVoiceInputID = olderInputID
         manager.voiceInputTargetSnapshotsByInputID[olderInputID] = olderSnapshot
 
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
 
         #expect(manager.voiceInputTargetSnapshotsByInputID[olderInputID] == olderSnapshot)
         let newerInputID = try #require(manager.interactionVoiceInputID)
@@ -846,7 +831,7 @@ struct PickyCompanionManagerTests {
         )
 
         manager.bindDictationErrors()
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
         let failedInputID = try #require(manager.interactionVoiceInputID)
         selection.setScreenContextTarget(sessionID: nil, sticky: false)
         selection.setScreenContextTarget(sessionID: "pickle-target", sticky: true)
@@ -873,11 +858,11 @@ struct PickyCompanionManagerTests {
         let newerInputID = UUID()
         manager.voiceInputTargetSnapshotsByInputID[olderInputID] = PickyVoiceInputTargetSnapshot(
             inputID: olderInputID,
-            target: .pickle(sessionID: "pickle-old", origin: .pointer)
+            target: .pickle(sessionID: "pickle-old", origin: .unarmed)
         )
         let newerSnapshot = PickyVoiceInputTargetSnapshot(
             inputID: newerInputID,
-            target: .pickle(sessionID: "pickle-new", origin: .pointer)
+            target: .pickle(sessionID: "pickle-new", origin: .unarmed)
         )
         manager.voiceInputTargetSnapshotsByInputID[newerInputID] = newerSnapshot
         manager.interactionVoiceInputID = newerInputID
@@ -936,7 +921,7 @@ struct PickyCompanionManagerTests {
             armedPickleDispatchMode: .followUp
         )
 
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
         manager.submitTranscriptToPickyAgent(transcript: "이전 입력")
         try await captureGate.waitUntilEntered()
 
@@ -951,188 +936,21 @@ struct PickyCompanionManagerTests {
         manager.stop()
     }
 
-    @Test func productionPTTPointerTargetKeepsFollowUpDispatch() async throws {
+    /// Push to Talk no longer resolves the Pickle under the pointer. Without an
+    /// armed target the utterance must reach the main agent, never a Pickle.
+    @Test func pttWithoutArmedTargetSubmitsToMainAgent() async throws {
         let client = FakeVoiceClient()
-        let selection = FakeVoiceSelectionStore()
-        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-hovered")
-        let manager = CompanionManager(
-            agentClient: client,
-            selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            armedPickleDispatchMode: .steer,
-            voiceTargetResolver: targetResolver
-        )
-
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 200, y: 300))
-        manager.submitTranscriptToPickyAgent(transcript: "일반 후속 질문")
-
-        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
-        let command = try #require(client.commands.first { $0.sessionId == "pickle-hovered" })
-        #expect(command.type == .followUp)
-        #expect(command.text == "일반 후속 질문")
-        manager.stop()
-    }
-
-    @Test func conversationCardHoverImmediatelyBeforePTTTargetsPickleOnFirstAttempt() async throws {
-        let client = FakeVoiceClient()
-        let selection = FakeVoiceSelectionStore()
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            selectionStore: selection
-        )
-        viewModel.apply(.protocolEvent(events.snapshotEnvelope(
-            id: "evt-hovered-pickle",
-            session: session(id: "pickle-hovered", status: .completed)
-        )))
-        let card = PickyConversationCardView(
-            viewModel: viewModel,
-            session: try #require(viewModel.sessions.first)
-        )
-        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-hovered")
-        let manager = CompanionManager(
-            agentClient: client,
-            selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            voiceTargetResolver: targetResolver
-        )
-
-        card.updateVoiceFollowUpHover(true)
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 640, y: 480))
-        manager.submitTranscriptToPickyAgent(transcript: "첫 시도부터 계속해줘")
-
-        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
-        let command = try #require(client.commands.first { $0.sessionId == "pickle-hovered" })
-        #expect(command.type == .followUp)
-        #expect(command.text == "첫 시도부터 계속해줘")
-        #expect(client.submissions.isEmpty)
-        card.updateVoiceFollowUpHover(false)
-        manager.stop()
-    }
-
-    @Test func deferredConversationCardHoverAfterPTTStillTargetsPickleOnFirstAttempt() async throws {
-        let client = FakeVoiceClient()
-        let selection = FakeVoiceSelectionStore()
-        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-hovered")
-        let viewModel = PickySessionListViewModel(
-            client: client,
-            notificationCenter: PickyNoopNotificationCenter(),
-            selectionStore: selection
-        )
-        viewModel.apply(.protocolEvent(events.snapshotEnvelope(
-            id: "evt-deferred-hovered-pickle",
-            session: session(id: "pickle-hovered", status: .completed)
-        )))
-        let card = PickyConversationCardView(
-            viewModel: viewModel,
-            session: try #require(viewModel.sessions.first)
-        )
-        let manager = CompanionManager(
-            agentClient: client,
-            selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            voiceTargetResolver: targetResolver
-        )
-
-        // The press-time pointer resolver must win even when SwiftUI delivers
-        // onHover(true) after the shortcut transition.
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 640, y: 480))
-        card.updateVoiceFollowUpHover(true)
-        manager.submitTranscriptToPickyAgent(transcript: "첫 시도부터 계속해줘")
-
-        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-hovered" } }
-        let command = try #require(client.commands.first { $0.sessionId == "pickle-hovered" })
-        #expect(command.type == .followUp)
-        #expect(command.text == "첫 시도부터 계속해줘")
-        #expect(client.submissions.isEmpty)
-        #expect(targetResolver.requestedScreenPoints == [CGPoint(x: 640, y: 480)])
-        card.updateVoiceFollowUpHover(false)
-        manager.stop()
-    }
-
-    @Test func staleHoverDoesNotOverridePointerTargetAtPTTPress() async throws {
-        let client = FakeVoiceClient()
-        let selection = FakeVoiceSelectionStore()
-        selection.hoveredVoiceFollowUpSessionID = "pickle-stale"
-        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-pointer")
-        let manager = CompanionManager(
-            agentClient: client,
-            selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            voiceTargetResolver: targetResolver
-        )
-
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 100, y: 200))
-        manager.submitTranscriptToPickyAgent(transcript: "포인터 대상에게 보내줘")
-
-        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-pointer" } }
-        let command = try #require(client.commands.first { $0.sessionId == "pickle-pointer" })
-        #expect(command.type == .followUp)
-        #expect(client.commands.contains { $0.sessionId == "pickle-stale" } == false)
-        manager.stop()
-    }
-
-    @Test func globalShortcutPublisherResolvesTargetSynchronouslyWithoutSchedulerHop() {
-        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-global")
-        let manager = CompanionManager(
-            agentClient: FakeVoiceClient(),
-            selectionStore: FakeVoiceSelectionStore(),
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            voiceTargetResolver: targetResolver
-        )
-        let pressPoint = CGPoint(x: 321, y: 654)
-        manager.bindShortcutTransitions()
-
-        manager.globalPushToTalkShortcutMonitor.shortcutTransitionPublisher.send(.pressed(
-            PickyPTTPressObservation(
-                screenPoint: pressPoint,
-                observedAt: Date(timeIntervalSince1970: 1_800_000_000),
-                source: .keyboardShortcut
-            )
-        ))
-
-        #expect(targetResolver.requestedScreenPoints == [pressPoint])
-        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-global")
-        manager.stop()
-    }
-
-    @Test func externalPTTUsesPointerLocationAtReceiptTime() async throws {
-        let client = FakeVoiceClient()
-        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-external")
-        let receiptPoint = CGPoint(x: 777, y: 333)
         let manager = CompanionManager(
             agentClient: client,
             selectionStore: FakeVoiceSelectionStore(),
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            voiceTargetResolver: targetResolver,
-            pointerLocationProvider: { receiptPoint }
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
         )
 
-        manager.controlPushToTalkFromExternal(action: .press)
-        manager.submitTranscriptToPickyAgent(transcript: "외부 버튼 입력")
+        manager.handleShortcutTransition(.pressed)
+        manager.submitTranscriptToPickyAgent(transcript: "메인에게 보내줘")
 
-        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-external" } }
-        #expect(targetResolver.requestedScreenPoints == [receiptPoint])
-        manager.stop()
-    }
-
-    @Test func pointerMovementAfterPTTPressDoesNotRetargetCurrentUtterance() async throws {
-        let client = FakeVoiceClient()
-        let targetResolver = FakeVoiceTargetResolver(sessionID: "pickle-at-press")
-        let manager = CompanionManager(
-            agentClient: client,
-            selectionStore: FakeVoiceSelectionStore(),
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
-            voiceTargetResolver: targetResolver
-        )
-
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: CGPoint(x: 100, y: 200))
-        targetResolver.sessionID = "pickle-after-move"
-        manager.submitTranscriptToPickyAgent(transcript: "처음 대상을 유지해줘")
-
-        try await waitUntil { client.commands.contains { $0.sessionId == "pickle-at-press" } }
-        #expect(client.commands.contains { $0.sessionId == "pickle-after-move" } == false)
-        #expect(targetResolver.requestedScreenPoints.count == 1)
+        try await waitUntil { client.submissions.contains { $0.transcript == "메인에게 보내줘" } }
+        #expect(client.commands.allSatisfy { $0.sessionId == nil })
         manager.stop()
     }
 
@@ -1546,7 +1364,7 @@ struct PickyCompanionManagerTests {
         manager.speakSystemMessage("긴 음성 응답을 재생하는 중입니다")
         #expect(manager.voiceState == .responding)
 
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
         #expect(manager.voiceState == .listening)
         #expect(speechProvider.isSpeaking == false)
 
@@ -1801,7 +1619,7 @@ struct PickyCompanionManagerTests {
         defer { manager.stop() }
         #expect(await manager.sendDirectMessage("continue this work", source: .quickInput))
 
-        manager.handleShortcutTransition(.pressed, pressedScreenPoint: .zero)
+        manager.handleShortcutTransition(.pressed)
         try await waitUntil { client.commands.contains { $0.type == .abortMainAgent } }
         #expect(!client.commands.contains { $0.type == .abort })
         manager.handleShortcutTransition(.released)

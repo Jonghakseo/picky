@@ -95,6 +95,11 @@ struct PickyComposerRuntimePresentation: Equatable {
         thinkingText = assistantRun?.thinkingLevel.map { Self.normalized($0.rawValue) } ?? nil
     }
 
+    /// Compact model name for the composer settings chip (no vendor prefix).
+    var chipModelText: String? {
+        modelIdentifier.map(PickyAssistantRunMetadata.compactModelName)
+    }
+
     var hasControls: Bool {
         modelText != nil || thinkingText != nil
     }

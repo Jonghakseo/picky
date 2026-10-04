@@ -821,15 +821,6 @@ struct PickyConversationCardViewTests {
         #expect(composer.placeholderText == L10n.t("hud.composer.placeholder.question"))
     }
 
-    @Test func composerShowsIndependentCompletionDestinationStates() {
-        #expect(PickyComposerLabelPolicy.notifyMainOnCompletionHelpText(enabled: true) == L10n.t("hud.composer.notifyMain.on.help"))
-        #expect(PickyComposerLabelPolicy.notifyMainOnCompletionHelpText(enabled: false) == L10n.t("hud.composer.notifyMain.off.help"))
-        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionIconName(enabled: true) == "bell.fill")
-        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionIconName(enabled: false) == "bell.slash")
-        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionHelpText(enabled: true) == L10n.t("hud.composer.notifyMacOS.on.help"))
-        #expect(PickyComposerLabelPolicy.notifyMacOSOnCompletionHelpText(enabled: false) == L10n.t("hud.composer.notifyMacOS.off.help"))
-    }
-
     @Test func composerStopButtonOnlyShowsForActiveTurns() {
         let viewModel = makeViewModel()
         let userMessage = message("m1", kind: .userText, text: "hi")
@@ -1659,28 +1650,6 @@ struct PickyConversationCardViewTests {
         #expect(!noPiMenu.canCopyResumeCommand)
         #expect(!noPiMenu.canSyncFromPiSession)
         #expect(!noPiMenu.canStop)
-    }
-
-    @Test func cardHoverSeedsVoiceFollowUpTargetForPushToTalk() async throws {
-        let client = ConversationCardFakeClient()
-        let selection = ConversationCardSelectionStore()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
-        viewModel.start()
-        defer { viewModel.stop() }
-
-        client.emit(.protocolEvent(.fixture(eventJSON: sessionProjectionSnapshotJSON(id: "pickle-voice", status: "running"))))
-        try await waitForSession(viewModel, id: "pickle-voice")
-
-        let session = try #require(viewModel.sessions.first(where: { $0.id == "pickle-voice" }))
-        let card = PickyConversationCardView(viewModel: viewModel, session: session)
-
-        card.updateVoiceFollowUpHover(true)
-        #expect(viewModel.hoveredVoiceFollowUpSessionID == "pickle-voice")
-        #expect(selection.hoveredVoiceFollowUpSessionID == "pickle-voice")
-
-        card.updateVoiceFollowUpHover(false)
-        #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
-        #expect(selection.hoveredVoiceFollowUpSessionID == nil)
     }
 
     @Test func userBubbleShowsByMainAgentLabelWhenOriginated() {

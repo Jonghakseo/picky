@@ -63,7 +63,9 @@ struct PickyAssistantRunMetadata: Codable, Equatable {
         return parts.joined(separator: " ")
     }
 
-    private static func compactModelName(_ rawModel: String) -> String {
+    /// Last path segment without the "claude-" / "openai-" vendor prefix.
+    /// Shared by the header tooltip and the composer settings chip.
+    static func compactModelName(_ rawModel: String) -> String {
         let leaf = rawModel.split(separator: "/").last.map(String.init) ?? rawModel
         for prefix in ["claude-", "openai-"] where leaf.hasPrefix(prefix) {
             return String(leaf.dropFirst(prefix.count))

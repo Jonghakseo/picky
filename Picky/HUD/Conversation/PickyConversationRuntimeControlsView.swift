@@ -20,6 +20,17 @@ enum PickyComposerRuntimePickerScreen {
     case allModels
 }
 
+enum PickyComposerSettingsPage: Equatable {
+    case menu
+    case model
+    case thinking
+}
+
+struct PickyComposerCompletionNotificationState: Equatable {
+    let notifyMain: Bool
+    let notifyMacOS: Bool
+}
+
 struct PickyConversationRuntimeControlsView: View {
 
     let presentation: PickyComposerRuntimePresentation
@@ -51,10 +62,14 @@ struct PickyConversationRuntimeControlsView: View {
     /// Nil hides the control: the current model has no provider fast mode.
     let fastMode: PickyComposerFastModeControlState?
     let onToggleFastMode: () -> Void
+    /// Nil hides the completion section (galleries that show runtime rows only).
+    let completionNotifications: PickyComposerCompletionNotificationState?
+    let onToggleNotifyMain: () -> Void
+    let onToggleNotifyMacOS: () -> Void
 
     @State private var modelQuery = ""
     @State private var pickerScreen: PickyComposerRuntimePickerScreen = .quick
-    @State private var isThinkingPickerPresented = false
+    @State private var settingsPage: PickyComposerSettingsPage = .menu
     @StateObject private var fastModeNotice = PickyComposerFastModeNotice()
     @State private var lastHandledScopeApplyGeneration = 0
     @FocusState private var focusedModelRowID: String?
@@ -86,7 +101,10 @@ struct PickyConversationRuntimeControlsView: View {
         onReloadGlobalScope: @escaping () -> Void,
         onApplyGlobalScope: @escaping () -> Void,
         fastMode: PickyComposerFastModeControlState? = nil,
-        onToggleFastMode: @escaping () -> Void = {}
+        onToggleFastMode: @escaping () -> Void = {},
+        completionNotifications: PickyComposerCompletionNotificationState? = nil,
+        onToggleNotifyMain: @escaping () -> Void = {},
+        onToggleNotifyMacOS: @escaping () -> Void = {}
     ) {
         self.presentation = presentation
         self.actionError = actionError
@@ -115,90 +133,284 @@ struct PickyConversationRuntimeControlsView: View {
         self.onApplyGlobalScope = onApplyGlobalScope
         self.fastMode = fastMode
         self.onToggleFastMode = onToggleFastMode
+        self.completionNotifications = completionNotifications
+        self.onToggleNotifyMain = onToggleNotifyMain
+        self.onToggleNotifyMacOS = onToggleNotifyMacOS
     }
 
-    @ViewBuilder
     var body: some View {
-        if presentation.hasControls || fastMode != nil || actionError != nil {
-            controls
-        }
-    }
-
-    private var controls: some View {
         HStack(spacing: DS.Spacing.space1) {
-            modelControl
-            thinkingControl
-            fastModeControl
+            settingsChip
             runtimeError
         }
-        .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))
-        .onChange(of: sessionID) { _, _ in fastModeNotice.dismiss() }
+        .onChange(of: sessionID) { _, _ in
+            fastModeNotice.dismiss()
+            settingsPage = .menu
+        }
         .onChange(of: fastMode) { _, _ in fastModeNotice.dismiss() }
-    }
-
-    @ViewBuilder
-    private var modelControl: some View {
-        if let modelText = presentation.modelText {
-            Button {
-                isThinkingPickerPresented = false
-                fastModeNotice.dismiss()
-                onOpenModelPicker()
-            } label: {
-                controlLabel(text: modelText, maximumTextWidth: PickyComposerToolbarMetrics.modelLabelMaximumWidth)
-            }
-            .buttonStyle(PickyComposerToolbarGhostButtonStyle())
-            .help(L10n.t("hud.composer.runtime.model.help"))
-            .accessibilityLabel(presentation.modelLabel ?? modelText)
-            .accessibilityHint(L10n.t("hud.composer.runtime.model.accessibilityHint"))
-            .disabled(isModelActionInFlight)
-            .pickyInstantPopover(isPresented: $isModelPickerPresented, arrowEdge: .bottom) { modelPicker }
+        .onChange(of: isModelPickerPresented) { _, isPresented in
+            guard !isPresented else { return }
+            fastModeNotice.dismiss()
+            settingsPage = .menu
         }
     }
 
-    @ViewBuilder
-    private var thinkingControl: some View {
-        if let thinkingText = presentation.thinkingText {
-            Button {
-                isModelPickerPresented = false
-                fastModeNotice.dismiss()
-                isThinkingPickerPresented = true
-            } label: {
-                controlLabel(text: thinkingText)
+    // MARK: Settings chip
+
+    /// One chip for every per-Pickle setting. It shows the compact model name,
+    /// thinking level, and Fast only while Fast is on (it costs more); the
+    /// completion alerts stay inside the popover.
+    private var settingsChip: some View {
+        Button {
+            settingsPage = .menu
+            fastModeNotice.dismiss()
+            onOpenModelPicker()
+        } label: {
+            HStack(spacing: DS.Spacing.space1) {
+                if let chipModelText = presentation.chipModelText {
+                    PickyComposerCappedWidthLayout(
+                        maximumWidth: PickyComposerToolbarMetrics.settingsChipModelMaximumWidth,
+                        minimumWidth: PickyComposerToolbarMetrics.settingsChipModelMinimumWidth
+                    ) {
+                        Text(chipModelText).lineLimit(1).truncationMode(.middle)
+                    }
+                    // The model name shrinks first so the send/stop actions never clip.
+                    .layoutPriority(-1)
+                }
+                ForEach(Array(chipSuffixes.enumerated()), id: \.offset) { index, suffix in
+                    if index > 0 || presentation.chipModelText != nil {
+                        Text(verbatim: "·").foregroundColor(DS.Colors.textTertiary)
+                    }
+                    Text(suffix).lineLimit(1).fixedSize()
+                }
+                if presentation.chipModelText == nil, chipSuffixes.isEmpty {
+                    Text("hud.composer.settings.chip.empty").lineLimit(1).fixedSize()
+                }
+                Image(systemName: "chevron.down")
+                    .pickyFont(size: 7.5, weight: .bold)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(PickyComposerToolbarGhostButtonStyle())
-            .help(L10n.t("hud.composer.runtime.thinking.help"))
-            .accessibilityLabel(presentation.thinkingLabel ?? thinkingText)
-            .accessibilityHint(L10n.t("hud.composer.runtime.thinking.accessibilityHint"))
-            .disabled((runtimeOptions?.thinkingLevels.isEmpty ?? true) || isThinkingActionInFlight)
-            .pickyInstantPopover(isPresented: $isThinkingPickerPresented, arrowEdge: .bottom) { thinkingPicker }
+            .font(PickyHUDTypography.status)
+            .foregroundColor(DS.Colors.textSecondary)
+            .padding(.horizontal, DS.Spacing.space2)
+            .frame(height: PickyComposerToolbarMetrics.controlSize)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: isModelPickerPresented))
+        .help(L10n.t("hud.composer.settings.help"))
+        .accessibilityLabel(L10n.t("hud.composer.settings.accessibilityLabel"))
+        .accessibilityValue(chipAccessibilityValue)
+        .pickyInstantPopover(isPresented: $isModelPickerPresented, arrowEdge: .bottom) {
+            settingsPopover
         }
     }
 
+    private var chipSuffixes: [String] {
+        var suffixes: [String] = []
+        if let thinkingText = presentation.thinkingText { suffixes.append(thinkingText) }
+        if fastMode?.isEnabled == true { suffixes.append(L10n.t("hud.composer.settings.chip.fast")) }
+        return suffixes
+    }
+
+    private var chipAccessibilityValue: String {
+        ([presentation.modelText] + chipSuffixes.map(Optional.some))
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+
     @ViewBuilder
-    private var fastModeControl: some View {
-        if let fastMode {
-            Button {
-                isModelPickerPresented = false
-                isThinkingPickerPresented = false
-                fastModeNotice.requestToggle(control: fastMode, sessionID: sessionID, onToggle: onToggleFastMode)
-            } label: {
-                Image(systemName: fastMode.isEnabled ? "bolt.fill" : "bolt")
-                    .pickyFont(size: 10.5, weight: .semibold)
-                    .foregroundColor(fastMode.isEnabled ? DS.Colors.accentText : DS.Colors.textTertiary)
-                    .frame(width: PickyComposerToolbarMetrics.controlSize, height: PickyComposerToolbarMetrics.controlSize)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(PickyComposerToolbarGhostButtonStyle())
-            .disabled(fastMode.isUpdating)
-            .nativeTooltip(L10n.t(fastMode.isEnabled ? "hud.composer.fastMode.on.help" : "hud.composer.fastMode.off.help"))
-            .accessibilityLabel(L10n.t("hud.composer.fastMode.accessibilityLabel"))
-            .accessibilityValue(L10n.t(fastMode.isEnabled ? "hud.composer.fastMode.on.value" : "hud.composer.fastMode.off.value"))
-            .pickyInstantPopover(isPresented: $fastModeNotice.isPresented, arrowEdge: .bottom) {
-                fastModeCostNotice
+    private var settingsPopover: some View {
+        if fastModeNotice.isPresented {
+            fastModeCostNotice
+        } else {
+            switch settingsPage {
+            case .menu:
+                settingsMenu
+            case .model:
+                VStack(alignment: .leading, spacing: 0) {
+                    settingsBackButton
+                    modelPicker
+                }
+            case .thinking:
+                VStack(alignment: .leading, spacing: 0) {
+                    settingsBackButton
+                    thinkingPicker
+                }
             }
         }
+    }
+
+    /// Exposed for the offscreen gallery, which mounts it without a popover.
+    var settingsMenu: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            settingsSectionLabel("hud.composer.settings.title")
+                .padding(.top, DS.Spacing.space3)
+            if let modelText = presentation.modelText {
+                settingsValueRow(
+                    title: "hud.composer.settings.model",
+                    value: modelText,
+                    shortcut: "⌃P",
+                    action: { settingsPage = .model }
+                )
+                .disabled(isModelActionInFlight)
+            }
+            if let thinkingText = presentation.thinkingText {
+                settingsValueRow(
+                    title: "hud.composer.settings.thinking",
+                    value: thinkingText,
+                    shortcut: nil,
+                    action: { settingsPage = .thinking }
+                )
+                .disabled((runtimeOptions?.thinkingLevels.isEmpty ?? true) || isThinkingActionInFlight)
+            }
+            if let fastMode {
+                settingsToggleRow(
+                    title: "hud.composer.settings.fast",
+                    detail: "hud.composer.settings.fast.detail",
+                    shortcut: nil,
+                    isOn: fastMode.isEnabled,
+                    isDisabled: fastMode.isUpdating
+                ) {
+                    fastModeNotice.requestToggle(control: fastMode, sessionID: sessionID, onToggle: onToggleFastMode)
+                }
+            }
+            if let completionNotifications {
+                if presentation.hasControls || fastMode != nil {
+                    Divider()
+                        .padding(.horizontal, DS.Spacing.space3)
+                        .padding(.vertical, DS.Spacing.space2)
+                }
+                settingsSectionLabel("hud.composer.settings.completion")
+                settingsToggleRow(
+                    title: "hud.composer.settings.notifyMain",
+                    detail: nil,
+                    shortcut: nil,
+                    isOn: completionNotifications.notifyMain,
+                    isDisabled: false,
+                    onToggle: onToggleNotifyMain
+                )
+                settingsToggleRow(
+                    title: "hud.composer.settings.notifyMacOS",
+                    detail: nil,
+                    shortcut: "⌘N",
+                    isOn: completionNotifications.notifyMacOS,
+                    isDisabled: false,
+                    onToggle: onToggleNotifyMacOS
+                )
+            }
+            Spacer().frame(height: DS.Spacing.space1)
+        }
+        .frame(width: PickyComposerToolbarMetrics.settingsMenuWidth, alignment: .leading)
+    }
+
+    private var settingsBackButton: some View {
+        Button { settingsPage = .menu } label: {
+            HStack(spacing: DS.Spacing.space1) {
+                Image(systemName: "chevron.left")
+                    .pickyFont(size: 9, weight: .bold)
+                    .accessibilityHidden(true)
+                Text("hud.composer.settings.title")
+            }
+            .font(PickyHUDTypography.status)
+            .foregroundColor(DS.Colors.textSecondary)
+            .padding(.horizontal, DS.Spacing.space3)
+            .padding(.top, DS.Spacing.space2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.t("hud.composer.settings.back.accessibilityLabel"))
+    }
+
+    private func settingsSectionLabel(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(PickyHUDTypography.status)
+            .foregroundColor(DS.Colors.textTertiary)
+            .padding(.horizontal, DS.Spacing.space3)
+            .padding(.bottom, DS.Spacing.space1)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    // Every row shares one 8pt vertical inset with no fixed height, so the gap
+    // between visible content stays 16pt whether or not a row has a detail line.
+    private func settingsValueRow(
+        title: LocalizedStringKey,
+        value: String,
+        shortcut: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: DS.Spacing.space2) {
+                Text(title)
+                    .font(PickyHUDTypography.bodyCompact)
+                    .foregroundColor(DS.Colors.textPrimary)
+                Spacer(minLength: DS.Spacing.space2)
+                if let shortcut {
+                    Text(verbatim: shortcut)
+                        .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .accessibilityHidden(true)
+                }
+                Text(value)
+                    .font(PickyHUDTypography.status)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.right")
+                    .pickyFont(size: 8, weight: .bold)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, DS.Spacing.space3)
+            .padding(.vertical, DS.Spacing.space2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PickyComposerSettingsRowButtonStyle())
+        .accessibilityValue(value)
+    }
+
+    private func settingsToggleRow(
+        title: LocalizedStringKey,
+        detail: LocalizedStringKey?,
+        shortcut: String?,
+        isOn: Bool,
+        isDisabled: Bool,
+        onToggle: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: DS.Spacing.space2) {
+            VStack(alignment: .leading, spacing: 2) { // design-token-exception: title/detail optical gap
+                Text(title)
+                    .font(PickyHUDTypography.bodyCompact)
+                    .foregroundColor(DS.Colors.textPrimary)
+                if let detail {
+                    Text(detail)
+                        .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: DS.Spacing.space2)
+            if let shortcut {
+                Text(verbatim: shortcut)
+                    .font(PickyHUDTypography.status)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            Toggle(isOn: Binding(get: { isOn }, set: { newValue in
+                guard newValue != isOn else { return }
+                onToggle()
+            })) {
+                Text(title)
+            }
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .disabled(isDisabled)
+        }
+        .padding(.horizontal, DS.Spacing.space3)
+        .padding(.vertical, DS.Spacing.space2)
     }
 
     /// Production popover content, also mounted directly by the offscreen gallery.
@@ -265,7 +477,6 @@ struct PickyConversationRuntimeControlsView: View {
         }
         .onChange(of: sessionID) { _, _ in
             pickerScreen = .quick
-            isThinkingPickerPresented = false
             lastHandledScopeApplyGeneration = 0
             resetPicker()
         }
@@ -304,7 +515,7 @@ struct PickyConversationRuntimeControlsView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(runtimeOptions?.thinkingLevels ?? [], id: \.self) { level in
                 Button {
-                    isThinkingPickerPresented = false
+                    isModelPickerPresented = false
                     onSelectThinkingLevel(level)
                 } label: {
                     pickerRowLabel(
@@ -326,7 +537,7 @@ struct PickyConversationRuntimeControlsView: View {
             Divider()
                 .padding(.vertical, DS.Spacing.space1)
             Button {
-                isThinkingPickerPresented = false
+                isModelPickerPresented = false
                 onSetNewPickleDefaultThinking(
                     PickyMainAgentThinkingLevel(rawValue: presentation.thinkingText ?? "") ?? .off
                 )
@@ -354,7 +565,7 @@ struct PickyConversationRuntimeControlsView: View {
                 ? currentID
                 : thinkingRowIDs.first
         }
-        .onExitCommand { isThinkingPickerPresented = false }
+        .onExitCommand { settingsPage = .menu }
     }
 
     @ViewBuilder
@@ -656,17 +867,6 @@ struct PickyConversationRuntimeControlsView: View {
 
     private static let thinkingDefaultRowID = "picky.runtime.thinking.default"
 
-    private func controlLabel(text: String, maximumTextWidth: CGFloat? = nil) -> some View {
-        Text(text)
-            .font(PickyHUDTypography.meta)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .frame(maxWidth: maximumTextWidth)
-            .foregroundColor(DS.Colors.textSecondary)
-            .padding(.horizontal, DS.Spacing.space2)
-            .frame(height: PickyComposerToolbarMetrics.controlSize)
-            .contentShape(Rectangle())
-    }
 }
 
 /// Fast mode toggle shown only while the current model supports provider fast mode.
@@ -706,7 +906,9 @@ struct PickyComposerToolbarGhostButtonStyle: ButtonStyle {
 
 enum PickyComposerToolbarMetrics {
     static let controlSize = DS.Spacing.space6 + DS.Spacing.space1
-    static let modelLabelMaximumWidth: CGFloat = 126 // design-token-exception: keeps long runtime model IDs inside the fixed 446pt Composer row
+    static let settingsChipModelMaximumWidth: CGFloat = 104 // design-token-exception: the chip caps the model name so the 446pt row keeps its actions
+    static let settingsChipModelMinimumWidth: CGFloat = 36 // design-token-exception: keeps a few glyphs of the model visible under pressure
+    static let settingsMenuWidth = DS.Spacing.space8 * 8 + DS.Spacing.space2
     static let runtimePickerListMinimumHeight = DS.Spacing.space8 * 3
     static let runtimePickerListHeight = runtimePickerListMinimumHeight
     static let runtimePickerRowHeight = DS.Spacing.space6
@@ -715,4 +917,42 @@ enum PickyComposerToolbarMetrics {
     static let runtimePickerWidth = DS.Spacing.space8 * 8
     static let runtimeQuickPickerHeight = DS.Spacing.space8 * 8 - DS.Spacing.space2
     static let runtimeThinkingPickerWidth = runtimePickerWidth
+}
+
+/// Highlights a settings row on hover/press like a native menu item.
+struct PickyComposerSettingsRowButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(isEnabled ? 1 : 0.5)
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
+                    .fill(configuration.isPressed ? DS.Colors.surface4 : (isHovered ? DS.Colors.surface3 : .clear))
+                    .padding(.horizontal, DS.Spacing.space1)
+            )
+            .onHover { isHovered = isEnabled && $0 }
+    }
+}
+
+/// Hugs its content, caps it at `maximumWidth`, and gives way down to
+/// `minimumWidth` when the row runs out of room.
+struct PickyComposerCappedWidthLayout: Layout {
+    let maximumWidth: CGFloat
+    let minimumWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let ideal = content.sizeThatFits(.unspecified)
+        let target = max(minimumWidth, min(ideal.width, maximumWidth, proposal.width ?? .infinity))
+        // A truncated label is narrower than the width it was offered; report
+        // that width so no gap opens before the next label.
+        let fitted = content.sizeThatFits(ProposedViewSize(width: target, height: nil))
+        return CGSize(width: min(target, max(minimumWidth, fitted.width)), height: ideal.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
 }

@@ -128,8 +128,7 @@ struct PickyHUDDockGroupListHoverPolicyTests {
             appearanceStore: PickyAppearanceStore(settingsStore: settingsStore),
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settingsStore),
             visibilityStore: PickyHUDVisibilityStore(settingsStore: settingsStore),
-            settingsStore: settingsStore,
-            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry()
+            settingsStore: settingsStore
         )
         let displayID: CGDirectDisplayID = 71
         let panel = PickyHUDDockGroupListPanel(

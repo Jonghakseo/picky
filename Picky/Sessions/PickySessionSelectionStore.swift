@@ -8,13 +8,8 @@
 import Foundation
 
 extension Notification.Name {
-    static let pickyVoiceFollowUpTargetChanged = Notification.Name("pickyVoiceFollowUpTargetChanged")
     static let pickyScreenContextTargetChanged = Notification.Name("pickyScreenContextTargetChanged")
     static let pickyComposerDraftAppendRequested = Notification.Name("pickyComposerDraftAppendRequested")
-}
-
-enum PickyVoiceFollowUpTargetNotification {
-    static let sessionIDKey = "sessionID"
 }
 
 enum PickyScreenContextTargetNotification {
@@ -30,7 +25,6 @@ enum PickyComposerDraftAppendNotification {
 
 protocol PickySessionSelectionStoring: AnyObject {
     var selectedSessionID: String? { get set }
-    var hoveredVoiceFollowUpSessionID: String? { get set }
     var screenContextTargetSessionID: String? { get set }
     /// Monotonic identity of the current armed-target semantics. Voice input
     /// snapshots this value so completion cannot clear a target re-armed later.
@@ -107,7 +101,6 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     static let key = "PickySelectedSessionID"
 
     private let defaults: UserDefaults
-    private var transientHoveredVoiceFollowUpSessionID: String?
     private var transientScreenContextTargetSessionID: String?
     private var transientScreenContextTargetSticky: Bool = false
     private var transientScreenContextTargetLabel: String?
@@ -129,11 +122,6 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
                 defaults.removeObject(forKey: Self.key)
             }
         }
-    }
-
-    var hoveredVoiceFollowUpSessionID: String? {
-        get { transientHoveredVoiceFollowUpSessionID }
-        set { transientHoveredVoiceFollowUpSessionID = newValue?.isEmpty == true ? nil : newValue }
     }
 
     var screenContextTargetSessionID: String? {

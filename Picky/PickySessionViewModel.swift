@@ -9,9 +9,6 @@ final class PickySessionListViewModel: ObservableObject {
     }
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
-    let voiceFollowUpHoverState = PickyVoiceFollowUpHoverState()
-    var hoveredVoiceFollowUpSessionID: String? { voiceFollowUpHoverState.sessionID }
-    @Published private(set) var activeVoiceFollowUpSessionID: String?
     @Published private(set) var screenContextTargetSessionID: String? {
         didSet { scheduleDockStateSync() }
     }
@@ -170,7 +167,6 @@ final class PickySessionListViewModel: ObservableObject {
     /// completed — or, if the watchdog fires, exactly how long we waited
     /// before giving up.
     private var lastConnectedAt: Date?
-    private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var screenContextTargetCancellable: AnyCancellable?
     private var composerDraftAppendCancellable: AnyCancellable?
     private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
@@ -260,7 +256,6 @@ final class PickySessionListViewModel: ObservableObject {
             )
         }
         self.selectedSessionID = selectionStore.selectedSessionID
-        self.voiceFollowUpHoverState.sessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
         self.screenContextTargetSticky = selectionStore.screenContextTargetSticky
         self.hasExplicitSelection = self.selectedSessionID != nil
@@ -268,11 +263,6 @@ final class PickySessionListViewModel: ObservableObject {
             sendCommand: { [client] in try await client.send($0) },
             onSendFailure: { [weak self] in self?.lastError = $0 }
         )
-        self.voiceFollowUpTargetCancellable = NotificationCenter.default.publisher(for: .pickyVoiceFollowUpTargetChanged)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                self?.setActiveVoiceFollowUpSessionID(notification.userInfo?[PickyVoiceFollowUpTargetNotification.sessionIDKey] as? String)
-            }
         self.screenContextTargetCancellable = NotificationCenter.default.publisher(for: .pickyScreenContextTargetChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
@@ -591,29 +581,6 @@ final class PickySessionListViewModel: ObservableObject {
         case .queued, .running, .waiting_for_input:
             break
         }
-    }
-
-    func beginHoveredVoiceFollowUp(sessionID: String) {
-        // Dedup before mutating @Published — SwiftUI onHover can fire repeated
-        // hovering=true callbacks (e.g. on scroll or layout updates), and any
-        // assignment to a @Published republishes regardless of equality. The
-        // resulting objectWillChange cascade re-evaluates every HUD view that
-        // observes the viewModel (conversation card/list/header/composer/etc.),
-        // which in turn re-parses markdown for each bubble's isTruncated check
-        // and re-measures TextKit. Guarding with a same-value early return
-        // keeps the hover-driven cascade to one event per real state change.
-        guard hoveredVoiceFollowUpSessionID != sessionID else { return }
-        guard sessions.contains(where: { $0.id == sessionID }) else { return }
-        voiceFollowUpHoverState.sessionID = sessionID
-        selectionStore.hoveredVoiceFollowUpSessionID = sessionID
-        pickySessionLog("voice follow-up hovered session=\(sessionID)")
-    }
-
-    func endHoveredVoiceFollowUp(sessionID: String) {
-        guard hoveredVoiceFollowUpSessionID == sessionID else { return }
-        voiceFollowUpHoverState.sessionID = nil
-        selectionStore.hoveredVoiceFollowUpSessionID = nil
-        pickySessionLog("voice follow-up hover cleared session=\(sessionID)")
     }
 
     func toggleScreenContextTarget(sessionID: String) {
@@ -1457,13 +1424,6 @@ final class PickySessionListViewModel: ObservableObject {
             selectedSessionID = defaultSelectionID()
             selectionStore.selectedSessionID = nil
         }
-        if hoveredVoiceFollowUpSessionID == sessionID {
-            voiceFollowUpHoverState.sessionID = nil
-            selectionStore.hoveredVoiceFollowUpSessionID = nil
-        }
-        if activeVoiceFollowUpSessionID == sessionID {
-            activeVoiceFollowUpSessionID = nil
-        }
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTarget(sessionID: sessionID)
         }
@@ -1503,9 +1463,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
         applyManualOrder()
         syncSelectionAfterSessionListChange()
-        syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
-        syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
     /// Tear down the child daemon once the archive undo window expires. Called from
@@ -1562,9 +1520,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
         applyManualOrder()
         syncSelectionAfterSessionListChange()
-        syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
-        syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
     func stopArchivedAsyncWork(sessionID: String) async throws {
@@ -1630,13 +1586,6 @@ final class PickySessionListViewModel: ObservableObject {
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTargetState()
         }
-        if hoveredVoiceFollowUpSessionID == sessionID {
-            voiceFollowUpHoverState.sessionID = nil
-            selectionStore.hoveredVoiceFollowUpSessionID = nil
-        }
-        if activeVoiceFollowUpSessionID == sessionID {
-            activeVoiceFollowUpSessionID = nil
-        }
         if selectedSessionID == sessionID {
             hasExplicitSelection = false
             selectedSessionID = defaultSelectionID()
@@ -1672,9 +1621,7 @@ final class PickySessionListViewModel: ObservableObject {
         pruneSlashCommandCache(knownSessionIDs: knownSessionIDs)
         applyManualOrder()
         syncSelectionAfterSessionListChange()
-        syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
-        syncActiveVoiceFollowUpAfterSessionListChange()
         if isPrimary {
             // Membership is authoritative only here, so this is the first and
             // only point where the pre-group drag order can be replayed onto
@@ -2108,9 +2055,7 @@ final class PickySessionListViewModel: ObservableObject {
             // a per-card mutation does not change order, so no reapply needed.
             PickyPerf.interval("vm_update_sync_selection_state") {
                 syncSelectionAfterSessionListChange()
-                syncVoiceFollowUpAfterSessionListChange()
                 syncScreenContextTargetAfterSessionListChange()
-                syncActiveVoiceFollowUpAfterSessionListChange()
             }
             deliverNotificationIfNeeded(for: updatedCard)
             didMutateActive = true
@@ -2229,15 +2174,6 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func syncVoiceFollowUpAfterSessionListChange() {
-        if let hoveredVoiceFollowUpSessionID, sessions.contains(where: { $0.id == hoveredVoiceFollowUpSessionID }) {
-            selectionStore.hoveredVoiceFollowUpSessionID = hoveredVoiceFollowUpSessionID
-        } else {
-            voiceFollowUpHoverState.sessionID = nil
-            selectionStore.hoveredVoiceFollowUpSessionID = nil
-        }
-    }
-
     func syncScreenContextTargetAfterSessionListChange() {
         if let screenContextTargetSessionID,
            let session = sessions.first(where: { $0.id == screenContextTargetSessionID }) {
@@ -2253,17 +2189,6 @@ final class PickySessionListViewModel: ObservableObject {
         } else if screenContextTargetSessionID != nil {
             clearScreenContextTarget(sessionID: screenContextTargetSessionID)
         }
-    }
-
-    private func setActiveVoiceFollowUpSessionID(_ sessionID: String?) {
-        let trimmed = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        activeVoiceFollowUpSessionID = trimmed.isEmpty ? nil : trimmed
-        syncActiveVoiceFollowUpAfterSessionListChange()
-    }
-
-    func syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: Bool = false) {
-        if let activeVoiceFollowUpSessionID, sessions.contains(where: { $0.id == activeVoiceFollowUpSessionID }) { return }
-        if !skippingRedundantPublishedAssignments || activeVoiceFollowUpSessionID != nil { activeVoiceFollowUpSessionID = nil }
     }
 
     private func defaultSelectionID() -> String? {

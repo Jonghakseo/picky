@@ -183,7 +183,6 @@ struct PickyConversationCardView: View {
         .contentShape(Rectangle())
         .environment(\.pickyHUDDetailWidth, width)
         .onDrop(of: PickyConversationFileDrop.acceptedTypeIdentifiers, isTargeted: $isFileDropTargeted, perform: handleFileDrop)
-        .onHover(perform: updateVoiceFollowUpHover)
         .sheet(isPresented: $showingRewindPicker) {
             PickyRewindPickerView(session: session, commands: viewModel)
         }
@@ -377,14 +376,6 @@ struct PickyConversationCardView: View {
             }
         }
         return true
-    }
-
-    func updateVoiceFollowUpHover(_ hovering: Bool) {
-        if hovering {
-            viewModel.beginHoveredVoiceFollowUp(sessionID: session.id)
-        } else {
-            viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
-        }
     }
 
     private var cardBackground: some View {

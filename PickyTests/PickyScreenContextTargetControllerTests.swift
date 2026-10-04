@@ -149,7 +149,7 @@ struct PickyScreenContextTargetControllerTests {
         let (controller, store, _) = makeController(armed: "pickle-a")
         let pointerSnapshot = PickyVoiceInputTargetSnapshot(
             inputID: UUID(),
-            target: .pickle(sessionID: "pickle-a", origin: .pointer)
+            target: .pickle(sessionID: "pickle-a", origin: .unarmed)
         )
 
         controller.clearIfCurrent(pointerSnapshot, includingSticky: true)

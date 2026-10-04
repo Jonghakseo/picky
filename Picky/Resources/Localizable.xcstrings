@@ -14236,102 +14236,6 @@
         }
       }
     },
-    "hud.composer.notifyMain.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Report completion to Main Picky"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "완료 시 Main Picky에 보고"
-          }
-        }
-      }
-    },
-    "hud.composer.notifyMain.off.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Do not report completion to Main Picky"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "완료 시 Main Picky에 보고하지 않기"
-          }
-        }
-      }
-    },
-    "hud.composer.notifyMain.on.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Report completion to Main Picky"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "완료 시 Main Picky에 보고하기"
-          }
-        }
-      }
-    },
-    "hud.composer.notifyMacOS.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS completion notification"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 완료 알림"
-          }
-        }
-      }
-    },
-    "hud.composer.notifyMacOS.off.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Do not send a macOS completion notification (⌘N)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 완료 알림 보내지 않기 (⌘N)"
-          }
-        }
-      }
-    },
-    "hud.composer.notifyMacOS.on.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Send a macOS completion notification (⌘N)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "macOS 완료 알림 보내기 (⌘N)"
-          }
-        }
-      }
-    },
     "hud.composer.placeholder.compacting": {
       "localizations": {
         "en": {
@@ -14456,70 +14360,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "모델 또는 추론 설정을 변경하지 못했어요: %@"
-          }
-        }
-      }
-    },
-    "hud.composer.runtime.model.accessibilityHint": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose model. Control-P cycles forward and Shift-Control-P cycles backward."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "모델을 선택하세요. Control-P는 다음 모델, Shift-Control-P는 이전 모델로 바꿔요."
-          }
-        }
-      }
-    },
-    "hud.composer.runtime.model.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose model (⌃P / ⇧⌃P cycles)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "모델 선택 (⌃P / ⇧⌃P 변경)"
-          }
-        }
-      }
-    },
-    "hud.composer.runtime.thinking.accessibilityHint": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose a supported thinking level. Shift-Tab cycles levels."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "지원되는 추론 수준을 선택하세요. Shift-Tab으로 수준을 바꿔요."
-          }
-        }
-      }
-    },
-    "hud.composer.runtime.thinking.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose thinking level (⇧Tab cycles)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "추론 수준 선택 (⇧Tab 변경)"
           }
         }
       }
@@ -15880,38 +15720,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pickle 대상 전환"
-          }
-        }
-      }
-    },
-    "hud.header.target.voice.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pickle status: %@, voice input target"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pickle 상태: %@, 음성 지시 대상"
-          }
-        }
-      }
-    },
-    "hud.header.target.voice.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@. Voice input target"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@. 음성 지시 대상"
           }
         }
       }
@@ -28260,91 +28068,6 @@
       },
       "comment": "Acknowledges the cost notice and enables fast mode for this Pickle."
     },
-    "hud.composer.fastMode.on.value": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "On"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "켜짐"
-          }
-        }
-      },
-      "comment": "Accessibility value when fast mode is enabled."
-    },
-    "hud.composer.fastMode.off.value": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Off"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "꺼짐"
-          }
-        }
-      },
-      "comment": "Accessibility value when fast mode is disabled."
-    },
-    "hud.composer.fastMode.accessibilityLabel": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fast mode"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fast 모드"
-          }
-        }
-      },
-      "comment": "Accessibility label of the composer toggle for provider fast mode."
-    },
-    "hud.composer.fastMode.on.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fast mode on: faster replies at a higher price"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fast 모드 켜짐: 응답이 빨라지는 대신 요금이 더 나와요"
-          }
-        }
-      },
-      "comment": "Help for the composer fast mode toggle while it is on. Clicking turns it off."
-    },
-    "hud.composer.fastMode.off.help": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Turn on Fast mode: faster replies at a higher price"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fast 모드 켜기: 응답이 빨라지는 대신 요금이 더 나와요"
-          }
-        }
-      },
-      "comment": "Help for the composer fast mode toggle while it is off."
-    },
     "settings.field.mainAgentFastMode": {
       "localizations": {
         "en": {
@@ -28504,6 +28227,439 @@
           "stringUnit": {
             "state": "translated",
             "value": "취소"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle 설정"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model, thinking, Fast mode, and completion alerts for this Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle의 모델·생각 수준·Fast 모드·완료 알림"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle 설정"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.chip.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.chip.fast": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.thinking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "생각 수준"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.fast": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast 모드"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.fast.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faster, but costs more"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "더 빠르지만 요금이 더 나와요"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.completion": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When done"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료되면"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.notifyMain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report to Main Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Main Picky에 보고"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.notifyMacOS": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send a macOS notification"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 알림 보내기"
+          }
+        }
+      }
+    },
+    "hud.composer.settings.back.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to Pickle settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle 설정으로 돌아가기"
+          }
+        }
+      }
+    },
+    "hud.composer.mic.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 입력"
+          }
+        }
+      }
+    },
+    "hud.composer.mic.start.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictate. Press again to add the text to the input"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말로 입력해요. 다시 누르면 받아쓴 글을 입력란에 넣어요"
+          }
+        }
+      }
+    },
+    "hud.composer.mic.stop.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop and add the text to the input (esc to cancel)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기를 끝내고 입력란에 넣어요 (esc: 취소)"
+          }
+        }
+      }
+    },
+    "hud.composer.mic.transcribing.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribing"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰는 중"
+          }
+        }
+      }
+    },
+    "hud.composer.mic.busy.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation is running in another Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 Pickle에서 받아쓰는 중이에요"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.preparing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting microphone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마이크 준비 중"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.listening": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣는 중 %@"
+          }
+        }
+      },
+      "comment": "%@ is the elapsed time, e.g. 0:04"
+    },
+    "hud.composer.voice.listening.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press again to add it to the input · esc to cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 누르면 입력란에 넣어요 · esc 취소"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.transcribing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribing"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰는 중"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.transcribing.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adds to the input when done"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끝나면 입력란에 넣어요"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't transcribe"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰지 못했어요"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.failed.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your text is unchanged · press the mic to try again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력한 글은 그대로예요 · 다시 눌러 말해 주세요"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.permission": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone access needed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마이크 권한이 필요해요"
+          }
+        }
+      }
+    },
+    "hud.composer.voice.permission.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Picky to use the microphone and speech recognition in System Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 설정에서 Picky의 마이크·음성 인식을 허용해 주세요"
           }
         }
       }

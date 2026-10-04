@@ -117,6 +117,9 @@ final class CompanionManager: ObservableObject {
     var annotationBasePaletteByTurnScreen: [String: PickyAnnotationPaletteRole] = [:]
 
     let buddyDictationManager: BuddyDictationManager
+    /// Per-Pickle composer mic. Shares the dictation engine with global PTT but
+    /// fills a composer draft instead of dispatching a voice turn.
+    let composerDictation: PickyComposerDictationController
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
     let globalShortcutArbiter = PickyGlobalShortcutArbiter()
     var quickInputDoubleTapDetector: QuickInputDoubleTapDetector {
@@ -156,8 +159,6 @@ final class CompanionManager: ObservableObject {
     private let ownsAgentClientLifecycle: Bool
     // Shared with the agent-event lifecycle extension for authoritative target cleanup.
     let selectionStore: PickySessionSelectionStoring
-    private let voiceTargetResolver: any PickyVoiceTargetResolving
-    private let pointerLocationProvider: @MainActor () -> CGPoint
     private let transcriptionProviderFactory: (PickySettings) -> any BuddyTranscriptionProvider
     private let speechPlaybackProviderFactory: (PickySettings) -> any PickySpeechPlaybackProvider
     private let interactionTimerScheduler: any PickyInteractionTimerScheduling
@@ -199,9 +200,7 @@ final class CompanionManager: ObservableObject {
         speechWatchdogTimeout: TimeInterval? = nil,
         armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil,
         annotationSceneMonitor: PickyAnnotationSceneMonitor? = nil,
-        voiceTargetResolver: (any PickyVoiceTargetResolving)? = nil,
-        permissions: PickyPermissionMonitor? = nil,
-        pointerLocationProvider: @escaping @MainActor () -> CGPoint = { NSEvent.mouseLocation }
+        permissions: PickyPermissionMonitor? = nil
     ) {
         self.permissions = permissions ?? PickyPermissionMonitor()
         let resolvedInitialSettings = initialSettings
@@ -220,14 +219,14 @@ final class CompanionManager: ObservableObject {
             selectionStore: selectionStore,
             overlayVisibility: overlayVisibility
         )
-        self.voiceTargetResolver = voiceTargetResolver ?? PickyVoiceTargetHitTestRegistry()
-        self.pointerLocationProvider = pointerLocationProvider
         self.transcriptionProviderFactory = resolvedTranscriptionProviderFactory
         self.speechPlaybackProviderFactory = resolvedSpeechPlaybackProviderFactory
         self.interactionTimerScheduler = interactionTimerScheduler ?? PickyTaskInteractionTimerScheduler()
-        self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager(
+        let resolvedDictationManager = buddyDictationManager ?? BuddyDictationManager(
             transcriptionProvider: resolvedTranscriptionProviderFactory(resolvedInitialSettings)
         )
+        self.buddyDictationManager = resolvedDictationManager
+        self.composerDictation = PickyComposerDictationController(driver: resolvedDictationManager)
         self.speechPlaybackProvider = speechPlaybackProvider ?? resolvedSpeechPlaybackProviderFactory(resolvedInitialSettings)
         self.appliedVoiceProviderSettings = PickyVoiceProviderSettings(resolvedInitialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? resolvedInitialSettings.ttsEnabled : true
@@ -692,6 +691,9 @@ final class CompanionManager: ObservableObject {
     }
 
     func handleDictationSessionEvent(_ event: BuddyDictationSessionEvent) {
+        // Composer mic sessions report to their own controller, never to the
+        // cursor or the main-agent voice turn.
+        if composerDictation.owns(inputID: event.inputID) { return }
         switch event {
         case .failed(let inputID, let message):
             guard let inputID else {
@@ -846,7 +848,7 @@ final class CompanionManager: ObservableObject {
     }
 
     // Internal (instead of private) so PickyCompanionManagerTests can replay the
-    // PTT-released idle window where the hover ID race used to clear the target.
+    // PTT-released idle window where a race used to clear the captured target.
     func updateVoicePresentation(
         isKeyboardRecording: Bool? = nil,
         isMicrophoneRecording: Bool? = nil,
@@ -855,10 +857,18 @@ final class CompanionManager: ObservableObject {
     ) {
         let isKeyboardRecording = isKeyboardRecording ?? buddyDictationManager.isRecordingFromKeyboardShortcut
         let isMicrophoneRecording = isMicrophoneRecording ?? buddyDictationManager.isRecordingFromMicrophoneButton
-        let isFinalizing = isFinalizing ?? buddyDictationManager.isFinalizingTranscript
-        let isPreparing = isPreparing ?? buddyDictationManager.isPreparingToRecord
-        let isCapturing = isPushToTalkShortcutHeld || isKeyboardRecording || isMicrophoneRecording
-        let isVoiceInputActive = isCapturing || isFinalizing || isPreparing
+        let isSharedFinalizing = isFinalizing ?? buddyDictationManager.isFinalizingTranscript
+        let isSharedPreparing = isPreparing ?? buddyDictationManager.isPreparingToRecord
+        // The microphone-button source is the composer mic. It still mutes
+        // speech playback, but it is not a cursor voice turn, so the shared
+        // finalizing/preparing flags count only while the composer is idle.
+        let composerOwnsDictation = isMicrophoneRecording
+            || composerDictation.phase.isActive
+            || buddyDictationManager.isMicrophoneButtonSessionBusy
+        let isFinalizing = isSharedFinalizing && !composerOwnsDictation
+        let isPreparing = isSharedPreparing && !composerOwnsDictation
+        let isCapturing = isPushToTalkShortcutHeld || isKeyboardRecording
+        let isVoiceInputActive = isCapturing || isMicrophoneRecording || isSharedFinalizing || isSharedPreparing
         updateVoiceInputAudioSuppression(isVoiceInputActive: isVoiceInputActive)
 
         // Align the voice machine with reality using semantic events only.
@@ -887,13 +897,13 @@ final class CompanionManager: ObservableObject {
         // doesn't get stuck. Only do this when no response is in flight, otherwise
         // the brief idle gap between recording and processing would prematurely hide the overlay.
         if voiceState == .idle, pendingAgentResponseStartedAt == nil {
-            // Note: hover ID reset is intentionally NOT done here. The reducer can
+            // Note: target ID reset is intentionally NOT done here. The reducer can
             // briefly report idle right after PTT release (between
             // `stopPushToTalkFromKeyboardShortcut` and the subsequent finalize +
             // `submitDraftText` -> `submitTranscriptToPickyAgent` chain), and clearing
             // `voiceFollowUpSessionIDForCurrentUtterance` here would race the response
-            // task into routing voice input to Picky instead of the hovered
-            // Pickle. Hover-ID cleanup is handled explicitly on dictation error,
+            // task into routing voice input to Picky instead of the armed
+            // Pickle. Target-ID cleanup is handled explicitly on dictation error,
             // capture failure, and at the end of the response task. See the regression
             // test `idleVoicePresentationDoesNotClearPressedHoverIDBeforeSubmit`.
             scheduleTransientHideIfNeeded()
@@ -930,10 +940,10 @@ final class CompanionManager: ObservableObject {
         let isCapturing = isCapturingVoiceInput ?? (
             isPushToTalkShortcutHeld
                 || buddyDictationManager.isRecordingFromKeyboardShortcut
-                || buddyDictationManager.isRecordingFromMicrophoneButton
         )
         let isFinalizing = isFinalizingTranscript ?? (
-            buddyDictationManager.isFinalizingTranscript || buddyDictationManager.isPreparingToRecord
+            !composerDictation.phase.isActive
+                && (buddyDictationManager.isFinalizingTranscript || buddyDictationManager.isPreparingToRecord)
         )
         voiceState = PickyCursorVoiceStatePolicy.resolve(PickyCursorVoiceStatePolicy.Inputs(
             machineState: machineProjection.voiceState,
@@ -954,10 +964,10 @@ final class CompanionManager: ObservableObject {
             .sink { [weak self] event in
                 // GlobalPushToTalkShortcutMonitor publishes synchronously from
                 // its main-run-loop event tap. Do not add a scheduler hop here:
-                // point and live card geometry must be resolved in the same turn.
+                // the armed target snapshot must be taken in the same turn.
                 switch event {
-                case .pressed(let observation):
-                    self?.handleShortcutTransition(.pressed, pressedScreenPoint: observation.screenPoint)
+                case .pressed:
+                    self?.handleShortcutTransition(.pressed)
                 case .released:
                     self?.handleShortcutTransition(.released)
                 }
@@ -1201,7 +1211,7 @@ final class CompanionManager: ObservableObject {
         switch action {
         case .press:
             guard !isPushToTalkShortcutHeld else { return }
-            handleShortcutTransition(.pressed, pressedScreenPoint: pointerLocationProvider())
+            handleShortcutTransition(.pressed)
         case .release:
             guard isPushToTalkShortcutHeld else { return }
             handleShortcutTransition(.released)
@@ -1210,10 +1220,7 @@ final class CompanionManager: ObservableObject {
 
     // Internal so PickyCompanionManagerTests can exercise the production PTT
     // transition through context capture and coordinator effect dispatch.
-    func handleShortcutTransition(
-        _ transition: BuddyPushToTalkShortcut.ShortcutTransition,
-        pressedScreenPoint: CGPoint? = nil
-    ) {
+    func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
         // Defensive: even though GlobalPushToTalkShortcutMonitor short-circuits
         // its callback while paused, swallowing transitions here too keeps any
         // already-queued event from slipping through and dismissing the panel.
@@ -1238,13 +1245,14 @@ final class CompanionManager: ObservableObject {
                     revision: selectionStore.screenContextTargetRevision
                 )
             }
-            let pressPoint = pressedScreenPoint ?? pointerLocationProvider()
-            let pointerTargetSessionID = voiceTargetResolver.sessionID(at: pressPoint)
+            // Global PTT reaches a Pickle only through an explicit armed
+            // target; otherwise it goes to the main agent. The pointer
+            // position is deliberately ignored (the composer mic button is the
+            // per-Pickle voice entry point).
             let inputID = UUID()
             let targetSnapshot = PickyVoiceInputTargetPolicy.resolve(
                 inputID: inputID,
                 armedTarget: armedTarget,
-                pointerSessionID: pointerTargetSessionID,
                 armedDispatchMode: armedPickleDispatchMode
             )
             // Keep older snapshots until their own effect reaches a terminal
@@ -1255,7 +1263,7 @@ final class CompanionManager: ObservableObject {
             interactionVoiceInputID = inputID
             reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: targetSessionID))
             beginInkCapture(source: .voice)
-            print("🎙️ Picky voice route — PTT pressed; screenContext=\(selectionStore.screenContextTargetSessionID ?? "<nil>") pointerTarget=\(pointerTargetSessionID ?? "<nil>") point=(\(Int(pressPoint.x)),\(Int(pressPoint.y))) prevTask=\(currentResponseTask != nil)")
+            print("🎙️ Picky voice route — PTT pressed; screenContext=\(selectionStore.screenContextTargetSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
             setVoiceFollowUpSessionIDForCurrentUtterance(targetSessionID, caller: "PTT-pressed")
             interactionCoordinator.accept(
                 .voicePressed(targetSessionID: targetSessionID),
@@ -1370,11 +1378,9 @@ final class CompanionManager: ObservableObject {
         } else {
             inputID = UUID()
             interactionVoiceInputID = inputID
-            voiceInputTargetSnapshotsByInputID[inputID] = PickyVoiceInputTargetPolicy.resolve(
+            voiceInputTargetSnapshotsByInputID[inputID] = PickyVoiceInputTargetSnapshot(
                 inputID: inputID,
-                armedTarget: nil,
-                pointerSessionID: voiceFollowUpSessionID,
-                armedDispatchMode: armedPickleDispatchMode
+                target: voiceFollowUpSessionID.map { .pickle(sessionID: $0, origin: .unarmed) } ?? .main
             )
             interactionCoordinator.accept(
                 .voicePressed(targetSessionID: voiceFollowUpSessionID),
@@ -1485,17 +1491,12 @@ final class CompanionManager: ObservableObject {
     }
 
     // Internal (instead of private) so PickyCompanionManagerTests can seed the
-    // utterance-scoped hover ID exactly the way the PTT pressed handler does.
+    // utterance-scoped target ID exactly the way the PTT pressed handler does.
     func setVoiceFollowUpSessionIDForCurrentUtterance(_ sessionID: String?, caller: String = #function) {
         let normalized = normalizedVoiceFollowUpSessionID(sessionID)
         guard voiceFollowUpSessionIDForCurrentUtterance != normalized else { return }
-        print("🎙️ Picky voice route — hoverID \(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>") -> \(normalized ?? "<nil>") (from \(caller))")
+        print("🎙️ Picky voice route — targetID \(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>") -> \(normalized ?? "<nil>") (from \(caller))")
         voiceFollowUpSessionIDForCurrentUtterance = normalized
-        var userInfo: [String: String] = [:]
-        if let normalized {
-            userInfo[PickyVoiceFollowUpTargetNotification.sessionIDKey] = normalized
-        }
-        NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: userInfo)
     }
 
     private func normalizedVoiceFollowUpSessionID(_ sessionID: String?) -> String? {

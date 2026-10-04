@@ -37,6 +37,12 @@ private struct BuddyDictationDraftCallbacks {
 enum BuddyDictationSessionEvent: Equatable {
     case failed(inputID: UUID?, message: String)
     case discarded(inputID: UUID?)
+
+    var inputID: UUID? {
+        switch self {
+        case .failed(let inputID, _), .discarded(let inputID): inputID
+        }
+    }
 }
 
 @MainActor
@@ -168,14 +174,18 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         print("🎙️ BuddyDictationManager: switched transcription provider to \(provider.displayName)")
     }
 
+    /// Click-to-toggle dictation. The final transcript is handed back through
+    /// `updateDraftText` and never auto-submitted. `inputID` correlates the
+    /// session's `failed`/`discarded` events with their owner.
     func startPersistentDictationFromMicrophoneButton(
+        inputID: UUID? = nil,
         currentDraftText: String,
         updateDraftText: @escaping (String) -> Void,
         submitDraftText: @escaping (String) -> Void
     ) async {
         await startPushToTalk(
             startSource: .microphoneButton,
-            inputID: nil,
+            inputID: inputID,
             currentDraftText: currentDraftText,
             updateDraftText: updateDraftText,
             submitDraftText: submitDraftText,
@@ -650,6 +660,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         let finalTranscriptText = latestRecognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
         let currentDraftCallbacks = draftCallbacks
         let completedInputID = activeInputID
+        let completedStartSource = activeStartSource
 
         if !shouldSubmitFinalDraft && !finalDraftText.isEmpty {
             currentDraftCallbacks?.updateDraftText(finalDraftText)
@@ -660,7 +671,14 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
         resetSessionState()
 
-        guard shouldSubmitFinalDraft else { return }
+        guard shouldSubmitFinalDraft else {
+            // A microphone-button session that heard nothing must not end
+            // silently; its owner shows the empty-result notice.
+            if completedStartSource == .microphoneButton, finalTranscriptText.isEmpty {
+                reportSessionDiscarded(inputID: completedInputID)
+            }
+            return
+        }
         guard !finalTranscriptText.isEmpty else {
             reportSessionError(Self.noSpeechDetectedMessage, inputID: completedInputID)
             return

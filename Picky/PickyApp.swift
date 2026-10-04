@@ -112,10 +112,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         }
         return controller
     }()
-    /// Shared press-time resolver. HUD cards register live AppKit hit regions;
-    /// Companion queries the same instance synchronously when PTT is pressed.
-    private lazy var voiceTargetHitTestRegistry = PickyVoiceTargetHitTestRegistry()
-
     /// Companion shares the HUD's `PickyAgentClientRouter`. The router
     /// (1) sends session-scoped commands to the right child daemon — the
     /// primary daemon doesn't own external pickle sessions, so a direct
@@ -139,8 +135,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             }
         ),
         appearanceStore: appearanceStore,
-        fontScaleStore: fontScaleStore,
-        voiceTargetResolver: voiceTargetHitTestRegistry
+        fontScaleStore: fontScaleStore
     )
     private lazy var hudPrimaryAgentClient = WebSocketPickyAgentClient(
         configuration: WebSocketPickyAgentClient.Configuration(
@@ -194,7 +189,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         visibilityStore: hudVisibilityStore,
         actualPanelVisibilityStore: hudActualPanelVisibilityStore,
         settingsStore: settingsStore,
-        voiceTargetHitTestRegistry: voiceTargetHitTestRegistry
+        composerDictation: companionManager.composerDictation
     )
     /// Orders Picky's own always-on-top windows out while a macOS secure
     /// authorization surface (such as App Store download confirmation) is active.

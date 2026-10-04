@@ -397,7 +397,7 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.dockState.snapshot.activeSessions.map(\.id) == ["session-a"])
     }
 
-    @Test func archiveTransactionClearsSelectionAndVoiceTargetsForTheRemovedSession() async throws {
+    @Test func archiveTransactionClearsSelectionAndInputTargetForTheRemovedSession() async throws {
         let selectionStore = V2SelectionStore()
         let viewModel = makeViewModel(
             client: FakePickyAgentClient(),
@@ -406,14 +406,7 @@ struct PickySessionProjectionV2ApplicationTests {
         )
         apply(snapshot(sessionID: "session-a", title: "A", status: .running, revision: 1), to: viewModel)
         viewModel.select(sessionID: "session-a")
-        viewModel.beginHoveredVoiceFollowUp(sessionID: "session-a")
         viewModel.toggleScreenContextTarget(sessionID: "session-a")
-        NotificationCenter.default.post(
-            name: .pickyVoiceFollowUpTargetChanged,
-            object: nil,
-            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "session-a"]
-        )
-        await waitUntil { viewModel.activeVoiceFollowUpSessionID == "session-a" }
 
         apply(transaction(
             sessionID: "session-a",
@@ -424,11 +417,8 @@ struct PickySessionProjectionV2ApplicationTests {
 
         #expect(viewModel.selectedSessionID == nil)
         #expect(selectionStore.selectedSessionID == nil)
-        #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
-        #expect(selectionStore.hoveredVoiceFollowUpSessionID == nil)
         #expect(viewModel.screenContextTargetSessionID == nil)
         #expect(selectionStore.screenContextTargetSessionID == nil)
-        #expect(viewModel.activeVoiceFollowUpSessionID == nil)
     }
 
     @Test func transactionUpdatesOnlyItsSessionStoreAndPreservesMessageLeafIdentity() throws {

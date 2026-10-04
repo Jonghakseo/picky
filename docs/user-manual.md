@@ -159,15 +159,17 @@ Basic flow:
 
 Starting a new voice input interrupts an in-progress spoken response. This lets you quickly correct, redirect, or continue without waiting for TTS to finish.
 
-### 4.2 Voice follow-up to a Pickle
+### 4.2 Dictating into a Pickle
 
-When a Pickle conversation card is open and the cursor is hovering over it, Push-to-Talk targets that Pickle instead of the main Picky agent.
+Push-to-Talk goes to the main Picky agent unless a Pickle is armed as the input target (see 4.3). Hovering over a Pickle card does not change the target.
 
-Visible cues:
+To speak to one Pickle, use the microphone button next to Send in that Pickle's composer:
 
-- The Pickle header can show a small microphone badge.
-- The voice input becomes a Pickle follow-up/steer rather than a main Picky turn.
-- If the targeted Pickle is cancelled, Picky resumes it with a steer so the voice input is not rejected as a follow-up.
+1. Click the microphone. The line above the composer shows **Listening** and the elapsed time.
+2. Click it again to stop. Picky transcribes the recording and adds the text to the end of the composer, after anything you already typed. Nothing is sent yet.
+3. Review or edit the text, then send it as usual. While the Pickle is running, Send queues it as a follow-up.
+
+Press `esc` while listening to cancel without changing the composer. If nothing was recognized, the composer stays as it was and the status line says so. Only one Pickle can dictate at a time, and Push-to-Talk is ignored while a composer is dictating.
 
 ### 4.3 Screen-context target to a Pickle
 

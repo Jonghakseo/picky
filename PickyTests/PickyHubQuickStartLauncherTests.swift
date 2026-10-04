@@ -456,7 +456,6 @@ private final class QuickStartHUDHarness {
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settings),
             visibilityStore: visibility,
             settingsStore: settings,
-            voiceTargetHitTestRegistry: PickyVoiceTargetHitTestRegistry(),
             presentSessionPanels: { displayID in
                 #expect(displayID == 777)
                 #expect(visibility.isVisible(for: 777))

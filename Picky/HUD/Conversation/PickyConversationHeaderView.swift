@@ -53,13 +53,6 @@ struct PickyConversationHeaderView: View {
     /// Header presentation is owned exclusively by session metadata. The
     /// transcript is intentionally not materialized or observed here.
     let metaStore: PickySessionMetaStore
-    /// Observed separately from `viewModel` so cursor enter/exit on the
-    /// conversation card only invalidates this header (which reads the value
-    /// for the pi-badge active-voice highlight) rather than every conversation
-    /// subview observing the commands. Defaults to the viewModel's own store
-    /// via the explicit init below so existing call sites (and tests) keep
-    /// working without passing the parameter explicitly.
-    @ObservedObject var voiceFollowUpHoverState: PickyVoiceFollowUpHoverState
     private var session: PickyConversationHeaderProjection {
         PickyConversationHeaderProjection(metaStore: metaStore)
     }
@@ -74,12 +67,10 @@ struct PickyConversationHeaderView: View {
         onArchiveSession: @escaping (String) -> Void = { _ in },
         onClose: @escaping () -> Void = { },
         isCommandShortcutHintVisible: Bool = false,
-        onRewind: (() -> Void)? = nil,
-        voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
+        onRewind: (() -> Void)? = nil
     ) {
         self.commands = viewModel
         self.metaStore = metaStore
-        self.voiceFollowUpHoverState = voiceFollowUpHoverState ?? viewModel.voiceFollowUpHoverState
         self.onArchiveSession = onArchiveSession
         self.onClose = onClose
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
@@ -93,8 +84,7 @@ struct PickyConversationHeaderView: View {
         onArchiveSession: @escaping (String) -> Void = { _ in },
         onClose: @escaping () -> Void = { },
         isCommandShortcutHintVisible: Bool = false,
-        onRewind: (() -> Void)? = nil,
-        voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
+        onRewind: (() -> Void)? = nil
     ) {
         let metaStore = PickySessionMetaStore()
         metaStore.replace(PickySessionMetadata(card: session))
@@ -104,8 +94,7 @@ struct PickyConversationHeaderView: View {
             onArchiveSession: onArchiveSession,
             onClose: onClose,
             isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-            onRewind: onRewind,
-            voiceFollowUpHoverState: voiceFollowUpHoverState
+            onRewind: onRewind
         )
     }
 
@@ -120,13 +109,6 @@ struct PickyConversationHeaderView: View {
     @State private var didCompleteStickyHold = false
     @State private var stopChoiceRequest: PickyStopChoiceRequest?
     @FocusState private var isTitleFieldFocused: Bool
-
-    private var isVoiceFollowUpTarget: Bool {
-        if let activeVoiceFollowUpSessionID = commands.activeVoiceFollowUpSessionID {
-            return activeVoiceFollowUpSessionID == session.id
-        }
-        return voiceFollowUpHoverState.sessionID == session.id
-    }
 
     private var isScreenContextArmed: Bool {
         commands.screenContextTargetSessionID == session.id
@@ -379,11 +361,6 @@ struct PickyConversationHeaderView: View {
 
     private var piBadgeSlot: some View {
         piBadge
-            .overlay(alignment: .bottomTrailing) {
-                if !isScreenContextArmed, isVoiceFollowUpTarget {
-                    voiceTargetMicBadge
-                }
-            }
             .overlay(alignment: .center) {
                 stickyHoldProgressRing
             }
@@ -522,16 +499,6 @@ struct PickyConversationHeaderView: View {
         }
     }
 
-    private var voiceTargetMicBadge: some View {
-        Image(systemName: "mic.fill")
-            .pickyFont(size: 6.8, weight: .bold)
-            .foregroundColor(DS.Colors.accentText)
-            .frame(width: 11, height: 11)
-            .background(Circle().fill(DS.Colors.surface1))
-            .overlay(Circle().stroke(DS.Colors.accentText.opacity(0.65), lineWidth: 0.9))
-            .offset(x: 3, y: 3)
-    }
-
     private var piBadge: some View {
         RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
             .fill(isScreenContextArmed ? DS.Colors.accentSubtle.opacity(0.46) : statusColor.opacity(statusFillOpacity))
@@ -599,9 +566,6 @@ struct PickyConversationHeaderView: View {
         if isScreenContextArmed {
             return L10n.t("hud.header.target.armed.help")
         }
-        if isVoiceFollowUpTarget {
-            return L10n.t("hud.header.target.voice.help", statusDescription)
-        }
         return L10n.t("hud.header.target.route.help", statusDescription)
     }
 
@@ -612,12 +576,7 @@ struct PickyConversationHeaderView: View {
         if isScreenContextArmed {
             return L10n.t("hud.header.target.armed.accessibilityLabel", statusDescription)
         }
-        return L10n.t(
-            isVoiceFollowUpTarget
-                ? "hud.header.target.voice.accessibilityLabel"
-                : "hud.header.target.accessibilityLabel",
-            statusDescription
-        )
+        return L10n.t("hud.header.target.accessibilityLabel", statusDescription)
     }
 
     private var statusDescription: String {

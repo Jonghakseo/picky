@@ -24,6 +24,13 @@ export function summarizeProviderError(raw: string): ProviderErrorSummary {
   return { ...(code ? { code } : {}), message: truncate(message) };
 }
 
+/** Status for a Pi auto-retry: the attempt plus the summarized cause of the failed request. */
+export function autoRetryStatus(attempt: number | undefined, maxAttempts: number | undefined, rawError: string | undefined) {
+  if (!attempt || !maxAttempts) return undefined;
+  const error = summarizeProviderError(rawError ?? "Unknown error");
+  return { attempt, maxAttempts, ...(error.code ? { errorCode: error.code } : {}), errorMessage: error.message };
+}
+
 function providerMessage(text: string): string | undefined {
   if (!text.startsWith("{")) return undefined;
   try {

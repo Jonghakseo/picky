@@ -19,7 +19,7 @@ import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
 import { logAgentd,logLifecycleEvent } from "../local-log.js";
-import { summarizeProviderError } from "../domain/provider-error-summary.js";
+import { autoRetryStatus } from "../domain/provider-error-summary.js";
 import {
 type ScopedModelOption,
 applyScopedModelsForCycling,
@@ -1101,10 +1101,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const attempt = numberValue(event.attempt);
       const maxAttempts = numberValue(event.maxAttempts);
       const summary = attempt && maxAttempts ? `Retrying after transient Pi error (${attempt}/${maxAttempts})…` : "Retrying after transient Pi error…";
-      const error = summarizeProviderError(stringValue(event.errorMessage) ?? "Unknown error");
-      const autoRetry = attempt && maxAttempts
-        ? { attempt, maxAttempts, ...(error.code ? { errorCode: error.code } : {}), errorMessage: error.message }
-        : undefined;
+      const autoRetry = autoRetryStatus(attempt, maxAttempts, stringValue(event.errorMessage));
       return { type: "status", status: "running", summary, ...(autoRetry ? { autoRetry } : {}) };
     }
     if (event.type === "auto_retry_end") {

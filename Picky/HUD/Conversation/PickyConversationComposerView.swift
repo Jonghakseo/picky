@@ -429,7 +429,7 @@ struct PickyConversationComposerView: View {
         HStack(spacing: DS.Spacing.space1) {
             attachmentButton
             if effectiveBashMode != .none {
-                bashModeBadge
+                PickyComposerBashModeBadge(mode: effectiveBashMode)
             }
             runtimeControlsBar
         }
@@ -452,65 +452,8 @@ struct PickyConversationComposerView: View {
         .accessibilityLabel(L10n.t(isFileDropTargeted ? "hud.composer.drop.accessibilityLabel" : "hud.composer.attachment.accessibilityLabel"))
     }
 
-    /// Replaces the notify/terminal actions when the draft is in bash-execution
-    /// mode. Keyboard shortcuts remain active while the horizontal badge keeps
-    /// the editor's one-line minimum independent from action chrome.
-    private var bashModeBadge: some View {
-        HStack(spacing: DS.Spacing.xs) {
-            Image(systemName: "terminal.fill")
-                .pickyFont(size: 11, weight: .bold)
-            Text(effectiveBashMode == .private ? "PRIVATE" : "BASH")
-                .font(PickyHUDTypography.badgeMonospacedBold)
-                .fixedSize()
-        }
-        .foregroundColor(bashAccentColor)
-        .padding(.horizontal, DS.Spacing.space2)
-        .frame(height: PickyComposerToolbarMetrics.controlSize)
-        .background(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                .fill(DS.Colors.surface2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
-                .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
-        )
-        .help(effectiveBashMode == .private
-            ? L10n.t("hud.composer.bash.private.help")
-            : L10n.t("hud.composer.bash.shared.help"))
-        .accessibilityLabel(effectiveBashMode == .private ? L10n.t("hud.composer.bash.private.accessibility") : L10n.t("hud.composer.bash.accessibility"))
-    }
-
-    private var terminalButton: some View {
-        Button(action: onToggleUtilityPanel) {
-            toolbarIcon(
-                systemName: "terminal.fill",
-                color: isUtilityPanelOpen ? DS.Colors.accentText : DS.Colors.textSecondary
-            )
-        }
-        .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: isUtilityPanelOpen))
-        .overlay(alignment: .topTrailing) {
-            PickyShortcutKeyBadge(label: "E")
-                .fixedSize()
-                .offset(x: 9, y: -7)
-                .opacity(isCommandShortcutHintVisible ? 1 : 0)
-                .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
-                .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
-                .allowsHitTesting(false)
-        }
-        .help(L10n.t("hud.utilityPanel.toggle.help"))
-        .accessibilityLabel(L10n.t("hud.utilityPanel.accessibilityLabel"))
-        .accessibilityValue(L10n.t(isUtilityPanelOpen ? "hud.utilityPanel.state.open" : "hud.utilityPanel.state.closed"))
-    }
-
     private func toolbarIcon(systemName: String, color: Color) -> some View {
-        Image(systemName: systemName)
-            .pickyFont(size: 10.5, weight: .semibold)
-            .foregroundColor(color)
-            .frame(
-                width: PickyComposerToolbarMetrics.controlSize,
-                height: PickyComposerToolbarMetrics.controlSize
-            )
-            .contentShape(Rectangle())
+        PickyComposerToolbarIcon(systemName: systemName, color: color)
     }
 
     private func toggleMainPickyCompletion() {
@@ -941,7 +884,8 @@ struct PickyConversationComposerView: View {
     private var trailingActions: some View {
         HStack(spacing: DS.Spacing.space1) {
             HStack(spacing: DS.Spacing.space1) {
-                terminalButton
+                PickyComposerUtilityPanelButton(isOpen: isUtilityPanelOpen,
+                    isShortcutHintVisible: isCommandShortcutHintVisible, action: onToggleUtilityPanel)
                 if let composerDictation {
                     PickyComposerMicButton(controller: composerDictation, sessionID: session.id)
                 }

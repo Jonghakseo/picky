@@ -366,6 +366,7 @@ final class CompanionManager: ObservableObject {
     private var dictationErrorCancellable: AnyCancellable?
     private var settingsChangeCancellable: AnyCancellable?
     private var permissionCancellables = Set<AnyCancellable>()
+    var sessionProjectionTransitionCancellables = Set<AnyCancellable>()
     private var mainConversationCancellable: AnyCancellable?
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
     // Lifecycle task state is mutable only through CompanionManager's extensions.
@@ -421,9 +422,6 @@ final class CompanionManager: ObservableObject {
     var activeMainTurnFollowUpSessionID: String? {
         didSet { updateMainCancelPillPresentation() }
     }
-    /// Tracks v1/v2 terminal status transitions so cursor cleanup executes exactly once.
-    var lastObservedSessionStatuses: [String: PickySessionStatus] = [:]
-    var projectionSessionPresentations: [String: ProjectionSessionPresentation] = [:]
     /// Voice follow-up target captured at PTT press time and used by the response
     /// task to route the utterance. Exposed read-only at module scope so tests can
     /// guard the race-condition fix in `updateVoicePresentation` (see also the
@@ -587,6 +585,7 @@ final class CompanionManager: ObservableObject {
         dictationErrorCancellable?.cancel()
         settingsChangeCancellable?.cancel()
         permissionCancellables.removeAll()
+        sessionProjectionTransitionCancellables.removeAll()
         permissions.stopPolling()
     }
 
@@ -2120,11 +2119,11 @@ final class CompanionManager: ObservableObject {
 
     func applyAgentEvent(_ event: PickyEvent) {
         switch event {
-        case .sessionProjectionSnapshot(let snapshot):
-            applySessionProjectionSnapshotSideEffects(snapshot)
-        case .sessionProjectionTransaction(let transaction):
-            applySessionProjectionTransactionSideEffects(transaction)
-        case .sessionProjectionBootstrapComplete:
+        case .sessionProjectionSnapshot, .sessionProjectionTransaction, .sessionProjectionBootstrapComplete:
+            // Projection frames are folded into session state by the session view
+            // model, which then publishes the transitions this manager subscribes to
+            // in `bindSessionProjectionTransitions(to:)`. Reacting to the raw frames
+            // here as well would be a second, independently-timed consumer.
             break
         case .sessionResourcesReloaded, .pluginsReloaded,
              .hubStatisticsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted:

@@ -963,8 +963,8 @@ function swiftTypeGroupStem(relativePath) {
 }
 
 const SWIFT_TYPE_GROUP_RATCHET = new Map([
-  ["CompanionManager", 3850],
-  ["PickySessionViewModel", 3036],
+  ["CompanionManager", 3812],
+  ["PickySessionViewModel", 3008],
   ["PickyHUDOverlayManager", 2442],
   ["PickyHUDDockRailView", 1553],
   // Already under the 1500 group threshold. The pin stays so the group cannot

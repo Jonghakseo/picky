@@ -1220,7 +1220,8 @@ struct PickyCompanionManagerTests {
         // utterance-scoped target before the Pickle terminal event can arrive.
         manager.setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "test-target-cleared-after-send")
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-race", status: .cancelled))))
+        manager.handleSessionBecameTerminal(.init(sessionID: "pickle-race", status: .cancelled))
+        manager.handleSessionSummaryPresentationChanged(summaryPresentation(id: "pickle-race", status: .cancelled))
         #expect(manager.latestAgentSessionSummary == "Pickle · cancelled")
 
         // Wait past the deferred-receipt window to prove the cancelled
@@ -1466,33 +1467,11 @@ struct PickyCompanionManagerTests {
         )
         #expect(manager.voiceState == .responding)
 
-        manager.applyAgentEvent(.sessionProjectionTransaction(events.transaction(
-            sessionID: "pickle-1",
-            mutations: [
-                PickyProjectionEventFixtures.logAppendMutation("running"),
-                PickyProjectionEventFixtures.toolUpsertMutation(PickyToolActivity(
-                    toolCallId: "tool-1",
-                    name: "bash",
-                    status: "running",
-                    preview: nil,
-                    startedAt: nil,
-                    endedAt: nil
-                )),
-            ]
-        )))
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: PickyAgentSession(
+        manager.handleSessionSummaryPresentationChanged(summaryPresentation(
             id: "pickle-1",
-            title: "Pickle",
             status: .running,
-            cwd: nil,
-            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_001),
-            lastSummary: "Follow-up queued",
-            logs: [],
-            tools: [],
-            artifacts: [],
-            changedFiles: []
-        ))))
+            lastSummary: "Follow-up queued"
+        ))
 
         #expect(manager.latestAgentSessionSummary == "기존 응답")
     }
@@ -3039,19 +3018,12 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .responding)
 
         // Drive an unrelated reducer event so the interaction projection ticks.
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: PickyAgentSession(
+        manager.handleSessionSummaryPresentationChanged(summaryPresentation(
             id: "unrelated",
             title: "Unrelated",
             status: .running,
-            cwd: nil,
-            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
-            updatedAt: Date(timeIntervalSince1970: 1_800_000_001),
-            lastSummary: "chugging along",
-            logs: [],
-            tools: [],
-            artifacts: [],
-            changedFiles: []
-        ))))
+            lastSummary: "chugging along"
+        ))
         try await settle()
 
         // Still responding because the speak came from the system path, not
@@ -3064,7 +3036,7 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .idle }
     }
 
-    // MARK: - Projection snapshot terminal status -> cursor cleanup (HUD abort regression)
+    // MARK: - Projection terminal status -> cursor cleanup (HUD abort regression)
 
     @Test func projectionSnapshotToCancelledReleasesCursorProcessingForAwaitedSession() async throws {
         // Repro for the HUD-abort bug: user hits abort on a Pickle that the cursor is
@@ -3077,7 +3049,7 @@ struct PickyCompanionManagerTests {
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hello")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-aborted", status: .cancelled))))
+        manager.handleSessionBecameTerminal(.init(sessionID: "pickle-aborted", status: .cancelled))
 
         #expect(manager.voiceState == .idle)
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
@@ -3093,20 +3065,23 @@ struct PickyCompanionManagerTests {
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-failed", status: .failed))))
+        manager.handleSessionBecameTerminal(.init(sessionID: "pickle-failed", status: .failed))
 
         #expect(manager.voiceState == .idle)
         manager.stop()
     }
 
     @Test func projectionTerminalTransactionReleasesCursorOnlyForItsFirstTerminalTransition() async throws {
-        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
-        let cancelled = projectionTransaction(sessionID: "pickle-projection", status: .cancelled)
+        // Driven through the real view-model application path: the publisher now
+        // owns the "first terminal arrival" rule, so a repeat of the same terminal
+        // status must not reach the manager at all.
+        let (manager, viewModel) = makeProjectionWiredCompanion()
+        apply(events.snapshotEnvelope(session: session(id: "pickle-projection", status: .running)), to: viewModel)
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-projection")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hello")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionProjectionTransaction(cancelled))
+        apply(statusTransactionEnvelope(sessionID: "pickle-projection", status: .cancelled), to: viewModel)
 
         #expect(manager.voiceState == .idle)
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
@@ -3114,7 +3089,7 @@ struct PickyCompanionManagerTests {
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-new")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hello again")
         #expect(manager.voiceState == .processing)
-        manager.applyAgentEvent(.sessionProjectionTransaction(cancelled))
+        apply(statusTransactionEnvelope(sessionID: "pickle-projection", status: .cancelled), to: viewModel)
 
         #expect(manager.voiceState == .processing)
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-new")
@@ -3124,13 +3099,34 @@ struct PickyCompanionManagerTests {
     @Test func projectionMetadataSummaryRefreshesPassiveCursorText() throws {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
 
-        manager.applyAgentEvent(.sessionProjectionTransaction(projectionTransaction(
-            sessionID: "pickle-summary",
+        manager.handleSessionSummaryPresentationChanged(summaryPresentation(
+            id: "pickle-summary",
             status: .running,
             lastSummary: "Projection summary"
-        )))
+        ))
 
         #expect(manager.latestAgentSessionSummary == "Projection summary")
+        manager.stop()
+    }
+
+    @Test func projectionMetadataSummaryIsIgnoredWhileSpokenResponseIsPlaying() throws {
+        // The passive cursor text is the same label the spoken reply renders into.
+        // While a reply is being spoken, a session summary arriving on the
+        // projection channel must not replace the visible answer.
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "pickle-summary", message: "말하고 있는 응답"),
+            source: "voice"
+        )
+        #expect(manager.voiceState == .responding)
+
+        manager.handleSessionSummaryPresentationChanged(summaryPresentation(
+            id: "pickle-summary",
+            status: .running,
+            lastSummary: "Projection summary"
+        ))
+
+        #expect(manager.latestAgentSessionSummary == "말하고 있는 응답")
         manager.stop()
     }
 
@@ -3144,7 +3140,7 @@ struct PickyCompanionManagerTests {
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-B", status: .cancelled))))
+        manager.handleSessionBecameTerminal(.init(sessionID: "pickle-B", status: .cancelled))
 
         #expect(manager.voiceState == .processing, "the cursor was waiting on pickle-A; pickle-B's terminal status must not touch it")
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-A")
@@ -3153,15 +3149,16 @@ struct PickyCompanionManagerTests {
 
     @Test func projectionSnapshotToRunningDoesNotReleaseCursor() async throws {
         // Defensive regression: non-terminal status transitions must keep the cursor's
-        // .processing state intact.
-        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        // .processing state intact. Driven through the real view-model application
+        // path, because the point is that these frames publish no terminal transition.
+        let (manager, viewModel) = makeProjectionWiredCompanion()
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-running")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
         #expect(manager.voiceState == .processing)
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-running", status: .running))))
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-running", status: .waiting_for_input))))
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-running", status: .blocked))))
+        apply(events.snapshotEnvelope(session: session(id: "pickle-running", status: .running)), to: viewModel)
+        apply(events.snapshotEnvelope(session: session(id: "pickle-running", status: .waiting_for_input)), to: viewModel)
+        apply(events.snapshotEnvelope(session: session(id: "pickle-running", status: .blocked)), to: viewModel)
 
         #expect(manager.voiceState == .processing)
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-running")
@@ -3179,7 +3176,7 @@ struct PickyCompanionManagerTests {
         manager.interruptSpokenResponseForVoiceInput()
         try await waitUntil { manager.voiceState == .idle }
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-race", status: .cancelled))))
+        manager.handleSessionBecameTerminal(.init(sessionID: "pickle-race", status: .cancelled))
 
         #expect(manager.voiceState == .idle)
         manager.stop()
@@ -3197,7 +3194,7 @@ struct PickyCompanionManagerTests {
         )
         #expect(manager.voiceState == .responding)
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-1", status: .completed))))
+        manager.handleSessionBecameTerminal(.init(sessionID: "pickle-1", status: .completed))
 
         #expect(manager.voiceState == .responding, "a late .completed projection snapshot must not abort the in-flight spoken reply")
         manager.stop()
@@ -3208,11 +3205,11 @@ struct PickyCompanionManagerTests {
         // (e.g. reconnect snapshot + live update). The cleanup must only happen on
         // the first transition into a terminal status; subsequent terminal updates
         // for the same session must be silent.
-        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        let (manager, viewModel) = makeProjectionWiredCompanion()
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-replay")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
 
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-replay", status: .cancelled))))
+        apply(events.snapshotEnvelope(session: session(id: "pickle-replay", status: .cancelled)), to: viewModel)
         try await waitUntil { manager.voiceState == .idle }
 
         // Start a NEW awaited turn on a different session; the duplicate terminal
@@ -3220,10 +3217,30 @@ struct PickyCompanionManagerTests {
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-new")
         manager.beginAwaitingAgentResponse(recognizedTranscript: "hi again")
         #expect(manager.voiceState == .processing)
-        manager.applyAgentEvent(.sessionProjectionSnapshot(events.snapshot(session: session(id: "pickle-replay", status: .cancelled))))
+        apply(events.snapshotEnvelope(session: session(id: "pickle-replay", status: .cancelled)), to: viewModel)
 
         #expect(manager.voiceState == .processing, "a duplicate terminal projection snapshot for the old session must be a no-op")
         #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-new")
+        manager.stop()
+    }
+
+    @Test func terminalProjectionFrameReleasesCursorInTheSameTurnThatAppliesIt() throws {
+        // Cursor release used to run on a second, independently scheduled consumer
+        // of the same event stream, so nothing said it had happened by the time the
+        // session showed the terminal status. There is no `await` between applying
+        // the frame and these assertions.
+        let (manager, viewModel) = makeProjectionWiredCompanion()
+        apply(events.snapshotEnvelope(session: session(id: "pickle-sync", status: .running)), to: viewModel)
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-sync")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
+        #expect(manager.voiceState == .processing)
+
+        apply(statusTransactionEnvelope(sessionID: "pickle-sync", status: .completed), to: viewModel)
+
+        #expect(viewModel.sessions.first { $0.id == "pickle-sync" }?.status == .completed)
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+        #expect(manager.latestAgentSessionSummary == "Pickle \u{B7} completed")
         manager.stop()
     }
 
@@ -3608,6 +3625,44 @@ struct PickyCompanionManagerTests {
             tools: [],
             artifacts: [],
             changedFiles: []
+        )
+    }
+
+    private func summaryPresentation(
+        id: String,
+        title: String = "Pickle",
+        status: PickySessionStatus,
+        lastSummary: String = ""
+    ) -> PickySessionSummaryPresentation {
+        PickySessionSummaryPresentation(sessionID: id, title: title, status: status, lastSummary: lastSummary)
+    }
+
+    /// Companion subscribed to a real view model, for the invariants that only
+    /// exist once a projection frame is actually folded into session state
+    /// (first-terminal-arrival dedupe, non-terminal frames publishing nothing).
+    private func makeProjectionWiredCompanion(
+        selectionStore: FakeVoiceSelectionStore = FakeVoiceSelectionStore()
+    ) -> (CompanionManager, PickySessionListViewModel) {
+        let viewModel = PickySessionListViewModel(
+            client: FakeVoiceClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            notificationPreferencesProvider: PickyStubNotificationPreferences(),
+            selectionStore: selectionStore,
+            sessionProjectionStorage: PickyRegistrySessionProjectionStorage()
+        )
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: selectionStore)
+        manager.bindSessionProjectionTransitions(to: viewModel.sessionProjectionTransitions)
+        return (manager, viewModel)
+    }
+
+    private func apply(_ envelope: PickyEventEnvelope, to viewModel: PickySessionListViewModel) {
+        viewModel.apply(.protocolEvent(envelope))
+    }
+
+    private func statusTransactionEnvelope(sessionID: String, status: PickySessionStatus) -> PickyEventEnvelope {
+        events.transactionEnvelope(
+            sessionID: sessionID,
+            mutations: [PickyProjectionEventFixtures.metaPatchMutation("\"status\":\"\(status.rawValue)\"")]
         )
     }
 

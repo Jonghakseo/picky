@@ -1364,6 +1364,89 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId)) == ["active", "finished"])
     }
 
+    // MARK: - Published projection transitions
+
+    @Test func terminalTransitionIsPublishedOnlyForTheFirstTerminalArrival() throws {
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage())
+        let recorder = TransitionRecorder(viewModel.sessionProjectionTransitions)
+
+        apply(snapshot(sessionID: "work", title: "Work", status: .running, revision: 1), to: viewModel)
+        #expect(recorder.terminals.isEmpty)
+
+        apply(transaction(sessionID: "work", baseRevision: 1, revision: 2,
+                          mutations: #"[{"type":"metaPatch","patch":{"status":"completed"}}]"#), to: viewModel)
+        #expect(recorder.terminals == [PickySessionTerminalTransition(sessionID: "work", status: .completed)])
+
+        // A terminal status the session already holds, whether it arrives as
+        // another transaction or as a reconnect snapshot, is not a new arrival.
+        apply(transaction(sessionID: "work", baseRevision: 2, revision: 3,
+                          mutations: #"[{"type":"metaPatch","patch":{"status":"completed"}}]"#), to: viewModel)
+        apply(snapshot(sessionID: "work", title: "Work", status: .completed, revision: 4), to: viewModel)
+        #expect(recorder.terminals.count == 1)
+    }
+
+    @Test func nonTerminalStatusesPublishNoTerminalTransition() throws {
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage())
+        let recorder = TransitionRecorder(viewModel.sessionProjectionTransitions)
+
+        apply(snapshot(sessionID: "work", title: "Work", status: .running, revision: 1), to: viewModel)
+        apply(transaction(sessionID: "work", baseRevision: 1, revision: 2,
+                          mutations: #"[{"type":"metaPatch","patch":{"status":"waiting_for_input"}}]"#), to: viewModel)
+        apply(transaction(sessionID: "work", baseRevision: 2, revision: 3,
+                          mutations: #"[{"type":"metaPatch","patch":{"status":"blocked"}}]"#), to: viewModel)
+
+        #expect(recorder.terminals.isEmpty)
+    }
+
+    @Test func archivedSessionRepublishingItsTerminalStatusPublishesNothing() throws {
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage())
+        let recorder = TransitionRecorder(viewModel.sessionProjectionTransitions)
+
+        // Archived sessions keep a registry store, so the previous status is
+        // still readable and a re-send is recognized as a repeat.
+        apply(snapshot(sessionID: "done", title: "Done", status: .completed, revision: 1, archived: true), to: viewModel)
+        #expect(recorder.terminals == [PickySessionTerminalTransition(sessionID: "done", status: .completed)])
+
+        apply(snapshot(sessionID: "done", title: "Done", status: .completed, revision: 2, archived: true), to: viewModel)
+        #expect(recorder.terminals.count == 1)
+    }
+
+    @Test func summaryPresentationFollowsSnapshotEveryTimeAndTransactionFieldChangesOnly() throws {
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage())
+        let recorder = TransitionRecorder(viewModel.sessionProjectionTransitions)
+
+        apply(snapshot(sessionID: "work", title: "Work", status: .running, revision: 1), to: viewModel)
+        apply(snapshot(sessionID: "work", title: "Work", status: .running, revision: 2), to: viewModel)
+        #expect(recorder.summaries.count == 2, "a snapshot republishes the whole projection, so it always re-announces")
+
+        // A patch that touches nothing the summary is composed from stays silent.
+        apply(transaction(sessionID: "work", baseRevision: 2, revision: 3,
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:09.000Z"}}]"#), to: viewModel)
+        #expect(recorder.summaries.count == 2)
+
+        apply(transaction(sessionID: "work", baseRevision: 3, revision: 4,
+                          mutations: #"[{"type":"metaPatch","patch":{"lastSummary":"Reviewing the diff"}}]"#), to: viewModel)
+        #expect(recorder.summaries.last == PickySessionSummaryPresentation(
+            sessionID: "work",
+            title: "Work",
+            status: .running,
+            lastSummary: "Reviewing the diff"
+        ))
+        #expect(recorder.summaries.count == 3)
+    }
+
+    @MainActor
+    private final class TransitionRecorder {
+        private(set) var terminals: [PickySessionTerminalTransition] = []
+        private(set) var summaries: [PickySessionSummaryPresentation] = []
+        private var cancellables: [AnyCancellable] = []
+
+        init(_ publisher: PickySessionProjectionTransitionPublisher) {
+            cancellables.append(publisher.sessionBecameTerminal.sink { [weak self] in self?.terminals.append($0) })
+            cancellables.append(publisher.summaryPresentationChanged.sink { [weak self] in self?.summaries.append($0) })
+        }
+    }
+
     private func makeViewModel(
         client: FakePickyAgentClient,
         storage: PickyRegistrySessionProjectionStorage,

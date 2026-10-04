@@ -298,6 +298,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             hudSessionViewModel.onScheduledSendPluginInstalled = { [weak self] in
                 self?.pluginReloadController.notePluginsChanged()
             }
+            // Subscribed before the view model consumes its first event, because
+            // projection frames are never replayed to a late subscriber.
+            companionManager.bindSessionProjectionTransitions(to: hudSessionViewModel.sessionProjectionTransitions)
             hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require

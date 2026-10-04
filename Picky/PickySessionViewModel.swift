@@ -38,6 +38,8 @@ final class PickySessionListViewModel: ObservableObject {
     /// invalidate every conversation bubble observing this view model. The active composer
     /// filters this stream by session, generation, request id, draft revision, and cursor.
     let autocompleteEvents = PassthroughSubject<PickyAutocompleteClientEvent, Never>()
+    /// Session-projection transitions for surfaces outside the session stack.
+    let sessionProjectionTransitions = PickySessionProjectionTransitionPublisher()
     /// Per-session TODO expansion choice survives Conversation Card teardown while the HUD is closed.
     @Published private(set) var todoProgressExpandedBySessionID: [String: Bool] = [:]
     /// Per-invocation expansion survives conversation-card teardown while the HUD is closed.

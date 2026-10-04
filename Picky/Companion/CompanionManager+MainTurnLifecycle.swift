@@ -231,26 +231,13 @@ extension CompanionManager {
     /// cursor stays at `.processing` (yellow) forever because both channels that drive it
     /// (`pendingAgentResponseStartedAt` + interaction state `.waitingForAgent`) never clear.
     ///
-    /// Idempotent and side-effect-light when nothing matches:
-    ///   - only the *transition* into a terminal status triggers cleanup (duplicate
-    ///     projection updates for the same terminal status are no-ops);
+    /// The publisher only reports a first terminal arrival, so duplicate terminal
+    /// frames never reach this. It stays side-effect-light when nothing matches:
     ///   - voice-follow-up tracking is only released when the terminated session is the
     ///     one the cursor is actively waiting on;
     ///   - the interaction-coordinator dispatch is harmless when the reducer never
     ///     observed an `agentSubmissionAccepted` for this sessionID.
-    func handleSessionStatusTransition(session: PickyAgentSession) {
-        handleSessionStatusTransition(sessionID: session.id, status: session.status)
-    }
-
-    func handleSessionStatusTransition(sessionID: String, status: PickySessionStatus) {
-        let previous = lastObservedSessionStatuses[sessionID]
-        lastObservedSessionStatuses[sessionID] = status
-        guard status.isTerminal else { return }
-        if let previous, previous.isTerminal { return }
-        releaseCursorForTerminatedSession(sessionID: sessionID, status: status)
-    }
-
-    private func releaseCursorForTerminatedSession(sessionID: String, status: PickySessionStatus) {
+    func releaseCursorForTerminatedSession(sessionID: String, status: PickySessionStatus) {
         if activeMainTurnFollowUpSessionID == sessionID {
             activeMainTurnFollowUpSessionID = nil
         }

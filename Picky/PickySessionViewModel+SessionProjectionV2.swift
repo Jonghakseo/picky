@@ -123,6 +123,7 @@ extension PickySessionListViewModel {
         syncVoiceFollowUpAfterSessionListChange()
         syncScreenContextTargetAfterSessionListChange()
         syncActiveVoiceFollowUpAfterSessionListChange(skippingRedundantPublishedAssignments: true)
+        sessionProjectionTransitions.publish(previous: previous, applied: card, frame: .snapshot)
     }
 
     /// Source identity is retained only at the router boundary. This hook is
@@ -176,6 +177,7 @@ extension PickySessionListViewModel {
         if !shouldArchive {
             deliverNotificationIfNeeded(for: card)
         }
+        sessionProjectionTransitions.publish(previous: previous, applied: card, frame: .transaction)
     }
 
     private func transactionContainsPiSessionPathLog(_ transaction: PickySessionProjectionTransaction) -> Bool {
@@ -280,45 +282,5 @@ extension PickySessionListViewModel {
             else { archiveStore.manuallyArchivedSessionIDs.remove(sessionID) }
             archiveStore.archivedSessionIDs = archiveStore.manuallyArchivedSessionIDs
         }
-    }
-}
-
-enum PickySessionProjectionArchiveIntentUpdate: Equatable {
-    case preserve
-    case set(Bool)
-    case setAndResolvePending(Bool)
-}
-
-enum PickySessionProjectionArchiveIntentPolicy {
-    static func snapshotUpdate(
-        archived: Bool?,
-        origin: PickySessionRecoveryCoordinator.SnapshotOrigin,
-        pendingLocalIntent: Bool?
-    ) -> PickySessionProjectionArchiveIntentUpdate {
-        guard let archived else { return .preserve }
-        if pendingLocalIntent != nil {
-            guard origin == .recovery else { return .preserve }
-            // A response to the in-flight recovery request is authoritative
-            // even when it conflicts with an optimistic archive intent. It
-            // can briefly flicker if the daemon processes the command later,
-            // but that later transaction re-applies the archive, whereas
-            // preserving the conflict leaves the session hidden forever.
-            return .setAndResolvePending(archived)
-        }
-        switch origin {
-        case .recovery:
-            return .set(archived)
-        case .bootstrap:
-            return archived ? .set(true) : .preserve
-        }
-    }
-
-    static func transactionUpdate(
-        archived: Bool,
-        pendingLocalIntent: Bool?
-    ) -> PickySessionProjectionArchiveIntentUpdate {
-        guard let pendingLocalIntent else { return .set(archived) }
-        guard archived == pendingLocalIntent else { return .preserve }
-        return .setAndResolvePending(archived)
     }
 }

@@ -1,0 +1,83 @@
+{
+  "name": "meta-patch-notification-toggles",
+  "description": "Completion notification preferences are tri-state: `true`, an explicit `false`, and absent (follow the global default). An explicit `false` must survive as `false` and never collapse to absent, and `null` must clear back to the default, because the notification policy treats the two differently.",
+  "events": [
+    {
+      "id": "event-conformance-notify-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 5,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Minimal",
+        "status": "queued",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:00:00.000Z",
+        "notifyMainOnCompletion": true,
+        "notifyMacOSOnCompletion": true
+      }
+    },
+    {
+      "id": "event-conformance-notify-off",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:06.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 5,
+      "revision": 6,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "notifyMainOnCompletion": false,
+            "notifyMacOSOnCompletion": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "event-conformance-notify-default",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:07.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 6,
+      "revision": 7,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "notifyMainOnCompletion": null,
+            "notifyMacOSOnCompletion": false
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": {
+      "localPresentationResets": 0,
+      "progressOnlyTransactions": 0,
+      "ignoredTransactions": 0
+    },
+    "sections": {
+      "meta": {
+        "state": "loaded",
+        "value": {
+          "id": "session-conformance",
+          "revision": 7,
+          "notifyMainOnCompletion": null,
+          "notifyMacOSOnCompletion": false
+        }
+      }
+    }
+  }
+}

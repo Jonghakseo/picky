@@ -1,0 +1,148 @@
+{
+  "name": "meta-patch-every-field-set",
+  "description": "A metaPatch sets every field it carries. Covering every metadata-owned metaPatch field pins the set branch per field, so a field the client decodes but never applies fails here.",
+  "events": [
+    {
+      "id": "event-conformance-meta-set-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 1,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Minimal",
+        "status": "queued",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "event-conformance-meta-set-transaction",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:09.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 1,
+      "revision": 2,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "id": "session-conformance",
+            "title": "Every field patched",
+            "status": "completed",
+            "cwd": "/tmp/patched",
+            "piSessionFilePath": "/Users/creatrip/.pi/sessions/patched.jsonl",
+            "createdAt": "2026-08-23T00:00:00.000Z",
+            "updatedAt": "2026-08-24T00:00:09.000Z",
+            "lastSummary": "Patched summary",
+            "thinkingPreview": "patched thought",
+            "contextUsage": {
+              "tokens": null,
+              "contextWindow": 100000,
+              "percent": null
+            },
+            "currentAssistantRun": {
+              "model": "openai-codex/gpt-5.5",
+              "thinkingLevel": "low"
+            },
+            "notifyMainOnCompletion": false,
+            "notifyMacOSOnCompletion": true,
+            "archived": true,
+            "archivedAt": "2026-08-24T00:00:08.000Z",
+            "pinned": false,
+            "lastRequest": {
+              "source": "steer",
+              "text": "stop and summarize"
+            },
+            "agentCycle": {
+              "cycleId": "cycle-2",
+              "runtimeInstanceId": "runtime-2",
+              "phase": "settled",
+              "outcome": "completed",
+              "controlGeneration": 5
+            },
+            "asyncWorkSummary": {
+              "tracking": "reconciling",
+              "activeRootCount": 0,
+              "pendingCompletionCount": 2,
+              "uncertainExecutionCount": 1,
+              "attentionCount": 1,
+              "workRevision": 9,
+              "canReleaseRuntime": true
+            },
+            "messageJournalAvailable": false
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": {
+      "localPresentationResets": 0,
+      "progressOnlyTransactions": 0,
+      "ignoredTransactions": 0
+    },
+    "sections": {
+      "meta": {
+        "state": "loaded",
+        "value": {
+          "id": "session-conformance",
+          "revision": 2,
+          "title": "Every field patched",
+          "status": "completed",
+          "cwd": "/tmp/patched",
+          "piSessionFilePath": "/Users/creatrip/.pi/sessions/patched.jsonl",
+          "createdAt": "2026-08-23T00:00:00.000Z",
+          "updatedAt": "2026-08-24T00:00:09.000Z",
+          "lastSummary": "Patched summary",
+          "thinkingPreview": "patched thought",
+          "contextUsage": {
+            "tokens": null,
+            "contextWindow": 100000,
+            "percent": null
+          },
+          "currentAssistantRun": {
+            "model": "openai-codex/gpt-5.5",
+            "thinkingLevel": "low"
+          },
+          "notifyMainOnCompletion": false,
+          "notifyMacOSOnCompletion": true,
+          "archived": true,
+          "archivedAt": "2026-08-24T00:00:08.000Z",
+          "pinned": false,
+          "lastRequest": {
+            "source": "steer",
+            "text": "stop and summarize"
+          },
+          "agentCycle": {
+            "cycleId": "cycle-2",
+            "runtimeInstanceId": "runtime-2",
+            "phase": "settled",
+            "outcome": "completed",
+            "controlGeneration": 5
+          },
+          "asyncWorkSummary": {
+            "tracking": "reconciling",
+            "activeRootCount": 0,
+            "pendingCompletionCount": 2,
+            "uncertainExecutionCount": 1,
+            "attentionCount": 1,
+            "workRevision": 9,
+            "canReleaseRuntime": true
+          }
+        }
+      },
+      "messageJournalAvailable": {
+        "state": "loaded",
+        "value": false
+      }
+    }
+  }
+}

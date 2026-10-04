@@ -1,0 +1,124 @@
+{
+  "name": "meta-snapshot-every-field",
+  "description": "A snapshot hydrates every metaPatch field into the metadata section. The scenario lists every metadata-owned metaPatch field, so a field the client forgets to copy out of a snapshot fails here instead of rendering stale or missing state.",
+  "events": [
+    {
+      "id": "event-conformance-meta-every-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 3,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Every field",
+        "status": "running",
+        "cwd": "/Users/creatrip/Documents/picky",
+        "piSessionFilePath": "/Users/creatrip/.pi/sessions/every.jsonl",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:00:01.000Z",
+        "lastSummary": "Read the protocol",
+        "thinkingPreview": "comparing schemas",
+        "contextUsage": {
+          "tokens": 1200,
+          "contextWindow": 200000,
+          "percent": 0.6
+        },
+        "currentAssistantRun": {
+          "model": "anthropic/claude-opus-5",
+          "thinkingLevel": "high"
+        },
+        "notifyMainOnCompletion": true,
+        "notifyMacOSOnCompletion": false,
+        "archived": false,
+        "archivedAt": "2026-08-24T00:00:02.000Z",
+        "pinned": true,
+        "lastRequest": {
+          "source": "followUp",
+          "text": "keep going"
+        },
+        "agentCycle": {
+          "cycleId": "cycle-1",
+          "runtimeInstanceId": "runtime-1",
+          "phase": "responding",
+          "controlGeneration": 3
+        },
+        "asyncWorkSummary": {
+          "tracking": "ready",
+          "activeRootCount": 1,
+          "pendingCompletionCount": 0,
+          "uncertainExecutionCount": 0,
+          "attentionCount": 0,
+          "workRevision": 4,
+          "canReleaseRuntime": false
+        },
+        "messageJournalAvailable": true
+      }
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": {
+      "localPresentationResets": 0,
+      "progressOnlyTransactions": 0,
+      "ignoredTransactions": 0
+    },
+    "sections": {
+      "meta": {
+        "state": "loaded",
+        "value": {
+          "id": "session-conformance",
+          "revision": 3,
+          "title": "Every field",
+          "status": "running",
+          "cwd": "/Users/creatrip/Documents/picky",
+          "piSessionFilePath": "/Users/creatrip/.pi/sessions/every.jsonl",
+          "createdAt": "2026-08-24T00:00:00.000Z",
+          "updatedAt": "2026-08-24T00:00:01.000Z",
+          "lastSummary": "Read the protocol",
+          "thinkingPreview": "comparing schemas",
+          "contextUsage": {
+            "tokens": 1200,
+            "contextWindow": 200000,
+            "percent": 0.6
+          },
+          "currentAssistantRun": {
+            "model": "anthropic/claude-opus-5",
+            "thinkingLevel": "high"
+          },
+          "notifyMainOnCompletion": true,
+          "notifyMacOSOnCompletion": false,
+          "archived": false,
+          "archivedAt": "2026-08-24T00:00:02.000Z",
+          "pinned": true,
+          "lastRequest": {
+            "source": "followUp",
+            "text": "keep going"
+          },
+          "agentCycle": {
+            "cycleId": "cycle-1",
+            "runtimeInstanceId": "runtime-1",
+            "phase": "responding",
+            "controlGeneration": 3
+          },
+          "asyncWorkSummary": {
+            "tracking": "ready",
+            "activeRootCount": 1,
+            "pendingCompletionCount": 0,
+            "uncertainExecutionCount": 0,
+            "attentionCount": 0,
+            "workRevision": 4,
+            "canReleaseRuntime": false
+          }
+        }
+      },
+      "messageJournalAvailable": {
+        "state": "loaded",
+        "value": true
+      }
+    }
+  }
+}

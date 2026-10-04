@@ -1,0 +1,133 @@
+{
+  "name": "meta-patch-every-field-clear",
+  "description": "`null` clears every clearable metaPatch field while fields omitted from the patch keep their value. Non-clearable fields (snapshot semantics `replace`) cannot be cleared, so they are left out of the patch and must survive unchanged.",
+  "events": [
+    {
+      "id": "event-conformance-meta-clear-snapshot",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:00.000Z",
+      "type": "sessionProjectionSnapshot",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "revision": 3,
+      "complete": true,
+      "omittedFields": [],
+      "projection": {
+        "id": "session-conformance",
+        "title": "Every field",
+        "status": "running",
+        "cwd": "/Users/creatrip/Documents/picky",
+        "piSessionFilePath": "/Users/creatrip/.pi/sessions/every.jsonl",
+        "createdAt": "2026-08-24T00:00:00.000Z",
+        "updatedAt": "2026-08-24T00:00:01.000Z",
+        "lastSummary": "Read the protocol",
+        "thinkingPreview": "comparing schemas",
+        "contextUsage": {
+          "tokens": 1200,
+          "contextWindow": 200000,
+          "percent": 0.6
+        },
+        "currentAssistantRun": {
+          "model": "anthropic/claude-opus-5",
+          "thinkingLevel": "high"
+        },
+        "notifyMainOnCompletion": true,
+        "notifyMacOSOnCompletion": false,
+        "archived": false,
+        "archivedAt": "2026-08-24T00:00:02.000Z",
+        "pinned": true,
+        "lastRequest": {
+          "source": "followUp",
+          "text": "keep going"
+        },
+        "agentCycle": {
+          "cycleId": "cycle-1",
+          "runtimeInstanceId": "runtime-1",
+          "phase": "responding",
+          "controlGeneration": 3
+        },
+        "asyncWorkSummary": {
+          "tracking": "ready",
+          "activeRootCount": 1,
+          "pendingCompletionCount": 0,
+          "uncertainExecutionCount": 0,
+          "attentionCount": 0,
+          "workRevision": 4,
+          "canReleaseRuntime": false
+        },
+        "messageJournalAvailable": true
+      }
+    },
+    {
+      "id": "event-conformance-meta-clear-transaction",
+      "protocolVersion": "2026-08-25",
+      "timestamp": "2026-08-24T00:00:10.000Z",
+      "type": "sessionProjectionTransaction",
+      "sessionId": "session-conformance",
+      "epoch": "epoch-conformance",
+      "baseRevision": 3,
+      "revision": 4,
+      "mutations": [
+        {
+          "type": "metaPatch",
+          "patch": {
+            "cwd": null,
+            "piSessionFilePath": null,
+            "lastSummary": null,
+            "thinkingPreview": null,
+            "contextUsage": null,
+            "currentAssistantRun": null,
+            "notifyMainOnCompletion": null,
+            "notifyMacOSOnCompletion": null,
+            "archived": null,
+            "archivedAt": null,
+            "pinned": null,
+            "lastRequest": null,
+            "agentCycle": null,
+            "asyncWorkSummary": null,
+            "messageJournalAvailable": null
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "sessionPresent": true,
+    "signals": {
+      "localPresentationResets": 0,
+      "progressOnlyTransactions": 0,
+      "ignoredTransactions": 0
+    },
+    "sections": {
+      "meta": {
+        "state": "loaded",
+        "value": {
+          "id": "session-conformance",
+          "revision": 4,
+          "title": "Every field",
+          "status": "running",
+          "createdAt": "2026-08-24T00:00:00.000Z",
+          "updatedAt": "2026-08-24T00:00:01.000Z",
+          "cwd": null,
+          "piSessionFilePath": null,
+          "lastSummary": null,
+          "thinkingPreview": null,
+          "contextUsage": null,
+          "currentAssistantRun": null,
+          "notifyMainOnCompletion": null,
+          "notifyMacOSOnCompletion": null,
+          "archived": null,
+          "archivedAt": null,
+          "pinned": null,
+          "lastRequest": null,
+          "agentCycle": null,
+          "asyncWorkSummary": null
+        }
+      },
+      "messageJournalAvailable": {
+        "state": "loaded",
+        "value": null
+      }
+    }
+  }
+}

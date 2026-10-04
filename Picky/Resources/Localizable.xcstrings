@@ -28145,6 +28145,91 @@
         }
       }
     },
+    "hud.composer.fastMode.notice.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on Fast mode?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast 모드를 켤까요?"
+          }
+        }
+      },
+      "comment": "Title of the one-time cost acknowledgement before enabling composer fast mode."
+    },
+    "hud.composer.fastMode.notice.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast mode can give faster replies, but the provider charges a higher rate. The cost shown in Picky may not include the full Fast mode surcharge. Applies only to this Pickle."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답이 빨라질 수 있지만 AI 제공업체가 더 높은 요금을 청구해요. Picky에 표시되는 비용에는 Fast 모드 추가 요금이 전부 반영되지 않을 수 있어요. 이 Pickle에만 적용돼요."
+          }
+        }
+      },
+      "comment": "Cost and scope notice shown before the first composer fast mode activation."
+    },
+    "hud.composer.fastMode.notice.enable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on Fast mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast 모드 켜기"
+          }
+        }
+      },
+      "comment": "Acknowledges the cost notice and enables fast mode for this Pickle."
+    },
+    "hud.composer.fastMode.on.value": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜짐"
+          }
+        }
+      },
+      "comment": "Accessibility value when fast mode is enabled."
+    },
+    "hud.composer.fastMode.off.value": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "꺼짐"
+          }
+        }
+      },
+      "comment": "Accessibility value when fast mode is disabled."
+    },
     "hud.composer.fastMode.accessibilityLabel": {
       "localizations": {
         "en": {

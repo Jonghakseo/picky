@@ -43,6 +43,80 @@ struct PickyFastModeTests {
         #expect(!PickyMainAgentFastModeAvailability.isKnownUnsupported(modelPattern: "anthropic/claude-opus-5", options: options))
     }
 
+    @MainActor
+    @Test func requiresExplicitCostAcknowledgementBeforeFirstActivationAndRemembersIt() throws {
+        let suite = "PickyFastModeNoticeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let off = try #require(PickyComposerFastModeControlState(enabled: false, supported: true, isUpdating: false))
+        let notice = PickyComposerFastModeNotice(defaults: defaults)
+        var toggles = 0
+
+        notice.requestToggle(control: off, sessionID: "a") { toggles += 1 }
+        #expect(notice.isPresented)
+        #expect(toggles == 0)
+        notice.dismiss()
+        notice.confirm(control: off, sessionID: "a") { toggles += 1 }
+        #expect(toggles == 0)
+
+        // Cancellation must not suppress the next notice, even after reopening the card.
+        let reopened = PickyComposerFastModeNotice(defaults: defaults)
+        reopened.requestToggle(control: off, sessionID: "a") { toggles += 1 }
+        #expect(reopened.isPresented)
+        reopened.confirm(control: off, sessionID: "a") { toggles += 1 }
+        #expect(!reopened.isPresented)
+        #expect(toggles == 1)
+        reopened.confirm(control: off, sessionID: "a") { toggles += 1 }
+        #expect(toggles == 1)
+
+        // A different Pickle and a fresh controller reuse the persisted acknowledgement.
+        let relaunched = PickyComposerFastModeNotice(defaults: defaults)
+        relaunched.requestToggle(control: off, sessionID: "b") { toggles += 1 }
+        #expect(!relaunched.isPresented)
+        #expect(toggles == 2)
+    }
+
+    @MainActor
+    @Test func turningFastModeOffDoesNotRequireCostAcknowledgement() throws {
+        let suite = "PickyFastModeNoticeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let on = try #require(PickyComposerFastModeControlState(enabled: true, supported: true, isUpdating: false))
+        let off = try #require(PickyComposerFastModeControlState(enabled: false, supported: true, isUpdating: false))
+        let notice = PickyComposerFastModeNotice(defaults: defaults)
+        var toggles = 0
+        notice.requestToggle(control: on, sessionID: "a") { toggles += 1 }
+        #expect(!notice.isPresented)
+        #expect(toggles == 1)
+        notice.requestToggle(control: off, sessionID: "a") { toggles += 1 }
+        #expect(notice.isPresented)
+        #expect(toggles == 1)
+    }
+
+    @MainActor
+    @Test func staleOrUnavailableConfirmationCannotToggleOrRememberAcknowledgement() throws {
+        let suite = "PickyFastModeNoticeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let off = try #require(PickyComposerFastModeControlState(enabled: false, supported: true, isUpdating: false))
+        let updating = try #require(PickyComposerFastModeControlState(enabled: false, supported: true, isUpdating: true))
+        let on = try #require(PickyComposerFastModeControlState(enabled: true, supported: true, isUpdating: false))
+        let notice = PickyComposerFastModeNotice(defaults: defaults)
+        var toggles = 0
+        notice.requestToggle(control: updating, sessionID: "a") { toggles += 1 }
+        #expect(!notice.isPresented)
+        for (control, sessionID) in [(Optional(off), "b"), (nil, "a"), (Optional(updating), "a"), (Optional(on), "a")] {
+            notice.requestToggle(control: off, sessionID: "a") { toggles += 1 }
+            #expect(notice.isPresented)
+            notice.confirm(control: control, sessionID: sessionID) { toggles += 1 }
+            #expect(!notice.isPresented)
+            #expect(toggles == 0)
+        }
+        notice.requestToggle(control: off, sessionID: "a") { toggles += 1 }
+        #expect(notice.isPresented)
+        #expect(toggles == 0)
+    }
+
     @Test func readsPersistedFastModeAndDefaultsOlderSettingsToOff() throws {
         let session = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyAgentSession.self, from: Data("""
         {"id": "s", "title": "t", "status": "running", "createdAt": "2026-08-24T00:00:00.000Z", "updatedAt": "2026-08-24T00:00:00.000Z",

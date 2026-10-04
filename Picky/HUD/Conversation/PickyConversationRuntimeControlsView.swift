@@ -55,6 +55,7 @@ struct PickyConversationRuntimeControlsView: View {
     @State private var modelQuery = ""
     @State private var pickerScreen: PickyComposerRuntimePickerScreen = .quick
     @State private var isThinkingPickerPresented = false
+    @StateObject private var fastModeNotice = PickyComposerFastModeNotice()
     @State private var lastHandledScopeApplyGeneration = 0
     @FocusState private var focusedModelRowID: String?
     @FocusState private var focusedThinkingRowID: String?
@@ -133,6 +134,8 @@ struct PickyConversationRuntimeControlsView: View {
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.t("hud.composer.runtime.accessibilityLabel"))
+        .onChange(of: sessionID) { _, _ in fastModeNotice.dismiss() }
+        .onChange(of: fastMode) { _, _ in fastModeNotice.dismiss() }
     }
 
     @ViewBuilder
@@ -140,6 +143,7 @@ struct PickyConversationRuntimeControlsView: View {
         if let modelText = presentation.modelText {
             Button {
                 isThinkingPickerPresented = false
+                fastModeNotice.dismiss()
                 onOpenModelPicker()
             } label: {
                 controlLabel(text: modelText, maximumTextWidth: PickyComposerToolbarMetrics.modelLabelMaximumWidth)
@@ -158,6 +162,7 @@ struct PickyConversationRuntimeControlsView: View {
         if let thinkingText = presentation.thinkingText {
             Button {
                 isModelPickerPresented = false
+                fastModeNotice.dismiss()
                 isThinkingPickerPresented = true
             } label: {
                 controlLabel(text: thinkingText)
@@ -174,7 +179,11 @@ struct PickyConversationRuntimeControlsView: View {
     @ViewBuilder
     private var fastModeControl: some View {
         if let fastMode {
-            Button(action: onToggleFastMode) {
+            Button {
+                isModelPickerPresented = false
+                isThinkingPickerPresented = false
+                fastModeNotice.requestToggle(control: fastMode, sessionID: sessionID, onToggle: onToggleFastMode)
+            } label: {
                 Image(systemName: fastMode.isEnabled ? "bolt.fill" : "bolt")
                     .pickyFont(size: 10.5, weight: .semibold)
                     .foregroundColor(fastMode.isEnabled ? DS.Colors.accentText : DS.Colors.textTertiary)
@@ -183,10 +192,38 @@ struct PickyConversationRuntimeControlsView: View {
             }
             .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: fastMode.isEnabled))
             .disabled(fastMode.isUpdating)
-            .help(L10n.t(fastMode.isEnabled ? "hud.composer.fastMode.on.help" : "hud.composer.fastMode.off.help"))
+            .nativeTooltip(L10n.t(fastMode.isEnabled ? "hud.composer.fastMode.on.help" : "hud.composer.fastMode.off.help"))
             .accessibilityLabel(L10n.t("hud.composer.fastMode.accessibilityLabel"))
-            .accessibilityValue(fastMode.isEnabled ? "On" : "Off")
+            .accessibilityValue(L10n.t(fastMode.isEnabled ? "hud.composer.fastMode.on.value" : "hud.composer.fastMode.off.value"))
+            .pickyInstantPopover(isPresented: $fastModeNotice.isPresented, arrowEdge: .bottom) {
+                fastModeCostNotice
+            }
         }
+    }
+
+    private var fastModeCostNotice: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space3) {
+            Text("hud.composer.fastMode.notice.title")
+                .font(PickyHUDTypography.statusSemibold)
+                .foregroundColor(DS.Colors.textPrimary)
+            Text("hud.composer.fastMode.notice.message")
+                .font(PickyHUDTypography.body)
+                .foregroundColor(DS.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("common.cancel") { fastModeNotice.dismiss() }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+                Button("hud.composer.fastMode.notice.enable") {
+                    fastModeNotice.confirm(control: fastMode, sessionID: sessionID, onToggle: onToggleFastMode)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(fastMode?.isUpdating != false)
+            }
+        }
+        .padding(DS.Spacing.space3)
+        .frame(width: PickyComposerToolbarMetrics.runtimePickerWidth, alignment: .leading)
     }
 
     @ViewBuilder

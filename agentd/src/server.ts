@@ -26,6 +26,7 @@ import { McpServerAdmin } from "./runtime/mcp-server-admin.js";
 import { PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./runtime/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./runtime/package-operations.js";
 import type { PiOAuthHandling } from "./runtime/pi-oauth-service.js";
+import type { RuntimeAutoRetry } from "./runtime/types.js";
 import { readNewPickleRuntimeDefaults } from "./application/new-pickle-runtime-defaults.js";
 import { SettingsControlBroker, SettingsControlError } from "./features/settings/settings-control-broker.js";
 import { settingsCommandHandlers } from "./features/settings/handlers.js";
@@ -181,6 +182,11 @@ export class AgentdServer {
       type: "sessionToolCallPreparingUpdated",
       sessionId,
       preparing,
+    }));
+    this.options.supervisor.on("autoRetry", (sessionId: string, retry: RuntimeAutoRetry | null) => this.broadcast({
+      type: "sessionAutoRetryUpdated",
+      sessionId,
+      retry,
     }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
       type: "terminalSessionSyncOutcome",
@@ -1308,6 +1314,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, writing: event.writing ? 1 : 0 };
     case "sessionToolCallPreparingUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, preparing: event.preparing ? 1 : 0 };
+    case "sessionAutoRetryUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, attempt: event.retry?.attempt, maxAttempts: event.retry?.maxAttempts, errorCode: event.retry?.errorCode, errorChars: event.retry?.errorMessage.length };
     case "terminalSessionSyncOutcome":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, baselineFound: event.baselineFound ? 1 : 0, importedMessageCount: event.importedMessageCount };
     case "error":

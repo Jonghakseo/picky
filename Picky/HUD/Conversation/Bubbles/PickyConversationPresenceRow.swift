@@ -21,6 +21,10 @@ struct PickyConversationPresencePresentation: Equatable {
         /// of its step here, before the tool starts and the line reads "working".
         case preparing
         case working
+        /// Pi is waiting to re-send a failed model request. The detail carries
+        /// the provider's code and message: without them a user cannot tell a
+        /// passing rate limit from a request that can never succeed.
+        case retrying(attempt: Int, maxAttempts: Int)
         case waitingForInput
     }
 
@@ -46,6 +50,7 @@ struct PickyConversationPresencePresentation: Equatable {
         case .writing: L10n.t(Self.writingTitleKey(forTurnStartedAt: startedAt))
         case .preparing: L10n.t("hud.presence.preparing")
         case .working: L10n.t("hud.liveStep.working")
+        case .retrying(let attempt, let maxAttempts): L10n.t("hud.presence.retrying", attempt, maxAttempts)
         case .waitingForInput: L10n.t("hud.conversation.status.waiting")
         }
     }
@@ -73,13 +78,24 @@ struct PickyConversationPresencePresentation: Equatable {
         activeTodoForm: String?,
         isWritingReply: Bool = false,
         isPreparingToolCall: Bool = false,
+        autoRetry: PickyAutoRetryStatus? = nil,
         startedAt: Date?,
         isAgentResponding: Bool = true
     ) -> Self? {
         if isWaitingForInput {
             return Self(phase: .waitingForInput, detail: nil, startedAt: nil)
         }
-        guard isRunning, isAgentResponding else { return nil }
+        guard isRunning else { return nil }
+        // The daemon clears a retry once the model makes progress, so it outranks
+        // every other phase while it is set.
+        if let autoRetry {
+            return Self(
+                phase: .retrying(attempt: autoRetry.attempt, maxAttempts: autoRetry.maxAttempts),
+                detail: retryDetail(autoRetry),
+                startedAt: startedAt
+            )
+        }
+        guard isAgentResponding else { return nil }
         let todo = activeTodoForm.flatMap(nonEmptyLine)
         if let activeTool, activeTool.isActive {
             return Self(phase: .working, detail: todo ?? detail(for: activeTool), startedAt: startedAt)
@@ -91,6 +107,15 @@ struct PickyConversationPresencePresentation: Equatable {
             return Self(phase: .writing, detail: nil, startedAt: startedAt)
         }
         return Self(phase: .thinking, detail: nil, startedAt: startedAt)
+    }
+
+    /// "429 · Usage credits are required for fast mode." The message is the
+    /// provider's own text, shown as-is because it names the actual cause.
+    static func retryDetail(_ retry: PickyAutoRetryStatus) -> String? {
+        let message = nonEmptyLine(retry.errorMessage)
+        let code = retry.errorCode.flatMap(nonEmptyLine)
+        let detail = [code, message].compactMap { $0 }.joined(separator: " · ")
+        return detail.isEmpty ? nil : detail
     }
 
     /// Detail priority after the active todo: bash/bash_async title, skill name,
@@ -170,7 +195,10 @@ struct PickyConversationPresenceStabilizer: Equatable {
 
     /// Phases that report actual progress, so they hold the line through a gap.
     private static func isStep(_ phase: PickyConversationPresencePresentation.Phase?) -> Bool {
-        phase == .working || phase == .preparing || phase == .writing
+        switch phase {
+        case .working, .preparing, .writing, .retrying: true
+        case .thinking, .waitingForInput, nil: false
+        }
     }
 
     private mutating func show(_ target: PickyConversationPresencePresentation, at now: Date) {
@@ -212,6 +240,7 @@ struct PickyConversationPresenceRow: View {
                             .foregroundStyle(DS.Colors.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.tail)
+                            .help(detail)
                     }
                 }
                 // Elapsed time sits right after the status, like a bubble's send

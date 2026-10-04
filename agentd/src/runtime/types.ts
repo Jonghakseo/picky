@@ -148,6 +148,16 @@ export interface RuntimeGlobalModelScopeChange {
   cwd?: string;
 }
 
+/** Pi is waiting to re-send a failed model request (rate limit, 5xx, network). */
+export interface RuntimeAutoRetry {
+  attempt: number;
+  maxAttempts: number;
+  /** HTTP status code of the failed attempt, when the provider reported one. */
+  errorCode?: string;
+  /** The provider's message for the failed attempt, without the JSON envelope. */
+  errorMessage: string;
+}
+
 export type RuntimeEvent =
   | RuntimeAsyncTaskEvent
   | { type: "log"; line: string }
@@ -166,7 +176,7 @@ export type RuntimeEvent =
    */
   | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string; turnActive?: boolean; asyncTasks?: AsyncCompletionDelivery }
   | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
-  | { type: "status"; status: RuntimeSessionStatus; cycleId?: string; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string; compaction?: RuntimeCompactionResult }
+  | { type: "status"; status: RuntimeSessionStatus; cycleId?: string; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string; compaction?: RuntimeCompactionResult; autoRetry?: RuntimeAutoRetry }
   /**
    * Per-turn assistant text flush. Emitted when a turn ends with both assistant
    * text and tool calls so the supervisor can speak the text-so-far through TTS

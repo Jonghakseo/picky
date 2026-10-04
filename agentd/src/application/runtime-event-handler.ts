@@ -11,7 +11,7 @@ import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
 import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySubagentInvocation, PickyToolActivity } from "../protocol.js";
-import type { RuntimeEvent } from "../runtime/types.js";
+import type { RuntimeAutoRetry, RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
 interface RuntimeMessageJournal {
@@ -67,6 +67,11 @@ interface RuntimeEventHandlerDependencies {
    * Never persisted.
    */
   setLiveOutput?(sessionId: string, signal: LiveOutputSignal, active: boolean): void;
+  /**
+   * Broadcasts Pi's auto-retry wait for a failed model request, or undefined
+   * once the model makes progress again or the turn ends. Never persisted.
+   */
+  setAutoRetry?(sessionId: string, retry: RuntimeAutoRetry | undefined): void;
   messageBuilder: RuntimeMessageJournal;
 }
 
@@ -100,6 +105,8 @@ export class RuntimeEventHandler {
   private readonly thinkingActive = new Map<string, boolean>();
   /** Live streaming output per session (reply text or tool-call arguments); never persisted. */
   private readonly liveOutput = new Map<string, LiveOutput>();
+  /** Pi's pending auto-retry per session; live only, like `liveOutput`. */
+  private readonly autoRetry = new Map<string, RuntimeAutoRetry>();
   private readonly pendingThinkingFlushes = new Map<string, PendingThinkingFlush>();
   private readonly activeThinkingFlushes = new Map<string, Promise<void>>();
   private readonly seenToolCallIds = new Map<string, Set<string>>();
@@ -232,7 +239,10 @@ export class RuntimeEventHandler {
       }
       return;
     }
-    if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
+    if (event.type === "thinking_delta") {
+      if (event.delta) this.setAutoRetry(sessionId, undefined);
+      return this.applyThinkingEvent(sessionId, event);
+    }
     if (event.type === "tool_call_preparing") return this.setLiveOutput(sessionId, "preparing_tool");
     if (event.type === "queue_update") return this.dependencies.applyQueueUpdate(sessionId, event.steering, event.followUp);
     if (event.type === "status") {
@@ -240,6 +250,10 @@ export class RuntimeEventHandler {
       // A terminal event owns its entire staged operation. Draining or clearing drafts before
       // SessionSupervisor saves would leak transient state when that sole save rejects.
       this.setLiveOutput(sessionId, "idle");
+      // A retry stays on screen through the next attempt's start; it ends with
+      // model progress, a question for the user, or the end of the turn.
+      if (event.autoRetry) this.setAutoRetry(sessionId, event.autoRetry);
+      else if (event.status !== "running") this.setAutoRetry(sessionId, undefined);
       if (!terminal) {
         await this.drainPendingThinkingFlush(sessionId);
         this.thinkingActive.set(sessionId, false);
@@ -274,6 +288,7 @@ export class RuntimeEventHandler {
     // The supervisor turns this into a resourcesReloaded broadcast before delegating here.
     if (event.type === "resources_reloaded") return;
     await this.drainPendingThinkingFlush(sessionId);
+    this.setAutoRetry(sessionId, undefined);
     return this.applyToolEvent(sessionId, event);
   }
 
@@ -566,6 +581,16 @@ export class RuntimeEventHandler {
     // holds both at once.
     if (previous !== "idle") this.dependencies.setLiveOutput?.(sessionId, previous === "writing" ? "replyWriting" : "toolCallPreparing", false);
     if (next !== "idle") this.dependencies.setLiveOutput?.(sessionId, next === "writing" ? "replyWriting" : "toolCallPreparing", true);
+    if (next !== "idle") this.setAutoRetry(sessionId, undefined);
+  }
+
+  /** Reports only changes, like `setLiveOutput`. */
+  private setAutoRetry(sessionId: string, next: RuntimeAutoRetry | undefined): void {
+    const previous = this.autoRetry.get(sessionId);
+    if (!previous && !next) return;
+    if (previous && next && JSON.stringify(previous) === JSON.stringify(next)) return;
+    if (next) this.autoRetry.set(sessionId, next); else this.autoRetry.delete(sessionId);
+    this.dependencies.setAutoRetry?.(sessionId, next);
   }
 
   private async applyThinkingEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "thinking_delta" }>): Promise<void> {

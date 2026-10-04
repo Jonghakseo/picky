@@ -2061,7 +2061,7 @@ describe("PiSdkRuntime", () => {
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "복구 완료" }] }, toolResults: [] });
 
     expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
-    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Retrying after transient Pi error (1/3)…" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Retrying after transient Pi error (1/3)…", autoRetry: { attempt: 1, maxAttempts: 3, errorMessage: "network error" } });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "복구 완료", assistantRun: { model: "claude-fake" } });
   });
 

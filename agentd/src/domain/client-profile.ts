@@ -44,8 +44,8 @@ export const DESKTOP_BRIDGE_CAPABILITIES: readonly string[] = [
  * Deliberately absent:
  * - `quickReply`: the CLI waits for it (`cli.ts` `matchMainReplyForContext`),
  *   so gating it would hang `picky submit --wait`.
- * - `sessionReplyWritingUpdated` / `sessionToolCallPreparingUpdated`: neutral
- *   per-session status that any client could render.
+ * - `sessionReplyWritingUpdated` / `sessionToolCallPreparingUpdated` /
+ *   `sessionAutoRetryUpdated`: neutral per-session status that any client could render.
  */
 export const DESKTOP_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set<string>([
   // Overlay windows drawn by the app over the user's screen.

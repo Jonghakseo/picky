@@ -2202,7 +2202,7 @@ final class CompanionManager: ObservableObject {
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .autocompleteCapabilitiesSnapshot, .autocompleteSuggestionsSnapshot, .autocompleteCompletionApplied,
              .rewindTargetsSnapshot, .sessionRuntimeOptionsSnapshot, .toolHistoryDetailResult, .sessionDiffResult, .sessionRewound, .ack, .unknown,
-             .sessionReplyWritingUpdated, .sessionToolCallPreparingUpdated, .terminalSessionSyncOutcome,
+             .sessionReplyWritingUpdated, .sessionToolCallPreparingUpdated, .sessionAutoRetryUpdated, .terminalSessionSyncOutcome,
              .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested:
             break
         }

@@ -25,6 +25,9 @@ struct PickySessionCard: Equatable, Identifiable {
     /// call's arguments (`sessionToolCallPreparingUpdated`). Same ownership as
     /// `isWritingReply`.
     var isPreparingToolCall: Bool = false
+    /// Live-only: Pi is waiting to re-send a failed model request
+    /// (`sessionAutoRetryUpdated`). Same ownership as `isWritingReply`.
+    var autoRetry: PickyAutoRetryStatus?
     var logPreview: String
     var lastRequestText: String?
     // When the latest REQUEST row content was observed/sent locally. Used to render the

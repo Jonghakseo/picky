@@ -1206,6 +1206,35 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(phase(try #require(viewModel.sessions.first)) == .thinking)
     }
 
+    /// Pi retries a failed model request after a backoff (rate limit, 5xx).
+    /// The line must say so with the provider's code and message, keep saying
+    /// it across a projection rebuild, and fall back once the daemon clears it.
+    @Test func autoRetrySignalShowsTheProviderReasonOnThePresenceLine() throws {
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage)
+        apply(snapshot(sessionID: "session-a", title: "Retrying", status: .running, revision: 1), to: viewModel)
+        func presence(_ card: PickySessionCard) -> PickyConversationPresencePresentation? {
+            PickyConversationPresencePresentation.make(
+                isRunning: card.status == .running, isWaitingForInput: false, activeTool: nil,
+                activeTodoForm: nil, isWritingReply: card.isWritingReply,
+                isPreparingToolCall: card.isPreparingToolCall, autoRetry: card.autoRetry, startedAt: nil,
+                isAgentResponding: true
+            )
+        }
+
+        applyAutoRetry(sessionID: "session-a", retry: #"{"attempt":6,"maxAttempts":15,"errorCode":"429","errorMessage":"Usage credits are required for fast mode."}"#, to: viewModel)
+        let retryingCard = try #require(viewModel.sessions.first)
+        let retrying = try #require(presence(retryingCard))
+        #expect(retrying.phase == .retrying(attempt: 6, maxAttempts: 15))
+        #expect(retrying.detail == "429 · Usage credits are required for fast mode.")
+
+        apply(transaction(sessionID: "session-a", baseRevision: 1, revision: 2, mutations: #"[{"type":"metaPatch","patch":{"lastSummary":"Still retrying"}}]"#), to: viewModel)
+        #expect(presence(try #require(viewModel.sessions.first))?.phase == .retrying(attempt: 6, maxAttempts: 15))
+
+        applyAutoRetry(sessionID: "session-a", retry: "null", to: viewModel)
+        #expect(presence(try #require(viewModel.sessions.first))?.phase == .thinking)
+    }
+
     @Test func metaPatchDistinguishesExplicitClearFromAbsentField() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let viewModel = PickyProjectionReplayFixtures.makeViewModel(sessionProjectionStorage: storage)
@@ -1569,6 +1598,14 @@ struct PickySessionProjectionV2ApplicationTests {
     private func applyReplyWriting(sessionID: String, writing: Bool, to viewModel: PickySessionListViewModel) {
         let json = """
         {"id":"reply-writing-\(sessionID)-\(writing)","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-08-25T00:00:01.000Z","type":"sessionReplyWritingUpdated","sessionId":"\(sessionID)","writing":\(writing)}
+        """
+        let envelope = try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
+        viewModel.apply(.protocolEvent(envelope))
+    }
+
+    private func applyAutoRetry(sessionID: String, retry: String, to viewModel: PickySessionListViewModel) {
+        let json = """
+        {"id":"auto-retry-\(sessionID)-\(retry.hashValue)","protocolVersion":"\(pickyAgentProtocolVersion)","timestamp":"2026-10-04T00:00:01.000Z","type":"sessionAutoRetryUpdated","sessionId":"\(sessionID)","retry":\(retry)}
         """
         let envelope = try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
         viewModel.apply(.protocolEvent(envelope))

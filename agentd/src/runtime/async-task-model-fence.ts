@@ -16,6 +16,8 @@ export class AsyncTaskModelFence {
   private wrappedStream?: AgentSession["agent"]["streamFunction"];
   private cycle?: AgentCycle;
   private settlingCycleId?: string;
+  /** Messages of an `agent_end` that Pi will auto-retry; the cycle settles on the final one. */
+  private retryingRunMessages?: unknown[];
   private deliveries: AsyncCompletionDelivery[] = [];
   private requestDeliveries: AsyncCompletionDelivery[] = [];
   private consumedDeliveries = new Set<string>();
@@ -135,15 +137,33 @@ export class AsyncTaskModelFence {
       else if (!session.isCompacting) finish();
     });
   }
-  onEvent(event: { type: string; message?: unknown; messages?: unknown[] }): void {
+  onEvent(event: { type: string; message?: unknown; messages?: unknown[]; willRetry?: boolean }): void {
     if (event.type === "compaction_start" || event.type === "compaction_end") { this.recordCompaction(event.type === "compaction_start"); return; }
     if (event.type === "message_end") { this.recordAssistantMessageEnd(event.message); return; }
-    if (event.type !== "agent_end" || !this.cycle || this.settlingCycleId === this.cycle.cycleId) return;
+    if (event.type === "agent_settled") {
+      // A cancelled retry backoff ends the run without another agent_end.
+      const retried = this.retryingRunMessages;
+      this.retryingRunMessages = undefined;
+      if (retried) this.settleCycle(retried);
+      return;
+    }
+    if (event.type !== "agent_end") return;
+    if (event.willRetry === true && this.cycle) {
+      // Pi re-requests the same response after a backoff (e.g. 429). The agent is still
+      // responding, so keep the cycle open instead of reporting a failed settle per attempt.
+      this.retryingRunMessages = event.messages ?? [];
+      return;
+    }
+    this.retryingRunMessages = undefined;
+    this.settleCycle(event.messages);
+  }
+  private settleCycle(messages: unknown[] | undefined): void {
+    if (!this.cycle || this.settlingCycleId === this.cycle.cycleId) return;
     const cycle = this.cycle;
     this.settlingCycleId = cycle.cycleId;
     const deliveries = this.deliveries;
     const consumed = this.consumedDeliveries;
-    const last = event.messages?.slice().reverse().find((message) => typeof message === "object" && message !== null && "role" in message && message.role === "assistant") as { stopReason?: string } | undefined;
+    const last = messages?.slice().reverse().find((message) => typeof message === "object" && message !== null && "role" in message && message.role === "assistant") as { stopReason?: string } | undefined;
     const outcome = last?.stopReason === "aborted" ? "cancelled" : last?.stopReason === "error" ? "failed" : "completed";
     const settledCycle: AgentCycle = { ...cycle, phase: "settled", outcome };
     this.enqueuePersistence(() => this.bridge.owner.transact((current) => ({ ...current, cycle: settledCycle, tickets: current.tickets.map((ticket) => ticket.cycleId === cycle.cycleId && ticket.state === "processing" ? { ...ticket, state: (outcome === "completed" || (ticket.deliveryId !== undefined && consumed.has(asyncIdentity(ticket, ticket.deliveryId)))) ? "handled" : "pending" } : ticket) })).then((state) => {

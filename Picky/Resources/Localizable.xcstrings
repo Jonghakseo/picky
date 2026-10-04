@@ -26685,6 +26685,22 @@
         }
       }
     },
+    "hud.presence.retrying": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retrying %1$lld/%2$lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도하는 중 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
     "hud.presence.skill": {
       "localizations": {
         "en": {

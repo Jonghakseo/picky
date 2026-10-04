@@ -1087,6 +1087,20 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   // the model streams text or thinking, or the turn ends. A separate event so an
   // app that predates it ignores it instead of misreading it as reply writing.
   EventBaseSchema.extend({ type: z.literal("sessionToolCallPreparingUpdated"), sessionId: z.string(), preparing: z.boolean() }),
+  // Live-only presence signal, same contract as sessionReplyWritingUpdated: Pi is
+  // waiting to re-send a failed model request (rate limit, 5xx, network). `retry`
+  // carries the attempt and the provider's code and message so the user can see
+  // why the turn is stuck; null once the model makes progress or the turn ends.
+  EventBaseSchema.extend({
+    type: z.literal("sessionAutoRetryUpdated"),
+    sessionId: z.string(),
+    retry: z.object({
+      attempt: z.number().int().positive(),
+      maxAttempts: z.number().int().positive(),
+      errorCode: z.string().optional(),
+      errorMessage: z.string(),
+    }).nullable(),
+  }),
   EventBaseSchema.extend({
     type: z.literal("terminalSessionSyncOutcome"),
     sessionId: z.string(),

@@ -1792,6 +1792,8 @@ final class PickySessionListViewModel: ObservableObject {
             applySessionReplyWriting(sessionID: sessionId, writing: writing)
         case .sessionToolCallPreparingUpdated(let sessionId, let preparing):
             applySessionToolCallPreparing(sessionID: sessionId, preparing: preparing)
+        case .sessionAutoRetryUpdated(let sessionId, let retry):
+            applySessionAutoRetry(sessionID: sessionId, retry: retry)
         case .terminalSessionSyncOutcome(let outcome):
             applyTerminalSessionSyncOutcome(outcome)
         case .externalEntryAccepted(let accepted):
@@ -1867,6 +1869,17 @@ final class PickySessionListViewModel: ObservableObject {
             }
         } else {
             mutateSession(sessionID: sessionID) { $0.isPreparingToolCall = preparing }
+        }
+    }
+
+    /// Same live, locally-owned slot as `applySessionReplyWriting`.
+    private func applySessionAutoRetry(sessionID: String, retry: PickyAutoRetryStatus?) {
+        if let storage = sessionProjectionStorage as? PickyRegistrySessionProjectionStorage {
+            _ = storage.updateProjectionPresentation(sessionID: sessionID) {
+                $0.replaceAutoRetry(retry)
+            }
+        } else {
+            mutateSession(sessionID: sessionID) { $0.autoRetry = retry }
         }
     }
 

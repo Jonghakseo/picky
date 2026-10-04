@@ -638,6 +638,7 @@ struct PickyConversationListView: View {
             activeTodoForm: session.todoState?.tasks.first { $0.status == .inProgress }?.displayText,
             isWritingReply: session.isWritingReply,
             isPreparingToolCall: session.isPreparingToolCall,
+            autoRetry: session.autoRetry,
             startedAt: turnStart,
             isAgentResponding: !(session.agentCycle?.phase == .idle || session.agentCycle?.phase == .settled)
         )

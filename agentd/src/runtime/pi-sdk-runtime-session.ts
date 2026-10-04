@@ -19,6 +19,7 @@ import type { ModelCycleDirection,PickyQueueMode } from "../protocol.js";
 import { expectedInputDeliveryIndex,PiInputRewriteObserver } from "./pi-input-rewrite-observer.js";
 import { SubagentInvocationTracker } from "./subagent-invocation-tracker.js";
 import { logAgentd,logLifecycleEvent } from "../local-log.js";
+import { summarizeProviderError } from "../domain/provider-error-summary.js";
 import {
 type ScopedModelOption,
 applyScopedModelsForCycling,
@@ -764,7 +765,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const record = asRecord(event);
       if (record.type === "agent_start" || record.type === "compaction_start") this.asyncSettled = false;
       const cycleId = this.asyncFence?.currentCycleId;
-      this.asyncFence?.onEvent({ type: String(record.type), ...(record.message ? { message: record.message } : {}), ...(Array.isArray(record.messages) ? { messages: record.messages } : {}) });
+      this.asyncFence?.onEvent({ type: String(record.type), ...(record.message ? { message: record.message } : {}), ...(Array.isArray(record.messages) ? { messages: record.messages } : {}), ...(record.willRetry === true ? { willRetry: true } : {}) });
       const runtimeEvent = this.runtimeEventFromPiEvent(event);
       if (runtimeEvent) this.emit(runtimeEvent.type === "status" && cycleId ? { ...runtimeEvent, cycleId } : runtimeEvent);
       if ((record.type === "agent_settled" || record.type === "compaction_end") && this.asyncFence) {
@@ -1100,7 +1101,11 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const attempt = numberValue(event.attempt);
       const maxAttempts = numberValue(event.maxAttempts);
       const summary = attempt && maxAttempts ? `Retrying after transient Pi error (${attempt}/${maxAttempts})…` : "Retrying after transient Pi error…";
-      return { type: "status", status: "running", summary };
+      const error = summarizeProviderError(stringValue(event.errorMessage) ?? "Unknown error");
+      const autoRetry = attempt && maxAttempts
+        ? { attempt, maxAttempts, ...(error.code ? { errorCode: error.code } : {}), errorMessage: error.message }
+        : undefined;
+      return { type: "status", status: "running", summary, ...(autoRetry ? { autoRetry } : {}) };
     }
     if (event.type === "auto_retry_end") {
       this.cancelDeferredTerminalError();

@@ -120,6 +120,7 @@ final class PickySessionStore {
             thinkingPreview: metadata.thinkingPreview,
             isWritingReply: presentation.isWritingReply,
             isPreparingToolCall: presentation.isPreparingToolCall,
+            autoRetry: presentation.autoRetry,
             logPreview: presentation.logPreview,
             lastRequestText: presentation.lastRequestText,
             lastRequestAt: presentation.lastRequestAt,
@@ -333,6 +334,10 @@ final class PickySessionStore {
         presentation.isPreparingToolCall = preparing
     }
 
+    func replaceAutoRetry(_ retry: PickyAutoRetryStatus?) {
+        presentation.autoRetry = retry
+    }
+
     /// A `session_replaced` transaction is an explicit daemon reset, unlike a
     /// recovery snapshot. Its fresh session must not retain local UI state.
     func clearLocallyOwnedProjectionPresentation() {
@@ -340,6 +345,7 @@ final class PickySessionStore {
         presentation.lastTerminalSyncOutcome = nil
         presentation.isWritingReply = false
         presentation.isPreparingToolCall = false
+        presentation.autoRetry = nil
     }
 }
 
@@ -351,6 +357,7 @@ private struct PickySessionCardPresentation {
     var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?
     var isWritingReply: Bool
     var isPreparingToolCall: Bool
+    var autoRetry: PickyAutoRetryStatus?
 
     static let empty = Self(
         logPreview: "",
@@ -359,7 +366,8 @@ private struct PickySessionCardPresentation {
         piSessionFilePath: nil,
         lastTerminalSyncOutcome: nil,
         isWritingReply: false,
-        isPreparingToolCall: false
+        isPreparingToolCall: false,
+        autoRetry: nil
     )
 
     init(card: PickySessionListViewModel.SessionCard) {
@@ -370,6 +378,7 @@ private struct PickySessionCardPresentation {
         lastTerminalSyncOutcome = card.lastTerminalSyncOutcome
         isWritingReply = card.isWritingReply
         isPreparingToolCall = card.isPreparingToolCall
+        autoRetry = card.autoRetry
     }
 
     private init(
@@ -379,7 +388,8 @@ private struct PickySessionCardPresentation {
         piSessionFilePath: String?,
         lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome?,
         isWritingReply: Bool,
-        isPreparingToolCall: Bool
+        isPreparingToolCall: Bool,
+        autoRetry: PickyAutoRetryStatus?
     ) {
         self.logPreview = logPreview
         self.lastRequestText = lastRequestText
@@ -388,6 +398,7 @@ private struct PickySessionCardPresentation {
         self.lastTerminalSyncOutcome = lastTerminalSyncOutcome
         self.isWritingReply = isWritingReply
         self.isPreparingToolCall = isPreparingToolCall
+        self.autoRetry = autoRetry
     }
 }
 

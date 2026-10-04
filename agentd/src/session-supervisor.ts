@@ -229,6 +229,7 @@ export class SessionSupervisor extends EventEmitter {
         this.pickleVisualDslCoordinator.deactivate(sessionId, "runtime terminal");
       },
       setLiveOutput: (sessionId, signal, active) => this.emit(signal, sessionId, active),
+      setAutoRetry: (sessionId, retry) => this.emit("autoRetry", sessionId, retry ?? null),
       messageBuilder: this.messageBuilder,
     });
     this.terminalManualCompactionCoordinator = new TerminalManualCompactionCoordinator({

@@ -1098,6 +1098,22 @@ describe("protocol contract fixtures", () => {
     expect(() => EventEnvelopeSchema.parse({ ...event, preparing: "yes" })).toThrow();
   });
 
+  it("carries the live auto-retry signal and its clear without a session revision", () => {
+    const event = {
+      id: "event-auto-retry",
+      protocolVersion: PROTOCOL_VERSION,
+      timestamp: "2026-10-04T00:00:00.000Z",
+      type: "sessionAutoRetryUpdated" as const,
+      sessionId: "session-001",
+      retry: { attempt: 6, maxAttempts: 15, errorCode: "429", errorMessage: "Usage credits are required for fast mode." },
+    };
+
+    expect(EventEnvelopeSchema.parse(event)).toMatchObject(event);
+    expect(EventEnvelopeSchema.parse({ ...event, retry: null })).toMatchObject({ retry: null });
+    expect(EventEnvelopeSchema.parse({ ...event, retry: { attempt: 1, maxAttempts: 3, errorMessage: "fetch failed" } })).toMatchObject({ retry: { errorMessage: "fetch failed" } });
+    expect(() => EventEnvelopeSchema.parse({ ...event, retry: { attempt: 1, maxAttempts: 3 } })).toThrow();
+  });
+
   it("validates session projection bootstrap membership completion", () => {
     const completion = {
       id: "event-projection-bootstrap-complete",

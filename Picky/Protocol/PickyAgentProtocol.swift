@@ -465,6 +465,10 @@ enum PickyEvent: Equatable {
     /// arguments, which can take far longer than running the tool. Same
     /// contract as `sessionReplyWritingUpdated`.
     case sessionToolCallPreparingUpdated(sessionId: String, preparing: Bool)
+    /// Live-only presence signal: Pi is waiting to re-send a failed model
+    /// request (rate limit, 5xx, network); nil once the model makes progress or
+    /// the turn ends. Same contract as `sessionReplyWritingUpdated`.
+    case sessionAutoRetryUpdated(sessionId: String, retry: PickyAutoRetryStatus?)
     case terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome)
     case error(PickyErrorEvent)
     case ack(PickyAckEvent)
@@ -563,6 +567,9 @@ enum PickyEvent: Equatable {
         case "sessionToolCallPreparingUpdated":
             let payload = try PickySessionToolCallPreparingUpdatedPayload(from: decoder)
             return .sessionToolCallPreparingUpdated(sessionId: payload.sessionId, preparing: payload.preparing)
+        case "sessionAutoRetryUpdated":
+            let payload = try PickySessionAutoRetryUpdatedPayload(from: decoder)
+            return .sessionAutoRetryUpdated(sessionId: payload.sessionId, retry: payload.retry)
         case "terminalSessionSyncOutcome":
             return .terminalSessionSyncOutcome(try PickyTerminalSessionSyncOutcome(from: decoder))
         default: return nil
@@ -840,6 +847,20 @@ struct PickySessionReplyWritingUpdatedPayload: Decodable, Equatable {
 struct PickySessionToolCallPreparingUpdatedPayload: Decodable, Equatable {
     let sessionId: String
     let preparing: Bool
+}
+
+/// Why a Pickle's model request is being retried: the attempt and the
+/// provider's status code and message for the failed attempt.
+struct PickyAutoRetryStatus: Decodable, Equatable, Hashable {
+    let attempt: Int
+    let maxAttempts: Int
+    let errorCode: String?
+    let errorMessage: String
+}
+
+struct PickySessionAutoRetryUpdatedPayload: Decodable, Equatable {
+    let sessionId: String
+    let retry: PickyAutoRetryStatus?
 }
 
 struct PickyTerminalSessionSyncOutcome: Decodable, Equatable {

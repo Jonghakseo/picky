@@ -18,7 +18,8 @@ import type { RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.unstubAllEnvs(); });
-async function fixture(options: { onTool?: () => Promise<void>; failModel?: boolean; readyOnDiscovery?: boolean; deferReady?: boolean; holdCloseAck?: boolean; captureSaved?: boolean; acceptCancel?: boolean } = {}) {
+async function fixture(options: { onTool?: () => Promise<void>; failModel?: boolean; readyOnDiscovery?: boolean; deferReady?: boolean; holdCloseAck?: boolean; captureSaved?: boolean; acceptCancel?: boolean; rateLimitedRequests?: number } = {}) {
+  const rateLimitedRequests = options.rateLimitedRequests ?? 0;
   const root = await mkdtemp(join(tmpdir(), "picky-w3-sdk-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "home/.pi/agent"); await mkdir(agentDir, { recursive: true });
@@ -32,7 +33,7 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
   let acknowledgeClose!: () => void;
   const closeAcknowledged = new Promise<void>((resolve) => { acknowledgeClose = resolve; });
   const runtime = new PiSdkRuntime({ agentDir, modelPattern: "w3-offline/finite",
-    createServices: (options) => createAgentSessionServices({ ...options, settingsManager: SettingsManager.inMemory({ packages: [], retry: { enabled: false }, compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 100 } }) }),
+    createServices: (options) => createAgentSessionServices({ ...options, settingsManager: SettingsManager.inMemory({ packages: [], retry: rateLimitedRequests ? { enabled: true, maxRetries: 3, baseDelayMs: 1 } : { enabled: false }, compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 100 } }) }),
     createSessionFromServices: async (options) => { const result = await createAgentSessionFromServices({ ...options, noTools: "builtin" }); session = result.session; return result; },
     resourceLoaderOptions: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [(pi) => {
       api = pi;
@@ -62,9 +63,11 @@ async function fixture(options: { onTool?: () => Promise<void>; failModel?: bool
         requests.push(JSON.parse(JSON.stringify(context)));
         const stream = createAssistantMessageEventStream();
         const toolCall = options.onTool !== undefined && requests.length === 1;
-        const message: AssistantMessage = { role: "assistant", content: toolCall ? [{ type: "toolCall", id: "fixture-tool", name: "bash_async", arguments: {} }] : [{ type: "text", text: "Finite reply" }], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: options.failModel ? "error" : toolCall ? "toolUse" : "stop", ...(options.failModel ? { errorMessage: "Finite model failure" } : {}), timestamp: Date.now() };
+        const failModel = options.failModel || requests.length <= rateLimitedRequests;
+        const errorMessage = options.failModel ? "Finite model failure" : `429 {"type":"error","error":{"type":"rate_limit_error","message":"Usage credits are required for fast mode."},"request_id":"req_fixture"}`;
+        const message: AssistantMessage = { role: "assistant", content: toolCall ? [{ type: "toolCall", id: "fixture-tool", name: "bash_async", arguments: {} }] : [{ type: "text", text: "Finite reply" }], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: failModel ? "error" : toolCall ? "toolUse" : "stop", ...(failModel ? { errorMessage } : {}), timestamp: Date.now() };
         stream.push({ type: "start", partial: message });
-        if (options.failModel) stream.push({ type: "error", reason: "error", error: message });
+        if (failModel) stream.push({ type: "error", reason: "error", error: message });
         else stream.push({ type: "done", reason: toolCall ? "toolUse" : "stop", message });
         stream.end(); return stream;
       } });
@@ -636,6 +639,38 @@ it("does not settle a result when the model fails before completing its response
   await f.session.waitForIdle(); await f.drainEvents();
   expect((await f.store.loadReadOnly("session-sdk"))?.completionTickets?.[0]?.state).toBe("pending");
   expect(f.frames.filter((frame) => frame.type === "completion-observed")).toEqual([]);
+}, 15_000);
+
+it("keeps the response cycle open while Pi auto-retries a rate-limited request", async () => {
+  const f = await fixture({ rateLimitedRequests: 2 });
+  const retries: unknown[] = [];
+  f.supervisor.on("autoRetry", (sessionId: string, retry: unknown) => { if (sessionId === "session-sdk") retries.push(retry); });
+  await f.handle.followUp({ text: "Finite rate-limited request", imagePaths: [] });
+  await vi.waitFor(() => expect(f.requests).toHaveLength(3));
+  await f.session.waitForIdle(); await f.drainEvents();
+  // A settled cycle hides the Pickle's presence line, so a retry backoff must not publish one.
+  const cycles = f.projections.map((state) => state.agentCycle).filter((cycle) => cycle !== undefined);
+  const firstSettled = cycles.findIndex((cycle) => cycle.phase === "settled");
+  expect(cycles.slice(firstSettled).every((cycle) => cycle.phase === "settled" && cycle.outcome === "completed")).toBe(true);
+  expect(cycles.some((cycle) => cycle.outcome === "failed")).toBe(false);
+  expect(new Set(cycles.map((cycle) => cycle.cycleId)).size).toBe(1);
+  expect((await f.store.loadReadOnly("session-sdk"))?.agentCycle).toMatchObject({ phase: "settled", outcome: "completed" });
+  // The user sees why the turn is waiting, then the notice clears once the reply streams.
+  const reason = { errorCode: "429", errorMessage: "Usage credits are required for fast mode." };
+  expect(retries).toEqual([{ attempt: 1, maxAttempts: 3, ...reason }, { attempt: 2, maxAttempts: 3, ...reason }, null]);
+}, 15_000);
+
+it("clears the retry notice when Pi gives up on a rate-limited request", async () => {
+  const f = await fixture({ rateLimitedRequests: 10 });
+  const retries: unknown[] = [];
+  f.supervisor.on("autoRetry", (sessionId: string, retry: unknown) => { if (sessionId === "session-sdk") retries.push(retry); });
+  await f.handle.followUp({ text: "Finite rate-limited request", imagePaths: [] });
+  await vi.waitFor(() => expect(f.requests).toHaveLength(4));
+  await f.session.waitForIdle(); await f.drainEvents();
+  await vi.waitFor(() => expect(f.supervisor.get("session-sdk")?.status).toBe("failed"));
+  expect(retries.at(-1)).toBeNull();
+  expect(retries.filter((retry) => retry !== null)).toHaveLength(3);
+  expect(f.supervisor.get("session-sdk")?.agentCycle).toMatchObject({ phase: "settled", outcome: "failed" });
 }, 15_000);
 
 it("persists late task exit despite the old-turn abort guard and ignores a replayed pending ticket after handling", async () => {

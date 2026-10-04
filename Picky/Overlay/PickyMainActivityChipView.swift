@@ -163,20 +163,13 @@ private struct PickyMainActivityPulsingDot: View {
         Circle()
             .fill(color)
             .frame(width: 6, height: 6)
-            .opacity(isPulsing ? 0.38 : 1)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
-                    isPulsing = true
-                }
+            // Opacity-only animation scope: a `withAnimation` repeat started in
+            // `onAppear` would also replay the chip's first-layout shift forever.
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
+                $0.opacity(isPulsing ? 0.38 : 1)
             }
-            .onChange(of: reduceMotion) { _, enabled in
-                isPulsing = false
-                guard !enabled else { return }
-                withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
-                    isPulsing = true
-                }
-            }
+            .onAppear { isPulsing = !reduceMotion }
+            .onChange(of: reduceMotion) { _, enabled in isPulsing = !enabled }
     }
 }
 

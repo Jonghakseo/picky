@@ -261,8 +261,13 @@ private struct PickyPresenceTypingIndicator: View {
                 Circle()
                     .fill(DS.Colors.textTertiary)
                     .frame(width: Self.dotSize, height: Self.dotSize)
-                    .opacity(dotOpacity)
-                    .animation(animation(delay: Double(index) * Self.cycle / 3), value: isPulsing)
+                    // Scope the repeating animation to opacity only. A
+                    // value-based `.animation` also animates the dot's layout
+                    // position, so the row's first-layout shift (or any later
+                    // list reflow) got replayed forever and the dots jumped.
+                    .animation(animation(delay: Double(index) * Self.cycle / 3)) {
+                        $0.opacity(dotOpacity)
+                    }
             }
         }
         .padding(.horizontal, DS.Spacing.space2)

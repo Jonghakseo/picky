@@ -60,6 +60,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var errorCode: String?
     var result: JSONValue?
     var capabilities: [String]?
+    var profile: PickyClientProfile?
     var sessions: [PickyAgentSession]?
     var groups: [PickyDockGroupPayload]?
     var session: PickyAgentSession?
@@ -146,6 +147,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         errorCode: String? = nil,
         result: JSONValue? = nil,
         capabilities: [String]? = nil,
+        profile: PickyClientProfile? = nil,
         sessions: [PickyAgentSession]? = nil,
         groups: [PickyDockGroupPayload]? = nil,
         session: PickyAgentSession? = nil,
@@ -220,6 +222,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.errorCode = errorCode
         self.result = result
         self.capabilities = capabilities
+        self.profile = profile
         self.sessions = sessions
         self.groups = groups
         self.session = session

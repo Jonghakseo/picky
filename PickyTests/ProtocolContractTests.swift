@@ -1426,6 +1426,37 @@ struct ProtocolContractTests {
         }
     }
 
+    /// The app declares what it can render instead of letting the daemon infer
+    /// it from bridge capabilities, so macOS-only broadcasts stay gated on an
+    /// explicit claim.
+    @Test func registersDesktopClientProfileOnTheWire() throws {
+        let url = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "register-app-capabilities.command.json"
+        })
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let fixture = try decoder.decode(PickyCommandEnvelope.self, from: Data(contentsOf: url))
+        #expect(fixture.type == .registerAppCapabilities)
+        #expect(fixture.profile == .desktop)
+        #expect(fixture.capabilities == [
+            "pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2",
+        ])
+
+        let encoder = JSONEncoder.pickyAgentProtocolEncoder()
+        let built = PickyCommandEnvelope(
+            id: fixture.id,
+            type: .registerAppCapabilities,
+            capabilities: fixture.capabilities,
+            profile: .desktop
+        )
+        #expect(try decoder.decode(PickyCommandEnvelope.self, from: encoder.encode(built)) == fixture)
+
+        // A command that declares no profile must not put a key on the wire:
+        // the daemon's capability fallback keys off its absence.
+        let withoutProfile = PickyCommandEnvelope(id: fixture.id, type: .registerAppCapabilities, capabilities: fixture.capabilities)
+        let object = try JSONSerialization.jsonObject(with: encoder.encode(withoutProfile)) as? [String: Any]
+        #expect(object?["profile"] == nil)
+    }
+
     @Test func keepsSwiftProjectionOwnershipInParityWithManifest() throws {
         let manifestURL = try #require(try fixtureURLs(in: "contracts/projection").first {
             $0.lastPathComponent == "session-field-ownership.json"

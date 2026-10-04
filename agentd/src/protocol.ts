@@ -453,6 +453,11 @@ export const PickyAgentSessionSchema = z.object({
   currentAssistantRun: PickyAssistantRunMetadataSchema.optional(),
   pendingExtensionUiRequest: PickyExtensionUiRequestSchema.optional(),
   notifyMainOnCompletion: z.boolean().optional(),
+  // Completion alert through the client's own system notifications, a channel
+  // independent of notifyMainOnCompletion (forwarding to the main agent). The
+  // name predates non-macOS clients; such a client maps it to its native
+  // notification mechanism. Renaming is deferred until one exists because the
+  // field is persisted in session JSON (decisions.tsv 1-e).
   notifyMacOSOnCompletion: z.boolean().optional(),
   archived: z.boolean().optional(),
   archivedAt: isoTimestamp.optional(),

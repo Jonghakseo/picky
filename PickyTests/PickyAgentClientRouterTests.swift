@@ -457,6 +457,26 @@ struct PickyAgentClientRouterTests {
         #expect(primary.connectCalls == 1)
     }
 
+    /// The daemon gates macOS-only broadcasts on the registered profile. The
+    /// app must claim `desktop` itself instead of relying on the daemon's
+    /// legacy capability inference.
+    @Test func declaresDesktopProfileWhenRegisteringAppCapabilities() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "tok", appSupportRoot: root))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+
+        await router.connect()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+
+        let registration = try #require(primary.sentCommands.first { $0.type == .registerAppCapabilities })
+        #expect(registration.profile == .desktop)
+        let encoded = try JSONSerialization.jsonObject(
+            with: JSONEncoder.pickyAgentProtocolEncoder().encode(registration)
+        ) as? [String: Any]
+        #expect(encoded?["profile"] as? String == "desktop")
+    }
+
     @Test func gatesLegacyCommandsUntilCapabilityRegistrationIsSent() async throws {
         let primary = StubAgentClient(id: "primary")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)

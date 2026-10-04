@@ -37,6 +37,8 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var currentAssistantRun: PickyAssistantRunMetadata? = nil
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
+    /// System notification on completion, independent of `notifyMainOnCompletion`.
+    /// Wire name kept for persisted sessions; see agentd `PickyAgentSessionSchema`.
     var notifyMacOSOnCompletion: Bool? = nil
     var archived: Bool? = nil, archivedAt: Date? = nil
     var pinned: Bool? = nil

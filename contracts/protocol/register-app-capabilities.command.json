@@ -1,0 +1,14 @@
+{
+  "id": "cmd-register-app-capabilities",
+  "protocolVersion": "2026-08-25",
+  "type": "registerAppCapabilities",
+  "capabilities": [
+    "pickleHandoff",
+    "pickleBridge",
+    "externalEntry",
+    "pushToTalkControl",
+    "settingsControl",
+    "sessionProjectionV2"
+  ],
+  "profile": "desktop"
+}

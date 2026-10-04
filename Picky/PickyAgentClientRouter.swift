@@ -1072,9 +1072,13 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         if supportsSessionProjectionV2 {
             capabilities.append("sessionProjectionV2")
         }
+        // Declaring the profile explicitly keeps the daemon's macOS-only
+        // broadcast gate off capability inference, which exists only for app
+        // builds that predate this field.
         let command = PickyCommandEnvelope(
             type: .registerAppCapabilities,
-            capabilities: capabilities
+            capabilities: capabilities,
+            profile: .desktop
         )
         if supportsSessionProjectionV2 {
             projectionOwnership.beginBootstrap(ownerKey: ownerKey, bootstrapID: command.id)

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, EventEnvelopeVariantSchema, PickyAgentSessionSchema, PickySessionMetaPatchSchema, PickySessionProjectionMutationSchema, PickySessionProjectionMutationVariantSchema, PickyAnnotationOverlayAnnotationSchema, PROTOCOL_VERSION } from "./protocol.js";
+import { resolveClientProfile } from "./domain/client-profile.js";
 import { mutationNames, persistedSessionFieldOwnership } from "./domain/session-projection-ownership.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
@@ -1100,6 +1101,22 @@ describe("protocol contract fixtures", () => {
     expect(CommandEnvelopeSchema.parse({ ...base, capabilities: ["sessionProjectionV2"] })).toMatchObject({
       capabilities: ["sessionProjectionV2"],
     });
+  });
+
+  it("accepts the app's declared desktop profile and still classifies a registration without one", () => {
+    const fixture = JSON.parse(readFileSync(join(contractsRoot, "register-app-capabilities.command.json"), "utf8"));
+    const parsed = CommandEnvelopeSchema.parse(fixture);
+    expect(parsed).toMatchObject({ type: "registerAppCapabilities", profile: "desktop" });
+    expect(resolveClientProfile({
+      declaredProfile: parsed.type === "registerAppCapabilities" ? parsed.profile : undefined,
+      capabilities: parsed.type === "registerAppCapabilities" ? parsed.capabilities : [],
+    })).toBe("desktop");
+
+    // The capability fallback stays in place for app builds that predate the field.
+    const { profile: _profile, ...withoutProfile } = fixture;
+    const legacy = CommandEnvelopeSchema.parse(withoutProfile);
+    expect(legacy.type === "registerAppCapabilities" && legacy.profile).toBeUndefined();
+    expect(resolveClientProfile({ capabilities: withoutProfile.capabilities })).toBe("desktop");
   });
 
   it("requires projection snapshot recovery command and request IDs to match", () => {

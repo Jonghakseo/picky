@@ -13,10 +13,13 @@
 #   closed    one slice, nothing outside it, and none of the three above
 #
 # Usage:
-#   scripts/measure-slice-cochange.sh
-#   SINCE="42 days ago" scripts/measure-slice-cochange.sh        # post-split window
-#   SINCE=2026-07-06 UNTIL=2026-10-04 scripts/measure-slice-cochange.sh
+#   scripts/measure-slice-cochange.sh                             # post-split window (default)
+#   SINCE=2026-07-06 UNTIL=2026-10-04 scripts/measure-slice-cochange.sh   # the recorded baseline
 #   EXCLUDE="<sha> <sha>" scripts/measure-slice-cochange.sh      # extra exclusions
+#
+# The default window starts at the split commit, so a re-run any number of weeks
+# later measures only post-split work. A relative SINCE ("42 days ago") drifts
+# with the run date and silently mixes pre-split commits back in.
 set -euo pipefail
 
 # Commits that are the restructuring itself, not a feature change being measured.
@@ -66,7 +69,12 @@ excluded=" "
 for entry in $DEFAULT_EXCLUDE ${EXCLUDE:-}; do
   excluded="$excluded$(git rev-parse "$entry") "
 done
-commits=$(git log --since="${SINCE:-90 days ago}" ${UNTIL:+--until="$UNTIL"} --format=%H -- "${paths[@]}")
+SPLIT_COMMIT=4b4aed2e7230d2a5b46120323b29ed5d6f836dd9
+since="${SINCE:-$(git show -s --format=%cI "$SPLIT_COMMIT")}"
+commits=$(git log --since="$since" ${UNTIL:+--until="$UNTIL"} --format=%H -- "${paths[@]}")
+if [ -n "${SINCE:-}" ] && [ -n "$(git log --since="$SINCE" ${UNTIL:+--until="$UNTIL"} --format=%H -1 "$SPLIT_COMMIT")" ]; then
+  echo "note: this window reaches back past the split commit; commits before it are pre-split work" >&2
+fi
 
 total=0
 closed_count=0

@@ -99,8 +99,9 @@ final class PickySessionProjectionTransitionPublisher {
     }
 
     private func sendSummaryPresentation(for card: PickySessionCard) {
-        // The applied card is the frame that was just folded in, so its fields
-        // are the daemon's values, not a stale optimistic guess.
+        // Fields the frame set are the daemon's values. On a transaction, fields
+        // it did not touch keep whatever the card held, which can be a local
+        // optimistic write; the terminal rule above never reads this card.
         summaryPresentationChanged.send(PickySessionSummaryPresentation(
             sessionID: card.id,
             title: card.title,

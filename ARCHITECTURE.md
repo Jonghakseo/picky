@@ -358,9 +358,10 @@ Decisions worth keeping:
 
 The pilot is worth continuing only if changing one of these features stops
 spreading across the tree. Re-measure in 4-6 weeks with
-`scripts/measure-slice-cochange.sh` (`SINCE="42 days ago"` narrows the window to
-the post-split period). It walks the slice folders plus the pre-slice service
-paths and judges each commit on its own:
+`scripts/measure-slice-cochange.sh`. With no arguments its window starts at the
+split commit, so the result covers post-split work only no matter when it runs
+(a relative `SINCE` would drift with the run date). It walks the slice folders
+plus the pre-slice service paths and judges each commit on its own:
 
 - `slice`: which feature the commit belongs to. Two slices in one commit is not
   closed.
@@ -377,12 +378,20 @@ as a reference number only; it counts directories, not coupling. With fewer
 than five measurable commits the script prints `verdict=inconclusive` instead of
 a percentage, because one commit either way swings the rate by 20 points.
 
-Baseline in the 90 days before the split (11 measurable commits, 2 excluded):
+Baseline in the 90 days before the split (11 measurable commits, 2 excluded;
+reproduce with `SINCE=2026-07-06 UNTIL=2026-10-04 scripts/measure-slice-cochange.sh`):
 **1 of 11 closed (9%)**, **36%** (4 of 11) changed `protocol.ts` and `server.ts`
 together, **64%** (7 of 11) also changed the Swift protocol models, and the
 average commit touched 8.2 directories. The one closed commit (`ad0b408a0`) was a
 one-file import fix, so in practice no Hub feature change stayed inside its
 feature before the split.
+
+The baseline is not a like-for-like population. It only counts commits that
+touched the pre-slice service files, so a pre-split Hub change that edited only
+`protocol.ts` and `server.ts` is missing from it. That makes the 9% closed rate an
+upper bound and the 36% co-change rate a lower bound, and it includes one SDK
+upgrade (`6a6a9789d`) that could not have been closed. Read the comparison
+accordingly: the post-split closed rate on its own carries most of the signal.
 
 Decision rule: if the post-split window has at least five measurable commits and
 the closed rate clears 50% while `protocol.ts` + `server.ts` co-change drops

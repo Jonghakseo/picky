@@ -28588,13 +28588,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dictate. Press again to add the text to the input"
+            "value": "Dictate (⌘D). Press again to add the text to the input"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "말로 입력해요. 다시 누르면 받아쓴 글을 입력란에 넣어요"
+            "value": "말로 입력해요 (⌘D). 다시 누르면 받아쓴 글을 입력란에 넣어요"
           }
         }
       }
@@ -28604,13 +28604,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stop and add the text to the input (esc to cancel)"
+            "value": "Stop and add the text to the input (⌘D, Esc to cancel)"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "받아쓰기를 끝내고 입력란에 넣어요 (esc: 취소)"
+            "value": "받아쓰기를 끝내고 입력란에 넣어요 (⌘D, Esc: 취소)"
           }
         }
       }

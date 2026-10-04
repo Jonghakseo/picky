@@ -6,8 +6,10 @@
 //  never sends; empty or failed results leave the draft untouched.
 //
 
+import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import Testing
 @testable import Picky
 
@@ -64,6 +66,55 @@ struct PickyComposerDictationControllerTests {
             if case .listening(sessionID, _) = controller.phase { return true }
             return false
         }
+    }
+
+    @Test func composerCommandDAppendsAndPersistsOnlyItsOwnDraftWithoutSending() async throws {
+        let suite = "PickyComposerCommandD-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let drafts = PickyUserDefaultsComposerDraftStore(defaults: defaults)
+        drafts.setDraft("기존 초안", for: "pickle-a")
+        drafts.setDraft("다른 초안", for: "pickle-b")
+        let client = FakePickyAgentClient()
+        let model = PickySessionListViewModel(client: client,
+            notificationCenter: PickyNoopNotificationCenter(), composerDraftStore: drafts,
+            composerAttachmentDraftStore: PickyUserDefaultsComposerAttachmentDraftStore(defaults: defaults))
+        let driver = FakeComposerDictationDriver()
+        let controller = PickyComposerDictationController(driver: driver)
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let session = PickyConversationSessionCard.fromAgentSession(PickyAgentSession(
+            id: "pickle-a", title: "Shortcut test", status: .completed, cwd: "/tmp/picky",
+            createdAt: date, updatedAt: date, logs: [], tools: [], artifacts: [], changedFiles: []))
+        let host = NSHostingView(rootView: AnyView(
+            PickyConversationComposerView(session: session, viewModel: model)
+                .environment(\.pickyComposerDictation, controller)))
+        host.frame = NSRect(x: 0, y: 0, width: 520, height: 200)
+        host.layoutSubtreeIfNeeded()
+        defer { host.rootView = AnyView(EmptyView()) }
+
+        func editor(in view: NSView) -> PickyIMENSTextView? {
+            if let editor = view as? PickyIMENSTextView { return editor }
+            return view.subviews.lazy.compactMap { editor(in: $0) }.first
+        }
+        try await waitUntil { editor(in: host)?.string == "기존 초안" }
+        let nativeEditor = try #require(editor(in: host))
+        let shortcut = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "d", charactersIgnoringModifiers: "d", isARepeat: false, keyCode: 2))
+        nativeEditor.keyDown(with: shortcut)
+        try await waitUntil {
+            if case .listening("pickle-a", _) = controller.phase { return true }
+            return false
+        }
+        nativeEditor.keyDown(with: shortcut)
+        #expect(controller.phase == .transcribing(sessionID: "pickle-a"))
+        driver.finish(transcript: "새 문장")
+        try await waitUntil { drafts.draft(for: "pickle-a") == "기존 초안 새 문장" }
+
+        #expect(nativeEditor.string == "기존 초안 새 문장")
+        #expect(drafts.draft(for: "pickle-b") == "다른 초안")
+        #expect(client.submitted.isEmpty)
+        #expect(!client.sentCommands.contains { $0.type == .followUp || $0.type == .steer })
     }
 
     @Test func secondPressTranscribesIntoThatPickleDraftWithoutSending() async throws {

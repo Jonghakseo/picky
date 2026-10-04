@@ -41,6 +41,7 @@ struct PickyComposerMicPresentation: Equatable {
 struct PickyComposerMicButton: View {
     @ObservedObject var controller: PickyComposerDictationController
     let sessionID: String
+    var isShortcutHintVisible = false
 
     var body: some View {
         let presentation = PickyComposerMicPresentation(phase: controller.phase, sessionID: sessionID)
@@ -58,6 +59,14 @@ struct PickyComposerMicButton: View {
         }
         .buttonStyle(PickyComposerToolbarGhostButtonStyle(isActive: presentation.isActive))
         .disabled(!presentation.isEnabled)
+        .overlay(alignment: .topTrailing) {
+            PickyShortcutKeyBadge(label: "D")
+                .offset(x: 9, y: -7)
+                .opacity(isShortcutHintVisible ? 1 : 0)
+                .scaleEffect(isShortcutHintVisible ? 1 : 0.88, anchor: .center)
+                .animation(.easeOut(duration: 0.12), value: isShortcutHintVisible)
+                .allowsHitTesting(false)
+        }
         .help(L10n.t(presentation.helpKey))
         .accessibilityLabel(L10n.t("hud.composer.mic.accessibilityLabel"))
         .accessibilityHint(L10n.t(presentation.helpKey))

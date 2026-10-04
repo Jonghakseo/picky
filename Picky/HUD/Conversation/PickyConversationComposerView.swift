@@ -495,7 +495,10 @@ struct PickyConversationComposerView: View {
                 onDownArrow: { moveAutocompleteSelection(.down) },
                 onTab: handleComposerTabKey,
                 onEscape: handleComposerEscapeKey,
-                onControlP: { shiftPressed in runtimeControls.cycleModel(direction: shiftPressed ? .backward : .forward, commands: commands, sessionID: session.id) }
+                onControlP: { shiftPressed in runtimeControls.cycleModel(direction: shiftPressed ? .backward : .forward, commands: commands, sessionID: session.id) },
+                onCommandD: composerDictation.map { controller in
+                    { controller.toggle(sessionID: session.id) }
+                }
             )
             .frame(height: editorHeight)
             .onChange(of: draft) { _, newValue in
@@ -889,7 +892,11 @@ struct PickyConversationComposerView: View {
                 PickyComposerUtilityPanelButton(isOpen: isUtilityPanelOpen,
                     isShortcutHintVisible: isCommandShortcutHintVisible, action: onToggleUtilityPanel)
                 if let composerDictation {
-                    PickyComposerMicButton(controller: composerDictation, sessionID: session.id)
+                    PickyComposerMicButton(
+                        controller: composerDictation,
+                        sessionID: session.id,
+                        isShortcutHintVisible: isCommandShortcutHintVisible
+                    )
                 }
             }
             .padding(.trailing, DS.Spacing.space1)

@@ -48,6 +48,8 @@ struct PickyIMETextView: NSViewRepresentable {
     var onTab: ((NSEvent.ModifierFlags) -> Bool)?
     var onEscape: (() -> Bool)?
     var onControlP: ((_ shiftPressed: Bool) -> Void)?
+    /// Opt-in Command-D action, used only by the Pickle composer for dictation.
+    var onCommandD: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -164,6 +166,7 @@ struct PickyIMETextView: NSViewRepresentable {
         textView.onTab = onTab
         textView.onEscape = onEscape
         textView.onControlP = onControlP
+        textView.onCommandD = onCommandD
     }
 
     private func applyTemporaryHighlight(to textView: PickyIMENSTextView) {
@@ -291,6 +294,7 @@ final class PickyIMENSTextView: NSTextView {
     var onTab: ((NSEvent.ModifierFlags) -> Bool)?
     var onEscape: (() -> Bool)?
     var onControlP: ((_ shiftPressed: Bool) -> Void)?
+    var onCommandD: (() -> Void)?
 
     var routesMarkedTextReturnToReturnHandler = false
 
@@ -334,6 +338,7 @@ final class PickyIMENSTextView: NSTextView {
         onTab = nil
         onEscape = nil
         onControlP = nil
+        onCommandD = nil
     }
 
     private func clearUndoHistory() {
@@ -413,7 +418,22 @@ final class PickyIMENSTextView: NSTextView {
         onLayout?(self)
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if window?.firstResponder === self, handleCommandD(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func handleCommandD(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard isEditable, modifiers == .command,
+              event.keyCode == Self.dKeyCode || event.charactersIgnoringModifiers?.lowercased() == "d",
+              let onCommandD else { return false }
+        if !event.isARepeat { onCommandD() }
+        return true
+    }
+
     override func keyDown(with event: NSEvent) {
+        if handleCommandD(event) { return }
         let isReturn = event.keyCode == Self.returnKeyCode || event.keyCode == Self.keypadReturnKeyCode
         if hasMarkedText() {
             let handledByInputContext: Bool
@@ -492,4 +512,5 @@ final class PickyIMENSTextView: NSTextView {
     static let upArrowKeyCode: UInt16 = 126
     static let downArrowKeyCode: UInt16 = 125
     static let pKeyCode: UInt16 = 35
+    static let dKeyCode: UInt16 = 2
 }

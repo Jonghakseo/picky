@@ -102,6 +102,44 @@ struct PickyIMETextViewTests {
         #expect(textView.onReturn == nil)
     }
 
+    @Test func commandDKeyEquivalentRequiresAnOptedInFocusedEditableEditor() throws {
+        let panel = PickyHUDPanel(contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let editor = PickyIMENSTextView(frame: panel.contentView!.bounds)
+        panel.contentView = editor
+        defer { panel.close() }
+        panel.makeFirstResponder(editor)
+        var activations = 0
+        let commandD = Self.commandDEvent()
+
+        #expect(!editor.performKeyEquivalent(with: commandD))
+        editor.onCommandD = { activations += 1 }
+        #expect(editor.performKeyEquivalent(with: commandD))
+        #expect(editor.performKeyEquivalent(with: Self.commandDEvent(characters: "ㅇ")))
+        #expect(!editor.performKeyEquivalent(with: Self.commandDEvent(modifiers: [.command, .shift])))
+        editor.isEditable = false
+        #expect(!editor.performKeyEquivalent(with: commandD))
+        editor.isEditable = true
+        panel.makeFirstResponder(nil)
+        #expect(!editor.performKeyEquivalent(with: commandD))
+        #expect(activations == 2)
+    }
+
+    @Test func commandDKeyDownIgnoresRepeatAndPreservesMarkedText() {
+        let editor = PickyIMENSTextView()
+        editor.setMarkedText("ㅎ", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: 0, length: 0))
+        var activations = 0
+        editor.onCommandD = { activations += 1 }
+
+        editor.keyDown(with: Self.commandDEvent())
+        editor.keyDown(with: Self.commandDEvent(isARepeat: true))
+
+        #expect(activations == 1)
+        #expect(editor.string == "ㅎ")
+        #expect(editor.hasMarkedText())
+    }
+
     @Test func returnCommitsThroughSubmitHandlerWithoutInsertingNewline() throws {
         let textView = PickyIMENSTextView()
         textView.string = "ready"
@@ -472,6 +510,17 @@ struct PickyIMETextViewTests {
             isARepeat: false,
             keyCode: keyCode
         )
+    }
+
+    private static func commandDEvent(
+        characters: String = "d",
+        modifiers: NSEvent.ModifierFlags = .command,
+        isARepeat: Bool = false
+    ) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+            timestamp: 0, windowNumber: 0, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: isARepeat,
+            keyCode: PickyIMENSTextView.dKeyCode)!
     }
 
     private static func returnKeyEvent(modifiers: NSEvent.ModifierFlags = []) -> NSEvent {

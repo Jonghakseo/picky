@@ -12,7 +12,7 @@
 <body>
   <main class="proto-page">
     <div class="proto-title">대화 말풍선</div>
-    <p class="proto-note">HUD source: <code>Picky/HUD/Conversation/Bubbles/</code> · reference PNG: <code>build/render-gallery/messenger-ux/pickle-chat-{working,hover}-{dark,light}-ko.png</code></p>
+    <p class="proto-note">HUD source: <code>Picky/HUD/Conversation/Bubbles/</code> (도구 이미지: <code>PickyToolImageBubbleView.swift</code>) · reference PNG: <code>build/render-gallery/messenger-ux/pickle-chat-{working,hover}-{dark,light}-ko.png</code></p>
 
     <section class="proto-state">
       <div class="proto-caption">1. 날짜 구분선 · 사용자 · 에이전트 (평소 상태, 보낸 시각 숨김)</div>
@@ -220,6 +220,49 @@
                 </button>
               </div>
               <div class="sendtime">오전 10:15</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="proto-state">
+      <div class="proto-caption">6. 도구가 읽은 이미지 (탭하면 크게 보기) · 원본 파일이 없을 때</div>
+      <div class="proto-room">
+        <div class="room">
+          <div class="msgs">
+            <div class="row row--user">
+              <div class="bubble bubble--user">
+                <p>이 이미지 보고 어떤 내용인지 알려줘</p>
+              </div>
+            </div>
+
+            <div class="row row--agent">
+              <div class="bubble bubble--agent">
+                <div class="md"><p>이미지를 읽어서 확인할게요.</p></div>
+              </div>
+            </div>
+
+            <div class="row row--agent">
+              <div class="tool-image">
+                <div class="tool-image-caption"><svg data-sf-symbol="photo" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="1.2" y="2.4" width="9.6" height="7.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="4.1" cy="5" r="0.8" fill="currentColor"/><path d="M2 8.6 4.6 6.4 7 8.2 8.8 6.9l1.6 1.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tool-image-name">sample-landscape.png</span></div>
+                <button class="tool-image-thumb is-landscape" type="button">
+                  <img src="fixtures/tool-image-landscape.png" alt="">
+                  <span class="sr-only" data-l10n="hud.toolImage.accessibilityLabel">읽은 이미지: sample-landscape.png</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="row row--agent">
+              <div class="bubble bubble--agent">
+                <div class="md"><p>세 항목의 상태를 비교하는 이미지예요. 가운데 항목의 값이 가장 높네요.</p></div>
+              </div>
+            </div>
+
+            <div class="row row--agent">
+              <div class="tool-image">
+                <div class="tool-image-caption"><svg data-sf-symbol="photo" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="1.2" y="2.4" width="9.6" height="7.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="4.1" cy="5" r="0.8" fill="currentColor"/><path d="M2 8.6 4.6 6.4 7 8.2 8.8 6.9l1.6 1.4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tool-image-name">deleted-image.png</span></div>
+                <div class="tool-image-missing"><svg data-sf-symbol="photo.badge.exclamationmark" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.2" y="3" width="11" height="8.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="4.6" cy="6" r="0.9" fill="currentColor"/><path d="M2.2 10.4 5.2 7.8 7.6 9.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12.2" cy="11.6" r="3.2" fill="currentColor"/><path d="M12.2 9.9v1.9" stroke="var(--tool-image-badge-mark)" stroke-width="1.2" stroke-linecap="round"/><circle cx="12.2" cy="13.1" r="0.6" fill="var(--tool-image-badge-mark)"/></svg><span data-l10n="hud.toolImage.missing">이미지를 찾을 수 없어요</span></div>
+              </div>
             </div>
           </div>
         </div>

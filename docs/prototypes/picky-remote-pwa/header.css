@@ -17,9 +17,9 @@
 .room-header {
   display: flex;
   align-items: center;
-  gap: var(--ds-space-2); /* DS.Spacing.sm (PickyConversationHeaderView.swift:155) */
+  gap: var(--ds-space-2); /* DS.Spacing.sm (PickyConversationHeaderView.swift:148) */
   padding: var(--ds-space-2) var(--ds-space-3);
-  /* Swift uses minHeight 26 (PickyConversationHeaderView.swift:148); the phone row
+  /* Swift uses minHeight 26 (PickyConversationHeaderView.swift:125); the phone row
    * grows to 44 so every control in it can reach the 44pt tap minimum. */
   min-height: 44px;
   border-bottom: 1px solid var(--ds-color-border-subtle);
@@ -28,7 +28,7 @@
 /* ---- status tone ------------------------------------------------------- */
 /* --status      = fill-grade token (PickyConversationStatusTone.color)
  * --status-text = foreground-grade token (PickyConversationStatusTone.textColor)
- * --status-fill = piBadge statusFillOpacity (PickyConversationHeaderView.swift:575) */
+ * --status-fill = piBadge statusFillOpacity (PickyConversationHeaderView.swift:557) */
 .is-running {
   --status: var(--ds-color-info);
   --status-text: var(--ds-color-info);
@@ -94,7 +94,7 @@
 }
 
 /* ---- pi badge ----------------------------------------------------------- */
-/* piBadgeSlot frame 26x26, piBadge 22x22 (PickyConversationHeaderView.swift:379, :524).
+/* piBadgeSlot frame 26x26, piBadge 22x22 (PickyConversationHeaderView.swift:377, :512).
  * Tap-to-arm is Mac-only (screen-context target), so the phone badge is a static
  * status avatar. */
 .pi-badge {
@@ -120,12 +120,13 @@
 
 .pi-glyph {
   display: block;
-  width: 15px; /* PickyConversationHeaderView.swift:536 */
+  width: 15px; /* PickyConversationHeaderView.swift:524 */
   height: 15px;
   color: var(--status);
 }
 
-/* statusCornerIndicator (PickyConversationHeaderView.swift:547) */
+/* statusCornerIndicator (PickyConversationHeaderView.swift:535). Since 8361c7b8d a running
+ * session shows no corner mark; only waiting/blocked (!) and failed (x) do. */
 .pi-badge-corner {
   position: absolute;
   top: 0;
@@ -135,14 +136,8 @@
   justify-content: center;
   border-radius: var(--ds-radius-circle);
   background: var(--status);
-  /* Swift strokes the dot with surface1 at lineWidth 1.4 (:555). */
+  /* attentionIndicator strokes the badge with surface1 at lineWidth 1.4 (:554). */
   box-shadow: 0 0 0 1.4px var(--ds-color-surface1);
-}
-
-.is-running .pi-badge-corner {
-  width: 7.5px;
-  height: 7.5px;
-  transform: translate(calc(2.8px - 2px), calc(-2.8px + 2px));
 }
 
 .pi-badge-corner.attention {
@@ -156,9 +151,9 @@
 /* ---- title and status --------------------------------------------------- */
 .hdr-title {
   flex: 1 1 auto;
-  min-width: 96px; /* PickyConversationHeaderView.swift:169 */
+  min-width: 96px; /* PickyConversationHeaderView.swift:171 */
   overflow: hidden;
-  padding: 2px 5px; /* PickyConversationHeaderView.swift:215-216 */
+  padding: 2px 5px; /* PickyConversationHeaderView.swift:218-219 */
   font: var(--hud-type-title);
   color: var(--ds-color-text-primary);
   white-space: nowrap;
@@ -220,7 +215,7 @@
   color: color-mix(in srgb, var(--band-text) 88%, transparent);
 }
 
-/* PickyHeaderContextUsageDisplay bands (PickyConversationHeaderView.swift:1155-:1170) */
+/* PickyHeaderContextUsageDisplay bands (PickyConversationHeaderView.swift:1141-:1152) */
 .band-low {
   --band: var(--ds-color-text-tertiary);
   --band-text: var(--ds-color-text-secondary);

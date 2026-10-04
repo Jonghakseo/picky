@@ -1,27 +1,47 @@
-/* Conversation composer, ported from
- * Picky/HUD/Conversation/PickyConversationComposerView.swift,
+/* Conversation composer, ported from (Picky/HUD/Conversation/)
+ * PickyConversationComposerView.swift (surface, border, action row),
+ * PickyConversationRuntimeControlsView.swift (settings chip and settings menu),
+ * PickyComposerVoiceInputViews.swift (mic button, voice status row),
+ * PickyComposerToolbarItems.swift (toolbar icon, BASH badge, work panel button),
  * PickyComposerSplitSendButton.swift, PickySendTimingPolicy.swift,
- * PickyComposerAttachmentChipView.swift and PickyRunningComposerBorder.swift.
- * References: build/render-gallery/conversation-composer/composer-*.png,
- * build/render-gallery/steer-followup/9-send-menu-dark.png.
+ * PickyComposerAttachmentChipView.swift, PickyRunningComposerBorder.swift and
+ * PickyStopChoiceAlert.swift.
+ * References: build/render-gallery/composer-production/*.png (22:15 production render
+ * of the composer after 0bf965d8d), build/render-gallery/steer-followup/9-send-menu-dark.png.
  */
 
-/* missing DS token: PickyComposerToolbarMetrics.controlSize = DS.Spacing.space6 + space1
- * (Picky/HUD/Conversation/PickyConversationRuntimeControlsView.swift:708) */
 :root {
+  /* missing DS token: PickyComposerToolbarMetrics.controlSize = DS.Spacing.space6 + space1
+   * (PickyConversationRuntimeControlsView.swift:908) */
   --composer-control-size: 28px;
+  /* missing DS token: settingsChipModelMaximumWidth / settingsChipModelMinimumWidth
+   * (PickyConversationRuntimeControlsView.swift:909-910) */
+  --composer-chip-model-max: 104px;
+  --composer-chip-model-min: 36px;
+  /* missing DS token: phone-only switch size. The HUD uses a mini NSSwitch
+   * (.controlSize(.mini)); a phone needs a larger thumb target. */
+  --composer-switch-width: 38px;
+  --composer-switch-height: 22px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* The composer sits at the bottom of the room, above the home indicator. The
- * card inset is PickyHUDLayoutPolicy.detailHorizontalPadding = 12
- * (Picky/HUD/PickyHUDLayoutPolicy.swift:274). */
+ * card inset is PickyHUDLayoutPolicy.detailHorizontalPadding = 12. */
 .room-composer {
   position: relative;
   padding: var(--ds-space-3) var(--ds-space-3)
     calc(var(--ds-space-3) + env(safe-area-inset-bottom));
 }
 
-/* composerSurface (PickyConversationComposerView.swift:381-394):
+/* composerSurface (PickyConversationComposerView.swift:403-416):
  * VStack(spacing: space1), padding leading 12 / trailing 8 / top 12 / bottom 8,
  * surface2 @ 0.55 fill on DS.CornerRadius.medium. */
 .composer {
@@ -35,19 +55,24 @@
   box-shadow: inset 0 0 0 0.5px var(--ds-color-border-subtle);
 }
 
-/* .focused: borderStrong, lineWidth 1 */
+/* Border priority (PickyConversationComposerView+Policy.swift:14-25):
+ * file drop > bash > running > focused > rest. */
 .composer.is-focused {
   box-shadow: inset 0 0 0 1px var(--ds-color-border-strong);
 }
 
-/* .running: PickyRunningComposerBorder = info @ 0.7, lineWidth 1 */
+/* PickyRunningComposerBorder: info @ 0.7, lineWidth 1 */
 .composer.is-running {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-color-info) 70%, transparent);
 }
 
+/* .bash: bash accent (successText for "!", warningText for "!!") @ 0.9 */
+.composer.is-bash {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-color-success-text) 90%, transparent);
+}
+
 /* PickyComposerEditorHeightPolicy: two-line canvas (space6 * 2 = 48), grows by
- * an 18pt line to a 78pt maximum; text inset height 2
- * (PickyFocusStackComposerPresentation.swift:124-127). */
+ * an 18pt line to a 78pt maximum; text inset height 2. */
 .composer-editor {
   min-height: 48px;
   padding-top: 2px;
@@ -65,7 +90,8 @@
   color: var(--ds-color-text-tertiary);
 }
 
-/* actionBar: HStack(spacing: DS.Spacing.xs), fixed control-row height. */
+/* actionBar (PickyConversationComposerView.swift:418-425): HStack(spacing: xs),
+ * Spacer(minLength: sm), controlSize tall. */
 .composer-actions {
   display: flex;
   align-items: center;
@@ -73,46 +99,49 @@
   height: var(--composer-control-size);
 }
 
-/* leadingActions: HStack(spacing: space2) around an inner HStack(spacing: space1). */
+/* leadingActions: HStack(spacing: space1) [attach][BASH][settings chip], with
+ * layoutPriority(-1) so it yields width before the trailing actions. */
 .actions-leading {
   display: flex;
   align-items: center;
-  gap: var(--ds-space-2);
+  gap: var(--ds-space-1);
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.actions-group {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-1);
-}
-
-/* Divider().frame(height: 18) (PickyConversationComposerView.swift:417) */
-.actions-divider {
-  width: 1px;
-  height: 18px;
-  background: var(--ds-color-border-subtle);
-  flex: none;
-}
-
+/* trailingActions: HStack(space1) { HStack(space1) { work panel, mic }
+ * .padding(.trailing, space1); HStack(space2) { send, stop } }, fixed size. */
 .actions-trailing {
   display: flex;
   align-items: center;
-  /* trailingActions: HStack(spacing: space2) */
-  gap: var(--ds-space-2);
-  margin-left: auto;
+  gap: var(--ds-space-1);
+  margin-left: var(--ds-space-2);
+  flex: none;
 }
 
-/* toolbarIcon: 10.5pt semibold glyph in a controlSize square
- * (PickyConversationComposerView.swift:509-518). The square is 28pt, below the
- * 44pt phone minimum, so the hit area is extended without changing the visual. */
+.actions-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  padding-right: var(--ds-space-1);
+}
+
+.actions-primary {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+
+/* PickyComposerToolbarIcon: 10.5pt semibold glyph in a controlSize square, inside
+ * PickyComposerToolbarGhostButtonStyle (DS.CornerRadius.control). The square is
+ * 28pt, below the 44pt phone minimum, so the hit area grows without changing it. */
 .toolbar-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: var(--composer-control-size);
   height: var(--composer-control-size);
-  border-radius: var(--ds-radius-compact);
+  border-radius: var(--ds-radius-control);
   color: var(--ds-color-text-secondary);
   position: relative;
   flex: none;
@@ -126,39 +155,101 @@
   height: 44px;
 }
 
-/* PickyComposerToolbarGhostButtonStyle(isActive: true) */
+/* GhostButtonStyle(isActive: true): accentSubtle. The mic while listening uses it. */
 .toolbar-icon.is-active {
   color: var(--ds-color-accent-text);
   background: var(--ds-color-accent-subtle);
 }
 
+/* The transcribing mic is disabled; its glyph keeps textSecondary
+ * (PickyComposerVoiceInputViews.swift, PickyComposerMicButton). */
+.toolbar-icon:disabled {
+  cursor: default;
+}
+
+/* stopButton: stop.fill in destructiveText. */
 .toolbar-icon.is-stop {
   color: var(--ds-color-destructive-text);
 }
 
-/* controlLabel: meta, textSecondary, padding horizontal space2, controlSize tall
- * (PickyConversationRuntimeControlsView.swift:659-669). Closed state only. */
-.runtime-controls {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.runtime-label {
-  font: var(--hud-type-meta);
-  color: var(--ds-color-text-secondary);
-  padding: 0 var(--ds-space-2);
-  height: var(--composer-control-size);
+/* settingsChip (PickyConversationRuntimeControlsView.swift:165-206): status font,
+ * textSecondary, HStack(spacing: space1), padding horizontal space2, controlSize
+ * tall, "·" separators and a 7.5pt bold chevron in textTertiary. */
+.settings-chip {
   display: inline-flex;
   align-items: center;
-  max-width: 126px; /* PickyComposerToolbarMetrics.modelLabelMaximumWidth */
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: var(--ds-space-1);
+  height: var(--composer-control-size);
+  padding: 0 var(--ds-space-2);
+  border-radius: var(--ds-radius-control);
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+  min-width: 0;
+  position: relative;
   white-space: nowrap;
 }
 
+.settings-chip.is-active {
+  background: var(--ds-color-accent-subtle);
+}
+
+.settings-chip::after {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 22px) 0 auto 0;
+  height: 44px;
+}
+
+/* PickyComposerCappedWidthLayout: the model name hugs its text, caps at 104pt and
+ * gives way down to 36pt first. SwiftUI truncates in the middle; CSS only has an
+ * end ellipsis, so the fixtures carry the middle-truncated text the HUD shows and
+ * the implementation needs a measured middle truncation. */
+.chip-model {
+  display: inline-block;
+  max-width: var(--composer-chip-model-max);
+  min-width: var(--composer-chip-model-min);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+
+.chip-text {
+  flex: none;
+}
+
+.chip-sep,
+.chip-chevron {
+  color: var(--ds-color-text-tertiary);
+  flex: none;
+}
+
+.chip-chevron {
+  display: inline-flex;
+}
+
+/* PickyComposerBashModeBadge (PickyComposerToolbarItems.swift:31-58): terminal.fill
+ * 11pt bold + "BASH" badge monospaced bold, bash accent, surface2 fill with a 0.5
+ * borderSubtle stroke, controlSize tall. "BASH" is verbatim in the HUD too. */
+.bash-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  height: var(--composer-control-size);
+  padding: 0 var(--ds-space-2);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-color-surface2);
+  box-shadow: inset 0 0 0 0.5px var(--ds-color-border-subtle);
+  color: var(--ds-color-success-text);
+  flex: none;
+}
+
+.bash-badge-text {
+  font: var(--hud-type-badge-monospaced-bold);
+}
+
 /* PickyComposerSplitSendButton: send 28 + divider 1 + chevron 20, controlSize
- * tall, DS.CornerRadius.small, filled with Action Blue. */
+ * tall, DS.CornerRadius.small, filled with the send tint (accentText, or the bash
+ * accent while the draft is a command). */
 .send {
   display: inline-flex;
   align-items: center;
@@ -168,6 +259,10 @@
   color: var(--ds-color-text-on-accent);
   flex: none;
   position: relative;
+}
+
+.send.is-bash {
+  background: var(--ds-color-success-text);
 }
 
 /* isEnabled == false: surface3 fill at 0.6 opacity. */
@@ -214,6 +309,178 @@
   position: absolute;
   inset: calc(50% - 22px) 0 auto 0;
   height: 44px;
+}
+
+/* PickyComposerVoiceStatusRow: one line above the composer. HStack(spacing:
+ * space1), status font, 10pt semibold glyph, padding horizontal space3 and bottom
+ * xs. Tints: listening accentText, transcribing textSecondary, failure warningText.
+ * Phone only: Esc does not exist, so the listening row ends with a cancel button
+ * instead of the "· esc 취소" hint. */
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  min-height: 22px;
+  padding: 0 var(--ds-space-3) var(--ds-space-1);
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+}
+
+.voice-row.is-listening {
+  color: var(--ds-color-accent-text);
+}
+
+.voice-row.is-failed {
+  color: var(--ds-color-warning-text);
+}
+
+.voice-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.voice-primary {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ds-color-text-tertiary);
+}
+
+.voice-cancel {
+  margin-left: auto;
+  padding: 0 var(--ds-space-1);
+  font: var(--hud-type-status-semibold);
+  color: var(--ds-color-accent-text);
+  position: relative;
+  flex: none;
+}
+
+.voice-cancel::after {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 22px) -8px auto -8px;
+  height: 44px;
+}
+
+/* settingsMenu (PickyConversationRuntimeControlsView.swift:247-307), opened from the
+ * chip. On the phone it sits above the composer like the send-timing menu. The
+ * keyboard shortcut hints (⌃P, ⌘N) are left out. */
+.settings-anchor {
+  display: flex;
+  justify-content: flex-start;
+  padding-bottom: var(--ds-space-2);
+}
+
+.settings-menu {
+  /* PickyComposerToolbarMetrics.settingsMenuWidth = space8 * 8 + space2 */
+  width: 264px;
+  padding: var(--ds-space-3) 0 var(--ds-space-1);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-color-surface2);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  box-shadow: 0 var(--ds-elevation-floating-panel-shadow-yoffset)
+    var(--ds-elevation-floating-panel-shadow-radius)
+    rgb(0 0 0 / var(--ds-elevation-floating-panel-shadow-opacity));
+}
+
+/* settingsSectionLabel: status, textTertiary, padding horizontal space3, bottom space1. */
+.settings-section {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+  padding: 0 var(--ds-space-3) var(--ds-space-1);
+}
+
+/* settingsValueRow / settingsToggleRow: HStack(spacing: space2), padding horizontal
+ * space3 and vertical space2. Phone: rows grow to the 44pt minimum tap height. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  text-align: left;
+}
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px; /* design-token-exception in Swift: title/detail optical gap (:383) */
+  margin-right: auto;
+  min-width: 0;
+}
+
+.settings-row-title {
+  font: var(--hud-type-body-compact);
+  color: var(--ds-color-text-primary);
+  flex: none;
+}
+
+.settings-row:not(.is-toggle) .settings-row-title {
+  margin-right: auto;
+}
+
+.settings-row-detail {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+}
+
+.settings-row-value {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-chevron {
+  display: inline-flex;
+  color: var(--ds-color-text-tertiary);
+  flex: none;
+}
+
+/* Divider().padding(.horizontal, space3).padding(.vertical, space2) */
+.settings-divider {
+  height: 1px;
+  margin: var(--ds-space-2) var(--ds-space-3);
+  background: var(--ds-color-border-subtle);
+}
+
+/* Phone switch standing in for the HUD's mini NSSwitch: accent when on. */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: var(--composer-switch-width);
+  height: var(--composer-switch-height);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-surface4);
+  flex: none;
+}
+
+.switch.is-on {
+  background: var(--ds-color-accent);
+}
+
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(var(--composer-switch-height) - 4px);
+  height: calc(var(--composer-switch-height) - 4px);
+  border-radius: var(--ds-radius-circle);
+  background: var(--ds-color-text-on-accent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+.switch.is-on .switch-knob {
+  left: calc(var(--composer-switch-width) - var(--composer-switch-height) + 2px);
 }
 
 /* PickySendTimingMenuView, presented from the chevron. On the phone it sits
@@ -267,6 +534,7 @@
 }
 
 .send-timing-row-chevron {
+  display: inline-flex;
   color: var(--ds-color-text-tertiary);
   margin-left: auto;
   flex: none;
@@ -340,4 +608,65 @@
   inset: calc(50% - 22px) calc(50% - 22px);
   width: 44px;
   height: 44px;
+}
+
+/* Stop choice (PickyStopChoiceAlert.swift). The HUD asks through a native alert
+ * when background tasks run; a web app cannot show a native alert with custom
+ * buttons, so the phone draws one. Options and copy are the HUD's. */
+.alert-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: var(--ds-space-6) var(--ds-space-4);
+  /* Phone-only backdrop dim behind the alert. */
+  background: rgb(0 0 0 / 0.32);
+}
+
+.stop-alert {
+  /* 270pt is the iOS alert width; the HUD alert width is AppKit's. */
+  width: 270px;
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-color-surface2);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  box-shadow: 0 var(--ds-elevation-floating-panel-shadow-yoffset)
+    var(--ds-elevation-floating-panel-shadow-radius)
+    rgb(0 0 0 / var(--ds-elevation-floating-panel-shadow-opacity));
+  overflow: hidden;
+  text-align: center;
+}
+
+.stop-alert-body {
+  padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-3);
+}
+
+.stop-alert-title {
+  margin: 0;
+  font: var(--hud-type-title);
+  color: var(--ds-color-text-primary);
+}
+
+.stop-alert-message {
+  margin: var(--ds-space-1) 0 0;
+  font: var(--hud-type-body-compact);
+  color: var(--ds-color-text-secondary);
+}
+
+.stop-alert-action {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border-top: 1px solid var(--ds-color-border-subtle);
+  font: var(--hud-type-body-medium);
+  color: var(--ds-color-accent-text);
+}
+
+/* role: .destructive */
+.stop-alert-action.is-destructive {
+  color: var(--ds-color-destructive-text);
+}
+
+/* role: .cancel */
+.stop-alert-action.is-cancel {
+  font: var(--hud-type-body-semibold);
 }

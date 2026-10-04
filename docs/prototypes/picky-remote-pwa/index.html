@@ -15,12 +15,14 @@
     <p>왼쪽은 폰 시안(390pt), 오른쪽은 같은 부분의 HUD 렌더 갤러리 이미지입니다. 대화방은 HUD와 똑같이 보여야 하고, 방 목록만 새 디자인입니다. 계획: <code>docs/remote-pwa-plan.md</code> "화면" 절.</p>
     <p>검수 때 볼 것</p>
     <ul class="board-checklist">
-      <li>대화방 파트에서 HUD와 다른 점. 폰에 맞춰 일부러 바꾼 것은 세 가지입니다. hover 대신 탭으로 보이는 시각과 아이콘, 44pt 터치 영역, Option+Return 대신 보낼 시점 메뉴입니다.</li>
+      <li>대화방 파트에서 HUD와 다른 점. 폰에 맞춰 일부러 바꾼 것은 hover 대신 탭으로 보이는 시각과 아이콘, 44pt 터치 영역, Option+Return 대신 보낼 시점 메뉴, 받아쓰기 중 esc 대신 취소 버튼, 설정 시트의 단축키 안내 제거, 중지 선택을 폰 알림으로 그린 것입니다.</li>
+      <li>폰 마이크: 폰에서 녹음해 맥의 받아쓰기 설정으로 바꿀지, 브라우저 음성 인식을 쓸지 정해야 합니다. 마이크 권한 거부 문구도 그 뒤에 정합니다.</li>
+      <li>작업 패널 버튼은 결과물·변경사항 탭만 엽니다(터미널 탭 제외). 도구가 읽은 이미지와 대화 속 파일 링크는 맥에 있는 파일이라, 폰에서는 gateway가 이 세션에 기록된 경로만 보여 줍니다.</li>
       <li>방 목록 기본안: Picky 방 고정, 최근 활동 순, 그룹 필터, 맥과 읽음 공유. Picky 방에도 상태 줄을 보여 줄지.</li>
       <li>새 문구와 빌려 쓴 문구: <a href="new-strings.md">new-strings.md</a>. 방 목록 제목은 지금 Hub 메시지 화면의 "메시지"를 빌려 씁니다.</li>
       <li>질문 머리줄의 <code>⌑ 입력이 필요해요 · confirm</code>처럼 내부 method 이름이 보이는 것은 HUD도 같습니다. 바꾸려면 HUD와 함께 바꿉니다.</li>
     </ul>
-    <p>오른쪽 이미지는 저장소에 없습니다. 먼저 <code>./scripts/render-ui-gallery.sh messenger-ux</code>, <code>conversation-composer</code>, <code>conversation-activity</code>, <code>conversation-context</code>, <code>dock-group</code>을 실행하세요.</p>
+    <p>오른쪽 이미지는 저장소에 없습니다. 대부분은 <code>./scripts/render-ui-gallery.sh messenger-ux</code>, <code>conversation-activity</code>, <code>conversation-context</code>, <code>dock-group</code>으로 만듭니다. 컴포저(<code>composer-production</code>)와 도구 이미지(<code>read-image</code>)는 해당 기능을 만들 때 목업 런북 하네스로 렌더한 production 이미지입니다(<a href="README.md">README</a> 참고).</p>
     <div class="board-toggle" role="group" aria-label="모양">
       <button type="button" data-theme-choice="light">라이트</button>
       <button type="button" data-theme-choice="dark">다크</button>
@@ -34,6 +36,8 @@
       <div class="board-refs">
         <figure><img alt="HUD 말풍선" data-src-template="messenger-ux/pickle-chat-working-{theme}-ko.png"><figcaption>messenger-ux · pickle-chat-working</figcaption></figure>
         <figure><img alt="HUD 말풍선 hover" data-src-template="messenger-ux/pickle-chat-hover-{theme}-ko.png"><figcaption>messenger-ux · pickle-chat-hover (폰에서는 탭)</figcaption></figure>
+        <figure><img alt="HUD 도구 이미지 말풍선" data-src-template="read-image/landscape-{theme}.png"><figcaption>read-image · landscape (렌더 뒤 캡션의 "이미지 읽음" 문구가 빠짐)</figcaption></figure>
+        <figure><img alt="HUD 도구 이미지 없음" data-src-template="read-image/missing-{theme}.png"><figcaption>read-image · missing</figcaption></figure>
       </div>
     </div>
   </section>
@@ -65,10 +69,15 @@
     <div class="board-row">
       <iframe data-part="composer" title="입력창 시안" style="height: 1700px"></iframe>
       <div class="board-refs">
-        <figure><img alt="HUD 입력창 한 줄" data-src-fixed="conversation-composer/composer-one-line-dark-ko.png"><figcaption>composer-one-line (다크만 있음)</figcaption></figure>
-        <figure><img alt="HUD 입력창 네 줄" data-src-template="conversation-composer/composer-four-lines-{theme}-ko.png"><figcaption>composer-four-lines</figcaption></figure>
-        <figure><img alt="HUD 입력창 실행 중" data-src-fixed="conversation-composer/composer-empty-running-dark-ko.png"><figcaption>composer-empty-running (다크만 있음)</figcaption></figure>
-        <figure><img alt="HUD 답 끝나면 보내기" data-src-fixed="conversation-composer/composer-option-follow-up-dark-ko.png"><figcaption>composer-option-follow-up (다크만 있음)</figcaption></figure>
+        <figure><img alt="HUD 컴포저 실행 중" data-src-template="composer-production/02-running-{theme}.png"><figcaption>composer-production · 실행 중</figcaption></figure>
+        <figure><img alt="HUD 컴포저 모델 정보 없음" data-src-template="composer-production/01-waiting-no-model-{theme}.png"><figcaption>composer-production · 새 Pickle, 칩은 '설정'</figcaption></figure>
+        <figure><img alt="HUD 컴포저 긴 모델" data-src-template="composer-production/03-running-long-fast-{theme}.png"><figcaption>composer-production · 긴 모델 + Fast</figcaption></figure>
+        <figure><img alt="HUD 컴포저 좁은 폭" data-src-fixed="composer-production/03-running-long-fast-narrow-130-dark.png"><figcaption>composer-production · 380pt·130% (폰 폭에 가장 가까움, 다크만 있음)</figcaption></figure>
+        <figure><img alt="HUD 컴포저 듣는 중" data-src-template="composer-production/04-listening-{theme}.png"><figcaption>composer-production · 듣는 중 (폰은 esc 대신 취소 버튼)</figcaption></figure>
+        <figure><img alt="HUD 컴포저 받아쓰는 중" data-src-template="composer-production/05-transcribing-{theme}.png"><figcaption>composer-production · 받아쓰는 중</figcaption></figure>
+        <figure><img alt="HUD 컴포저 받아쓰기 실패" data-src-template="composer-production/06-failed-empty-{theme}.png"><figcaption>composer-production · 받아쓰기 실패</figcaption></figure>
+        <figure><img alt="HUD 설정 메뉴" data-src-template="composer-production/08-settings-menu-{theme}.png"><figcaption>composer-production · 설정 메뉴 (폰은 단축키 안내 제거)</figcaption></figure>
+        <p class="board-missing">셸 명령(BASH), 보낼 시점 메뉴, 첨부, 중지 선택 알림은 이 렌더에 없습니다. 셸·첨부·메뉴는 Swift 소스에서, 중지 선택은 <code>PickyStopChoiceAlert.swift</code>의 선택지와 문구에서 옮겼습니다.</p>
       </div>
     </div>
   </section>
@@ -80,7 +89,7 @@
       <div class="board-refs">
         <figure><img alt="HUD 컨텍스트 컨트롤" data-src-fixed="conversation-context/context-control-ready-dark-ko.png"><figcaption>context-control-ready (다크만 있음)</figcaption></figure>
         <figure><img alt="HUD 컨텍스트 구간" data-src-template="conversation-context/context-band-ramp-{theme}-ko.png"><figcaption>context-band-ramp</figcaption></figure>
-        <p class="board-missing">제목 줄은 갤러리에 없어 <code>PickyConversationHeaderView.swift</code>에서 옮겼습니다. 뒤로 가기는 폰에만 있는 요소입니다.</p>
+        <p class="board-missing">제목 줄은 갤러리에 없어 <code>PickyConversationHeaderView.swift</code>에서 옮겼습니다. 실행 중 배지의 코너 점은 <code>8361c7b8d</code>에서 빠졌습니다. 뒤로 가기는 폰에만 있는 요소입니다.</p>
       </div>
     </div>
   </section>

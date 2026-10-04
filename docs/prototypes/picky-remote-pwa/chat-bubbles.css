@@ -342,3 +342,81 @@
   font: var(--hud-type-meta);
   color: var(--ds-color-text-tertiary);
 }
+
+/* ---------- image read by a tool ----------
+ * PickyToolImageBubbleView.swift: caption (photo icon in textSecondary + file name in
+ * textTertiary, meta font, middle truncation) above the thumbnail in the agent
+ * bubble shape, surface2 fill and a 0.5 borderSubtle stroke. The journal keeps only
+ * the Mac-local path, so on the phone the gateway serves the thumbnail and, on tap,
+ * the full image for paths recorded in this session's messages only. */
+:root {
+  /* missing DS token: PickyToolImageLayout.maxWidth / maxHeight (280 x 220) */
+  --tool-image-max-width: 280px;
+  /* The exclamation mark inside the badge is cut out of the badge circle. */
+  --tool-image-badge-mark: var(--ds-color-surface1);
+}
+
+.tool-image {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+  max-width: var(--tool-image-max-width);
+}
+
+.tool-image-caption {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-secondary);
+  min-width: 0;
+}
+
+.tool-image-caption svg {
+  flex: none;
+}
+
+.tool-image-name {
+  color: var(--ds-color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* PickyToolImageLayout.displaySize: a 2x image is shown at point size, aspect-fit
+ * into 280 x 220 without upscaling, at least 48pt per side. The 1120 x 700 sample
+ * becomes 280 x 175. */
+.tool-image-thumb {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--ds-radius-extra-large) var(--ds-radius-extra-large) var(--ds-radius-extra-large) 4px;
+  background: var(--ds-color-surface2);
+  box-shadow: inset 0 0 0 0.5px var(--ds-color-border-subtle);
+}
+
+.tool-image-thumb.is-landscape {
+  width: 280px;
+  height: 175px;
+}
+
+.tool-image-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* missingPlaceholder: labelMedium, textTertiary, padding space3 x space2, surface2
+ * agent bubble shape. */
+.tool-image-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  align-self: flex-start;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-radius: var(--ds-radius-extra-large) var(--ds-radius-extra-large) var(--ds-radius-extra-large) 4px;
+  background: var(--ds-color-surface2);
+  font: var(--hud-type-label-medium);
+  color: var(--ds-color-text-tertiary);
+}

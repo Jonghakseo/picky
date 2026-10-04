@@ -15,6 +15,7 @@
 | `base.css`, `theme.js` | 페이지 틀. `?theme=light\|dark`, `?scale=1.3`(앱 글꼴 배율)을 처리한다 |
 | `strings.ko.json`, `strings.en.json` | 시안이 쓰는 문구를 `Picky/Resources/Localizable.xcstrings`에서 뽑은 것 |
 | `new-strings.md` | 아직 카탈로그에 없는 문구. UX writing 검수 대상 |
+| `fixtures/` | 시안에 쓰는 고정 샘플. `tool-image-landscape.png`는 HUD 도구 이미지 렌더(`read-image`)와 같은 합성 이미지 |
 
 ## 명령
 
@@ -33,7 +34,14 @@ tools/shoot-board.sh <part> [height]     # 보드에서 그 파트와 HUD 기준
 
 HUD 기준 이미지가 소스보다 오래되면 비교가 틀린다. 2026-10-04 검수에서도 10-02 렌더를 기준으로 삼았다가, 그사이 HUD가 에이전트 답변 접기를 없애고 작업 중 표시 줄을 바꾼 것을 놓칠 뻔했다. 검수 전에 `git log --since=<기준 이미지 시각> -- <해당 Swift 파일>`로 변경을 확인하고, 바뀌었으면 갤러리를 다시 렌더한다.
 
-HUD 기준 이미지는 저장소에 넣지 않는다. 보드 오른쪽을 채우려면 먼저 `./scripts/render-ui-gallery.sh`를 `messenger-ux`, `conversation-composer`, `conversation-activity`, `conversation-context`, `dock-group` 대상으로 실행한다.
+HUD 기준 이미지는 저장소에 넣지 않는다. 보드 오른쪽을 채우려면 먼저 `./scripts/render-ui-gallery.sh`를 `messenger-ux`, `conversation-activity`, `conversation-context`, `dock-group` 대상으로 실행한다.
+
+컴포저와 도구 이미지 말풍선은 렌더 갤러리 대상이 아니라, 기능을 만들 때 [목업 런북](../../../runbook/swift-ui-mockup.md)의 하네스로 렌더한 production 이미지를 기준으로 쓴다.
+
+- `build/render-gallery/composer-production/`: 설정 칩·마이크·음성 상태 줄이 들어간 컴포저(2026-10-04 22:15, `0bf965d8d` 직전 작업 트리). 이후 커밋은 화면을 바꾸지 않았다.
+- `build/render-gallery/read-image/`: 도구 이미지 말풍선(2026-10-04 22:48). 이 렌더 뒤 `d38f6588f`가 캡션의 "이미지 읽음" 문구를 지웠으므로 시안은 현재 코드대로 아이콘과 파일 이름만 쓴다.
+
+두 폴더가 없으면 각 폴더의 하네스 소스(`*.swift`)로 다시 렌더하거나, 컴포저는 `./scripts/render-ui-gallery.sh conversation-composer`로 대신한다. 이 갤러리는 받아쓰기 컨트롤러를 넣지 않아 마이크와 음성 상태 줄이 빠진다.
 
 `tools/shoot.sh`는 실행마다 임시 Chrome 프로필을 쓰고, 끝나면 그 프로필의 프로세스만 정리한다. macOS의 headless Chrome은 캡처 뒤에도 종료되지 않는 경우가 있어서, Chrome을 직접 띄우지 말고 이 스크립트를 쓴다.
 

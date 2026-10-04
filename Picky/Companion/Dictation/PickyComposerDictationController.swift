@@ -106,9 +106,11 @@ enum PickyComposerDictationDraftPolicy {
 @MainActor
 final class PickyComposerDictationController: ObservableObject {
     @Published private(set) var phase: PickyComposerDictationPhase = .idle
-    /// The latest finished transcript. The owning composer appends it to its
-    /// draft and calls `consumeTranscript(id:)`.
-    @Published private(set) var pendingTranscript: PickyComposerDictationTranscript?
+    /// Emits each finished transcript exactly once and never replays it.
+    /// A replaying publisher (`@Published`) re-delivered the last transcript
+    /// whenever the composer re-subscribed after its draft changed, so one
+    /// utterance was appended twice.
+    let transcripts = PassthroughSubject<PickyComposerDictationTranscript, Never>()
 
     private let driver: any PickyComposerDictationDriving
     private let failureDisplayDuration: Duration
@@ -172,11 +174,6 @@ final class PickyComposerDictationController: ObservableObject {
         finish(.idle)
     }
 
-    func consumeTranscript(id: UUID) {
-        guard pendingTranscript?.id == id else { return }
-        pendingTranscript = nil
-    }
-
     private func start(sessionID: String) {
         guard !driver.isDictationInProgress else { return }
         failureResetTask?.cancel()
@@ -204,8 +201,8 @@ final class PickyComposerDictationController: ObservableObject {
             finish(.failed(sessionID: sessionID, .noSpeech))
             return
         }
-        pendingTranscript = PickyComposerDictationTranscript(id: UUID(), sessionID: sessionID, text: text)
         finish(.idle)
+        transcripts.send(PickyComposerDictationTranscript(id: inputID, sessionID: sessionID, text: text))
     }
 
     private func handle(_ event: BuddyDictationSessionEvent) {

@@ -69,6 +69,9 @@ struct PickyComposerDictationControllerTests {
     @Test func secondPressTranscribesIntoThatPickleDraftWithoutSending() async throws {
         let driver = FakeComposerDictationDriver()
         let controller = PickyComposerDictationController(driver: driver)
+        var delivered: [PickyComposerDictationTranscript] = []
+        let subscription = controller.transcripts.sink { delivered.append($0) }
+        defer { subscription.cancel() }
 
         try await startListening(controller, sessionID: "pickle-a")
         controller.toggle(sessionID: "pickle-a")
@@ -77,24 +80,46 @@ struct PickyComposerDictationControllerTests {
 
         driver.finish(transcript: "  타임아웃 난 요청만 정리해줘 ")
 
-        let transcript = try #require(controller.pendingTranscript)
-        #expect(transcript.sessionID == "pickle-a")
-        #expect(transcript.text == "타임아웃 난 요청만 정리해줘")
+        #expect(delivered.map(\.sessionID) == ["pickle-a"])
+        #expect(delivered.map(\.text) == ["타임아웃 난 요청만 정리해줘"])
         #expect(controller.phase == .idle)
-        controller.consumeTranscript(id: transcript.id)
-        #expect(controller.pendingTranscript == nil)
+    }
+
+    /// Regression: one utterance ("밥은 먹거리죠?") was appended twice because the
+    /// composer re-subscribes after its draft changes and the old publisher
+    /// replayed the last transcript. A later subscriber must receive nothing.
+    @Test func finishedTranscriptIsDeliveredOnceAndNeverReplayed() async throws {
+        let driver = FakeComposerDictationDriver()
+        let controller = PickyComposerDictationController(driver: driver)
+        var firstSubscriber: [String] = []
+        let first = controller.transcripts.sink { firstSubscriber.append($0.text) }
+
+        try await startListening(controller, sessionID: "pickle-a")
+        controller.toggle(sessionID: "pickle-a")
+        driver.finish(transcript: "밥은 먹거리죠?")
+        first.cancel()
+
+        var resubscribed: [String] = []
+        let second = controller.transcripts.sink { resubscribed.append($0.text) }
+        defer { second.cancel() }
+
+        #expect(firstSubscriber == ["밥은 먹거리죠?"])
+        #expect(resubscribed.isEmpty)
     }
 
     @Test func emptyResultShowsNoticeAndProducesNoTranscript() async throws {
         let driver = FakeComposerDictationDriver()
         let controller = PickyComposerDictationController(driver: driver, failureDisplayDuration: .seconds(60))
+        var delivered: [PickyComposerDictationTranscript] = []
+        let subscription = controller.transcripts.sink { delivered.append($0) }
+        defer { subscription.cancel() }
 
         try await startListening(controller, sessionID: "pickle-a")
         controller.toggle(sessionID: "pickle-a")
         driver.finishEmpty()
 
         #expect(controller.phase == .failed(sessionID: "pickle-a", .noSpeech))
-        #expect(controller.pendingTranscript == nil)
+        #expect(delivered.isEmpty)
     }
 
     @Test func permissionFailureIsReportedSeparately() async throws {
@@ -111,6 +136,9 @@ struct PickyComposerDictationControllerTests {
     @Test func cancelDiscardsLateTranscript() async throws {
         let driver = FakeComposerDictationDriver()
         let controller = PickyComposerDictationController(driver: driver)
+        var delivered: [PickyComposerDictationTranscript] = []
+        let subscription = controller.transcripts.sink { delivered.append($0) }
+        defer { subscription.cancel() }
 
         try await startListening(controller, sessionID: "pickle-a")
         controller.cancel(sessionID: "pickle-a")
@@ -118,7 +146,7 @@ struct PickyComposerDictationControllerTests {
 
         #expect(driver.cancelCount == 1)
         #expect(controller.phase == .idle)
-        #expect(controller.pendingTranscript == nil)
+        #expect(delivered.isEmpty)
     }
 
     @Test func otherPickleCannotStartWhileOneIsRecording() async throws {

@@ -66,6 +66,8 @@ struct PickyConversationComposerView: View {
     @StateObject private var runtimeControls = PickyComposerRuntimeControlsModel()
     /// Nil outside the live HUD; the mic button and voice status are hidden then.
     @Environment(\.pickyComposerDictation) private var composerDictation
+    /// Last dictation result appended, so a re-delivered event is ignored.
+    @State private var appliedDictationTranscriptID: UUID?
     @State private var isAttachmentPickerPresented = false
 
     init(
@@ -826,8 +828,7 @@ struct PickyConversationComposerView: View {
     private var composerDictationTranscripts: AnyPublisher<PickyComposerDictationTranscript, Never> {
         guard let composerDictation else { return Empty().eraseToAnyPublisher() }
         let sessionID = session.id
-        return composerDictation.$pendingTranscript
-            .compactMap { $0 }
+        return composerDictation.transcripts
             .filter { $0.sessionID == sessionID }
             .eraseToAnyPublisher()
     }
@@ -835,7 +836,8 @@ struct PickyConversationComposerView: View {
     /// Dictation never sends: the transcript is appended to the draft so the
     /// user can review and edit it first.
     private func appendDictatedTranscript(_ transcript: PickyComposerDictationTranscript) {
-        composerDictation?.consumeTranscript(id: transcript.id)
+        guard appliedDictationTranscriptID != transcript.id else { return }
+        appliedDictationTranscriptID = transcript.id
         let updated = PickyComposerDictationDraftPolicy.draft(draft, appending: transcript.text)
         guard updated != draft else { return }
         draft = updated

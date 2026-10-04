@@ -19,7 +19,6 @@ UI_EFFECT_TESTS = {
     ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
     ("PickyTests/PickyHUDUnreadFocusRoutingTests.swift", "groupMemberOpenedFromAnotherWindowClosesOnFirstCommandW"),
     ("PickyTests/PickyHubFocusPerformanceTests.swift", "productionHubFocusTransitionsMeetTheLocalLatencyBudget"),
-    ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 }
 UI_EFFECT_HELPERS: set[tuple[str, str]] = set()
@@ -28,7 +27,6 @@ UI_EFFECT_CALLERS = {
     ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
     ("PickyTests/PickyHUDUnreadFocusRoutingTests.swift", "groupMemberOpenedFromAnotherWindowClosesOnFirstCommandW"),
     ("PickyTests/PickyHubFocusPerformanceTests.swift", "productionHubFocusTransitionsMeetTheLocalLatencyBudget"),
-    ("PickyTests/PickyVoiceInputTargetTests.swift", "appKitRegionExcludesOrderedOutHiddenAndIneligibleCards"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 } | UI_EFFECT_HELPERS
 UI_EFFECT_CALL = re.compile(

@@ -133,7 +133,7 @@ if len(sys.argv) > 1 and ("--ui-effect-selectors" in sys.argv or any(
             "PickyHUDUnreadFocusRoutingTests": 1,
             "PickyHubFocusPerformanceTests": 1, "PickyHubNativeFocusTests": 1,
             "PickyHubWindowLifecycleTests": 2, "PickyIMETextViewTests": 1,
-            "PickySecureSurfaceWindowCoordinatorTests": 1, "PickyVoiceInputTargetTests": 1,
+            "PickySecureSurfaceWindowCoordinatorTests": 1,
         }
         actual = {}
         for call in calls:

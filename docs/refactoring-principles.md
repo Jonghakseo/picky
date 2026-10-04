@@ -280,7 +280,7 @@ Use this sequence for safe refactors:
 4. Route the facade through the extracted policy.
 5. Run targeted tests.
 6. Ask `verifier`/`reviewer`/`challenger` to stress the result.
-7. Commit as one small checkpoint.
+7. Commit as one small checkpoint, following `.agents/skills/picky-commit/SKILL.md`.
 
 ## 6. References
 

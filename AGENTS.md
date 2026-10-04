@@ -206,15 +206,6 @@ Skipping this is not cosmetic. Each abandoned DerivedData directory keeps roughl
 
 When an agentd vitest run fails, inspect the failure and its connection to the changed behavior before editing code. If it appears intermittent, rerun the failing file once in isolation. Escalate to `--no-file-parallelism` only to investigate suspected cross-file interference; compare the same failing case against the pre-change baseline in a temporary worktree only when attribution remains unresolved. A failure reproduced on the baseline is evidence of a pre-existing issue, not proof that the change caused it. Do not automatically repeat full suites or baseline runs three times. Report unresolved flakiness without calling it a pass, do not fix unrelated failures, and remove any temporary worktree afterwards.
 
-Committing from a temp worktree runs this repo's commit hooks, which need both the root and `agentd` dependency trees. If the worktree has no installed dependencies, symlink both from the primary worktree before committing and remove the links afterwards (linking only `agentd/node_modules` is not enough; root `commitlint` is also required). Skip this when the worktree has its own installed dependencies or their versions may diverge from the hooks' expectations:
-
-```bash
-ln -sfn "$MAIN/node_modules" node_modules
-ln -sfn "$MAIN/agentd/node_modules" agentd/node_modules
-git commit ...
-rm node_modules agentd/node_modules
-```
-
 Daemon protocol changes (event ordering, bootstrap sequences) can be smoke-tested without touching the running Picky.app: launch a throwaway agentd on a non-default port with `PICKY_AGENTD_PORT=<port> PICKY_AGENTD_RUNTIME=mock PICKY_APP_SUPPORT_DIR=<tmp-dir>`, connect a scripted WebSocket client (register capabilities, assert frame order), then tear it down. Never attach to or restart the user's live daemon for this.
 
 Runtime smoke for packaged app:
@@ -234,5 +225,4 @@ Expected: `picky-agentd listening on 127.0.0.1:17631`; quitting the app closes t
 - Keep context packets neutral: transcript, app/window, browser URL/title/selection, screenshots, cwd, selected session.
 - Follow-up routing must be explicit and predictable; avoid surprising session capture.
 - Extension UI and confirmation flows should remain visible in the HUD, not hidden in logs.
-- When committing, include only your own changes. Never stage unrelated local edits.
-- Commit messages must pass commitlint Conventional Commits in English/ASCII only, e.g. `feat: add dock shortcut`.
+- Before any commit, read `.agents/skills/picky-commit/SKILL.md`. It is the single source for commit scope, message format (including the required origin paragraph), hooks, and temp-worktree commits; do not restate those rules elsewhere.

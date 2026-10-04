@@ -741,6 +741,27 @@ struct PickyTurnCardViewTests {
         #expect(stabilizer.displayed == read)
     }
 
+    /// Between Pi runs of one running turn (queued follow-up, compaction then
+    /// continue) the live line drops to nil for a moment. Removing and re-adding
+    /// the row shifted the transcript, so the last line stays through the gap.
+    @Test func presenceLineSurvivesAShortGapWhileTheTurnKeepsRunning() {
+        let t0 = Date(timeIntervalSince1970: 3_000)
+        let writing = PickyConversationPresencePresentation(phase: .writing, detail: nil, startedAt: nil)
+        let thinking = PickyConversationPresencePresentation(phase: .thinking, detail: nil, startedAt: nil)
+        var hold = PickyPresenceGapHold()
+
+        // Gap: the previous line keeps rendering, and comes back seamlessly.
+        #expect(hold.update(previous: writing, live: nil, now: t0) == PickyPresenceGapHold.grace)
+        #expect(hold.presented(live: nil) == writing)
+        #expect(hold.update(previous: nil, live: thinking, now: t0.addingTimeInterval(0.8)) == nil)
+        #expect(hold.presented(live: thinking) == thinking)
+
+        // A gap that outlasts the grace (agent done, only background work left) ends the line.
+        #expect(hold.update(previous: thinking, live: nil, now: t0.addingTimeInterval(10)) != nil)
+        #expect(hold.update(previous: nil, live: nil, now: t0.addingTimeInterval(10 + PickyPresenceGapHold.grace)) == nil)
+        #expect(hold.presented(live: nil) == nil)
+    }
+
     @Test func dateDividerTitlesUseTodayYesterdayAndDates() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!

@@ -393,6 +393,53 @@ struct PickyTurnLiveStatePolicy: Equatable {
     }
 }
 
+/// Bridges short gaps in the live presence line while the turn is still
+/// running. The daemon reports the agent as not responding between Pi runs of
+/// one turn (queued follow-up delivery, async completion delivery, compaction
+/// followed by continue, auto-retry), so the live value drops to nil for a
+/// moment. Removing the row then re-adding it shifts the transcript twice.
+/// Instead the last line stays on screen for `grace`; a real settle (the turn
+/// leaving `isCurrent`) still removes it at once because the card stops asking.
+struct PickyPresenceGapHold: Equatable {
+    static let grace: TimeInterval = 3
+
+    private(set) var held: PickyConversationPresencePresentation?
+    private var heldUntil: Date?
+
+    /// Records the live value at `now` and returns how long until the held
+    /// line expires, or nil when nothing is held.
+    mutating func update(
+        previous: PickyConversationPresencePresentation?,
+        live: PickyConversationPresencePresentation?,
+        now: Date
+    ) -> TimeInterval? {
+        if live != nil {
+            release()
+            return nil
+        }
+        if held == nil, let previous {
+            held = previous
+            heldUntil = now.addingTimeInterval(Self.grace)
+        }
+        guard let heldUntil else { return nil }
+        let remaining = heldUntil.timeIntervalSince(now)
+        if remaining <= 0 {
+            release()
+            return nil
+        }
+        return remaining
+    }
+
+    func presented(live: PickyConversationPresencePresentation?) -> PickyConversationPresencePresentation? {
+        live ?? held
+    }
+
+    mutating func release() {
+        held = nil
+        heldUntil = nil
+    }
+}
+
 enum PickyTurnBodyPolicy {
     /// Thinking stays out of the messenger transcript; the presence line says
     /// "thinking" while it happens.
@@ -413,9 +460,10 @@ struct PickyTurnCardView<MessageContent: View>: View {
     @ViewBuilder let messageContent: (PickySessionMessage) -> MessageContent
 
     @State private var liveState = PickyTurnLiveStatePolicy()
+    @State private var gapHold = PickyPresenceGapHold()
 
     private var presentedPresence: PickyConversationPresencePresentation? {
-        liveState.isVisuallyCurrent(isCurrent: group.isCurrent) ? presence : nil
+        liveState.isVisuallyCurrent(isCurrent: group.isCurrent) ? gapHold.presented(live: presence) : nil
     }
 
     var body: some View {
@@ -444,6 +492,14 @@ struct PickyTurnCardView<MessageContent: View>: View {
         .onAppear { liveState.observe(isCurrent: group.isCurrent) }
         .onChange(of: group.isCurrent) { _, isCurrent in
             liveState.observe(isCurrent: isCurrent)
+            if !isCurrent { gapHold.release() }
+        }
+        .onChange(of: presence) { previous, live in
+            guard let wait = gapHold.update(previous: previous, live: live, now: Date()) else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(wait))
+                _ = gapHold.update(previous: nil, live: presence, now: Date())
+            }
         }
     }
 }

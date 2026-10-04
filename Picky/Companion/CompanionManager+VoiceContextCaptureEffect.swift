@@ -31,7 +31,7 @@ extension CompanionManager {
                         correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
                     )
                     if completeVoiceInteractionIfCurrent(inputID: inputID) {
-                        clearScreenContextTargetIfCurrent(targetSnapshot)
+                        screenContextTarget.clearIfCurrent(targetSnapshot)
                         setVoiceFollowUpSessionIDForCurrentUtterance(nil)
                     }
                     return
@@ -66,7 +66,7 @@ extension CompanionManager {
                         visibleText: "I captured that, but the local agent client is not ready yet.",
                         spokenText: "I captured that, but the local agent client is not ready yet."
                     )
-                    clearScreenContextTargetIfCurrent(targetSnapshot)
+                    screenContextTarget.clearIfCurrent(targetSnapshot)
                     setVoiceFollowUpSessionIDForCurrentUtterance(nil)
                 }
             }

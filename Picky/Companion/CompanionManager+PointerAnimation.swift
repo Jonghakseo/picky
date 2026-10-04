@@ -22,7 +22,7 @@ extension CompanionManager {
         detectedElementParksAtTarget = target.parksAtTarget
         detectedElementScreenLocation = target.screenLocation
         detectedElementPointerID = target.id
-        setLocalOverlayReason(.activePointerAnimation, visible: true)
+        overlayVisibility.setLocalReason(.activePointerAnimation, visible: true)
     }
 
     func setPointerReturnsToCursor(pointerID: String, returnsToCursor: Bool) {
@@ -63,7 +63,7 @@ extension CompanionManager {
         detectedElementReturnsToCursor = true
         detectedElementParksAtTarget = false
         detectedElementPointerID = nil
-        setLocalOverlayReason(.activePointerAnimation, visible: false)
+        overlayVisibility.setLocalReason(.activePointerAnimation, visible: false)
         scheduleTransientHideIfNeeded()
     }
 
@@ -85,7 +85,7 @@ extension CompanionManager {
                 correlation: PickyInteractionCorrelation(pointerID: clearedPointerID, source: .pointer)
             )
         }
-        setLocalOverlayReason(.activePointerAnimation, visible: false)
+        overlayVisibility.setLocalReason(.activePointerAnimation, visible: false)
         scheduleTransientHideIfNeeded()
     }
 }

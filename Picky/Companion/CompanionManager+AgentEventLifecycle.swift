@@ -76,7 +76,7 @@ extension CompanionManager {
         }
         if let targetSessionID = selectionStore.screenContextTargetSessionID,
            removedSessionIDs.contains(targetSessionID) {
-            applyScreenContextTarget(nil)
+            screenContextTarget.apply(nil)
         }
     }
 }

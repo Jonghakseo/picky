@@ -685,7 +685,7 @@ Files:
 - `Picky/PickyAgentClient.swift`
 - `Picky/Companion/Dictation/AgentdTranscriptionProvider.swift`
 - `Picky/Companion/Speech/AgentdSpeechPlaybackProvider.swift`
-- `Picky/CompanionManager.swift`
+- `Picky/Companion/CompanionManager.swift`
 - `agentd/src/protocol.ts`
 - `agentd/src/server.ts`
 
@@ -708,7 +708,7 @@ Files:
 - `agentd/src/protocol.ts`
 - `Picky/PickyAgentProtocol.swift`
 - `Picky/PickyAgentClient.swift`
-- `Picky/CompanionManager.swift`
+- `Picky/Companion/CompanionManager.swift`
 - `Picky/BuddyDictationManager.swift` if transform must happen before submission callbacks
 
 Steps:
@@ -759,7 +759,7 @@ Files:
 - `Picky/App/Settings/PickySettings.swift`
 - `Picky/Companion/CompanionPanelSettingsView.swift`
 - `Picky/App/Settings/PickySettingsStore.swift`
-- `Picky/CompanionManager.swift`
+- `Picky/Companion/CompanionManager.swift`
 - `Picky/PickyAgentClientRouter.swift`
 - `Picky/PickyAgentDaemonPool.swift`
 - `Picky/PickyAgentDaemonLauncher.swift`

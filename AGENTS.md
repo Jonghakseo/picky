@@ -94,7 +94,7 @@ When the user asks about a feature, start here before broad searching:
 - Hub settings / prerequisites / plugin + main-agent settings UI: `Picky/Hub/Settings/`, `Picky/Hub/Plugins/`, `Picky/Hub/Pages/PickyHubSettingsPage.swift`
 - Always-on main-agent transcript state: `Picky/MainAgent/PickyMainAgentConversationStore.swift`
 - Settings / default cwd / local paths: `Picky/App/Settings/`, `Picky/App/Settings/PickySettingsStore.swift`
-- Voice / push-to-talk / dictation: `Picky/CompanionManager.swift`, `Picky/BuddyDictationManager.swift`, `Picky/Companion/Dictation/`
+- Voice / push-to-talk / dictation: `Picky/Companion/CompanionManager.swift`, `Picky/BuddyDictationManager.swift`, `Picky/Companion/Dictation/`
 - Global shortcut semantics/settings: `Picky/Shortcuts/`, `Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift`, `Picky/Companion/Dictation/BuddyPushToTalkShortcut.swift`, `Picky/QuickInput/QuickInputDoubleTapDetector.swift`
 - Quick text input: `Picky/QuickInput/`
 - Speech transcription/playback providers: `Picky/Companion/Dictation/AppleSpeechTranscriptionProvider.swift`, `Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`, `Picky/Companion/AzureOpenAI/`, `Picky/Companion/ElevenLabs/`, `Picky/Companion/Speech/`

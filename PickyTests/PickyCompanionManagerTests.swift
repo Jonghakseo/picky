@@ -564,11 +564,11 @@ struct PickyCompanionManagerTests {
         )
         ink.onStateChange(drawing)
         try await waitUntil { manager.inkOverlayState == drawing }
-        #expect(manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        #expect(manager.overlayVisibility.overlayVisibilityReasons.contains(.activeInkCapture))
 
         ink.onStateChange(.inactive)
         try await waitUntil { manager.inkOverlayState == .inactive }
-        #expect(!manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        #expect(!manager.overlayVisibility.overlayVisibilityReasons.contains(.activeInkCapture))
         manager.stop()
     }
 
@@ -589,13 +589,13 @@ struct PickyCompanionManagerTests {
         }
         ink.onStateChange(pointerState(0))
         let updatesAfterBegin = globalUpdates
-        #expect(manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        #expect(manager.overlayVisibility.overlayVisibilityReasons.contains(.activeInkCapture))
         for x in 1...100 { ink.onStateChange(pointerState(CGFloat(x))) }
 
         #expect(manager.inkOverlayState.virtualCursorGlobalPoint == CGPoint(x: 100, y: 20))
         #expect(globalUpdates == updatesAfterBegin)
         ink.onStateChange(.inactive)
-        #expect(!manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        #expect(!manager.overlayVisibility.overlayVisibilityReasons.contains(.activeInkCapture))
         #expect(manager.inkOverlayStore.state == .inactive)
         withExtendedLifetime(observation) {}
         manager.stop()
@@ -1916,6 +1916,41 @@ struct PickyCompanionManagerTests {
         await captureGate.release()
         #expect(!(await dispatch.value))
         #expect(!client.commands.contains { $0.type == .steer || $0.type == .followUp })
+    }
+
+    /// Daemon main-agent events must land in the activity store the cursor
+    /// overlay renders from, and a settled turn must only linger, not vanish.
+    @Test func mainAgentDaemonEventsLandInTheActivityStore() {
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore()
+        )
+
+        manager.applyAgentEvent(.mainActivityUpdated(PickyMainActivity(
+            kind: .tool,
+            toolCallId: "call-1",
+            toolName: "Read",
+            status: "running"
+        )))
+        #expect(manager.mainActivity.liveActivities.map(\.toolCallId) == ["call-1"])
+        #expect(manager.mainActivity.hasLiveTurnActivities)
+
+        manager.applyAgentEvent(.mainExtensionUiRequested(PickyExtensionUiRequest(
+            id: "req-1",
+            sessionId: "main",
+            method: "ask",
+            prompt: "Pick one",
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )))
+        #expect(manager.mainActivity.pendingQuestion?.id == "req-1")
+
+        manager.applyAgentEvent(.mainExtensionUiCancelled(requestId: "req-1"))
+        #expect(manager.mainActivity.pendingQuestion == nil)
+
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "main-context"))
+        #expect(manager.mainActivity.liveActivities.map(\.toolCallId) == ["call-1"])
+        #expect(!manager.mainActivity.hasLiveTurnActivities)
+        manager.stop()
     }
 
     @Test func failedQuickInputRestartsTextInkWithSubmittedCaptureAndRetryUsesCombinedStrokes() async throws {

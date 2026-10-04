@@ -61,10 +61,9 @@ final class CompanionManager: ObservableObject {
     /// Main-agent transcript, Pi session location, and model options. Observe
     /// it directly from views.
     let mainConversation = PickyMainAgentConversationStore()
-    @Published private(set) var mainLiveActivities: [PickyMainActivity] = [] {
-        didSet { updateMainCancelPillPresentation() }
-    }
-    @Published private(set) var mainPendingQuestion: PickyExtensionUiRequest?
+    /// Live turn presence (activity chips, pending extension-UI question).
+    /// Observe it directly from views.
+    let mainActivity = PickyMainAgentActivityStore()
     @Published private(set) var isSendingDirectMessage = false
     @Published private(set) var isResettingMainAgentSession = false
     @Published private(set) var directMessageError: String?
@@ -72,8 +71,8 @@ final class CompanionManager: ObservableObject {
     /// Owner of the macOS permission flags. Observe it directly from views;
     /// CompanionManager only reacts to its transitions (event tap, cursor overlay).
     let permissions: PickyPermissionMonitor
-    @Published private(set) var screenContextTargetSessionID: String?
-    private var screenContextTargetLabel: String?
+    /// Single owner of the Companion-side armed screen-context target.
+    let screenContextTarget: PickyScreenContextTargetController
 
     /// Screen location (global AppKit coords) of a highlighted UI point;
     /// observed by BlueCursorView to trigger the flight animation.
@@ -124,6 +123,9 @@ final class CompanionManager: ObservableObject {
         globalShortcutArbiter.quickInputDetector
     }
     let overlayWindowManager = OverlayWindowManager()
+    /// Single owner of overlay visibility reasons, the on-screen flag, and the
+    /// transient-hide timer. CompanionManager only calls its mutators.
+    let overlayVisibility: PickyOverlayVisibilityController
     let quickInputPanelManager: QuickInputPanelManager
     let mainQuestionPanelManager: PickyMainQuestionPanelManager
     let mainCancelPillPanelManager = PickyMainCancelPillPanelManager()
@@ -212,6 +214,12 @@ final class CompanionManager: ObservableObject {
         self.agentClient = agentClient
         self.ownsAgentClientLifecycle = ownsAgentClientLifecycle
         self.selectionStore = selectionStore
+        let overlayVisibility = PickyOverlayVisibilityController()
+        self.overlayVisibility = overlayVisibility
+        self.screenContextTarget = PickyScreenContextTargetController(
+            selectionStore: selectionStore,
+            overlayVisibility: overlayVisibility
+        )
         self.voiceTargetResolver = voiceTargetResolver ?? PickyVoiceTargetHitTestRegistry()
         self.pointerLocationProvider = pointerLocationProvider
         self.transcriptionProviderFactory = resolvedTranscriptionProviderFactory
@@ -243,14 +251,24 @@ final class CompanionManager: ObservableObject {
             appearanceStore: appearanceStore,
             fontScaleStore: fontScaleStore
         )
-        self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
-        self.screenContextTargetLabel = (selectionStore as? PickyScreenContextTargetLabelStoring)?.screenContextTargetLabel
+        self.overlayVisibility.windowEffects = PickyOverlayWindowEffects(
+            show: { [weak self] in
+                guard let self else { return }
+                guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
+                overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+            },
+            hide: { [weak self] in self?.overlayWindowManager.hideOverlay() },
+            fadeOutAndHide: { [weak self] in self?.overlayWindowManager.fadeOutAndHideOverlay() }
+        )
+        self.mainActivity.onLiveTurnPresenceChanged = { [weak self] in
+            self?.updateMainCancelPillPresentation()
+        }
         self.inkCaptureCoordinator.onStateChange = { [weak self] state in
             // Capture commands and the CGEvent tap both run on the main run loop.
             MainActor.assumeIsolated {
                 guard let self else { return }
                 if self.inkOverlayStore.update(state) {
-                    self.setLocalOverlayReason(.activeInkCapture, visible: state.isActive)
+                    self.overlayVisibility.setLocalReason(.activeInkCapture, visible: state.isActive)
                 }
             }
         }
@@ -336,9 +354,6 @@ final class CompanionManager: ObservableObject {
     /// hold the chips a short beat so they linger beside the response bubble and
     /// fade, instead of vanishing the instant the response appears. A fresh
     /// activity or a hard reset cancels it.
-    private var mainActivityClearTask: Task<Void, Never>?
-    private static let mainActivityLingerDelay: Duration = .seconds(2)
-    private var screenContextTargetCancellable: AnyCancellable?
     private var shortcutCaptureObserver: NSObjectProtocol?
     /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
     /// capture mode. While > 0 the global PTT monitor and Quick Input
@@ -353,11 +368,8 @@ final class CompanionManager: ObservableObject {
     private var permissionCancellables = Set<AnyCancellable>()
     private var mainConversationCancellable: AnyCancellable?
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
-    /// Scheduled hide for transient cursor mode — cancelled if the user
-    /// speaks again before the delay elapses.
     // Lifecycle task state is mutable only through CompanionManager's extensions.
     // Internal visibility permits those coherent responsibilities to stay in named files.
-    var transientHideTask: Task<Void, Never>?
     var responseStateTask: Task<Void, Never>?
     var deferredInteractionSpeechTask: Task<Void, Never>?
     var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
@@ -419,19 +431,12 @@ final class CompanionManager: ObservableObject {
     /// `setVoiceFollowUpSessionIDForCurrentUtterance(_:)`.
     private(set) var voiceFollowUpSessionIDForCurrentUtterance: String?
 
-    /// Whether the blue cursor overlay is currently visible on screen.
-    /// Used by the panel to show accurate status text ("Active" vs "Ready").
-    @Published private(set) var isOverlayVisible: Bool = false
-    @Published private(set) var overlayVisibilityReasons: Set<PickyOverlayReason> = []
     @Published private(set) var isQuickInputPanelVisible: Bool = false
     @Published private(set) var isWaitingForCursorResponse: Bool = false {
         didSet { updateMainCancelPillPresentation() }
     }
     let inkOverlayStore = PickyInkOverlayStore()
     var inkOverlayState: PickyInkOverlayState { inkOverlayStore.latestState }
-
-    var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
-    var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []
 
     /// Whether the cursor overlay windows should exist at all. Sourced from
     /// Settings → Cursor → "Show Picky cursor" (`cursor.showPiCursor`) — the
@@ -480,17 +485,14 @@ final class CompanionManager: ObservableObject {
         let enabled = settings.cursor.showPiCursor
         guard enabled != isCursorPreferenceEnabled else { return }
         isCursorPreferenceEnabled = enabled
-        transientHideTask?.cancel()
-        transientHideTask = nil
+        overlayVisibility.cancelTransientHide()
 
         if enabled {
             if permissions.allGranted {
-                setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
+                overlayVisibility.setLocalReason(.cursorPreferenceEnabled, visible: true)
             }
         } else {
-            localOverlayVisibilityReasons.removeAll()
-            interactionOverlayVisibilityReasons.removeAll()
-            syncOverlayVisibility(animatedHide: false)
+            overlayVisibility.clearAllReasons(animatedHide: false)
         }
     }
 
@@ -516,12 +518,12 @@ final class CompanionManager: ObservableObject {
         bindShortcutTransitions()
         bindQuickInputDoubleTap()
         bindFocusPickleShortcut()
-        bindScreenContextTarget()
+        screenContextTarget.bind()
         bindSettingsChanges()
         // Show the cursor as soon as all permissions are available and the
         // cursor preference is enabled.
         if permissions.allGranted && isCursorPreferenceEnabled {
-            setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
+            overlayVisibility.setLocalReason(.cursorPreferenceEnabled, visible: true)
         }
     }
 
@@ -539,7 +541,7 @@ final class CompanionManager: ObservableObject {
         inkCaptureCoordinator.teardownEventTap()
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
-        transientHideTask?.cancel()
+        overlayVisibility.cancelTransientHide()
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil
 
@@ -573,8 +575,7 @@ final class CompanionManager: ObservableObject {
         focusPickleShortcutCancellable?.cancel()
         mainQuestionPanelCancellable?.cancel()
         mainQuestionPanelCancellable = nil
-        screenContextTargetCancellable?.cancel()
-        screenContextTargetCancellable = nil
+        screenContextTarget.unbind()
         if let shortcutCaptureObserver {
             NotificationCenter.default.removeObserver(shortcutCaptureObserver)
             self.shortcutCaptureObserver = nil
@@ -610,7 +611,7 @@ final class CompanionManager: ObservableObject {
         permissions.becameAllGranted
             .sink { [weak self] in
                 guard let self, isCursorPreferenceEnabled else { return }
-                setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
+                overlayVisibility.setLocalReason(.cursorPreferenceEnabled, visible: true)
             }
             .store(in: &permissionCancellables)
     }
@@ -629,15 +630,6 @@ final class CompanionManager: ObservableObject {
     }
 
     // MARK: - Private
-
-    func setLocalOverlayReason(_ reason: PickyOverlayReason, visible: Bool) {
-        if visible {
-            localOverlayVisibilityReasons.insert(reason)
-        } else {
-            localOverlayVisibilityReasons.remove(reason)
-        }
-        syncOverlayVisibility()
-    }
 
     func shouldPassThroughInkMouseEvent(point: CGPoint, source: PickyInkCaptureSource) -> Bool {
         if screenContextControlHitTest(point) { return true }
@@ -662,7 +654,7 @@ final class CompanionManager: ObservableObject {
         }
         interactionCoordinator.accept(.agentAnnotationsClearedForUserInput, correlation: PickyInteractionCorrelation(source: .text))
         if inkCaptureCoordinator.isActive {
-            setLocalOverlayReason(.activeInkCapture, visible: true)
+            overlayVisibility.setLocalReason(.activeInkCapture, visible: true)
             return
         }
         if !inkCaptureCoordinator.begin(
@@ -670,56 +662,14 @@ final class CompanionManager: ObservableObject {
             origin: NSEvent.mouseLocation,
             priorCapture: priorCapture
         ) {
-            setLocalOverlayReason(.activeInkCapture, visible: false)
+            overlayVisibility.setLocalReason(.activeInkCapture, visible: false)
         }
     }
 
     private func cancelInkCapture() {
         failedQuickInputInkCapture = nil
         inkCaptureCoordinator.cancel()
-        setLocalOverlayReason(.activeInkCapture, visible: false)
-    }
-
-    private func setInteractionOverlayReasons(from phase: PickyOverlayPhase) {
-        switch phase {
-        case .hidden:
-            interactionOverlayVisibilityReasons = []
-        case .visible(let reasons):
-            interactionOverlayVisibilityReasons = reasons
-        case .hiding(_, let reason):
-            interactionOverlayVisibilityReasons = [reason]
-        }
-        syncOverlayVisibility()
-    }
-
-    func syncOverlayVisibility(animatedHide: Bool = true) {
-        let reasons = localOverlayVisibilityReasons.union(interactionOverlayVisibilityReasons)
-        overlayVisibilityReasons = reasons
-        transientHideTask?.cancel()
-        transientHideTask = nil
-
-        guard !reasons.isEmpty else {
-            if isOverlayVisible {
-                if animatedHide {
-                    overlayWindowManager.fadeOutAndHideOverlay()
-                } else {
-                    overlayWindowManager.hideOverlay()
-                }
-            }
-            isOverlayVisible = false
-            return
-        }
-
-        guard !isOverlayVisible else { return }
-        if PickyRuntimeEnvironment.allowsUserEnvironmentEffects {
-            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-        }
-        isOverlayVisible = true
-    }
-
-    var hasActiveTransientOverlayBlocker: Bool {
-        let blockers: Set<PickyOverlayReason> = [.activeVoiceInput, .waitingForVoiceResponse, .speakingResponse, .activePointerAnimation, .activeInkCapture, .screenContextTarget]
-        return !overlayVisibilityReasons.intersection(blockers).isEmpty
+        overlayVisibility.setLocalReason(.activeInkCapture, visible: false)
     }
 
     private func bindAudioPowerLevel() {
@@ -755,7 +705,7 @@ final class CompanionManager: ObservableObject {
             )
             reduceVoiceInteraction(.sttFailed(inputID: inputID, message: message))
             guard completeVoiceInteractionIfCurrent(inputID: inputID) else { return }
-            clearScreenContextTargetIfCurrent(targetSnapshot, includingSticky: true)
+            screenContextTarget.clearIfCurrent(targetSnapshot, includingSticky: true)
             setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "dictation-error")
             finishAwaitingAgentResponse(visibleText: message, spokenText: message)
 
@@ -1084,12 +1034,11 @@ final class CompanionManager: ObservableObject {
         // Lingering chips (deferred clear scheduled after turn settle) are a
         // purely visual afterglow — they must not keep the cancel pill alive
         // for an already-finished turn.
-        let hasLiveTurnActivities = mainActivityClearTask == nil && !mainLiveActivities.isEmpty
         let isMainTurnInFlight = PickyMainCancelPillPolicy.isMainTurnInFlight(
             hasPendingAgentResponse: pendingAgentResponseStartedAt != nil,
             voiceState: voiceState,
             isWaitingForCursorResponse: isWaitingForCursorResponse,
-            hasLiveActivities: hasLiveTurnActivities,
+            hasLiveActivities: mainActivity.hasLiveTurnActivities,
             hasActiveFollowUpTurn: activeMainTurnFollowUpSessionID != nil
         )
         // Only the panels that use ESC as their own close/cancel key may
@@ -1104,33 +1053,6 @@ final class CompanionManager: ObservableObject {
             isMainTurnInFlight: isMainTurnInFlight,
             isPickyPanelKeyWindow: escOwningPanelIsKey
         )
-    }
-
-    /// Defers clearing the cursor activity chips so they briefly linger beside the
-    /// response bubble, then fade. Cancelled by a fresh activity or a hard reset.
-    private func scheduleMainActivityClear() {
-        guard !mainLiveActivities.isEmpty else { return }
-        mainActivityClearTask?.cancel()
-        mainActivityClearTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.mainActivityLingerDelay)
-            guard !Task.isCancelled, let self else { return }
-            // Animate the removal so the chips fade via their `.transition(.opacity)`
-            // instead of cutting out. Only the presence changes here; chip layout is
-            // unaffected, so this does not reintroduce the height-bounce the chips
-            // otherwise guard against.
-            withAnimation(.easeOut(duration: 0.25)) {
-                self.mainLiveActivities = []
-            }
-            self.mainActivityClearTask = nil
-        }
-    }
-
-    /// Clears chips now and cancels any pending deferred clear (hard reset paths:
-    /// connection loss, new session).
-    func clearMainActivitiesImmediately() {
-        mainActivityClearTask?.cancel()
-        mainActivityClearTask = nil
-        mainLiveActivities = []
     }
 
     private func wireMainQuestionPanel() {
@@ -1148,15 +1070,13 @@ final class CompanionManager: ObservableObject {
                 guard PickyMainQuestionPanelPolicy.shouldClearPendingQuestion(after: answerError) else {
                     return PickyMainQuestionPanelAnswerError(message: answerError?.message ?? "Failed to answer question")
                 }
-                if self.mainPendingQuestion?.id == requestID {
-                    self.mainPendingQuestion = nil
-                }
+                self.mainActivity.clearPendingQuestion(id: requestID)
                 return nil
             } catch {
                 return error
             }
         }
-        mainQuestionPanelCancellable = $mainPendingQuestion
+        mainQuestionPanelCancellable = mainActivity.$pendingQuestion
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] request in
@@ -1175,26 +1095,6 @@ final class CompanionManager: ObservableObject {
             }
     }
 
-    private func bindScreenContextTarget() {
-        applyScreenContextTarget(selectionStore.screenContextTargetSessionID)
-        screenContextTargetCancellable = NotificationCenter.default.publisher(for: .pickyScreenContextTargetChanged)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                let sessionID = notification.userInfo?[PickyScreenContextTargetNotification.sessionIDKey] as? String
-                let label = notification.userInfo?[PickyScreenContextTargetNotification.labelKey] as? String
-                self?.applyScreenContextTarget(sessionID, label: label)
-            }
-    }
-
-    func applyScreenContextTarget(_ sessionID: String?, label: String? = nil) {
-        let normalized = normalizedVoiceFollowUpSessionID(sessionID)
-        let targetChanged = screenContextTargetSessionID != normalized
-        screenContextTargetSessionID = normalized
-        screenContextTargetLabel = normalized == nil
-            ? nil
-            : label ?? (targetChanged ? nil : screenContextTargetLabel)
-        setLocalOverlayReason(.screenContextTarget, visible: normalized != nil)
-    }
     private func handleQuickInputDoubleTap(_ event: QuickInputDoubleTapEvent) {
         // PTT-in-progress and the input panel are mutually exclusive: voice and
         // typed quick input share the same submission lane and we don't want a
@@ -1211,7 +1111,7 @@ final class CompanionManager: ObservableObject {
         quickInputPanelManager.updateRecentMessages(mainConversation.messages)
         quickInputPanelManager.presentPanel(
             near: event.mouseLocation,
-            recipient: PickyQuickInputRecipientPolicy.resolve(screenContextTargetSessionID: selectionStore.screenContextTargetSessionID, targetLabel: screenContextTargetLabel)
+            recipient: PickyQuickInputRecipientPolicy.resolve(screenContextTargetSessionID: selectionStore.screenContextTargetSessionID, targetLabel: screenContextTarget.targetLabel)
         )
     }
 
@@ -1360,12 +1260,11 @@ final class CompanionManager: ObservableObject {
             )
 
             // Cancel any pending transient hide so the overlay stays visible
-            transientHideTask?.cancel()
-            transientHideTask = nil
+            overlayVisibility.cancelTransientHide()
 
             // If the cursor is hidden, bring it back transiently for this interaction
             if !isCursorPreferenceEnabled {
-                setLocalOverlayReason(.activeVoiceInput, visible: true)
+                overlayVisibility.setLocalReason(.activeVoiceInput, visible: true)
             }
 
             // Cancel any in-progress response from a previous utterance.
@@ -1396,7 +1295,7 @@ final class CompanionManager: ObservableObject {
             }
         case .released:
             isPushToTalkShortcutHeld = false
-            setLocalOverlayReason(.activeVoiceInput, visible: false)
+            overlayVisibility.setLocalReason(.activeVoiceInput, visible: false)
             // Cancel the pending start task in case the user released the shortcut
             // before the async startPushToTalk had a chance to begin recording.
             // Without this, a quick press-and-release drops the release event and
@@ -1510,7 +1409,7 @@ final class CompanionManager: ObservableObject {
                 text: transcript,
                 visualDslEnabled: visualDslEnabled
             ))
-            clearScreenContextTargetIfCurrent(targetSessionID)
+            screenContextTarget.clearIfCurrent(targetSessionID)
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         case .followUpPickle(let targetSessionID):
             print("🎙️ Picky voice route — FOLLOW-UP Pickle=\(targetSessionID)")
@@ -1523,7 +1422,7 @@ final class CompanionManager: ObservableObject {
                 text: transcript,
                 visualDslEnabled: visualDslEnabled
             ))
-            clearScreenContextTargetIfCurrent(targetSessionID)
+            screenContextTarget.clearIfCurrent(targetSessionID)
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         case .submitToMain:
             print("🎙️ Picky voice route — SUBMIT Picky (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
@@ -1600,28 +1499,6 @@ final class CompanionManager: ObservableObject {
         PickyVoiceTranscriptRoutingPolicy.normalizedSessionID(sessionID)
     }
 
-    func clearScreenContextTargetIfCurrent(_ sessionID: String?) {
-        guard let sessionID, selectionStore.screenContextTargetSessionID == sessionID else { return }
-        // Normal completion never clears a sticky target. Hard failures use
-        // the revision-aware snapshot overload with `includingSticky: true`.
-        if selectionStore.screenContextTargetSticky { return }
-        selectionStore.setScreenContextTarget(sessionID: nil, sticky: false)
-        applyScreenContextTarget(nil)
-    }
-
-    func clearScreenContextTargetIfCurrent(
-        _ snapshot: PickyVoiceInputTargetSnapshot?,
-        includingSticky: Bool = false
-    ) {
-        guard case .pickle(let sessionID, .armed(_, let sticky, let revision)) = snapshot?.target,
-              (!sticky || includingSticky),
-              selectionStore.screenContextTargetSessionID == sessionID,
-              selectionStore.screenContextTargetRevision == revision
-        else { return }
-        selectionStore.setScreenContextTarget(sessionID: nil, sticky: false)
-        applyScreenContextTarget(nil)
-    }
-
     private func sendPickleMessageFromInput(
         targetSessionID: String,
         text: String,
@@ -1649,7 +1526,7 @@ final class CompanionManager: ObservableObject {
                 guard isCurrentArmedPickleDispatch(dispatch) else { return false }
                 directMessageError = L10n.t("error.directMessage.contextEmpty")
                 latestAgentSessionSummary = directMessageError
-                clearScreenContextTargetIfCurrent(targetSessionID)
+                screenContextTarget.clearIfCurrent(targetSessionID)
                 finishArmedPickleDispatch(dispatch)
                 return false
             }
@@ -1692,14 +1569,14 @@ final class CompanionManager: ObservableObject {
             if let rejection {
                 directMessageError = L10n.t("error.directMessage.sendFailed", rejection.message)
                 latestAgentSessionSummary = directMessageError
-                clearScreenContextTargetIfCurrent(targetSessionID)
+                screenContextTarget.clearIfCurrent(targetSessionID)
                 finishArmedPickleDispatch(dispatch)
                 return false
             }
             latestAgentSessionSummary = dispatchMode == .steer
                 ? L10n.t("directMessage.steerDelivered")
                 : L10n.t("directMessage.followUpDelivered")
-            clearScreenContextTargetIfCurrent(targetSessionID)
+            screenContextTarget.clearIfCurrent(targetSessionID)
             // Delivery is over. The Pickle owns the work from here, including
             // queued follow-ups; only its own Stop control should abort it.
             finishArmedPickleDispatch(dispatch)
@@ -1709,7 +1586,7 @@ final class CompanionManager: ObservableObject {
             let message = error.localizedDescription
             directMessageError = L10n.t("error.directMessage.sendFailed", message)
             latestAgentSessionSummary = directMessageError
-            clearScreenContextTargetIfCurrent(targetSessionID)
+            screenContextTarget.clearIfCurrent(targetSessionID)
             finishArmedPickleDispatch(dispatch)
             return false
         }
@@ -1743,7 +1620,7 @@ final class CompanionManager: ObservableObject {
         } else {
             effectiveDisplaySelectionSnapshot = displaySelectionSnapshot
         }
-        let recipient = quickInputRecipient ?? PickyQuickInputRecipientPolicy.resolve(screenContextTargetSessionID: selectionStore.screenContextTargetSessionID, targetLabel: screenContextTargetLabel)
+        let recipient = quickInputRecipient ?? PickyQuickInputRecipientPolicy.resolve(screenContextTargetSessionID: selectionStore.screenContextTargetSessionID, targetLabel: screenContextTarget.targetLabel)
         if source == .quickInput,
            case let .pickle(targetSessionID, _) = recipient {
             return await sendPickleMessageFromInput(
@@ -1809,7 +1686,7 @@ final class CompanionManager: ObservableObject {
             annotationSceneMonitor?.stop()
             activeAnnotationSceneIdentity = nil
         }
-        setInteractionOverlayReasons(from: projection.state.overlay)
+        overlayVisibility.applyInteractionPhase(projection.state.overlay)
 
         switch projection.state.output {
         case .showingTextReply:
@@ -2078,7 +1955,7 @@ final class CompanionManager: ObservableObject {
         let targetSnapshot = voiceInputTargetSnapshotsByInputID[inputID]
         if completeVoiceInteractionIfCurrent(inputID: inputID) {
             finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
-            clearScreenContextTargetIfCurrent(targetSnapshot)
+            screenContextTarget.clearIfCurrent(targetSnapshot)
             setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "voice-submission-failure")
         }
     }
@@ -2088,7 +1965,7 @@ final class CompanionManager: ObservableObject {
         let completedCurrentInput = completeVoiceInteractionIfCurrent(inputID: inputID)
         print("🎙️ Picky voice route — responseTask end; cancelled=\(Task.isCancelled) selfBeforeReset=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>")")
         if completedCurrentInput {
-            clearScreenContextTargetIfCurrent(targetSnapshot)
+            screenContextTarget.clearIfCurrent(targetSnapshot)
             setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "responseTask-end")
         }
         if !Task.isCancelled, pendingAgentResponseStartedAt == nil {
@@ -2146,8 +2023,8 @@ final class CompanionManager: ObservableObject {
     /// turn, queued speech, speaking output) but does NOT clear persisted messages or
     /// send a daemon command, so a later reconnect keeps the transcript intact.
     private func clearInteractionStateForConnectionLoss() {
-        clearMainActivitiesImmediately()
-        mainPendingQuestion = nil
+        mainActivity.clearImmediately()
+        mainActivity.setPendingQuestion(nil)
         annotationSceneMonitor?.stop()
         activeAnnotationSceneIdentity = nil
         interactionCoordinator.accept(
@@ -2172,8 +2049,8 @@ final class CompanionManager: ObservableObject {
                 correlation: PickyInteractionCorrelation(source: .system)
             )
             mainConversation.clearMessages()
-            clearMainActivitiesImmediately()
-            mainPendingQuestion = nil
+            mainActivity.clearImmediately()
+            mainActivity.setPendingQuestion(nil)
             latestAgentSessionSummary = "Started a new Messages session"
             return true
         } catch {
@@ -2267,7 +2144,7 @@ final class CompanionManager: ObservableObject {
             )
             applyQuickReplyEvent(reply)
         case .mainTurnSettled(let contextID):
-            scheduleMainActivityClear()
+            mainActivity.scheduleClear()
             applyMainTurnSettled(contextID: contextID)
         case .mainNarrationChunk(let chunk):
             applyMainNarrationChunk(chunk)
@@ -2293,18 +2170,14 @@ final class CompanionManager: ObservableObject {
             autoDispatchPickyDeepLinkIfPresent(in: message)
         case .mainActivityUpdated(let activity):
             guard let activity else {
-                scheduleMainActivityClear()
+                mainActivity.scheduleClear()
                 break
             }
-            mainActivityClearTask?.cancel()
-            mainActivityClearTask = nil
-            mainLiveActivities = PickyMainActivityStack.apply(activity, to: mainLiveActivities)
+            mainActivity.apply(activity)
         case .mainExtensionUiRequested(let request):
-            mainPendingQuestion = request
+            mainActivity.setPendingQuestion(request)
         case .mainExtensionUiCancelled(let requestId):
-            if mainPendingQuestion?.id == requestId {
-                mainPendingQuestion = nil
-            }
+            mainActivity.clearPendingQuestion(id: requestId)
         case .mainAgentSessionInfoUpdated(let sessionFilePath, let cwd):
             mainConversation.updateSessionInfo(sessionFilePath: sessionFilePath, cwd: cwd)
         case .mainAgentModelsSnapshot(let models):

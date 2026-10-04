@@ -494,6 +494,8 @@ struct BlueCursorView: View {
     let displayID: CGDirectDisplayID
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject private var inkOverlayStore: PickyInkOverlayStore
+    @ObservedObject private var screenContextTarget: PickyScreenContextTargetController
+    @ObservedObject private var mainActivity: PickyMainAgentActivityStore
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
     @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
@@ -525,6 +527,8 @@ struct BlueCursorView: View {
         self.displayID = displayID
         self.companionManager = companionManager
         _inkOverlayStore = ObservedObject(wrappedValue: companionManager.inkOverlayStore)
+        _screenContextTarget = ObservedObject(wrappedValue: companionManager.screenContextTarget)
+        _mainActivity = ObservedObject(wrappedValue: companionManager.mainActivity)
 
         // Seed the cursor position from the current mouse location so the
         // buddy doesn't flash at (0,0) before onAppear fires.
@@ -589,7 +593,7 @@ struct BlueCursorView: View {
 
     @ViewBuilder
     private var cursorMascot: some View {
-        if companionManager.screenContextTargetSessionID != nil {
+        if screenContextTarget.targetSessionID != nil {
             PickleTargetCursorMascotView(
                 style: cursorStyleStore.style,
                 tint: moodColor,
@@ -830,10 +834,8 @@ struct BlueCursorView: View {
             if buddyIsVisibleOnThisScreen {
                 cursorMascot
                     .shadow(
-                        color: moodColor.opacity(companionManager.screenContextTargetSessionID == nil ? cursorStyleStore.style.outerShadowOpacity : 0),
-                        radius: companionManager.screenContextTargetSessionID == nil ? CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier) : 0,
-                        x: 0,
-                        y: 0
+                        color: moodColor.opacity(screenContextTarget.targetSessionID == nil ? cursorStyleStore.style.outerShadowOpacity : 0),
+                        radius: screenContextTarget.targetSessionID == nil ? CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier) : 0
                     )
                     .scaleEffect(buddyFlightScale)
                     .opacity(cursorOpacity)
@@ -896,12 +898,8 @@ struct BlueCursorView: View {
         .onChange(of: companionManager.latestAgentSessionSummary) { _, _ in
             syncResponseBubbleLayout()
         }
-        .onChange(of: companionManager.mainLiveActivities) { _, _ in
-            syncMainActivityChipPresentation()
-        }
-        .onChange(of: companionManager.mainPendingQuestion) { _, _ in
-            syncMainActivityChipPresentation()
-        }
+        .onChange(of: mainActivity.liveActivities) { _, _ in syncMainActivityChipPresentation() }
+        .onChange(of: mainActivity.pendingQuestion) { _, _ in syncMainActivityChipPresentation() }
         .onChange(of: companionManager.voiceState) { _, _ in
             syncResponseBubbleLayout()
         }
@@ -933,7 +931,7 @@ struct BlueCursorView: View {
             && buddyNavigationMode == .followingCursor
             && activePointerID == nil
             && !inkOverlayStore.state.isActive
-            && companionManager.screenContextTargetSessionID == nil
+            && screenContextTarget.targetSessionID == nil
     }
 
     private var isShakeReactionActive: Bool {
@@ -952,8 +950,8 @@ struct BlueCursorView: View {
 
     private func syncMainActivityChipPresentation() {
         mainActivityChipPresentationCache.update(
-            activities: companionManager.mainLiveActivities,
-            isQuestionPending: companionManager.mainPendingQuestion != nil
+            activities: mainActivity.liveActivities,
+            isQuestionPending: mainActivity.pendingQuestion != nil
         )
     }
 
@@ -994,7 +992,7 @@ struct BlueCursorView: View {
     /// navigating (detectedElementScreenLocation is set but this screen isn't
     /// the one animating), hide the cursor so only one buddy is ever visible.
     private var buddyIsVisibleOnThisScreen: Bool {
-        guard cursorPreferencesStore.preferences.showPiCursor || inkOverlayStore.state.isActive || companionManager.screenContextTargetSessionID != nil else { return false }
+        guard cursorPreferencesStore.preferences.showPiCursor || inkOverlayStore.state.isActive || screenContextTarget.targetSessionID != nil else { return false }
         if companionManager.isQuickInputPanelVisible { return false }
         switch buddyNavigationMode {
         case .followingCursor:

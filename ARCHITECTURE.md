@@ -81,8 +81,6 @@ Picky/
   PickyAgentDaemonLauncher.swift         child-process daemon launch/stop
   PickyAgentDaemonPool.swift             per-Pickle daemon pool and ownership
   PickyAdvancedContext.swift             browser/window/selection providers
-  CompanionManager.swift                 voice pipeline orchestration and event presentation
-  CompanionManager+*.swift               voice/event lifecycle extensions (deferred ownership split)
   BuddyDictationManager.swift            audio capture + transcription lifecycle
   PickySessionViewModel.swift            HUD session state facade (deferred rename/split)
   PickyAskUserQuestionForm.swift         extension UI form rendering
@@ -118,6 +116,8 @@ Picky/
     CompanionScreenCaptureUtility.swift
 
   Companion/                             voice pipeline only (settings UI moved to Hub/Settings)
+    CompanionManager.swift               voice pipeline orchestration and event presentation
+    CompanionManager+*.swift             voice/event lifecycle extensions (one folder; state owners split out)
     CompanionVoicePolicies.swift         pure voice routing/eligibility policy
     PickyVoice*.swift                    voice input target and transcript routing policy
     PickyPermissionMonitor.swift         mic/speech/accessibility permission observation

@@ -72,7 +72,7 @@ tool names, debug logs, Pi-only prompts, or developer CLI output.
 
 - **Locations:**
   - `Picky/PickySessionViewModel.swift:908,945,995-1015,1841`
-  - `Picky/CompanionManager.swift:1220,1275,2101,2345,2411-2450,2743-2774`
+  - `Picky/Companion/CompanionManager.swift:1220,1275,2101,2345,2411-2450,2743-2774`
   - `Picky/BuddyDictationManager.swift:741,751`
   - `Picky/PickyAskUserQuestionForm.swift:111`
   - `Picky/Overlay/PickyAgentAnnotationOverlayView.swift:38-39`

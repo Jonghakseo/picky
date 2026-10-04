@@ -78,7 +78,7 @@ If the Dock or Conversation Header later needs to keep a visible state during re
 
 `screenContextTargetSessionID` currently controls:
 
-- PTT and Quick Input routing in `Picky/CompanionManager.swift`;
+- PTT and Quick Input routing in `Picky/Companion/CompanionManager.swift`;
 - one-shot/sticky armed presentation in the HUD;
 - cursor mascot selection, shadow, compact placement, and visibility in `Picky/Overlay/BlueCursorView.swift`.
 
@@ -486,7 +486,7 @@ Do not use `agentAnnotations.isEmpty`, dismiss-control visibility, or scene-reco
   - lifecycle and context-scoped drain rule
 - `Picky/Interaction/PickyInteractionProjection.swift`
   - Pickle mascot presentation projection
-- `Picky/CompanionManager.swift`
+- `Picky/Companion/CompanionManager.swift`
   - dispatch wiring and effect execution only
 - `Picky/Overlay/BlueCursorView.swift`
   - consume one cursor-mascot policy instead of direct armed checks
@@ -672,7 +672,7 @@ Residual validation risk:
 - Cursor response component contract: `design/COMPONENTS.md`
 - Reducer ownership and protocol rules: `docs/refactoring-principles.md`
 - Existing narration pipeline plan: `docs/archive/visual-narration-segment-plan.md`
-- Armed routing orchestration: `Picky/CompanionManager.swift`
+- Armed routing orchestration: `Picky/Companion/CompanionManager.swift`
 - Canonical interaction state: `Picky/Interaction/PickyInteractionState.swift`
 - Presentation reducer: `Picky/Interaction/PickyInteractionReducer.swift`
 - Cursor rendering: `Picky/Overlay/BlueCursorView.swift`

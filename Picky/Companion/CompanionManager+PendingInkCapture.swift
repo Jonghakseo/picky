@@ -14,12 +14,12 @@ extension CompanionManager {
         if let inputID, let capture, capture.hasVisibleInk {
             pendingInkCaptures.store(capture, for: inputID)
         }
-        setLocalOverlayReason(.activeInkCapture, visible: false)
+        overlayVisibility.setLocalReason(.activeInkCapture, visible: false)
     }
 
     func finishInkCaptureForDeferredTextSubmission() -> PickyInkCapture? {
         let capture = inkCaptureCoordinator.finish()
-        setLocalOverlayReason(.activeInkCapture, visible: false)
+        overlayVisibility.setLocalReason(.activeInkCapture, visible: false)
         return capture?.hasVisibleInk == true ? capture : nil
     }
 }

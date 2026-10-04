@@ -128,12 +128,12 @@ struct PickyCursorPreferenceTests {
         let manager = makeManager(initialSettings: settings(showPiCursor: true), ink: ink)
 
         ink.onStateChange(activeInkState)
-        try await waitUntil { manager.isOverlayVisible }
+        try await waitUntil { manager.overlayVisibility.isOverlayVisible }
 
         manager.applyCursorPreferenceFromSettings(settings(showPiCursor: false))
 
-        #expect(!manager.isOverlayVisible)
-        #expect(manager.overlayVisibilityReasons.isEmpty)
+        #expect(!manager.overlayVisibility.isOverlayVisible)
+        #expect(manager.overlayVisibility.overlayVisibilityReasons.isEmpty)
     }
 
     @Test func unrelatedSettingsSaveKeepsTransientOverlayVisible() async throws {
@@ -141,13 +141,13 @@ struct PickyCursorPreferenceTests {
         let manager = makeManager(initialSettings: settings(showPiCursor: false), ink: ink)
 
         ink.onStateChange(activeInkState)
-        try await waitUntil { manager.isOverlayVisible }
+        try await waitUntil { manager.overlayVisibility.isOverlayVisible }
 
         // Same preference value — must not tear down the in-flight overlay.
         manager.applyCursorPreferenceFromSettings(settings(showPiCursor: false))
 
-        #expect(manager.isOverlayVisible)
-        #expect(manager.overlayVisibilityReasons.contains(.activeInkCapture))
+        #expect(manager.overlayVisibility.isOverlayVisible)
+        #expect(manager.overlayVisibility.overlayVisibilityReasons.contains(.activeInkCapture))
     }
 
     @Test func enablingCursorPreferenceWithoutPermissionsStaysHidden() {
@@ -156,8 +156,8 @@ struct PickyCursorPreferenceTests {
 
         manager.applyCursorPreferenceFromSettings(settings(showPiCursor: true))
 
-        #expect(!manager.isOverlayVisible)
-        #expect(manager.overlayVisibilityReasons.isEmpty)
+        #expect(!manager.overlayVisibility.isOverlayVisible)
+        #expect(manager.overlayVisibility.overlayVisibilityReasons.isEmpty)
     }
 
     private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {

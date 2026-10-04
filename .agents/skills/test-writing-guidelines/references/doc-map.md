@@ -25,7 +25,7 @@
 | 대상 | 대표 구현 | 대표 테스트 |
 |---|---|---|
 | interaction state/effects | `Picky/Interaction/` | `PickyTests/PickyInteractionReducerTests.swift`, `PickyTests/PickyInteractionStateMachineTests.swift` |
-| voice/PTT | `Picky/CompanionManager.swift`, `Picky/Companion/Dictation/` | `PickyTests/PickyCompanionManagerTests.swift`, `PickyTests/BuddyDictationManagerTests.swift` |
+| voice/PTT | `Picky/Companion/CompanionManager.swift`, `Picky/Companion/Dictation/` | `PickyTests/PickyCompanionManagerTests.swift`, `PickyTests/BuddyDictationManagerTests.swift` |
 | agent client/protocol routing | `Picky/PickyAgentClient.swift`, `Picky/PickyAgentClientRouter.swift` | `PickyTests/PickyAgentClientTests.swift`, `PickyTests/PickyAgentClientRouterTests.swift` |
 | session/HUD | `Picky/PickySessionViewModel.swift`, `Picky/HUD/` | `PickyTests/PickySessionViewModelTests.swift`, `PickyTests/PickyConversationCardViewTests.swift` |
 | pointer overlay | `Picky/PointerOverlay/` | `PickyTests/PickyPointerOverlayResolverTests.swift` |

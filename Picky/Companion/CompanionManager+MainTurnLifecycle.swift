@@ -15,25 +15,12 @@ extension CompanionManager {
     /// fades out the overlay after a 1-second pause. Cancelled automatically
     /// if the user starts another push-to-talk interaction.
     func scheduleTransientHideIfNeeded() {
-        guard !isCursorPreferenceEnabled && isOverlayVisible else { return }
-        guard !hasActiveTransientOverlayBlocker else { return }
+        guard !isCursorPreferenceEnabled && overlayVisibility.isOverlayVisible else { return }
+        guard !overlayVisibility.hasActiveTransientBlocker else { return }
 
-        transientHideTask?.cancel()
-        transientHideTask = Task {
-            // Wait for pointing animation to finish (location is cleared
-            // when the buddy flies back to the cursor)
-            while detectedElementScreenLocation != nil || hasActiveTransientOverlayBlocker {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                guard !Task.isCancelled else { return }
-            }
-
-            // Pause 1s after everything finishes, then fade out
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled, !hasActiveTransientOverlayBlocker else { return }
-            localOverlayVisibilityReasons.removeAll()
-            interactionOverlayVisibilityReasons.removeAll()
-            syncOverlayVisibility(animatedHide: true)
-        }
+        overlayVisibility.scheduleTransientHide(whilePointingAnimationActive: { [weak self] in
+            self?.detectedElementScreenLocation != nil
+        })
     }
 
     // Shared with CompanionManager+SpeechLifecycle.swift; state remains owned by CompanionManager.
@@ -88,7 +75,7 @@ extension CompanionManager {
             hasPendingAgentResponse: hasPendingAgentResponse,
             voiceState: voiceState,
             isWaitingForCursorResponse: isWaitingForCursorResponse,
-            hasLiveActivities: !mainLiveActivities.isEmpty,
+            hasLiveActivities: !mainActivity.liveActivities.isEmpty,
             hasActiveFollowUpTurn: activeMainTurnFollowUpSessionID != nil
         )
         let shouldAbortFollowUpPickle = PickyMainCancelPillPolicy.shouldAbortFollowUpPickle(
@@ -174,7 +161,7 @@ extension CompanionManager {
         pendingAgentResponseStartedAt = nil
         // User-initiated cancellation: drop the chips immediately (and any
         // pending linger) — there is no settled response to linger beside.
-        clearMainActivitiesImmediately()
+        mainActivity.clearImmediately()
         activeMainTurnFollowUpSessionID = nil
         currentVoicePromptPreview = nil
         // This is the same abort reduction used by the voice interruption path.

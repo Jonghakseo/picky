@@ -954,7 +954,7 @@ SC01~SC08은 2단계의 필수 합격 기준이다. SC09·SC10은 각각 예약�
 [C08]: ../agentd/src/bootstrap.ts
 [C09]: ./test-desktop-isolation.md
 [C10]: ./perf-profiling.md
-[C11]: ../Picky/CompanionManager.swift
+[C11]: ../Picky/Companion/CompanionManager.swift
 [C12]: ../Picky/HUD/Conversation/PickyConversationComposerView.swift
 [C13]: ../Picky/HUD/Conversation/PickyArtifactTrayPresentation.swift
 [C14]: ../agentd/src/runtime/picky-runtime-contract-extension.ts

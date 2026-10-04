@@ -921,7 +921,7 @@ function checkFileSizeRatchet() {
   };
   const allowlist = new Map([
     ["Picky/PickySessionViewModel.swift", 2276],
-    ["Picky/CompanionManager.swift", 2485],
+    ["Picky/Companion/CompanionManager.swift", 2370],
     ["Picky/Interaction/PickyInteractionReducer.swift", 1370],
     ["Picky/Hub/Settings/CompanionPanelSettingsView.swift", 1982],
     ["Picky/Overlay/BlueCursorView.swift", 1700],
@@ -963,7 +963,7 @@ function swiftTypeGroupStem(relativePath) {
 }
 
 const SWIFT_TYPE_GROUP_RATCHET = new Map([
-  ["CompanionManager", 3976],
+  ["CompanionManager", 3850],
   ["PickySessionViewModel", 3036],
   ["PickyHUDOverlayManager", 2442],
   ["PickyHUDDockRailView", 1553],
@@ -1040,8 +1040,8 @@ function checkSwiftTypeGroupRatchet(swiftFiles, threshold) {
 
 function checkSwiftTypeGroupRatchetFixtures() {
   const cases = [
-    ["Picky/CompanionManager.swift", "CompanionManager"],
-    ["Picky/Overlay/CompanionManager+AgentAnnotationOverlay.swift", "CompanionManager"],
+    ["Picky/Companion/CompanionManager.swift", "CompanionManager"],
+    ["Picky/Companion/CompanionManager+AgentAnnotationOverlay.swift", "CompanionManager"],
     ["Picky/Sessions/Projection/PickySessionViewModel+DiffStore.swift", "PickySessionViewModel"],
     ["Picky/HUD/PickyHUDView.swift", "PickyHUDView"],
   ];

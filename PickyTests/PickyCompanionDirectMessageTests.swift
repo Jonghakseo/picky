@@ -184,7 +184,7 @@ struct PickyCompanionDirectMessageTests {
         #expect(client.submissions.first?.transcript == "hello from cursor")
         #expect(manager.voiceState == .processing)
         #expect(manager.isWaitingForCursorResponse)
-        #expect(manager.overlayVisibilityReasons.contains(.waitingForVoiceResponse))
+        #expect(manager.overlayVisibility.overlayVisibilityReasons.contains(.waitingForVoiceResponse))
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "cursor reply")))
         try await waitUntil { speechProvider.spokenUtterances == ["cursor reply"] }

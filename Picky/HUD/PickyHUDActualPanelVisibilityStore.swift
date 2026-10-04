@@ -32,6 +32,18 @@ struct PickyHUDActualPanelVisibilitySnapshot: Equatable {
 @MainActor
 final class PickyHUDActualPanelVisibilityStore: ObservableObject {
     @Published private(set) var snapshot = PickyHUDActualPanelVisibilitySnapshot()
+    private var openedSessionIDsByDisplayID: [CGDirectDisplayID: String] = [:]
+
+    /// A retained open card on an ordered-out HUD is not being shown.
+    func isConversationCardVisible(sessionID: String) -> Bool {
+        openedSessionIDsByDisplayID.contains { displayID, openedSessionID in
+            openedSessionID == sessionID && snapshot.isVisible(for: displayID)
+        }
+    }
+
+    func setOpenedSession(_ sessionID: String?, for displayID: CGDirectDisplayID) {
+        openedSessionIDsByDisplayID[displayID] = sessionID
+    }
 
     func isVisible(for displayID: CGDirectDisplayID?) -> Bool {
         snapshot.isVisible(for: displayID)
@@ -54,6 +66,7 @@ final class PickyHUDActualPanelVisibilityStore: ObservableObject {
     }
 
     func removePanel(for displayID: CGDirectDisplayID) {
+        openedSessionIDsByDisplayID[displayID] = nil
         var next = snapshot
         next.removePanel(for: displayID)
         guard next != snapshot else { return }
@@ -61,6 +74,7 @@ final class PickyHUDActualPanelVisibilityStore: ObservableObject {
     }
 
     func removeAllPanels() {
+        openedSessionIDsByDisplayID.removeAll()
         guard snapshot != PickyHUDActualPanelVisibilitySnapshot() else { return }
         snapshot = PickyHUDActualPanelVisibilitySnapshot()
     }

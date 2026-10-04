@@ -17,15 +17,18 @@ final class PickyCompletionNotificationCoordinator {
     }
 
     private let notificationCenter: PickyNotificationDelivering
+    private let isConversationCardVisible: (String) -> Bool
     private let deliverMain: MainDelivery
     private var acceptedChannels = Set<String>()
     private var mainDeliveriesInFlight: [String: MainDeliveryAttempt] = [:]
 
     init(
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
+        isConversationCardVisible: @escaping (String) -> Bool = { _ in false },
         deliverMain: @escaping MainDelivery
     ) {
         self.notificationCenter = notificationCenter
+        self.isConversationCardVisible = isConversationCardVisible
         self.deliverMain = deliverMain
     }
 
@@ -39,7 +42,10 @@ final class PickyCompletionNotificationCoordinator {
             status: envelope.status
         )
 
-        if channels.contains(.macOS), accept(channel: "macos", completionId: envelope.completionId) {
+        // Consume the channel even when the card is open so a bridge retry
+        // after closing it cannot emit a delayed banner.
+        if channels.contains(.macOS), accept(channel: "macos", completionId: envelope.completionId),
+           !isConversationCardVisible(envelope.sessionID) {
             let notification = PickyCompletionNotificationRoutingPolicy.macOSNotification(for: envelope)
             notificationCenter.deliver(
                 title: notification.title,

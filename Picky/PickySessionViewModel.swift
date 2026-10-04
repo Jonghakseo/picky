@@ -95,6 +95,7 @@ final class PickySessionListViewModel: ObservableObject {
     let pickleRuntimeDefaultsStore: PickySettingsStore
     let pickleRuntimeDefaultsPersistence: PickySettingsPersistenceCoordinator
     private let notificationCenter: PickyNotificationDelivering
+    private let isConversationCardVisible: (String) -> Bool
     private let notificationPreferencesProvider: PickyNotificationPreferencesProviding
     private let selectionStore: PickySessionSelectionStoring
     let archiveStore: PickySessionArchiveStoring
@@ -188,6 +189,7 @@ final class PickySessionListViewModel: ObservableObject {
     init(
         client: any PickyAgentClient,
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
+        isConversationCardVisible: @escaping (String) -> Bool = { _ in false },
         notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyNotificationPreferencesStore(),
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         archiveStore: PickySessionArchiveStoring = PickyUserDefaultsSessionArchiveStore.shared,
@@ -217,6 +219,7 @@ final class PickySessionListViewModel: ObservableObject {
         // A ViewModel owns exactly one registry backend for its lifetime.
         self.sessionProjectionStorage = sessionProjectionStorage ?? PickyRegistrySessionProjectionStorage()
         self.notificationCenter = notificationCenter
+        self.isConversationCardVisible = isConversationCardVisible
         self.notificationPreferencesProvider = notificationPreferencesProvider
         self.selectionStore = selectionStore
         self.archiveStore = archiveStore
@@ -2250,6 +2253,8 @@ final class PickySessionListViewModel: ObservableObject {
 
         guard !deliveredNotificationKeys.contains(notification.key) else { return }
         deliveredNotificationKeys.insert(notification.key)
+        // Suppressed alerts remain consumed across subsequent projection updates.
+        guard !isConversationCardVisible(session.id) else { return }
         notificationCenter.deliver(title: notification.title, body: notification.body, identifier: notification.key)
     }
 

@@ -34,6 +34,57 @@ struct PickyCompletionNotificationCoordinatorTests {
         }
     }
 
+    @Test func openCardSuppressesCompletionEvenWhenMainDeliveryRetriesAfterClosing() async throws {
+        let notifications = PickyNoopNotificationCenter()
+        let visibility = PickyHUDActualPanelVisibilityStore()
+        visibility.setVisible(true, for: 1)
+        visibility.setOpenedSession("session-1", for: 1)
+        var mainDeliveries: [PickyCompletionNotificationEnvelope] = []
+        var shouldFail = true
+        let coordinator = PickyCompletionNotificationCoordinator(
+            notificationCenter: notifications,
+            isConversationCardVisible: { visibility.isConversationCardVisible(sessionID: $0) },
+            deliverMain: { envelope in
+                if shouldFail { throw TestError.failed }
+                mainDeliveries.append(envelope)
+            }
+        )
+        let envelope = completionEnvelope(notifyMain: true, notifyMacOS: true)
+
+        await #expect(throws: TestError.self) { try await coordinator.route(envelope) }
+        #expect(notifications.delivered.isEmpty)
+
+        visibility.setOpenedSession(nil, for: 1)
+        shouldFail = false
+        _ = try await coordinator.route(envelope)
+        _ = try await coordinator.route(envelope)
+        #expect(notifications.delivered.isEmpty)
+        #expect(mainDeliveries == [envelope])
+
+        _ = try await coordinator.route(completionEnvelope(
+            notifyMain: true, notifyMacOS: true, completionID: "session-1:5"
+        ))
+        #expect(notifications.delivered.map(\.identifier) == ["session-1:5"])
+    }
+
+    @Test func anotherOpenCardOrHiddenHUDDoesNotSuppressCompletion() async throws {
+        for (openedSessionID, isVisible) in [("other", true), ("session-1", false)] {
+            let visibility = PickyHUDActualPanelVisibilityStore()
+            visibility.setVisible(isVisible, for: 1)
+            visibility.setOpenedSession(openedSessionID, for: 1)
+            let notifications = PickyNoopNotificationCenter()
+            let coordinator = PickyCompletionNotificationCoordinator(
+                notificationCenter: notifications,
+                isConversationCardVisible: { visibility.isConversationCardVisible(sessionID: $0) },
+                deliverMain: { _ in }
+            )
+
+            _ = try await coordinator.route(completionEnvelope(notifyMain: false, notifyMacOS: true))
+
+            #expect(notifications.delivered.map(\.identifier) == ["session-1:4"])
+        }
+    }
+
     @Test func deduplicatesAcceptedChannelsButRetriesFailedMainDelivery() async throws {
         let notifications = PickyNoopNotificationCenter()
         var attempts = 0
@@ -111,10 +162,11 @@ struct PickyCompletionNotificationCoordinatorTests {
     private func completionEnvelope(
         notifyMain: Bool,
         notifyMacOS: Bool,
-        summary: String? = "Finished cleanly"
+        summary: String? = "Finished cleanly",
+        completionID: String = "session-1:4"
     ) -> PickyCompletionNotificationEnvelope {
         PickyCompletionNotificationEnvelope(
-            completionId: "session-1:4",
+            completionId: completionID,
             sessionID: "session-1",
             title: "Build report",
             status: .completed,

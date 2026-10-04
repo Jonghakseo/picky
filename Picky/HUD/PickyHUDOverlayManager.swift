@@ -201,6 +201,7 @@ final class PickyHUDOverlayManager {
     func minimizeDock(displayID: CGDirectDisplayID) {
         guard var entry = panelsByDisplayID[displayID], !entry.placement.isMinimized else { return }
         tearDownDockSurface(displayID: displayID)
+        actualPanelVisibilityStore.setOpenedSession(nil, for: displayID)
         externalDockGeometryByDisplayID.removeValue(forKey: displayID)
         dockGroupListGeometryByDisplayID.removeValue(forKey: displayID)
         entry.visibleChromeFrames = []
@@ -548,7 +549,9 @@ final class PickyHUDOverlayManager {
         let closeRequests = PassthroughSubject<Void, Never>()
         hudPanel.onCloseRequested = { closeRequests.send() }
         actualPanelVisibilityStore.track(hudPanel, for: displayID)
+        let reportActualVisibility = hudPanel.onActualVisibilityChanged
         hudPanel.onActualVisibilityChanged = { [weak self] isVisible in
+            reportActualVisibility?(isVisible)
             guard !isVisible else { return }
             Task { @MainActor in self?.tearDownDockSurface(displayID: displayID) }
         }
@@ -654,6 +657,7 @@ final class PickyHUDOverlayManager {
             },
             dockGroupListFocusStore: dockGroupListFocusStore,
             onDockGroupListGeometryChange: { [weak self] badgeFrames, interactionFrames, railFrame, isCommandHintVisible, openedSessionID in
+                self?.actualPanelVisibilityStore.setOpenedSession(openedSessionID, for: displayID)
                 self?.handleDockGroupListGeometryChange(
                     displayID: displayID,
                     badgeFrames: badgeFrames,

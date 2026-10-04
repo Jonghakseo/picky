@@ -161,9 +161,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         notificationPreferencesProvider: notificationPreferencesStore,
         supportsSessionProjectionV2: true
     )
+    private lazy var hudActualPanelVisibilityStore = PickyHUDActualPanelVisibilityStore()
     /// Completion effects are app-owned. The durable child envelope already
     /// contains the selected Main Picky and macOS channels.
     private lazy var completionNotificationCoordinator = PickyCompletionNotificationCoordinator(
+        isConversationCardVisible: { [weak self] sessionID in
+            self?.hudActualPanelVisibilityStore.isConversationCardVisible(sessionID: sessionID) ?? false
+        },
         deliverMain: { [weak self] envelope in
             guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
             try await self.hudAgentClientRouter.deliverCompletionToPrimary(envelope)
@@ -173,6 +177,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// observe the same session list instance.
     private lazy var hudSessionViewModel = PickySessionListViewModel(
         client: hudAgentClientRouter,
+        isConversationCardVisible: { [weak self] sessionID in
+            self?.hudActualPanelVisibilityStore.isConversationCardVisible(sessionID: sessionID) ?? false
+        },
         notificationPreferencesProvider: notificationPreferencesStore,
         recentPickleFolderStore: PickySettingsRecentPickleFolderStore(settingsStore: settingsStore),
         dockLayoutStore: PickySettingsDockLayoutStore(settingsStore: settingsStore),
@@ -185,6 +192,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         appearanceStore: appearanceStore,
         fontScaleStore: fontScaleStore,
         visibilityStore: hudVisibilityStore,
+        actualPanelVisibilityStore: hudActualPanelVisibilityStore,
         settingsStore: settingsStore,
         voiceTargetHitTestRegistry: voiceTargetHitTestRegistry
     )

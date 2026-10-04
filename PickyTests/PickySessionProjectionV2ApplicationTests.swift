@@ -118,6 +118,70 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(viewModel.unreadSessionIDs.isEmpty)
     }
 
+    @Test(arguments: [PickySessionStatus.failed, .waiting_for_input])
+    func openCardConsumesLiveAlertsWithoutDelayingThemUntilAfterClose(status: PickySessionStatus) throws {
+        let visibility = PickyHUDActualPanelVisibilityStore()
+        visibility.setVisible(true, for: 1)
+        visibility.setOpenedSession("session-a", for: 1)
+        let notifications = PickyNoopNotificationCenter()
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = makeViewModel(
+            client: FakePickyAgentClient(), storage: storage,
+            notificationCenter: notifications,
+            isConversationCardVisible: { visibility.isConversationCardVisible(sessionID: $0) }
+        )
+        apply(snapshot(sessionID: "session-a", title: "Work", status: .running, revision: 1), to: viewModel)
+        let request = status == .waiting_for_input
+            ? #"{"id":"request-1","sessionId":"session-a","method":"confirm","prompt":"Continue?","createdAt":"2026-08-25T00:00:01.000Z"}"#
+            : "null"
+        let alertMutations = #"[{"type":"metaPatch","patch":{"status":"\#(status.rawValue)"}},{"type":"extensionUiRequestSet","request":\#(request)}]"#
+
+        apply(transaction(sessionID: "session-a", baseRevision: 1, revision: 2, mutations: alertMutations), to: viewModel)
+        #expect(notifications.delivered.isEmpty)
+        #expect(storage.session(id: "session-a")?.status == status)
+        if status == .waiting_for_input {
+            #expect(viewModel.sessionCard(sessionID: "session-a")?.pendingExtensionUiRequest?.id == "request-1")
+        }
+
+        visibility.setOpenedSession(nil, for: 1)
+        apply(transaction(sessionID: "session-a", baseRevision: 2, revision: 3, mutations: alertMutations), to: viewModel)
+        apply(snapshot(sessionID: "session-a", title: "Recovered", status: status, revision: 4,
+                       extraProjectionFields: #", "pendingExtensionUiRequest":\#(request)"#), to: viewModel)
+        #expect(notifications.delivered.isEmpty)
+
+        apply(transaction(sessionID: "session-a", baseRevision: 4, revision: 5,
+                          mutations: #"[{"type":"metaPatch","patch":{"status":"running"}},{"type":"extensionUiRequestSet","request":null}]"#), to: viewModel)
+        let nextAlert = alertMutations.replacingOccurrences(of: "request-1", with: "request-2")
+        apply(transaction(sessionID: "session-a", baseRevision: 5, revision: 6, mutations: nextAlert), to: viewModel)
+        let expectedIdentifier = status == .failed ? "session-a:failed" : "session-a:waiting:request-2"
+        #expect(notifications.delivered.map(\.identifier) == [expectedIdentifier])
+    }
+
+    @Test(arguments: [PickySessionStatus.failed, .waiting_for_input])
+    func anotherOpenCardOrHiddenHUDStillDeliversLiveAlerts(status: PickySessionStatus) throws {
+        for (openedSessionID, isVisible) in [("other", true), ("session-a", false)] {
+            let visibility = PickyHUDActualPanelVisibilityStore()
+            visibility.setVisible(isVisible, for: 1)
+            visibility.setOpenedSession(openedSessionID, for: 1)
+            let notifications = PickyNoopNotificationCenter()
+            let viewModel = makeViewModel(
+                client: FakePickyAgentClient(), storage: PickyRegistrySessionProjectionStorage(),
+                notificationCenter: notifications,
+                isConversationCardVisible: { visibility.isConversationCardVisible(sessionID: $0) }
+            )
+            apply(snapshot(sessionID: "session-a", title: "Work", status: .running, revision: 1), to: viewModel)
+            let request = status == .waiting_for_input
+                ? #"{"id":"request-1","sessionId":"session-a","method":"confirm","prompt":"Continue?","createdAt":"2026-08-25T00:00:01.000Z"}"#
+                : "null"
+            apply(transaction(sessionID: "session-a", baseRevision: 1, revision: 2,
+                              mutations: #"[{"type":"metaPatch","patch":{"status":"\#(status.rawValue)"}},{"type":"extensionUiRequestSet","request":\#(request)}]"#), to: viewModel)
+
+            let expectedIdentifier = status == .failed ? "session-a:failed" : "session-a:waiting:request-1"
+            #expect(notifications.delivered.map(\.identifier) == [expectedIdentifier])
+            #expect(viewModel.sessionCard(sessionID: "session-a")?.status == status)
+        }
+    }
+
     @Test func acceptedPrimaryBootstrapCompletionPrunesOnlyExplicitlyRemovedMembershipAndUnblocksLoading() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let archiveStore = V2ArchiveStore()
@@ -1451,6 +1515,7 @@ struct PickySessionProjectionV2ApplicationTests {
         client: FakePickyAgentClient,
         storage: PickyRegistrySessionProjectionStorage,
         notificationCenter: PickyNotificationDelivering = PickyNoopNotificationCenter(),
+        isConversationCardVisible: @escaping (String) -> Bool = { _ in false },
         notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyStubNotificationPreferences(),
         selectionStore: PickySessionSelectionStoring = V2SelectionStore(),
         archiveStore: PickySessionArchiveStoring = V2ArchiveStore(),
@@ -1460,6 +1525,7 @@ struct PickySessionProjectionV2ApplicationTests {
         PickySessionListViewModel(
             client: client,
             notificationCenter: notificationCenter,
+            isConversationCardVisible: isConversationCardVisible,
             notificationPreferencesProvider: notificationPreferencesProvider,
             selectionStore: selectionStore,
             archiveStore: archiveStore,

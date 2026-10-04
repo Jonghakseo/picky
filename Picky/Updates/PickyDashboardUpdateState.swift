@@ -96,6 +96,24 @@ struct PickyDashboardUpdateState: Equatable {
         releaseNotesURL = nil
     }
 
+    enum UpdateButtonAction: Equatable {
+        case checkForUpdates
+        case installReadyUpdate
+    }
+
+    /// What the "Check for Updates" buttons do, or nil to disable them.
+    /// Once an update is downloaded, Sparkle stalls its update cycle and keeps
+    /// `canCheckForUpdates` false until quit, so the buttons install the ready
+    /// update instead. This holds even after "Later" hid the dashboard card.
+    func updateButtonAction(sparkleCanCheckForUpdates: Bool) -> UpdateButtonAction? {
+        switch phase {
+        case .readyToInstall: return .installReadyUpdate
+        case .installing: return nil
+        case .none, .needsUpdateWindow, .downloadFailed:
+            return sparkleCanCheckForUpdates ? .checkForUpdates : nil
+        }
+    }
+
     mutating func dismiss() {
         guard phase != .installing, let version else { return }
         dismissedVersion = version

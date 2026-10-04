@@ -26,6 +26,23 @@ struct PickyDashboardUpdateStateTests {
         #expect(state.card == .ready)
     }
 
+    @Test func updateButtonInstallsReadyUpdateWhileSparkleBlocksChecks() {
+        var state = PickyDashboardUpdateState()
+        #expect(state.updateButtonAction(sparkleCanCheckForUpdates: true) == .checkForUpdates)
+        #expect(state.updateButtonAction(sparkleCanCheckForUpdates: false) == nil)
+
+        // Sparkle keeps canCheckForUpdates false until quit once the update is
+        // downloaded; the button must stay usable, even after "Later".
+        state.updateReadyToInstall(version: "0.9.0", releaseNotesURL: nil)
+        state.dismiss()
+        #expect(state.updateButtonAction(sparkleCanCheckForUpdates: false) == .installReadyUpdate)
+
+        _ = state.beginInstall()
+        #expect(state.updateButtonAction(sparkleCanCheckForUpdates: false) == nil)
+        state.installDidNotRelaunch()
+        #expect(state.updateButtonAction(sparkleCanCheckForUpdates: false) == .installReadyUpdate)
+    }
+
     @Test func laterHidesOnlyThatVersion() {
         var state = PickyDashboardUpdateState()
         state.updateReadyToInstall(version: "0.9.0", releaseNotesURL: nil)

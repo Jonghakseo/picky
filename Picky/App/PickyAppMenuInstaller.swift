@@ -8,13 +8,12 @@
 //
 
 import AppKit
-import Sparkle
 
 @MainActor
 enum PickyAppMenuInstaller {
     static func install(
         on app: NSApplication? = nil,
-        updaterController: SPUStandardUpdaterController? = nil
+        updaterController: PickyUpdaterController? = nil
     ) {
         let app = app ?? .shared
         app.mainMenu = makeMainMenu(appName: resolvedAppName(), updaterController: updaterController)
@@ -22,7 +21,7 @@ enum PickyAppMenuInstaller {
 
     static func makeMainMenu(
         appName: String = "Picky",
-        updaterController: SPUStandardUpdaterController? = nil
+        updaterController: PickyUpdaterController? = nil
     ) -> NSMenu {
         let mainMenu = NSMenu(title: appName)
         // Keep the app menu key-equivalent-free; quitting stays behind the explicit
@@ -73,15 +72,14 @@ enum PickyAppMenuInstaller {
         return menu
     }
 
-    private static func makeAppMenu(updaterController: SPUStandardUpdaterController?) -> NSMenu {
+    private static func makeAppMenu(updaterController: PickyUpdaterController?) -> NSMenu {
         let menu = NSMenu(title: "App")
-        // Sparkle ships SPUStandardUpdaterController.checkForUpdates(_:) as an
-        // IBAction. Wiring it directly here lets Sparkle handle validation
-        // (disabling the item while a check is in progress) automatically.
-        if let controller = updaterController {
+        // Same action as the Hub update buttons: check for updates, or install
+        // an already downloaded update while Sparkle blocks new checks.
+        if let controller = updaterController, controller.isAvailable {
             let item = NSMenuItem(
                 title: L10n.t("menu.checkUpdates"),
-                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                action: #selector(PickyUpdaterController.runUpdateButtonAction(_:)),
                 keyEquivalent: ""
             )
             item.target = controller

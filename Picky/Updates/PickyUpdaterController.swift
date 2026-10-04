@@ -114,6 +114,27 @@ final class PickyUpdaterController: NSObject, ObservableObject {
         controller.checkForUpdates(nil)
     }
 
+    var updateButtonAction: PickyDashboardUpdateState.UpdateButtonAction? {
+        guard isAvailable else { return nil }
+        return dashboardUpdate.updateButtonAction(sparkleCanCheckForUpdates: canCheckForUpdates)
+    }
+
+    var canRunUpdateButtonAction: Bool { updateButtonAction != nil }
+
+    /// Shared action for the Hub sidebar and Settings update buttons.
+    func runUpdateButtonAction() {
+        switch updateButtonAction {
+        case .checkForUpdates: checkForUpdates()
+        case .installReadyUpdate: installReadyUpdateNow()
+        case nil: break
+        }
+    }
+
+    /// App menu entry point; `validateMenuItem` keeps it in sync with the Hub buttons.
+    @objc func runUpdateButtonAction(_ sender: Any?) {
+        runUpdateButtonAction()
+    }
+
     func updateAutomaticChecksPreference(_ enabled: Bool) {
         standardController?.updater.automaticallyChecksForUpdates = enabled
     }
@@ -174,6 +195,13 @@ final class PickyUpdaterController: NSObject, ObservableObject {
         let raw = normalizedReleaseChannel(releaseChannel)
         guard !raw.isEmpty else { return "Unknown" }
         return raw.prefix(1).uppercased() + raw.dropFirst()
+    }
+}
+
+extension PickyUpdaterController: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(runUpdateButtonAction(_:)) else { return true }
+        return canRunUpdateButtonAction
     }
 }
 

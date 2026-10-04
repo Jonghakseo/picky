@@ -236,7 +236,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
         PickyRuntimeEnvironment.userDefaults.register(defaults: ["NSInitialToolTipDelay": 0])
         UNUserNotificationCenter.current().delegate = self
-        PickyAppMenuInstaller.install(updaterController: updaterController.standardController)
+        PickyAppMenuInstaller.install(updaterController: updaterController)
         // Touch the lazy property so Sparkle starts checking on launch when
         // the build channel allows it. Updater stays inert on alpha builds.
         _ = updaterController

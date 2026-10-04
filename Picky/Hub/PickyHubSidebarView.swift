@@ -166,8 +166,8 @@ struct PickyHubSidebarFooter: View {
                     title: "hub.settings.checkUpdates.action",
                     foreground: PickyHubTheme.Colors.textSecondary,
                     focusID: "checkUpdates",
-                    isEnabled: updaterController.canCheckForUpdates,
-                    action: updaterController.checkForUpdates
+                    isEnabled: updaterController.canRunUpdateButtonAction,
+                    action: updaterController.runUpdateButtonAction
                 )
             }
 

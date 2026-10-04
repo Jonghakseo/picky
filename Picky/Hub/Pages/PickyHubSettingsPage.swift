@@ -620,7 +620,7 @@ private struct PickyHubGeneralControls: View {
                 .disabled(!updaterController.isAvailable || !updaterController.allowsAutomaticUpdates)
             }
             PickyHubSettingsRow(title: "hub.settings.checkUpdates", detail: "hub.settings.checkUpdates.detail") {
-                PickyHubButton(title: "hub.settings.checkUpdates.action", role: .secondary, isEnabled: updaterController.isAvailable && updaterController.canCheckForUpdates, action: updaterController.checkForUpdates)
+                PickyHubButton(title: "hub.settings.checkUpdates.action", role: .secondary, isEnabled: updaterController.canRunUpdateButtonAction, action: updaterController.runUpdateButtonAction)
             }
         }
     }

@@ -37,6 +37,7 @@
   "hud.composer.voice.failed": "받아쓰지 못했어요",
   "hud.composer.voice.failed.hint": "입력한 글은 그대로예요 · 다시 눌러 말해 주세요",
   "hud.composer.voice.listening": "듣는 중 %@",
+  "hud.composer.voice.permission": "마이크 권한이 필요해요",
   "hud.composer.voice.transcribing": "받아쓰는 중",
   "hud.composer.voice.transcribing.hint": "끝나면 입력란에 넣어요",
   "hud.conversation.dateDivider.today": "오늘",

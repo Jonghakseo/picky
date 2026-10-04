@@ -37,6 +37,7 @@
   "hud.composer.voice.failed": "Couldn't transcribe",
   "hud.composer.voice.failed.hint": "Your text is unchanged · press the mic to try again",
   "hud.composer.voice.listening": "Listening %@",
+  "hud.composer.voice.permission": "Microphone access needed",
   "hud.composer.voice.transcribing": "Transcribing",
   "hud.composer.voice.transcribing.hint": "Adds to the input when done",
   "hud.conversation.dateDivider.today": "Today",

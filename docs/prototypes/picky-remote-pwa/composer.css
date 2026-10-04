@@ -352,6 +352,27 @@
   color: var(--ds-color-text-tertiary);
 }
 
+/* Phone only: failure and permission hints carry the recovery step, so they wrap
+ * under the primary text instead of truncating. The HUD keeps one line and
+ * truncates the hint (PickyComposerVoiceInputViews.swift, lineLimit(1)). */
+.voice-row.is-failed {
+  align-items: flex-start;
+}
+
+.voice-row.is-failed .voice-icon {
+  height: 1lh;
+  align-items: center;
+}
+
+.voice-text {
+  min-width: 0;
+}
+
+.voice-text .voice-hint {
+  margin-left: var(--ds-space-1);
+  white-space: normal;
+}
+
 .voice-cancel {
   margin-left: auto;
   padding: 0 var(--ds-space-1);

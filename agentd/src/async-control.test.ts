@@ -274,6 +274,74 @@ it("stops only the response over the wire and leaves background tasks running", 
   }
 });
 
+it("stops background tasks over the wire while a response-only abort is still pending", async () => {
+  const f = await fixture(); await f.addTask();
+  f.handle.isStreaming = true;
+  let releaseResponseAbort!: () => void;
+  const responseAbortGate = new Promise<void>((resolve) => { releaseResponseAbort = resolve; });
+  let responseAbortEntered = false;
+  const originalAbort = f.handle.abort.bind(f.handle);
+  vi.spyOn(f.handle, "abort").mockImplementation(async () => {
+    // Only the first runtime abort waits; a full stop can still stop the model.
+    if (!responseAbortEntered) {
+      responseAbortEntered = true;
+      await responseAbortGate;
+    }
+    f.handle.isStreaming = false;
+    await originalAbort();
+  });
+  const server = new AgentdServer({ port: 0, token: "overlapping-abort", supervisor: f.supervisor });
+  const port = await server.start();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?token=overlapping-abort`);
+  const events: EventEnvelope[] = [];
+  const sentCommandIDs: string[] = [];
+  ws.on("message", (data) => events.push(JSON.parse(String(data)) as EventEnvelope));
+  try {
+    await once(ws, "open");
+    ws.send(JSON.stringify({ id: "abort-response", protocolVersion: PROTOCOL_VERSION, type: "abort", sessionId: "session-1", scope: "response" }));
+    sentCommandIDs.push("abort-response");
+    await vi.waitFor(() => expect(responseAbortEntered).toBe(true));
+
+    ws.send(JSON.stringify({ id: "abort-all", protocolVersion: PROTOCOL_VERSION, type: "abort", sessionId: "session-1" }));
+    sentCommandIDs.push("abort-all");
+    let fullStopFrameReceived = false;
+    ws.once("pong", () => { fullStopFrameReceived = true; });
+    // Pong proves receipt of the preceding abort frame without requiring one
+    // command to finish before the other, so serialized execution is valid too.
+    ws.ping();
+    await vi.waitFor(() => expect(fullStopFrameReceived).toBe(true));
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "ack", commandId: "abort-response" }));
+    releaseResponseAbort();
+
+    await vi.waitFor(() => {
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "asyncTaskCommandResult", result: expect.objectContaining({ requestId: "abort-all", outcome: "settled" }) }),
+        expect.objectContaining({ type: "ack", commandId: "abort-all" }),
+        expect.objectContaining({ type: "ack", commandId: "abort-response" }),
+      ]));
+    });
+    expect(events.filter((event) => event.type === "error")).toEqual([]);
+    expect(f.calls).toContainEqual(expect.objectContaining({ action: "cancel", taskId: "task-1" }));
+    const stopped = await f.store.loadReadOnly("session-1");
+    expect(stopped?.asyncTasks?.[0]).toMatchObject({ execution: "cancelled", presence: "settled" });
+    expect(stopped?.completionTickets?.[0]?.state).toBe("suppressed");
+    expect(stopped?.asyncControl?.admissionState).toBe("closed");
+    expect(stopped?.asyncWorkSummary?.activeRootCount).toBe(0);
+  } finally {
+    releaseResponseAbort();
+    try {
+      // Finish every request before afterEach removes the temporary store.
+      await vi.waitFor(() => {
+        for (const commandId of sentCommandIDs) {
+          expect(events.some((event) => (event.type === "ack" || event.type === "error") && event.commandId === commandId)).toBe(true);
+        }
+      });
+    } finally {
+      ws.close(); await server.stop();
+    }
+  }
+});
+
 it("persists an unknown delivery outcome on lost close ACK while still stopping observed execution", async () => {
   const f = await fixture({ noReply: "closeAdmission" }); await f.addTask(false);
   const result = await f.supervisor.asyncControls.stop("session-1", "lost-close");

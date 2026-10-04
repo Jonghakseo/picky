@@ -1,4 +1,4 @@
-import { aggregateAsyncWork, asyncOperationResolved, hasAsyncExecutionObligations, isAsyncTracked } from "../domain/async-work-aggregate.js";
+import { aggregateAsyncWork, asyncOperationResolved, hasAsyncExecutionObligations, isAsyncTracked, isPreviousOwnerAsyncTask } from "../domain/async-work-aggregate.js";
 import { randomUUID } from "node:crypto";
 import type { AsyncTaskCommand, AsyncTaskCommandResult, AsyncTaskOwner } from "../domain/async-task-contract.js";
 import type { PickyAgentSession } from "../protocol.js";
@@ -116,7 +116,8 @@ export class AsyncControlCoordinator {
 
   /** Runs the journaled reconcile, then reopens admission only if the owner is still quiescent. */
   private async reopenIfQuiescent(sessionId: string, lease: boolean): Promise<boolean> {
-    const recovered = await this.execute(this.internalCommand(sessionId, "reconcileAsyncControl"));
+    // A user input lease accepts that work lost with a previous runtime stays unknown.
+    const recovered = await this.execute(this.internalCommand(sessionId, "reconcileAsyncControl", lease));
     if (recovered.outcome !== "settled") throw new Error(recovered.reason ?? recovered.outcome);
     let reopened = false;
     await this.queue.run(sessionId, async () => {
@@ -124,7 +125,7 @@ export class AsyncControlCoordinator {
       if (current.asyncControl?.releasePrepared) throw new Error("Cancel prepared runtime release before input");
       // Startup reopen and a user input can race; whoever loses joins the already open admission.
       if (current.asyncControl?.admissionState !== "open") {
-        const command = this.internalCommand(sessionId, "reconcileAsyncControl");
+        const command = this.internalCommand(sessionId, "reconcileAsyncControl", lease);
         const handle = this.assertOwner(command);
         this.assertQuiescent(command, handle);
         await handle.asyncTasks!.reopenAdmission();
@@ -498,7 +499,8 @@ export class AsyncControlCoordinator {
       if (control?.admissionState !== "closed" || control.controlGeneration <= command.controlGeneration) throw error;
       closureFailure = error;
     }
-    const tasks = handle.asyncTasks!.snapshot().tasks;
+    // No live provider can control a previous runtime's tasks; user input only acknowledges them.
+    const tasks = handle.asyncTasks!.snapshot().tasks.filter((task) => !acknowledgesPreviousOwner(command) || !isPreviousOwnerAsyncTask(task, command.runtimeInstanceId));
     const cancellations = await Promise.allSettled(tasks.filter((task) => task.taskId === task.rootTaskId && tasks.some((member) => sameAsyncOwner(member, task) && member.rootTaskId === task.taskId && (member.presence !== "settled" || ["queued", "running", "cancelling"].includes(member.execution)))).map(async (root) => {
       const cancelled = await handle.asyncTasks!.control(root, "cancel", { taskId: root.taskId });
       if (!["settled", "accepted"].includes(cancelled.outcome)) throw new ControlFailure("blocked_cleanup", cancelled.reason ?? "Async execution cleanup is not settled");
@@ -542,7 +544,7 @@ export class AsyncControlCoordinator {
   private assertPhysicalQuiescence(command: Command, handle: RuntimeSessionHandle, session = this.deps.read(command.sessionId)): void {
     this.owners(command, handle);
     const ownLease = command.type === "prepareAsyncReplacement" && command.inputLease ? 1 : 0;
-    if (this.deps.runtimeBlocked(command.sessionId) || this.deps.handle(command.sessionId) !== handle || (this.inputLeases.get(command.sessionId) ?? 0) > ownLease || this.deps.pendingInput(command.sessionId) || runtimeBusy(handle, session) || outstandingState(session, command.requestId, provesRecovery(command))) {
+    if (this.deps.runtimeBlocked(command.sessionId) || this.deps.handle(command.sessionId) !== handle || (this.inputLeases.get(command.sessionId) ?? 0) > ownLease || this.deps.pendingInput(command.sessionId) || runtimeBusy(handle, session) || outstandingState(session, command.requestId, provesRecovery(command), acknowledgesPreviousOwner(command) ? command.runtimeInstanceId : undefined)) {
       throw new ControlFailure("blocked_cleanup", "Async work still has execution, delivery or control obligations");
     }
   }
@@ -568,9 +570,14 @@ function runtimeBusy(handle: RuntimeSessionHandle, session: PickyAgentSession): 
     || !!session.pendingExtensionUiRequest || !!session.queuedSteers?.length || !!session.queuedFollowUps?.length
     || handle.getSteeringMessages().length > 0 || handle.getFollowUpMessages().length > 0;
 }
-function outstandingState(session: PickyAgentSession, requestId: string, recovering = false): boolean {
-  return hasAsyncExecutionObligations(session.asyncTasks ?? [])
-    || session.completionTickets?.some((ticket) => !["handled", "suppressed"].includes(ticket.state)) === true
+/** Only explicit user input may continue past work a previous runtime left unknown. */
+function acknowledgesPreviousOwner(command: Command): boolean {
+  return command.type === "reconcileAsyncControl" && command.inputLease === true;
+}
+function outstandingState(session: PickyAgentSession, requestId: string, recovering = false, acknowledgedRuntimeInstanceId?: string): boolean {
+  const current = <T extends { runtimeInstanceId: string }>(entry: T) => acknowledgedRuntimeInstanceId === undefined || entry.runtimeInstanceId === acknowledgedRuntimeInstanceId;
+  return hasAsyncExecutionObligations((session.asyncTasks ?? []).filter((task) => acknowledgedRuntimeInstanceId === undefined || !isPreviousOwnerAsyncTask(task, acknowledgedRuntimeInstanceId)))
+    || session.completionTickets?.some((ticket) => current(ticket) && !["handled", "suppressed"].includes(ticket.state)) === true
     || session.asyncControl?.operations.some((operation) => operation.requestId !== requestId && !asyncOperationResolved(session, operation.operationId) && (operation.outcome === "accepted" || !recovering && ["blocked_cleanup", "blocked_delivery"].includes(operation.outcome))) === true;
 }
 

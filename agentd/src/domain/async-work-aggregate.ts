@@ -151,6 +151,14 @@ export function asyncExecutionIsActive(task: AsyncTask): boolean {
 export function hasAsyncExecutionObligations(tasks: readonly AsyncTask[]): boolean {
   return tasks.some((task) => asyncExecutionIsActive(task) || task.presence === "unknown");
 }
+/**
+ * Work a previous runtime left unsettled. Runtime instance IDs never repeat, so no live
+ * provider can stop or settle it; only a late settlement may still arrive. It must not
+ * fence explicit user input forever, but it still withholds release and deletion approval.
+ */
+export function isPreviousOwnerAsyncTask(task: AsyncTask, currentRuntimeInstanceId: string): boolean {
+  return task.runtimeInstanceId !== currentRuntimeInstanceId && (asyncExecutionIsActive(task) || task.presence === "unknown");
+}
 export function asyncOperationResolved(session: PickyAgentSession, operationId: string): boolean {
   const record = session.asyncControlJournal?.find((entry) => entry.result.operationId === operationId);
   return !!record?.resolvedBy && session.asyncControlJournal?.some((entry) => entry.result.operationId === record.resolvedBy && entry.result.outcome === "settled") === true;

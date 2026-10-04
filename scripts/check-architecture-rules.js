@@ -967,7 +967,7 @@ function checkFileSizeRatchet() {
     ts: 1500,
   };
   const allowlist = new Map([
-    ["Picky/PickySessionViewModel.swift", 2280],
+    ["Picky/PickySessionViewModel.swift", 2255],
     ["Picky/Companion/CompanionManager.swift", 2370],
     ["Picky/Interaction/PickyInteractionReducer.swift", 1370],
     ["Picky/Hub/Settings/CompanionPanelSettingsView.swift", 1982],
@@ -1011,7 +1011,7 @@ function swiftTypeGroupStem(relativePath) {
 
 const SWIFT_TYPE_GROUP_RATCHET = new Map([
   ["CompanionManager", 3817],
-  ["PickySessionViewModel", 3008],
+  ["PickySessionViewModel", 2980],
   ["PickyHUDOverlayManager", 2442],
   ["PickyHUDDockRailView", 1553],
   // Already under the 1500 group threshold. The pin stays so the group cannot

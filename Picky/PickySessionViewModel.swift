@@ -94,8 +94,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// They intentionally do not mutate a resumed session's Pi configuration.
     let pickleRuntimeDefaultsStore: PickySettingsStore
     let pickleRuntimeDefaultsPersistence: PickySettingsPersistenceCoordinator
-    private let notificationCenter: PickyNotificationDelivering
-    private let isConversationCardVisible: (String) -> Bool
+    private let notificationController: PickySessionNotificationController
     private let notificationPreferencesProvider: PickyNotificationPreferencesProviding
     private let selectionStore: PickySessionSelectionStoring
     let archiveStore: PickySessionArchiveStoring
@@ -174,7 +173,6 @@ final class PickySessionListViewModel: ObservableObject {
     private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var screenContextTargetCancellable: AnyCancellable?
     private var composerDraftAppendCancellable: AnyCancellable?
-    private var deliveredNotificationKeys = Set<String>()
     private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
     private var hasExplicitSelection = false
     let sessionProjectionStorage: any PickySessionProjectionStorage
@@ -218,8 +216,11 @@ final class PickySessionListViewModel: ObservableObject {
         self.pickleRuntimeDefaultsPersistence = pickleRuntimeDefaultsPersistence ?? .shared(for: pickleRuntimeDefaultsStore)
         // A ViewModel owns exactly one registry backend for its lifetime.
         self.sessionProjectionStorage = sessionProjectionStorage ?? PickyRegistrySessionProjectionStorage()
-        self.notificationCenter = notificationCenter
-        self.isConversationCardVisible = isConversationCardVisible
+        self.notificationController = PickySessionNotificationController(
+            notificationCenter: notificationCenter,
+            isConversationCardVisible: isConversationCardVisible,
+            preferencesProvider: notificationPreferencesProvider
+        )
         self.notificationPreferencesProvider = notificationPreferencesProvider
         self.selectionStore = selectionStore
         self.archiveStore = archiveStore
@@ -1604,8 +1605,7 @@ final class PickySessionListViewModel: ObservableObject {
         sessionProjectionTransitions.forgetSessions([sessionID])
         unreadSessionIDs.remove(sessionID)
         pendingDoneFlashSessionIDs.remove(sessionID)
-        deliveredNotificationKeys.remove("\(sessionID):completed")
-        deliveredNotificationKeys.remove("\(sessionID):failed")
+        notificationController.clearTerminalNotifications(sessionID: sessionID)
         todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
         subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
@@ -1678,7 +1678,7 @@ final class PickySessionListViewModel: ObservableObject {
         releasedArchivedChildSessionIDs.remove(sessionID)
         unreadSessionIDs.remove(sessionID)
         pendingDoneFlashSessionIDs.remove(sessionID)
-        deliveredNotificationKeys = deliveredNotificationKeys.filter { !$0.hasPrefix("\(sessionID):") }
+        notificationController.forgetSession(sessionID: sessionID)
         todoProgressExpandedBySessionID.removeValue(forKey: sessionID)
         subagentInvocationExpandedBySessionID.removeValue(forKey: sessionID)
         slashCommandController.clear(sessionID: sessionID)
@@ -2241,37 +2241,11 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func markNotificationDeliveredIfNeeded(for session: SessionCard) {
-        guard let notification = notification(for: session) else { return }
-        deliveredNotificationKeys.insert(notification.key)
+        notificationController.markDeliveredIfNeeded(for: session)
     }
 
     func deliverNotificationIfNeeded(for session: SessionCard) {
-        guard let notification = notification(for: session) else {
-            resetTerminalNotificationKeysIfNeeded(for: session)
-            return
-        }
-
-        guard !deliveredNotificationKeys.contains(notification.key) else { return }
-        deliveredNotificationKeys.insert(notification.key)
-        // Suppressed alerts remain consumed across subsequent projection updates.
-        guard !isConversationCardVisible(session.id) else { return }
-        notificationCenter.deliver(title: notification.title, body: notification.body, identifier: notification.key)
-    }
-
-    private func notification(for session: SessionCard) -> PickySessionNotificationPolicy.Notification? {
-        PickySessionNotificationPolicy.notification(
-            for: PickySessionNotificationPolicy.Input(card: session),
-            preferences: notificationPreferencesProvider.notificationPreferences
-        )
-    }
-
-    private func resetTerminalNotificationKeysIfNeeded(for session: SessionCard) {
-        deliveredNotificationKeys.subtract(
-            PickySessionNotificationPolicy.terminalDedupKeysToReset(
-                sessionID: session.id,
-                status: session.status
-            )
-        )
+        notificationController.deliverIfNeeded(for: session)
     }
 }
 

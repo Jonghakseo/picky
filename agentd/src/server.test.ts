@@ -362,11 +362,12 @@ describe("AgentdServer", () => {
     v2.ws.close();
   });
 
-  it("delivers terminalSessionSyncOutcome to unsubscribed and subscribed sockets", async () => {
+  it("delivers terminalSessionSyncOutcome to desktop sockets whether or not they subscribed to the v2 projection", async () => {
     const v1 = await connectWithHello();
+    await registerDesktopApp(v1.ws, "cmd-register-terminal-outcome-v1");
 
     const v2 = await connectWithHello();
-    await registerV2(v2.ws, "cmd-register-terminal-outcome-v2");
+    await registerDesktopApp(v2.ws, "cmd-register-terminal-outcome-v2", { projection: true });
 
     const v1Outcome = waitForEvent(v1.ws, "terminalSessionSyncOutcome");
     const v2Outcome = waitForEvent(v2.ws, "terminalSessionSyncOutcome");
@@ -389,6 +390,67 @@ describe("AgentdServer", () => {
     await expect(v2Outcome).resolves.toMatchObject(expectedOutcome);
     v1.ws.close();
     v2.ws.close();
+  });
+
+  it("withholds a desktop-only broadcast from a CLI-style socket that never registered, without withholding its own reply", async () => {
+    const cli = await connectWithHello();
+    trackEvents(cli.ws);
+
+    supervisor.emit("pointerOverlayRequested", pointerOverlayRequest("pointer-core-gate"));
+    // The reply is unicast and sent after the broadcast, so receiving it proves
+    // the overlay event was dropped rather than merely delayed.
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-list-after-overlay", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
+
+    await expect(waitForEvent(cli.ws, "ack")).resolves.toMatchObject({ commandId: "cmd-cli-list-after-overlay" });
+    expect(eventBuffers.get(cli.ws)?.filter((event) => event.type === "mainMessagesSnapshot")).toHaveLength(1);
+    expect(eventBuffers.get(cli.ws)?.filter((event) => event.type === "pointerOverlayRequested")).toEqual([]);
+    cli.ws.close();
+  });
+
+  it("delivers desktop-only broadcasts to a socket registered with the capabilities Picky.app sends", async () => {
+    const app = await connectWithHello();
+    await registerDesktopApp(app.ws, "cmd-register-overlay-app");
+
+    const overlay = waitForEvent(app.ws, "pointerOverlayRequested");
+    const narration = waitForEvent(app.ws, "mainNarrationChunk");
+    supervisor.emit("pointerOverlayRequested", pointerOverlayRequest("pointer-desktop-gate"));
+    supervisor.emit("mainNarrationChunk", { contextId: "context-narration-gate", text: "안녕", replyKind: "main" });
+
+    await expect(overlay).resolves.toMatchObject({ type: "pointerOverlayRequested", request: { id: "pointer-desktop-gate" } });
+    await expect(narration).resolves.toMatchObject({ type: "mainNarrationChunk", contextId: "context-narration-gate" });
+    app.ws.close();
+  });
+
+  it("honors an explicit core profile over the desktop capabilities the same socket registered", async () => {
+    const declaredCore = await connectWithHello();
+    await registerDesktopApp(declaredCore.ws, "cmd-register-declared-core", { profile: "core" });
+    const app = await connectWithHello();
+    await registerDesktopApp(app.ws, "cmd-register-declared-core-peer");
+
+    const delivered = waitForEvent(app.ws, "pointerOverlayRequested");
+    supervisor.emit("pointerOverlayRequested", pointerOverlayRequest("pointer-declared-core"));
+    declaredCore.ws.send(JSON.stringify({ id: "cmd-declared-core-list", protocolVersion: PROTOCOL_VERSION, type: "listMainMessages" }));
+
+    await expect(delivered).resolves.toMatchObject({ request: { id: "pointer-declared-core" } });
+    await expect(waitForEvent(declaredCore.ws, "ack")).resolves.toMatchObject({ commandId: "cmd-declared-core-list" });
+    expect(eventBuffers.get(declaredCore.ws)?.filter((event) => event.type === "pointerOverlayRequested")).toEqual([]);
+    declaredCore.ws.close();
+    app.ws.close();
+  });
+
+  it("keeps quickReply on every connected socket because the CLI waits for it", async () => {
+    const cli = await connectWithHello();
+    const app = await connectWithHello();
+    await registerDesktopApp(app.ws, "cmd-register-quick-reply-app");
+
+    const cliReply = waitForEvent(cli.ws, "quickReply");
+    const appReply = waitForEvent(app.ws, "quickReply");
+    supervisor.emit("quickReply", "context-quick-reply-gate", "답장", { replyKind: "main" });
+
+    await expect(cliReply).resolves.toMatchObject({ type: "quickReply", contextId: "context-quick-reply-gate", text: "답장" });
+    await expect(appReply).resolves.toMatchObject({ type: "quickReply", contextId: "context-quick-reply-gate" });
+    cli.ws.close();
+    app.ws.close();
   });
 
   it("delivers non-blocking editor text requests as standalone events without replaying interactive UI", async () => {
@@ -1622,6 +1684,7 @@ describe("AgentdServer", () => {
 
   it("broadcasts progressive visual narration segment events in supervisor order", async () => {
     const { ws } = await connectWithHello();
+    await registerDesktopApp(ws, "cmd-register-visual-narration");
     const identity = {
       contextId: "context-visual",
       contextGeneration: 1,
@@ -2909,6 +2972,24 @@ async function registerV2(ws: WebSocket, id: string): Promise<void> {
   await waitForEvent(ws, "ack");
 }
 
+/** The capability set Picky.app registers today, which the daemon classifies as the desktop profile. */
+const PICKY_APP_CAPABILITIES = ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"];
+
+async function registerDesktopApp(
+  ws: WebSocket,
+  id: string,
+  options: { projection?: boolean; profile?: "core" | "desktop" } = {},
+): Promise<void> {
+  ws.send(JSON.stringify({
+    id,
+    protocolVersion: PROTOCOL_VERSION,
+    type: "registerAppCapabilities",
+    capabilities: options.projection ? [...PICKY_APP_CAPABILITIES, "sessionProjectionV2"] : PICKY_APP_CAPABILITIES,
+    ...(options.profile ? { profile: options.profile } : {}),
+  }));
+  await waitForEvent(ws, "ack");
+}
+
 const eventBuffers = new WeakMap<WebSocket, EventEnvelope[]>();
 
 function trackEvents(ws: WebSocket): void {
@@ -2980,6 +3061,26 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 async function waitForRegisteredCapability(capability: string): Promise<void> {
   const visibleServer = server as unknown as { firstClientWithCapability: (capability: string) => WebSocket | undefined };
   await waitUntil(() => Boolean(visibleServer.firstClientWithCapability(capability)));
+}
+
+function pointerOverlayRequest(id: string): {
+  id: string;
+  contextId: string;
+  contextGeneration: number;
+  x: number;
+  y: number;
+  screenBounds: { x: number; y: number; width: number; height: number };
+  screenshotSize: { width: number; height: number };
+} {
+  return {
+    id,
+    contextId: `context-${id}`,
+    contextGeneration: 1,
+    x: 10,
+    y: 20,
+    screenBounds: { x: 0, y: 0, width: 100, height: 100 },
+    screenshotSize: { width: 100, height: 100 },
+  };
 }
 
 function context(text: string): PickyContextPacket {

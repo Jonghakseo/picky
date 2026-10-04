@@ -227,6 +227,8 @@ The app-daemon protocol is owned in both languages:
 
 Protocol changes must update fixtures and both Swift/TypeScript tests in the same PR.
 
+Each connection has a client profile, `core` or `desktop` (`agentd/src/domain/client-profile.ts`). Core is platform-neutral session control, which is all the `picky` CLI needs; desktop additionally owns overlay windows, cursor narration/TTS, and the embedded terminal. A client declares its profile in the optional `profile` field of `registerAppCapabilities`; a client that omits it is classified `desktop` when it registers an app bridge capability and `core` otherwise, and a client that never registers is `core`. The daemon drops events in `DESKTOP_ONLY_EVENT_TYPES` for core connections. Only `broadcast` is gated: unicast replies to a requesting socket always go through, so a CLI never loses the answer to its own command. A new event defaults to core until it is added to that set.
+
 How a client folds a v2 projection stream into session state is pinned separately by `contracts/projection/conformance/`: ordered snapshot/transaction scenarios with the per-section state they must produce, including the `unavailable` vs loaded-but-empty distinction a flattened session card erases. The Swift storage reducer (`Picky/Sessions/PickyRegistrySessionProjectionStorage+V2.swift`) is normative; `agentd/src/domain/session-projection-reducer.ts` is the TypeScript reference a web client reuses instead of re-reading the protocol, and its test also asserts that `buildSessionProjectionMutations` round-trips through it. The matching Swift conformance test is a following step.
 
 Session status values:

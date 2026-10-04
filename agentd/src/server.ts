@@ -14,6 +14,7 @@ import { SessionProjectionV2Broadcaster } from "./application/session-projection
 import { assertProtocolVersion } from "./application/protocol-version-guard.js";
 import { isSessionProjectionEventType } from "./application/session-projection-v2-broadcaster.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
+import { canDeliverEventToProfile, DEFAULT_CLIENT_PROFILE, resolveClientProfile, type PickyClientProfile } from "./domain/client-profile.js";
 import { runtimeControlCommandLogFields } from "./domain/runtime-control-log-fields.js";
 import { sanitizeForJson } from "./domain/sanitize-for-json.js";
 import { logAgentd } from "./local-log.js";
@@ -77,6 +78,8 @@ export class AgentdServer {
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
+  /** Rendering profile per socket; drives which broadcast events a client is eligible for. */
+  private clientProfiles = new WeakMap<WebSocket, PickyClientProfile>();
   /** Sockets that registered `sessionProjectionV2`; only they receive session projection frames. */
   private readonly projectionSubscribers = new Set<WebSocket>();
   private readonly projectionRecoveryRequestGate = new ProjectionRecoveryRequestGate();
@@ -297,6 +300,7 @@ export class AgentdServer {
       this.v2ProjectionBroadcaster.unregister(ws); this.projectionSubscribers.delete(ws); this.clients.delete(ws);
       const lostCapabilities = this.appCapabilities.get(ws);
       this.appCapabilities.delete(ws);
+      this.clientProfiles.delete(ws);
       // Pickle handoffs are intentionally NOT rejected on socket close: the app
       // may be mid-creation across a transient ws drop, and its completion send
       // waits for reconnect and arrives on the new socket (matched by requestId).
@@ -489,7 +493,7 @@ export class AgentdServer {
         this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(session) });
       },
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
-      registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id),
+      registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id, cmd.profile),
       ...settingsCommandHandlers({ socket: ws, settingsControl: this.settingsControl, send: (socket, event) => { this.send(socket, event); } }),
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
@@ -617,14 +621,16 @@ export class AgentdServer {
     if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
     return this.options.piOAuth;
   }
-  private async registerAppCapabilities(ws: WebSocket, capabilities: string[], bootstrapId: string): Promise<void> {
+  private async registerAppCapabilities(ws: WebSocket, capabilities: string[], bootstrapId: string, declaredProfile?: PickyClientProfile): Promise<void> {
     const subscribes = capabilities.includes("sessionProjectionV2");
     const wasSubscribed = this.projectionSubscribers.has(ws);
     if (wasSubscribed && !subscribes) {
       logAgentd("app capability registration rejected", { reason: "sessionProjectionV2 subscription cannot be dropped by re-registration" });
       throw new Error("Socket already subscribed to sessionProjectionV2; re-registration must keep the capability");
     }
-    this.appCapabilities.set(ws, new Set(capabilities)); logAgentd("app capabilities registered", { capabilities: capabilities.join(","), projection: subscribes ? 1 : 0 });
+    const profile = resolveClientProfile({ declaredProfile, capabilities });
+    this.clientProfiles.set(ws, profile);
+    this.appCapabilities.set(ws, new Set(capabilities)); logAgentd("app capabilities registered", { capabilities: capabilities.join(","), profile, projection: subscribes ? 1 : 0 });
     if (!subscribes || wasSubscribed) return;
     this.projectionSubscribers.add(ws);
     await this.v2ProjectionBroadcaster.register(ws, this.options.supervisor, bootstrapId);
@@ -947,15 +953,20 @@ export class AgentdServer {
   private broadcast(event: EventPayload): void {
     if (this.clients.size === 0) return;
     let bytes = 0;
-    let type: string | undefined;
     let clients = 0;
     for (const client of this.clients) {
+      // Events that only a macOS surface can render (overlays, narration, the
+      // embedded terminal) never reach a core client such as the `picky` CLI.
+      if (!canDeliverEventToProfile(event.type, this.clientProfile(client))) continue;
       const sent = this.send(client, event);
       bytes = sent.bytes;
-      type = sent.type;
       clients += 1;
     }
-    logAgentd("event broadcast", { type, clients, bytes });
+    logAgentd("event broadcast", { type: event.type, clients, bytes });
+  }
+
+  private clientProfile(ws: WebSocket): PickyClientProfile {
+    return this.clientProfiles.get(ws) ?? DEFAULT_CLIENT_PROFILE;
   }
 
   private broadcastToCapability(capability: string, event: EventPayload): void {

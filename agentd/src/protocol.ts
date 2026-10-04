@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AgentCycleSchema, AsyncWorkSummarySchema, AsyncTaskSchema, CompletionTicketSchema, AsyncTaskDetailSchema, AsyncControlStateSchema, AsyncTaskCommandSchema, AsyncTaskCommandResultSchema, ReleaseApprovalSchema } from "./domain/async-task-contract.js";
 import { ANNOTATION_TEXT_MAX_LENGTH } from "./domain/annotation-validation.js";
+import { PICKY_CLIENT_PROFILES } from "./domain/client-profile.js";
 import { CommandBaseSchema, EventBaseSchema, isoTimestamp, PROTOCOL_VERSION } from "./protocol-base.js";
 import { settingsCommandSchemas, settingsEventSchemas } from "./features/settings/schema.js";
 import { packageCommandSchemas, packageEventSchemas } from "./features/package/schema.js";
@@ -631,6 +632,12 @@ export const PickyAppCapabilitySchema = z.enum([
 ]);
 export type PickyAppCapability = z.infer<typeof PickyAppCapabilitySchema>;
 
+/**
+ * What a connected client can render. Optional on the wire: a client that omits
+ * it is classified from its capabilities (see `domain/client-profile.ts`).
+ */
+export const PickyClientProfileSchema = z.enum(PICKY_CLIENT_PROFILES);
+
 export const DockGroupSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -648,7 +655,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("createEmptyPickleSession"), context: PickyContextPacketSchema, notifyMainOnCompletion: z.boolean().optional(), notifyMacOSOnCompletion: z.boolean().optional() }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromHandoff"), context: PickyContextPacketSchema, title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional(), notifyMainOnCompletion: z.boolean().optional(), notifyMacOSOnCompletion: z.boolean().optional() }),
   CommandBaseSchema.extend({ type: z.literal("completePickleHandoff"), requestId: z.string().min(1), sessionId: z.string().min(1).optional(), title: z.string().min(1).optional(), cwd: z.string().optional(), errorMessage: z.string().min(1).optional() }),
-  CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(PickyAppCapabilitySchema).min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(PickyAppCapabilitySchema).min(1), profile: PickyClientProfileSchema.optional() }),
   ...settingsCommandSchemas,
   CommandBaseSchema.extend({ type: z.literal("submitMainFromExternal"), text: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromExternal"), title: z.string().min(1), instructions: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional(), group: z.string().min(1).optional() }),

@@ -349,3 +349,39 @@ verifier·reviewer·challenger 격리 검토 2사이클. 검증 증거: Swift �
 - **rewind 후 `lastRequest` 미갱신**: 폐기된 분기의 요청 텍스트가 REQUEST 행에 남는다. 이전 로그 파생 값도 같은 동작이었으므로 회귀는 아니지만 제품 판단이 필요하다.
 - **supervisor 내부 v1 emit 파이프라인**: 서버 리스너는 사라졌지만 `session`/`log`/`messageAppended` 등 내부 이벤트와 `emitTerminalV1Compatibility`는 남아 있다. `session-supervisor.test.ts` 335건이 이 이벤트로 검증하므로 테스트 리팩터와 함께 제거해야 한다.
 - **구버전 앱 + 신버전 데몬**: 앱·데몬이 한 번들로 배포되고 Sparkle 교체 전 데몬을 동기 종료하므로 정상 경로에서는 발생하지 않지만, `PICKY_AGENTD_ROOT` 같은 dev override로 섞이면 등록은 성공하고 도크가 비어 보인다. 명시적 거부가 필요하면 `registerAppCapabilities`에서 `sessionProjectionV2` 없는 앱 등록을 error로 만들면 된다.
+
+## 8. 2026-10 Phase 1 결과 (상태 소유와 경계, `4e8863032..5d6da0c7d`)
+
+기준은 "코드베이스가 에이전트 메모리다"(수정할 때 한 스코프만 보면 되는가, 웹 클라이언트를 클라이언트 레이어만 바꿔 붙일 수 있는가)다. 항목별 결정 근거는 `decisions.tsv`의 `1-a`~`1-e`, `p1-heal-*` 행에 있다.
+
+| 항목 | 결과 | 커밋 |
+|---|---|---|
+| 1-a CompanionManager 소유자 분해 (P0-2 계속) | 오버레이 가시성(`PickyOverlayVisibilityController` + 순수 정책), 스크린 컨텍스트 타깃(`PickyScreenContextTargetController`, 중복 clear 오버로드 통합), 메인 에이전트 활동·질문(`PickyMainAgentActivityStore`)이 각자 단일 writer. CompanionManager와 extension 11개는 `Picky/Companion/`으로 모음. 본 파일 2,481→2,356줄, `@Published` 34→29 | `4683ac65f` |
+| 1-b projection 소비자 단일화 (F15) | VM이 프레임을 적용한 같은 호출 스택에서 `PickySessionProjectionTransitionPublisher`가 terminal 첫 도달과 요약 변화를 발행하고 CompanionManager는 구독만 한다. CompanionManager 미러 2개 삭제. 판정은 데몬 프레임 내용 기준(아래 Cycle 1). 기각한 대안: CompanionManager가 VM read model을 동기 조회(직전 상태를 얻을 수 없어 캐시가 남고 두 Task 사이 경쟁이 더 넓음), 미러 하나만 제거(두 번째 적용 경로가 그대로) | `89805963a`, `673caa3b3` |
+| 1-c projection conformance | `contracts/projection/conformance/` 시나리오 16개(mutation 20종 전부), TS 레퍼런스 reducer `agentd/src/domain/session-projection-reducer.ts`, 서버 diff↔reducer 왕복 계약 11케이스, Swift 러너가 같은 시나리오를 production storage reducer로 실행 | `7e6bee193`, `690364a95` |
+| 1-d agentd feature slice pilot | settings, package, pi-oauth, hub(MCP 관리·통계)가 `agentd/src/features/<slice>/`로. 와이어 불변, 핸들러 누락은 여전히 컴파일 에러, slice가 supervisor를 값으로 import하면 가드 실패. `reloadPlugins`는 세션 상태를 바꿔 제외. `server.ts` 1,454→1,320줄, `protocol.ts` 1,363→1,172줄(1-e 포함 최종). 측정 규칙은 `ARCHITECTURE.md` §12.1 | `4b4aed2e7` |
+| 1-e 클라이언트 프로필 | 연결마다 core/desktop(`agentd/src/domain/client-profile.ts`), desktop 전용 broadcast 7종은 core(CLI 등)에 보내지 않음. 앱은 `profile: desktop`을 명시, 구 앱은 capability로 추론. `notifyMacOSOnCompletion` 이름 변경은 하지 않고 의미만 주석으로(영속 데이터 2곳 마이그레이션 비용 대비 웹 클라이언트 기능 이득 없음) | `2a1bac390`, `bf3f0e76d` |
+
+검증: Swift Testing 2,863 → 2,900 통과(7 skip은 UI-effect), XCTest 91 실행 0 실패, agentd test:ci 2단계 451 통과. 1단계 실패는 외부 의존 `async-task-provider-admission.integration.test.ts` 한 파일(Phase 1 이전부터)이고, Xcode 빌드와 겹친 실행에서 `picky-mcp-credentials.test.ts`가 1건 타임아웃했지만 단독 재실행은 10건 모두 통과했다(부하 플레이크). 격리 데몬 스모크로 CLI형 연결이 desktop 전용 이벤트를 받지 않고 자기 응답은 받는 것을 확인했다.
+
+### self-healing (verifier·reviewer·challenger 2사이클)
+
+| Cycle | 발견 | 심각도 | 조치 |
+|---|---|---|---|
+| 1 | HUD abort가 로컬 카드를 먼저 `cancelled`로 바꾸는데 1-b의 terminal 판정이 그 카드를 직전 상태로 읽어, 데몬의 cancelled 프레임을 반복으로 보고 커서 해제를 건너뜀(커서가 대기 상태에 고착). 1-b에서 커서 해제 테스트를 핸들러 직접 호출로 바꿔 전체 스위트가 놓침 | P1 | publisher가 데몬이 보고한 status를 기억하고 프레임 내용으로 판정(1-b 이전 의미와 동일), 실제 abort 경로 회귀 테스트 |
+| 1 | revision gap으로 버퍼링된 프레임은 recovery 스냅샷까지 부수효과 없음 | P2 | 지연 수용, 수렴 테스트로 고정 |
+| 1 | stop/start 비대칭, stop이 오버레이 소유자를 우회 | P3 | 구독 수명 대칭, 소유자 경유 |
+| 1 | slice 가드 우회(re-export, side-effect import), TS 러너 시나리오 하한 없음, desktop 이벤트 목록이 이벤트 타입과 무관 | P2~P3 | 가드 확장, 하한 16, `satisfies readonly PickyEventType[]` |
+| 1 | co-change 측정이 분할 커밋을 포함하고 커밋 크기를 셈 | P2 | 커밋별 닫힘 판정, 분할 커밋 제외, n<5 보류 |
+| 2 | 측정 창이 실행 날짜에 따라 움직임, 기준값 모집단 편향 | P3 | 창을 분할 커밋에 고정, 재현 명령과 편향 기록 |
+| 2 | ratchet 핀 여유 0 | P3 | 실측 + 5 |
+
+### 남은 리스크와 후속 (수정하지 않음)
+
+- **P0-2 완료 기준 미달**: CompanionManager 본 파일 2,356줄(<1,500), `@Published` 29(<20), extension 11(≤3). 남은 덩어리는 음성 상태머신(`voiceState`, PTT, speech lifecycle)인데 `applyCursorVoicePresentation`의 6축 동기 읽기와 scheduler hop 금지 계약을 직접 건드려 Phase 1 범위에서 뺐다. 별도 특성화가 먼저 필요하다.
+- **1-d 판정은 4~6주 뒤**: `scripts/measure-slice-cochange.sh`(인자 없이 실행하면 분할 이후만 측정). 분할 이전 기준 closed 9%, protocol+server 동시 36%.
+- **revision gap 지연**: 버퍼링된 terminal 프레임은 recovery 데드라인(5초)까지 커서를 풀지 않는다. 실패 시 재연결 부트스트랩으로 수렴한다.
+- **`picky submit --wait`**: mock처럼 `route()` 안에서 즉답이 나오면 ack보다 quickReply가 먼저 와서 CLI가 버리고 타임아웃한다. Phase 1 이전부터 같은 동작.
+- **1-e 추론 폴백**: profile을 보내지 않는 구 앱용. 모든 배포 앱이 profile을 보낸 뒤 `resolveClientProfile`의 capability 추론을 지운다. 연결 직후 등록 전 1 RTT 안의 desktop 전용 broadcast는 버려진다.
+- **요약 문구의 필드 출처**: 요약 발행 시점은 데몬 프레임이 정하지만 실어 보내는 title/status/lastSummary는 적용된 카드에서 읽는다. 트랜잭션이 건드리지 않은 필드는 로컬 낙관적 값(abort 직후의 `cancelled` 등)일 수 있어, 요약이 비고 status 폴백을 쓰는 좁은 경우 커서 문구가 데몬 확정보다 먼저 cancelled를 말할 수 있다. HUD 카드가 이미 같은 값을 보여 주므로 수용했다. terminal 판정은 카드를 읽지 않는다.
+- **TS 레퍼런스 reducer**는 아직 production 소비자가 없다(웹 클라이언트용 정본). 서버 diff 비대칭 2종(중간 삽입·재정렬, async detail 반쪽)은 현재 생산자가 도달하지 않아 `contracts/projection/conformance/README.md`에 기록만 했다.

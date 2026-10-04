@@ -7,7 +7,7 @@ Picky와 Pickle 세션은 지금처럼 내 맥에서 실행하고, 밖에서는 
 ## 범위
 
 - 한다: 세션 목록·상세·진행 상황 실시간 보기, follow-up·steer·중단·질문 응답, Pickle 생성, 메인 대화, 알림, 사진 첨부, 산출물 열람.
-- 안 한다: 클라우드·VM 런타임, 세션 이전, Linux 패키징, Picky가 운영하는 중계 서버, 네이티브 iOS 앱.
+- 안 한다: 클라우드·VM 런타임, 세션 이전, Linux 패키징, Picky가 운영하는 중계 서버, 네이티브 iOS 앱, 다른 앱에서 공유해 보내기(Web Share Target은 iOS Safari가 지원하지 않는다, [MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/share_target#browser_compatibility)).
 
 ## 결정 (2026-10-04)
 
@@ -55,19 +55,22 @@ flowchart TB
 **두 경로 공통 (gateway)**
 - 페어링은 맥 앱에서 등록 모드를 켤 때만 가능하다. 맥 화면에 QR을 띄우고, 설치한 홈 화면 앱 안에서 스캔한다. 코드는 한 번만 쓸 수 있고 몇 분 뒤 만료된다.
 - iOS 홈 화면 앱은 Safari와 쿠키·저장소가 분리되어 있다([WWDC23](https://developer.apple.com/videos/play/wwdc2023/10120/)). Safari에서 페어링하면 인증이 앱에 남지 않으므로 반드시 앱 안에서 한다.
-- 기기 토큰은 추측할 수 없는 길이의 난수로 만들고, gateway 출처의 HttpOnly 쿠키에 담는다. 짧은 숫자 코드를 쓰게 되면 시도 횟수 제한이 반드시 있어야 한다.
-- 인증 실패가 반복되면 IP와 기기 단위로 차단한다. 인증 없이 열리는 것은 PWA 정적 파일과 페어링 엔드포인트뿐이다.
+- 기기 토큰은 추측할 수 없는 길이의 난수로 만들고, gateway 출처의 쿠키(`HttpOnly`, `Secure`, `SameSite=Lax`)에 담는다. 맥에는 토큰의 해시만 저장한다. 짧은 숫자 코드를 쓰게 되면 시도 횟수 제한이 반드시 있어야 한다.
+- WebSocket 업그레이드와 상태를 바꾸는 요청은 자기 출처에서 온 것만 받는다(`Origin`, `Sec-Fetch-Site` 확인). 다른 사이트의 페이지가 사용자의 쿠키를 빌려 명령을 보내지 못하게 한다.
+- 인증 실패가 반복되면 IP와 기기 단위로 차단한다. 초기값은 같은 IP에서 10분에 5회 실패하면 15분 차단, 페어링 코드는 5회 틀리면 폐기다. Cloudflare 경로의 실제 접속 IP는 `CF-Connecting-IP`에서 읽는다. 인증 없이 열리는 것은 PWA 정적 파일과 페어링 엔드포인트뿐이다.
+- 맥에 있는 파일(도구가 읽은 이미지, 산출물, 대화 속 파일 링크)은 그 세션의 메시지와 산출물에 기록된 경로만, 실제 경로로 정규화한 뒤 제공한다. 이미지는 확장자와 파일 첫 바이트로 형식을 확인하고 크기 상한을 둔다. SVG와 HTML 산출물은 CSP `sandbox`로 스크립트를 막거나 다른 출처로 격리해 연다.
 - 기기 목록과 해제는 맥에서 한다. 해제하면 그 기기의 연결은 즉시 끊긴다. 원격 명령은 감사 로그에 남긴다.
 
 **Tailscale 경로**
 - Serve는 tailnet 멤버만 접근할 수 있고 공개 인터넷에 노출되지 않는다([문서](https://tailscale.com/docs/features/tailscale-serve)). 아이폰도 같은 tailnet에 들어가 있어야 한다.
+- tailnet IP에 http로만 열면 보안 컨텍스트가 아니라서 서비스 워커와 Web Push가 동작하지 않는다. pi-pocket도 알림에는 https가 필요하다며 `tailscale serve`를 앞에 두라고 안내한다. 그래서 처음부터 Serve를 쓴다.
 
 **Cloudflare 경로**
 - 터널은 맥에서 밖으로만 연결하므로 맥에 열린 포트가 없다([문서](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/)).
 - 모든 플랜에 DDoS 방어가 기본으로 들어 있다([문서](https://developers.cloudflare.com/ddos-protection/about/)).
 - 무료 플랜의 레이트 리밋은 규칙 1개, IP 기준, 집계·차단 모두 10초다([문서](https://developers.cloudflare.com/waf/rate-limiting-rules/)). 세밀한 조정은 어렵다.
 - Access는 선택 계층이다. Access 정책을 통과한 사용자만 맥까지 오고, `access.required`를 켜면 cloudflared가 Access JWT 없는 요청을 거부한다([문서](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/origin-parameters/)). Access 일회용 코드의 시도 횟수 제한은 공식 문서에서 찾지 못했다.
-- 공개 호스트네임을 쓰려면 Cloudflare에 올린 도메인이 필요하다. Quick Tunnel은 테스트용이라 쓰지 않는다([문서](https://developers.cloudflare.com/tunnel/setup/)).
+- 공개 호스트네임을 쓰려면 Cloudflare에 올린 도메인이 필요하다. Quick Tunnel은 테스트용이고([문서](https://developers.cloudflare.com/tunnel/setup/)) 실행할 때마다 주소가 바뀐다. 홈 화면 앱과 Web Push 구독은 주소(출처)에 묶이므로 주소가 바뀌면 앱을 다시 설치하고 알림을 다시 허용해야 한다. pi-pocket은 Quick Tunnel이 이벤트 스트림을 붙잡아 두는 문제 때문에 롱폴링으로 자동 전환한다. 그래서 쓰지 않는다.
 
 ## 경험 동일성 규칙
 
@@ -107,6 +110,11 @@ flowchart TB
   - Option+Return(답 끝나면 보내기) 같은 단축키는 보내기 메뉴에서 고른다.
   - 한글 조합 중 Return은 보내지 않는다(웹 `isComposing`).
   - 누를 수 있는 영역은 44pt 이상으로 둔다.
+  - 입력창 마이크는 폰 마이크로 받아쓴 글을 입력란에 넣고, 보내지는 않는다. 맥은 esc로 취소하지만 폰은 듣는 중 줄 끝의 취소 버튼으로 취소한다.
+  - 설정 칩 시트(모델, 생각 수준, Fast, 완료 알림)에서 단축키 안내(⌃P, ⌘N)를 뺀다.
+  - 백그라운드 작업이 도는 Pickle을 멈추면 HUD처럼 "응답만 중단"과 "백그라운드 작업도 함께 종료"를 묻는다. 웹은 선택지를 넣은 시스템 알림을 띄울 수 없어서 같은 선택지를 직접 그린다.
+  - 작업 패널은 결과물·변경사항 탭만 연다. 터미널 탭은 뺀다.
+- 도구가 읽은 이미지와 대화 속 파일 링크는 저널에 맥 경로만 있다. 폰에서는 gateway가 썸네일과 원본을 대신 보여 준다(보안 절의 맥 파일 규칙).
 - 폰에서 빼는 것: 음성 follow-up, 화면 컨텍스트 지정, 내장 터미널, Pi 터미널 동기화, Dock 드래그. 모두 맥 앞에 있어야 의미가 있는 기능이다.
 
 ### 동일성 유지 장치
@@ -134,7 +142,7 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
 ## 단계와 통과 기준
 
 1. **맥 안에서 읽기 전용 (외부 노출 없음)**
-   - 만들 것: gateway와 원격 허브, 방 목록과 대화방 보기(Picky 방 포함).
+   - 만들 것: gateway와 원격 허브, 방 목록과 대화방 보기(Picky 방 포함), 도구 이미지 썸네일(세션에 기록된 경로만).
    - 통과 기준:
      - mock 런타임에서 HUD로 만든 child Pickle의 진행이 localhost 브라우저에 실시간으로 보인다.
      - child 해제나 앱 재연결 뒤에도 웹 reducer 상태가 HUD와 같다.
@@ -145,17 +153,37 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
      - 두 입구 모두에서 아이폰 홈 화면 앱이 페어링 후 목록을 본다.
      - 해제한 기기의 연결은 즉시 끊긴다.
      - iOS 홈 화면 앱에서 Access 로그인이 유지되는지 실기기로 확인한다.
+     - Cloudflare 경로에서 WebSocket이 프록시에 막히거나 늦게 전달되지 않는지 실기기로 확인한다. 막히면 pi-pocket처럼 SSE와 POST 조합으로 바꾼다.
 3. **폰에서 제어**
-   - 만들 것: 대화방 입력창(HUD와 같은 보내기 방식, 중단, 예약 전송), 질문 응답, `!` 셸, Pickle 생성, Picky 방 입력. 모두 HUD 명령을 재사용한다. 명령 id 중복 제거, 맥 말풍선·음성 끄기.
+   - 만들 것: 대화방 입력창(HUD와 같은 보내기 방식, 중단과 중지 선택, 예약 전송, 설정 칩), 질문 응답, `!` 셸, Pickle 생성, Picky 방 입력. 모두 HUD 명령을 재사용한다. 명령 id 중복 제거, 맥 말풍선·음성 끄기. 받아쓰기는 방식을 정한 뒤 넣는다.
    - 통과 기준:
      - 재연결 뒤 같은 명령 id를 다시 보내도 follow-up은 한 번만 들어간다.
      - 폰에서 질문에 답하면 Pickle이 이어서 진행한다.
      - 폰에서 보낸 메인 대화에 맥이 말하지 않는다.
 4. **알림·첨부·가용성**
    - 만들 것: Web Push(질문 대기, 완료, 실패), 사진 첨부, 산출물 열람, 잠자기 방지 옵션, 감사 로그.
+   - Web Push 규칙: 그 방을 보고 있는 동안에는 보내지 않는다. 홈 화면 아이콘 배지에 답을 기다리는 방 수를 표시한다. 구독 주소는 알려진 푸시 서비스(Apple, Google, Mozilla, Microsoft)만 받아서 gateway가 임의 주소로 요청을 보내지 않게 한다. 기기당 구독 수에 상한을 두고, 404·410 응답이 오면 구독을 지운다. VAPID subject는 입구의 https 주소로 한다.
    - 통과 기준:
      - 잠긴 폰에 질문 대기 알림이 온다.
      - 산출물 목록에 없는 경로를 요청하면 거부된다.
+     - 알림을 누르면 그 방이 열린다.
+
+## 참고한 구현: pi-pocket
+
+[pi-pocket](https://github.com/TannerMidd/pi-pocket)(커밋 `c3c55f3`, 2026-10-04)은 Pi를 자체 서버에서 직접 돌리는 모바일 웹 앱이다. Pi Durable과 SQLite에 세션을 저장하고, 같은 서버가 PWA를 제공한다. Picky는 맥 앱이 세션을 가지므로 구조는 다르지만, 원격 접속과 알림 부분은 겹친다. 가져온 것과 가져오지 않은 것을 남긴다.
+
+| 항목 | pi-pocket | 이 계획 |
+|---|---|---|
+| 실시간 전송 | SSE를 쓰고 막히면 롱폴링으로 바꾼다. 다시 연결하면 전체 상태를 새로 받는다 | WebSocket과 v2 projection의 revision 복구를 유지한다. 2단계 실기기에서 막히면 SSE로 바꾼다 |
+| 명령 중복 | 요청 id로 같은 메시지를 두 번 보내지 않는다 | 같은 방식(명령 id 중복 제거) |
+| 인증 | 소유자 토큰은 해시로 저장하고 1년짜리 쿠키에 담는다. 초대 코드는 15분짜리 1회용이고, 실패 차단은 없다 | 쿠키 속성과 해시 저장을 가져온다. 기기별 토큰, 즉시 해제, 실패 차단은 유지한다 |
+| 다른 사이트 요청 차단 | `Sec-Fetch-Site`로 다른 사이트에서 온 로그인·초대 요청을 거부한다 | WebSocket과 상태를 바꾸는 요청 모두에 출처 확인을 둔다 |
+| 접속 방식 | local, LAN, Quick Tunnel, tailnet IP(http) | Tailscale Serve와 도메인 있는 Cloudflare Tunnel만 쓴다. https가 있어야 서비스 워커와 푸시가 동작한다 |
+| Web Push | 의존성 없이 직접 구현한다. 푸시 서비스 주소 허용 목록, 기기 10대, 보고 있는 방은 알리지 않기, 아이콘 배지 | 4단계 규칙으로 가져온다 |
+| 알림에서 허용·거절 | 알림 버튼으로 답한다. 호출 전체가 한 줄에 보일 때만 허용 버튼을 준다 | iOS에서 안 되므로 열린 확인 사항으로 둔다 |
+| 다른 앱에서 공유 | Web Share Target(Android) | iOS에서 안 되므로 범위 밖이다 |
+| 파일과 산출물 | 확장자와 파일 첫 바이트로 이미지를 확인하고, SVG와 산출물은 CSP `sandbox`로 연다 | 보안 절의 맥 파일 규칙으로 가져온다 |
+| 여러 사람 참여, 지속 런타임, 포크, 계획 모드 | 있다 | 해당 없다. 혼자 쓰고, 런타임은 맥 앱이 가진다 |
 
 ## 열린 확인 사항
 
@@ -166,3 +194,6 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
 - 텔레그램 원격 계획과의 관계를 정한다. 같은 원격 감독 수요를 다루므로 둘 다 진행할지 결정해야 한다.
 - 방 목록 기본안(Picky 방 고정, 최근 활동 순, 그룹 필터, 읽음 공유)을 목업 검수에서 확정한다.
 - PWA 구현 프레임워크를 1단계 구현 전에 정한다.
+- 폰 받아쓰기 방식을 3단계 전에 정한다. 폰에서 녹음해 맥의 받아쓰기 설정으로 바꾸면 맥과 같은 음성 인식·언어 설정을 쓰지만 음성을 올려야 한다. 브라우저 음성 인식은 iOS 홈 화면 앱에서 되는지부터 확인해야 한다. 마이크 권한 거부 문구는 HUD 문구가 맥 시스템 설정을 안내하므로 그 뒤에 정한다.
+- 대화 속 로컬 파일 링크를 폰에서 눌렀을 때 읽기 전용 미리보기를 보여 줄지, 맥에서 열지 정한다.
+- 알림에서 바로 답하기(확인·선택 질문)는 Android Chrome에서만 된다. iOS Safari는 알림 버튼(`actions`)을 지원하지 않는다([MDN](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification#browser_compatibility)). 넣는다면 pi-pocket처럼 질문 전체가 알림에 다 보일 때만 버튼을 준다.

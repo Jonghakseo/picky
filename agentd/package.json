@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:ci": "vitest run --exclude src/server.test.ts --exclude src/session-supervisor.test.ts && vitest run src/session-supervisor.test.ts src/server.test.ts --no-file-parallelism",
     "test:serial": "vitest run --no-file-parallelism",
+    "gen:contracts": "tsx scripts/gen-contracts.ts",
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },
   "dependencies": {

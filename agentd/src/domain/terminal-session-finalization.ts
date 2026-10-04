@@ -2,6 +2,7 @@ import { extractChangedFilesFromExplicitText } from "../artifact-store.js";
 import { mergeChangedFiles } from "./changed-files.js";
 import { cleanFinalAnswer, summaryFromFinalAnswer } from "./session-summary.js";
 import { settleActiveTools } from "./tool-activity.js";
+import { isClearableMetaPatchField, metaPatchFields } from "../protocol-session-fields.js";
 import type {
   PickyActivitySummary,
   PickyAgentSession,
@@ -209,10 +210,12 @@ function artifactAndPresentationMutations(before: Readonly<PickyAgentSession>, a
 
 function changedMetaPatch(before: Readonly<PickyAgentSession>, after: PickyAgentSession): Extract<PickySessionProjectionMutation, { type: "metaPatch" }>['patch'] {
   const patch: Extract<PickySessionProjectionMutation, { type: "metaPatch" }>['patch'] = {};
-  const fields = ["agentCycle", "asyncWorkSummary", "id", "title", "status", "cwd", "piSessionFilePath", "createdAt", "updatedAt", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage", "currentAssistantRun", "notifyMainOnCompletion", "notifyMacOSOnCompletion", "archived", "archivedAt", "pinned", "lastRequest"] as const;
-  for (const field of fields) {
+  for (const field of metaPatchFields) {
     if (same(before[field], after[field])) continue;
     const value = after[field];
+    // Clients reject `null` for a non-clearable field and drop the whole
+    // transaction, so a missing required value is never encoded as a clear.
+    if (value === undefined && !isClearableMetaPatchField(field)) continue;
     Object.assign(patch, { [field]: value === undefined ? null : value });
   }
   return patch;

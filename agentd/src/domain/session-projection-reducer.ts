@@ -13,6 +13,7 @@ import type {
   PickyToolActivity,
 } from "../protocol.js";
 import type { AsyncControlState, AsyncTaskDetail } from "./async-task-contract.js";
+import { customMetaPatchFields, metadataMetaPatchFields, type CustomMetaPatchField, type MetadataMetaPatchField } from "../protocol-session-fields.js";
 
 /**
  * Reference implementation of the client-side projection reducer.
@@ -36,12 +37,6 @@ import type { AsyncControlState, AsyncTaskDetail } from "./async-task-contract.j
  */
 
 export type PickyChangedFile = NonNullable<PickyAgentSession["changedFiles"]>[number];
-type PickyContextUsage = PickyAgentSession["contextUsage"];
-type PickyAssistantRun = PickyAgentSession["currentAssistantRun"];
-type PickyAgentCycle = PickyAgentSession["agentCycle"];
-type PickyAsyncWorkSummary = PickyAgentSession["asyncWorkSummary"];
-type PickySessionStatus = PickyAgentSession["status"];
-type PickyLastRequest = PickyAgentSession["lastRequest"];
 
 /**
  * A section is `unavailable` until a snapshot or mutation supplies it. This is
@@ -58,30 +53,14 @@ export function loadedSection<Value>(value: Value): ProjectionSectionState<Value
   return { state: "loaded", value };
 }
 
-/** Scalar session metadata, owned as one section (Swift: `PickySessionMetaStore`). */
-export interface SessionProjectionMeta {
-  readonly id: string;
-  readonly revision: number;
-  readonly title: string;
-  readonly status: PickySessionStatus;
-  readonly cwd?: string;
-  readonly piSessionFilePath?: string;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly lastSummary?: string;
-  readonly thinkingPreview?: string;
-  readonly finalAnswer?: string;
-  readonly contextUsage?: PickyContextUsage;
-  readonly currentAssistantRun?: PickyAssistantRun;
-  readonly notifyMainOnCompletion?: boolean;
-  readonly notifyMacOSOnCompletion?: boolean;
-  readonly archived?: boolean;
-  readonly archivedAt?: string;
-  readonly pinned?: boolean;
-  readonly lastRequest?: PickyLastRequest;
-  readonly agentCycle?: PickyAgentCycle;
-  readonly asyncWorkSummary?: PickyAsyncWorkSummary;
-}
+/**
+ * Scalar session metadata, owned as one section (Swift: `PickySessionMetaStore`):
+ * every metadata-owned `metaPatch` field from `protocol-session-fields.ts`, plus
+ * the session `id`, the envelope `revision`, and `finalAnswer` (its own mutation).
+ */
+export type SessionProjectionMeta =
+  & Readonly<Pick<PickyAgentSession, MetadataMetaPatchField | "id" | "finalAnswer">>
+  & { readonly revision: number };
 
 export interface SessionProjectionQueue {
   readonly steers: readonly PickyQueueItem[];
@@ -386,30 +365,8 @@ export function materializeSessionProjection(state: SessionProjectionState): Pic
   };
 }
 
-function materializeMeta(meta: SessionProjectionMeta) {
-  return {
-    id: meta.id,
-    revision: meta.revision,
-    title: meta.title,
-    status: meta.status,
-    createdAt: meta.createdAt,
-    updatedAt: meta.updatedAt,
-    ...optional("cwd", meta.cwd),
-    ...optional("piSessionFilePath", meta.piSessionFilePath),
-    ...optional("lastSummary", meta.lastSummary),
-    ...optional("thinkingPreview", meta.thinkingPreview),
-    ...optional("finalAnswer", meta.finalAnswer),
-    ...optional("contextUsage", meta.contextUsage),
-    ...optional("currentAssistantRun", meta.currentAssistantRun),
-    ...optional("notifyMainOnCompletion", meta.notifyMainOnCompletion),
-    ...optional("notifyMacOSOnCompletion", meta.notifyMacOSOnCompletion),
-    ...optional("archived", meta.archived),
-    ...optional("archivedAt", meta.archivedAt),
-    ...optional("pinned", meta.pinned),
-    ...optional("lastRequest", meta.lastRequest),
-    ...optional("agentCycle", meta.agentCycle),
-    ...optional("asyncWorkSummary", meta.asyncWorkSummary),
-  };
+function materializeMeta(meta: SessionProjectionMeta): SessionProjectionMeta {
+  return Object.fromEntries(Object.entries(meta).filter(([, value]) => value !== undefined)) as SessionProjectionMeta;
 }
 
 function collection<Value>(section: ProjectionSectionState<readonly Value[]>): Value[] {
@@ -508,68 +465,29 @@ type MetaPatch = Extract<PickySessionProjectionMutation, { type: "metaPatch" }>[
  */
 function applyMetaPatch(state: SessionProjectionState, patch: MetaPatch): SessionProjectionState {
   const patched = withMeta(state, (meta) => {
-    const next = { ...meta };
-    assign(next, patch, "agentCycle");
-    assign(next, patch, "asyncWorkSummary");
-    assign(next, patch, "title");
-    assign(next, patch, "status");
-    assign(next, patch, "cwd");
-    assign(next, patch, "piSessionFilePath");
-    assign(next, patch, "createdAt");
-    assign(next, patch, "updatedAt");
-    assign(next, patch, "lastSummary");
-    assign(next, patch, "thinkingPreview");
-    assign(next, patch, "contextUsage");
-    assign(next, patch, "currentAssistantRun");
-    assign(next, patch, "notifyMainOnCompletion");
-    assign(next, patch, "notifyMacOSOnCompletion");
-    assign(next, patch, "archived");
-    assign(next, patch, "archivedAt");
-    assign(next, patch, "pinned");
-    assign(next, patch, "lastRequest");
-    return next;
+    const next: Record<string, unknown> = { ...meta };
+    for (const field of metadataMetaPatchFields) {
+      const value = patch[field];
+      if (value !== undefined) next[field] = value === null ? undefined : value;
+    }
+    return next as SessionProjectionMeta;
   });
+  return customMetaPatchFields.reduce((current, field) => (
+    patch[field] === undefined ? current : applyCustomMetaPatch[field](current, patch[field])
+  ), patched);
+}
+
+/** `metaPatch` fields whose owner is not the metadata section; exhaustive by type. */
+const applyCustomMetaPatch: { [K in CustomMetaPatchField]: (state: SessionProjectionState, value: NonNullable<MetaPatch[K]> | null) => SessionProjectionState } = {
   // Journal availability is owned by the conversation section, so a patched
   // `null` loads an explicit "no journal", not an unavailable section.
-  if (patch.messageJournalAvailable === undefined) return patched;
-  return withSections(patched, { messageJournalAvailable: loadedSection(patch.messageJournalAvailable) });
-}
-
-function assign<Key extends keyof MetaPatch & keyof SessionProjectionMeta>(
-  target: { [K in Key]?: SessionProjectionMeta[K] },
-  patch: MetaPatch,
-  key: Key,
-): void {
-  if (!(key in patch)) return;
-  const value = patch[key];
-  if (value === undefined) return;
-  target[key] = (value === null ? undefined : value) as SessionProjectionMeta[Key];
-}
+  messageJournalAvailable: (state, value) => withSections(state, { messageJournalAvailable: loadedSection(value) }),
+};
 
 function metaFrom(projection: PickyAgentSession, revision: number): SessionProjectionMeta {
-  return {
-    id: projection.id,
-    revision,
-    title: projection.title,
-    status: projection.status,
-    cwd: projection.cwd,
-    piSessionFilePath: projection.piSessionFilePath,
-    createdAt: projection.createdAt,
-    updatedAt: projection.updatedAt,
-    lastSummary: projection.lastSummary,
-    thinkingPreview: projection.thinkingPreview,
-    finalAnswer: projection.finalAnswer,
-    contextUsage: projection.contextUsage,
-    currentAssistantRun: projection.currentAssistantRun,
-    notifyMainOnCompletion: projection.notifyMainOnCompletion,
-    notifyMacOSOnCompletion: projection.notifyMacOSOnCompletion,
-    archived: projection.archived,
-    archivedAt: projection.archivedAt,
-    pinned: projection.pinned,
-    lastRequest: projection.lastRequest,
-    agentCycle: projection.agentCycle,
-    asyncWorkSummary: projection.asyncWorkSummary,
-  };
+  const meta: Record<string, unknown> = { id: projection.id, revision, finalAnswer: projection.finalAnswer };
+  for (const field of metadataMetaPatchFields) meta[field] = projection[field];
+  return meta as SessionProjectionMeta;
 }
 
 function asyncDetailFrom(

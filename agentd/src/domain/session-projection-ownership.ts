@@ -1,21 +1,6 @@
-import persistedManifest from "../../../contracts/projection/session-field-ownership.json" with { type: "json" };
 import transientManifest from "../../../contracts/projection/session-transient-ownership.json" with { type: "json" };
 import { z } from "zod";
-
-const snapshotSemanticsSchema = z.enum(["replace", "merge", "clear-if-omitted-explicit"]);
-const p0OmissionBehaviorSchema = z.enum(["never-omitted", "omitted-empty", "omitted-unavailable"]);
-const mutationSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
-
-const sessionFieldOwnershipSchema = z.object({
-  field: z.string().min(1),
-  persistenceOwner: z.string().min(1),
-  v1Event: z.string().min(1),
-  v2Mutation: mutationSchema,
-  swiftStore: z.string().min(1),
-  snapshotSemantics: snapshotSemanticsSchema,
-  p0OmissionBehavior: p0OmissionBehaviorSchema,
-  consumers: z.array(z.string().min(1)).min(1),
-}).strict();
+import { sessionFieldSpecs, type SessionField, type SessionFieldSpec } from "../protocol-session-fields.js";
 
 const sessionTransientOwnershipSchema = z.object({
   id: z.string().min(1),
@@ -26,7 +11,8 @@ const sessionTransientOwnershipSchema = z.object({
   saveFailureRule: z.literal("rollback: untouched"),
 }).strict();
 
-export type SessionFieldOwnership = z.infer<typeof sessionFieldOwnershipSchema>;
+/** One row of `contracts/projection/session-field-ownership.json`, which is generated from the field table. */
+export type SessionFieldOwnership = { readonly field: SessionField } & Omit<SessionFieldSpec, "metaPatch">;
 export type SessionTransientOwnership = z.infer<typeof sessionTransientOwnershipSchema>;
 
 function rejectDuplicateValues<T, K extends keyof T>(entries: readonly T[], property: K, label: string): readonly T[] {
@@ -40,15 +26,15 @@ function rejectDuplicateValues<T, K extends keyof T>(entries: readonly T[], prop
   return entries;
 }
 
-export function parseSessionFieldOwnership(text: string): readonly SessionFieldOwnership[] {
-  return rejectDuplicateValues(sessionFieldOwnershipSchema.array().parse(JSON.parse(text)), "field", "session field ownership");
-}
-
 export function parseSessionTransientOwnership(text: string): readonly SessionTransientOwnership[] {
   return rejectDuplicateValues(sessionTransientOwnershipSchema.array().parse(JSON.parse(text)), "id", "session transient ownership");
 }
 
-export const persistedSessionFieldOwnership = parseSessionFieldOwnership(JSON.stringify(persistedManifest));
+export const persistedSessionFieldOwnership: readonly SessionFieldOwnership[] = (Object.keys(sessionFieldSpecs) as SessionField[])
+  .map((field) => {
+    const { metaPatch: _metaPatch, ...ownership } = sessionFieldSpecs[field] as SessionFieldSpec;
+    return { field, ...ownership };
+  });
 
 export const transientSessionOwnership = parseSessionTransientOwnership(JSON.stringify(transientManifest));
 
@@ -74,5 +60,5 @@ export const requiredTransientOwnershipIds = [
 ] as const;
 
 export function mutationNames(entry: SessionFieldOwnership): readonly string[] {
-  return Array.isArray(entry.v2Mutation) ? entry.v2Mutation : [entry.v2Mutation];
+  return typeof entry.v2Mutation === "string" ? [entry.v2Mutation] : entry.v2Mutation;
 }

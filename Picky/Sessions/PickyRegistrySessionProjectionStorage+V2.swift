@@ -210,7 +210,7 @@ extension PickyRegistrySessionProjectionStorage {
     ) {
         switch mutation {
         case .metaPatch(let patch):
-            apply(patch, to: &metadata, conversationStore: store.conversationStore)
+            patch.apply(to: &metadata, custom: store.conversationStore)
             switch patch.lastRequest {
             case .set(let request): store.applyProjectionLastRequest(request)
             case .clear: store.applyProjectionLastRequest(nil)
@@ -294,50 +294,6 @@ extension PickyRegistrySessionProjectionStorage {
         return clearsLogs && clearsTools && clearsArtifacts
     }
 
-    private func apply(
-        _ patch: PickySessionMetaPatch,
-        to metadata: inout PickySessionMetadata,
-        conversationStore: PickyConversationStore
-    ) {
-        // Session identity is a transaction envelope invariant; a meta patch
-        // may repeat it for validation but never rekeys an existing store.
-        apply(patch.agentCycle, to: &metadata.agentCycle)
-        apply(patch.asyncWorkSummary, to: &metadata.asyncWorkSummary)
-        apply(patch.title, to: &metadata.title)
-        apply(patch.status, to: &metadata.status)
-        apply(patch.cwd, to: &metadata.cwd)
-        apply(patch.piSessionFilePath, to: &metadata.piSessionFilePath)
-        apply(patch.createdAt, to: &metadata.createdAt)
-        apply(patch.updatedAt, to: &metadata.updatedAt)
-        apply(patch.lastSummary, to: &metadata.lastSummary)
-        apply(patch.thinkingPreview, to: &metadata.thinkingPreview)
-        switch patch.messageJournalAvailable {
-        case .unchanged: break
-        case .clear: conversationStore.replaceMessageJournalAvailability(nil)
-        case .set(let available): conversationStore.replaceMessageJournalAvailability(available)
-        }
-        apply(patch.contextUsage, to: &metadata.contextUsage)
-        apply(patch.currentAssistantRun, to: &metadata.currentAssistantRun)
-        apply(patch.notifyMainOnCompletion, to: &metadata.notifyMainOnCompletion)
-        apply(patch.notifyMacOSOnCompletion, to: &metadata.notifyMacOSOnCompletion)
-        apply(patch.archived, to: &metadata.archived)
-        apply(patch.archivedAt, to: &metadata.archivedAt)
-        apply(patch.pinned, to: &metadata.pinned)
-        apply(patch.lastRequest, to: &metadata.lastRequest)
-    }
-
-    private func apply<Value>(_ update: FieldUpdate<Value>, to value: inout Value) {
-        if case .set(let replacement) = update { value = replacement }
-    }
-
-    private func apply<Value>(_ update: FieldUpdate<Value>, to value: inout Value?) {
-        switch update {
-        case .unchanged: break
-        case .clear: value = nil
-        case .set(let replacement): value = replacement
-        }
-    }
-
     private func publishProjection(_ card: PickySessionListViewModel.SessionCard, archived shouldArchive: Bool) {
         var activeIDs = registry.activeSessionIDs
         var archivedIDs = registry.archivedSessionIDs
@@ -392,5 +348,17 @@ private extension PickyProjectionSectionState {
     var loadedValue: Value? {
         guard case .loaded(let value) = self else { return nil }
         return value
+    }
+}
+
+/// Journal availability belongs to the conversation section, so a patched `null`
+/// loads an explicit "no journal" rather than an unavailable section.
+extension PickyConversationStore: PickySessionMetaPatchCustomApplying {
+    func applyMetaPatchMessageJournalAvailable(_ update: FieldUpdate<Bool>) {
+        switch update {
+        case .unchanged: break
+        case .clear: replaceMessageJournalAvailability(nil)
+        case .set(let available): replaceMessageJournalAvailability(available)
+        }
     }
 }

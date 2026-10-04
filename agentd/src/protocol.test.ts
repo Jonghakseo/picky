@@ -865,6 +865,41 @@ describe("protocol contract fixtures", () => {
     expect(() => PickySessionMetaPatchSchema.parse({ finalAnswer: "owned elsewhere" })).toThrow();
   });
 
+  // Literal per-field wire expectations, deliberately not read from the field
+  // table, so a table edit that changes the contract fails here.
+  it("pins which projection meta patch fields accept null", () => {
+    const required = ["id", "title", "status", "createdAt", "updatedAt"];
+    const clearable = [
+      "cwd", "piSessionFilePath", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage",
+      "currentAssistantRun", "notifyMainOnCompletion", "notifyMacOSOnCompletion", "archived", "archivedAt",
+      "pinned", "lastRequest", "agentCycle", "asyncWorkSummary",
+    ];
+    expect(Object.keys(PickySessionMetaPatchSchema.shape).sort()).toEqual([...required, ...clearable].sort());
+    for (const field of required) expect(PickySessionMetaPatchSchema.safeParse({ [field]: null }).success, field).toBe(false);
+    for (const field of clearable) expect(PickySessionMetaPatchSchema.parse({ [field]: null }), field).toEqual({ [field]: null });
+  });
+
+  it("keeps completion notification preferences tri-state in meta patches", () => {
+    for (const field of ["notifyMainOnCompletion", "notifyMacOSOnCompletion"]) {
+      expect(PickySessionMetaPatchSchema.parse({ [field]: true })).toEqual({ [field]: true });
+      expect(PickySessionMetaPatchSchema.parse({ [field]: false })).toEqual({ [field]: false });
+      expect(PickySessionMetaPatchSchema.parse({ [field]: null })).toEqual({ [field]: null });
+      expect(PickySessionMetaPatchSchema.safeParse({ [field]: "false" }).success).toBe(false);
+    }
+  });
+
+  it("validates meta patch values with the session field rules", () => {
+    expect(PickySessionMetaPatchSchema.safeParse({ createdAt: "2026-08-24T09:00:00+0900" }).success).toBe(false);
+    expect(PickySessionMetaPatchSchema.safeParse({ status: "idle" }).success).toBe(false);
+    expect(PickySessionMetaPatchSchema.safeParse({ unknownField: true }).success).toBe(false);
+    expect(PickySessionMetaPatchSchema.safeParse({
+      asyncWorkSummary: {
+        tracking: "ready", activeRootCount: 0, pendingCompletionCount: 0, uncertainExecutionCount: 0, attentionCount: 0,
+        workRevision: 1, canReleaseRuntime: true, episode: { id: "episode-1", settled: true },
+      },
+    }).success).toBe(false);
+  });
+
   it("defaults legacy session revisions to zero and rejects unsafe revisions", () => {
     const session = {
       id: "session-revision", title: "Revision", status: "running", createdAt: "2026-08-24T00:00:00.000Z", updatedAt: "2026-08-24T00:00:00.000Z",

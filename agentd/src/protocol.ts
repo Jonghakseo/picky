@@ -3,6 +3,7 @@ import { AgentCycleSchema, AsyncWorkSummarySchema, AsyncTaskSchema, CompletionTi
 import { ANNOTATION_TEXT_MAX_LENGTH } from "./domain/annotation-validation.js";
 import { PICKY_CLIENT_PROFILES } from "./domain/client-profile.js";
 import { CommandBaseSchema, EventBaseSchema, isoTimestamp, PROTOCOL_VERSION } from "./protocol-base.js";
+import { isClearableMetaPatchField, metaPatchFields, type ClearableMetaPatchField, type MetaPatchField } from "./protocol-session-fields.js";
 import { settingsCommandSchemas, settingsEventSchemas } from "./features/settings/schema.js";
 import { packageCommandSchemas, packageEventSchemas } from "./features/package/schema.js";
 import { piOAuthCommandSchemas, piOAuthEventSchemas } from "./features/pi-oauth/schema.js";
@@ -479,32 +480,33 @@ export type PickyAgentSessionMeta = z.infer<typeof PickyAgentSessionMetaSchema>;
 
 // Projection v2 patches only scalar metadata. Collections and specialized state
 // have explicit mutations so a field's ownership cannot be hidden in metaPatch.
-export const PickySessionMetaPatchSchema = z.object({
-  agentCycle: AgentCycleSchema.nullable().optional(),
-  asyncWorkSummary: AsyncWorkSummarySchema.nullable().optional(),
-  id: z.string().optional(),
-  title: z.string().optional(),
-  status: SessionStatusSchema.optional(),
-  cwd: z.union([z.string(), z.null()]).optional(),
-  piSessionFilePath: z.union([z.string(), z.null()]).optional(),
-  createdAt: isoTimestamp.optional(),
-  updatedAt: isoTimestamp.optional(),
-  lastSummary: z.union([z.string(), z.null()]).optional(),
-  thinkingPreview: z.union([z.string(), z.null()]).optional(),
-  messageJournalAvailable: z.union([z.boolean(), z.null()]).optional(),
-  contextUsage: z.union([z.object({
-    tokens: z.number().nullable(),
-    contextWindow: z.number(),
-    percent: z.number().nullable(),
-  }), z.null()]).optional(),
-  currentAssistantRun: z.union([PickyAssistantRunMetadataSchema, z.null()]).optional(),
-  notifyMainOnCompletion: z.union([z.boolean(), z.null()]).optional(),
-  notifyMacOSOnCompletion: z.union([z.boolean(), z.null()]).optional(),
-  archived: z.union([z.boolean(), z.null()]).optional(),
-  archivedAt: z.union([isoTimestamp, z.null()]).optional(),
-  pinned: z.union([z.boolean(), z.null()]).optional(),
-  lastRequest: z.union([PickySessionLastRequestSchema, z.null()]).optional(),
-}).strict();
+// The patch is derived from the session schema and the field table in
+// `protocol-session-fields.ts`: every key is optional (absent = unchanged), and
+// a clearable field also accepts `null`.
+type SessionShape = typeof PickyAgentSessionSchema.shape;
+type PresentValue<Schema> = Schema extends z.ZodOptional<infer Inner> ? Inner : Schema;
+type MetaPatchShape = {
+  [K in MetaPatchField]: z.ZodOptional<K extends ClearableMetaPatchField ? z.ZodNullable<PresentValue<SessionShape[K]>> : PresentValue<SessionShape[K]>>;
+};
+
+/**
+ * The value a patch may set for a session field: the field schema without its
+ * `.optional()`. Wrappers that change parse outcomes (`.default`, `.catch`,
+ * `.nullable`) would make the patch accept or rewrite values the session schema
+ * rejects, so they are refused rather than silently carried into the patch.
+ */
+function presentValueSchema(field: string, schema: z.ZodType): z.ZodType {
+  const value = schema instanceof z.ZodOptional ? schema.unwrap() as z.ZodType : schema;
+  if (value instanceof z.ZodOptional || value instanceof z.ZodDefault || value instanceof z.ZodCatch || value instanceof z.ZodNullable) {
+    throw new Error(`metaPatch field ${field} must be a plain or .optional() session schema`);
+  }
+  return value;
+}
+
+export const PickySessionMetaPatchSchema = z.object(Object.fromEntries(metaPatchFields.map((field) => {
+  const value = presentValueSchema(field, PickyAgentSessionSchema.shape[field]);
+  return [field, (isClearableMetaPatchField(field) ? value.nullable() : value).optional()];
+})) as MetaPatchShape).strict();
 export type PickySessionMetaPatch = z.infer<typeof PickySessionMetaPatchSchema>;
 
 export const PickySessionProjectionMutationVariantSchema = z.discriminatedUnion("type", [

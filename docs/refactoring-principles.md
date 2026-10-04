@@ -442,3 +442,51 @@ fact the rules need (`childIsLive`) and applies the returned decision.
 `PickyAgentClientRouterTests` (2.6k lines) passed unchanged, which is the
 characterization gate 2.3 asks for. The topology itself is now documented in
 `docs/per-pickle-daemon-topology.md`.
+
+#### 2026-10-02 session field table and generated meta patch
+
+A persisted session field that rides v2 `metaPatch` was listed by hand in eight
+places: the TS patch schema, the daemon diff in `changedMetaPatch`, four
+functions of the TS reference reducer, the Swift decoder, and the Swift apply.
+Two of them failed silently when a field was missing. The daemon diff dropped
+the change without an error, and a strict-schema mismatch discarded the whole
+projection transaction, freezing the HUD.
+
+`agentd/src/protocol-session-fields.ts` is now the single field table. It
+`satisfies Record<keyof PickyAgentSessionSchema.shape, ...>`, so a schema field
+without a row fails `tsc`. Everything else derives from it:
+
+- `PickySessionMetaPatchSchema` picks the metaPatch fields from the session
+  schema. Each metaPatch row declares `clearable` explicitly (whether `null`
+  clears it, i.e. zod `nullable` and Swift `allowsClear`) instead of inferring
+  it from `snapshotSemantics`, which only describes P0 snapshot omission. The
+  derivation refuses `.default`/`.catch`/`.nullable` session schemas, which
+  would loosen the patch. A one-time zod 4 JSON Schema comparison showed the
+  derived schema equal to the former literal.
+- `changedMetaPatch` never encodes a missing required field as `null`, which
+  clients would reject together with the whole transaction.
+- `changedMetaPatch` and the TS reducer iterate the derived lists. A field owned
+  by another section (`messageJournalAvailable`) goes through a handler record
+  typed over the custom-field union, so a new custom field fails to compile.
+- `pnpm --dir agentd run gen:contracts` renders
+  `contracts/projection/session-field-ownership.json` (semantically identical
+  to the hand-written manifest; only five rows changed key order) and
+  `Picky/Protocol/Generated/PickySessionMetaPatch.generated.swift`. The
+  generated Swift apply assigns `PickySessionMetadata.<field>` directly, so a
+  missing metadata property fails to compile, and custom fields become protocol
+  requirements. A vitest case fails when a committed artifact is stale, so no
+  Xcode build phase runs the generator (it takes about 0.2 s).
+- Literal tests in `protocol.test.ts` pin which fields accept `null` and the
+  notification tri-state without reading the field table, so a table edit that
+  changes the wire contract fails there.
+- Four conformance scenarios (`meta-snapshot-every-field`,
+  `meta-patch-every-field-set`, `meta-patch-every-field-clear`,
+  `meta-patch-notification-toggles`) went in before the change and passed
+  unchanged against the old code on both reducers. A vitest case requires every
+  metaPatch field in the three every-field scenarios.
+
+Intentionally unchanged: the Swift `PickyAgentSession`, card mapping, and
+`PickySessionProjectionSnapshot.persistedSessionFields`; the minimal app-snapshot
+fallback in `app-session-snapshot-policy.ts`, which is a different tier from the
+P0 manifest semantics (it drops `lastRequest` without listing it in
+`omittedFields`, a pre-existing behavior left for a separate change).

@@ -52,72 +52,6 @@ enum FieldUpdate<Value: Equatable>: Equatable {
     }
 }
 
-/// Dormant v2 scalar metadata patch. This mirrors
-/// `PickySessionMetaPatchSchema`; collection fields have their own mutations.
-struct PickySessionMetaPatch: Decodable, Equatable {
-    let agentCycle: FieldUpdate<PickyAgentCycle>
-    let asyncWorkSummary: FieldUpdate<PickyAsyncWorkSummary>
-    let id: FieldUpdate<String>
-    let title: FieldUpdate<String>
-    let status: FieldUpdate<PickySessionStatus>
-    let cwd: FieldUpdate<String>
-    let piSessionFilePath: FieldUpdate<String>
-    let createdAt: FieldUpdate<Date>
-    let updatedAt: FieldUpdate<Date>
-    let lastSummary: FieldUpdate<String>
-    let thinkingPreview: FieldUpdate<String>
-    let messageJournalAvailable: FieldUpdate<Bool>
-    let contextUsage: FieldUpdate<PickyContextUsage>
-    let currentAssistantRun: FieldUpdate<PickyAssistantRunMetadata>
-    let notifyMainOnCompletion: FieldUpdate<Bool>
-    let notifyMacOSOnCompletion: FieldUpdate<Bool>
-    let archived: FieldUpdate<Bool>
-    let archivedAt: FieldUpdate<Date>
-    let pinned: FieldUpdate<Bool>
-    let lastRequest: FieldUpdate<PickySessionLastRequest>
-
-    enum CodingKeys: String, CodingKey, CaseIterable {
-        case agentCycle, asyncWorkSummary
-        case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary
-        case thinkingPreview, messageJournalAvailable, contextUsage, currentAssistantRun
-        case notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
-    }
-
-    init(from decoder: Decoder) throws {
-        let allKeys = try decoder.container(keyedBy: PickyProjectionCodingKey.self).allKeys
-        let knownKeys = Set(CodingKeys.allCases.map(\.stringValue))
-        let unknownKeys = allKeys.map(\.stringValue).filter { !knownKeys.contains($0) }
-        guard unknownKeys.isEmpty else {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: decoder.codingPath,
-                debugDescription: "Unknown meta patch keys: \(unknownKeys.sorted().joined(separator: ", "))"
-            ))
-        }
-
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        agentCycle = try FieldUpdate.decode(from: container, forKey: .agentCycle, allowsClear: true)
-        asyncWorkSummary = try FieldUpdate.decode(from: container, forKey: .asyncWorkSummary, allowsClear: true)
-        id = try FieldUpdate.decode(from: container, forKey: .id, allowsClear: false)
-        title = try FieldUpdate.decode(from: container, forKey: .title, allowsClear: false)
-        status = try FieldUpdate.decode(from: container, forKey: .status, allowsClear: false)
-        cwd = try FieldUpdate.decode(from: container, forKey: .cwd, allowsClear: true)
-        piSessionFilePath = try FieldUpdate.decode(from: container, forKey: .piSessionFilePath, allowsClear: true)
-        createdAt = try FieldUpdate.decode(from: container, forKey: .createdAt, allowsClear: false)
-        updatedAt = try FieldUpdate.decode(from: container, forKey: .updatedAt, allowsClear: false)
-        lastSummary = try FieldUpdate.decode(from: container, forKey: .lastSummary, allowsClear: true)
-        thinkingPreview = try FieldUpdate.decode(from: container, forKey: .thinkingPreview, allowsClear: true)
-        messageJournalAvailable = try FieldUpdate.decode(from: container, forKey: .messageJournalAvailable, allowsClear: true)
-        contextUsage = try FieldUpdate.decode(from: container, forKey: .contextUsage, allowsClear: true)
-        currentAssistantRun = try FieldUpdate.decode(from: container, forKey: .currentAssistantRun, allowsClear: true)
-        notifyMainOnCompletion = try FieldUpdate.decode(from: container, forKey: .notifyMainOnCompletion, allowsClear: true)
-        notifyMacOSOnCompletion = try FieldUpdate.decode(from: container, forKey: .notifyMacOSOnCompletion, allowsClear: true)
-        archived = try FieldUpdate.decode(from: container, forKey: .archived, allowsClear: true)
-        archivedAt = try FieldUpdate.decode(from: container, forKey: .archivedAt, allowsClear: true)
-        pinned = try FieldUpdate.decode(from: container, forKey: .pinned, allowsClear: true)
-        lastRequest = try FieldUpdate.decode(from: container, forKey: .lastRequest, allowsClear: true)
-    }
-}
-
 /// All v2 mutation variants. Unknown variant discriminators deliberately throw;
 /// the containing transaction is then discarded as `.unknown` by `PickyEvent`.
 enum PickySessionProjectionMutation: Decodable, Equatable {
@@ -228,21 +162,6 @@ enum PickySessionProjectionMutation: Decodable, Equatable {
         case let type:
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown projection mutation type: \(type)")
         }
-    }
-}
-
-private struct PickyProjectionCodingKey: CodingKey {
-    let stringValue: String
-    let intValue: Int?
-
-    init?(stringValue: String) {
-        self.stringValue = stringValue
-        intValue = nil
-    }
-
-    init?(intValue: Int) {
-        stringValue = String(intValue)
-        self.intValue = intValue
     }
 }
 
@@ -397,5 +316,4 @@ private func projectionDecodingErrorSummary(_ error: Error) -> String {
         "unexpected \(String(reflecting: type(of: error)))"
     }
 }
-
 

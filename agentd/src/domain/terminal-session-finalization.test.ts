@@ -8,7 +8,7 @@ import { SessionStore } from "../session-store.js";
 import { SessionSupervisor } from "../session-supervisor.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "../runtime/types.js";
 import { mutationNames, persistedSessionFieldOwnership, requiredTransientOwnershipIds } from "./session-projection-ownership.js";
-import { finalizeTerminalSession, type TerminalSessionFinalizationInput } from "./terminal-session-finalization.js";
+import { buildSessionProjectionMutations, finalizeTerminalSession, type TerminalSessionFinalizationInput } from "./terminal-session-finalization.js";
 
 const now = "2026-08-24T13:06:20.000Z";
 
@@ -238,3 +238,17 @@ class FixtureHandle implements RuntimeSessionHandle {
   isStreaming = false;
   subscribe(_listener: (event: RuntimeEvent) => void): () => void { return () => {}; }
 }
+
+describe("buildSessionProjectionMutations meta patch", () => {
+  const base: PickyAgentSession = {
+    id: "session-meta", title: "Meta", status: "running", createdAt: "2026-08-24T00:00:00.000Z", updatedAt: "2026-08-24T00:00:00.000Z",
+    logs: [], tools: [], artifacts: [], changedFiles: [], messages: [], notifyMainOnCompletion: true, notifyMacOSOnCompletion: true,
+  };
+
+  it("clears an optional field with null and never clears a required one", () => {
+    const after = { ...base, notifyMainOnCompletion: undefined, notifyMacOSOnCompletion: false, title: undefined } as unknown as PickyAgentSession;
+    const mutations = buildSessionProjectionMutations(base, after);
+    expect(mutations).toEqual([{ type: "metaPatch", patch: { notifyMainOnCompletion: null, notifyMacOSOnCompletion: false } }]);
+    for (const mutation of mutations) expect(PickySessionProjectionMutationSchema.safeParse(mutation).success).toBe(true);
+  });
+});

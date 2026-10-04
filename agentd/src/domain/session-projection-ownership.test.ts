@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { PickyAgentSessionSchema } from "../protocol.js";
 import {
   persistedSessionFieldOwnership,
-  parseSessionFieldOwnership,
   parseSessionTransientOwnership,
   requiredTransientOwnershipIds,
   transientSessionOwnership,
@@ -47,12 +46,8 @@ describe("session projection ownership", () => {
     );
   });
 
-  it("rejects malformed and duplicate manifest rows", () => {
-    expect(() => parseSessionFieldOwnership("not json")).toThrow();
-
-    const persisted = JSON.parse(readFileSync(new URL("../../../contracts/projection/session-field-ownership.json", import.meta.url), "utf8"));
-    persisted.push({ ...persisted[0] });
-    expect(() => parseSessionFieldOwnership(JSON.stringify(persisted))).toThrow(/Duplicate/);
+  it("rejects malformed and duplicate transient manifest rows", () => {
+    expect(() => parseSessionTransientOwnership("not json")).toThrow();
 
     const transient = JSON.parse(readFileSync(new URL("../../../contracts/projection/session-transient-ownership.json", import.meta.url), "utf8"));
     transient.push({ ...transient[0] });

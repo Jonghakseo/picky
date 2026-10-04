@@ -564,19 +564,13 @@ struct PickyConversationHeaderView: View {
     @ViewBuilder
     private var statusCornerIndicator: some View {
         switch session.status {
-        case .running:
-            Circle()
-                .fill(statusColor)
-                .frame(width: 7.5, height: 7.5)
-                .overlay(Circle().stroke(DS.Colors.surface1, lineWidth: 1.4))
-                .offset(x: 2.8, y: -2.8)
         case .waiting_for_input, .blocked:
             attentionIndicator("!")
                 .offset(x: 3.2, y: -3.2)
         case .failed:
             attentionIndicator("×")
                 .offset(x: 3.2, y: -3.2)
-        case .completed, .cancelled, .queued:
+        case .running, .completed, .cancelled, .queued:
             EmptyView()
         }
     }

@@ -387,7 +387,6 @@ it("admits explicit user input after restart even though the previous owner left
   await restarted.load();
   await vi.waitFor(() => expect(restarted.asyncControls.context("session-sdk").tracking).toBe("ready"));
   await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
-  expect(restarted.get("session-sdk")?.status).toBe("blocked");
   await restarted.runtimeControls.setModel("session-sdk", "w3-offline", "finite");
   await restarted.followUp("session-sdk", "Continue after restart");
   await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
@@ -400,6 +399,12 @@ it("admits explicit user input after restart even though the previous owner left
   await restarted.followUp("session-sdk", "Second input after restart");
   await vi.waitFor(() => expect(f.requests.length).toBeGreaterThan(requestsAfterFirst));
   expect(JSON.stringify(f.requests.at(-1))).toContain("Second input after restart");
+  await vi.waitFor(() => expect(restarted.get("session-sdk")?.status).toBe("completed"));
+  // Lost work does not pin the Pickle to blocked, but stays visible and non-releasable.
+  expect(restarted.get("session-sdk")?.asyncWorkSummary).toMatchObject({ uncertainExecutionCount: 1, attentionCount: 0, canReleaseRuntime: false });
+  // The user's stop cannot control the lost work either, so it must not fail on it.
+  const stopped = await restarted.abort("session-sdk");
+  expect(stopped.asyncControl?.operations.at(-1)?.outcome).toBe("settled");
 }, 20_000);
 
 it("keeps an empty resumed Pickle fenced until its new provider snapshot is ready", async () => {

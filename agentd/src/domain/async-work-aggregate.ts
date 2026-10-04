@@ -13,19 +13,22 @@ export interface AsyncWorkObservation {
 /** Pure whole-work policy. Response finalization and persistence remain owner effects. */
 export function aggregateAsyncWork(before: PickyAgentSession, proposed: PickyAgentSession, observation: AsyncWorkObservation): PickyAgentSession {
   let episode = episodeForCycle(proposed);
-  const counts = rootCounts(proposed, observation);
-  const pending = (proposed.completionTickets ?? []).filter((ticket) => !["handled", "suppressed"].includes(ticket.state));
+  const { lostRootCount, attentionUncertainCount, ...counts } = rootCounts(proposed, observation);
+  const { pending, lostTickets } = pendingTickets(proposed, observation);
+  const lostWork = lostRootCount > 0 || lostTickets;
   const failedDeliveryCount = pending.filter((ticket) => ["failed", "unknown"].includes(ticket.state)).length;
   const controls = controlObligations(proposed);
   const executionPending = hasUnfinishedWork(proposed, observation, counts.activeRootCount, pending.length);
   const unfinished = hasUnfinishedWork(proposed, observation, counts.activeRootCount, pending.length, controls.pending);
-  const reason = attentionReason(counts.uncertainExecutionCount, failedDeliveryCount, controls.failures, parentOutcome(proposed, episode), executionPending, observation.tracking);
-  const attentionCount = counts.uncertainExecutionCount + failedDeliveryCount + controls.failures + reason.extraCount;
-  const quiescent = observation.tracking === "ready" && attentionCount === 0 && !unfinished
+  const reason = attentionReason(attentionUncertainCount, failedDeliveryCount, controls.failures, parentOutcome(proposed, episode), executionPending, observation.tracking);
+  const attentionCount = attentionUncertainCount + failedDeliveryCount + controls.failures + reason.extraCount;
+  const workSettled = observation.tracking === "ready" && attentionCount === 0 && !unfinished
     && !proposed.pendingExtensionUiRequest && responseFinalized(proposed, episode);
+  // Lost work finishes the current episode but never authorizes runtime release.
+  const quiescent = workSettled && !lostWork;
   // A settled episode is historical until a real new cycle is admitted. Queued/preflight input
   // must not erase that marker and accidentally reuse the previous notification identity.
-  if (episode && quiescent && !episode.settled) episode = { ...episode, settled: true };
+  if (episode && workSettled && !episode.settled) episode = { ...episode, settled: true };
   const status = aggregateStatus(proposed, attentionCount, executionPending, episode);
   const summary: AsyncWorkSummary = {
     tracking: observation.tracking, ...counts, pendingCompletionCount: pending.length, attentionCount,
@@ -81,11 +84,27 @@ function episodeForCycle(session: PickyAgentSession): Episode | undefined {
   return episode;
 }
 
-function rootCounts(session: PickyAgentSession, observation: AsyncWorkObservation): Pick<AsyncWorkSummary, "activeRootCount" | "uncertainExecutionCount"> {
-  const roots = new Map<string, { active: boolean; uncertain: boolean }>();
+/**
+ * Work a previous runtime left behind stays visible as uncertain and withholds release, but
+ * no live owner can run, stop or deliver it. Counting it as active or as attention would pin
+ * the Pickle to running/blocked while the user keeps working in it.
+ */
+function fromPreviousRuntime(entry: { runtimeInstanceId: string }, observation: AsyncWorkObservation): boolean {
+  return observation.runtimeInstanceId !== undefined && entry.runtimeInstanceId !== observation.runtimeInstanceId;
+}
+
+/** A previous runtime can never deliver its tickets; they withhold release but are not current work. */
+function pendingTickets(session: PickyAgentSession, observation: AsyncWorkObservation) {
+  const unhandled = (session.completionTickets ?? []).filter((ticket) => !["handled", "suppressed"].includes(ticket.state));
+  const pending = unhandled.filter((ticket) => !fromPreviousRuntime(ticket, observation));
+  return { pending, lostTickets: pending.length !== unhandled.length };
+}
+
+function rootCounts(session: PickyAgentSession, observation: AsyncWorkObservation): Pick<AsyncWorkSummary, "activeRootCount" | "uncertainExecutionCount"> & { lostRootCount: number; attentionUncertainCount: number } {
+  const roots = new Map<string, { active: boolean; uncertain: boolean; lost: boolean }>();
   for (const task of session.asyncTasks ?? []) {
     const key = JSON.stringify([task.runtimeInstanceId, task.providerId, task.providerInstanceId, task.rootTaskId]);
-    const root = roots.get(key) ?? { active: false, uncertain: false };
+    const root = roots.get(key) ?? { active: false, uncertain: false, lost: fromPreviousRuntime(task, observation) };
     root.active ||= asyncExecutionIsActive(task);
     // A durable grant is unknown until the ready provider reports its start.
     // It is pending only while this same live owner can still complete registration.
@@ -94,8 +113,11 @@ function rootCounts(session: PickyAgentSession, observation: AsyncWorkObservatio
     root.uncertain ||= task.presence === "unknown" && !pendingGrant;
     roots.set(key, root);
   }
-  return { activeRootCount: [...roots.values()].filter((root) => root.active).length,
-    uncertainExecutionCount: [...roots.values()].filter((root) => root.uncertain).length };
+  const all = [...roots.values()];
+  return { activeRootCount: all.filter((root) => root.active && !root.lost).length,
+    uncertainExecutionCount: all.filter((root) => root.uncertain).length,
+    attentionUncertainCount: all.filter((root) => root.uncertain && !root.lost).length,
+    lostRootCount: all.filter((root) => root.lost && (root.active || root.uncertain)).length };
 }
 
 function controlObligations(session: PickyAgentSession): { pending: boolean; failures: number } {

@@ -27,7 +27,9 @@ it("shows pending live-owner grants without hiding unconfirmed grants from a los
   const proposed = { ...before, asyncTasks: [task] };
   const live = aggregateAsyncWork(before, proposed, { ...idle, runtimeInstanceId: task.runtimeInstanceId });
   expect(live).toMatchObject({ status: "running", asyncWorkSummary: { activeRootCount: 1, uncertainExecutionCount: 0, attentionCount: 0, canReleaseRuntime: false } });
-  expect(aggregateAsyncWork(before, proposed, { ...idle, runtimeInstanceId: "replacement-owner" })).toMatchObject({ status: "blocked", asyncWorkSummary: { uncertainExecutionCount: 1, canReleaseRuntime: false } });
+  // A lost owner's grant stays visible and non-releasable, but no live owner can run it,
+  // so it must not pin the Pickle to blocked while the user keeps working.
+  expect(aggregateAsyncWork(before, proposed, { ...idle, runtimeInstanceId: "replacement-owner" })).toMatchObject({ status: "completed", asyncWorkSummary: { activeRootCount: 0, uncertainExecutionCount: 1, attentionCount: 0, canReleaseRuntime: false } });
   expect(aggregateAsyncWork(before, proposed, { ...idle, runtimeInstanceId: task.runtimeInstanceId, tracking: "reconciling" })).toMatchObject({ status: "blocked", asyncWorkSummary: { uncertainExecutionCount: 1 } });
 });
 

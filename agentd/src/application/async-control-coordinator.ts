@@ -570,9 +570,12 @@ function runtimeBusy(handle: RuntimeSessionHandle, session: PickyAgentSession): 
     || !!session.pendingExtensionUiRequest || !!session.queuedSteers?.length || !!session.queuedFollowUps?.length
     || handle.getSteeringMessages().length > 0 || handle.getFollowUpMessages().length > 0;
 }
-/** Only explicit user input may continue past work a previous runtime left unknown. */
+/**
+ * Explicit user input and the user's stop may continue past work a previous runtime left
+ * unknown: no live provider can control it. Release, archive and startup reopen stay fenced.
+ */
 function acknowledgesPreviousOwner(command: Command): boolean {
-  return command.type === "reconcileAsyncControl" && command.inputLease === true;
+  return command.type === "stopAsyncTasks" || command.type === "reconcileAsyncControl" && command.inputLease === true;
 }
 function outstandingState(session: PickyAgentSession, requestId: string, recovering = false, acknowledgedRuntimeInstanceId?: string): boolean {
   const current = <T extends { runtimeInstanceId: string }>(entry: T) => acknowledgedRuntimeInstanceId === undefined || entry.runtimeInstanceId === acknowledgedRuntimeInstanceId;

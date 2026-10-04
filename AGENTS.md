@@ -90,6 +90,7 @@ If Pi is mid-turn, the command first aborts the current turn and waits for it to
 When the user asks about a feature, start here before broad searching:
 
 - UX writing / labels / errors / localization: `design/UX_WRITING.md`, `.agents/skills/picky-ux-writing/SKILL.md`, `docs/i18n.md`, `Picky/Resources/Localizable.xcstrings`. Use the local `picky-ux-writing` skill when adding, changing, or auditing user-facing copy, including copy in new UI.
+- SwiftUI 1:1 mockups / state renders / visual galleries: `runbook/swift-ui-mockup.md`, `.agents/skills/picky-swift-ui-mockup/SKILL.md`. The runbook owns the workflow; the skill's `scripts/` and `references/` hold reusable tools and examples. `docs/render-gallery.md` lists production gallery targets and limits. Keep proposal mockups distinct from production validation.
 - App lifecycle / menu bar / permissions: `Picky/PickyApp.swift`, `Picky/App/`, `Picky/Companion/PickyPermissionMonitor.swift`
 - Hub settings / prerequisites / plugin + main-agent settings UI: `Picky/Hub/Settings/`, `Picky/Hub/Plugins/`, `Picky/Hub/Pages/PickyHubSettingsPage.swift`
 - Always-on main-agent transcript state: `Picky/MainAgent/PickyMainAgentConversationStore.swift`

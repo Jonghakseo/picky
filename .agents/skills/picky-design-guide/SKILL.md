@@ -147,17 +147,13 @@ Near miss에는 이 스킬의 시각 규칙을 억지로 적용하지 않는다.
 - 유지할 것과 변경할 것을 함께 기록한다.
 - 사용자가 리뷰만 요청했다면 파일을 수정하지 않는다.
 
-### 7. 정적 UI 증거는 production offscreen render로 만든다
+### 7. 정적 UI 렌더와 제안 목업
 
-사용자가 변경 화면의 스크린샷이나 시각 검증을 요청하면 실행 중인 Picky.app의 빌드를 먼저 바꾸려 하지 않는다.
+[Swift UI 목업 런북](../../../runbook/swift-ui-mockup.md)을 실행 절차의 정본으로 따른다. 기존 target과 오프스크린 제약은 [렌더 갤러리 문서](../../../docs/render-gallery.md)에 있다.
 
-1. `<repo-root>/docs/render-gallery.md`에서 대상 surface의 기존 gallery target과 제한을 확인한다.
-2. 기존 scene이 있으면 `./scripts/render-ui-gallery.sh <target>`을 실행한다.
-3. 필요한 상태가 없으면 gallery 전용 모사 UI를 만들지 말고 production component를 사용한 deterministic scene을 추가한다.
-4. 생성 성공만으로 끝내지 않고 PNG를 직접 읽어 geometry, clipping, 상태와 appearance를 확인한다.
-5. 사용자가 이미지 파일을 열어 달라고 명시했을 때만 `open`을 실행한다.
-
-정적 geometry, appearance, 상태 표현을 캡처하기 위해 Picky.app 재실행 승인을 요청하지 않는다. hover, keyboard focus, native panel anchoring, material/vibrancy처럼 offscreen render가 증명하지 못하는 interaction만 별도 live validation으로 분리하고, 이 경우에도 재실행은 매번 명시적 승인을 받아야 한다.
+- 실제 구현 검증은 production component scene으로 수행한다. 별도의 모사 UI를 구현 완료의 증거로 쓰지 않는다.
+- 사용자가 Swift 1:1 제안 목업을 요청하면 [목업 스킬](../picky-swift-ui-mockup/SKILL.md)을 함께 사용한다. 바뀌는 영역만 proposal View로 만들고 실제 컴포넌트·토큰을 재사용한다.
+- 생성한 PNG를 직접 검수한다. 정적 검수에 앱 재시작은 필요 없으며, 렌더를 live interaction 검증으로 보고하지 않는다.
 
 ### 8. 좁은 범위부터 검증한다
 

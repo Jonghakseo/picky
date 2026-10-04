@@ -24,6 +24,8 @@ git rev-parse --show-toplevel
 | `<repo-root>/design/COMPONENTS.md` | button, chip, card, Dock, Composer, bubble, panel, overlay 생성·변경 |
 | `<repo-root>/design/AUDIT.md` | 디자인 리뷰, 전체 검수, 일관성 점검, 우선순위 산정 |
 | `<repo-root>/design/UX_WRITING.md` | 라벨, 설명, 상태, 오류, 빈 화면, 접근성 문구 작성·검수. 로컬 `picky-ux-writing` 스킬을 함께 사용 |
+| `<repo-root>/runbook/swift-ui-mockup.md` | Swift 1:1 목업·상태별 렌더·갤러리 실행 절차. 로컬 `picky-swift-ui-mockup` 스킬을 함께 사용 |
+| `<repo-root>/docs/render-gallery.md` | production gallery target 목록·지원 scene·오프스크린 제약 |
 | `<repo-root>/design/references/APPLE-HIG.md` | macOS platform behavior, accessibility, material, control 가정 확인 |
 | `<repo-root>/design/references/DESIGN-apple.md` | Apple 웹 시각 언어와 비교할 때만. 규범이 아니라 참고 자료 |
 

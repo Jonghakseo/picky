@@ -57,6 +57,41 @@ describe("pi session image attachment evidence", () => {
     expect(messages.every((message) => message.attachedImagesCount === undefined)).toBe(true);
   });
 
+  it("imports a successful image read as a path-only tool image message", () => {
+    const messages = piSessionEntriesToPickyMessages([
+      {
+        type: "message",
+        id: "a1",
+        timestamp: "2026-07-14T00:59:03.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "toolCall", id: "call-img", name: "read", arguments: { path: "shots/a.png" } },
+            { type: "toolCall", id: "call-txt", name: "read", arguments: { path: "/abs/notes.md" } },
+          ],
+        },
+      },
+      {
+        type: "message",
+        id: "r1",
+        timestamp: "2026-07-14T00:59:04.000Z",
+        message: { role: "toolResult", toolCallId: "call-img", toolName: "read", content: [{ type: "text", text: "Read image file [image/png]" }, { type: "image", data: "SU1BR0VEQVRB", mimeType: "image/png" }] },
+      },
+      {
+        type: "message",
+        id: "r2",
+        timestamp: "2026-07-14T00:59:05.000Z",
+        message: { role: "toolResult", toolCallId: "call-txt", toolName: "read", content: [{ type: "text", text: "notes" }] },
+      },
+    ] as never, "/work/project");
+
+    expect(messages.map((message) => [message.kind, message.toolImage])).toEqual([
+      ["agent_activity", undefined],
+      ["system", { toolCallId: "call-img", toolName: "read", path: "/work/project/shots/a.png", mimeType: "image/png" }],
+    ]);
+    expect(JSON.stringify(messages)).not.toContain("SU1BR0VEQVRB");
+  });
+
   it("restores image counts through the terminal session import path", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-pi-image-count-sync-"));
     const sessionFile = join(dir, "session.jsonl");

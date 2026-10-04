@@ -2226,6 +2226,34 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.lastSummary).toBe("Cancelled");
   });
 
+  it("persists an image read as its own conversation message after the preceding reply text", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "이미지 확인", instructions: "Look at the screenshot" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "스크린샷을 볼게요" });
+    runtime.handle?.emit({ type: "tool", toolCallId: "read-1", name: "read", status: "running" });
+    runtime.handle?.emit({ type: "tool", toolCallId: "read-1", name: "read", status: "succeeded", imagePath: "/tmp/screen.png", imageMimeType: "image/png" });
+    runtime.handle?.emit({ type: "tool", toolCallId: "read-1", name: "read", status: "succeeded", imagePath: "/tmp/screen.png", imageMimeType: "image/png" });
+    await waitUntil(() => supervisor.get(pickle.id)?.messages?.some((message) => message.toolImage) === true);
+
+    const messages = supervisor.get(pickle.id)?.messages ?? [];
+    const imageMessages = messages.filter((message) => message.toolImage);
+    expect(imageMessages).toEqual([expect.objectContaining({
+      kind: "system",
+      toolImage: { toolCallId: "read-1", toolName: "read", path: "/tmp/screen.png", mimeType: "image/png" },
+    })]);
+    const replyIndex = messages.findIndex((message) => message.kind === "agent_text" && message.text === "스크린샷을 볼게요");
+    expect(replyIndex).toBeGreaterThanOrEqual(0);
+    expect(messages.indexOf(imageMessages[0]!)).toBeGreaterThan(replyIndex);
+
+    const reloaded = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir));
+    await reloaded.load();
+    expect(reloaded.get(pickle.id)?.messages?.find((message) => message.toolImage)?.toolImage?.path).toBe("/tmp/screen.png");
+  });
+
   it("resets the same Pickle card when /new replaces the underlying Pi session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

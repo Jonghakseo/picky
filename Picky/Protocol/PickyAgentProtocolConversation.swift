@@ -169,6 +169,13 @@ struct PickyMessagePresentation: Codable, Equatable {
     }
 }
 
+struct PickyToolImage: Codable, Equatable {
+    var toolCallId: String? = nil
+    let toolName: String
+    let path: String
+    var mimeType: String? = nil
+}
+
 struct PickySessionMessage: Codable, Equatable, Identifiable {
     let id: String
     let kind: PickySessionMessageKind
@@ -193,6 +200,9 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     /// structured context channel (PTT / QuickInput screenshots). Nil for
     /// messages that have no attachments or for non-user kinds.
     var attachedImagesCount: Int? = nil
+    /// Image a tool handed to the model (Pi `read` on an image file). Rides on a
+    /// `system` message; the HUD loads the local file, the journal keeps only the path.
+    var toolImage: PickyToolImage? = nil
     /// Set only on entries Picky itself authored; see `PickyMessagePresentationCode`.
     var presentation: PickyMessagePresentation? = nil
 }
@@ -203,6 +213,7 @@ extension PickySessionMessage {
     /// requests and system messages so any text-bearing bubble can be expanded into
     /// the larger markdown view from the conversation card.
     var openAsReportMarkdown: String? {
+        if toolImage != nil { return nil }
         switch kind {
         case .agentText, .userText, .system:
             if let compactSummaryReportMarkdown { return compactSummaryReportMarkdown }

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { hasActivity } from "./domain/activity-summary.js";
 import { stripAnsiEscapeSequences } from "./domain/ansi.js";
-import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySessionMessage, PickySubagentInvocation } from "./protocol.js";
+import { toolImageMessage } from "./domain/tool-image-message.js";
+import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySessionMessage, PickySubagentInvocation, PickyToolImage } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -298,6 +299,13 @@ export class SessionMessageBuilder {
       createdAt: this.deps.now(),
       subagentInvocation,
     });
+  }
+
+  async recordToolImage(sessionId: string, toolImage: PickyToolImage): Promise<void> {
+    await this.flushAssistantText(sessionId);
+    await this.flushThinking(sessionId);
+    const messageId = `msg-tool-image-${toolImage.toolCallId ?? randomUUID()}`;
+    await this.appendInternal(sessionId, toolImageMessage(messageId, this.deps.now(), toolImage));
   }
 
   appendAssistantDelta(sessionId: string, delta: string): void {

@@ -364,6 +364,8 @@ struct PickyConversationListView: View {
                 snapshot.notifyBubbleCount += 1
             case .extensionCustomMessage:
                 snapshot.extensionCustomMessageBubbleCount += 1
+            case .toolImage:
+                snapshot.toolImageBubbleCount += 1
             }
         }
         snapshot.showsActivitySummary = snapshot.activitySummaryCount > 0
@@ -579,6 +581,10 @@ struct PickyConversationListView: View {
                 onOpenAsReport: openMessageReportAction(for: message),
                 onCopyText: { viewModel.copyMessageText($0) }
             )
+        case .toolImage:
+            if let toolImage = message.toolImage {
+                PickyToolImageBubbleView(toolImage: toolImage, createdAt: message.createdAt)
+            }
         case .systemText:
             PickyAgentBubbleView(
                 message: message,
@@ -1184,6 +1190,8 @@ enum PickyConversationBubbleKind: Equatable {
     /// Pi `role="custom"` extension output, rendered as a `customType`-labeled
     /// bubble whose detail collapses behind a disclosure.
     case extensionCustomMessage(PickyExtensionCustomMessagePresentation)
+    /// Image a tool read for the model, shown as an inline thumbnail.
+    case toolImage
     /// Plain `system` message rendered through the agent bubble surface.
     case systemText
 
@@ -1210,7 +1218,9 @@ enum PickyConversationBubbleKind: Equatable {
         case .agentActivity:
             self = message.activitySnapshot?.visibleToolCallItems.isEmpty == false ? .activitySummary : .hiddenActivity
         case .system:
-            if message.isCompactCompletionMessage {
+            if message.toolImage != nil {
+                self = .toolImage
+            } else if message.isCompactCompletionMessage {
                 self = .compactCompletion
             } else if message.isCompactFailureMessage {
                 self = .compactFailure
@@ -1250,6 +1260,7 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var compactFailureBubbleCount = 0
     var commandReceiptBubbleCount = 0
     var subagentInvocationBubbleCount = 0
+    var toolImageBubbleCount = 0
     var turnCardCount = 0
     var showsActivitySummary = false
 }

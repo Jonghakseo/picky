@@ -1193,6 +1193,29 @@ describe("PiSdkRuntime", () => {
     }));
   });
 
+  it("points a successful image read at the file on disk without forwarding base64", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/work/project", sessionId: "session-read-image" });
+    const events: RuntimeEvent[] = [];
+    handle.subscribe((event) => events.push(event));
+    const readCall = (toolCallId: string, path: string, content: unknown[], isError = false) => {
+      fakeSession.emit("event", { type: "tool_execution_start", toolCallId, toolName: "read", args: { path } });
+      fakeSession.emit("event", { type: "tool_execution_end", toolCallId, toolName: "read", isError, result: { content } });
+    };
+
+    readCall("read-image", "shots/screen.png", [{ type: "text", text: "Read image file [image/png]" }, { type: "image", data: "QkFTRTY0", mimeType: "image/png" }]);
+    readCall("read-text", "notes.md", [{ type: "text", text: "hello" }]);
+    readCall("read-failed", "/abs/missing.png", [{ type: "image", data: "QkFTRTY0", mimeType: "image/png" }], true);
+
+    const finished = events.filter((event): event is Extract<RuntimeEvent, { type: "tool" }> => event.type === "tool" && event.status !== "running");
+    expect(finished.map((event) => [event.toolCallId, event.imagePath, event.imageMimeType])).toEqual([
+      ["read-image", "/work/project/shots/screen.png", "image/png"],
+      ["read-text", undefined, undefined],
+      ["read-failed", undefined, undefined],
+    ]);
+    expect(JSON.stringify(finished.map(({ imagePath, imageMimeType }) => ({ imagePath, imageMimeType })))).not.toContain("QkFTRTY0");
+  });
+
   it("captures normalized raw write paths across start and success events without relying on argsPreview", async () => {
     const fakeSession = new FakeSession();
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: process.cwd(), sessionId: "session-write-artifact" });

@@ -10,7 +10,7 @@ import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js"
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySubagentInvocation, PickyToolActivity } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySubagentInvocation, PickyToolActivity, PickyToolImage } from "../protocol.js";
 import type { RuntimeAutoRetry, RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -31,6 +31,7 @@ interface RuntimeMessageJournal {
   clearAllThinking(sessionId: string): Promise<void>;
   recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void>;
   recordSubagentInvocation?(sessionId: string, invocation: PickySubagentInvocation): Promise<void>;
+  recordToolImage?(sessionId: string, toolImage: PickyToolImage): Promise<void>;
 }
 
 type LiveOutput = "idle" | "writing" | "preparing_tool";
@@ -777,6 +778,14 @@ export class RuntimeEventHandler {
     logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.dependencies.patchSession(sessionId, { tools }, { emitSession: false });
     this.dependencies.emitToolActivityUpdated(sessionId, nextTool);
+    if (event.status === "succeeded" && event.imagePath) {
+      await this.dependencies.messageBuilder.recordToolImage?.(sessionId, {
+        toolCallId: event.toolCallId,
+        toolName: event.name,
+        path: event.imagePath,
+        ...(event.imageMimeType ? { mimeType: event.imageMimeType } : {}),
+      });
+    }
     if (event.name !== "write" || event.status !== "succeeded") return;
     const currentArtifacts = this.dependencies.getSession(sessionId).artifacts;
     const existingUpdatedAt = currentArtifacts.find((existing) => existing.kind === "file" && existing.path === event.filePath)?.updatedAt;

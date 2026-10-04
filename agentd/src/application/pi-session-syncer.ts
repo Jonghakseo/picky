@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, resolve } from "node:path";
 import { hasActivity, zeroActivitySummary } from "../domain/activity-summary.js";
 import { categorizeTool } from "../domain/tool-categorizer.js";
+import { toolImageMessage } from "../domain/tool-image-message.js";
 import { resolveTodoStateFromPiSessionEntries } from "../domain/todo-state.js";
 import type { PickyActivitySummary, PickySessionMessage, PickyTodoState } from "../protocol.js";
 
@@ -12,6 +15,7 @@ export interface PiSessionEntry {
   timestamp?: string;
   customType?: string;
   data?: unknown;
+  cwd?: string;
   message?: PiSessionMessage;
 }
 
@@ -21,6 +25,9 @@ export interface PiSessionMessage {
   timestamp?: number | string;
   stopReason?: string;
   errorMessage?: string;
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
 }
 
 interface PiContentBlock {
@@ -28,6 +35,9 @@ interface PiContentBlock {
   text?: string;
   thinking?: string;
   name?: string;
+  id?: string;
+  arguments?: unknown;
+  mimeType?: string;
 }
 
 interface PiTerminalSessionSyncResult {
@@ -63,8 +73,14 @@ export async function readPiSessionInfoName(sessionFilePath: string): Promise<st
   return undefined;
 }
 
-export function piSessionEntriesToPickyMessages(entries: readonly PiSessionEntry[]): PickySessionMessage[] {
-  return entries.flatMap(toPickySessionMessages);
+export function piSessionEntriesToPickyMessages(entries: readonly PiSessionEntry[], cwd?: string): PickySessionMessage[] {
+  // `read` image results carry no path; pair them with the earlier tool call in this batch.
+  const readPathsByToolCallId = new Map<string, string>();
+  return entries.flatMap((entry) => {
+    if (entry.message?.role === "assistant") rememberReadPaths(entry.message.content, cwd, readPathsByToolCallId);
+    if (entry.message?.role === "toolResult") return toolImageMessages(entry, readPathsByToolCallId);
+    return toPickySessionMessages(entry);
+  });
 }
 
 export async function readPiTerminalSessionMessages(sessionFilePath: string, baselinePiMessageId?: string): Promise<PiTerminalSessionSyncResult> {
@@ -88,7 +104,8 @@ export async function readPiTerminalSessionMessages(sessionFilePath: string, bas
   const baselineEntry = startIndex >= 0 ? activePath[startIndex] : undefined;
   const baselineCreatedAt = baselineEntry ? isoTimestamp(baselineEntry.timestamp, baselineEntry.message?.timestamp) : undefined;
   const candidates = baselinePiMessageId ? activePath.slice(startIndex + 1) : activePath;
-  const messages = piSessionEntriesToPickyMessages(candidates);
+  const cwd = entries.find((entry) => entry.type === "session")?.cwd;
+  const messages = piSessionEntriesToPickyMessages(candidates, cwd);
   return {
     messages,
     todoStateResolved: todoResolution.resolved,
@@ -217,6 +234,36 @@ function toolActivitySnapshot(content: unknown): PickyActivitySummary | undefine
     summary[category] = (summary[category] ?? 0) + 1;
   }
   return hasActivity(summary) ? summary : undefined;
+}
+
+function rememberReadPaths(content: unknown, cwd: string | undefined, paths: Map<string, string>): void {
+  for (const block of contentBlocks(content)) {
+    if (block.type !== "toolCall" || block.name !== "read" || typeof block.id !== "string") continue;
+    const args = block.arguments && typeof block.arguments === "object" ? block.arguments as Record<string, unknown> : {};
+    const path = resolveToolPath(args.path, cwd);
+    if (path) paths.set(block.id, path);
+  }
+}
+
+function resolveToolPath(rawPath: unknown, cwd: string | undefined): string | undefined {
+  if (typeof rawPath !== "string" || !rawPath || rawPath.includes("\0")) return undefined;
+  const expanded = rawPath === "~" || rawPath.startsWith("~/") ? `${homedir()}${rawPath.slice(1)}` : rawPath;
+  if (isAbsolute(expanded)) return expanded;
+  return cwd ? resolve(cwd, expanded) : undefined;
+}
+
+function toolImageMessages(entry: PiSessionEntry, readPaths: ReadonlyMap<string, string>): PickySessionMessage[] {
+  const message = entry.message;
+  const toolCallId = message?.toolCallId;
+  if (!message || message.isError || message.toolName !== "read" || !toolCallId) return [];
+  const path = readPaths.get(toolCallId);
+  const image = contentBlocks(message.content).find((block) => block.type === "image");
+  if (!path || !image) return [];
+  return [toolImageMessage(
+    `msg-pi-tool-image-${safeId(toolCallId)}`,
+    isoTimestamp(entry.timestamp, message.timestamp),
+    { toolCallId, toolName: "read", path, ...(typeof image.mimeType === "string" ? { mimeType: image.mimeType } : {}) },
+  )];
 }
 
 function imageBlockCount(content: unknown): number {

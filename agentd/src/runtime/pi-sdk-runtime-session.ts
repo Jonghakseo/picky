@@ -74,6 +74,7 @@ import { movePiFollowUpToSteering,removePiQueuedMessage,replacePiQueuedFollowUpT
 import { dropExpectedInputs, retargetExpectedInput, syncedQueueEdit, type ExpectedInputDelivery } from "./pi-expected-input-sync.js";
 import { PiExtensionInvoker } from "./pi-extension-invocation.js";
 import { WriteFileMetadataTracker } from "./write-file-path.js";
+import { ReadImageTracker } from "./read-image-tracker.js";
 import { ResourceReloadScheduler } from "./pi-resource-reload.js";
 import { handlePiBuiltinSlashCommand } from "./pi-builtin-slash-commands.js";
 import { compactionResultFromPiEvent } from "./pi-compaction-result.js";
@@ -124,6 +125,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private readonly extensionInvoker = new PiExtensionInvoker(() => this.runtime.session, () => this.uiBridge);
   private readonly subagentInvocationTracker = new SubagentInvocationTracker();
   private readonly writeFileMetadata = new WriteFileMetadataTracker();
+  private readonly readImages = new ReadImageTracker();
   private asyncSettled = true;
   private disposed = false;
   private disposePromise?: Promise<void>;
@@ -949,6 +951,8 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (runtimeEvent?.type === "tool") {
       const writeFileMetadata = this.writeFileMetadata.forToolEvent(record, runtimeEvent, this.runtime.cwd);
       if (writeFileMetadata) runtimeEvent = { ...runtimeEvent, ...writeFileMetadata };
+      const readImage = this.readImages.forToolEvent(record, runtimeEvent, this.runtime.cwd);
+      if (readImage) runtimeEvent = { ...runtimeEvent, ...readImage };
     }
 
     if (runtimeEvent?.type === "extension_ui" && runtimeEvent.waitsForInput) {

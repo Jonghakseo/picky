@@ -1,6 +1,70 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "hud.toolImage.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read image"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 읽음"
+          }
+        }
+      }
+    },
+    "hud.toolImage.missing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image not found"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지를 찾을 수 없어요"
+          }
+        }
+      }
+    },
+    "hud.toolImage.open.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Image"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 열기"
+          }
+        }
+      }
+    },
+    "hud.toolImage.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image read: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽은 이미지: %@"
+          }
+        }
+      }
+    },
     "hud.markdownLink.fileNotFound": {
       "localizations": {
         "en": {

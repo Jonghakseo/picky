@@ -223,6 +223,15 @@ export const PickySubagentInvocationSchema = z.object({
   completed: z.boolean().optional(),
 });
 export type PickySubagentInvocation = z.infer<typeof PickySubagentInvocationSchema>;
+// An image a tool returned to the model (today: Pi's `read` on an image file). Only the local
+// path travels; the HUD loads the file itself so base64 never lands in the session journal.
+export const PickyToolImageSchema = z.object({
+  toolCallId: z.string().optional(),
+  toolName: z.string(),
+  path: z.string(),
+  mimeType: z.string().optional(),
+});
+export type PickyToolImage = z.infer<typeof PickyToolImageSchema>;
 const PickyExtensionUiQuestionOptionSchema = z.preprocess(
   (option) => typeof option === "string" ? { value: option, label: option } : option,
   z.object({ value: z.string(), label: z.string(), description: z.string().optional() }),
@@ -395,6 +404,9 @@ export const PickySessionMessageSchema = z.object({
   // can tell the model received screenshots even though no path appears in
   // the message body. Absent on messages that have no attachments.
   attachedImagesCount: z.number().int().nonnegative().optional(),
+  // Carried on a `system` message (not a new kind) so an older daemon still loads the journal
+  // and an older app falls back to the plain `text`. Malformed values are dropped.
+  toolImage: PickyToolImageSchema.optional().catch(undefined),
   // Set only on messages Picky authored; see PickyMessagePresentationSchema. Codes grow over time,
   // and a journal written by a newer daemon must still load after a downgrade: an unknown or
   // malformed presentation is dropped and the English `text`/`errorMessage` fallback stands.

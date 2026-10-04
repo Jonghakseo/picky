@@ -212,7 +212,7 @@ export class TerminalSessionCoordinator {
     const patch: Partial<PickyAgentSession> = {};
     if (!this.deps.isRuntimeStreaming(sessionId)) {
       const existingIds = new Set((session.messages ?? []).map((message) => message.id));
-      const messagesToImport = piSessionEntriesToPickyMessages(entries)
+      const messagesToImport = piSessionEntriesToPickyMessages(entries, session.cwd)
         .map((message) => message.kind === "user_text" && message.text
           ? { ...message, text: this.deps.reverseInputExpansion(sessionId, message.text) }
           : message)

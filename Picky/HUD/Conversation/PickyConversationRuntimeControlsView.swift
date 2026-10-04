@@ -201,7 +201,8 @@ struct PickyConversationRuntimeControlsView: View {
         }
     }
 
-    private var fastModeCostNotice: some View {
+    /// Production popover content, also mounted directly by the offscreen gallery.
+    var fastModeCostNotice: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space3) {
             Text("hud.composer.fastMode.notice.title")
                 .font(PickyHUDTypography.statusSemibold)

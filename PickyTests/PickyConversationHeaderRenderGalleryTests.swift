@@ -341,7 +341,55 @@ struct PickyConversationHeaderRenderGalleryTests {
                 appearance: .light,
                 options: PickySessionRuntimeOptions(models: catalog, allModels: catalog, globalScope: allScope, thinkingLevels: [.off, .low, .medium, .high], currentModel: .init(provider: "anthropic", modelId: "claude-sonnet"))
             ),
+            fastModeScene(appearance: .dark, enabled: false),
+            fastModeScene(appearance: .light, enabled: false),
+            fastModeScene(appearance: .dark, enabled: true),
+            fastModeScene(appearance: .light, enabled: true),
+            fastModeScene(appearance: .dark, showsNotice: true),
+            fastModeScene(appearance: .light, showsNotice: true),
         ]
+    }
+
+    private func fastModeScene(
+        appearance: Appearance,
+        enabled: Bool = false,
+        showsNotice: Bool = false
+    ) -> Scene {
+        let controls = PickyConversationRuntimeControlsView(
+            presentation: PickyComposerRuntimePresentation(assistantRun: .init(model: "openai-codex/gpt-5.5", thinkingLevel: .high)),
+            actionError: nil,
+            sessionID: "gallery-fast-mode",
+            isModelPickerPresented: .constant(false),
+            runtimeOptions: nil,
+            modelPickerLoadState: .idle,
+            isModelActionInFlight: false,
+            isThinkingActionInFlight: false,
+            isGlobalScopeActionInFlight: false,
+            pickleRuntimeDefaults: ("", .automatic),
+            scopeStaging: .init(),
+            onOpenModelPicker: {},
+            onRetryRuntimeOptions: {},
+            onSelectModel: { _ in },
+            onSelectThinkingLevel: { _ in },
+            onSetNewPickleDefaultModel: { _ in },
+            onSetNewPickleDefaultThinking: { _ in },
+            onBeginGlobalScopeEditing: {},
+            onSetAllModelsEnabled: { _, _ in },
+            onSetStagedScopePattern: { _, _ in },
+            onReloadGlobalScope: {},
+            onApplyGlobalScope: {},
+            fastMode: .init(enabled: enabled, supported: true, isUpdating: false)
+        )
+        let state = showsNotice ? "notice" : (enabled ? "on" : "off")
+        return Scene(
+            name: "composer-fast-mode-\(state)-\(appearance.rawValue)-ko.png",
+            appearance: appearance,
+            // The native popover supplies its surface in a live window; the detached
+            // content needs that same surface in the offscreen fixture.
+            content: showsNotice
+                ? AnyView(controls.fastModeCostNotice.background(DS.Colors.surface1))
+                : AnyView(controls.background(DS.Colors.surface1))
+        )
     }
 
     private func runtimePickerScene(
@@ -466,6 +514,10 @@ struct PickyConversationHeaderRenderGalleryTests {
                 scene.content
                     .environment(\.locale, Locale(identifier: "ko_KR"))
                     .preferredColorScheme(scene.appearance.colorScheme)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
                     .fixedSize()
                     .padding(canvasInset)
                     .frame(
@@ -475,12 +527,18 @@ struct PickyConversationHeaderRenderGalleryTests {
                     )
             }
         )
-        guard let bitmap = PickyRenderGalleryRasterizer.rasterize(
-            renderedRoot,
-            logicalSize: renderSize,
-            scale: Self.renderScale,
-            appearance: scene.appearance.nsAppearance
-        ) else {
+        var renderedBitmap: NSBitmapImageRep?
+        // Native button drawing also consults the current drawing appearance,
+        // independent of the detached hosting view's appearance.
+        NSAppearance(named: scene.appearance.nsAppearance)?.performAsCurrentDrawingAppearance {
+            renderedBitmap = PickyRenderGalleryRasterizer.rasterize(
+                renderedRoot,
+                logicalSize: renderSize,
+                scale: Self.renderScale,
+                appearance: scene.appearance.nsAppearance
+            )
+        }
+        guard let bitmap = renderedBitmap else {
             throw RenderError.bitmapCreationFailed(scene.name)
         }
         guard let png = bitmap.representation(using: .png, properties: [:]) else {

@@ -330,6 +330,12 @@ if [ "$TARGET" = "conversation-composer" ]; then
     composer-model-picker-loading-dark-ko.png
     composer-thinking-picker-dark-ko.png
     composer-thinking-picker-light-ko.png
+    composer-fast-mode-off-dark-ko.png
+    composer-fast-mode-off-light-ko.png
+    composer-fast-mode-on-dark-ko.png
+    composer-fast-mode-on-light-ko.png
+    composer-fast-mode-notice-dark-ko.png
+    composer-fast-mode-notice-light-ko.png
   )
 
   rm -rf "$OUTPUT"
@@ -339,6 +345,7 @@ if [ "$TARGET" = "conversation-composer" ]; then
 
   echo "Rendering conversation-composer gallery offscreen to $OUTPUT"
   xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
+    -derivedDataPath "$HUB_DERIVED_DATA_PATH" \
     test -only-testing:PickyTests/PickyConversationHeaderRenderGalleryTests
 
   python3 - "$OUTPUT" "${EXPECTED[@]}" <<'PY'

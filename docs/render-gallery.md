@@ -72,6 +72,14 @@ pass-through, drag gestures, or keyboard focus. The standalone prototype under
 
 This target writes seven 2× Korean scenes under `build/render-gallery/conversation-context/`: the production header context control, available popover content in dark and light appearance, the unavailable action state, active compaction progress, and context-band ramp states in dark and light appearance. `PickyConversationHeaderRenderGalleryTests` renders the production SwiftUI components without creating an app window. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove native popover anchoring or click-outside dismissal.
 
+## Conversation composer gallery
+
+```bash
+./scripts/render-ui-gallery.sh conversation-composer
+```
+
+This target writes twenty 2× Korean scenes under `build/render-gallery/conversation-composer/`. They cover the production composer, model and thinking pickers, Fast mode off/on controls, and the first-activation cost notice in light and dark appearance. `PickyConversationHeaderRenderGalleryTests` mounts the actual `PickyConversationRuntimeControlsView` and its popover content directly without opening a window. The six Fast mode scenes show the control states and complete notice text; they do not prove native popover anchoring, first-click presentation, or acknowledgement persistence. The command uses the shared agent DerivedData path.
+
 ## Conversation activity gallery
 
 ```bash

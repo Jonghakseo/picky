@@ -29,6 +29,7 @@ if [ "$TARGET" = "async-tasks" ]; then
   xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
     -derivedDataPath "$HUB_DERIVED_DATA_PATH" -parallel-testing-enabled NO test \
     -only-testing:PickyTests/PickyAsyncTaskShelfTests \
+    -only-testing:PickyTests/PickyRunningTaskFooterTests \
     -only-testing:PickyTests/PickyAsyncTaskShelfRenderGalleryTests
   python3 - "$OUTPUT" "$REQUEST_FILE" <<'PY_VALIDATE'
 import json, struct, sys
@@ -45,6 +46,14 @@ expected |= {f'mounted-{state}-{appearance}-{scale}.png'
              for state in ('running', 'short', 'processing', 'failure', 'unavailable')
              for appearance in ('light', 'dark') for scale in (100, 130)}
 expected |= {f'archived-{appearance}-{scale}.png'
+             for appearance in ('light', 'dark') for scale in (100, 130)}
+expected |= {f'review-{state}-{appearance}-{scale}.png'
+             for state in ('fresh-failure-child', 'delivery-no-reason', 'delivery-unknown-no-reason',
+                           'delivery-unknown-with-reason', 'delivery-resolved-reason', 'archived-attention')
+             for appearance in ('light', 'dark') for scale in (100, 130)}
+expected |= {f'footer-{state}-{appearance}-{scale}.png'
+             for state in ('batch', 'mixed', 'collapsed', 'queued', 'result-pending',
+                           'delivery-unverified', 'failure-mixed', 'root-failed', 'summary-unverified')
              for appearance in ('light', 'dark') for scale in (100, 130)}
 if len(scenes) != len(expected) or {scene['file'] for scene in scenes} != expected:
     raise SystemExit('Unexpected async-task scene matrix')

@@ -8,7 +8,7 @@ import {
 	createLocalBashOperations,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { AsyncTaskProvider } from "./async-task-provider.js";
+import type { AsyncTaskProvider, TaskTiming } from "./async-task-provider.js";
 import { JobLog } from "./job-log.js";
 import type { CompletedJob, NotificationBatcher } from "./notification-batcher.js";
 import { validateCwd } from "./tool-schema.js";
@@ -136,6 +136,11 @@ function safeSessionId(value: string | undefined): string {
 
 function errorSummary(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/** Only moments the job actually reached; a never-started job reports no start. */
+function timingFor(job: BashAsyncJob): TaskTiming {
+	return { startedAt: job.startedAt, finishedAt: job.endedAt };
 }
 
 function causeForError(error: unknown, requested: JobTerminalCause | undefined): JobTerminalCause {
@@ -457,13 +462,15 @@ export class JobManager {
 			if (!id) continue;
 			const job = this.jobs.get(id);
 			if (job?.status !== "queued") continue;
-			if (this.options.provider?.supported && !this.options.provider.start(id)) {
+			// One reading for both the job and the task; the host must not see a different start.
+			const startedAt = this.now();
+			if (this.options.provider?.supported && !this.options.provider.start(id, startedAt)) {
 				void this.options.provider.abandon(id);
 				this.finalize(job, "shutdown");
 				continue;
 			}
 			job.status = "running";
-			job.startedAt = this.now();
+			job.startedAt = startedAt;
 			job.slotAcquired = true;
 			this.running++;
 			this.emitStateChange(job);
@@ -530,6 +537,8 @@ export class JobManager {
 					? "cancelled"
 					: "failed",
 			job.settlementTimedOut ? "unknown" : "settled",
+			true,
+			timingFor(job),
 		);
 		this.emitStateChange(job);
 		job.resolveSettlement();
@@ -565,6 +574,8 @@ export class JobManager {
 					? "cancelled"
 					: "failed",
 			job.settlementTimedOut ? "unknown" : "settled",
+			true,
+			timingFor(job),
 		);
 		this.emitStateChange(job);
 		job.resolveSettlement();
@@ -613,7 +624,7 @@ export class JobManager {
 		if (logClosed) this.scheduleLogMaintenance(log.path);
 		const quarantinedSlot = job.slotAcquired;
 		job.slotAcquired = false;
-		this.options.provider?.finish(job.id, "failed", "unknown");
+		this.options.provider?.finish(job.id, "failed", "unknown", true, timingFor(job));
 		this.emitStateChange(job);
 		job.resolveSettlement();
 		this.detachExecution(job, () => {

@@ -199,7 +199,10 @@ it("holds actual bash admission until the approval is durable and consumes its r
   }, { timeout: 10000 }); } finally { console.log("W0B_ADMISSION_TRACE", JSON.stringify({ disk: await f.store.loadReadOnly("session-sdk"), frames: f.frames, events: f.events, requests: f.requests })); }
   await f.drainEvents();
   const disk = await f.store.loadReadOnly("session-sdk");
-  expect(disk?.asyncTasks?.[0]).toMatchObject({ execution: "succeeded", presence: "settled", registration: "spawned" });
+  expect(disk?.asyncTasks?.[0]).toMatchObject({ execution: "succeeded", presence: "settled", registration: "spawned",
+    details: { startedAt: expect.any(String), finishedAt: expect.any(String), elapsedMs: expect.any(Number) } });
+  expect(f.projections.some(state => state.asyncTasks?.some(task =>
+    typeof task.details?.elapsedMs === "number" && task.details.elapsedMs >= 0))).toBe(true);
   const completionId = disk!.completionTickets![0]!.completionId;
   expect(f.session.messages).toContainEqual(expect.objectContaining({ role: "custom", customType: "bash-async-completion", details: expect.objectContaining({ asyncTasks: expect.objectContaining({ completionIds: [completionId] }) }) }));
   expect(await readFile(disk!.piSessionFilePath!, "utf8")).toContain(completionId);
@@ -248,6 +251,9 @@ it("retains a real subagent result until its original child exits, then settles 
   await f.drainEvents();
   const after = await f.store.loadReadOnly("session-sdk");
   expect(after?.asyncTasks?.every(task => task.presence === "settled")).toBe(true);
+  expect(after?.asyncTasks?.every(task => typeof task.details?.startedAt === "string"
+    && typeof task.details.finishedAt === "string" && typeof task.details.elapsedMs === "number"
+    && task.details.elapsedMs >= 0)).toBe(true);
   expect(after?.messages?.filter(message => message.kind === "agent_text")).toEqual(before?.messages?.filter(message => message.kind === "agent_text"));
   expect(f.requests).toHaveLength(requests);
   expect(f.notifications).toHaveLength(1);

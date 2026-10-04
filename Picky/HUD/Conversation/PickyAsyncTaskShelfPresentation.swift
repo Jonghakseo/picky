@@ -168,9 +168,9 @@ enum PickyAsyncTaskShelfPresentation {
     }
 
     static func resultKey(_ tickets: [PickyCompletionTicket]) -> String? {
-        if tickets.contains(where: { $0.state == .failed || $0.state == .unknown }) {
-            return "hud.asyncTasks.result.failed"
-        }
+        // An unverified delivery is not a confirmed failure; it needs checking.
+        if tickets.contains(where: { $0.state == .failed }) { return "hud.asyncTasks.result.failed" }
+        if tickets.contains(where: { $0.state == .unknown }) { return "hud.asyncTasks.result.unknown" }
         if tickets.contains(where: { $0.state == .processing }) { return "hud.asyncTasks.result.processing" }
         if tickets.contains(where: { [.pending, .submitted, .observed].contains($0.state) }) {
             return "hud.asyncTasks.result.pending"

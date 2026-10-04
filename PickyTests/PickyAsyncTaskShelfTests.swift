@@ -106,6 +106,8 @@ struct PickyAsyncTaskShelfTests {
         #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .pending)]) == "hud.asyncTasks.result.pending")
         #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .processing)]) == "hud.asyncTasks.result.processing")
         #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .failed)]) == "hud.asyncTasks.result.failed")
+        // An unverified delivery is reported as needing verification, not as a confirmed failure.
+        #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .unknown)]) == "hud.asyncTasks.result.unknown")
         #expect(PickyAsyncTaskShelfPresentation.resultKey([PickyAsyncTaskShelfFixtures.ticket(root, state: .handled)]) == nil)
     }
 

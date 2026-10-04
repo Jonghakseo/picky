@@ -213,11 +213,12 @@ the shared agent DerivedData path; do not run it alongside another Xcode job.
 ```
 
 This target uses Xcode 16.3 and shared `/private/tmp/PickyAgentDD`, refuses a
-competing Xcode job, and runs `PickyAsyncTaskShelfTests` plus
-`PickyAsyncTaskShelfRenderGalleryTests` in the ordinary desktop-isolated host.
+competing Xcode job, and runs `PickyAsyncTaskShelfTests`,
+`PickyRunningTaskFooterTests` and `PickyAsyncTaskShelfRenderGalleryTests` in the
+ordinary desktop-isolated host.
 It does not start or restart the live app or enable UI-effect tests.
 
-The 60 production-component PNGs and `manifest.json` are written to
+The 120 production-component PNGs and `manifest.json` are written to
 `build/render-gallery/async-tasks/`. The 36 shelf scenes cover single work, multiple
 roots (collapsed at 100%, expanded at 130%), expanded subagent-group details,
 a bounded long child/detail document, result processing, one-line failure guidance with
@@ -230,7 +231,16 @@ Processing scenes supply an older fetched detail beside the current v2 state to 
 Twenty additional scenes render the actual conversation card with the mounted
 shelf in running, short-card (compact work opener), processing, failure, and
 unavailable states. Four archived-list scenes show the retained-work controls.
-Inspect the PNGs directly, especially composer visibility in the short card.
+Twenty-four review scenes cover a surviving failed child and the delivery-reason
+variants, including an unverified delivery whose reason keeps the warning tone
+instead of reading as a confirmed failure. Thirty-six footer scenes render the
+production `PickyRunningTaskFooterView` from a projected session store: a running
+batch that keeps its finished members, a batch beside a standalone command, the
+collapsed summary, queued agents, result handling, unverified delivery, a failed
+agent next to running work, a failed invocation whose agents all completed, and
+canonical counts without detail, which report verification rather than failure.
+Inspect the PNGs directly, especially composer visibility in the short card and
+whether every member of a running batch is still listed.
 
 These renders prove static presentation only, not keyboard interaction,
 VoiceOver navigation, popover anchoring, focus/IME, scrolling, transcript anchoring,

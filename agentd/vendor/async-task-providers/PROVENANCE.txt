@@ -5,3 +5,8 @@ subagent 0.5.9 tarball SHA256: adf4ef1394916dbf6d036ddc28561fef3083bde7191710e89
 Reproduce with: npm pack @ryan_nookpi/pi-extension-bash-async@0.2.4 @ryan_nookpi/pi-extension-subagent@0.5.9
 The checked-in async-task-providers.lock.json pins every extracted package file byte.
 Do not replace these with a developer checkout, version-only npm lookup, or an unqualified tarball.
+
+Local patch on top of those tarballs (re-apply or upstream it before re-vendoring):
+- Optional executor-measured task timing in details.startedAt / details.finishedAt / details.elapsedMs.
+  Files: bash-async/{async-task-provider.ts,job-manager.ts}, subagent/{async-task-provider.ts,async-task-lifecycle.ts}.
+  Covered by tests/async-task-timing.test.ts; regenerate the lock with scripts/lock-async-task-providers.mjs after any edit.

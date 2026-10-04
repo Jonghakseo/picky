@@ -273,6 +273,15 @@ final class PickyProjectionEventFixtures {
         "{\"type\":\"subagentRunsSet\",\"runs\":\(encode(runs))}"
     }
 
+    static func asyncTaskDetailSetMutation(_ detail: PickyAsyncTaskDetail?) -> String {
+        let payload = detail.map { encode($0) } ?? "null"
+        return "{\"type\":\"asyncTaskDetailSet\",\"detail\":\(payload)}"
+    }
+
+    static func asyncWorkSummaryPatchMutation(_ summary: PickyAsyncWorkSummary) -> String {
+        metaPatchMutation("\"asyncWorkSummary\":\(encode(summary))")
+    }
+
     static func finalAnswerSetMutation(_ finalAnswer: String?) -> String {
         "{\"type\":\"finalAnswerSet\",\"finalAnswer\":\(finalAnswer.map(encodeString) ?? "null")}"
     }

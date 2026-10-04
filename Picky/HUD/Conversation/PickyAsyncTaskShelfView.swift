@@ -364,8 +364,17 @@ struct PickyAsyncTaskShelfRowView: View {
             case .available, .unsupported:
                 EmptyView()
             }
-            if let failedTicket = tickets.first(where: { $0.state == .failed || $0.state == .unknown }) {
+            if let failedTicket = tickets.first(where: { $0.state == .failed }) {
                 failureLine("hud.asyncTasks.deliveryFailedShort", reason: failedTicket.failureReason)
+            } else if let unverified = tickets.first(where: { $0.state == .unknown }) {
+                // Delivery state could not be confirmed, which is not the same as a failure.
+                Label(L10n.t("hud.asyncTasks.deliveryUnknownShort"), systemImage: "questionmark.circle")
+                    .foregroundStyle(DS.Colors.warningText)
+                    .lineLimit(1)
+                    .help(unverified.failureReason ?? L10n.t("hud.asyncTasks.deliveryUnknownShort"))
+                    .accessibilityLabel(unverified.failureReason
+                        .map { "\(L10n.t("hud.asyncTasks.deliveryUnknownShort")) \($0)" }
+                        ?? L10n.t("hud.asyncTasks.deliveryUnknownShort"))
             }
             if disclosure.wrappedValue {
                 expandedDetails
@@ -409,7 +418,10 @@ struct PickyAsyncTaskShelfRowView: View {
             }
             ForEach(Array(tickets.enumerated()), id: \.offset) { _, ticket in
                 if ticket.state == .failed || ticket.state == .unknown, let reason = ticket.failureReason {
-                    fullReason(reason)
+                    // An unverified delivery reason explains uncertainty, not a confirmed failure,
+                    // so it keeps the same warning tone as its short label.
+                    fullReason(reason, color: ticket.state == .unknown
+                        ? DS.Colors.warningText : DS.Colors.destructiveText)
                 }
             }
             if root.presence == .settled, root.execution == .succeeded,
@@ -454,15 +466,15 @@ struct PickyAsyncTaskShelfRowView: View {
             .accessibilityLabel(reason.map { "\(L10n.t(key)) \($0)" } ?? L10n.t(key))
     }
 
-    private func fullReason(_ reason: String) -> some View {
+    private func fullReason(_ reason: String, color: Color = DS.Colors.destructiveText) -> some View {
         Text(reason)
             .pickyFont(size: PickyHUDTypography.bodyCompactNSFont(fontScale: 1).pointSize)
-            .foregroundStyle(DS.Colors.destructiveText)
+            .foregroundStyle(color)
             .textSelection(.enabled)
     }
 
     private func statusLabel(_ task: PickyAsyncTask, key: String) -> some View {
-        let unknown = key == "hud.asyncTasks.execution.unknown"
+        let unknown = key.hasSuffix(".unknown")
         let failed = key.hasSuffix("failed") ||
             task.execution == .interrupted && key == "hud.asyncTasks.execution.interrupted"
         let symbol = unknown ? "questionmark.circle" : failed ? "exclamationmark.triangle" :

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { AsyncTaskProvider, type TrackedTask } from "./async-task-provider.js";
+import { AsyncTaskProvider, type TaskTiming, type TrackedTask } from "./async-task-provider.js";
 import type { SingleResult } from "./types.js";
 
 type Presence = TrackedTask["presence"];
@@ -11,6 +11,8 @@ interface Invocation {
 	hidden: boolean;
 	children: Map<string, Presence>;
 	result?: TrackedTask["execution"];
+	startedAt: number;
+	finishedAt?: number;
 }
 const invocations = new AsyncLocalStorage<Invocation>();
 const resources = new AsyncLocalStorage<(presence: Presence) => void>();
@@ -45,7 +47,8 @@ export async function trackSubagentRunner(
 		combined,
 	);
 	if (!id) throw new Error("Subagent registration unavailable");
-	if (combined.aborted || !lifecycle.provider.start(id)) {
+	const startedAt = Date.now();
+	if (combined.aborted || !lifecycle.provider.start(id, startedAt)) {
 		await lifecycle.provider.abandon(id);
 		throw new Error("Subagent admission closed before execution");
 	}
@@ -68,10 +71,14 @@ export async function trackSubagentRunner(
 					: "failed",
 			presence,
 			false,
+			{ startedAt, finishedAt: Date.now() },
 		);
 		return result;
 	} catch (error) {
-		lifecycle.provider.finish(id, combined.aborted ? "cancelled" : "failed", presence, false);
+		lifecycle.provider.finish(id, combined.aborted ? "cancelled" : "failed", presence, false, {
+			startedAt,
+			finishedAt: Date.now(),
+		});
 		throw error;
 	}
 }
@@ -168,11 +175,19 @@ export class SubagentAsyncTasks {
 		if (invocations.getStore() || !this.provider.supported) return run();
 		const id = await this.provider.reserve({ title, kind: "subagent", invocationId }, signal);
 		if (!id) throw new Error("Subagent registration unavailable");
-		if (signal?.aborted || !this.provider.start(id)) {
+		const startedAt = Date.now();
+		if (signal?.aborted || !this.provider.start(id, startedAt)) {
 			await this.provider.abandon(id);
 			throw new Error("Subagent admission closed before invocation");
 		}
-		const root: Invocation = { id, lifecycle: this, controller: new AbortController(), hidden, children: new Map() };
+		const root: Invocation = {
+			id,
+			lifecycle: this,
+			controller: new AbortController(),
+			hidden,
+			children: new Map(),
+			startedAt,
+		};
 		this.roots.set(id, root);
 		return invocations.run(root, async () => {
 			try {
@@ -186,12 +201,12 @@ export class SubagentAsyncTasks {
 					root.children.size === 0
 				) {
 					root.result = "failed";
-					this.provider.finish(id, "failed", "settled", false);
+					this.provider.finish(id, "failed", "settled", false, this.timing(root));
 				}
 				return result;
 			} catch (error) {
 				root.result = root.controller.signal.aborted ? "cancelled" : "failed";
-				this.provider.finish(id, root.result, this.presence(root), false);
+				this.provider.finish(id, root.result, this.presence(root), false, this.timing(root));
 				throw error;
 			}
 		});
@@ -207,8 +222,14 @@ export class SubagentAsyncTasks {
 		this.provider.resource(root.id, this.presence(root));
 	}
 
+	/** The first settled moment wins; a later shutdown pass must not restate the duration. */
+	private timing(root: Invocation): TaskTiming {
+		root.finishedAt ??= Date.now();
+		return { startedAt: root.startedAt, finishedAt: root.finishedAt };
+	}
+
 	finish(root: Invocation): void {
-		if (root.result) this.provider.finish(root.id, root.result, this.presence(root), !root.hidden);
+		if (root.result) this.provider.finish(root.id, root.result, this.presence(root), !root.hidden, this.timing(root));
 	}
 
 	shutdown(): void {

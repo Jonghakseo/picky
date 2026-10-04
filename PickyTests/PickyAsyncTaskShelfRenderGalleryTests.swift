@@ -49,10 +49,122 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
         }
         try renderMountedScenes(into: output, scenes: &scenes)
         try renderReviewScenes(into: output, scenes: &scenes)
-        let manifest: [String: Any] = ["schemaVersion": 1, "renderer": "production shelf, mounted conversation and archive / offscreen NSHostingView", "scenes": scenes]
+        try renderFooterScenes(into: output, scenes: &scenes)
+        let manifest: [String: Any] = ["schemaVersion": 1, "renderer": "production shelf, background-work footer, mounted conversation and archive / offscreen NSHostingView", "scenes": scenes]
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("manifest.json"), options: .atomic)
-        #expect(scenes.count == 80)
+        #expect(scenes.count == 120)
+    }
+
+    /// The production conversation footer, not a proposal mockup: one group per
+    /// batch, every participant with its own state, and results kept separate.
+    private func renderFooterScenes(into output: URL, scenes: inout [[String: Any]]) throws {
+        let states = ["batch", "mixed", "collapsed", "queued", "result-pending", "delivery-unverified",
+                      "failure-mixed", "root-failed", "summary-unverified"]
+        for light in [false, true] {
+            for scale in [1.0, 1.3] {
+                for state in states {
+                    try LocaleManager.shared.withTemporaryChoiceForTesting(scale == 1.3 ? .korean : .english) {
+                        let store = try footerStore(state: state)
+                        let view = PickyRunningTaskFooterView(store: store, maxListHeight: 180,
+                            bottomSpacing: DS.Spacing.space2, initiallyExpanded: state != "collapsed")
+                            .environment(\.pickyAppFontScale, scale)
+                            .environment(\.locale, Locale(identifier: scale == 1.3 ? "ko" : "en"))
+                            .environment(\.colorScheme, light ? .light : .dark)
+                            .frame(width: 420)
+                            .padding(DS.Spacing.space3)
+                            .background(DS.Colors.surface1)
+                        let appearance: NSAppearance.Name = light ? .aqua : .darkAqua
+                        let host = NSHostingView(rootView: view)
+                        host.appearance = NSAppearance(named: appearance)
+                        host.layoutSubtreeIfNeeded()
+                        let size = host.fittingSize
+                        #expect(size.height > 0, "\(state) must render the footer")
+                        let name = "footer-\(state)-\(light ? "light" : "dark")-\(Int(scale * 100)).png"
+                        let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
+                            logicalSize: size, scale: 2, appearance: appearance))
+                        try #require(bitmap.representation(using: .png, properties: [:]))
+                            .write(to: output.appendingPathComponent(name), options: .atomic)
+                        scenes.append(["file": name, "pixelWidth": bitmap.pixelsWide, "pixelHeight": bitmap.pixelsHigh,
+                            "logicalWidth": size.width, "logicalHeight": size.height])
+                    }
+                }
+            }
+        }
+    }
+
+    private func footerStore(state: String) throws -> PickySessionStore {
+        let settledRoot = ["result-pending", "delivery-unverified", "root-failed"].contains(state)
+        var root = PickyAsyncTaskShelfFixtures.task("group", kind: "subagent", title: "subagent batch",
+            execution: state == "root-failed" ? .failed : settledRoot ? .succeeded : .running,
+            presence: settledRoot ? .settled : .active)
+        root.invocationId = "invocation"
+        root.createdAt = Date(timeIntervalSinceNow: -900)
+        let startedAt = JSONValue.string(ISO8601DateFormatter().string(from: Date(timeIntervalSinceNow: -866)))
+        let agents = ["verifier", "reviewer", "challenger"]
+        let elapsed: [Double] = [866_000, 588_000, 437_000]
+        var tasks = [root] + agents.indices.map { index -> PickyAsyncTask in
+            var child = PickyAsyncTaskShelfFixtures.task("child-\(index)", root: "group", kind: "subagent")
+            child.createdAt = root.createdAt
+            child.details = ["runId": .number(Double(index + 1))]
+            switch (index, state) {
+            case (_, "queued"):
+                child.execution = .queued
+            case (0, "failure-mixed"):
+                child.execution = .failed
+                child.presence = .settled
+                child.details?["startedAt"] = startedAt
+                child.details?["elapsedMs"] = .number(elapsed[index])
+            case (0, "batch"), (0, "mixed"), (0, "collapsed"):
+                // The first agent is still running while its batch mates finished.
+                child.details?["startedAt"] = startedAt
+            default:
+                child.execution = .succeeded
+                child.presence = .settled
+                child.details?["startedAt"] = startedAt
+                child.details?["elapsedMs"] = .number(elapsed[index])
+            }
+            return child
+        }
+        let standalone = ["mixed", "collapsed", "failure-mixed"].contains(state)
+        if standalone {
+            var command = PickyAsyncTaskShelfFixtures.task("logs", title: "Collect daemon logs")
+            command.createdAt = Date(timeIntervalSinceNow: -60)
+            command.details = ["startedAt": .string(ISO8601DateFormatter()
+                .string(from: Date(timeIntervalSinceNow: -45)))]
+            tasks.append(command)
+        }
+        let batchRunning = ["batch", "mixed", "collapsed", "queued"].contains(state)
+        var card = PickySessionCard.fromAgentSession(PickyAgentSession(
+            id: "footer", title: "Background work", status: .running, cwd: "/tmp/project",
+            createdAt: Date(timeIntervalSince1970: 1), updatedAt: Date(timeIntervalSince1970: 2),
+            logs: [], tools: [], artifacts: [], changedFiles: [], messages: []))
+        card.agentCycle = .init(cycleId: "cycle", runtimeInstanceId: root.runtimeInstanceId,
+            phase: .idle, outcome: nil, controlGeneration: 1)
+        card.asyncTasks = tasks
+        card.completionTickets = state == "result-pending"
+            ? [PickyAsyncTaskShelfFixtures.ticket(root, state: .pending)]
+            : ["delivery-unverified", "root-failed"].contains(state)
+                ? [PickyAsyncTaskShelfFixtures.ticket(root, state: .unknown)] : []
+        card.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(
+            active: (batchRunning ? 1 : 0) + (standalone ? 1 : 0),
+            pending: state == "result-pending" ? 1 : 0,
+            attention: ["delivery-unverified", "failure-mixed", "root-failed"].contains(state) ? 1 : 0)
+        card.subagentRuns = try JSONDecoder.pickyAgentProtocolDecoder().decode([PickySubagentRun].self,
+            from: JSONSerialization.data(withJSONObject: agents.enumerated().map { index, agent in
+                ["runId": index + 1, "agent": agent, "task": "Private delegation instructions",
+                 "status": "running", "invocationId": "invocation"] as [String: Any]
+            }))
+        if state == "summary-unverified" {
+            // Re-entry before the detail arrives: canonical counts alone, which cannot
+            // prove a failure and must read as work that still needs verification.
+            card.asyncTasks = nil
+            card.completionTickets = nil
+            card.asyncWorkSummary = PickyAsyncTaskShelfFixtures.summary(active: 0, unknown: 1, attention: 1)
+        }
+        let store = PickySessionStore(sessionID: card.id)
+        store.replace(card: card)
+        return store
     }
 
     @Test func emptyNewAndReenteredPicklesNeverMountLoadingShelfButRealWorkAndUncertaintyDo() throws {
@@ -573,8 +685,8 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
             for scale in [1.0, 1.3] {
                 try LocaleManager.shared.withTemporaryChoiceForTesting(scale == 1.3 ? .korean : .english) {
                     let appearance: NSAppearance.Name = light ? .aqua : .darkAqua
-                    let states = ["fresh-failure-child", "delivery-no-reason",
-                                  "delivery-unknown-no-reason", "delivery-resolved-reason"]
+                    let states = ["fresh-failure-child", "delivery-no-reason", "delivery-unknown-no-reason",
+                                  "delivery-unknown-with-reason", "delivery-resolved-reason"]
                     for state in states {
                         var root = PickyAsyncTaskShelfFixtures.task("root", title: "Run local checks",
                             execution: state == "fresh-failure-child" ? .failed : .succeeded, presence: .settled)
@@ -583,10 +695,13 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
                         let child = PickyAsyncTaskShelfFixtures.task("child", root: root.taskId,
                             title: "Surviving child")
                         var ticket = PickyAsyncTaskShelfFixtures.ticket(root,
-                            state: state == "delivery-unknown-no-reason" ? .unknown :
+                            state: state.hasPrefix("delivery-unknown") ? .unknown :
                                 state == "delivery-resolved-reason" ? .handled : .failed)
                         ticket.failureReason = state == "delivery-resolved-reason"
-                            ? "Previous failure already resolved." : nil
+                            ? "Previous failure already resolved."
+                            : state == "delivery-unknown-with-reason"
+                            ? "The provider stopped responding before it confirmed delivery."
+                            : nil
                         let detail = PickyAsyncTaskDetail(
                             tasks: state == "fresh-failure-child" ? [root, child] : [root],
                             tickets: state == "fresh-failure-child" ? [] : [ticket])
@@ -594,7 +709,8 @@ struct PickyAsyncTaskShelfRenderGalleryTests {
                             active: state == "fresh-failure-child" ? 1 : 0,
                             attention: state == "delivery-resolved-reason" ? 0 : 1)
                         let view = PickyAsyncTaskShelfView(summary: summary, detailState: .loaded(detail),
-                            initiallyExpandedRows: state == "fresh-failure-child",
+                            initiallyExpandedRows: ["fresh-failure-child", "delivery-unknown-with-reason"]
+                                .contains(state),
                             cancelAvailability: { _ in .available }, onAction: { _ in })
                             .environment(\.pickyAppFontScale, scale)
                             .environment(\.colorScheme, light ? .light : .dark)

@@ -57,6 +57,19 @@ const capabilities = {
 };
 const ownerFields = ["sessionId", "piSessionId", "runtimeInstanceId", "providerId", "providerInstanceId"] as const;
 const isId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 256;
+const MAX_TIMESTAMP_MS = 8.64e15;
+const isTimestampMs = (value: unknown): value is number =>
+	typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= MAX_TIMESTAMP_MS;
+
+/**
+ * Executor-measured execution timing. A missing field means the executor never
+ * measured that moment, so hosts must leave it blank instead of inferring one
+ * from update traffic that also moves for unrelated lifecycle events.
+ */
+export interface TaskTiming {
+	startedAt?: number;
+	finishedAt?: number;
+}
 
 /** Registration is a grant protocol, not an event notification. */
 export class AsyncTaskProvider {
@@ -186,6 +199,20 @@ export class AsyncTaskProvider {
 
 	private snapshot(): { tasks: TrackedTask[]; tickets: Ticket[] } {
 		return structuredClone({ tasks: [...this.tasks.values()], tickets: [...this.tickets.values()] });
+	}
+
+	/** Timing is advisory metadata and must never fail a lifecycle transition. */
+	private applyTiming(task: TrackedTask, timing: TaskTiming | undefined): void {
+		if (!timing) return;
+		const patch: Record<string, unknown> = {};
+		if (isTimestampMs(timing.startedAt)) patch.startedAt = new Date(timing.startedAt).toISOString();
+		if (isTimestampMs(timing.finishedAt)) patch.finishedAt = new Date(timing.finishedAt).toISOString();
+		if (isTimestampMs(timing.startedAt) && isTimestampMs(timing.finishedAt))
+			patch.elapsedMs = Math.max(0, timing.finishedAt - timing.startedAt);
+		if (!Object.keys(patch).length) return;
+		const details = { ...task.details, ...patch };
+		if (Buffer.byteLength(JSON.stringify(details)) > 16_384) return;
+		task.details = details;
 	}
 
 	private publish(task?: TrackedTask): void {
@@ -412,13 +439,14 @@ export class AsyncTaskProvider {
 		);
 	}
 
-	start(taskId: string): boolean {
+	start(taskId: string, startedAt?: number): boolean {
 		if (!this.canStart(taskId)) return false;
 		this.spawned.add(taskId);
 		const task = this.tasks.get(taskId);
 		if (!task) return false;
 		task.registration = "starting";
 		task.execution = "running";
+		this.applyTiming(task, { startedAt });
 		// Do not call external listeners between consuming the grant and entering
 		// the executor. The first resource/result event publishes this revision.
 		task.providerRevision = ++this.revision;
@@ -439,12 +467,14 @@ export class AsyncTaskProvider {
 		execution: TrackedTask["execution"],
 		presence: TrackedTask["presence"],
 		completion = true,
+		timing?: TaskTiming,
 	): void {
 		const task = this.tasks.get(taskId);
 		const owner = this.owner;
 		if (!task || !owner) return;
 		task.execution = execution;
 		task.presence = presence;
+		this.applyTiming(task, timing);
 		if (
 			completion &&
 			task.rootTaskId === taskId &&

@@ -425,9 +425,9 @@ Interactions:
 
 ### 8.3 Composer behavior
 
-The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with the editor in the middle and actions along the bottom, where the model and thinking controls sit beside the other actions. Click either value to open its picker; `Control + P` and `Shift + Tab` still cycle them without opening a picker. Each picker can save the current value as the default for new Pickles. Resumed Pickles keep the model and thinking level stored in their Pi transcript instead.
+The composer stays pinned to the bottom of a resized Pickle card. It uses one bordered surface with the editor in the middle and actions along the bottom. A single settings chip opens the model, thinking level, fast mode, and completion notification controls. `Control + P` and `Shift + Tab` still cycle the model and thinking level without opening the settings. Each picker can save the current value as the default for new Pickles. Resumed Pickles keep the model and thinking level stored in their Pi transcript instead.
 
-When the Pickle's current model supports provider fast mode, a lightning button appears to the right of the thinking level. Turning it on asks the provider for faster replies at a higher price: `service_tier: "priority"` for OpenAI GPT-5.4 and later (including the Codex subscription), and `speed: "fast"` for Claude Opus 4.8, 5, and 5.5 on the Claude API (a research preview that needs access from Anthropic). The first time you turn it on, a short notice explains the extra cost and asks you to confirm; once you confirm, it does not appear again in any Pickle. Cancelling leaves fast mode off. The choice belongs to that Pickle only, survives restarts, and stays when you switch to a model without fast mode, where the button hides and requests go out unchanged. New and duplicated Pickles always start with fast mode off.
+When the Pickle's current model supports provider fast mode, its settings offer a fast mode control. Turning it on asks the provider for faster replies at a higher price: `service_tier: "priority"` for OpenAI GPT-5.4 and later (including the Codex subscription), and `speed: "fast"` for Claude Opus 4.8, 5, and 5.5 on the Claude API (a research preview that needs access from Anthropic). The first time you turn it on, a short notice explains the extra cost and asks you to confirm; once you confirm, it does not appear again in any Pickle. Cancelling leaves fast mode off. The choice belongs to that Pickle only, survives restarts, and stays when you switch to a model without fast mode, where the control hides and requests go out unchanged. New and duplicated Pickles always start with fast mode off.
 
 Picky refreshes Pi's remote model catalog before initial model selection and when loading an active Pickle's model picker. Updating the standalone Pi installation does not update Picky's bundled SDK. Catalog requests respect Pi's cache and `PI_OFFLINE` setting; if a refresh fails or reaches its five-second deadline, existing models remain available. Repeated picker requests share an in-flight refresh and wait at least one minute between attempts.
 
@@ -579,6 +579,8 @@ Answered or cancelled question bubbles collapse but can be expanded for review.
 
 The footer above the composer shows the number of running tasks. Expand it to see their names and elapsed times; when the card is compact, the list opens in a popover. Subagent work shows agent types when available. The conversation does not repeat subagent launches or `bash_async` completion notifications. Use **Tool History** to inspect the recorded calls and results.
 
+When background tasks are running, Stop lets you end only the current response or stop everything. Stopping only the response leaves those tasks running. During automatic retries, the presence line stays visible and shows the attempt and the provider's error.
+
 ### 8.12 Extension message bubbles
 
 Other Pi extension messages, such as `web-search-content-ready` or `prompt-suggest-lite-status`, can appear in the conversation with their `customType` label. Long messages start collapsed with a preview of each blank-line separated block, up to ten lines. Click the header to expand the full output, or right-click to copy it or open it in the report viewer.
@@ -598,6 +600,10 @@ It can show:
 - Dedicated layouts for todo-list updates and subagent launches; batch and chain entries retain the complete launched-agent list even when their task text is long.
 
 File paths shown for read/edit/write entries are clickable: absolute (including `~`-prefixed) paths open directly, and relative paths resolve against the session's working directory. Clicking opens the file with its default app; a right-click menu offers **Open**, **Reveal in Finder**, and **Copy path**.
+
+When Pi's `read` tool reads an image, the conversation shows a thumbnail with the filename. Click it to open the local file, or right-click to reveal it in Finder or copy its path. Only the path is saved in the journal; if the file is moved or deleted, the thumbnail may become unavailable.
+
+File links in conversation messages also resolve relative paths against the Pickle's working directory, not Picky's own directory. Absolute and `~`-prefixed paths work too. If a local file cannot be found or opened, Picky reports the problem instead of silently ignoring the click.
 
 Tool History is a local inspection surface for the current user, so treat visible tool outputs and diffs as potentially sensitive project context.
 

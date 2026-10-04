@@ -156,20 +156,12 @@ private struct PickyMainActivityWaitingChipView: View {
 
 private struct PickyMainActivityPulsingDot: View {
     let color: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isPulsing = false
 
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: 6, height: 6)
-            // Opacity-only animation scope: a `withAnimation` repeat started in
-            // `onAppear` would also replay the chip's first-layout shift forever.
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
-                $0.opacity(isPulsing ? 0.38 : 1)
-            }
-            .onAppear { isPulsing = !reduceMotion }
-            .onChange(of: reduceMotion) { _, enabled in isPulsing = !enabled }
+            .pickyRepeatingPulse(dimmedOpacity: 0.38, halfPeriod: 0.75)
     }
 }
 

@@ -1145,7 +1145,42 @@ function checkAppStorageBoundary() {
   }
 }
 
+// A repeating animation attached with `.animation(_:value:)` or started by
+// `withAnimation` in `onAppear` also animates the view's layout position, so
+// the first-layout shift is replayed forever and indicator dots jump around.
+// `pickyRepeatingPulse` scopes the repeat to opacity; it is the only owner.
+const repeatForeverOwner = "Picky/PickyRepeatingPulse.swift";
+
+function hasRepeatForever(source) {
+  return /\brepeatForever\b/.test(stripSwiftCommentsAndStrings(source));
+}
+
+function checkRepeatForeverBoundary() {
+  for (const file of walk("Picky", (candidate) => candidate.endsWith(".swift"))) {
+    if (rel(file) === repeatForeverOwner) continue;
+    if (hasRepeatForever(fs.readFileSync(file, "utf8"))) {
+      addError(
+        `${rel(file)}: repeatForever replays layout shifts forever (dots jump around); ` +
+          `use .pickyRepeatingPulse for fades or a TimelineView(.animation) clock for motion (see ${repeatForeverOwner}).`,
+      );
+    }
+  }
+  const blocked = [
+    ".animation(.easeInOut.repeatForever(autoreverses: true), value: on)",
+    "withAnimation(Animation.linear(duration: 1).repeatForever()) { on = true }",
+  ];
+  const allowed = ["// .repeatForever()", 'Text("repeatForever")', ".pickyRepeatingPulse(dimmedOpacity: 0.4, halfPeriod: 0.5)"];
+  if (blocked.some((sample) => !hasRepeatForever(sample)) || allowed.some(hasRepeatForever)) {
+    addError("repeatForever boundary self-test failed.");
+  }
+}
+
 function main() {
+  if (process.argv.includes("--self-test=repeat-forever")) {
+    checkRepeatForeverBoundary();
+    finish();
+    return;
+  }
   if (process.argv.includes("--self-test=app-storage")) {
     checkAppStorageBoundary();
     finish();
@@ -1192,6 +1227,7 @@ function main() {
     checkHubSettingsMenuBoundary();
     checkInstantPopoverBoundary();
     checkAppStorageBoundary();
+    checkRepeatForeverBoundary();
     checkFileSizeRatchet();
   }
 

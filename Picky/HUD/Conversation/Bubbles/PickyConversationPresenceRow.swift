@@ -249,8 +249,6 @@ struct PickyConversationPresenceRow: View {
 /// Pickle is active; Reduce Motion and the waiting phase keep them static.
 private struct PickyPresenceTypingIndicator: View {
     let isAnimated: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isPulsing = false
 
     private static let dotSize: CGFloat = 5
     private static let cycle: Double = 0.9
@@ -261,32 +259,18 @@ private struct PickyPresenceTypingIndicator: View {
                 Circle()
                     .fill(DS.Colors.textTertiary)
                     .frame(width: Self.dotSize, height: Self.dotSize)
-                    // Scope the repeating animation to opacity only. A
-                    // value-based `.animation` also animates the dot's layout
-                    // position, so the row's first-layout shift (or any later
-                    // list reflow) got replayed forever and the dots jumped.
-                    .animation(animation(delay: Double(index) * Self.cycle / 3)) {
-                        $0.opacity(dotOpacity)
-                    }
+                    .pickyRepeatingPulse(
+                        isActive: isAnimated,
+                        dimmedOpacity: 0.35,
+                        halfPeriod: Self.cycle / 2,
+                        delay: Double(index) * Self.cycle / 3,
+                        staticOpacity: isAnimated ? 0.8 : 0.45
+                    )
             }
         }
         .padding(.horizontal, DS.Spacing.space2)
         .padding(.vertical, DS.Spacing.space2)
         .background(DS.Colors.surface2, in: PickyConversationBubbleLayout.bubbleShape(side: .agent))
         .accessibilityHidden(true)
-        .onAppear { isPulsing = shouldAnimate }
-        .onChange(of: shouldAnimate) { _, value in isPulsing = value }
-    }
-
-    private var shouldAnimate: Bool { isAnimated && !reduceMotion }
-
-    private var dotOpacity: Double {
-        guard shouldAnimate else { return isAnimated ? 0.8 : 0.45 }
-        return isPulsing ? 0.35 : 1
-    }
-
-    private func animation(delay: Double) -> Animation? {
-        guard shouldAnimate else { return nil }
-        return .easeInOut(duration: Self.cycle / 2).repeatForever(autoreverses: true).delay(delay)
     }
 }

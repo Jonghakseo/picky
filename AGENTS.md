@@ -228,6 +228,7 @@ Expected: `picky-agentd listening on 127.0.0.1:17631`; quitting the app closes t
 - Prefer small, focused changes. Add/update nearby tests only when they protect a meaningful behavior gap, following Behavior-focused validation above.
 - When moving Pi features into Picky's bundled runtime, compare the original documentation and implementation for execution triggers, process ownership, behavior after app/session exit, and restart/resume conditions. Record which contracts are preserved, changed, or excluded; do not silently reduce agreed behavior. Separate unverified lifecycle behavior from completed work in the final report. This comparison does not authorize quitting or restarting the user's running app.
 - Do not use `@AppStorage` in `Picky/` (guard-enforced) and do not persist keystroke-rate state per keystroke. Typing must re-render only the composer; see "Contract: typing re-renders only the composer" in `docs/perf-profiling.md`.
+- Do not call `repeatForever` outside `Picky/PickyRepeatingPulse.swift` (guard-enforced). It replays layout shifts forever; use `.pickyRepeatingPulse` for looping fades and a `TimelineView(.animation)` clock for looping motion.
 - Keep context packets neutral: transcript, app/window, browser URL/title/selection, screenshots, cwd, selected session.
 - Follow-up routing must be explicit and predictable; avoid surprising session capture.
 - Extension UI and confirmation flows should remain visible in the HUD, not hidden in logs.

@@ -124,8 +124,8 @@ struct PickyToolImageBubbleView: View {
         }
         .font(PickyHUDTypography.labelMedium)
         .foregroundColor(DS.Colors.textTertiary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DS.Spacing.space3)
+        .padding(.vertical, DS.Spacing.space2)
         .background(
             PickyConversationBubbleLayout.bubbleShape(side: .agent)
                 .fill(DS.Colors.surface2)

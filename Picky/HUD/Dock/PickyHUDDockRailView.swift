@@ -663,8 +663,11 @@ struct PickyHUDDockRailView: View {
                 )
             }
         } header: { header in
+            // Hover belongs to the tile's AppKit tracking area, which already
+            // covers this inset label. A second SwiftUI `.onHover` here fires
+            // after the next view-graph update, so a fast sweep delivered a
+            // stale `true` for a folder the pointer had already left.
             header
-                .onHover { onDockGroupTileHover(group.id, $0) }
                 .onTapGesture {
                     if case .singleSession(let id) = PickyHUDDockGroupTilePresentation.resolve(
                         visibleMemberIDs: memberCards.map(\.id)

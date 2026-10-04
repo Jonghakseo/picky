@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
-import { logAgentd } from "../local-log.js";
-import type { parseCommand } from "../protocol.js";
+import { logAgentd } from "../../local-log.js";
+import type { parseCommand } from "../../protocol.js";
 
 export const APP_SETTINGS_CONTROL_UNAVAILABLE = "Picky app settings control unavailable";
 const APP_SETTINGS_CONTROL_TIMEOUT = "Picky app settings control timed out";

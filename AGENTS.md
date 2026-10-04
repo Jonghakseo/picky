@@ -114,7 +114,8 @@ When the user asks about a feature, start here before broad searching:
 - Pointer overlay validation/resolution: `Picky/Overlay/Pointer/`, `agentd/src/application/pointer-overlay-request.ts`, `agentd/src/application/overlay-context-resolver.ts`, `agentd/src/domain/pointer-validation.ts`
 - App-daemon protocol/client: `Picky/Protocol/` (all Codable protocol models; `Picky/Protocol/PickyAgentProtocol.swift` holds the envelope and version), `Picky/PickyAgentClient.swift`, `Picky/PickyAgentClientRouter.swift`, `Picky/PickyAgentDaemonLauncher.swift`, `Picky/PickyAgentDaemonPool.swift`
 - agentd entry/composition: `agentd/src/index.ts`
-- agentd WebSocket protocol handling: `agentd/src/server.ts`, `agentd/src/protocol.ts`
+- agentd WebSocket protocol handling: `agentd/src/server.ts`, `agentd/src/protocol.ts`, `agentd/src/protocol-base.ts` (envelope base shared with feature slices)
+- agentd feature slices (settings, package, pi-oauth, hub): `agentd/src/features/<slice>/{schema,handlers}.ts` plus the services that slice owns; `agentd/src/features/slice-contract.ts` holds the registry types. Each slice's schemas are spread back into `protocol.ts`, so the wire protocol is unchanged. Conventions and the co-change measurement are in `ARCHITECTURE.md` §12.1; `reloadPlugins` deliberately stays in `server.ts`
 - agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts` (Pickle sessions), `agentd/src/application/main-agent-coordinator.ts` (always-on main agent: handle lifecycle, turn/interrupt guards, idle compaction, Pickle completion delivery), `agentd/src/session-store.ts`
 - Backend message journal / source mapping: `agentd/src/session-message-builder.ts`, `agentd/src/domain/log-prefixes.ts`
 - Tool categorizer/activity counts: `agentd/src/domain/tool-categorizer.ts`, `agentd/src/domain/tool-activity.ts`

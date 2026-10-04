@@ -237,7 +237,7 @@ function checkPermissionPromptAPIUsage() {
 
 function checkProtocolParity() {
   const swift = read("Picky/Protocol/PickyAgentProtocol.swift").match(/pickyAgentProtocolVersion\s*=\s*"([^"]+)"/);
-  const ts = read("agentd/src/protocol.ts").match(/PROTOCOL_VERSION\s*=\s*"([^"]+)"/);
+  const ts = read("agentd/src/protocol-base.ts").match(/PROTOCOL_VERSION\s*=\s*"([^"]+)"/);
   if (!swift) addError("Could not find Swift pickyAgentProtocolVersion.");
   if (!ts) addError("Could not find TypeScript PROTOCOL_VERSION.");
   if (!swift || !ts) return;
@@ -284,9 +284,33 @@ const EXTERNAL_ONLY_PROTOCOL_EVENTS = new Set([
   "pushToTalkControlAck",
 ]);
 
+// Reads the `type: z.literal("...")` discriminators of a `const <name> = [ ... ]`
+// schema list, which is how a feature slice exports its wire messages.
+function zodSchemaListTypeLiterals(name, sources) {
+  for (const source of sources) {
+    const header = source.match(new RegExp(String.raw`const ${name}(?:\s*:[^=]+)?\s*=\s*\[`));
+    if (!header) continue;
+    const start = header.index + header[0].length - 1;
+    let index = start;
+    let depth = 0;
+    for (; index < source.length; index += 1) {
+      if (source[index] === "[") depth += 1;
+      else if (source[index] === "]") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    const types = new Set();
+    for (const match of source.slice(start, index).matchAll(/type:\s*z\.literal\("([A-Za-z0-9_]+)"\)/g)) types.add(match[1]);
+    return types;
+  }
+  return undefined;
+}
+
 // Reads the `type: z.literal("...")` discriminators of a zod discriminated union,
-// following identifiers that reference schemas declared elsewhere in the file.
-function zodUnionTypeLiterals(source, unionName) {
+// following identifiers that reference schemas declared elsewhere in the file and
+// `...sliceSchemas` spreads that pull in `agentd/src/features/<slice>/schema.ts`.
+function zodUnionTypeLiterals(source, unionName, extraSources = []) {
   const header = `export const ${unionName} = z.discriminatedUnion("type", [`;
   const start = source.indexOf(header);
   if (start === -1) return undefined;
@@ -307,7 +331,18 @@ function zodUnionTypeLiterals(source, unionName) {
     if (referenced) types.add(referenced[1]);
     else addError(`Could not resolve zod schema ${match[1]} referenced by ${unionName}.`);
   }
+  for (const match of body.matchAll(/^\s*\.\.\.([A-Za-z0-9_]+),?\s*$/gm)) {
+    const spread = zodSchemaListTypeLiterals(match[1], [source, ...extraSources]);
+    if (spread && spread.size > 0) for (const type of spread) types.add(type);
+    else addError(`Could not resolve zod schema list ${match[1]} spread into ${unionName}. Feature slice schemas must stay readable by the protocol parity guard.`);
+  }
   return types;
+}
+
+// Feature slices compose their wire messages back into `protocol.ts`, so parity
+// has to read their schema files too.
+function featureSliceSchemaSources() {
+  return walk("agentd/src/features", (file) => file.endsWith("schema.ts")).map((file) => fs.readFileSync(file, "utf8"));
 }
 
 // Raw values of a `String` enum, honoring `case a, b` lists and `case a = "raw"`.
@@ -347,8 +382,9 @@ function swiftDecodedEventTypes(source) {
 function checkProtocolMessageSetParity() {
   const ts = read("agentd/src/protocol.ts");
   const swift = read("Picky/Protocol/PickyAgentProtocol.swift");
-  const tsCommands = zodUnionTypeLiterals(ts, "CommandEnvelopeSchema");
-  const tsEvents = zodUnionTypeLiterals(ts, "EventEnvelopeVariantSchema");
+  const sliceSources = featureSliceSchemaSources();
+  const tsCommands = zodUnionTypeLiterals(ts, "CommandEnvelopeSchema", sliceSources);
+  const tsEvents = zodUnionTypeLiterals(ts, "EventEnvelopeVariantSchema", sliceSources);
   const swiftCommands = swiftStringEnumRawValues(swift, "PickyCommandType");
   const swiftEvents = swiftDecodedEventTypes(swift);
   if (!tsCommands || !tsEvents) addError("Could not locate CommandEnvelopeSchema/EventEnvelopeVariantSchema in agentd/src/protocol.ts.");
@@ -383,6 +419,26 @@ function checkProtocolMessageSetParityFixtures() {
   ].join("\n");
   const tsTypes = zodUnionTypeLiterals(tsFixture, "SampleSchema");
   if (!tsTypes || [...tsTypes].sort().join(",") !== "inline,referenced") addError("Protocol parity self-test: zod union extraction drifted.");
+
+  const sliceFixture = [
+    "export const sliceSchemas = [",
+    '  Base.extend({ type: z.literal("sliced"), values: z.array(z.string()) }),',
+    '  Base.extend({ type: z.literal("slicedToo") }),',
+    "] as const;",
+  ].join("\n");
+  const spreadFixture = [
+    'export const SpreadSchema = z.discriminatedUnion("type", [',
+    '  Base.extend({ type: z.literal("inline") }),',
+    "  ...sliceSchemas,",
+    "]);",
+  ].join("\n");
+  const spreadTypes = zodUnionTypeLiterals(spreadFixture, "SpreadSchema", [sliceFixture]);
+  if (!spreadTypes || [...spreadTypes].sort().join(",") !== "inline,sliced,slicedToo") {
+    addError("Protocol parity self-test: feature slice spread extraction drifted.");
+  }
+  if (zodSchemaListTypeLiterals("missingSchemas", [sliceFixture]) !== undefined) {
+    addError("Protocol parity self-test: an unresolved schema list must not report members.");
+  }
 
   const swiftEnumFixture = [
     "enum SampleType: String, Codable, Equatable {",
@@ -490,6 +546,60 @@ function checkPiSdkImportBoundaryFixtures() {
   }
   for (const fixture of allowed) {
     if (PI_SDK_IMPORT_PATTERN.test(fixture)) addError(`Pi SDK boundary self-test incorrectly blocked: ${fixture}`);
+  }
+}
+
+// A feature slice (`agentd/src/features/<slice>/`) owns its wire schema, its
+// command handlers, and the services that have no other owner. It must not pull
+// the session supervisor in as a value: supervisor capabilities arrive through a
+// narrow port on the slice's context object, so the slice stays a leaf of the
+// graph and server.ts keeps deciding what a slice may reach. Type-only imports
+// are fine; they are erased and cannot start a session.
+const IMPORT_STATEMENT_PATTERN = /\bimport\s+(type\s+)?((?:[^;'"]|'[^']*'|"[^"]*")*?)from\s*["']([^"']+)["']/g;
+const SESSION_SUPERVISOR_MODULE_PATTERN = /(?:^|\/)session-supervisor(?:\.js)?$/;
+
+function sessionSupervisorValueImport(source) {
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  for (const match of text.matchAll(IMPORT_STATEMENT_PATTERN)) {
+    if (match[1]) continue;
+    if (SESSION_SUPERVISOR_MODULE_PATTERN.test(match[3])) return match[3];
+  }
+  const dynamic = text.match(/\bimport\s*\(\s*["']([^"']*session-supervisor(?:\.js)?)["']\s*\)/);
+  if (dynamic) return dynamic[1];
+  const required = text.match(/\brequire\s*\(\s*["']([^"']*session-supervisor(?:\.js)?)["']\s*\)/);
+  return required ? required[1] : undefined;
+}
+
+function checkFeatureSliceSupervisorBoundary() {
+  for (const file of walk("agentd/src/features", (candidate) => candidate.endsWith(".ts"))) {
+    const specifier = sessionSupervisorValueImport(fs.readFileSync(file, "utf8"));
+    if (!specifier) continue;
+    addError(
+      `${rel(file)} imports ${specifier} as a value. A feature slice must receive supervisor capabilities through a narrow port on its context (see agentd/src/features/slice-contract.ts); "import type" is still allowed.`,
+    );
+  }
+}
+
+function checkFeatureSliceSupervisorBoundaryFixtures() {
+  const blocked = [
+    'import { SessionSupervisor } from "../../session-supervisor.js";',
+    'import {\n  SessionSupervisor,\n} from "../../session-supervisor.js";',
+    'const { SessionSupervisor } = await import("../../session-supervisor.js");',
+    'const supervisor = require("../../session-supervisor.js");',
+  ];
+  const allowed = [
+    'import type { SessionSupervisor } from "../../session-supervisor.js";',
+    'import type {\n  SessionSupervisor,\n} from "../../session-supervisor.js";',
+    'import { logAgentd } from "../../local-log.js";',
+    'import { reloadPlugins } from "../../application/plugin-reload.js";',
+    '// import { SessionSupervisor } from "../../session-supervisor.js";',
+    '/** Calls back into session-supervisor.ts through ctx. */',
+  ];
+  for (const fixture of blocked) {
+    if (!sessionSupervisorValueImport(fixture)) addError(`Feature slice supervisor boundary self-test failed to block: ${fixture}`);
+  }
+  for (const fixture of allowed) {
+    if (sessionSupervisorValueImport(fixture)) addError(`Feature slice supervisor boundary self-test incorrectly blocked: ${fixture}`);
   }
 }
 
@@ -1220,6 +1330,8 @@ function main() {
     checkAgentdDomainImports();
     checkPiSdkImportBoundaryFixtures();
     checkPiSdkImportBoundary();
+    checkFeatureSliceSupervisorBoundaryFixtures();
+    checkFeatureSliceSupervisorBoundary();
     checkInteractionReducerMutationBoundary();
     checkSecretCodingKeys();
     checkSessionProjectionRules();

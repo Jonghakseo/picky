@@ -302,7 +302,7 @@ agentd:
 
 Mechanical protocol updates:
 
-- Bump `PROTOCOL_VERSION` in `agentd/src/protocol.ts`.
+- Bump `PROTOCOL_VERSION` in `agentd/src/protocol-base.ts`.
 - Bump `pickyAgentProtocolVersion` in `Picky/PickyAgentProtocol.swift` to match.
 - Update Swift `PickyCommandType` and `PickyEvent`/decode cases for every new command/event.
 - Update protocol redaction/log-summary helpers on both sides.

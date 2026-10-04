@@ -21,16 +21,22 @@ import { awaitPickleSessionTerminal } from "./application/pickle-terminal-waiter
 import { EdgeTTSServiceError } from "./edge-tts-service.js";
 import { workingDirectoryProblem } from "./application/working-directory.js";
 import type { EdgeTTSService } from "./edge-tts-service.js";
-import { McpServerAdmin, McpServerOperationError } from "./runtime/mcp-server-admin.js";
-import { packageOperationHandlers, PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./runtime/package-operations.js";
+import { McpServerAdmin } from "./runtime/mcp-server-admin.js";
+import { PackageOperations, type CronPackageLifecycleLike, type PackageManager, type PackageManagerFactoryOptions } from "./runtime/package-operations.js";
 export { createDefaultPackageManager, type DefaultPackageManagerDependencies } from "./runtime/package-operations.js";
 import type { PiOAuthHandling } from "./runtime/pi-oauth-service.js";
 import { readNewPickleRuntimeDefaults } from "./application/new-pickle-runtime-defaults.js";
-import { SettingsControlBroker, SettingsControlError } from "./application/settings-control-broker.js";
+import { SettingsControlBroker, SettingsControlError } from "./features/settings/settings-control-broker.js";
+import { settingsCommandHandlers } from "./features/settings/handlers.js";
+import { packageCommandHandlers } from "./features/package/handlers.js";
+import { piOAuthCommandHandlers } from "./features/pi-oauth/handlers.js";
+import { hubCommandHandlers } from "./features/hub/handlers.js";
+import { HubStatisticsBroker } from "./features/hub/hub-statistics-broker.js";
+import type { CommandHandlerMap, EventPayload, ParsedCommand } from "./features/slice-contract.js";
 import type { HubStatisticsServiceLike } from "./application/hub-statistics-service.js";
 import type { PickleClassifier } from "./application/pickle-classifier.js";
 import { PiModelScopeConflictError } from "./runtime/model-scope-errors.js";
-export { APP_SETTINGS_CONTROL_UNAVAILABLE } from "./application/settings-control-broker.js";
+export { APP_SETTINGS_CONTROL_UNAVAILABLE } from "./features/settings/settings-control-broker.js";
 export interface AgentdServerOptions {
   port: number;
   token: string;
@@ -55,10 +61,6 @@ export interface AgentdServerOptions {
   /** Primary-only classifier lifecycle, stopped with the daemon. */
   pickleClassifier?: PickleClassifier;
 }
-type ParsedCommand = ReturnType<typeof parseCommand>;
-type CommandHandlerMap = {
-  [Type in ParsedCommand["type"]]: (command: Extract<ParsedCommand, { type: Type }>) => unknown;
-};
 export const APP_PICKLE_HANDOFF_UNAVAILABLE = "Picky app handoff unavailable";
 const APP_PICKLE_HANDOFF_TIMEOUT = "Picky app handoff timed out";
 export const APP_EXTERNAL_ENTRY_UNAVAILABLE = "Picky app external entry unavailable";
@@ -72,8 +74,6 @@ const APP_DOCK_GROUPS_TIMEOUT = "Picky app dock groups request timed out";
 const DOCK_GROUPS_TIMEOUT_MS = 4_000;
 export class AgentdServer {
   private httpServer?: HttpServer;
-  private classificationConfiguration: Promise<void> = Promise.resolve();
-  private classificationConfigurationGeneration = 0;
   private wsServer?: WebSocketServer;
   private clients = new Set<WebSocket>();
   private appCapabilities = new WeakMap<WebSocket, Set<string>>();
@@ -87,6 +87,7 @@ export class AgentdServer {
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
   private readonly settingsControl: SettingsControlBroker;
+  private readonly hubStatistics: HubStatisticsBroker;
   private readonly packageOperations: PackageOperations;
   private readonly mcpServers: McpServerAdmin;
   /**
@@ -110,6 +111,11 @@ export class AgentdServer {
       createCronLifecycle: options.createCronLifecycle,
       getAgentDir: options.getAgentDir,
       packageOperationTimeoutMs: options.packageOperationTimeoutMs,
+      send: (ws, event) => { this.send(ws, event); },
+    });
+    this.hubStatistics = new HubStatisticsBroker({
+      statistics: options.hubStatistics,
+      classifier: options.pickleClassifier,
       send: (ws, event) => { this.send(ws, event); },
     });
     this.settingsControl = new SettingsControlBroker({
@@ -233,7 +239,7 @@ export class AgentdServer {
     this.settingsControl.rejectAll();
     for (const client of this.clients) client.close();
     await this.packageOperations.stop();
-    this.classificationConfigurationGeneration += 1;
+    this.hubStatistics.abandonPendingConfiguration();
     this.options.pickleClassifier?.stop();
     this.options.edgeTTS?.dispose();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
@@ -373,65 +379,12 @@ export class AgentdServer {
       asyncTaskCommand: async (cmd) => this.send(ws, { type: "asyncTaskCommandResult", result: await this.options.supervisor.executeAsyncTaskCommand(cmd.command) }),
       listMainMessages: (cmd) => this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() }),
       listMainAgentModels: async (cmd) => this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() }),
-      getPiOAuthStatus: async (cmd) => {
-        const status = await this.requirePiOAuth().status(cmd.providerId);
-        this.send(ws, { type: "piOAuthStatus", requestId: cmd.id, providerId: cmd.providerId, ...status });
-      },
-      signInPiOAuth: async (cmd) => {
-        const status = await this.requirePiOAuth().login({
-          requestId: cmd.id,
-          providerId: cmd.providerId,
-          owner: ws,
-          onNotify: (event) => {
-            if (event.type === "auth_url") {
-              this.send(ws, {
-                type: "piOAuthUrlRequested",
-                requestId: cmd.id,
-                providerId: cmd.providerId,
-                url: event.url,
-                instructions: event.instructions,
-              });
-            } else if (event.type === "device_code") {
-              this.send(ws, {
-                type: "piOAuthUrlRequested",
-                requestId: cmd.id,
-                providerId: cmd.providerId,
-                url: event.verificationUri,
-                userCode: event.userCode,
-              });
-            } else {
-              logAgentd("pi oauth progress", { requestId: cmd.id, providerId: cmd.providerId, eventType: event.type });
-            }
-          },
-          onPrompt: (promptId, prompt) => this.send(ws, {
-            type: "piOAuthPromptRequested",
-            requestId: cmd.id,
-            providerId: cmd.providerId,
-            promptId,
-            promptType: prompt.type,
-            message: prompt.message,
-            ...("placeholder" in prompt && prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
-            ...(prompt.type === "select" ? { options: [...prompt.options] } : {}),
-          }),
-        });
-        this.send(ws, { type: "piOAuthStatus", requestId: cmd.id, providerId: cmd.providerId, ...status });
-      },
-      signOutPiOAuth: async (cmd) => {
-        const status = await this.requirePiOAuth().logout(cmd.providerId);
-        this.send(ws, { type: "piOAuthStatus", requestId: cmd.id, providerId: cmd.providerId, ...status });
-      },
-      answerPiOAuthPrompt: (cmd) => this.requirePiOAuth().answerPrompt({
-        owner: ws,
-        requestId: cmd.requestId,
-        promptId: cmd.promptId,
-        value: cmd.value,
-        cancelled: cmd.cancelled,
+      ...piOAuthCommandHandlers({
+        socket: ws,
+        requirePiOAuth: () => this.requirePiOAuth(),
+        reloadAuthentication: () => this.options.supervisor.reloadPiAuthentication(),
+        send: (socket, event) => { this.send(socket, event); },
       }),
-      cancelPiOAuth: (cmd) => { this.requirePiOAuth().cancel(ws, cmd.requestId); },
-      reloadPiAuthentication: async (cmd) => {
-        const reloadedHandleCount = await this.options.supervisor.reloadPiAuthentication();
-        this.send(ws, { type: "piAuthenticationReloaded", requestId: cmd.id, reloadedHandleCount });
-      },
       setDefaultCwd: (cmd) => this.options.setDefaultCwd?.(cmd.defaultCwd.trim()),
       setMainAgentModel: (cmd) => this.options.supervisor.setMainAgentModel(cmd.mainAgentModelPattern),
       setDisabledBuiltinTools: (cmd) => this.options.supervisor.setDisabledBuiltinTools(cmd.disabledBuiltinTools),
@@ -537,26 +490,7 @@ export class AgentdServer {
       },
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id),
-      listPickySettings: async (cmd) => {
-        const result = await this.settingsControl.request({ action: "list", caller: cmd.caller });
-        this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
-      },
-      getPickySettings: async (cmd) => {
-        const result = await this.settingsControl.request({ action: "get", key: cmd.key, caller: cmd.caller });
-        this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
-      },
-      setPickySettings: async (cmd) => {
-        const result = await this.settingsControl.request({
-          action: "set",
-          key: cmd.key,
-          value: cmd.value,
-          ...(cmd.toggle !== undefined ? { toggle: cmd.toggle } : {}),
-          ...(cmd.displayId !== undefined ? { displayId: cmd.displayId } : {}),
-          caller: cmd.caller,
-        });
-        this.send(ws, { type: "pickySettingsAck", commandId: cmd.id, result });
-      },
-      completePickySettingsRequest: (cmd) => this.settingsControl.complete(ws, cmd),
+      ...settingsCommandHandlers({ socket: ws, settingsControl: this.settingsControl, send: (socket, event) => { this.send(socket, event); } }),
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
@@ -655,7 +589,7 @@ export class AgentdServer {
       },
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
       answerMainExtensionUi: (cmd) => this.options.supervisor.answerMainExtensionUi(cmd.requestId, cmd.value),
-      ...packageOperationHandlers(this.packageOperations, ws),
+      ...packageCommandHandlers({ socket: ws, operations: this.packageOperations }),
       reloadPlugins: async (cmd) => {
         const summary = await this.options.supervisor.reloadPlugins();
         this.broadcast({
@@ -668,95 +602,17 @@ export class AgentdServer {
           failedCount: summary.failedCount,
         });
       },
-      listMcpServers: async (cmd) => this.sendMcpServerList(ws, cmd.id),
-      addMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "add", cmd.name, () => this.mcpServers.add(cmd.name, cmd.configJson, cmd.pickyScope)),
-      updateMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "update", cmd.name, () => this.mcpServers.update(cmd.name, {
-        ...(cmd.enabled === undefined ? {} : { enabled: cmd.enabled }),
-        ...(cmd.pickyScope === undefined ? {} : { pickyScope: cmd.pickyScope }),
-      })),
-      removeMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "remove", cmd.name, () => this.mcpServers.remove(cmd.name)),
-      signInMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "signIn", cmd.name, () => this.mcpServers.signIn(cmd.name)),
-      signOutMcpServer: (cmd) => this.runMcpServerOperation(ws, cmd.id, "signOut", cmd.name, () => this.mcpServers.signOut(cmd.name)),
-      getHubStatistics: async (cmd) => this.sendHubStatistics(ws, cmd.id, false),
-      resetHubStatistics: async (cmd) => this.sendHubStatistics(ws, cmd.id, true),
-      configureHubStatistics: async (cmd) => this.configureHubStatistics(ws, cmd.id, cmd.classificationEnabled),
+      ...hubCommandHandlers({
+        socket: ws,
+        mcpServers: this.mcpServers,
+        statistics: this.hubStatistics,
+        send: (socket, event) => { this.send(socket, event); },
+      }),
     };
 
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
     await handler(command);
   }
-  private async sendMcpServerList(ws: WebSocket, commandId: string): Promise<void> {
-    try {
-      const listing = await this.mcpServers.list();
-      this.send(ws, { type: "mcpServerList", commandId, ok: true, ...listing });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logAgentd("mcp server list failed", { error: message });
-      this.send(ws, { type: "mcpServerList", commandId, ok: false, servers: [], configErrors: [], errorMessage: message });
-    }
-  }
-
-  private async runMcpServerOperation(
-    ws: WebSocket,
-    requestId: string,
-    operation: "add" | "update" | "remove" | "signIn" | "signOut",
-    name: string,
-    run: () => Promise<void>,
-  ): Promise<void> {
-    try {
-      await run();
-      this.send(ws, { type: "mcpServerOperationCompleted", requestId, operation, name, ok: true });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logAgentd("mcp server operation failed", { operation, name, error: message });
-      this.send(ws, {
-        type: "mcpServerOperationCompleted", requestId, operation, name, ok: false, errorMessage: message,
-        ...(error instanceof McpServerOperationError && error.code ? { errorCode: error.code } : {}),
-      });
-    }
-  }
-
-  private async sendHubStatistics(ws: WebSocket, commandId: string, reset: boolean): Promise<void> {
-    const statistics = this.options.hubStatistics;
-    if (!statistics) {
-      this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: "Hub statistics unavailable on this daemon" });
-      return;
-    }
-    try {
-      const snapshot = reset ? await statistics.reset() : await statistics.snapshot();
-      this.send(ws, { type: "hubStatisticsResult", commandId, ok: true, errorMessage: null, snapshot });
-    } catch (error) {
-      this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: error instanceof Error ? error.message : String(error) });
-    }
-  }
-
-  private async configureHubStatistics(ws: WebSocket, commandId: string, enabled: boolean): Promise<void> {
-    const statistics = this.options.hubStatistics;
-    if (!statistics) {
-      this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: "Hub statistics unavailable on this daemon" });
-      return;
-    }
-
-    const generation = ++this.classificationConfigurationGeneration;
-    // Revoke immediately, even while an earlier opt-in is awaiting disk reads.
-    if (!enabled) this.options.pickleClassifier?.setClassificationEnabled(false);
-    const operation = this.classificationConfiguration.then(async () => {
-      try {
-        const snapshot = await statistics.configureClassification(enabled);
-        if (generation === this.classificationConfigurationGeneration) {
-          this.options.pickleClassifier?.setClassificationEnabled(enabled);
-        }
-        this.send(ws, { type: "hubStatisticsResult", commandId, ok: true, errorMessage: null, snapshot });
-      } catch (error) {
-        // Never resume transmission after a failed withdrawal. The error tells
-        // the caller the durable choice still needs retrying before a restart.
-        this.send(ws, { type: "hubStatisticsResult", commandId, ok: false, errorMessage: error instanceof Error ? error.message : String(error) });
-      }
-    });
-    this.classificationConfiguration = operation.catch(() => undefined);
-    await operation;
-  }
-
   private requirePiOAuth(): PiOAuthHandling {
     if (!this.options.piOAuth) throw new Error("Pi OAuth is available only on the primary daemon");
     return this.options.piOAuth;
@@ -1450,5 +1306,4 @@ function protocolSession(session: PickyAgentSession): PickyAgentSessionParsed {
   return PickyAgentSessionSchema.parse(session);
 }
 
-type RemoveEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;
-type EventPayload = RemoveEnvelope<EventEnvelope>;
+

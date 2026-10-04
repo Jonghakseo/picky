@@ -307,9 +307,76 @@ These are intentionally deferred until they clearly reduce complexity:
 - `PickySessionViewModel.swift` rename/split into HUD-specific files.
 - Separate `PickySessionCardView.swift` only if card ownership grows; keep `SessionCard` nested unless separately approved.
 - Further `CompanionManager` collaborators beyond the current voice/context/event boundaries.
-- `agentd/src/server.ts` transport split.
 - `agentd/src/runtime/pi-sdk-runtime.ts` session/image-options split.
 - Broader Picky runtime orchestrator or visible lifecycle extraction unless session orchestration grows again.
+
+### 12.1 agentd feature slices (Phase 1-d pilot)
+
+`agentd/src/server.ts` is no longer deferred as a whole. Instead of splitting it by
+transport layer, four Hub-side features moved into `agentd/src/features/<slice>/`,
+where each slice owns the pieces that used to change together across
+`protocol.ts`, `server.ts`, and a service file.
+
+A slice is:
+
+- `schema.ts`: the feature's zod command and event schemas, built on
+  `agentd/src/protocol-base.ts`. `protocol.ts` spreads them back into the single
+  wire union, so message names and fields are unchanged.
+- `handlers.ts`: a `(ctx) => CommandHandlersFor<...>` factory, following the
+  existing `packageOperationHandlers` shape. `server.ts` merges the factories into
+  one registry annotated with `CommandHandlerMap`, so a command without a handler
+  is still a compile error.
+- Services with no other owner (`settings-control-broker.ts`,
+  `hub-statistics-broker.ts`). Anything that imports `@earendil-works/*` stays in
+  `runtime/`; the slice declares a narrow port and the runtime adapter satisfies it
+  structurally.
+
+Decisions worth keeping:
+
+- The four slices are `settings`, `package`, `pi-oauth`, and `hub`. They are the
+  Hub-side features that never touched `session-supervisor.ts` in the last 90 days.
+- `reloadPlugins` is **not** in the `hub` slice. It queues `/reload` follow-ups and
+  appends session logs through the supervisor, so folding it in would mix session
+  state into the measurement below. It stays in `server.ts`.
+- `application/hub-statistics-service.ts` stays in `application/`: `bootstrap.ts`
+  and `application/pickle-classifier.ts` own it too, and moving it would make
+  application code depend on a feature slice.
+- Envelope primitives live in `protocol-base.ts` rather than `protocol.ts` because
+  a slice schema importing `protocol.ts` would be a module cycle.
+- `scripts/check-architecture-rules.js` enforces two slice rules: the protocol
+  parity guard resolves `...sliceSchemas` spreads so slice messages still need a
+  Swift counterpart, and `checkFeatureSliceSupervisorBoundary` fails when anything
+  under `features/` imports `session-supervisor.js` as a value. Supervisor
+  capabilities must arrive through a narrow port on the slice context
+  (`reloadPiAuthentication` is the only current case); `import type` stays allowed.
+
+#### Measuring whether the slice holds
+
+The pilot is worth continuing only if changing one of these features stops
+spreading across the tree. Re-measure in 4-6 weeks with
+`scripts/measure-slice-cochange.sh` (`SINCE="42 days ago"` narrows the window to
+the post-split period). It walks this `git log` over the slice folders and the
+pre-slice service paths:
+
+```bash
+git log --since="90 days ago" --format=%H -- \
+  agentd/src/features/settings agentd/src/features/package \
+  agentd/src/features/pi-oauth agentd/src/features/hub \
+  agentd/src/application/settings-control-broker.ts \
+  agentd/src/runtime/package-operations.ts \
+  agentd/src/runtime/pi-oauth-service.ts \
+  agentd/src/runtime/mcp-server-admin.ts \
+  agentd/src/application/hub-statistics-service.ts
+```
+
+Baseline at the time of the split (90 days before the pilot, 12 commits): the
+average commit touched **8.0 directories**, and **33%** (4 of 12) changed
+`protocol.ts` and `server.ts` in the same commit.
+
+Decision rule: if a later change to one of these features closes inside its slice
+folder plus that feature's UI folder, extend slicing to the next feature. If
+commits keep fanning out across `protocol.ts`, `server.ts`, and unrelated folders,
+stop slicing rather than adding more `features/` directories.
 
 ## 13. Pi integration references
 

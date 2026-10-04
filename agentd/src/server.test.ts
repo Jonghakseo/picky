@@ -904,6 +904,21 @@ describe("AgentdServer", () => {
     observer.ws.close();
   });
 
+  it("rejects provider sign-in on a daemon without the primary OAuth coordinator and keeps other commands working", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-oauth-child", protocolVersion: PROTOCOL_VERSION, type: "getPiOAuthStatus", providerId: "anthropic" }));
+    await expect(waitForEvent(ws, "error")).resolves.toMatchObject({
+      commandId: "cmd-oauth-child",
+      message: "Pi OAuth is available only on the primary daemon",
+    });
+
+    // The primary-only check belongs to the OAuth commands alone; it must not
+    // run while the command registry is being assembled for every command.
+    ws.send(JSON.stringify({ id: "cmd-oauth-child-abort", protocolVersion: PROTOCOL_VERSION, type: "abortMainAgent" }));
+    await expect(waitForEvent(ws, "ack")).resolves.toMatchObject({ commandId: "cmd-oauth-child-abort" });
+    ws.close();
+  });
+
   it("unicasts an ack after a successfully handled command", async () => {
     const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-abort-main", protocolVersion: PROTOCOL_VERSION, type: "abortMainAgent" }));

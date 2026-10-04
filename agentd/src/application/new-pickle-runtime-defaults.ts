@@ -1,6 +1,6 @@
 import type { RuntimeCreateOptions, ThinkingLevel } from "../runtime/types.js";
 import { logAgentd } from "../local-log.js";
-import type { SettingsControlBroker } from "./settings-control-broker.js";
+import type { SettingsControlBroker } from "../features/settings/settings-control-broker.js";
 
 const thinkingLevels = new Set<string>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 

@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { AgentCycleSchema, AsyncWorkSummarySchema, AsyncTaskSchema, CompletionTicketSchema, AsyncTaskDetailSchema, AsyncControlStateSchema, AsyncTaskCommandSchema, AsyncTaskCommandResultSchema, ReleaseApprovalSchema } from "./domain/async-task-contract.js";
 import { ANNOTATION_TEXT_MAX_LENGTH } from "./domain/annotation-validation.js";
+import { CommandBaseSchema, EventBaseSchema, isoTimestamp, PROTOCOL_VERSION } from "./protocol-base.js";
+import { settingsCommandSchemas, settingsEventSchemas } from "./features/settings/schema.js";
+import { packageCommandSchemas, packageEventSchemas } from "./features/package/schema.js";
+import { piOAuthCommandSchemas, piOAuthEventSchemas } from "./features/pi-oauth/schema.js";
+import { hubCommandSchemas, hubEventSchemas } from "./features/hub/schema.js";
 
-export const PROTOCOL_VERSION = "2026-08-25";
-
-const isoTimestamp = z.string().datetime({ offset: true });
+// The envelope primitives live in `protocol-base.ts` so feature slices can
+// extend them without importing this module back (see features/slice-contract.ts).
+export { PROTOCOL_VERSION };
 
 export const SessionStatusSchema = z.enum([
   "queued",
@@ -332,16 +337,6 @@ export const PickyRuntimeModelScopeSchema = z.object({
   reason: z.enum(["advancedPatterns"]).optional(),
 });
 export type PickyRuntimeModelScope = z.infer<typeof PickyRuntimeModelScopeSchema>;
-export const PiOAuthProviderIdSchema = z.enum(["openai-codex", "anthropic"]);
-export type PiOAuthProviderId = z.infer<typeof PiOAuthProviderIdSchema>;
-export const PiOAuthPromptTypeSchema = z.enum(["text", "secret", "select", "manual_code"]);
-export type PiOAuthPromptType = z.infer<typeof PiOAuthPromptTypeSchema>;
-export const PiOAuthPromptOptionSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  description: z.string().optional(),
-});
-export type PiOAuthPromptOption = z.infer<typeof PiOAuthPromptOptionSchema>;
 /**
  * Semantic identity for a journal entry Picky itself authored (as opposed to Pi, an extension,
  * a tool, or the user). The app renders these through its own localization catalog, so the
@@ -645,56 +640,6 @@ export const DockGroupSchema = z.object({
 });
 export type DockGroup = z.infer<typeof DockGroupSchema>;
 
-const PickyHubWorkCategorySchema = z.enum(["fix", "research", "create", "review", "unclassified"]);
-const PickyHubPickleRecordSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  project: z.string(),
-  cwd: z.string().nullable().optional(),
-  createdAt: isoTimestamp,
-  lastActivityAt: isoTimestamp,
-  followUpCount: z.number().int().nonnegative(),
-  delegationCount: z.number().int().nonnegative(),
-  reviewCount: z.number().int().nonnegative(),
-  category: PickyHubWorkCategorySchema,
-});
-const PickyHubUsageSampleSchema = z.object({
-  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  provider: z.string(),
-  model: z.string(),
-  project: z.string().nullable().optional(),
-  inputTokens: z.number().int().nonnegative(),
-  outputTokens: z.number().int().nonnegative(),
-  cacheTokens: z.number().int().nonnegative(),
-});
-const PickyHubStatisticsSnapshotSchema = z.object({
-  generatedAt: isoTimestamp,
-  records: z.array(PickyHubPickleRecordSchema),
-  usageSamples: z.array(PickyHubUsageSampleSchema),
-  pendingClassificationCount: z.number().int().nonnegative(),
-  // Legacy snapshots predate the consent field. Treat omission as disabled.
-  classificationEnabled: z.boolean().default(false),
-});
-
-/** `all`: the main agent and every Pickle connect to the server. `main`: the main agent only. */
-const PickyMcpScopeSchema = z.enum(["all", "main"]);
-const PickyMcpServerSchema = z.object({
-  name: z.string().min(1),
-  pickyScope: PickyMcpScopeSchema,
-  enabled: z.boolean(),
-  exposure: z.string(),
-  transport: z.string(),
-  state: z.enum(["disabled", "connecting", "connected", "disconnected", "needs-auth", "failed", "closed"]),
-  tools: z.array(z.string()),
-  error: z.string().optional(),
-  usesOAuth: z.boolean(),
-});
-
-const CommandBaseSchema = z.object({
-  id: z.string(),
-  protocolVersion: z.literal(PROTOCOL_VERSION),
-  caller: z.literal("mainAgent").optional(),
-});
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("getAsyncControlContext"), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("asyncTaskCommand"), command: AsyncTaskCommandSchema }),
@@ -704,22 +649,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("createPickleFromHandoff"), context: PickyContextPacketSchema, title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional(), notifyMainOnCompletion: z.boolean().optional(), notifyMacOSOnCompletion: z.boolean().optional() }),
   CommandBaseSchema.extend({ type: z.literal("completePickleHandoff"), requestId: z.string().min(1), sessionId: z.string().min(1).optional(), title: z.string().min(1).optional(), cwd: z.string().optional(), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(PickyAppCapabilitySchema).min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("listPickySettings") }),
-  CommandBaseSchema.extend({ type: z.literal("getPickySettings"), key: z.string().min(1) }),
-  CommandBaseSchema.extend({
-    type: z.literal("setPickySettings"),
-    key: z.string().min(1),
-    value: z.any().refine((value) => value !== undefined, "value is required"),
-    toggle: z.boolean().optional(),
-    displayId: z.string().min(1).optional(),
-  }),
-  CommandBaseSchema.extend({
-    type: z.literal("completePickySettingsRequest"),
-    requestId: z.string().min(1),
-    result: z.unknown().optional(),
-    errorCode: z.string().min(1).optional(),
-    errorMessage: z.string().min(1).optional(),
-  }),
+  ...settingsCommandSchemas,
   CommandBaseSchema.extend({ type: z.literal("submitMainFromExternal"), text: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromExternal"), title: z.string().min(1), instructions: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional(), group: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromMain"), title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional(), group: z.string().min(1).optional() }),
@@ -802,18 +732,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
   CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
-  CommandBaseSchema.extend({ type: z.literal("getPiOAuthStatus"), providerId: PiOAuthProviderIdSchema }),
-  CommandBaseSchema.extend({ type: z.literal("signInPiOAuth"), providerId: PiOAuthProviderIdSchema }),
-  CommandBaseSchema.extend({ type: z.literal("signOutPiOAuth"), providerId: PiOAuthProviderIdSchema }),
-  CommandBaseSchema.extend({
-    type: z.literal("answerPiOAuthPrompt"),
-    requestId: z.string().min(1),
-    promptId: z.string().min(1),
-    value: z.string().optional(),
-    cancelled: z.boolean().optional(),
-  }),
-  CommandBaseSchema.extend({ type: z.literal("cancelPiOAuth"), requestId: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("reloadPiAuthentication") }),
+  ...piOAuthCommandSchemas,
   CommandBaseSchema.extend({ type: z.literal("setDefaultCwd"), defaultCwd: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentModel"), mainAgentModelPattern: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("setDisabledBuiltinTools"), disabledBuiltinTools: z.array(z.string()) }),
@@ -856,22 +775,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("getSessionProjectionSnapshot"), requestId: z.string().min(1), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("answerMainExtensionUi"), requestId: z.string().min(1), value: z.unknown().optional() }),
-  CommandBaseSchema.extend({ type: z.literal("installPackage"), source: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("setupPackage"), source: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("removePackage"), source: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("checkPackageUpdates") }),
-  CommandBaseSchema.extend({ type: z.literal("inspectPackageConflicts"), sources: z.array(z.string().min(1)).max(100) }),
-  CommandBaseSchema.extend({ type: z.literal("updatePackage"), source: z.string().min(1) }),
+  ...packageCommandSchemas,
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
-  CommandBaseSchema.extend({ type: z.literal("listMcpServers") }),
-  CommandBaseSchema.extend({ type: z.literal("addMcpServer"), name: z.string().min(1), configJson: z.string().min(1), pickyScope: PickyMcpScopeSchema }),
-  CommandBaseSchema.extend({ type: z.literal("updateMcpServer"), name: z.string().min(1), enabled: z.boolean().optional(), pickyScope: PickyMcpScopeSchema.optional() }),
-  CommandBaseSchema.extend({ type: z.literal("removeMcpServer"), name: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("signInMcpServer"), name: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("signOutMcpServer"), name: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("getHubStatistics") }),
-  CommandBaseSchema.extend({ type: z.literal("resetHubStatistics") }),
-  CommandBaseSchema.extend({ type: z.literal("configureHubStatistics"), classificationEnabled: z.boolean() }),
+  ...hubCommandSchemas,
 ]).superRefine((command, context) => {
   if (command.type === "getSessionProjectionSnapshot" && command.id !== command.requestId) {
     context.addIssue({
@@ -891,7 +797,6 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
 
 type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
 
-const EventBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION), timestamp: isoTimestamp });
 const QuickReplyOriginSourceSchema = z.enum(["voice", "text", "voiceFollowUp", "textFollowUp", "system", "cli", "unknown"]);
 const QuickReplyKindSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
@@ -1009,37 +914,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("mainActivityUpdated"), activity: PickyMainActivitySchema.optional() }),
   EventBaseSchema.extend({ type: z.literal("mainExtensionUiRequested"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("mainExtensionUiCancelled"), requestId: z.string() }),
-  EventBaseSchema.extend({
-    type: z.literal("piOAuthStatus"),
-    requestId: z.string().min(1),
-    providerId: PiOAuthProviderIdSchema,
-    configured: z.boolean(),
-    source: z.string().optional(),
-    label: z.string().optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("piOAuthUrlRequested"),
-    requestId: z.string().min(1),
-    providerId: PiOAuthProviderIdSchema,
-    url: z.string().url(),
-    instructions: z.string().optional(),
-    userCode: z.string().optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("piOAuthPromptRequested"),
-    requestId: z.string().min(1),
-    providerId: PiOAuthProviderIdSchema,
-    promptId: z.string().min(1),
-    promptType: PiOAuthPromptTypeSchema,
-    message: z.string().min(1),
-    placeholder: z.string().optional(),
-    options: z.array(PiOAuthPromptOptionSchema).optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("piAuthenticationReloaded"),
-    requestId: z.string().min(1),
-    reloadedHandleCount: z.number().int().nonnegative(),
-  }),
+  ...piOAuthEventSchemas,
   PickySessionProjectionTransactionEventSchema,
   PickySessionProjectionSnapshotEventSchema,
   PickySessionProjectionBootstrapCompleteEventSchema,
@@ -1053,72 +928,8 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     pickleDeferredCount: z.number().int().nonnegative(),
     failedCount: z.number().int().nonnegative().optional(),
   }),
-  EventBaseSchema.extend({
-    type: z.literal("hubStatisticsResult"),
-    commandId: z.string().min(1),
-    ok: z.boolean(),
-    errorMessage: z.string().nullable().optional(),
-    snapshot: PickyHubStatisticsSnapshotSchema.optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("mcpServerList"),
-    commandId: z.string().min(1),
-    ok: z.boolean(),
-    configPath: z.string().optional(),
-    servers: z.array(PickyMcpServerSchema),
-    configErrors: z.array(z.string()),
-    errorMessage: z.string().optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("mcpServerOperationCompleted"),
-    requestId: z.string().min(1),
-    operation: z.enum(["add", "update", "remove", "signIn", "signOut"]),
-    name: z.string().min(1),
-    ok: z.boolean(),
-    errorCode: z.enum(["duplicate", "invalid", "notFound"]).optional(),
-    errorMessage: z.string().optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("packageUpdatesAvailable"),
-    commandId: z.string().min(1),
-    sources: z.array(z.string().min(1)),
-    /** Registry version each source would update to, when agentd could resolve it. */
-    latestVersions: z.record(z.string().min(1), z.string().min(1)).optional(),
-    failed: z.boolean().optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("packageConflicts"),
-    commandId: z.string().min(1),
-    conflicts: z.array(z.object({
-      source: z.string().min(1),
-      kind: z.enum(["tool", "skill"]),
-      name: z.string().min(1),
-      ownerPath: z.string().min(1),
-      removal: z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("package"), source: z.string().min(1) }),
-        z.object({ kind: z.literal("trash"), path: z.string().min(1) }),
-        z.object({ kind: z.literal("manual") }),
-      ]).optional(),
-    })),
-    failed: z.boolean().optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("packageOperationProgress"),
-    requestId: z.string().min(1),
-    operation: z.enum(["install", "remove", "update"]),
-    source: z.string().min(1),
-    message: z.string().min(1),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("packageOperationCompleted"),
-    requestId: z.string().min(1),
-    operation: z.enum(["install", "remove", "update", "setup"]),
-    source: z.string().min(1),
-    ok: z.boolean(),
-    errorCode: z.enum(["duplicate", "held", "timeout"]).optional(),
-    errorMessage: z.string().min(1).optional(),
-    packageChanged: z.boolean().optional(),
-  }),
+  ...hubEventSchemas,
+  ...packageEventSchemas,
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("annotationOverlayRequested"), request: PickyAnnotationOverlayRequestSchema }),
@@ -1182,21 +993,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   }),
   EventBaseSchema.extend({ type: z.literal("dockGroupsRequested"), requestId: z.string().min(1) }),
   EventBaseSchema.extend({ type: z.literal("dockGroupsSnapshot"), groups: z.array(DockGroupSchema) }),
-  EventBaseSchema.extend({
-    type: z.literal("pickySettingsRequested"),
-    requestId: z.string().min(1),
-    action: z.enum(["list", "get", "set"]),
-    key: z.string().min(1).optional(),
-    value: z.any().optional(),
-    toggle: z.boolean().optional(),
-    displayId: z.string().min(1).optional(),
-    caller: z.literal("mainAgent").optional(),
-  }),
-  EventBaseSchema.extend({
-    type: z.literal("pickySettingsAck"),
-    commandId: z.string().min(1),
-    result: z.unknown().refine((value) => value !== undefined, "result is required"),
-  }),
+  ...settingsEventSchemas,
   EventBaseSchema.extend({
     type: z.literal("pushToTalkControlRequested"),
     requestId: z.string().min(1),

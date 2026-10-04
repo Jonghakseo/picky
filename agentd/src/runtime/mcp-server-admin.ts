@@ -148,6 +148,11 @@ export class McpServerAdmin {
     await this.runCommand(["logout", name]);
   }
 
+  /** Lets a caller label a failure this admin raised without importing its error type. */
+  operationErrorCode(error: unknown): McpServerOperationErrorCode | undefined {
+    return error instanceof McpServerOperationError ? error.code : undefined;
+  }
+
   private async runCommand(args: string[]): Promise<void> {
     const internals = await this.internals();
     const agentDir = this.agentDir();

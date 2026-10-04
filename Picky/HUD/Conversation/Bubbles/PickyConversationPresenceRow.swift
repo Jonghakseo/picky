@@ -119,45 +119,50 @@ struct PickyConversationPresencePresentation: Equatable {
     }
 }
 
-/// Keeps the last step on screen between tool calls. Most tools finish in
-/// well under a second while the model spends most of a turn choosing the next
-/// one, so a strict live value read "thinking" nearly all the time. Entering
-/// a step ("working", "preparing", or "writing"), changing a detail, waiting for input, and any other
-/// change apply at once. Falling back to "thinking" waits until the step has
-/// been gone for `workingGrace` (and shown for `minimumWorkingDuration`): the
-/// next tool or reply inside that window only swaps the line, and only a pause
-/// longer than the grace reads as "thinking" again.
+/// Keeps the line from flickering. Most tools finish in well under a second
+/// while the model spends most of a turn choosing the next one, so the live
+/// value can change several times a second.
+///
+/// - Every change (phase, title, or detail) stays on screen for at least
+///   `minimumDisplayDuration`; changes arriving sooner are coalesced and the
+///   latest one shows when the interval ends.
+/// - Falling back from a step ("working", "preparing", or "writing") to
+///   "thinking" additionally waits until the step has been gone for
+///   `workingGrace`, so only a long pause reads as "thinking" again.
+/// - Entering or leaving "waiting for input" applies at once: the user has to
+///   act on it, or just did.
 struct PickyConversationPresenceStabilizer: Equatable {
     static let workingGrace: TimeInterval = 5
-    static let minimumWorkingDuration: TimeInterval = 0.6
+    static let minimumDisplayDuration: TimeInterval = 1.5
 
     private(set) var displayed: PickyConversationPresencePresentation?
-    private var stepSince: Date?
+    private var displayedSince: Date?
     /// When the live value first stopped reporting a step (working, preparing, or writing).
     private var leftStepAt: Date?
 
     /// Applies `target` at `now` and returns how long to wait before calling
     /// again, or nil when the displayed value already matches the target.
     mutating func update(target: PickyConversationPresencePresentation, now: Date) -> TimeInterval? {
-        if Self.isStep(target.phase) {
-            if !Self.isStep(displayed?.phase) { stepSince = now }
+        guard let displayed, let displayedSince,
+              target.phase != .waitingForInput, displayed.phase != .waitingForInput else {
+            show(target, at: now)
+            return nil
+        }
+        if target == displayed {
             leftStepAt = nil
-            displayed = target
             return nil
         }
-        guard Self.isStep(displayed?.phase), target.phase == .thinking, let stepSince else {
-            reset(to: target)
-            return nil
+        var releaseAt = displayedSince.addingTimeInterval(Self.minimumDisplayDuration)
+        if Self.isStep(displayed.phase), target.phase == .thinking {
+            let leftAt = leftStepAt ?? now
+            leftStepAt = leftAt
+            releaseAt = max(releaseAt, leftAt.addingTimeInterval(Self.workingGrace))
+        } else {
+            leftStepAt = nil
         }
-        let leftAt = leftStepAt ?? now
-        leftStepAt = leftAt
-        let releaseAt = max(
-            leftAt.addingTimeInterval(Self.workingGrace),
-            stepSince.addingTimeInterval(Self.minimumWorkingDuration)
-        )
         let remaining = releaseAt.timeIntervalSince(now)
         guard remaining > 0 else {
-            reset(to: target)
+            show(target, at: now)
             return nil
         }
         return remaining
@@ -168,9 +173,9 @@ struct PickyConversationPresenceStabilizer: Equatable {
         phase == .working || phase == .preparing || phase == .writing
     }
 
-    private mutating func reset(to target: PickyConversationPresencePresentation) {
+    private mutating func show(_ target: PickyConversationPresencePresentation, at now: Date) {
         displayed = target
-        stepSince = nil
+        displayedSince = now
         leftStepAt = nil
     }
 }

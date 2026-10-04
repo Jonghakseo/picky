@@ -661,52 +661,84 @@ struct PickyTurnCardViewTests {
         let waiting = PickyConversationPresencePresentation(phase: .waitingForInput, detail: nil, startedAt: nil)
         var stabilizer = PickyConversationPresenceStabilizer()
 
-        // Before the first tool the line reads "thinking"; a tool applies at once.
-        #expect(stabilizer.update(target: thinking, now: t0) == nil)
-        #expect(stabilizer.displayed == thinking)
-        #expect(stabilizer.update(target: working, now: t0.addingTimeInterval(0.1)) == nil)
+        #expect(stabilizer.update(target: working, now: t0) == nil)
         #expect(stabilizer.displayed == working)
 
         // The tool ends; its step stays up for 5 seconds from that moment.
         let hold = stabilizer.update(target: thinking, now: t0.addingTimeInterval(0.5))
         #expect(stabilizer.displayed == working)
         #expect(abs((hold ?? 0) - 5) < 0.001)
-        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(4.9)) != nil)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(5.4)) != nil)
         #expect(stabilizer.displayed == working)
 
         // A tool starting inside the hold only swaps the detail.
-        #expect(stabilizer.update(target: next, now: t0.addingTimeInterval(5.0)) == nil)
+        #expect(stabilizer.update(target: next, now: t0.addingTimeInterval(5.45)) == nil)
         #expect(stabilizer.displayed == next)
 
         // A pause longer than 5 seconds switches back to "thinking".
-        _ = stabilizer.update(target: thinking, now: t0.addingTimeInterval(6.0))
+        _ = stabilizer.update(target: thinking, now: t0.addingTimeInterval(7.0))
         #expect(stabilizer.displayed == next)
-        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(11.01)) == nil)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(12.01)) == nil)
         #expect(stabilizer.displayed == thinking)
 
-        // Waiting for input is never delayed.
-        #expect(stabilizer.update(target: working, now: t0.addingTimeInterval(12)) == nil)
-        #expect(stabilizer.update(target: waiting, now: t0.addingTimeInterval(12.1)) == nil)
-        #expect(stabilizer.displayed == waiting)
-
-        // Streaming reply text is a step too: it applies at once and holds the
-        // line for the same 5 seconds before "thinking" comes back.
+        // Streaming reply text and tool-call arguments are steps too and hold
+        // the line the same way.
         let writing = PickyConversationPresencePresentation(phase: .writing, detail: nil, startedAt: nil)
-        #expect(stabilizer.update(target: writing, now: t0.addingTimeInterval(13)) == nil)
+        #expect(stabilizer.update(target: writing, now: t0.addingTimeInterval(14)) == nil)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(14.5)) != nil)
         #expect(stabilizer.displayed == writing)
-        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(13.5)) != nil)
-        #expect(stabilizer.displayed == writing)
-        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(18.6)) == nil)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(19.6)) == nil)
         #expect(stabilizer.displayed == thinking)
 
-        // Streaming tool-call arguments is a step as well, so a long `write`
-        // reads as preparing instead of dropping to "thinking" after 5 seconds.
         let preparing = PickyConversationPresencePresentation(phase: .preparing, detail: nil, startedAt: nil)
-        #expect(stabilizer.update(target: preparing, now: t0.addingTimeInterval(19)) == nil)
-        #expect(stabilizer.displayed == preparing)
         #expect(preparing.title != "hud.presence.preparing")
-        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(19.5)) != nil)
+        #expect(stabilizer.update(target: preparing, now: t0.addingTimeInterval(21.2)) == nil)
+        #expect(stabilizer.update(target: thinking, now: t0.addingTimeInterval(21.7)) != nil)
         #expect(stabilizer.displayed == preparing)
+
+        // Waiting for input is never delayed, even right after a change.
+        #expect(stabilizer.update(target: waiting, now: t0.addingTimeInterval(21.8)) == nil)
+        #expect(stabilizer.displayed == waiting)
+    }
+
+    /// Back-to-back short tools used to swap the line several times a second,
+    /// which read as flicker. Every change now stays up for a minimum interval
+    /// and the latest pending value shows once it ends.
+    @Test func presenceHoldsEachChangeForAMinimumInterval() {
+        let t0 = Date(timeIntervalSince1970: 2_000)
+        let thinking = PickyConversationPresencePresentation(phase: .thinking, detail: nil, startedAt: nil)
+        let read = PickyConversationPresencePresentation(phase: .working, detail: "파일 읽기", startedAt: nil)
+        let preparing = PickyConversationPresencePresentation(phase: .preparing, detail: nil, startedAt: nil)
+        let build = PickyConversationPresencePresentation(phase: .working, detail: "빌드", startedAt: nil)
+        let waiting = PickyConversationPresencePresentation(phase: .waitingForInput, detail: nil, startedAt: nil)
+        let minimum = PickyConversationPresenceStabilizer.minimumDisplayDuration
+        var stabilizer = PickyConversationPresenceStabilizer()
+
+        #expect(stabilizer.update(target: thinking, now: t0) == nil)
+
+        // "thinking" -> step right after the line appeared waits out the interval.
+        let wait = stabilizer.update(target: read, now: t0.addingTimeInterval(0.2))
+        #expect(stabilizer.displayed == thinking)
+        #expect(abs((wait ?? 0) - (minimum - 0.2)) < 0.001)
+
+        // Rapid changes coalesce; only the latest shows when the interval ends.
+        #expect(stabilizer.update(target: preparing, now: t0.addingTimeInterval(0.6)) != nil)
+        #expect(stabilizer.update(target: build, now: t0.addingTimeInterval(1.0)) != nil)
+        #expect(stabilizer.displayed == thinking)
+        #expect(stabilizer.update(target: build, now: t0.addingTimeInterval(minimum)) == nil)
+        #expect(stabilizer.displayed == build)
+
+        // Step -> step and detail swaps are held too.
+        let shown = t0.addingTimeInterval(minimum)
+        #expect(stabilizer.update(target: preparing, now: shown.addingTimeInterval(0.3)) != nil)
+        #expect(stabilizer.displayed == build)
+        #expect(stabilizer.update(target: preparing, now: shown.addingTimeInterval(minimum)) == nil)
+        #expect(stabilizer.displayed == preparing)
+
+        // Leaving "waiting for input" applies at once: the user just answered.
+        #expect(stabilizer.update(target: waiting, now: shown.addingTimeInterval(minimum + 0.1)) == nil)
+        #expect(stabilizer.update(target: read, now: shown.addingTimeInterval(minimum + 0.2)) == nil)
+        #expect(stabilizer.displayed == read)
     }
 
     @Test func dateDividerTitlesUseTodayYesterdayAndDates() {

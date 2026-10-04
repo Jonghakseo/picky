@@ -499,7 +499,9 @@ export class AsyncControlCoordinator {
       if (control?.admissionState !== "closed" || control.controlGeneration <= command.controlGeneration) throw error;
       closureFailure = error;
     }
-    // No live provider can control a previous runtime's tasks; user input only acknowledges them.
+    // No live provider can control a previous runtime's tasks; the user's input or stop
+    // acknowledges them as interrupted history instead.
+    if (acknowledgesPreviousOwner(command)) await handle.asyncTasks!.acknowledgeLostWork?.();
     const tasks = handle.asyncTasks!.snapshot().tasks.filter((task) => !acknowledgesPreviousOwner(command) || !isPreviousOwnerAsyncTask(task, command.runtimeInstanceId));
     const cancellations = await Promise.allSettled(tasks.filter((task) => task.taskId === task.rootTaskId && tasks.some((member) => sameAsyncOwner(member, task) && member.rootTaskId === task.taskId && (member.presence !== "settled" || ["queued", "running", "cancelling"].includes(member.execution)))).map(async (root) => {
       const cancelled = await handle.asyncTasks!.control(root, "cancel", { taskId: root.taskId });

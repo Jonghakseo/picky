@@ -37,4 +37,6 @@ export interface RuntimeAsyncTaskControl {
   closeAdmission(): Promise<RuntimeAsyncTaskState>;
   /** New user input must be explicitly authorized after a stop; old tickets stay fenced. */
   reopenAdmission(): Promise<RuntimeAsyncTaskState>;
+  /** Records work a previous runtime left unsettled as interrupted history once the user continues past it. */
+  acknowledgeLostWork?(): Promise<RuntimeAsyncTaskState>;
 }

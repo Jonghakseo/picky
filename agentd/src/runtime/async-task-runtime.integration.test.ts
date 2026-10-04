@@ -378,7 +378,7 @@ it("keeps admission closed after restart while async work from the previous owne
   expect(disk?.asyncTasks?.find((task) => task.taskId === "left-running")).toMatchObject({ presence: "unknown" });
 }, 20_000);
 
-it("admits explicit user input after restart even though the previous owner left async work in an unknown state", async () => {
+it.each(["followUp", "stop"] as const)("settles async work a previous owner lost once the user's %s continues past it", async action => {
   const f = await fixture({ readyOnDiscovery: true });
   await f.completion("left-running", { execution: "running", presence: "active" });
   await f.drainEvents();
@@ -387,24 +387,24 @@ it("admits explicit user input after restart even though the previous owner left
   await restarted.load();
   await vi.waitFor(() => expect(restarted.asyncControls.context("session-sdk").tracking).toBe("ready"));
   await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.find((task) => task.taskId === "left-running")).toMatchObject({ presence: "unknown" });
   await restarted.runtimeControls.setModel("session-sdk", "w3-offline", "finite");
-  await restarted.followUp("session-sdk", "Continue after restart");
-  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
-  expect(JSON.stringify(f.requests.at(-1))).toContain("Continue after restart");
+  if (action === "followUp") {
+    await restarted.followUp("session-sdk", "Continue after restart");
+    await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
+    expect(JSON.stringify(f.requests.at(-1))).toContain("Continue after restart");
+    await vi.waitFor(() => expect(restarted.get("session-sdk")?.status).toBe("completed"));
+  } else {
+    // No live provider can control the lost work, so the stop must not fail on it.
+    const stopped = await restarted.abort("session-sdk");
+    expect(stopped.asyncControl?.operations.at(-1)?.outcome).toBe("settled");
+  }
+  await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
   const disk = await f.store.loadReadOnly("session-sdk");
-  // The lost task stays visibly unknown and still withholds runtime release.
-  expect(disk?.asyncTasks?.find((task) => task.taskId === "left-running")).toMatchObject({ presence: "unknown" });
-  expect(disk?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
-  const requestsAfterFirst = f.requests.length;
-  await restarted.followUp("session-sdk", "Second input after restart");
-  await vi.waitFor(() => expect(f.requests.length).toBeGreaterThan(requestsAfterFirst));
-  expect(JSON.stringify(f.requests.at(-1))).toContain("Second input after restart");
-  await vi.waitFor(() => expect(restarted.get("session-sdk")?.status).toBe("completed"));
-  // Lost work does not pin the Pickle to blocked, but stays visible and non-releasable.
-  expect(restarted.get("session-sdk")?.asyncWorkSummary).toMatchObject({ uncertainExecutionCount: 1, attentionCount: 0, canReleaseRuntime: false });
-  // The user's stop cannot control the lost work either, so it must not fail on it.
-  const stopped = await restarted.abort("session-sdk");
-  expect(stopped.asyncControl?.operations.at(-1)?.outcome).toBe("settled");
+  // Acknowledged lost work is interrupted history: no unknown footer, no release fence.
+  expect(disk?.asyncTasks?.find((task) => task.taskId === "left-running")).toMatchObject({ presence: "settled", execution: "interrupted" });
+  expect(disk?.completionTickets?.every((ticket) => ["handled", "suppressed"].includes(ticket.state))).toBe(true);
+  expect(disk?.asyncWorkSummary).toMatchObject({ uncertainExecutionCount: 0, attentionCount: 0 });
 }, 20_000);
 
 it("keeps an empty resumed Pickle fenced until its new provider snapshot is ready", async () => {
@@ -485,7 +485,7 @@ it("archives a Pickle with incomplete coverage without settling or discarding it
   } finally { spy.mockRestore(); }
 }, 15_000);
 
-it("keeps unfinished work of an archived previous owner unknown after a fresh daemon generation while admitting explicit input", async () => {
+it("settles unfinished work of an archived previous owner after a fresh daemon generation once explicit input continues past it", async () => {
   const f = await fixture({ readyOnDiscovery: true });
   await f.completion("unfinished", { execution: "running", presence: "active" });
   await f.supervisor.setSessionArchived("session-sdk", true, "continue", "unfinished-archive");
@@ -501,9 +501,8 @@ it("keeps unfinished work of an archived previous owner unknown after a fresh da
   // The user accepts that work lost with the previous owner may still be running.
   await restarted.followUp("session-sdk", "Continue despite unknown work");
   await vi.waitFor(() => expect(JSON.stringify(f.requests.at(-1))).toContain("Continue despite unknown work"));
-  const after = await f.store.loadReadOnly("session-sdk");
-  expect(after?.asyncTasks?.[0]?.presence).toBe("unknown");
-  expect(after?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+  await restarted.withSessionProjectionBarrier("session-sdk", async () => {});
+  expect((await f.store.loadReadOnly("session-sdk"))?.asyncTasks?.[0]).toMatchObject({ presence: "settled", execution: "interrupted" });
 }, 20_000);
 
 it("fences an old completion after close and reopen, then admits a later authorized prompt", async () => {

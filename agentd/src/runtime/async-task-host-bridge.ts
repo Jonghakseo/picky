@@ -1,4 +1,4 @@
-import { hasAsyncExecutionObligations } from "../domain/async-work-aggregate.js";
+import { hasAsyncExecutionObligations, isPreviousOwnerAsyncTask } from "../domain/async-work-aggregate.js";
 import { randomUUID } from "node:crypto";
 import { ASYNC_TASK_CONTRACT, AsyncTaskHostMessageSchema, type AsyncTaskHostMessage, type AsyncTaskOwner } from "../domain/async-task-contract.js";
 import type { RuntimeAsyncTaskControl, RuntimeAsyncTaskCoverage, RuntimeAsyncTaskEvent, RuntimeAsyncTaskOwner, RuntimeAsyncTaskState } from "./async-task-types.js";
@@ -98,6 +98,23 @@ export class AsyncTaskHostBridge implements RuntimeAsyncTaskControl {
     const state = await this.owner.transact((current) => ({ ...current, control: { ...current.control, operations: current.control?.operations ?? [], admissionState: "open", controlGeneration: (current.control?.controlGeneration ?? 0) + 1 } }));
     this.openAdmissionLifetime();
     for (const provider of this.providers.values()) this.send({ ...this.envelope(provider.owner, randomUUID(), provider.revision), type: "host-state", supported: provider.ready && provider.snapshot, admissionState: "open", capabilities });
+    this.publish(state);
+    return state;
+  }
+  /**
+   * No live provider can settle or deliver work a previous runtime left behind. Once the user
+   * explicitly continues past it, record it as interrupted history: its grants are void and its
+   * results are never delivered. A late settlement can still refine the recorded execution.
+   */
+  async acknowledgeLostWork(): Promise<RuntimeAsyncTaskState> {
+    const current = this.owner.read();
+    const lostTicket = (ticket: RuntimeAsyncTaskState["tickets"][number]) => ticket.runtimeInstanceId !== this.runtimeInstanceId && !["handled", "suppressed"].includes(ticket.state);
+    if (!current.tasks.some((task) => isPreviousOwnerAsyncTask(task, this.runtimeInstanceId)) && !current.tickets.some(lostTicket)) return current;
+    const state = await this.owner.transact((latest) => ({ ...latest,
+      tasks: latest.tasks.map((task) => isPreviousOwnerAsyncTask(task, this.runtimeInstanceId) ? { ...task, presence: "settled" as const,
+        execution: ["succeeded", "failed", "cancelled", "interrupted"].includes(task.execution) ? task.execution : "interrupted" as const,
+        registration: ["reserved", "approved"].includes(task.registration) ? "abandoned" as const : task.registration } : task),
+      tickets: latest.tickets.map((ticket) => lostTicket(ticket) ? { ...ticket, state: "suppressed" as const } : ticket) }));
     this.publish(state);
     return state;
   }

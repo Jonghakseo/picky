@@ -24,9 +24,12 @@ struct PickyRemoteProtocolTests {
             case ("hello.json", .hello(let version, _, _)):
                 #expect(version == PickyRemoteHubProtocol.version)
             case ("devices.json", .devices(let devices)):
-                #expect(devices.count == 2)
+                #expect(devices.count == 3)
                 #expect(devices.first?.lastSeenAt != nil)
-                #expect(devices.last?.lastSeenAt == nil)
+                #expect(devices[1].lastSeenAt == nil)
+                #expect(devices.map(\.isLocal) == [false, false, true])
+            case ("local-open.json", .localOpen(let url)):
+                #expect(url.hasPrefix("http://127.0.0.1:17640/api/local-open?token="))
             case ("pairing.json", .pairing(let code, _, let url)):
                 #expect(code == "K7QM-4XTR")
                 #expect(url?.hasSuffix("#pair=K7QM-4XTR") == true)

@@ -18,6 +18,9 @@ enum PickyHubRemoteAccessStatus: Equatable {
     case off
     case starting
     case running(address: String)
+    /// Remote access is off (`localOnly`): the server runs for this Mac's
+    /// browser alone, so there is no address to hand a phone.
+    case runningLocalOnly
     /// The gateway is up but the entrance has no address yet, so a phone has
     /// nothing to open. Pairing is unavailable in this state for the two
     /// entrances that need a public origin.
@@ -31,7 +34,8 @@ enum PickyHubRemoteAccessStatus: Equatable {
         isEnabled: Bool,
         gatewayState: PickyRemoteGatewayState,
         entranceURL: String?,
-        isEntranceAddressPending: Bool = false
+        isEntranceAddressPending: Bool = false,
+        isLocalOnly: Bool = false
     ) -> PickyHubRemoteAccessStatus {
         guard isEnabled else { return .off }
         switch gatewayState {
@@ -42,6 +46,7 @@ enum PickyHubRemoteAccessStatus: Equatable {
         case .failed(let reason):
             return .failed(reason: reason)
         case .running:
+            if isLocalOnly { return .runningLocalOnly }
             guard let entranceURL, !entranceURL.isEmpty else {
                 return isEntranceAddressPending ? .waitingForAddress : .runningWithoutAddress
             }
@@ -54,6 +59,7 @@ enum PickyHubRemoteAccessStatus: Equatable {
         case .off: .neutral
         case .starting: .neutral
         case .running: .success
+        case .runningLocalOnly: .success
         case .runningWithoutAddress: .warning
         case .waitingForAddress: .neutral
         case .failed: .error
@@ -65,6 +71,7 @@ enum PickyHubRemoteAccessStatus: Equatable {
         case .off: L10n.t("settings.remote.status.off")
         case .starting: L10n.t("settings.remote.status.starting")
         case .running(let address): L10n.t("settings.remote.status.running", address)
+        case .runningLocalOnly: L10n.t("settings.remote.status.runningLocalOnly")
         case .runningWithoutAddress: L10n.t("settings.remote.status.runningWithoutAddress")
         case .waitingForAddress: L10n.t("settings.remote.status.waitingForAddress")
         case .failed(let reason): reason

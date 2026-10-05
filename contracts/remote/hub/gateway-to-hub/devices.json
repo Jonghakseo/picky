@@ -15,6 +15,15 @@
       "createdAt": "2026-10-01T09:00:00.000Z",
       "online": false,
       "pushEnabled": false
+    },
+    {
+      "id": "dev_4mac7",
+      "name": "Chrome",
+      "createdAt": "2026-10-05T11:20:00.000Z",
+      "lastSeenAt": "2026-10-05T11:21:00.000Z",
+      "online": true,
+      "pushEnabled": false,
+      "local": true
     }
   ]
 }

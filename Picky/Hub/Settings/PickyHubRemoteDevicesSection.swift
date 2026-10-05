@@ -106,15 +106,21 @@ private struct PickyHubRemoteDeviceRow: View {
     let revoke: () -> Void
 
     private var meta: String {
+        let origin = L10n.t(device.isLocal ? "settings.remote.devices.local" : "settings.remote.devices.remote")
         let presence = device.online ? L10n.t("settings.remote.devices.online") : lastSeen
         let push = device.pushEnabled
             ? L10n.t("settings.remote.devices.push.on")
             : L10n.t("settings.remote.devices.push.off")
-        return "\(presence) · \(push)"
+        return "\(origin) · \(presence) · \(push)"
     }
 
     var body: some View {
         HStack(alignment: .center, spacing: PickyHubTheme.Spacing.field) {
+            Image(systemName: device.isLocal ? "laptopcomputer" : "iphone")
+                .pickyFont(size: PickyHubTheme.Typography.body, weight: .regular)
+                .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                .frame(width: 18)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
                 HStack(spacing: PickyHubTheme.Spacing.related) {
                     Circle()

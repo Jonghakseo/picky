@@ -426,6 +426,7 @@ struct PickyRemoteAccessControllerTests {
         let quickTunnel = FakeQuickTunnel()
         var readiness: PickyRemoteDictationReadiness = .ready
         var rememberedQuickTunnelURL: String?
+        var openedURLs: [URL] = []
     }
 
     private func make(
@@ -453,8 +454,40 @@ struct PickyRemoteAccessControllerTests {
             appSupportRoot: URL(fileURLWithPath: NSTemporaryDirectory()),
             appVersion: "1.2.3",
             macName: "Test Mac",
-            tokenFactory: { "test-token" }
+            tokenFactory: { "test-token" },
+            openURL: { harness.openedURLs.append($0) }
         )
+    }
+
+    /// "Open in browser" opens exactly the link the gateway issued for it, and
+    /// nothing else: not a link nobody asked for, not a non-loopback address.
+    @Test func openInBrowserOpensOnlyTheRequestedLoopbackLink() {
+        let harness = Harness()
+        let controller = make(harness)
+        let link = "http://127.0.0.1:17640/api/local-open?token=abc"
+
+        // Not running yet: there is no gateway to ask.
+        controller.openInBrowser()
+        #expect(!harness.transport.sentTypes.contains("hub.localOpen.start"))
+
+        harness.gateway.transition(to: .running(port: 17640))
+        harness.transport.simulateConnected()
+
+        // A link the Mac did not ask for is ignored.
+        harness.transport.onMessage?(.localOpen(url: link))
+        #expect(harness.openedURLs.isEmpty)
+
+        controller.openInBrowser()
+        controller.openInBrowser()
+        #expect(harness.transport.sentTypes.filter { $0 == "hub.localOpen.start" }.count == 1)
+        #expect(controller.isOpeningBrowser)
+        harness.transport.onMessage?(.localOpen(url: link))
+        #expect(harness.openedURLs.map(\.absoluteString) == [link])
+        #expect(!controller.isOpeningBrowser)
+
+        controller.openInBrowser()
+        harness.transport.onMessage?(.localOpen(url: "https://evil.example/api/local-open?token=abc"))
+        #expect(harness.openedURLs.count == 1)
     }
 
     @Test func enabledSettingsStartTheGatewayAndTheSocketFollowsItsReadyLine() {

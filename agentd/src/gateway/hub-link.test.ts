@@ -17,6 +17,7 @@ function quietListener(): HubLinkListener {
     onConfig: () => {},
     onPairingStart: () => {},
     onPairingCancel: () => {},
+    onLocalOpen: () => {},
     onRevoke: () => {},
     onRename: () => {},
     onConnectionChange: () => {},

@@ -7,6 +7,7 @@
 //  inert until the user turns remote access on.
 //
 
+import AppKit
 import Combine
 import Foundation
 
@@ -65,6 +66,8 @@ final class PickyRemoteAccessController: ObservableObject {
     /// The temporary address differs from the one phones last paired through.
     /// Cleared by the next successful pairing or when the user dismisses it.
     @Published private(set) var quickTunnelAddressChanged = false
+    /// "Open in browser" is waiting for the gateway's one-time link.
+    @Published private(set) var isOpeningBrowser = false
 
     let macName: String
 
@@ -80,6 +83,8 @@ final class PickyRemoteAccessController: ObservableObject {
     private let appSupportRoot: URL
     private let appVersion: String
     private let tokenFactory: () -> String
+    private let openURL: (URL) -> Void
+    private var openBrowserTimeout: Task<Void, Never>?
 
     private var hubToken: String?
     private var lastSentOverlay: PickyRemoteOverlaySnapshot?
@@ -101,7 +106,8 @@ final class PickyRemoteAccessController: ObservableObject {
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
         macName: String = ProcessInfo.processInfo.hostName,
-        tokenFactory: @escaping () -> String = PickyRemoteGatewayCommandResolver.randomHubToken
+        tokenFactory: @escaping () -> String = PickyRemoteGatewayCommandResolver.randomHubToken,
+        openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }
     ) {
         self.settings = settings
         self.gateway = gateway
@@ -117,6 +123,7 @@ final class PickyRemoteAccessController: ObservableObject {
         self.appVersion = appVersion
         self.macName = macName
         self.tokenFactory = tokenFactory
+        self.openURL = openURL
         self.isTailscaleInstalled = tailscale.isInstalled
         wire()
     }
@@ -344,6 +351,13 @@ final class PickyRemoteAccessController: ObservableObject {
             if reason == .paired { quickTunnelAddressChanged = false }
         case .devices(let devices):
             self.devices = devices
+        case .localOpen(let url):
+            // Only a link this Mac asked for, and only to its own loopback
+            // address: a stray message must never make the Mac open a browser.
+            guard isOpeningBrowser else { return }
+            finishOpeningBrowser()
+            guard let link = URL(string: url), Self.isLoopbackLink(link) else { return }
+            openURL(link)
         case .request(let requestId, _, let request):
             Task { [weak self] in
                 guard let self else { return }
@@ -358,6 +372,31 @@ final class PickyRemoteAccessController: ObservableObject {
     func startPairing() {
         pairing = .idle
         transport.send(.pairingStart)
+    }
+
+    /// Opens Picky in this Mac's default browser, already signed in. The
+    /// gateway answers with a one-time loopback link; a browser that is already
+    /// paired keeps its device, a new one is listed as this Mac's browser.
+    func openInBrowser() {
+        guard isRunning, isHubConnected, !isOpeningBrowser else { return }
+        isOpeningBrowser = true
+        transport.send(.localOpenStart)
+        openBrowserTimeout?.cancel()
+        openBrowserTimeout = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.finishOpeningBrowser()
+        }
+    }
+
+    private func finishOpeningBrowser() {
+        isOpeningBrowser = false
+        openBrowserTimeout?.cancel()
+        openBrowserTimeout = nil
+    }
+
+    static func isLoopbackLink(_ url: URL) -> Bool {
+        url.scheme == "http" && url.host == "127.0.0.1"
     }
 
     func cancelPairing() {

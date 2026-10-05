@@ -47,6 +47,7 @@ export interface HubLinkListener {
   onConfig: (config: HubConfig) => void;
   onPairingStart: () => void;
   onPairingCancel: () => void;
+  onLocalOpen: () => void;
   onRevoke: (deviceId: string) => void;
   onRename: (deviceId: string, name: string) => void;
   onConnectionChange: (connected: boolean) => void;
@@ -144,6 +145,9 @@ export class HubLink {
         return;
       case "hub.pairing.cancel":
         this.listener.onPairingCancel();
+        return;
+      case "hub.localOpen.start":
+        this.listener.onLocalOpen();
         return;
       case "hub.devices.revoke":
         this.listener.onRevoke(message.deviceId);

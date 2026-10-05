@@ -15,6 +15,7 @@ export const AUDIT_KEPT_FILES = 3;
 export type AuditEvent =
   | { action: "pair.attempt"; ip: string; ok: boolean; reason?: string; deviceName?: string }
   | { action: "pair.success"; ip: string; deviceId: string; deviceName: string }
+  | { action: "localOpen"; ip: string; ok: boolean; deviceId?: string; deviceName?: string }
   | { action: "device.revoke"; deviceId: string; by: "hub" | "device" }
   | { action: "command"; deviceId: string; type: string; sessionId?: string; textChars?: number; shellCommand?: string }
   | { action: "file.read"; deviceId: string; sessionId: string; path: string; ok: boolean; reason?: string }

@@ -27,6 +27,20 @@ struct PickyHubRemoteAccessPresentationTests {
         #expect(status(enabled: false, gateway: .failed("boom"), entranceURL: nil) == .off)
     }
 
+    /// With remote access off the server still runs for this Mac's browser;
+    /// the line must not tell the user a phone can reach a loopback address.
+    @Test func saysOnlyThisMacCanOpenItWhenRemoteAccessIsOff() {
+        let local = PickyHubRemoteAccessStatus.resolve(
+            isEnabled: true,
+            gatewayState: .running(port: 17640),
+            entranceURL: "http://127.0.0.1:17640",
+            isLocalOnly: true
+        )
+        #expect(local == .runningLocalOnly)
+        #expect(local.tone == .success)
+        #expect(!local.message.contains("127.0.0.1"))
+    }
+
     @Test func treatsTheGapBeforeTheFirstLaunchAsStarting() {
         // Saving the toggle and the launcher's first transition are separate
         // turns; a momentary `stopped` must not read as "off" under a live switch.

@@ -50,7 +50,8 @@ private struct PickyHubRemoteAccessControls: View {
             isEnabled: remote.enabled,
             gatewayState: controller.gatewayState,
             entranceURL: controller.entranceURL,
-            isEntranceAddressPending: controller.isEntranceAddressPending
+            isEntranceAddressPending: controller.isEntranceAddressPending,
+            isLocalOnly: remote.entrance == .localOnly
         )
     }
 
@@ -71,9 +72,16 @@ private struct PickyHubRemoteAccessControls: View {
                 }
             }
             statusLine
-            PickyHubSettingsNotice(text: "settings.remote.notice")
+            // One web server, two ways in: this Mac's browser is always there,
+            // and remote access only chooses the path a phone takes.
+            thisMacSection
+                .disabled(!remote.enabled)
+                .opacity(remote.enabled ? 1 : 0.45)
             entranceSection
             PickyHubRemoteDevicesSection(controller: controller, modalHost: modalHost)
+                .disabled(!remote.enabled)
+                .opacity(remote.enabled ? 1 : 0.45)
+            PickyHubSettingsNotice(text: "settings.remote.notice")
         }
         .onAppear { speechAuthorization = SFSpeechRecognizer.authorizationStatus() }
     }
@@ -152,11 +160,34 @@ private struct PickyHubRemoteAccessControls: View {
         }
     }
 
-    // MARK: - Entrance
+    // MARK: - This Mac
+
+    private var thisMacSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PickyHubSubsectionTitle(title: "settings.remote.thisMac")
+            PickyHubSettingsList {
+                PickyHubSettingsRow(title: "settings.remote.openBrowser", detail: "settings.remote.openBrowser.detail") {
+                    PickyHubButton(
+                        title: "settings.remote.openBrowser",
+                        role: .primary,
+                        systemImage: "safari",
+                        isBusy: controller.isOpeningBrowser,
+                        isEnabled: controller.isRunning && controller.isHubConnected && !controller.isOpeningBrowser,
+                        action: { controller.openInBrowser() }
+                    )
+                }
+                PickyHubSettingsRow(title: "settings.remote.localOnly.address", detail: "settings.remote.localOnly.detail") {
+                    PickyHubRemoteAddressLabel(address: controller.localURL)
+                }
+            }
+        }
+    }
+
+    // MARK: - Remote access (the phone's path)
 
     private var entranceSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PickyHubSubsectionTitle(title: "settings.remote.entrance")
+            PickyHubSubsectionTitle(title: "settings.remote.remoteSection")
             PickyHubSettingsList {
                 PickyHubSettingsRow(title: "settings.remote.entrance", detail: "settings.remote.entrance.detail") {
                     PickyHubMenuPicker(
@@ -168,7 +199,8 @@ private struct PickyHubRemoteAccessControls: View {
                                 settingsViewModel.save()
                             }
                         ),
-                        options: PickyRemoteEntrance.allCases.map {
+                        // "Off" first: remote access is the opt-in, this Mac is the default.
+                        options: [PickyRemoteEntrance.localOnly, .tailscale, .cloudflare].map {
                             PickyNativeMenuOption(value: $0, title: L10n.t($0.titleKey))
                         }
                     )
@@ -180,12 +212,8 @@ private struct PickyHubRemoteAccessControls: View {
                 case .cloudflare:
                     PickyHubRemoteCloudflareRows(settingsViewModel: settingsViewModel, controller: controller)
                 case .localOnly:
-                    PickyHubSettingsRow(
-                        title: "settings.remote.localOnly.address",
-                        detail: "settings.remote.localOnly.detail"
-                    ) {
-                        PickyHubRemoteAddressLabel(address: controller.localURL)
-                    }
+                    // The address lives under "This Mac"; nothing else to set up.
+                    EmptyView()
                 }
             }
         }

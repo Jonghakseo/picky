@@ -164,6 +164,36 @@ describe("a phone from pairing to revocation", () => {
     expect(gateway.core.devices.get(deviceId)?.pushSubscriptions).toHaveLength(0);
   });
 
+  it("signs this Mac's browser in once from the hub's one-time link, and never through a tunnel", async () => {
+    const url = await hub.openLocalBrowser();
+    expect(url).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${port}/api/local-open\\?token=`));
+
+    // A request that came through Tailscale Serve or cloudflared carries a forwarding header.
+    const tunnelled = await fetch(url, { redirect: "manual", headers: { "x-forwarded-for": "100.64.0.9" } });
+    expect(tunnelled.status).toBe(403);
+
+    const opened = await fetch(url, { redirect: "manual" });
+    expect(opened.status).toBe(303);
+    expect(opened.headers.get("location")).toBe("/");
+    const browserCookie = opened.headers.get("set-cookie")?.split(";")[0] ?? "";
+    expect(browserCookie).not.toBe("");
+    const me = await (await fetch(`${origin}/api/me`, { headers: { cookie: browserCookie } })).json() as { paired: boolean };
+    expect(me.paired).toBe(true);
+    await until(() => hub.devices.some((device) => device.local === true), "the Mac never listed the browser as this Mac's");
+
+    // The link is spent: opening it again signs nothing in.
+    const reused = await fetch(url, { redirect: "manual" });
+    expect(reused.status).toBe(303);
+    expect(reused.headers.get("set-cookie")).toBeNull();
+
+    // An already-signed-in browser keeps its device instead of adding another.
+    const before = gateway.core.devices.list().length;
+    const again = await fetch(await hub.openLocalBrowser(), { redirect: "manual", headers: { cookie: browserCookie } });
+    expect(again.status).toBe(303);
+    expect(again.headers.get("set-cookie")).toBeNull();
+    expect(gateway.core.devices.list().length).toBe(before);
+  });
+
   it("refuses a WebSocket upgrade from another origin, and one with no cookie", async () => {
     await expect(openSocket({ cookie, origin: "http://evil.example" })).rejects.toThrow(/403/);
     await expect(openSocket({ origin })).rejects.toThrow(/401/);

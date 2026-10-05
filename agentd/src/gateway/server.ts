@@ -84,6 +84,7 @@ export class GatewayServer {
           resolve(typeof address === "object" && address ? address.port : this.options.config.port);
         });
       });
+      this.core.boundPort = this.boundPort;
     } catch (error) {
       // The core is already running at this point; a start that never bound
       // must not leave daemon links and timers behind.

@@ -108,6 +108,10 @@ struct PickyRemoteDevice: Equatable, Codable, Identifiable {
     var lastSeenAt: Date?
     var online: Bool
     var pushEnabled: Bool
+    /// Paired from a browser on this Mac. Absent on the wire for every other device.
+    var local: Bool?
+
+    var isLocal: Bool { local == true }
 }
 
 // MARK: - Hub -> gateway
@@ -131,6 +135,8 @@ enum PickyHubToGatewayMessage: Equatable {
     case config(publicUrl: String?, dictation: PickyRemoteDictationAvailability)
     case pairingStart
     case pairingCancel
+    /// "Open in browser": asks for a one-time loopback sign-in link (`gateway.localOpen`).
+    case localOpenStart
     case devicesRevoke(deviceId: String)
     case devicesRename(deviceId: String, name: String)
     case response(PickyRemoteHubResponse)
@@ -143,6 +149,7 @@ enum PickyHubToGatewayMessage: Equatable {
         case .config: "hub.config"
         case .pairingStart: "hub.pairing.start"
         case .pairingCancel: "hub.pairing.cancel"
+        case .localOpenStart: "hub.localOpen.start"
         case .devicesRevoke: "hub.devices.revoke"
         case .devicesRename: "hub.devices.rename"
         case .response: "hub.response"
@@ -199,6 +206,8 @@ extension PickyHubToGatewayMessage: Codable {
             self = .pairingStart
         case "hub.pairing.cancel":
             self = .pairingCancel
+        case "hub.localOpen.start":
+            self = .localOpenStart
         case "hub.devices.revoke":
             self = .devicesRevoke(deviceId: try container.decode(String.self, forKey: .deviceId))
         case "hub.devices.rename":
@@ -243,7 +252,7 @@ extension PickyHubToGatewayMessage: Codable {
         case .config(let publicUrl, let dictation):
             try container.encodeIfPresent(publicUrl, forKey: .publicUrl)
             try container.encode(dictation, forKey: .dictation)
-        case .pairingStart, .pairingCancel:
+        case .pairingStart, .pairingCancel, .localOpenStart:
             break
         case .devicesRevoke(let deviceId):
             try container.encode(deviceId, forKey: .deviceId)
@@ -328,6 +337,8 @@ enum PickyGatewayToHubMessage: Equatable {
     case pairing(code: String, expiresAt: Date, url: String?)
     case pairingEnded(reason: PickyRemotePairingEndReason, deviceName: String?)
     case devices([PickyRemoteDevice])
+    /// One-time `http://127.0.0.1:<port>/api/local-open?token=...` for this Mac's default browser.
+    case localOpen(url: String)
     case request(requestId: String, deviceId: String, request: PickyRemoteHubRequest)
 }
 
@@ -361,6 +372,8 @@ extension PickyGatewayToHubMessage: Decodable {
             )
         case "gateway.devices":
             self = .devices(try container.decode([PickyRemoteDevice].self, forKey: .devices))
+        case "gateway.localOpen":
+            self = .localOpen(url: try container.decode(String.self, forKey: .url))
         case "gateway.request":
             self = .request(
                 requestId: try container.decode(String.self, forKey: .requestId),

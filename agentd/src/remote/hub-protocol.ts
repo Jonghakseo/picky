@@ -76,6 +76,11 @@ const HubEventSchema = z.discriminatedUnion("type", [
   /** The user opened "connect a phone" on the Mac. The gateway answers with `gateway.pairing`. */
   z.object({ type: z.literal("hub.pairing.start") }),
   z.object({ type: z.literal("hub.pairing.cancel") }),
+  /**
+   * "Open in browser" on the Mac. The gateway answers with `gateway.localOpen`:
+   * a one-time loopback URL that signs this Mac's default browser in.
+   */
+  z.object({ type: z.literal("hub.localOpen.start") }),
   z.object({ type: z.literal("hub.devices.revoke"), deviceId: IdSchema }),
   z.object({ type: z.literal("hub.devices.rename"), deviceId: IdSchema, name: z.string().min(1).max(60) }),
 ]);
@@ -118,6 +123,8 @@ export interface HubDevice {
   lastSeenAt?: string;
   online: boolean;
   pushEnabled: boolean;
+  /** Paired from a browser on this Mac (loopback, no tunnel in between). */
+  local?: boolean;
 }
 
 export type GatewayToHubMessage =
@@ -125,4 +132,6 @@ export type GatewayToHubMessage =
   | { type: "gateway.pairing"; code: string; expiresAt: string; url?: string }
   | { type: "gateway.pairing.ended"; reason: "paired" | "expired" | "cancelled" | "exhausted"; deviceName?: string }
   | { type: "gateway.devices"; devices: HubDevice[] }
+  /** One-time `http://127.0.0.1:<port>/api/local-open?token=...`, valid for a minute. */
+  | { type: "gateway.localOpen"; url: string }
   | { type: "gateway.request"; requestId: string; deviceId: string; request: HubRequest };

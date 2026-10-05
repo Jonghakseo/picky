@@ -9,6 +9,7 @@ import { AuditLog } from "./audit.js";
 import { DeviceStore } from "./device-store.js";
 import { DaemonPool } from "./daemon-pool.js";
 import { HubLink, type HubConfig, type HubDaemons, type HubHello, type HubOverlay } from "./hub-link.js";
+import { LocalOpenTokens } from "./local-open.js";
 import { LockoutTracker } from "./lockout.js";
 import { MainConversation } from "./main-conversation.js";
 import { PairingSession } from "./pairing.js";
@@ -24,7 +25,7 @@ import type { RemoteMacState, RemoteRoom, RemoteServerMessage } from "../remote/
 import type { HubRequest } from "../remote/hub-protocol.js";
 import type { CommandContext } from "./command-executor.js";
 import type { FileReferenceSource } from "./file-references.js";
-import type { GatewayConfig } from "./config.js";
+import { GATEWAY_LOOPBACK_HOST, type GatewayConfig } from "./config.js";
 import type { PushFetch } from "./push/sender.js";
 
 export const ROOM_REBUILD_DEBOUNCE_MS = 150;
@@ -49,6 +50,9 @@ export class GatewayCore {
   readonly devices: DeviceStore;
   readonly pairing = new PairingSession();
   readonly lockout = new LockoutTracker();
+  readonly localOpen = new LocalOpenTokens();
+  /** The port the gateway actually listens on (the config may say 0 for "any"). Set by the server. */
+  boundPort = 0;
   readonly audit: AuditLog;
   readonly uploads: UploadStore;
   readonly push: PushService;
@@ -361,6 +365,10 @@ export class GatewayCore {
       onPairingCancel: () => {
         this.pairing.cancel();
         this.hub.send({ type: "gateway.pairing.ended", reason: "cancelled" });
+      },
+      onLocalOpen: () => {
+        const token = this.localOpen.issue();
+        this.hub.send({ type: "gateway.localOpen", url: `http://${GATEWAY_LOOPBACK_HOST}:${this.boundPort}/api/local-open?token=${token}` });
       },
       onRevoke: (deviceId: string) => void this.revokeDevice(deviceId, "hub"),
       onRename: (deviceId: string, name: string) => void this.devices.rename(deviceId, name).then(() => this.publishDevices()),

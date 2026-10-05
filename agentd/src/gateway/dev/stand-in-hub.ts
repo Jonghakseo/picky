@@ -40,6 +40,9 @@ export class StandInHub {
   private readonly daemon: DaemonLink;
   private readonly children = new Map<string, { daemon: ChildDaemon; link: DaemonLink }>();
   private overlayTimer?: NodeJS.Timeout;
+  private localOpenWaiters: Array<(url: string) => void> = [];
+  /** The last device list the gateway published. */
+  devices: Array<{ id: string; name: string; local?: boolean }> = [];
 
   constructor(private readonly options: StandInHubOptions) {
     this.daemon = new DaemonLink(options.daemonUrl, options.daemonToken, {
@@ -73,6 +76,14 @@ export class StandInHub {
   /** Asks the gateway for a pairing code, like the Mac's "connect a phone" sheet. */
   startPairing(): void {
     this.send({ type: "hub.pairing.start" });
+  }
+
+  /** Like "Open in browser" on the Mac: resolves with the one-time loopback link. */
+  openLocalBrowser(): Promise<string> {
+    return new Promise((resolve) => {
+      this.localOpenWaiters.push(resolve);
+      this.send({ type: "hub.localOpen.start" });
+    });
   }
 
   /** Creates demo Pickles so the room list and a conversation are not empty. */
@@ -149,7 +160,13 @@ export class StandInHub {
       return;
     }
     if (message.type === "gateway.devices") {
+      this.devices = message.devices;
       this.options.print(`stand-in hub: ${message.devices.length} paired device(s)`);
+      return;
+    }
+    if (message.type === "gateway.localOpen") {
+      this.localOpenWaiters.shift()?.(message.url);
+      this.options.print(`stand-in hub: open ${message.url}`);
       return;
     }
     if (message.type !== "gateway.request") return;

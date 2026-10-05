@@ -24,6 +24,8 @@ export interface DeviceRecord {
   createdAt: string;
   lastSeenAt?: string;
   locale?: string;
+  /** Paired from a browser on this Mac. Shown as "This Mac" on the Mac's device list. */
+  local?: boolean;
   pushSubscriptions: StoredPushSubscription[];
 }
 
@@ -71,13 +73,14 @@ export class DeviceStore {
     });
   }
 
-  async add(name: string): Promise<{ device: DeviceRecord; token: string }> {
+  async add(name: string, options: { local?: boolean } = {}): Promise<{ device: DeviceRecord; token: string }> {
     const token = createDeviceToken();
     const device: DeviceRecord = {
       id: `dev_${randomId(6)}`,
       name,
       tokenHash: hashDeviceToken(token),
       createdAt: new Date().toISOString(),
+      ...(options.local ? { local: true } : {}),
       pushSubscriptions: [],
     };
     this.devices = [...this.devices, device];
@@ -129,6 +132,7 @@ export class DeviceStore {
       ...(device.lastSeenAt ? { lastSeenAt: device.lastSeenAt } : {}),
       online: onlineDeviceIds.has(device.id),
       pushEnabled: device.pushSubscriptions.length > 0,
+      ...(device.local ? { local: true } : {}),
     }));
   }
 

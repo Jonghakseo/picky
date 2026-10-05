@@ -1119,28 +1119,29 @@ To experiment without touching the default, point **Hub → Settings → Account
 2. Click **Copy resume command** and paste `pi --session ...` into your own shell.
 3. Work directly in the Pi TUI. Hub keeps following the same session file.
 
-## 15. Remote access from your phone
+## 15. Web access: this Mac's browser and your phone
 
-Remote access lets you check on Pickles and the Picky conversation from your phone, answer their questions, and send instructions while you are away from the Mac. The phone opens a web app that you add to its Home Screen. It reaches the Mac over a path you set up yourself (your Tailscale tailnet or your Cloudflare Tunnel); Picky runs no server of its own.
+Web access opens Picky as a web app: in a browser on this Mac, where a wide window shows the Pickle list beside the conversation, and on your phone, where you can check on Pickles and the Picky conversation, answer their questions, and send instructions while you are away. The phone adds the app to its Home Screen and reaches the Mac over a path you set up yourself (your Tailscale tailnet or your Cloudflare Tunnel); Picky runs no server of its own.
 
-Remote access is off until you turn it on. A paired phone can do what the HUD can do on this Mac, including running shell commands, so pair only devices you own and revoke the ones you stop using.
+Web access is off until you turn it on. A paired device can do what the HUD can do on this Mac, including running shell commands, so pair only devices you own and revoke the ones you stop using.
 
 ### 15.1 Turn it on
 
-1. Open **Remote access** in the Hub sidebar and turn on **Use remote access**. Picky starts a small server on `127.0.0.1:17640`. It listens only on this Mac; the entrance below carries traffic to it.
-2. Choose an entrance:
+1. Open **Web access** in the Hub sidebar and turn on **Use web access**. Picky starts a small server on `127.0.0.1:17640`. It listens only on this Mac; remote access below carries a phone's traffic to it.
+2. Under **This Mac**, press **Open in browser** to open Picky in your default browser. A browser opening it this way for the first time is paired without a code and listed as **This Mac** under paired devices. Another browser can open the address shown there and pair with a code from **Connect a device**.
+3. Under **Remote access**, choose how a phone reaches the Mac:
+   - **Off**: only browsers on this Mac can open Picky.
    - **Tailscale Serve**: install Tailscale on the Mac and the phone and sign in to the same tailnet. Press **Turn Serve on**. The address is `https://<this Mac's MagicDNS name>`. Serve needs HTTPS certificates enabled for the tailnet; if they are off, the Tailscale CLI prints a link to the admin console, and the settings page shows that message. If you cannot enable them (for example on a company tailnet you do not administer), use Cloudflare Tunnel instead.
    - **Cloudflare Tunnel**, with one of two addresses:
      - **Temporary address**: Picky runs `cloudflared` (install it with `brew install cloudflared`) and shows the `https://<words>.trycloudflare.com` address it gets. No Cloudflare account is needed. The address changes whenever the tunnel opens again, including every time Picky restarts. A Home Screen app and its notifications belong to one address, so after a change pair the phone again, add the Home Screen app again from the new address, and turn notifications back on; the page says so when it happens. Cloudflare offers these tunnels for testing, without an uptime guarantee.
      - **My domain**: run your own named tunnel with a hostname on your domain that points at `http://127.0.0.1:17640`, then paste its https address. It does not change. Cloudflare Access can sit in front as an extra login.
-   - **This Mac only**: opens at `http://127.0.0.1:17640` in a browser on this Mac. Use it to try the app; notifications and offline start need https, so they stay off here.
-3. The status line shows the address your phone uses.
+4. The status line shows the address your phone uses, or that only this Mac can open it.
 
-Picky has to be running and the Mac awake for the phone to connect. **Prevent sleep** keeps the Mac from idle sleep while remote access runs; closing the lid still puts it to sleep.
+Picky has to be running and the Mac awake for the phone to connect. **Prevent sleep** keeps the Mac from idle sleep while web access runs; closing the lid still puts it to sleep.
 
 ### 15.2 Connect a phone
 
-1. Press **Connect a phone**. A QR code and an 8-character pairing code (`XXXX-XXXX`) appear. The code works once and expires after 5 minutes; five wrong attempts end it.
+1. Press **Connect a device**. A QR code and an 8-character pairing code (`XXXX-XXXX`) appear. The code works once and expires after 5 minutes; five wrong attempts end it.
 2. On the phone, open the address in Safari, tap Share, choose **Add to Home Screen**, and open Picky from the Home Screen.
 3. Inside that app, scan the QR code with **Scan QR** or type the code.
 

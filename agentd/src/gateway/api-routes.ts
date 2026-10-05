@@ -19,7 +19,8 @@ import {
   type RemoteMeResponse,
 } from "../remote/protocol.js";
 import { PREVIEW_DOCUMENT_CSP, remoteError, sendBytes, sendError, sendJson } from "./http/responses.js";
-import { checkSameOrigin, deviceCookie, deviceTokenOf, clearedDeviceCookie, type RequestFacts } from "./http/request-context.js";
+import { checkSameOrigin, deviceCookie, deviceTokenOf, clearedDeviceCookie, isLocalHost, isLoopbackPeer, requestHostOf, type RequestFacts } from "./http/request-context.js";
+import { browserNameOf } from "./local-open.js";
 import { describeFile, PREVIEW_CONTENT_TYPES, resolveReferencedFile, sniffImageMime, MAX_PREVIEW_IMAGE_BYTES } from "./file-service.js";
 import { isAllowedPushEndpoint } from "./push/sender.js";
 import { UploadRejected } from "./uploads.js";
@@ -80,6 +81,7 @@ export class ApiRouter {
     const routes: Record<string, ApiHandler> = {
       "GET /api/me": (request, response, context) => this.me(request, response, context),
       "POST /api/pair": (request, response, context) => this.pair(request, response, context),
+      "GET /api/local-open": (request, response, context) => this.localOpen(request, response, context),
       "POST /api/unpair": (request, response, context) => this.unpair(request, response, context),
       "POST /api/uploads": (request, response, context) => this.upload(request, response, context),
       "GET /api/files/meta": (request, response, context) => this.fileMeta(request, response, context),
@@ -158,7 +160,8 @@ export class ApiRouter {
       return;
     }
 
-    const { device, token } = await this.core.devices.add(parsed.data.deviceName);
+    // A browser on this Mac that typed the code itself is still this Mac's browser.
+    const { device, token } = await this.core.devices.add(parsed.data.deviceName, { local: isLoopbackPeer(request) });
     this.core.lockout.recordSuccess(facts.clientIp);
     this.core.audit.record({ action: "pair.attempt", ip: facts.clientIp, ok: true, deviceName: device.name });
     this.core.audit.record({ action: "pair.success", ip: facts.clientIp, deviceId: device.id, deviceName: device.name });
@@ -167,6 +170,41 @@ export class ApiRouter {
     sendJson(response, 200, { paired: true, device: { id: device.id, name: device.name } }, {
       "Set-Cookie": deviceCookie(token, facts.secure),
     });
+  }
+
+  /**
+   * "Open in browser" from the Mac. The token came over the hub socket and is
+   * single-use; only a loopback peer with a loopback Host may spend it, so the
+   * link cannot sign in anything that reaches the gateway through a tunnel.
+   * An already-paired browser keeps its device and just lands in the app.
+   */
+  private async localOpen(request: IncomingMessage, response: ServerResponse, facts: RequestFacts): Promise<void> {
+    if (!isLoopbackPeer(request) || !isLocalHost(requestHostOf(request))) {
+      sendJson(response, 403, { error: remoteError("unauthorized", "This link only opens on the Mac itself.") });
+      return;
+    }
+    const redirect = (cookie?: string): void => {
+      response.writeHead(303, { Location: "/", "Cache-Control": "no-store", ...(cookie ? { "Set-Cookie": cookie } : {}) });
+      response.end();
+    };
+    const token = facts.url.searchParams.get("token") ?? "";
+    if (!token || !this.core.localOpen.consume(token)) {
+      // Not a lockout strike: a spent link reopened from browser history is
+      // ordinary, and a 24-byte token is not guessable. It just signs nothing in.
+      this.core.audit.record({ action: "localOpen", ip: facts.clientIp, ok: false });
+      redirect();
+      return;
+    }
+    const existing = this.authenticate(request, facts);
+    if (existing) {
+      this.core.audit.record({ action: "localOpen", ip: facts.clientIp, ok: true, deviceId: existing.id });
+      redirect();
+      return;
+    }
+    const { device, token: deviceToken } = await this.core.devices.add(browserNameOf(headerOf(request, "user-agent")), { local: true });
+    this.core.audit.record({ action: "localOpen", ip: facts.clientIp, ok: true, deviceId: device.id, deviceName: device.name });
+    this.core.publishDevices();
+    redirect(deviceCookie(deviceToken, facts.secure));
   }
 
   private async unpair(request: IncomingMessage, response: ServerResponse, facts: RequestFacts): Promise<void> {

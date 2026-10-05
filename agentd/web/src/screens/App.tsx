@@ -53,12 +53,12 @@ export function App({ store, platform, buildId, demo }: AppProps): JSX.Element {
     return (
       <>
         <IconSprite />
-        <div class="app-shell">
+        <main class="app-shell" aria-busy="true">
           <div class="loading-row">
             <Spinner />
             <span>{t("remote.loading")}</span>
           </div>
-        </div>
+        </main>
       </>
     );
   }
@@ -69,20 +69,22 @@ export function App({ store, platform, buildId, demo }: AppProps): JSX.Element {
       <>
         <IconSprite />
         {pairing === "revoked" && <RevokedNotice />}
-        {onHomeScreenHint ? (
-          <InstallScreen onContinueAnyway={() => (forcePair.value = true)} />
-        ) : (
-          <PairScreen
-            transport={store.transport}
-            platform={platform}
-            initialCode={pairCode}
-            onPaired={() => {
-              store.pairing.value = "paired";
-              store.start();
-              navigate({ name: "rooms" }, { replace: true });
-            }}
-          />
-        )}
+        <main class="app-main">
+          {onHomeScreenHint ? (
+            <InstallScreen onContinueAnyway={() => (forcePair.value = true)} />
+          ) : (
+            <PairScreen
+              transport={store.transport}
+              platform={platform}
+              initialCode={pairCode}
+              onPaired={() => {
+                store.pairing.value = "paired";
+                store.start();
+                navigate({ name: "rooms" }, { replace: true });
+              }}
+            />
+          )}
+        </main>
       </>
     );
   }
@@ -96,7 +98,7 @@ export function App({ store, platform, buildId, demo }: AppProps): JSX.Element {
           {renderWideMain(location.route)}
         </WideShell>
       ) : (
-        renderRoute()
+        <main class="app-main">{renderRoute()}</main>
       )}
     </>
   );
@@ -158,7 +160,7 @@ function WideShell({ store, route, children }: { store: AppStore; route: Route; 
   return (
     <div class="wide-shell">
       <nav class="wide-list" aria-label={t("messages.title")}>
-        <RoomListScreen store={store} selectedRoomId={selected} />
+        <RoomListScreen store={store} selectedRoomId={selected} sidebar={route.name !== "rooms" && route.name !== "pair"} />
       </nav>
       <main class="wide-main">{children}</main>
     </div>
@@ -179,7 +181,7 @@ function WideEmpty(): JSX.Element {
 function ConnectionBanner({ store }: { store: AppStore }): JSX.Element | null {
   if (store.connection.value === "open") return null;
   return (
-    <div class="notice info connection-banner">
+    <div class="notice info connection-banner" role="status">
       <Spinner />
       <span class="notice-text">{t("remote.connection.reconnecting")}</span>
     </div>
@@ -188,7 +190,7 @@ function ConnectionBanner({ store }: { store: AppStore }): JSX.Element | null {
 
 function RevokedNotice(): JSX.Element {
   return (
-    <div class="notice error">
+    <div class="notice error" role="alert">
       <span class="notice-text">
         <span class="notice-title">{t("remote.revoked.title")}</span>
         <span class="notice-body">{t("remote.revoked.body")}</span>

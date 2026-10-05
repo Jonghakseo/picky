@@ -183,7 +183,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
             <span>{t("remote.room.newMessages")}</span>
           </button>
         ) : null}
-        {failure ? <div class="composer-note is-error">{failure}</div> : null}
+        {failure ? <div class="composer-note is-error" role="alert">{failure}</div> : null}
         {isMain ? null : <BackgroundWorkFooter session={vm.session} now={now} />}
         <Composer
           sessionId={vm.room.id}

@@ -11,6 +11,7 @@ import type { JSX } from "preact";
 import type { PickyAgentSession } from "../../../src/protocol";
 import type { PickySessionDiffView } from "../../../src/protocol";
 import type { RoomActions } from "./contract";
+import { onTablistKeyDown, useDialog } from "../ui/use-dialog";
 import { t } from "./i18n";
 import { changeCounts, diffLineKind, parseDiffResult, type DiffResult } from "./policy/diff";
 
@@ -28,6 +29,7 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
   const [view, setView] = useState<PickySessionDiffView>("unstaged");
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const dialog = useDialog<HTMLDivElement>({ onDismiss });
 
   useEffect(() => {
     if (tab !== "changes") return;
@@ -54,7 +56,9 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
       <div
         class="sheet-panel"
         role="dialog"
+        aria-modal="true"
         aria-label={t("hud.utilityPanel.accessibilityLabel")}
+        ref={dialog}
         onClick={(event: MouseEvent) => event.stopPropagation()}
       >
         <div class="sheet-head">
@@ -64,27 +68,24 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
             <span class="sr-only">{t("common.close")}</span>
           </button>
         </div>
-        <div class="panel-tabs" role="tablist">
-          <button
-            class={`panel-tab${tab === "artifacts" ? " is-selected" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={tab === "artifacts"}
-            onClick={() => setTab("artifacts")}
-          >
-            {t("hud.utilityPanel.tab.artifacts")}
-          </button>
-          <button
-            class={`panel-tab${tab === "changes" ? " is-selected" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={tab === "changes"}
-            onClick={() => setTab("changes")}
-          >
-            {t("hud.utilityPanel.tab.changes")}
-          </button>
+        <div class="panel-tabs" role="tablist" onKeyDown={onTablistKeyDown}>
+          {(["artifacts", "changes"] as WorkTab[]).map((option) => (
+            <button
+              key={option}
+              id={`work-tab-${option}`}
+              class={`panel-tab${tab === option ? " is-selected" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === option}
+              aria-controls="work-tabpanel"
+              tabIndex={tab === option ? 0 : -1}
+              onClick={() => setTab(option)}
+            >
+              {t(option === "artifacts" ? "hud.utilityPanel.tab.artifacts" : "hud.utilityPanel.tab.changes")}
+            </button>
+          ))}
         </div>
-        <div class="sheet-body">
+        <div class="sheet-body" id="work-tabpanel" role="tabpanel" aria-labelledby={`work-tab-${tab}`}>
           {tab === "artifacts" ? (
             <Artifacts session={session} actions={actions} />
           ) : (
@@ -144,14 +145,14 @@ function Changes({
   const changed = session?.changedFiles ?? [];
   return (
     <div class="panel-list">
-      <div class="panel-tabs" role="tablist">
+      {/* A segmented choice that refetches, not a tab set with panels of its own. */}
+      <div class="panel-tabs" role="group">
         {(["unstaged", "staged"] as PickySessionDiffView[]).map((option) => (
           <button
             key={option}
             class={`panel-tab${view === option ? " is-selected" : ""}`}
             type="button"
-            role="tab"
-            aria-selected={view === option}
+            aria-pressed={view === option}
             onClick={() => onView(option)}
           >
             {t(option === "staged" ? "hud.changes.view.staged" : "hud.changes.view.unstaged")}

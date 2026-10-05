@@ -137,7 +137,7 @@ export function PairScreen({ transport, platform, initialCode, onPaired }: PairS
             />
           </div>
 
-          {error.value && <div class="notice error">{error.value}</div>}
+          {error.value && <div class="notice error" role="alert">{error.value}</div>}
 
           <button class="primary-button" type="button" disabled={busy.value || !isCompletePairingCode(code.value)} onClick={() => void submit(code.value)}>
             {t(busy.value ? "remote.pair.connecting" : "remote.pair.submit")}

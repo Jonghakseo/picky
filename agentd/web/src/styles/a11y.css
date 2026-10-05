@@ -1,0 +1,56 @@
+/* ---- accessibility layer (web only) -------------------------------------
+ * tokens.css is generated from the Mac's DesignSystem.swift and stays as is.
+ * The web adds what a browser needs on top:
+ *
+ * - Tertiary text (times, previews, paths, captions) is 10-11px, and the Mac
+ *   token reaches only 2.6-3.6:1 on the room surfaces. These are the smallest
+ *   shifts of the same grey that clear WCAG AA 4.5:1 on every surface the PWA
+ *   uses (#fff..#e9eaea light, #171918..#252827 dark).
+ * - Light destructive and warning text sit just under 4.5:1 on their own tinted
+ *   notices and on surface2; nudged the same way.
+ * - Notice bodies sit on tinted backgrounds, so they use secondary text.
+ * - A visible focus ring for keyboard focus everywhere.
+ */
+:root {
+  --ds-color-text-tertiary: #656b68;
+  --ds-color-destructive-text: #c82228;
+  --ds-color-warning-text: #ab4f09;
+}
+
+:root[data-theme="dark"] {
+  --ds-color-text-tertiary: #898f8c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ds-color-text-tertiary: #898f8c;
+  }
+}
+
+.notice-body {
+  color: var(--ds-color-text-secondary);
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ds-color-accent);
+  outline-offset: 2px;
+}
+
+/* Rows and tiles draw the ring inside so a scrolling list does not clip it. */
+:where(.room-row, .slash-row, .send-timing-row, .settings-row, .panel-row, pre):focus-visible {
+  outline-offset: -2px;
+}
+
+/* Headings that kept their old look when they became h1/h2. */
+h1.app-topbar-title,
+h2.app-topbar-title,
+h1.hdr-title {
+  margin: 0;
+}
+
+.app-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}

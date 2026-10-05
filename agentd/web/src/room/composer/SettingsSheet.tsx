@@ -3,11 +3,12 @@
  * Source: PickyConversationRuntimeControlsView.swift (sections, rows, toggles).
  * The keyboard shortcut hints (⌃P, ⌘N) are left out: a phone has no such keys.
  */
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 
 import type { ThinkingLevel } from "../../../../src/protocol";
 import { ChevronRight } from "../icons";
+import { useDialog } from "../../ui/use-dialog";
 import { t } from "../i18n";
 
 export interface RuntimeModelOption {
@@ -72,10 +73,22 @@ type Page = "root" | "model" | "thinking";
 
 export function SettingsSheet(props: SettingsSheetProps): JSX.Element {
   const [page, setPage] = useState<Page>("root");
+  // Esc on a sub-page goes back to the settings list first, like the HUD menu.
+  const dialog = useDialog<HTMLDivElement>({ onDismiss: () => (page === "root" ? props.onDismiss() : setPage("root")) });
+  // A page change unmounts the focused row; start the new page at its first control.
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    dialog.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
   return (
     <div class="sheet-backdrop" onClick={props.onDismiss}>
       <div class="sheet-anchor is-leading" onClick={(event: MouseEvent) => event.stopPropagation()}>
-        <div class="settings-menu" role="dialog">
+        <div class="settings-menu" role="dialog" aria-modal="true" aria-label={t("hud.composer.settings.title")} ref={dialog}>
           {page === "root" ? <RootPage {...props} onOpen={setPage} /> : null}
           {page === "model" ? (
             <ListPage

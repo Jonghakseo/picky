@@ -124,6 +124,7 @@ export function QuestionBubble({ request, active, onAnswer }: QuestionBubbleProp
             class="q-field"
             type="text"
             value={text}
+            aria-label={request.title ?? request.prompt ?? t("hud.question.responsePlaceholder")}
             placeholder={t("hud.question.responsePlaceholder")}
             disabled={disabled}
             onInput={(event: JSX.TargetedEvent<HTMLInputElement>) => setText(event.currentTarget.value)}
@@ -203,6 +204,7 @@ export function QuestionBubble({ request, active, onAnswer }: QuestionBubbleProp
                   <input
                     class={`q-field${form.radio[key] === OTHER_SENTINEL ? "" : " is-disabled"}`}
                     type="text"
+                    aria-label={`${question.prompt ?? question.label ?? ""} ${t("hud.question.other")}`.trim()}
                     placeholder={t("hud.question.other")}
                     value={form.other[key] ?? ""}
                     disabled={disabled || form.radio[key] !== OTHER_SENTINEL}
@@ -215,6 +217,7 @@ export function QuestionBubble({ request, active, onAnswer }: QuestionBubbleProp
                   <input
                     class="q-field"
                     type="text"
+                    aria-label={question.prompt ?? question.label ?? question.placeholder ?? t("hud.question.responsePlaceholder")}
                     placeholder={question.placeholder ?? t("hud.question.responsePlaceholder")}
                     value={form.text[key] ?? ""}
                     disabled={disabled}

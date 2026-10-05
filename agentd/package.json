@@ -17,6 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:web": "tsc -p web/tsconfig.json --noEmit && tsc -p web/tsconfig.sw.json --noEmit",
     "check:web-taps": "node web/tools/hit-test.mjs",
+    "check:web-keyboard": "node web/tools/keyboard-check.mjs",
     "lint": "eslint src --max-warnings 0",
     "lint:fix": "eslint src --fix --max-warnings 0",
     "test": "vitest run",

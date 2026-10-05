@@ -69,7 +69,8 @@ function renderBlock(token: Token, context: RenderContext, key: number): Compone
     case "code": {
       const code = token as Tokens.Code;
       return (
-        <pre key={key}>
+        // Long lines scroll sideways; a keyboard can only scroll what it can focus.
+        <pre key={key} tabIndex={0}>
           <code>{code.text}</code>
         </pre>
       );

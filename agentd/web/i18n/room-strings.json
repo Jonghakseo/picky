@@ -8,6 +8,7 @@
   "remote.room.composer.editingScheduled": { "ko": "예약 메시지를 고치는 중이에요", "en": "Editing a scheduled message" },
   "remote.room.composer.editingQueued": { "ko": "대기 중인 메시지를 고치는 중이에요", "en": "Editing a queued message" },
   "remote.room.slash.accessibilityLabel": { "ko": "명령 제안", "en": "Command suggestions" },
+  "remote.room.slash.count": { "ko": "명령 제안 %lld개", "en": "%lld command suggestions" },
 
   "remote.room.schedule.sheet.title": { "ko": "보낼 시간", "en": "Send time" },
   "remote.room.schedule.custom.send": { "ko": "예약", "en": "Schedule" },

@@ -3,10 +3,11 @@
  * Source: PickySendTimingMenuView / PickySendTimingPolicy. On the phone it sits
  * above the composer, where the Mac popover opens with `arrowEdge .top`.
  */
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 
 import { ChevronRight } from "../icons";
+import { useDialog } from "../../ui/use-dialog";
 import { t } from "../i18n";
 import type { SendTiming, SendTimingOption } from "../policy/schedule";
 import { delayMilliseconds, isWithinScheduleLimit } from "../policy/schedule";
@@ -20,19 +21,15 @@ export interface SendTimingMenuProps {
 
 export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
   const [custom, setCustom] = useState<string | null>(null);
-  const menu = useRef<HTMLDivElement | null>(null);
-  // Opened from the keyboard (Command-Return) the menu takes focus, so the
-  // arrows, Return and Esc work without reaching for the pointer.
+  // Focus, Tab, Esc and focus return; Esc on the custom time goes back to the list.
+  const menu = useDialog<HTMLDivElement>({ onDismiss: () => (custom === null ? props.onDismiss() : setCustom(null)) });
   useEffect(() => {
-    menu.current?.querySelector<HTMLElement>("button:not(:disabled), input")?.focus({ preventScroll: true });
+    if (custom === null) return;
+    menu.current?.querySelector<HTMLElement>("input")?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [custom === null]);
 
   function onKeyDown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      props.onDismiss();
-      return;
-    }
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     const rows = [...(menu.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
     if (rows.length === 0) return;
@@ -62,8 +59,8 @@ export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
     <div class="sheet-backdrop" onClick={props.onDismiss}>
       <div class="sheet-anchor is-trailing" ref={menu} onKeyDown={onKeyDown} onClick={(event: MouseEvent) => event.stopPropagation()}>
         {custom === null ? (
-          <div class="send-timing-menu" role="menu">
-            <div class="send-timing-title">{t("hud.composer.sendTiming.title")}</div>
+          <div class="send-timing-menu" role="menu" aria-labelledby="send-timing-title">
+            <div class="send-timing-title" id="send-timing-title">{t("hud.composer.sendTiming.title")}</div>
             {disabledReason ? <div class="send-timing-note">{disabledReason}</div> : null}
             {props.options.map((option, index) => (
               <>
@@ -91,12 +88,13 @@ export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
             ))}
           </div>
         ) : (
-          <div class="send-timing-menu" role="dialog">
-            <div class="send-timing-title">{t("remote.room.schedule.sheet.title")}</div>
+          <div class="send-timing-menu" role="dialog" aria-labelledby="send-timing-custom-title">
+            <div class="send-timing-title" id="send-timing-custom-title">{t("remote.room.schedule.sheet.title")}</div>
             <div class="send-timing-row">
               <input
                 class="q-field"
                 type="datetime-local"
+                aria-labelledby="send-timing-custom-title"
                 value={custom}
                 onInput={(event: JSX.TargetedEvent<HTMLInputElement>) => setCustom(event.currentTarget.value)}
               />

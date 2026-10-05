@@ -51,7 +51,7 @@ export function FilePreviewScreen({ store, roomId, path }: { store: AppStore; ro
         <button class="icon-button" type="button" aria-label={t("remote.room.back")} onClick={() => goBack()}>
           <ChevronLeftIcon size={17} />
         </button>
-        <span class="app-topbar-title">{title}</span>
+        <h1 class="app-topbar-title">{title}</h1>
       </div>
 
       <div class="app-scroll app-side-inset">

@@ -269,6 +269,10 @@ export function Composer(props: ComposerProps): JSX.Element {
       <VoiceRow dictation={dictation} now={props.now} />
       <Note edit={props.edit} online={props.online} macConnected={props.macConnected} attachments={attachments} />
       <div class="room-composer">
+        {/* How many suggestions there are, said once when the list changes. */}
+        <span class="sr-only" role="status">
+          {suggestions.length > 0 ? t("remote.room.slash.count", suggestions.length) : ""}
+        </span>
         {suggestions.length > 0 ? (
           <SlashPanel
             id={slashListId}
@@ -305,11 +309,11 @@ export function Composer(props: ComposerProps): JSX.Element {
             rows={1}
             value={draft}
             placeholder={placeholder}
-            // A combobox: the caret stays in the field while the list's active row
-            // is announced, so arrow navigation works with VoiceOver too.
-            role="combobox"
+            // A multi-line textbox with list autocomplete: the caret stays in the
+            // field while the list's active row is announced. `role="combobox"`
+            // is not allowed on a textarea, and a textbox needs no aria-expanded.
+            aria-label={placeholder}
             aria-autocomplete="list"
-            aria-expanded={suggestions.length > 0}
             aria-controls={suggestions.length > 0 ? slashListId : undefined}
             aria-activedescendant={suggestions.length > 0 && hardwareKeyboard ? slashOptionId(slashListId, selectedSlash) : undefined}
             onInput={(event: JSX.TargetedEvent<HTMLTextAreaElement>) => {
@@ -358,10 +362,13 @@ export function Composer(props: ComposerProps): JSX.Element {
               >
                 <Paperclip />
               </button>
+              {/* The paperclip button is the control; this input only opens the picker. */}
               <input
                 ref={fileInput}
                 class="sr-only"
                 type="file"
+                tabIndex={-1}
+                aria-hidden="true"
                 accept="image/*"
                 multiple
                 onChange={(event: JSX.TargetedEvent<HTMLInputElement>) => {
@@ -658,7 +665,7 @@ function VoiceRow({
   }
   const recording = state.kind === "listening" || state.kind === "preparing";
   return (
-    <div class={`voice-row${tone}`}>
+    <div class={`voice-row${tone}`} role="status">
       <span class="voice-icon" aria-hidden="true">
         {tone === " is-failed" ? <VoiceWarning /> : recording ? <Waveform /> : <Mic />}
       </span>
@@ -692,17 +699,17 @@ function Note({
   macConnected: boolean;
   attachments: Attachment[];
 }): JSX.Element | null {
-  if (!online) return <div class="composer-note">{t("remote.room.composer.reconnecting")}</div>;
-  if (!macConnected) return <div class="composer-note is-error">{t("remote.room.composer.macOffline")}</div>;
+  if (!online) return <div class="composer-note" role="status">{t("remote.room.composer.reconnecting")}</div>;
+  if (!macConnected) return <div class="composer-note is-error" role="alert">{t("remote.room.composer.macOffline")}</div>;
   if (attachments.some((item) => item.failed)) {
-    return <div class="composer-note is-error">{t("remote.room.attachment.failed")}</div>;
+    return <div class="composer-note is-error" role="alert">{t("remote.room.attachment.failed")}</div>;
   }
   if (attachments.some((item) => !item.uploadId)) {
-    return <div class="composer-note">{t("remote.room.attachment.uploading")}</div>;
+    return <div class="composer-note" role="status">{t("remote.room.attachment.uploading")}</div>;
   }
   if (edit) {
     return (
-      <div class="composer-note">
+      <div class="composer-note" role="status">
         {t(edit.kind === "scheduled" ? "remote.room.composer.editingScheduled" : "remote.room.composer.editingQueued")}
       </div>
     );

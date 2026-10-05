@@ -9,6 +9,7 @@ import { navigate } from "../app/navigation";
 import type { AppStore } from "../app/store";
 import { FolderIcon, Spinner } from "../ui/icons";
 import { fileName } from "../app/format";
+import { useDialog } from "../ui/use-dialog";
 
 export function NewPickleSheet({ store, onClose }: { store: AppStore; onClose: () => void }): JSX.Element {
   const busyPath = useSignal<string | undefined>(undefined);
@@ -16,6 +17,7 @@ export function NewPickleSheet({ store, onClose }: { store: AppStore; onClose: (
   const folders = store.folders.value;
   const pinned = folders.pinned;
   const recent = folders.recent.filter((path) => !pinned.includes(path));
+  const dialog = useDialog<HTMLDivElement>({ onDismiss: onClose });
 
   async function create(cwd: string): Promise<void> {
     if (busyPath.value) return;
@@ -34,15 +36,22 @@ export function NewPickleSheet({ store, onClose }: { store: AppStore; onClose: (
 
   return (
     <div class="sheet-scrim" onClick={onClose}>
-      <div class="sheet" onClick={(event) => event.stopPropagation()}>
+      <div
+        class="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-pickle-title"
+        ref={dialog}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div class="sheet-head">
-          <span class="sheet-title">{t("remote.roomList.newPickle")}</span>
+          <span class="sheet-title" id="new-pickle-title">{t("remote.roomList.newPickle")}</span>
           <button class="sheet-cancel tap-target" type="button" onClick={onClose}>
             {t("common.cancel")}
           </button>
         </div>
         <div class="sheet-body">
-          {error.value && <div class="notice error">{error.value}</div>}
+          {error.value && <div class="notice error" role="alert">{error.value}</div>}
           {pinned.length === 0 && recent.length === 0 && (
             <div class="app-empty">
               <span class="app-empty-title">{t("remote.newPickle.empty")}</span>

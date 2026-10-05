@@ -84,7 +84,7 @@ export function SettingsScreen({
             <ChevronLeftIcon size={17} />
           </button>
         )}
-        <span class="app-topbar-title">{t("remote.settings.title")}</span>
+        <h1 class="app-topbar-title">{t("remote.settings.title")}</h1>
       </div>
 
       <div class="app-scroll app-side-inset">

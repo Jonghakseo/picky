@@ -30,7 +30,16 @@ function groupClass(color: string): string {
   return known.includes(color) ? `group-${color}` : "";
 }
 
-export function RoomListScreen({ store, selectedRoomId }: { store: AppStore; selectedRoomId?: string }): JSX.Element {
+export function RoomListScreen({
+  store,
+  selectedRoomId,
+  sidebar = false,
+}: {
+  store: AppStore;
+  selectedRoomId?: string;
+  /** Rendered as the wide layout's list column next to another page. */
+  sidebar?: boolean;
+}): JSX.Element {
   const groupFilter = store.roomListGroup;
   const archiveOpen = useSignal(false);
   const sheetOpen = useSignal(false);
@@ -48,7 +57,12 @@ export function RoomListScreen({ store, selectedRoomId }: { store: AppStore; sel
   return (
     <div class="app-shell">
       <div class="app-topbar app-side-inset">
-        <span class="app-topbar-title">{t("messages.title")}</span>
+        {/* Beside an open room the list is a sidebar: the room's title is the page's h1. */}
+        {!sidebar ? (
+          <h1 class="app-topbar-title">{t("messages.title")}</h1>
+        ) : (
+          <h2 class="app-topbar-title">{t("messages.title")}</h2>
+        )}
         <button class="icon-button" type="button" aria-label={t("remote.settings.title")} onClick={() => navigate({ name: "settings" })}>
           <GearIcon size={17} />
         </button>
@@ -59,10 +73,11 @@ export function RoomListScreen({ store, selectedRoomId }: { store: AppStore; sel
       </div>
 
       {groups.length > 0 && (
-        <div class="list-filters app-side-inset">
+        <div class="list-filters app-side-inset" role="group" aria-label={t("remote.roomList.filter.label")}>
           <button
             class={`filter-chip${activeGroup === undefined ? " selected" : ""}`}
             type="button"
+            aria-pressed={activeGroup === undefined}
             onClick={() => (groupFilter.value = undefined)}
           >
             <span>{t("remote.roomList.filter.all")}</span>
@@ -119,8 +134,8 @@ export function RoomListScreen({ store, selectedRoomId }: { store: AppStore; sel
 
 function GroupChip({ group, selected, onSelect }: { group: RemoteDockGroup; selected: boolean; onSelect: () => void }): JSX.Element {
   return (
-    <button class={`filter-chip ${groupClass(group.color)}${selected ? " selected" : ""}`} type="button" onClick={onSelect}>
-      <span class="filter-dot" />
+    <button class={`filter-chip ${groupClass(group.color)}${selected ? " selected" : ""}`} type="button" aria-pressed={selected} onClick={onSelect}>
+      <span class="filter-dot" aria-hidden="true" />
       {group.name}
     </button>
   );
@@ -128,7 +143,7 @@ function GroupChip({ group, selected, onSelect }: { group: RemoteDockGroup; sele
 
 function MacOfflineBanner(): JSX.Element {
   return (
-    <div class="notice warning">
+    <div class="notice warning" role="status">
       <span class="notice-icon">
         <MacOfflineIcon size={14} />
       </span>

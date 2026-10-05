@@ -106,7 +106,7 @@ export function Header(props: HeaderProps): JSX.Element {
         {corner ? <span class="pi-badge-corner attention">{corner}</span> : null}
         {status === "idle" ? null : <span class="sr-only">{t("hud.header.target.accessibilityLabel", statusLabel)}</span>}
       </span>
-      <span class="hdr-title">{title}</span>
+      <h1 class="hdr-title">{title}</h1>
       {/* An idle Picky room shows no status: "done" would claim a turn that never ran. */}
       {status === "idle" ? null : <span class="hdr-status">{statusLabel}</span>}
       {contextUsage ? (

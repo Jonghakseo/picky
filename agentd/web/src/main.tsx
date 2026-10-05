@@ -8,6 +8,7 @@ import "./styles/base.css";
 import "./styles/room-list.css";
 import "./styles/screens.css";
 import "./styles/wide.css";
+import "./styles/a11y.css";
 import { GatewayTransport } from "./app/gateway-transport";
 import { resolveLocale, setLocale } from "./app/i18n";
 import { currentPlatform } from "./app/platform";

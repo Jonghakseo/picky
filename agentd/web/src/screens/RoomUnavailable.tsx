@@ -15,7 +15,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
         <button class="icon-button" type="button" aria-label={t("remote.room.back")} onClick={() => actions.back()}>
           <ChevronLeftIcon size={17} />
         </button>
-        <span class="app-topbar-title">{vm.room.title}</span>
+        <h1 class="app-topbar-title">{vm.room.title}</h1>
       </div>
       <div class="app-scroll app-side-inset">
         <div class="app-empty">

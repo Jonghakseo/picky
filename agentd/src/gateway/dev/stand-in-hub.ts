@@ -5,11 +5,16 @@
  * It speaks the real `hub-protocol.ts` contract against a mock-runtime agentd,
  * so the gateway and the PWA can be exercised end to end without Picky.app and
  * without touching the user's running daemon.
+ *
+ * Pickles run in their own child daemons here too, because that is what the app
+ * does and because the gateway's ownership rules only get tested that way.
  */
+import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { HUB_PROTOCOL_VERSION, type GatewayToHubMessage, type HubRequest } from "../../remote/hub-protocol.js";
 import { DaemonLink } from "../daemon-link.js";
 import { randomId } from "../storage.js";
+import { ChildDaemon } from "./child-daemon.js";
 
 export interface StandInHubOptions {
   gatewayUrl: string;
@@ -18,6 +23,10 @@ export interface StandInHubOptions {
   daemonToken: string;
   publicUrl?: string;
   cwd: string;
+  /** The agentd package root; child daemons are spawned from its `src/index.ts`. */
+  packageRoot: string;
+  /** The primary's support dir: children share the same session store. */
+  daemonSupportDir: string;
   print: (line: string) => void;
 }
 
@@ -29,6 +38,7 @@ export class StandInHub {
   private readonly archived = new Set<string>();
   private readonly unread = new Set<string>();
   private readonly daemon: DaemonLink;
+  private readonly children = new Map<string, { daemon: ChildDaemon; link: DaemonLink }>();
   private overlayTimer?: NodeJS.Timeout;
 
   constructor(private readonly options: StandInHubOptions) {
@@ -57,6 +67,7 @@ export class StandInHub {
     if (this.overlayTimer) clearTimeout(this.overlayTimer);
     this.daemon.stop();
     this.socket?.close();
+    for (const sessionId of [...this.children.keys()]) void this.releaseChild(sessionId);
   }
 
   /** Asks the gateway for a pairing code, like the Mac's "connect a phone" sheet. */
@@ -68,7 +79,7 @@ export class StandInHub {
   async seed(prompts: readonly string[]): Promise<void> {
     for (const prompt of prompts) {
       const sessionId = await this.createPickle(this.options.cwd);
-      await this.daemon.send({ type: "followUp", sessionId, text: prompt });
+      await this.linkFor(sessionId).send({ type: "followUp", sessionId, text: prompt });
       this.options.print(`stand-in hub: seeded ${sessionId}`);
     }
   }
@@ -90,7 +101,7 @@ export class StandInHub {
 
   private announce(): void {
     this.send({ type: "hub.hello", protocolVersion: HUB_PROTOCOL_VERSION, appVersion: "dev", macName: "Dev Mac" });
-    this.send({ type: "hub.daemons", token: this.options.daemonToken, primary: { url: this.options.daemonUrl }, children: [] });
+    this.sendDaemons();
     this.send({
       type: "hub.config",
       ...(this.options.publicUrl ? { publicUrl: this.options.publicUrl } : {}),
@@ -179,8 +190,13 @@ export class StandInHub {
         this.sendOverlay();
         return undefined;
       case "session.archive":
-        if (request.archived) this.archived.add(request.sessionId);
-        else this.archived.delete(request.sessionId);
+        if (request.archived) {
+          this.archived.add(request.sessionId);
+          // Archiving a finished Pickle on the Mac releases its child daemon.
+          await this.releaseChild(request.sessionId);
+        } else {
+          this.archived.delete(request.sessionId);
+        }
         this.sendOverlay();
         return undefined;
       case "dictation.transcribe":
@@ -188,16 +204,73 @@ export class StandInHub {
     }
   }
 
+  /**
+   * The app's order, which is the one that exposes ownership bugs: pick the id,
+   * spawn the child, create the session inside it, and only then tell the
+   * gateway the child exists. The gateway therefore meets a child whose very
+   * first frames already carry the session.
+   */
   private async createPickle(cwd: string): Promise<string> {
-    const before = new Set(this.sessionIds);
-    await this.daemon.send({ type: "createEmptyPickleSession", context: this.context(undefined, cwd) });
+    const sessionId = `session-${randomUUID()}`;
+    const daemon = await ChildDaemon.spawn({
+      sessionId,
+      sessionCwd: cwd,
+      packageRoot: this.options.packageRoot,
+      token: this.options.daemonToken,
+      appSupportDir: this.options.daemonSupportDir,
+      primaryUrl: this.options.daemonUrl,
+      print: this.options.print,
+    });
+    const link = new DaemonLink(daemon.url, this.options.daemonToken, {
+      onSnapshot: () => this.scheduleOverlay(),
+      onTransaction: () => this.scheduleOverlay(),
+      onEvent: () => {},
+      onConnectionChange: () => {},
+    }, `dev-child-${sessionId.slice(8, 16)}`);
+    this.children.set(sessionId, { daemon, link });
+    link.start();
+    await this.waitForLink(link);
+
+    await link.send({ type: "createEmptyPickleSession", context: this.context(undefined, cwd) });
+    this.sessionIds.add(sessionId);
+    this.unread.add(sessionId);
+    this.sendDaemons();
+    this.sendOverlay();
+    this.options.print(`stand-in hub: ${sessionId} runs in ${daemon.url}`);
+    return sessionId;
+  }
+
+  /** Mirrors `PickyAgentDaemonPool.releaseChild`: untell, then terminate. */
+  private async releaseChild(sessionId: string): Promise<void> {
+    const child = this.children.get(sessionId);
+    if (!child) return;
+    this.children.delete(sessionId);
+    this.sendDaemons();
+    child.link.stop();
+    await child.daemon.stop();
+    this.options.print(`stand-in hub: released the child daemon of ${sessionId}`);
+  }
+
+  private linkFor(sessionId: string): DaemonLink {
+    return this.children.get(sessionId)?.link ?? this.daemon;
+  }
+
+  private sendDaemons(): void {
+    this.send({
+      type: "hub.daemons",
+      token: this.options.daemonToken,
+      primary: { url: this.options.daemonUrl },
+      children: [...this.children.values()].map((child) => ({ sessionId: child.daemon.sessionId, url: child.daemon.url })),
+    });
+  }
+
+  private async waitForLink(link: DaemonLink): Promise<void> {
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
-      const created = [...this.sessionIds].find((id) => !before.has(id));
-      if (created) return created;
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (link.connected) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    throw new Error("the mock daemon did not project a new Pickle");
+    throw new Error("the child daemon never accepted the hub's socket");
   }
 
   private context(transcript: string | undefined, cwd = this.options.cwd): Record<string, unknown> {

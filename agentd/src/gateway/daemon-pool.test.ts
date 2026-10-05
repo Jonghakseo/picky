@@ -1,10 +1,11 @@
 /**
- * Ownership hand-back when a child daemon leaves the topology.
+ * Which daemon a session's frames belong to, while a child joins and after it
+ * leaves the topology.
  *
- * Archiving a finished Pickle on the Mac releases its child daemon. The session
- * itself lives on in the shared store, so the phone must keep the room; before
- * this was fixed the gateway dropped the child's projection and never asked the
- * primary for a replacement, and the room vanished from the room list.
+ * Both rules exist because of the same real failure: a Pickle created in the
+ * HUD runs in its own child daemon, and the phone either never saw it or saw
+ * it disappear. The fakes here reproduce agentd's actual frame order, where a
+ * link's bootstrap snapshots arrive before the ack of its registration.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -49,13 +50,11 @@ async function startFakeDaemon(sessions: Map<string, PickyAgentSession>, bootstr
     socket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as { id: string; type: string; sessionId?: string; requestId?: string };
       if (message.type === "registerAppCapabilities") {
+        // agentd's order, which the gateway has to survive: the broadcaster
+        // bootstraps the new subscriber inside the command, so every snapshot
+        // is on the wire before the ack that ends it.
+        for (const sessionId of bootstrap) snapshot(socket, sessionId);
         socket.send(JSON.stringify({ type: "ack", commandId: message.id }));
-        // A real daemon builds the bootstrap after the ack round trip; sending
-        // it in the same chunk would reach the link before it counts itself
-        // registered, which is a different story than this test's.
-        setTimeout(() => {
-          for (const sessionId of bootstrap) snapshot(socket, sessionId);
-        }, 10);
         return;
       }
       if (message.type === "getSessionProjectionSnapshot" && message.sessionId) {
@@ -119,6 +118,37 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
+function roomIds(pool: DaemonPool): string[] {
+  const sessions = new Map(pool.sessionIds().map((id) => [id, pool.projection(id)!]));
+  return buildRoomList({ sessions, main: { busy: false, pendingQuestion: false, unread: false } }).rooms.map((room) => room.id);
+}
+
+describe("a child daemon joining the topology", () => {
+  it("keeps the bootstrap snapshot it sends before its registration ack", async () => {
+    // The Pickle was created in the HUD, inside the child, after the primary
+    // started: the primary has no record of it, so the child's own bootstrap is
+    // the only projection the gateway will ever get for this room.
+    const sessionId = "s-hud-created";
+    const primary = await startFakeDaemon(new Map(), []);
+    const child = await startFakeDaemon(new Map([[sessionId, session(sessionId, "from the child")]]), [sessionId]);
+    const counts = { sessionsChanged: 0 };
+    const pool = new DaemonPool(listener(counts));
+    cleanups.push(async () => {
+      pool.stop();
+      await child.close();
+      await primary.close();
+    });
+
+    pool.setTopology({ token: "t", primaryUrl: primary.url, children: [{ sessionId, url: child.url }] });
+
+    await until(
+      () => pool.projection(sessionId)?.title === "from the child",
+      `the child's pre-ack bootstrap was dropped (ids=${pool.sessionIds().join(",")})`,
+    );
+    expect(roomIds(pool)).toEqual([MAIN_ROOM_ID, sessionId]);
+  });
+});
+
 describe("releasing a child daemon", () => {
   it("re-seeds the child's session from the primary so the room survives", async () => {
     const sessionId = "s-archived";
@@ -138,15 +168,44 @@ describe("releasing a child daemon", () => {
     const before = counts.sessionsChanged;
     pool.setTopology({ token: "t", primaryUrl: primary.url, children: [] });
 
-    await until(() => pool.projection(sessionId) !== undefined, "the released session was never re-seeded");
-    expect(pool.projection(sessionId)?.title).toBe("from the primary");
+    // The room never blinks out: the handed over state stays until the
+    // primary's fresher snapshot replaces it.
+    expect(pool.projection(sessionId)?.title).toBe("from the child");
+    await until(
+      () => pool.projection(sessionId)?.title === "from the primary",
+      "the released session was never re-seeded from the primary",
+    );
 
-    const sessions = new Map(pool.sessionIds().map((id) => [id, pool.projection(id)!]));
-    const rooms = buildRoomList({ sessions, main: { busy: false, pendingQuestion: false, unread: false } }).rooms;
-    expect(rooms.map((room) => room.id)).toEqual([MAIN_ROOM_ID, sessionId]);
+    expect(roomIds(pool)).toEqual([MAIN_ROOM_ID, sessionId]);
 
     // The room list is rebuilt from this signal, so losing it would leave the
     // phone on a stale list until the next unrelated change.
     expect(counts.sessionsChanged).toBeGreaterThan(before);
+  });
+
+  it("keeps the child's last projection when the primary cannot serve the session", async () => {
+    // A primary only learns the shared store when it starts, so a session a
+    // child created later is unknown to it: the re-seed fails and the handed
+    // over state is all the phone has.
+    const sessionId = "s-unknown-to-primary";
+    const primary = await startFakeDaemon(new Map(), []);
+    const child = await startFakeDaemon(new Map([[sessionId, session(sessionId, "from the child")]]), [sessionId]);
+    const counts = { sessionsChanged: 0 };
+    const pool = new DaemonPool(listener(counts));
+    cleanups.push(async () => {
+      pool.stop();
+      await child.close();
+      await primary.close();
+    });
+
+    pool.setTopology({ token: "t", primaryUrl: primary.url, children: [{ sessionId, url: child.url }] });
+    await until(() => pool.projection(sessionId) !== undefined, "the child never took ownership");
+
+    pool.setTopology({ token: "t", primaryUrl: primary.url, children: [] });
+    // Long enough for the failed refresh to come back from the primary.
+    await new Promise((done) => setTimeout(done, 300));
+
+    expect(pool.projection(sessionId)?.title).toBe("from the child");
+    expect(roomIds(pool)).toEqual([MAIN_ROOM_ID, sessionId]);
   });
 });

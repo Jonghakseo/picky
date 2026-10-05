@@ -91,6 +91,8 @@ const hub = new StandInHub({
   daemonToken,
   publicUrl,
   cwd: packageRoot,
+  packageRoot,
+  daemonSupportDir,
   print,
 });
 hub.start();

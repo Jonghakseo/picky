@@ -74,7 +74,7 @@ export class DaemonPool {
       }
       link.stop();
       this.links.delete(url);
-      orphaned.push(...this.dropProjectionsOwnedBy(url));
+      orphaned.push(...this.handOffProjectionsOwnedBy(url));
     }
 
     for (const url of wanted) {
@@ -89,11 +89,10 @@ export class DaemonPool {
       link.start();
     }
 
-    // Releasing a child daemon does not end its sessions: they stay in the
-    // shared store and the primary still projects them. Without re-seeding, the
-    // room list skips an id with no projection and the Pickle disappears from
-    // the phone. A primary that is not connected yet re-bootstraps everything
-    // on its own, so there is nothing to ask for in that case.
+    // Releasing a child daemon does not end its sessions. The handed-over state
+    // already keeps the room alive; this only tries to replace it with the
+    // primary's fresher view. A primary that is not connected yet re-bootstraps
+    // everything on its own, so there is nothing to ask for in that case.
     const primary = this.primaryUrl ? this.links.get(this.primaryUrl) : undefined;
     if (primary?.connected) {
       for (const sessionId of orphaned) void this.recoverFrom(sessionId, "owner-released");
@@ -118,12 +117,9 @@ export class DaemonPool {
     return link?.connected ? link : undefined;
   }
 
-  /** The child that hosts this session when it is connected, else the primary. */
+  /** The child that hosts this session while its socket is up, else the primary. */
   ownerFor(sessionId: string): DaemonLink | undefined {
-    const childUrl = this.topology.children.find((child) => child.sessionId === sessionId)?.url;
-    const child = childUrl ? this.links.get(childUrl) : undefined;
-    if (child?.connected) return child;
-    return this.primary();
+    return this.attachedChildFor(sessionId) ?? this.primary();
   }
 
   sessionIds(): string[] {
@@ -153,10 +149,20 @@ export class DaemonPool {
     );
   }
 
-  private ownerUrlFor(sessionId: string): string | undefined {
+  /**
+   * `attached`, not `connected`: a child's very first frames are the bootstrap
+   * snapshot of the session it hosts, and agentd sends those before acking the
+   * registration. Waiting for the ack would credit them to the primary and drop
+   * them, which left a HUD-created Pickle invisible on the phone.
+   */
+  private attachedChildFor(sessionId: string): DaemonLink | undefined {
     const childUrl = this.topology.children.find((child) => child.sessionId === sessionId)?.url;
-    if (childUrl && this.links.get(childUrl)?.connected) return childUrl;
-    return this.primaryUrl;
+    const child = childUrl ? this.links.get(childUrl) : undefined;
+    return child?.attached ? child : undefined;
+  }
+
+  private ownerUrlFor(sessionId: string): string | undefined {
+    return this.attachedChildFor(sessionId)?.url ?? this.primaryUrl;
   }
 
   private handleSnapshot(url: string, frame: DaemonSnapshotFrame): void {
@@ -217,7 +223,7 @@ export class DaemonPool {
 
   private handleConnectionChange(url: string, connected: boolean): void {
     logGateway("daemon connection", { url, connected });
-    if (!connected) this.dropProjectionsOwnedBy(url);
+    if (!connected) this.handOffProjectionsOwnedBy(url);
     // A child that just connected takes ownership of its session back from the
     // primary; its bootstrap snapshot arrives next and resets that session.
     if (connected && url === this.primaryUrl) this.listener.onPrimaryConnected();
@@ -225,15 +231,32 @@ export class DaemonPool {
     this.listener.onSessionsChanged();
   }
 
-  /** Returns the ids of the sessions that just lost their folded projection. */
-  private dropProjectionsOwnedBy(url: string): string[] {
-    const dropped: string[] = [];
+  /**
+   * The link at `url` is gone. Its sessions keep the last state it produced and
+   * move to the primary, which owns their future frames.
+   *
+   * Deleting them instead was wrong for a child: the primary only learns the
+   * shared store at startup, so a session a child created later is unknown to
+   * it, the re-seed request fails, and the room disappears from the phone for
+   * good. Nothing pins a stale room to the list either, because the room list
+   * only shows ids the hub's overlay still reports.
+   *
+   * Returns the ids whose owner changed, so the caller can try a refresh.
+   */
+  private handOffProjectionsOwnedBy(url: string): string[] {
+    const inheritor = this.primaryUrl && this.primaryUrl !== url ? this.primaryUrl : undefined;
+    const affected: string[] = [];
     for (const [sessionId, entry] of this.projections) {
       if (entry.ownerUrl !== url) continue;
-      this.projections.delete(sessionId);
-      dropped.push(sessionId);
-      this.listener.onSessionReset(sessionId);
+      affected.push(sessionId);
+      if (!inheritor) {
+        // The primary itself left: nothing can serve this session anymore.
+        this.projections.delete(sessionId);
+        this.listener.onSessionReset(sessionId);
+        continue;
+      }
+      this.projections.set(sessionId, { ...entry, ownerUrl: inheritor });
     }
-    return dropped;
+    return affected;
   }
 }

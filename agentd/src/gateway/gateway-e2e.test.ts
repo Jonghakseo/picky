@@ -77,6 +77,8 @@ beforeAll(async () => {
     daemonUrl: `ws://127.0.0.1:${daemonPort}`,
     daemonToken,
     cwd: daemonSupportDir,
+    packageRoot,
+    daemonSupportDir,
     print: () => {},
   });
   hub.start();

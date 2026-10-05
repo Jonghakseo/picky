@@ -89,6 +89,18 @@ export class DaemonLink {
     return this.registered && this.socket?.readyState === WebSocket.OPEN;
   }
 
+  /**
+   * The socket is up and the capability registration is sent or in flight.
+   *
+   * agentd streams a new subscriber's bootstrap snapshots while it handles
+   * `registerAppCapabilities`, so the first frames of a link always arrive
+   * before its ack. Ownership decisions must use this, not `connected`, or they
+   * credit those frames to the wrong daemon.
+   */
+  get attached(): boolean {
+    return this.socket?.readyState === WebSocket.OPEN;
+  }
+
   start(): void {
     this.stopped = false;
     this.connect();

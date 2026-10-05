@@ -125,6 +125,16 @@ Lives in `Picky/Remote/`; the settings UI in `Picky/Hub/Settings/`. Responsibili
 
 Source `agentd/web/`, built by `agentd/web/build.mjs` (esbuild) into `agentd/dist/web/`. Preact + TSX, `@preact/signals` for state, `marked` (lexer only) for markdown, `jsqr` for the in-app QR scanner. The session reducer is imported from `agentd/src/domain/session-projection-reducer.ts`, wire types from `agentd/src/remote/protocol.ts`.
 
+Why Preact:
+
+- Components and props map one to one onto the SwiftUI HUD views the PWA ports.
+- The runtime is a few KB (the whole app bundle is about 214 KB), which matters on a first open over a temporary tunnel; React would add roughly ten times that for the same JSX.
+- `@preact/signals` keeps one signal per room, so a streaming Pickle re-renders its own room and nothing else.
+- esbuild compiles TSX directly: one `build.mjs`, no dev-server toolchain, and the output is static files the gateway serves.
+- It is TypeScript, so the browser imports the daemon's session reducer and protocol types and renders the same session as the Mac.
+
+Plain DOM was too heavy for the state-driven bubbles, questions and panels; Svelte or Solid would be as small but need their own compiler, while JSX and hooks are the most familiar shape for contributors. The cost is that Preact ships no accessible primitives: dialogs, focus and tabs are hand-built (`agentd/web/src/ui/use-dialog.ts`). If such widgets keep growing, reconsider a headless accessible component library.
+
 - **Same look as the HUD.** Port the reviewed prototypes in `docs/prototypes/picky-remote-pwa/` (tokens, base, room list, header, chat bubbles, presence and activity, question, composer). `tokens.css` is generated from the Swift design system by the prototype tool and copied verbatim.
 - **Copy** comes from `Picky/Resources/Localizable.xcstrings` (keys extracted at build time), plus phone-only keys in `agentd/web/i18n/remote-strings.json` (ko and en, reviewed with `.agents/skills/picky-ux-writing/SKILL.md`).
 - **Bundle hygiene.** Browser code imports runtime values only from `agentd/src/remote/constants.ts`, `agentd/src/remote/status-presentation.ts` and `agentd/src/domain/session-projection-reducer.ts` (about 3.5 KB gzip together). `agentd/src/protocol.ts` and `agentd/src/remote/protocol.ts` are `import type` only: their runtime values pull in zod and every daemon schema (about 100 KB gzip).

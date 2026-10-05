@@ -165,8 +165,8 @@ Push-to-Talk goes to the main Picky agent unless a Pickle is armed as the input 
 
 To speak to one Pickle, use the microphone button next to Send in that Pickle's composer:
 
-1. Click the microphone. The line above the composer shows **Listening** and the elapsed time.
-2. Click it again to stop. Picky transcribes the recording and adds the text to the end of the composer, after anything you already typed. Nothing is sent yet.
+1. Click the microphone, or press `Cmd + D` while the Pickle's composer has keyboard focus. The line above the composer shows **Listening** and the elapsed time.
+2. Click it again or press `Cmd + D` again to stop. Picky transcribes the recording and adds the text to the end of the composer, after anything you already typed. Nothing is sent yet.
 3. Review or edit the text, then send it as usual. While the Pickle is running, Send queues it as a follow-up.
 
 Press `esc` while listening to cancel without changing the composer. If nothing was recognized, the composer stays as it was and the status line says so. Only one Pickle can dictate at a time, and Push-to-Talk is ignored while a composer is dictating.
@@ -239,7 +239,7 @@ Details:
 
 When a reply refers to a concrete location in a captured screenshot, Picky can point at that location or draw rough rectangles, lines, and freeform paths with labels over the matching display. Rectangles and lines may also use spotlights; paths can combine straight and cubic Bézier segments for trends or graph-like guidance. Visual narration is revealed sentence by sentence, so each pointer or drawing appears alongside the part of the spoken/text response that describes it.
 
-To translate or explain on-screen text, Picky underlines the original text and attaches a callout bubble beside it. The original stays visible, the whole translation is shown (long text widens the bubble up to a cap instead of being cut off), and several callouts are placed so they do not cover each other or the other marked text.
+To translate or explain on-screen text, Picky boxes the original text and connects it to a numbered translation card beside it. The original stays visible. Cards adjust their width for the text and sit beside the marked areas, avoiding other cards and labels. Translation text belongs to a `RECT` annotation; the old `TEXT` annotation is no longer supported.
 
 These overlays are grounded in the screenshot captured for the current turn. Picky validates the current screen pixels before revealing them, hides drawings when the referenced area changes substantially, and can restore them if the original scene returns during narration or within the roughly 30-second recovery window afterward. Drawings that remain after narration show a lower-center **Clear drawing** control. Agent-authored overlays are visual-only and are not added to the conversation transcript.
 
@@ -1150,7 +1150,7 @@ Pair inside the Home Screen app, not in Safari: iOS keeps the Home Screen app's 
 
 - **Room list**: Picky (the main conversation) stays at the top, then Pickles by recent activity. Dock groups appear as filters, archived Pickles sit at the bottom, and unread marks are shared with the Mac dock. **New Pickle** creates one in a pinned or recent folder.
 - **Rooms** look like the HUD conversation card. Tap a bubble to see what the Mac shows on hover (sent time, open as report, elapsed time).
-- **Sending**: while a Pickle runs, send delivers guidance to the current work; otherwise it sends a follow-up. The arrow next to send offers "after this response", scheduled times, and a custom time. Return inserts a new line; the send button sends. A message starting with `!` runs a shell command, as on the Mac.
+- **Sending**: while a Pickle runs, send delivers guidance to the current work; after it completes, send starts a follow-up. For a cancelled or failed Pickle, send resumes or retries the work. The arrow next to send offers "after this response", scheduled times, and a custom time. "After this response" is unavailable for cancelled or failed Pickles; timed delivery accepts text only, so attaching a photo disables it. Picky's main room does not offer scheduled delivery. Return inserts a new line; the send button sends. A message starting with `!` runs a shell command, as on the Mac.
 - **Stop**: when background tasks are running, you choose between stopping the response only and stopping the background tasks too. Queued messages move back into the phone's composer.
 - **Questions** from Pickles and Picky can be answered in the room.
 - **Photos**: attach up to 10 images (20 MB each). They are saved on the Mac and sent as file paths, like files dropped on the HUD composer.

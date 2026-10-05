@@ -1282,7 +1282,8 @@
   text-align: left;
 }
 
-.slash-row:active {
+.slash-row:active,
+.slash-row.is-selected {
   background: color-mix(in srgb, var(--ds-color-accent-subtle) 55%, transparent);
 }
 
@@ -2945,4 +2946,10 @@ textarea.composer-editor::placeholder {
 
 .bg-work-note span {
   white-space: normal;
+}
+
+/* Keyboard focus in the send-timing menu (opened with Command-Return). */
+.send-timing-row:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--ds-color-accent-subtle) 55%, transparent);
 }

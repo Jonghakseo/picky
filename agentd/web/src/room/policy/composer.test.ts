@@ -11,6 +11,7 @@ import {
   effectiveBashMode,
   placeholderKey,
   queueItemText,
+  returnKeyAction,
   submitStatus,
 } from "./composer";
 
@@ -97,5 +98,24 @@ describe("dictation transcript", () => {
     expect(draftAppendingTranscript("앞 문장", " 받아쓴 문장 ")).toBe("앞 문장 받아쓴 문장");
     expect(draftAppendingTranscript("앞 문장 ", "받아쓴 문장")).toBe("앞 문장 받아쓴 문장");
     expect(draftAppendingTranscript("앞 문장", "   ")).toBe("앞 문장");
+  });
+});
+
+describe("Return key", () => {
+  const key = (overrides: Partial<Parameters<typeof returnKeyAction>[0]> = {}) =>
+    returnKeyAction({ key: "Enter", shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, composing: false, hardwareKeyboard: true, ...overrides });
+
+  it("sends with a keyboard the way the HUD does, and opens send timing with Command or Control", () => {
+    expect(key()).toBe("submit");
+    expect(key({ shiftKey: true })).toBe("newline");
+    expect(key({ altKey: true })).toBe("submitAfterReply");
+    expect(key({ metaKey: true })).toBe("openSendTiming");
+    expect(key({ ctrlKey: true })).toBe("openSendTiming");
+  });
+
+  it("leaves Return alone while Korean is composing and on a phone keyboard", () => {
+    expect(key({ composing: true })).toBe("none");
+    expect(key({ hardwareKeyboard: false })).toBe("none");
+    expect(key({ key: "a" })).toBe("none");
   });
 });

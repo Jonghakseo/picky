@@ -3,7 +3,7 @@
  * Source: PickySendTimingMenuView / PickySendTimingPolicy. On the phone it sits
  * above the composer, where the Mac popover opens with `arrowEdge .top`.
  */
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 
 import { ChevronRight } from "../icons";
@@ -20,6 +20,27 @@ export interface SendTimingMenuProps {
 
 export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
   const [custom, setCustom] = useState<string | null>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
+  // Opened from the keyboard (Command-Return) the menu takes focus, so the
+  // arrows, Return and Esc work without reaching for the pointer.
+  useEffect(() => {
+    menu.current?.querySelector<HTMLElement>("button:not(:disabled), input")?.focus({ preventScroll: true });
+  }, [custom === null]);
+
+  function onKeyDown(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      props.onDismiss();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const rows = [...(menu.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
+    if (rows.length === 0) return;
+    event.preventDefault();
+    const at = rows.indexOf(document.activeElement as HTMLElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    rows[(at + step + rows.length) % rows.length]?.focus();
+  }
   // The Mac shows why an option is off as hover help; a phone has no hover,
   // so the reason is written under the title instead.
   const disabledReason = props.options.find((option) => !option.enabled && option.disabledReason)?.disabledReason;
@@ -39,7 +60,7 @@ export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
 
   return (
     <div class="sheet-backdrop" onClick={props.onDismiss}>
-      <div class="sheet-anchor is-trailing" onClick={(event: MouseEvent) => event.stopPropagation()}>
+      <div class="sheet-anchor is-trailing" ref={menu} onKeyDown={onKeyDown} onClick={(event: MouseEvent) => event.stopPropagation()}>
         {custom === null ? (
           <div class="send-timing-menu" role="menu">
             <div class="send-timing-title">{t("hud.composer.sendTiming.title")}</div>

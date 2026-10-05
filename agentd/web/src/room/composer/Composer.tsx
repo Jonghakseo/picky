@@ -26,6 +26,7 @@ import {
   draftRestoringQueuedInputs,
   effectiveBashMode,
   placeholderKey,
+  returnKeyAction,
   submitStatus,
 } from "../policy/composer";
 import { sendTimingOptions } from "../policy/schedule";
@@ -82,7 +83,12 @@ export function Composer(props: ComposerProps): JSX.Element {
   const editor = useRef<HTMLTextAreaElement | null>(null);
   const [caret, setCaret] = useState<number | undefined>(undefined);
   const slash = useSlashCommands(isMain ? null : sessionId, isMain ? null : slashQuery(draft, caret ?? draft.length), actions);
-  const suggestions = slash ? slashSuggestions(draft, caret, slash) : [];
+  const hardwareKeyboard = useHardwareKeyboard();
+  // Esc hides the list for the draft it was pressed on; typing brings it back.
+  const [slashDismissedFor, setSlashDismissedFor] = useState<string | null>(null);
+  const suggestions = slash && slashDismissedFor !== draft ? slashSuggestions(draft, caret, slash) : [];
+  const [slashIndex, setSlashIndex] = useState(0);
+  const selectedSlash = Math.min(slashIndex, Math.max(0, suggestions.length - 1));
   const pendingCaret = useRef<number | null>(null);
 
   const status = session?.status ?? "waiting_for_input";
@@ -116,6 +122,8 @@ export function Composer(props: ComposerProps): JSX.Element {
     }
   }, [draft]);
 
+  useEffect(() => setSlashIndex(0), [draft]);
+
   function acceptSlash(command: SlashCommand): void {
     const next = slashCompletion(draft, caret, command);
     pendingCaret.current = next.caret;
@@ -124,6 +132,35 @@ export function Composer(props: ComposerProps): JSX.Element {
   }
 
   const trackCaret = (event: JSX.TargetedEvent<HTMLTextAreaElement>): void => setCaret(event.currentTarget.selectionStart);
+
+  /** Arrow keys move through the slash list, Return or Tab take the row, Esc closes it, as in the HUD. */
+  function handleSlashKey(event: JSX.TargetedKeyboardEvent<HTMLTextAreaElement>): boolean {
+    const count = suggestions.length;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setSlashIndex((selectedSlash + step + count) % count);
+      return true;
+    }
+    const plainReturn = event.key === "Enter" && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey;
+    if (plainReturn || (event.key === "Tab" && !event.shiftKey)) {
+      event.preventDefault();
+      const command = suggestions[selectedSlash];
+      if (command) acceptSlash(command);
+      return true;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setSlashDismissedFor(draft);
+      return true;
+    }
+    return false;
+  }
+
+  function closeTiming(): void {
+    setTimingOpen(false);
+    if (hardwareKeyboard) editor.current?.focus();
+  }
 
   const uploadIds = useMemo(
     () => attachments.map((item) => item.uploadId).filter((id): id is string => typeof id === "string"),
@@ -217,7 +254,9 @@ export function Composer(props: ComposerProps): JSX.Element {
       <VoiceRow dictation={dictation} now={props.now} />
       <Note edit={props.edit} online={props.online} macConnected={props.macConnected} attachments={attachments} />
       <div class="room-composer">
-        {suggestions.length > 0 ? <SlashPanel suggestions={suggestions} onAccept={acceptSlash} /> : null}
+        {suggestions.length > 0 ? (
+          <SlashPanel suggestions={suggestions} selectedIndex={hardwareKeyboard ? selectedSlash : -1} onAccept={acceptSlash} />
+        ) : null}
         <div class={`composer is-${border}`}>
           {attachments.length > 0 ? (
             <div class="composer-attachments">
@@ -257,9 +296,32 @@ export function Composer(props: ComposerProps): JSX.Element {
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
             onKeyDown={(event: JSX.TargetedKeyboardEvent<HTMLTextAreaElement>) => {
-              // Korean IME: Return while composing commits the syllable. The phone
-              // never submits on Return at all; the send button does that.
-              if (event.key === "Enter" && composing) event.stopPropagation();
+              // Korean IME: Return while composing commits the syllable. Safari
+              // reports that keydown with keyCode 229 after compositionend.
+              const imeComposing = composing || event.isComposing || event.keyCode === 229;
+              if (imeComposing && event.key === "Enter") {
+                event.stopPropagation();
+                return;
+              }
+              if (hardwareKeyboard && suggestions.length > 0 && !imeComposing && handleSlashKey(event)) return;
+              const action = returnKeyAction({
+                key: event.key,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                metaKey: event.metaKey,
+                ctrlKey: event.ctrlKey,
+                composing: imeComposing,
+                hardwareKeyboard,
+              });
+              if (action === "none" || action === "newline") return;
+              event.preventDefault();
+              if (action === "openSendTiming") {
+                if (!isMain && canSend && props.online && props.macConnected) setTimingOpen(true);
+                return;
+              }
+              if (!sendEnabled) return;
+              // The Picky room has no "after this reply": its queue is the main agent's.
+              void submit(action === "submitAfterReply" && afterReplyKind !== null ? afterReplyKind : submitKind);
             }}
           />
           <div class="composer-actions">
@@ -368,7 +430,7 @@ export function Composer(props: ComposerProps): JSX.Element {
               if (ok) clear();
             });
           }}
-          onDismiss={() => setTimingOpen(false)}
+          onDismiss={closeTiming}
         />
       ) : null}
       {settingsOpen ? (
@@ -421,15 +483,29 @@ function useSlashCommands(sessionId: string | null, query: string | null, action
 }
 
 /** Rows above the composer, as `PickyComposerAutocompletePanelView` draws them. */
-function SlashPanel({ suggestions, onAccept }: { suggestions: SlashCommand[]; onAccept: (command: SlashCommand) => void }): JSX.Element {
+function SlashPanel({
+  suggestions,
+  selectedIndex,
+  onAccept,
+}: {
+  suggestions: SlashCommand[];
+  /** Keyboard selection; -1 on a touch screen, where rows are only tapped. */
+  selectedIndex: number;
+  onAccept: (command: SlashCommand) => void;
+}): JSX.Element {
+  const panel = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    panel.current?.querySelector(".slash-row.is-selected")?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
   return (
-    <div class="slash-panel" role="listbox" aria-label={t("remote.room.slash.accessibilityLabel")}>
-      {suggestions.map((command) => (
+    <div class="slash-panel" role="listbox" aria-label={t("remote.room.slash.accessibilityLabel")} ref={panel}>
+      {suggestions.map((command, index) => (
         <button
           key={`${command.source}:${command.name}`}
-          class="slash-row"
+          class={`slash-row${index === selectedIndex ? " is-selected" : ""}`}
           type="button"
           role="option"
+          aria-selected={index === selectedIndex}
           // Keep the keyboard up: the textarea must not lose focus on the tap.
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => onAccept(command)}
@@ -441,6 +517,24 @@ function SlashPanel({ suggestions, onAccept }: { suggestions: SlashCommand[]; on
       ))}
     </div>
   );
+}
+
+/**
+ * True with a mouse or trackpad (a browser on the Mac, an iPad with a
+ * keyboard case), where Return can send. A phone keyboard keeps Return as a
+ * new line.
+ */
+function useHardwareKeyboard(): boolean {
+  const query = "(hover: hover) and (pointer: fine)";
+  const [matches, setMatches] = useState(() => globalThis.matchMedia?.(query).matches ?? false);
+  useEffect(() => {
+    const list = globalThis.matchMedia?.(query);
+    if (!list) return;
+    const update = (): void => setMatches(list.matches);
+    list.addEventListener("change", update);
+    return () => list.removeEventListener("change", update);
+  }, []);
+  return matches;
 }
 
 /** Model and fast mode at a glance, opening the Pickle settings menu. */

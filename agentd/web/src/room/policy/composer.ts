@@ -28,6 +28,36 @@ export function submitStatus(status: SessionStatus, agentPhase: string | undefin
   return status;
 }
 
+export type ReturnKeyAction = "none" | "newline" | "submit" | "submitAfterReply" | "openSendTiming";
+
+/**
+ * What Return does in the composer. `returnKeyAction(for:)` in
+ * PickyConversationComposerView+Policy.swift: Return sends, Shift+Return is a
+ * new line, Option+Return sends once the current reply ends. A browser on the
+ * Mac adds Command (or Control) + Return for the send-timing menu, which the
+ * HUD opens from the split button only.
+ *
+ * A phone keyboard has no modifiers and its Return is the only way to start a
+ * new line, so without a hardware keyboard Return stays a new line. While an
+ * IME is composing (Korean), Return commits the syllable and does nothing else.
+ */
+export function returnKeyAction(event: {
+  key: string;
+  shiftKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  composing: boolean;
+  hardwareKeyboard: boolean;
+}): ReturnKeyAction {
+  if (event.key !== "Enter" || event.composing) return "none";
+  if (!event.hardwareKeyboard) return "none";
+  if (event.shiftKey) return "newline";
+  if (event.metaKey || event.ctrlKey) return "openSendTiming";
+  if (event.altKey) return "submitAfterReply";
+  return "submit";
+}
+
 /** What the send button does by default for this session status. */
 export function defaultSubmitKind(status: SessionStatus): SubmitKind {
   switch (status) {

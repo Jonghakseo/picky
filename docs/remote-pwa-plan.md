@@ -1,6 +1,6 @@
 # 원격 PWA 접근 계획
 
-_상태: 결정 확정, 구현 전 · 작성일: 2026-10-04_
+_상태: 1~4단계 구현됨(실행 중인 앱에는 재시작해야 반영), 실기기 확인 일부 남음 · 작성일: 2026-10-04 · 갱신: 2026-10-05_
 
 Picky와 Pickle 세션은 지금처럼 내 맥에서 실행하고, 밖에서는 폰(iPhone 홈 화면 PWA)으로 보고 조작한다. 실행 위치는 옮기지 않는다. Picky가 운영하는 서버는 두지 않고, 사용자가 고른 망과 맥 앱이 발급한 기기 인증으로만 연결을 연다.
 
@@ -222,10 +222,13 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
 ## 열린 확인 사항
 
 - iOS 홈 화면 앱에서 Access 로그인이 유지되는지 확인한다(2단계 실기기). 범위 밖 링크는 Safari View Controller로 열리므로, 로그인 뒤 쿠키가 앱에 남는지 확실하지 않다. 안 되면 Cloudflare 경로는 Access 없이 gateway 인증과 엣지 방어로 운영한다.
-- 허브가 요청한 복구 스냅샷이 앱 자신의 projection 처리와 섞이는지 확인한다(1단계 첫 작업). 복구 프레임에는 `requestId`가 붙어 있다.
-- 앱 메인 스레드의 중계 비용을 측정한다. 원격에서 연 세션만 중계하고, 측정은 `docs/perf-profiling.md` 방식으로 한다.
 - 홈 화면 앱 안에서 카메라로 QR을 스캔할 수 있는지 확인한다(2단계). 안 되면 코드 입력 방식에 시도 횟수 제한을 둔다.
 - 텔레그램 원격 계획과의 관계를 정한다. 같은 원격 감독 수요를 다루므로 둘 다 진행할지 결정해야 한다.
-- 방 목록 기본안(Picky 방 고정, 최근 활동 순, 그룹 필터, 읽음 공유)을 목업 검수에서 확정한다.
-- PWA 구현 프레임워크를 1단계 구현 전에 정한다.
+- 실기기 확인이 남았다. 2026-10-05 Android(Galaxy Z Fold8, Chrome 154)를 USB로 dev 하네스에 붙여 페어링, 방 목록, 한글 입력과 보내기, 사진 첨부, 연결 끊김과 재연결을 확인했고, 폰 녹음 파일이 맥(`AVAudioFile`)에서 열리는 것까지 봤다. 재시작한 실제 앱, iPhone 홈 화면 앱, 두 입구(Tailscale Serve, Cloudflare Tunnel), 잠긴 폰의 푸시 수신(그 폰 Chrome이 알림 요청을 거부하도록 설정돼 있었다), 맥 음성 인식 서비스 네 가지는 아직 실기기로 확인하지 않았다.
 - 알림에서 바로 답하기(확인·선택 질문)는 Android Chrome에서만 된다. iOS Safari는 알림 버튼(`actions`)을 지원하지 않는다([MDN](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification#browser_compatibility)). 넣는다면 pi-pocket처럼 질문 전체가 알림에 다 보일 때만 버튼을 준다.
+
+구현하며 닫은 항목:
+
+- 복구 스냅샷이 앱의 projection 처리와 섞이는 문제와 앱 메인 스레드 중계 비용은 결정 8로 없어졌다. gateway가 데몬에 직접 붙고, 데몬은 복구 요청을 소켓별로 처리한다.
+- 방 목록은 목업 검수에서 기본안(Picky 방 고정, 최근 활동 순, 그룹 필터, 읽음 공유)으로 확정했다.
+- PWA는 Preact와 `@preact/signals`로 만들었다(`docs/remote-pwa-implementation.md` 4절).

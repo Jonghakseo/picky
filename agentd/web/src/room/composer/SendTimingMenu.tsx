@@ -20,6 +20,9 @@ export interface SendTimingMenuProps {
 
 export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
   const [custom, setCustom] = useState<string | null>(null);
+  // The Mac shows why an option is off as hover help; a phone has no hover,
+  // so the reason is written under the title instead.
+  const disabledReason = props.options.find((option) => !option.enabled && option.disabledReason)?.disabledReason;
 
   function pick(timing: SendTiming): void {
     if (timing.kind === "afterCurrentReply") {
@@ -40,6 +43,7 @@ export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
         {custom === null ? (
           <div class="send-timing-menu" role="menu">
             <div class="send-timing-title">{t("hud.composer.sendTiming.title")}</div>
+            {disabledReason ? <div class="send-timing-note">{disabledReason}</div> : null}
             {props.options.map((option, index) => (
               <>
                 {index === 1 || option.timing.kind === "custom" ? (

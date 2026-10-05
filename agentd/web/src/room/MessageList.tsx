@@ -54,6 +54,8 @@ export interface MessageListProps {
   send: (command: RemoteCommand) => Promise<boolean>;
   /** Pulls a queued or scheduled text back into the composer for editing. */
   onEdit: (edit: QueueEdit) => void;
+  /** Puts a withdrawn steer's text back into the composer draft. */
+  onRestore: (item: PickyQueueItem) => void;
   now: number;
 }
 
@@ -61,7 +63,7 @@ export function MessageList(props: MessageListProps): JSX.Element {
   return props.main ? <MainRows {...props} main={props.main} /> : <SessionRows {...props} />;
 }
 
-function SessionRows({ sessionId, session, actions, send, onEdit, now }: MessageListProps): JSX.Element {
+function SessionRows({ sessionId, session, actions, send, onEdit, onRestore, now }: MessageListProps): JSX.Element {
   const session_ = session;
   if (!session_) return <div class="msgs" />;
   const language = locale();
@@ -169,18 +171,44 @@ function SessionRows({ sessionId, session, actions, send, onEdit, now }: Message
     }
   }
 
-  const queued: Array<{ item: PickyQueueItem; editable: boolean }> = [
-    ...(session_.queuedSteers ?? []).map((item) => ({ item, editable: false })),
-    ...(session_.queuedFollowUps ?? []).map((item) => ({ item, editable: true })),
-  ];
-  for (const { item, editable } of queued) {
+  // Steers and follow-ups offer what the HUD offers for each. A steer is already
+  // taken at the next tool boundary, so it has no "send now" (the daemon's
+  // send-now only promotes follow-ups); "edit" withdraws it and puts the text
+  // back in the composer (PickyPendingSteerBubbleView). Follow-ups are edited in
+  // place and can be sent now (PickyScheduledMessagesBarView).
+  for (const item of session_.queuedSteers ?? []) {
+    const text = queueItemText(item);
+    const itemId = item.id;
+    // Screen context cannot go back into the composer, so such a steer can only be cancelled.
+    const restorable = (item.attachedImagesCount ?? 0) === 0;
+    rows.push(
+      <PendingQueueRow
+        key={`queued-steer-${itemId ?? text}`}
+        text={text}
+        onEdit={
+          itemId && restorable
+            ? () => {
+                // Removed first, so a steer the Pickle already took never comes back as a draft.
+                void send({ type: "session.queue.remove", sessionId, itemId }).then((ok) => {
+                  if (ok) onRestore(item);
+                });
+              }
+            : undefined
+        }
+        onRemove={() => {
+          if (itemId) void send({ type: "session.queue.remove", sessionId, itemId });
+        }}
+      />,
+    );
+  }
+  for (const item of session_.queuedFollowUps ?? []) {
     const text = queueItemText(item);
     const itemId = item.id;
     rows.push(
       <PendingQueueRow
-        key={`queued-${itemId ?? text}`}
+        key={`queued-followup-${itemId ?? text}`}
         text={text}
-        onEdit={editable && itemId ? () => onEdit({ kind: "queue", itemId, text }) : undefined}
+        onEdit={itemId ? () => onEdit({ kind: "queue", itemId, text }) : undefined}
         onRemove={() => {
           if (itemId) void send({ type: "session.queue.remove", sessionId, itemId });
         }}

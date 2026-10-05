@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import type { RemoteCommand } from "../../../src/remote/protocol";
 import { Composer } from "./composer/Composer";
+import { draftRestoringQueuedInputs } from "./policy/composer";
 import type { RoomViewProps } from "./contract";
 import { Header } from "./Header";
 import { ArrowDown } from "./icons";
@@ -147,6 +148,10 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
             onEdit={(next) => {
               setEdit(next);
               onDraft(next.text);
+            }}
+            onRestore={(item) => {
+              const next = draftRestoringQueuedInputs(draft, [item]);
+              if (next !== null) onDraft(next);
             }}
             now={now}
           />

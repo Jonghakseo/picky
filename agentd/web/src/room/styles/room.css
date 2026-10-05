@@ -1764,6 +1764,23 @@
   color: var(--ds-color-text-primary);
 }
 
+/* A disabled option reads as unavailable, like the HUD menu row:
+ * opacity 0.55 and tertiary text (PickyComposerSplitSendButton.swift:135,161). */
+.send-timing-row:disabled {
+  opacity: 0.55;
+}
+
+.send-timing-row:disabled .send-timing-row-title {
+  color: var(--ds-color-text-tertiary);
+}
+
+/* Why some options are off, written out because the phone has no hover help. */
+.send-timing-note {
+  margin: 0 var(--ds-space-3) var(--ds-space-1);
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+}
+
 .send-timing-row-detail {
   font: var(--hud-type-status);
   color: var(--ds-color-text-tertiary);

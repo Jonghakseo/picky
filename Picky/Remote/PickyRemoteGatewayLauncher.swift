@@ -225,6 +225,9 @@ final class PickyRemoteGatewayLauncher {
 
     private let logDirectory: URL
     private let fileManager: FileManager
+    /// How the gateway entry point is found. Injectable so a test can run the
+    /// real process out of a known agentd tree; production keeps the resolver.
+    private let resolveCommand: () throws -> PickyRemoteGatewayCommand
     private var process: Process?
     private var restartTask: Task<Void, Never>?
     private var consecutiveFailures = 0
@@ -241,9 +244,16 @@ final class PickyRemoteGatewayLauncher {
     /// settings change is what lets the launcher try again.
     private var reportedPortConflict: Int?
 
-    init(appSupportRoot: URL = PickyAppSupport.defaultRoot(), fileManager: FileManager = .default) {
+    init(
+        appSupportRoot: URL = PickyAppSupport.defaultRoot(),
+        fileManager: FileManager = .default,
+        resolveCommand: @escaping () throws -> PickyRemoteGatewayCommand = {
+            try PickyRemoteGatewayCommandResolver.resolve()
+        }
+    ) {
         self.logDirectory = appSupportRoot.appendingPathComponent("Logs", isDirectory: true)
         self.fileManager = fileManager
+        self.resolveCommand = resolveCommand
     }
 
     var isRunning: Bool { process?.isRunning == true }
@@ -314,7 +324,7 @@ final class PickyRemoteGatewayLauncher {
 
         let command: PickyRemoteGatewayCommand
         do {
-            command = try PickyRemoteGatewayCommandResolver.resolve()
+            command = try resolveCommand()
         } catch {
             state = .failed(error.localizedDescription)
             return

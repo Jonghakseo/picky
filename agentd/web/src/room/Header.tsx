@@ -23,6 +23,10 @@ export interface HeaderProps {
   contextUsage?: ContextUsage;
   /** Hidden for the main room, which cannot be archived from here. */
   showArchive: boolean;
+  /** An archived room's archive button restores it instead. */
+  archived?: boolean;
+  /** True while an archive or restore request is in flight. */
+  archiveBusy?: boolean;
   /** Hidden for the main room, which produces no artifacts or diffs of its own. */
   showWork: boolean;
   showMenu: boolean;
@@ -120,9 +124,9 @@ export function Header(props: HeaderProps): JSX.Element {
         </button>
       ) : null}
       {props.showArchive ? (
-        <button class="hdr-icon hdr-archive" type="button" onClick={props.onArchive}>
+        <button class="hdr-icon hdr-archive" type="button" onClick={props.onArchive} disabled={props.archiveBusy} aria-busy={props.archiveBusy}>
           <ArchiveBox />
-          <span class="sr-only">{t("hud.header.archive.accessibilityLabel")}</span>
+          <span class="sr-only">{t(props.archived ? "hud.archive.restore.accessibility" : "hud.header.archive.accessibilityLabel")}</span>
         </button>
       ) : null}
       {props.showMenu ? (

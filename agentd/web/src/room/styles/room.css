@@ -270,6 +270,10 @@
   height: 24px;
 }
 
+.hdr-archive:disabled {
+  opacity: 0.4;
+}
+
 .hdr-menu {
   width: 18px;
   height: 18px;

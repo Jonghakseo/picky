@@ -31,6 +31,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
   const [draft, setDraft] = useState(() => actions.loadDraft());
   const [edit, setEdit] = useState<QueueEdit | null>(null);
   const [workOpen, setWorkOpen] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const now = useNow(isLive(vm.room.status) || vm.main?.busy === true);
 
   setLocale(vm.locale);
@@ -41,6 +42,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
     setEdit(null);
     setFailure(null);
     setWorkOpen(false);
+    setArchiveBusy(false);
     // A different room is a different conversation: start at its latest message.
     setAtBottom(true);
     setHasNew(false);
@@ -112,6 +114,18 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
     setHasNew(false);
   }
 
+  // Archiving hides the Pickle from the dock, so the room has nothing left to
+  // show: return to the list the way the HUD closes the card. One request at
+  // a time, or a second tap would arrive after the list flipped and restore it.
+  async function toggleArchive(): Promise<void> {
+    if (archiveBusy) return;
+    const archiving = !vm.room.archived;
+    setArchiveBusy(true);
+    const ok = await send({ type: "session.archive", sessionId: vm.room.id, archived: archiving });
+    setArchiveBusy(false);
+    if (ok && archiving) actions.back();
+  }
+
   const isMain = vm.room.kind === "main";
   return (
     <div class="room-view" ref={root}>
@@ -120,11 +134,13 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
         status={vm.room.status}
         contextUsage={vm.session?.contextUsage ? { percent: vm.session.contextUsage.percent } : undefined}
         showArchive={!isMain}
+        archived={vm.room.archived}
+        archiveBusy={archiveBusy}
         showWork={!isMain}
         showMenu={false}
         onBack={actions.back}
         onWork={() => setWorkOpen(true)}
-        onArchive={() => void send({ type: "session.archive", sessionId: vm.room.id, archived: !vm.room.archived })}
+        onArchive={() => void toggleArchive()}
       />
       <div
         class="room-scroll"

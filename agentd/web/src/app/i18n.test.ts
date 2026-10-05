@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { createTranslator, formatString, resolveLocale } from "./i18n";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { beforeAll, describe, expect, it } from "vitest";
+import { createTranslator, formatString, resolveLocale, type StringTables } from "./i18n";
 
 describe("resolveLocale", () => {
   it("is ko for Korean browsers and en for the rest", () => {
@@ -26,6 +31,34 @@ describe("formatString", () => {
 
   it("leaves a specifier without an argument visible", () => {
     expect(formatString("%@개 남음", [])).toBe("%@개 남음");
+  });
+});
+
+describe("built PWA activity labels", () => {
+  let tables: StringTables;
+
+  beforeAll(() => {
+    const output = mkdtempSync(join(tmpdir(), "picky-web-i18n-"));
+    try {
+      execFileSync(process.execPath, [fileURLToPath(new URL("../../build.mjs", import.meta.url)), "--out", output]);
+      tables = JSON.parse(readFileSync(new URL("../../.generated/strings.json", import.meta.url), "utf8"));
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["read", "읽기", "Read"],
+    ["bash", "실행", "bash"],
+    ["edit", "수정", "Edit"],
+    ["write", "쓰기", "Write"],
+    ["todo", "할 일", "Todo"],
+    ["subagent", "서브에이전트", "Subagent"],
+    ["other", "기타", "Other"],
+  ])("translates %s from the shipped string tables in Korean and English", (category, korean, english) => {
+    const key = `hud.activity.category.${category}`;
+    expect(createTranslator(tables, "ko")(key)).toBe(korean);
+    expect(createTranslator(tables, "en")(key)).toBe(english);
   });
 });
 

@@ -207,6 +207,17 @@ export interface ActivitySummaryProps {
   counts: Array<{ category: ActivityCategory; count: number }>;
 }
 
+// Literal keys let the PWA build include these shared catalog strings.
+const ACTIVITY_LABEL_KEY = {
+  read: "hud.activity.category.read",
+  bash: "hud.activity.category.bash",
+  edit: "hud.activity.category.edit",
+  write: "hud.activity.category.write",
+  todo: "hud.activity.category.todo",
+  subagent: "hud.activity.category.subagent",
+  other: "hud.activity.category.other",
+} satisfies Record<ActivityCategory, string>;
+
 /** Collapsed by default; a tap expands the per-category grid, as hovering does on the Mac. */
 export function ActivitySummary({ total, counts }: ActivitySummaryProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
@@ -227,7 +238,7 @@ export function ActivitySummary({ total, counts }: ActivitySummaryProps): JSX.El
         <div class="activity-grid">
           {counts.map((entry) => (
             <div key={entry.category}>
-              <span class="k">{t(`hud.activity.category.${entry.category}`)}</span>
+              <span class="k">{t(ACTIVITY_LABEL_KEY[entry.category])}</span>
               <span class="v">{entry.count}</span>
             </div>
           ))}

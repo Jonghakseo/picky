@@ -107,7 +107,7 @@ describe("a phone from pairing to revocation", () => {
       headers: { "content-type": "application/json", Origin: "http://evil.example" },
       body: JSON.stringify({ code: "AAAA-AAAA", deviceName: "Attacker" }),
     });
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 

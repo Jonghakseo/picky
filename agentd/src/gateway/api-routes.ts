@@ -54,7 +54,9 @@ export class ApiRouter {
     if (facts.method !== "GET" && facts.method !== "HEAD") {
       const origin = checkSameOrigin(request);
       if (!origin.ok) {
-        sendError(response, remoteError("unauthorized", "Cross-origin requests are not allowed."));
+        // 403 like the WebSocket upgrade: the caller may well be authenticated,
+        // the request just did not come from this app's own pages.
+        sendJson(response, 403, { error: remoteError("unauthorized", "Cross-origin requests are not allowed.") });
         return;
       }
     }

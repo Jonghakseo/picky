@@ -4764,7 +4764,7 @@ describe("SessionSupervisor", () => {
 
     await supervisor.route(context("look at this"));
     mainRuntime.handle?.emit({ type: "tool", toolCallId: "tool-main-img", name: "read", status: "succeeded", imagePath: "/tmp/shot.png", imageMimeType: "image/png" });
-    await settle();
+    await waitUntil(() => activities.some((activity) => activity?.toolCallId === "tool-main-img" && activity.status === "succeeded"));
 
     expect(activities.at(-1)).toMatchObject({ toolCallId: "tool-main-img", status: "succeeded", imagePath: "/tmp/shot.png", imageMimeType: "image/png" });
   });

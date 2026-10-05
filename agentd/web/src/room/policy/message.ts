@@ -3,9 +3,16 @@
  *
  * Swift sources: `PickyConversationBubbleKind` (PickyConversationListView.swift),
  * `PickyAgentResponsePreview` (Bubbles/PickyAgentBubbleView.swift) and
- * `PickyErrorBubbleView.isRecoverableRuntimeRace`.
+ * `PickyErrorBubbleView.isRecoverableRuntimeRace`. The `system` branch lives in
+ * `policy/system-message.ts`, which is where the HUD keeps it too.
  */
 import type { PickyAgentSession, PickySessionMessage } from "../../../../src/protocol";
+import {
+  extensionCustomMessagePresentation,
+  isBackgroundWorkVisible,
+  isCompactCompletionMessage,
+  isCompactFailureMessage,
+} from "./system-message";
 
 export type BubbleKind =
   | "userText"
@@ -16,6 +23,10 @@ export type BubbleKind =
   | "activitySummary"
   | "subagentInvocation"
   | "toolImage"
+  | "compactCompletion"
+  | "compactFailure"
+  | "notify"
+  | "extensionCustomMessage"
   | "systemText"
   | "hidden";
 
@@ -33,6 +44,7 @@ export function visibleActivityCounts(
 }
 
 export function bubbleKind(message: PickySessionMessage): BubbleKind {
+  if (!isBackgroundWorkVisible(message)) return "hidden";
   switch (message.kind) {
     case "user_text":
     case "command_receipt":
@@ -51,7 +63,12 @@ export function bubbleKind(message: PickySessionMessage): BubbleKind {
     case "subagent_invocation":
       return message.subagentInvocation ? "subagentInvocation" : "hidden";
     case "system":
-      return message.toolImage ? "toolImage" : "systemText";
+      if (message.toolImage) return "toolImage";
+      if (isCompactCompletionMessage(message)) return "compactCompletion";
+      if (isCompactFailureMessage(message)) return "compactFailure";
+      if (message.notifyType) return "notify";
+      if (extensionCustomMessagePresentation(message)) return "extensionCustomMessage";
+      return "systemText";
   }
 }
 

@@ -323,6 +323,12 @@
   font: var(--hud-type-meta-medium);
   color: var(--ds-color-text-tertiary);
   white-space: nowrap;
+  /* A divider label is a date, so it never wraps. Should anything longer ever
+   * land here, it has to shrink and clip instead of stretching the transcript
+   * and leaving every bubble with a dead strip on the right. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- bubble row ---------- */
@@ -2464,4 +2470,258 @@ textarea.composer-editor::placeholder {
   height: 100%;
   border-radius: 3px;
   object-fit: cover;
+}
+
+/* ---------- system messages --------------------------------------------- */
+/* Sources: PickyNotifyBubbleView (PickyAgentBubbleView.swift:88),
+ * PickyExtensionCustomMessageBubbleView.swift, PickyCompactStatusViews.swift. */
+
+.notify {
+  display: flex;
+  flex-direction: column;
+  /* VStack(alignment: .leading, spacing: 7) (PickyAgentBubbleView.swift:104) */
+  gap: 7px;
+  min-width: 0;
+  /* .padding(.horizontal, 10) / .padding(.vertical, 8) (PickyAgentBubbleView.swift:136-137) */
+  padding: 8px 10px;
+  max-width: 320px;
+  border-radius: var(--ds-radius-surface) var(--ds-radius-surface) var(--ds-radius-surface) 4px;
+  /* surface3 @ 0.86 with the level tint over it (PickyAgentBubbleView.swift:144-154) */
+  background:
+    linear-gradient(0deg, color-mix(in srgb, var(--notify-tint) 5.5%, transparent), color-mix(in srgb, var(--notify-tint) 5.5%, transparent)),
+    color-mix(in srgb, var(--ds-color-surface3) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--notify-tint) 34%, transparent);
+}
+
+.notify--info {
+  --notify-tint: var(--ds-color-info);
+}
+
+.notify--warning {
+  --notify-tint: var(--ds-color-warning-text);
+}
+
+.notify--error {
+  --notify-tint: var(--ds-color-destructive-text);
+}
+
+.notify-head {
+  display: flex;
+  align-items: center;
+  /* HStack(spacing: 6) (PickyAgentBubbleView.swift:105) */
+  gap: 6px;
+  min-width: 0;
+  color: var(--notify-tint);
+}
+
+/* The glyph punched out of a filled symbol has to read on both themes. */
+.notify-head svg {
+  --notify-glyph: var(--ds-color-surface1);
+  flex: none;
+}
+
+.notify-label {
+  font: var(--hud-type-minimum-semibold);
+  color: var(--ds-color-text-secondary);
+  white-space: nowrap;
+}
+
+.notify-level {
+  font: var(--hud-type-minimum-semibold);
+  color: var(--notify-tint);
+  padding: 0 5px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--notify-tint) 12%, transparent);
+  box-shadow: inset 0 0 0 0.6px color-mix(in srgb, var(--notify-tint) 28%, transparent);
+}
+
+.notify-body {
+  min-width: 0;
+  color: var(--ds-color-text-body);
+}
+
+.notify-expand,
+.xmsg-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  min-width: 0;
+  position: relative;
+  text-align: left;
+}
+
+.notify-expand {
+  font: var(--hud-type-status-semibold);
+  color: var(--ds-color-text-secondary);
+}
+
+/* Both disclosures are short text, so the row itself is below the 44pt
+ * minimum; the tap area is grown without moving anything. */
+.notify-expand::after,
+.xmsg-head::after,
+.compact-done-head::after {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 22px) -10px auto -10px;
+  height: 44px;
+}
+
+.xmsg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  padding: var(--ds-space-2) 10px;
+  max-width: 320px;
+  border-radius: var(--ds-radius-surface) var(--ds-radius-surface) var(--ds-radius-surface) 4px;
+  background: color-mix(in srgb, var(--ds-color-surface3) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ds-color-border-subtle) 60%, transparent);
+}
+
+.xmsg-head {
+  color: var(--ds-color-text-tertiary);
+}
+
+.xmsg-head svg {
+  flex: none;
+}
+
+.xmsg-type {
+  font: var(--hud-type-meta-monospaced-medium);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xmsg-more {
+  font: var(--hud-type-meta-medium);
+  white-space: nowrap;
+}
+
+/* Pi prints these payloads as fixed-width text. Long tool output has no
+ * spaces to break on, so wrapping is forced rather than scrolled sideways. */
+.xmsg-body {
+  margin: 0;
+  font: var(--hud-type-status-monospaced-medium);
+  color: var(--ds-color-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.compact-done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-1) 0;
+  min-width: 0;
+  color: var(--ds-color-text-tertiary);
+}
+
+.compact-done-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  min-width: 0;
+  position: relative;
+  color: inherit;
+  text-align: left;
+}
+
+.compact-done-head svg {
+  flex: none;
+}
+
+.compact-done-title {
+  font: var(--hud-type-status-semibold);
+  white-space: nowrap;
+}
+
+.compact-done-tokens {
+  font: var(--hud-type-status-monospaced-medium);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-done-chevron {
+  display: flex;
+  margin-left: auto;
+}
+
+.compact-done-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+  /* .padding(.leading, DS.Spacing.space4) (PickyCompactStatusViews.swift:103) */
+  padding-left: var(--ds-space-4);
+  min-width: 0;
+}
+
+.compact-done-detail p {
+  margin: 0;
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* .lineLimit(6) on the kept summary (PickyCompactStatusViews.swift:95) */
+.compact-done-summary {
+  color: var(--ds-color-text-tertiary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  overflow: hidden;
+}
+
+.compact-failed {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  max-width: 320px;
+  border-radius: var(--ds-radius-surface) var(--ds-radius-surface) var(--ds-radius-surface) 4px;
+  background: color-mix(in srgb, var(--ds-color-destructive-text) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ds-color-destructive-text) 38%, transparent);
+}
+
+.compact-failed-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 999px;
+  color: var(--ds-color-destructive-text);
+  box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--ds-color-destructive-text) 42%, transparent);
+}
+
+.compact-failed-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.compact-failed-title {
+  font: var(--hud-type-label-semibold);
+  color: var(--ds-color-destructive-text);
+}
+
+.compact-failed-detail {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }

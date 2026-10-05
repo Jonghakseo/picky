@@ -266,3 +266,44 @@ export function ArrowDown({ size = 11, class: className }: IconProps): JSX.Eleme
     </svg>
   );
 }
+
+/* Extension notice levels and the compaction mark. The HUD fills these
+ * symbols, so the phone does too: at 11px an outline reads as noise. */
+
+export function NotifyInfo({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("info.circle.fill", size, className)} viewBox="0 0 12 12">
+      <circle cx="6" cy="6" r="5.2" fill="currentColor" />
+      <circle cx="6" cy="3.5" r="0.75" fill="var(--notify-glyph, #fff)" />
+      <path d="M6 5.3v3.4" fill="none" stroke="var(--notify-glyph, #fff)" stroke-width={1.5} stroke-linecap="round" />
+    </svg>
+  );
+}
+
+export function NotifyWarning({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("exclamationmark.triangle.fill", size, className)} viewBox="0 0 12 12">
+      <path d="M5.1 1.4a1.05 1.05 0 0 1 1.8 0l4.1 7.6a1.05 1.05 0 0 1-.9 1.6H1.9a1.05 1.05 0 0 1-.9-1.6Z" fill="currentColor" />
+      <path d="M6 4.2v2.7" fill="none" stroke="var(--notify-glyph, #fff)" stroke-width={1.4} stroke-linecap="round" />
+      <circle cx="6" cy="8.5" r="0.7" fill="var(--notify-glyph, #fff)" />
+    </svg>
+  );
+}
+
+export function NotifyError({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("xmark.octagon.fill", size, className)} viewBox="0 0 12 12">
+      <path d="M4.05.8h3.9L10.7 3.55v3.9L7.95 10.2h-3.9L1.3 7.45v-3.9Z" fill="currentColor" />
+      <path d="M4.4 4.4 7.6 7.6M7.6 4.4 4.4 7.6" fill="none" stroke="var(--notify-glyph, #fff)" stroke-width={1.3} stroke-linecap="round" />
+    </svg>
+  );
+}
+
+export function CheckCircle({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("checkmark.circle", size, className)} viewBox="0 0 12 12">
+      <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width={1.1} />
+      <path d="M3.7 6.2 5.3 7.8 8.4 4.4" fill="none" stroke="currentColor" stroke-width={1.3} stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  );
+}

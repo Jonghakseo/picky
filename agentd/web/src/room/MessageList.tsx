@@ -23,6 +23,12 @@ import {
 } from "./bubbles/Bubbles";
 import { ErrorBubble } from "./bubbles/ErrorBubble";
 import { QuestionBubble } from "./bubbles/QuestionBubble";
+import {
+  CompactCompletionRow,
+  CompactFailureBubble,
+  ExtensionCustomMessageBubble,
+  NotifyBubble,
+} from "./bubbles/SystemBubbles";
 import type { RoomActions } from "./contract";
 import { crossesDay, dateDividerTitle, parseTimestamp, timeOfDay } from "./format";
 import { locale, t } from "./i18n";
@@ -33,6 +39,7 @@ import { CONTINUE_PROMPT_KEY, bubbleKind, errorRecovery, visibleActivityCounts }
 import { derivePresence } from "./policy/presence";
 import { resolveQuestionRequest } from "./policy/question";
 import { absoluteDetail, relativeTitle } from "./policy/schedule";
+import { extensionCustomMessagePresentation } from "./policy/system-message";
 
 export type QueueEdit =
   | { kind: "queue"; itemId: string; text: string }
@@ -138,9 +145,25 @@ function SessionRows({ sessionId, session, actions, send, onEdit, now }: Message
         );
         break;
       }
+      case "compactCompletion":
+        rows.push(<CompactCompletionRow key={message.id} message={message} />);
+        break;
+      case "compactFailure":
+        rows.push(<CompactFailureBubble key={message.id} message={message} />);
+        break;
+      case "notify":
+        rows.push(<NotifyBubble key={message.id} message={message} {...links} />);
+        break;
+      case "extensionCustomMessage": {
+        const presentation = extensionCustomMessagePresentation(message);
+        if (presentation) rows.push(<ExtensionCustomMessageBubble key={message.id} presentation={presentation} />);
+        break;
+      }
       case "systemText":
+        // The HUD draws a plain system line through the agent bubble surface.
+        // A date divider would not: its label is `white-space: nowrap`.
         if ((message.text ?? "").trim().length > 0) {
-          rows.push(<DateDivider key={message.id} title={message.text ?? ""} />);
+          rows.push(<AgentBubble key={message.id} text={message.text ?? ""} time={time} {...links} />);
         }
         break;
     }

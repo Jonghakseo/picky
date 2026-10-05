@@ -145,6 +145,59 @@ const toolImageSession = session({
       text: "tool-image-landscape.png",
       toolImage: { toolCallId: "t9", toolName: "read", path: "/Users/you/Pickles/picky/build/render-gallery/read-image/tool-image-landscape.png", mimeType: "image/png" },
     }),
+    // Background bookkeeping the Mac keeps in its task footer. Both arrive as
+    // one very long unbroken line, which is exactly what used to stretch the
+    // transcript; the room must drop them.
+    message({
+      id: "p-sub",
+      kind: "system",
+      createdAt: at(11),
+      customType: "subagent-tool",
+      text: "[subagent:worker#67] completed Prompt: Read /Users/you/Pickles/picky/tmp/picky-remote/build/spec-web-room.md and follow it exactly, then report what changed.",
+    }),
+    message({
+      id: "p-async",
+      kind: "system",
+      createdAt: at(10),
+      customType: "bash-async-completion",
+      text: "[bash_async b06b1f2c-5d41-4a77-9b0e-6c2f8a1d3e44] /Users/you/Pickles/picky/scripts/collect-metrics.sh --since=2026-10-01T00:00:00Z --until=2026-10-05T00:00:00Z exited 0",
+    }),
+    message({
+      id: "p-notify",
+      kind: "system",
+      createdAt: at(7),
+      notifyType: "warning",
+      text: "지표 백필 설정이 기본값으로 돌아갔어요. /Users/you/Library/Application Support/Picky/metrics/backfill-profile-2026-10-05-default.json 을 확인해 주세요. 되돌리려면 같은 폴더의 backfill-profile-2026-09-28-tuned.json 을 다시 지정하면 돼요. 다음 수집부터 적용돼요.",
+    }),
+    message({
+      id: "p-custom",
+      kind: "system",
+      createdAt: at(6),
+      customType: "bash-async-status",
+      text: [
+        "job 1 · reindex · done (3m 12s)",
+        "  scanned 1,284,003 rows",
+        "  wrote 41 segments",
+        "",
+        "job 2 · backfill · running (12m)",
+        "  lag 18s",
+        "  retries 2",
+        "",
+        "job 3 · verify · queued",
+      ].join("\n"),
+    }),
+    message({
+      id: "p-compact",
+      kind: "system",
+      createdAt: at(5),
+      presentation: { code: "sessionCompacted" },
+      text: "Session compacted",
+      compaction: {
+        tokensBefore: 128_000,
+        tokensAfter: 21_400,
+        summary: "수집기 재색인은 끝났고, 백필은 지표 테이블을 나눠 돌리는 중이에요. 다음 차례는 검증 단계예요.",
+      },
+    }),
     message({ id: "p3", kind: "agent_text", text: "두 수집기 모두 지연이 20초 아래로 내려왔어요. 백필은 계속 돌고 있어요.", createdAt: at(8) }),
   ],
 });

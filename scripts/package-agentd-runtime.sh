@@ -57,6 +57,7 @@ rm -rf "${RUNTIME_DIR}/vendor/async-task-providers" "${RUNTIME_DIR}/async-task-p
 # Keep the bundle focused on files needed by `node dist/index.js` and the bundled `picky` CLI.
 rm -rf \
   "${RUNTIME_DIR}/src" \
+  "${RUNTIME_DIR}/web" \
   "${RUNTIME_DIR}/tsconfig.json" \
   "${RUNTIME_DIR}/node_modules/.bin" \
   "${RUNTIME_DIR}/node_modules/.pnpm/node_modules"

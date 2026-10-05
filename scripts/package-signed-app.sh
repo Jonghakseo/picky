@@ -225,6 +225,8 @@ agentd_input_hash() {
     cd "${ROOT_DIR}"
     /usr/bin/find \
       agentd/src \
+      agentd/web \
+      Picky/Resources/Localizable.xcstrings \
       agentd/vendor/async-task-providers \
       agentd/async-task-providers.lock.json \
       agentd/async-task-provider-deps \
@@ -234,7 +236,7 @@ agentd_input_hash() {
       scripts/install-async-task-providers.mjs \
       docs/user-manual.md \
       pnpm-lock.yaml \
-      -type f -print0 2>/dev/null \
+      -type f -not -path '*/.generated/*' -print0 2>/dev/null \
       | LC_ALL=C sort -z \
       | /usr/bin/xargs -0 /usr/bin/shasum -a 256 \
       | /usr/bin/shasum -a 256 \

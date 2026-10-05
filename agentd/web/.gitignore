@@ -1,1 +1,4 @@
 .generated/
+# The repository-wide `Icon?` rule (macOS folder icon files) also matches this
+# directory name case-insensitively; keep the PWA icons tracked.
+!/public/icons/

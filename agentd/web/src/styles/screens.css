@@ -1,0 +1,327 @@
+/* Onboarding, pairing, settings and file preview. These screens have no HUD
+ * equivalent, so they follow the prototype's token usage and spacing scale
+ * (docs/prototypes/picky-remote-pwa/base.css, room-list.css) rather than a
+ * Swift source. Tokens only, 44pt tap targets, icon plus word for state.
+ */
+
+/* ---- shared page block ---------------------------------------------------- */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+  padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-8);
+}
+
+.page-title {
+  font: var(--hud-type-title);
+  color: var(--ds-color-text-primary);
+}
+
+.page-body {
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-secondary);
+}
+
+.page-hint {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+}
+
+.page-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-color-accent-subtle);
+  color: var(--ds-color-accent-text);
+}
+
+/* ---- onboarding steps ----------------------------------------------------- */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-4);
+  border-radius: var(--ds-radius-surface);
+  background: var(--ds-color-surface2);
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-3);
+}
+
+.step-index {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--ds-radius-circle);
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-text-on-accent);
+  background: var(--ds-color-accent);
+}
+
+.step-text {
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-body);
+}
+
+.step-text .share-glyph {
+  vertical-align: -2px;
+  margin: 0 2px;
+  color: var(--ds-color-accent-text);
+}
+
+/* ---- pairing -------------------------------------------------------------- */
+.scanner {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--ds-radius-surface);
+  background: var(--ds-color-surface3);
+}
+
+.scanner video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Viewfinder: a square cut-out the size of a QR at arm's length. */
+.scanner-frame {
+  position: absolute;
+  inset: 16%;
+  border: 2px solid var(--ds-color-text-on-accent);
+  border-radius: var(--ds-radius-surface);
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, #000 35%, transparent);
+}
+
+.scanner-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  height: 100%;
+  color: var(--ds-color-text-tertiary);
+  font: var(--hud-type-status);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+}
+
+.field-label {
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-text-tertiary);
+}
+
+.code-field {
+  font: var(--hud-type-title);
+  font-family: var(--hud-font-family-mono);
+  letter-spacing: 0.12em;
+  text-align: center;
+  min-height: 52px;
+}
+
+/* ---- settings ------------------------------------------------------------- */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-section-title {
+  padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-1);
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-text-tertiary);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  min-height: 48px;
+  padding: var(--ds-space-2) var(--ds-space-4);
+  box-shadow: inset 0 -0.5px 0 var(--ds-color-border-subtle);
+  text-align: start;
+  width: 100%;
+}
+
+.settings-row:first-of-type {
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle), inset 0 -0.5px 0 var(--ds-color-border-subtle);
+}
+
+.settings-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-primary);
+}
+
+.settings-value {
+  flex: none;
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+  max-width: 55%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-value.monospaced {
+  font: var(--hud-type-status-monospaced-medium);
+}
+
+.settings-action {
+  flex: none;
+  font: var(--hud-type-status-semibold);
+  color: var(--ds-color-accent-text);
+}
+
+.settings-action.destructive {
+  color: var(--ds-color-destructive-text);
+}
+
+.settings-note {
+  padding: var(--ds-space-2) var(--ds-space-4) 0;
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+}
+
+.settings-state {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ds-space-1);
+  font: var(--hud-type-status-semibold);
+  color: var(--status-text, var(--ds-color-text-tertiary));
+}
+
+/* ---- confirm dialog -------------------------------------------------------- */
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-4);
+}
+
+.dialog-title {
+  font: var(--hud-type-heading2);
+}
+
+.dialog-body {
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-secondary);
+}
+
+.dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  padding-top: var(--ds-space-2);
+}
+
+/* ---- file preview ---------------------------------------------------------- */
+.preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  box-shadow: inset 0 -0.5px 0 var(--ds-color-border-subtle);
+}
+
+.preview-path {
+  font: var(--hud-type-meta-monospaced-medium);
+  color: var(--ds-color-text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.preview-size {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+}
+
+.preview-text {
+  margin: 0;
+  padding: var(--ds-space-3);
+  font: var(--hud-type-body-compact-monospaced);
+  color: var(--ds-color-text-body);
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+.preview-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--ds-color-surface2);
+}
+
+.preview-frame {
+  width: 100%;
+  height: 70dvh;
+  border: 0;
+  background: var(--ds-color-surface1);
+}
+
+.preview-markdown {
+  padding: var(--ds-space-3);
+}
+
+.preview-unsupported {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+  align-items: center;
+  padding: var(--ds-space-8) var(--ds-space-4);
+  text-align: center;
+}
+
+.preview-unsupported-title {
+  font: var(--hud-type-body-medium);
+}
+
+.preview-unsupported-body {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+}
+
+/* ---- loading -------------------------------------------------------------- */
+.loading-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-6);
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--ds-color-border-strong);
+  border-top-color: var(--ds-color-accent-text);
+  border-radius: var(--ds-radius-circle);
+  animation: picky-spin 0.8s linear infinite;
+}
+
+@keyframes picky-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}

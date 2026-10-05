@@ -1,10 +1,17 @@
 {
   "name": "Picky",
   "short_name": "Picky",
+  "description": "맥에서 도는 Picky와 Pickle을 폰에서 보고 조작해요",
+  "lang": "ko",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f6f7f7",
-  "theme_color": "#f6f7f7",
-  "icons": []
+  "orientation": "portrait",
+  "background_color": "#f7f8f8",
+  "theme_color": "#f7f8f8",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

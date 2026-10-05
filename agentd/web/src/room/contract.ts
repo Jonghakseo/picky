@@ -70,3 +70,12 @@ export interface RoomViewProps {
   vm: RoomViewModel;
   actions: RoomActions;
 }
+
+/**
+ * Props of the markdown renderer at `src/room/markdown/Markdown.tsx`. The shell's
+ * file preview renders markdown files with the same component, so a `.md` link
+ * looks the same in the conversation and in the preview.
+ */
+export interface MarkdownProps {
+  text: string;
+}

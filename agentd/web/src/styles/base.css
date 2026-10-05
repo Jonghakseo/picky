@@ -1,6 +1,7 @@
-/* Shared scaffolding for the remote PWA review prototypes.
- * Page layout and review captions only. Component styles live in each part's own CSS file.
- * Every value comes from tokens.css; no raw colors here.
+/* Reset and app shell. Every value comes from tokens.css; no raw colors here.
+ * The reset half is the reviewed prototype's base.css
+ * (docs/prototypes/picky-remote-pwa/base.css); the shell half replaces the
+ * prototype's review-board layout with the phone shell.
  */
 
 *,
@@ -11,10 +12,12 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  height: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100%;
   background: var(--ds-color-background);
   color: var(--ds-color-text-primary);
   font: var(--hud-type-body);
@@ -23,11 +26,15 @@ body {
    * strategy includes hangulWordPriority); browsers break between syllables. */
   word-break: keep-all;
   overflow-wrap: break-word;
+  /* The shell owns scrolling, so the page itself never rubber-bands. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
@@ -37,44 +44,288 @@ button {
   border: 0;
   padding: 0;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* One phone-width column. 390pt is a current iPhone portrait width; the HUD card
- * itself supports 360pt and up (PickyHUDCardSize.widthRange). Left-aligned on
- * purpose: headless Chrome keeps a layout viewport wider than 390px, so a centered
- * column would be cut off in the 390px screenshot. */
-.proto-page {
-  width: 390px;
-  margin: 0;
-  padding: var(--ds-space-4) 0 var(--ds-space-8);
+a {
+  color: var(--ds-color-accent-text);
 }
 
-.proto-title {
-  font: var(--hud-type-title);
-  padding: 0 var(--ds-space-4) var(--ds-space-1);
+/* ---- shell --------------------------------------------------------------- */
+/* 100dvh, not 100vh: iOS Safari's vh keeps the address bar height, which would
+ * push the composer under the home indicator. */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
 }
 
-.proto-note {
-  font: var(--hud-type-meta);
-  color: var(--ds-color-text-tertiary);
-  padding: 0 var(--ds-space-4) var(--ds-space-3);
-}
-
-.proto-state {
-  margin: 0 0 var(--ds-space-5);
-}
-
-/* Review caption for each rendered state. Not part of the product UI. */
-.proto-caption {
-  font: var(--hud-type-meta-medium);
-  color: var(--ds-color-text-tertiary);
-  padding: 0 var(--ds-space-4) var(--ds-space-1);
-}
-
-/* The room surface: the HUD conversation card fill (surface1) without the
- * desktop-overlay translucency, because nothing sits behind a phone screen. */
-.proto-room {
+.app-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
   background: var(--ds-color-surface1);
-  border-top: 1px solid var(--ds-color-border-subtle);
-  border-bottom: 1px solid var(--ds-color-border-subtle);
+}
+
+/* A banner above the shell takes over the status bar inset, so the top bar
+ * below it does not reserve the notch a second time. */
+.connection-banner {
+  flex: none;
+  align-items: center;
+  padding-top: calc(var(--ds-space-2) + env(safe-area-inset-top));
+}
+
+#app:has(> .notice) .app-topbar {
+  padding-top: var(--ds-space-2);
+}
+
+/* Top bar sits under the status bar; its inset keeps the title clear of the notch. */
+.app-topbar {
+  --app-gutter: var(--ds-space-3);
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: 44px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  padding-top: calc(var(--ds-space-2) + env(safe-area-inset-top));
+  background: var(--ds-color-surface1);
+}
+
+.app-topbar.bordered {
+  box-shadow: inset 0 -0.5px 0 var(--ds-color-border-subtle);
+}
+
+.app-topbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--hud-type-heading1);
+  color: var(--ds-color-text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The one scrolling region per screen. */
+.app-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Safe-area gutters. The inset is added to the gutter the element already
+ * wants, because a bare `padding-left` here would wipe out a `padding`
+ * shorthand that an element set earlier in the sheet. */
+.app-side-inset {
+  padding-left: calc(var(--app-gutter, 0px) + env(safe-area-inset-left));
+  padding-right: calc(var(--app-gutter, 0px) + env(safe-area-inset-right));
+}
+
+/* ---- shared controls ----------------------------------------------------- */
+/* Every control in the shell reaches the 44pt tap minimum: either by its own
+ * height or by the ::before hit area the prototypes use on small pills. */
+.tap-target {
+  position: relative;
+}
+
+.tap-target::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 100%;
+  min-width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.icon-button {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ds-radius-compact);
+  color: var(--ds-color-text-secondary);
+}
+
+.icon-button::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.primary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--ds-space-4);
+  border-radius: var(--ds-radius-control);
+  font: var(--hud-type-body-semibold);
+  color: var(--ds-color-text-on-accent);
+  background: var(--ds-color-accent);
+}
+
+.primary-button:disabled {
+  color: var(--ds-color-disabled-text);
+  background: var(--ds-color-disabled-background);
+  cursor: default;
+}
+
+.secondary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--ds-space-4);
+  border: 1px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-control);
+  font: var(--hud-type-body-medium);
+  color: var(--ds-color-text-primary);
+}
+
+.secondary-button.destructive {
+  color: var(--ds-color-destructive-text);
+  border-color: color-mix(in srgb, var(--ds-color-destructive) 45%, transparent);
+}
+
+.text-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--ds-space-3);
+  border: 1px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-color-surface1);
+  font: var(--hud-type-body);
+}
+
+.text-field:focus-visible {
+  outline: 2px solid var(--ds-color-accent);
+  outline-offset: -1px;
+}
+
+/* ---- banners and notices -------------------------------------------------- */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  font: var(--hud-type-status);
+}
+
+.notice-icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.notice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notice-title {
+  font: var(--hud-type-status-semibold);
+}
+
+.notice-body {
+  color: var(--ds-color-text-tertiary);
+}
+
+.notice.warning {
+  color: var(--ds-color-warning-text);
+  background: color-mix(in srgb, var(--ds-color-warning) 14%, transparent);
+}
+
+.notice.error {
+  color: var(--ds-color-destructive-text);
+  background: color-mix(in srgb, var(--ds-color-destructive) 12%, transparent);
+}
+
+.notice.info {
+  color: var(--ds-color-text-secondary);
+  background: var(--ds-color-surface2);
+}
+
+/* ---- sheet ---------------------------------------------------------------- */
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--ds-color-text-primary) 28%, transparent);
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 80dvh;
+  border-radius: var(--ds-radius-panel) var(--ds-radius-panel) 0 0;
+  background: var(--ds-color-surface1);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: 44px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  box-shadow: inset 0 -0.5px 0 var(--ds-color-border-subtle);
+}
+
+.sheet-title {
+  flex: 1 1 auto;
+  font: var(--hud-type-heading2);
+}
+
+.sheet-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--ds-space-2) 0 var(--ds-space-4);
+}
+
+.sheet-cancel {
+  flex: none;
+  font: var(--hud-type-status-medium);
+  color: var(--ds-color-accent-text);
+}
+
+/* ---- misc ----------------------------------------------------------------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-8) var(--ds-space-4);
+}
+
+.app-empty-title {
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-tertiary);
+  text-align: center;
 }

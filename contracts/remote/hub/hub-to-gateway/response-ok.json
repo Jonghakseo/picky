@@ -1,0 +1,8 @@
+{
+  "type": "hub.response",
+  "requestId": "req-001",
+  "ok": true,
+  "data": {
+    "sessionId": "pickle-7f3a"
+  }
+}

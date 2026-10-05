@@ -1,0 +1,4 @@
+{
+  "type": "gateway.pairing.ended",
+  "reason": "expired"
+}

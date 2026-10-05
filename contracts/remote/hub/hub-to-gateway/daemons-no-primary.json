@@ -1,0 +1,5 @@
+{
+  "type": "hub.daemons",
+  "token": "local-shared-token",
+  "children": []
+}

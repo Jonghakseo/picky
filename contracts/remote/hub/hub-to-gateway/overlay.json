@@ -1,0 +1,32 @@
+{
+  "type": "hub.overlay",
+  "activeSessionIds": [
+    "pickle-7f3a",
+    "pickle-91bd"
+  ],
+  "archivedSessionIds": [
+    "pickle-0a11"
+  ],
+  "unreadSessionIds": [
+    "pickle-91bd"
+  ],
+  "groups": [
+    {
+      "id": "group-product",
+      "name": "제품",
+      "color": "blue",
+      "memberIds": [
+        "pickle-7f3a"
+      ]
+    }
+  ],
+  "folders": {
+    "pinned": [
+      "/Users/me/Documents/picky"
+    ],
+    "recent": [
+      "/Users/me/product",
+      "/Users/me/Documents/picky"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "type": "hub.config",
+  "publicUrl": "https://mac.tailnet-1234.ts.net",
+  "dictation": {
+    "available": true
+  }
+}

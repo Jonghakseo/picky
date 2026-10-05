@@ -1,0 +1,10 @@
+{
+  "type": "gateway.request",
+  "requestId": "req-003",
+  "deviceId": "dev_2kq9x",
+  "request": {
+    "type": "dictation.transcribe",
+    "filePath": "/Users/me/Library/Application Support/Picky/Remote/tmp/dictation-5c1e.m4a",
+    "mime": "audio/mp4"
+  }
+}

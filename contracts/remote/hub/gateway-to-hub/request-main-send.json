@@ -1,0 +1,9 @@
+{
+  "type": "gateway.request",
+  "requestId": "req-004",
+  "deviceId": "dev_2kq9x",
+  "request": {
+    "type": "main.send",
+    "text": "오늘 남은 일 정리해줘\n/Users/me/Library/Application Support/Picky/Remote/uploads/u_4f9c2a1b.jpg"
+  }
+}

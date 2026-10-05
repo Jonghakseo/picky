@@ -1,0 +1,20 @@
+{
+  "type": "gateway.devices",
+  "devices": [
+    {
+      "id": "dev_2kq9x",
+      "name": "iPhone",
+      "createdAt": "2026-10-05T00:40:00.000Z",
+      "lastSeenAt": "2026-10-05T00:59:12.000Z",
+      "online": true,
+      "pushEnabled": true
+    },
+    {
+      "id": "dev_8wz1c",
+      "name": "iPad",
+      "createdAt": "2026-10-01T09:00:00.000Z",
+      "online": false,
+      "pushEnabled": false
+    }
+  ]
+}

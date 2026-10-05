@@ -1,0 +1,10 @@
+{
+  "type": "gateway.request",
+  "requestId": "req-006",
+  "deviceId": "dev_2kq9x",
+  "request": {
+    "type": "main.answer",
+    "requestId": "ui-77",
+    "value": true
+  }
+}

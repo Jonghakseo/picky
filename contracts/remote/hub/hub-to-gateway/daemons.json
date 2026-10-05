@@ -1,0 +1,13 @@
+{
+  "type": "hub.daemons",
+  "token": "local-shared-token",
+  "primary": {
+    "url": "ws://127.0.0.1:17631"
+  },
+  "children": [
+    {
+      "sessionId": "pickle-7f3a",
+      "url": "ws://127.0.0.1:53211"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "type": "gateway.request",
+  "requestId": "req-008",
+  "deviceId": "dev_2kq9x",
+  "request": {
+    "type": "session.archive",
+    "sessionId": "pickle-0a11",
+    "archived": false
+  }
+}

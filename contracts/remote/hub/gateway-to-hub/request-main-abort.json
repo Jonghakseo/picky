@@ -1,0 +1,8 @@
+{
+  "type": "gateway.request",
+  "requestId": "req-005",
+  "deviceId": "dev_2kq9x",
+  "request": {
+    "type": "main.abort"
+  }
+}

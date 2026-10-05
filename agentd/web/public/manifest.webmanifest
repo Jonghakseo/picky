@@ -1,0 +1,10 @@
+{
+  "name": "Picky",
+  "short_name": "Picky",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f7",
+  "theme_color": "#f6f7f7",
+  "icons": []
+}

@@ -1,0 +1,9 @@
+{
+  "type": "gateway.request",
+  "requestId": "req-001",
+  "deviceId": "dev_2kq9x",
+  "request": {
+    "type": "pickle.create",
+    "cwd": "/Users/me/Documents/picky"
+  }
+}

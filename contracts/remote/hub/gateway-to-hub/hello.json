@@ -1,0 +1,6 @@
+{
+  "type": "gateway.hello",
+  "protocolVersion": 1,
+  "version": "0.1.0",
+  "port": 17640
+}

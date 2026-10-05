@@ -1,0 +1,9 @@
+{
+  "type": "hub.response",
+  "requestId": "req-003",
+  "ok": false,
+  "error": {
+    "code": "macPermission",
+    "message": "Speech recognition is not allowed for Picky."
+  }
+}

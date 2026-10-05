@@ -1,0 +1,7 @@
+{
+  "type": "hub.config",
+  "dictation": {
+    "available": false,
+    "reason": "macPermission"
+  }
+}

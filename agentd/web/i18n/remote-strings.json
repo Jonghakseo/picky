@@ -1,0 +1,4 @@
+{
+  "$comment": "Phone-only copy that is not in Picky/Resources/Localizable.xcstrings yet. Keys use the remote.* prefix. Korean in 해요체, reviewed with .agents/skills/picky-ux-writing/SKILL.md. The build merges these with the catalog keys the PWA uses.",
+  "remote.room.main.title": { "ko": "Picky", "en": "Picky" }
+}

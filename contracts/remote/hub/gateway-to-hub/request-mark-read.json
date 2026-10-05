@@ -1,0 +1,9 @@
+{
+  "type": "gateway.request",
+  "requestId": "req-007",
+  "deviceId": "dev_2kq9x",
+  "request": {
+    "type": "session.markRead",
+    "sessionId": "pickle-91bd"
+  }
+}

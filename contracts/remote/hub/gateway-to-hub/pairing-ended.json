@@ -1,0 +1,5 @@
+{
+  "type": "gateway.pairing.ended",
+  "reason": "paired",
+  "deviceName": "iPhone"
+}

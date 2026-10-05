@@ -31,20 +31,37 @@ export function pushAvailability(environment: PushEnvironment): PushAvailability
   return { available: true, permission: environment.notificationPermission };
 }
 
-/** Copy key for a blocked reason; the strings live in `web/i18n/remote-strings.json`. */
-export function pushBlockedKey(reason: PushBlockedReason): string {
+/**
+ * Copy key for a blocked reason; the strings live in `web/i18n/remote-strings.json`.
+ * Where to undo a denial differs: an iOS Home Screen app is listed in the iOS
+ * notification settings, while a browser keeps it in its own site settings
+ * (verified on Android Chrome 154, where the device settings do not list sites).
+ */
+export function pushBlockedKey(reason: PushBlockedReason, ios = false): string {
   switch (reason) {
     case "iosNeedsHomeScreen":
       return "remote.settings.notifications.unavailable.homeScreen";
     case "insecure":
       return "remote.settings.notifications.unavailable.insecure";
     case "denied":
-      return "remote.settings.notifications.unavailable.denied";
+      return ios ? "remote.settings.notifications.unavailable.denied" : "remote.settings.notifications.unavailable.deniedBrowser";
     case "serverDisabled":
       return "remote.settings.notifications.unavailable.server";
     case "unsupported":
       return "remote.settings.notifications.unavailable.unsupported";
   }
+}
+
+export type PermissionOutcome = "granted" | "denied" | "dismissed";
+
+/**
+ * `Notification.requestPermission()` answers "default" when the prompt was
+ * dismissed or never shown (Chrome can suppress it); that is not a denial and
+ * must not send the user to their settings.
+ */
+export function permissionOutcome(permission: NotificationPermission): PermissionOutcome {
+  if (permission === "granted") return "granted";
+  return permission === "denied" ? "denied" : "dismissed";
 }
 
 /** base64url VAPID key to the `Uint8Array` `PushManager.subscribe` wants. */

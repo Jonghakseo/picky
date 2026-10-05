@@ -64,6 +64,8 @@
   "remote.settings.notifications.unavailable.homeScreen": { "ko": "홈 화면에 추가한 Picky에서만 알림을 받을 수 있어요", "en": "Notifications work only in the Home Screen app" },
   "remote.settings.notifications.unavailable.insecure": { "ko": "https로 접속할 때만 알림을 받을 수 있어요", "en": "Notifications need an https connection" },
   "remote.settings.notifications.unavailable.denied": { "ko": "알림이 거부돼 있어요. 기기 설정에서 Picky 알림을 켜 주세요", "en": "Notifications are blocked. Turn them on for Picky in your device settings." },
+  "remote.settings.notifications.unavailable.deniedBrowser": { "ko": "알림이 차단돼 있어요. 브라우저의 사이트 설정에서 이 주소의 알림을 허용해 주세요", "en": "Notifications are blocked. Allow them for this address in your browser's site settings." },
+  "remote.settings.notifications.dismissed": { "ko": "알림을 허용하지 않았어요. 다시 눌러 허용을 골라 주세요", "en": "Notifications weren't allowed. Tap again and choose Allow." },
   "remote.settings.notifications.unavailable.server": { "ko": "Mac에서 원격 주소를 설정하면 알림을 받을 수 있어요", "en": "Set the remote address on your Mac to receive notifications" },
   "remote.settings.notifications.unavailable.unsupported": { "ko": "이 브라우저는 알림을 지원하지 않아요", "en": "This browser doesn't support notifications" },
   "remote.settings.mac.section": { "ko": "Mac", "en": "Mac" },

@@ -38,7 +38,8 @@ export function SettingsScreen({ store, platform, buildId }: { store: AppStore; 
     } else {
       const result = await enablePush(store.transport, store.vapidPublicKey.value ?? "");
       subscribed.value = result === "enabled";
-      if (result === "denied") message.value = t("remote.settings.notifications.unavailable.denied");
+      if (result === "denied") message.value = t(pushBlockedKey("denied", platform.ios));
+      if (result === "dismissed") message.value = t("remote.settings.notifications.dismissed");
       if (result === "failed") message.value = t("remote.settings.notifications.failed");
     }
     busy.value = false;
@@ -104,7 +105,7 @@ export function SettingsScreen({ store, platform, buildId }: { store: AppStore; 
               )}
             </>
           ) : (
-            <div class="settings-note">{t(pushBlockedKey(availability.reason))}</div>
+            <div class="settings-note">{t(pushBlockedKey(availability.reason, platform.ios))}</div>
           )}
           {message.value && <div class="settings-note">{message.value}</div>}
         </div>

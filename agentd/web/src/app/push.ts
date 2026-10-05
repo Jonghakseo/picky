@@ -4,7 +4,7 @@
  * notifications off for good).
  */
 import type { RemotePushSubscription } from "../../../src/remote/protocol";
-import { decodeVapidKey, pushAvailability, type PushAvailability, type PushEnvironment } from "./push-policy";
+import { decodeVapidKey, permissionOutcome, pushAvailability, type PushAvailability, type PushEnvironment } from "./push-policy";
 import type { PlatformFacts } from "./platform";
 import type { Transport } from "./transport";
 
@@ -30,12 +30,12 @@ export async function isSubscribed(): Promise<boolean> {
   return (await registration.pushManager.getSubscription()) !== null;
 }
 
-export type EnablePushResult = "enabled" | "denied" | "failed";
+export type EnablePushResult = "enabled" | "denied" | "dismissed" | "failed";
 
 export async function enablePush(transport: Transport, vapidKey: string): Promise<EnablePushResult> {
   try {
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return "denied";
+    const outcome = permissionOutcome(await Notification.requestPermission());
+    if (outcome !== "granted") return outcome;
     const registration = await navigator.serviceWorker.ready;
     const existing = await registration.pushManager.getSubscription();
     const subscription =

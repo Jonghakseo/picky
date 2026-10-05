@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pushAvailability, pushBlockedKey, type PushEnvironment } from "./push-policy";
+import { permissionOutcome, pushAvailability, pushBlockedKey, type PushEnvironment } from "./push-policy";
 
 const installedIphone: PushEnvironment = {
   ios: true,
@@ -40,6 +40,17 @@ describe("pushAvailability", () => {
 
   it("reports a gateway that has no push keys yet", () => {
     expect(pushAvailability({ ...installedIphone, vapidKey: false })).toEqual({ available: false, reason: "serverDisabled" });
+  });
+
+  it("sends an iPhone to the device settings and a browser to its site settings after a denial", () => {
+    expect(pushBlockedKey("denied", true)).toBe("remote.settings.notifications.unavailable.denied");
+    expect(pushBlockedKey("denied", false)).toBe("remote.settings.notifications.unavailable.deniedBrowser");
+  });
+
+  it("does not treat a dismissed prompt as a denial", () => {
+    expect(permissionOutcome("granted")).toBe("granted");
+    expect(permissionOutcome("denied")).toBe("denied");
+    expect(permissionOutcome("default")).toBe("dismissed");
   });
 
   it("names a copy key for every blocked reason", () => {

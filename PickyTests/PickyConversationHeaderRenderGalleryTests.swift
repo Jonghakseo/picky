@@ -73,7 +73,7 @@ struct PickyConversationHeaderRenderGalleryTests {
         try writeGallery(requestFile: Self.composerOutputRequestFile, scenes: makeComposerScenes())
     }
 
-    @Test func quickRuntimePickerKeepsStableSizeAcrossLoadingAndLoadedContent() throws {
+    @Test func quickRuntimePickerKeepsWidthAndCapsLongListsWithoutPaddingShortLists() throws {
         let model = PickySessionRuntimeModelOption(
             provider: "anthropic",
             modelId: "claude-sonnet",
@@ -107,7 +107,26 @@ struct PickyConversationHeaderRenderGalleryTests {
             loadState: .loaded
         )).logicalSize
 
-        #expect(loadingSize == loadedSize)
+        func listSize(count: Int) throws -> CGSize {
+            let models = (0..<count).map { index in
+                PickySessionRuntimeModelOption(provider: "anthropic", modelId: "model-\(index)",
+                    displayName: "anthropic/model-\(index)", pattern: "anthropic/model-\(index)")
+            }
+            let listOptions = PickySessionRuntimeOptions(models: models, allModels: models,
+                globalScope: options.globalScope, thinkingLevels: [.low],
+                currentModel: .init(provider: "anthropic", modelId: "model-0"))
+            return try render(runtimePickerScene(name: "runtime-list-\(count)",
+                options: listOptions, initialScreen: .quick)).logicalSize
+        }
+        let fourRows = try listSize(count: 4)
+        let twelveRows = try listSize(count: 12)
+        let twentyRows = try listSize(count: 20)
+        #expect(loadingSize.width == loadedSize.width)
+        #expect(loadedSize.width == fourRows.width)
+        #expect(fourRows.width == twentyRows.width)
+        #expect(loadedSize.height < fourRows.height)
+        #expect(fourRows.height < twelveRows.height)
+        #expect(twelveRows.height == twentyRows.height)
     }
 
     private func writeGallery(requestFile: URL, scenes: [Scene]) throws {
@@ -429,6 +448,7 @@ struct PickyConversationHeaderRenderGalleryTests {
                     onApplyGlobalScope: {}
                 )
                 .modelPicker
+                .background(DS.Colors.surface1)
             )
         )
     }
@@ -467,6 +487,7 @@ struct PickyConversationHeaderRenderGalleryTests {
                     onApplyGlobalScope: {}
                 )
                 .thinkingPicker
+                .background(DS.Colors.surface1)
             )
         )
     }

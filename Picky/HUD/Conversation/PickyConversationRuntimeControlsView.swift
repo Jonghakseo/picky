@@ -230,15 +230,9 @@ struct PickyConversationRuntimeControlsView: View {
             case .menu:
                 settingsMenu
             case .model:
-                VStack(alignment: .leading, spacing: 0) {
-                    settingsBackButton
-                    modelPicker
-                }
+                modelPicker
             case .thinking:
-                VStack(alignment: .leading, spacing: 0) {
-                    settingsBackButton
-                    thinkingPicker
-                }
+                thinkingPicker
             }
         }
     }
@@ -317,7 +311,8 @@ struct PickyConversationRuntimeControlsView: View {
             .font(PickyHUDTypography.status)
             .foregroundColor(DS.Colors.textSecondary)
             .padding(.horizontal, DS.Spacing.space3)
-            .padding(.top, DS.Spacing.space2)
+            .padding(.top, DS.Spacing.space3)
+            .padding(.bottom, DS.Spacing.space3)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -452,23 +447,15 @@ struct PickyConversationRuntimeControlsView: View {
     }
 
     var modelPicker: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+        VStack(alignment: .leading, spacing: 0) {
+            settingsBackButton
             if pickerScreen == .allModels {
-                allModelsPicker
+                allModelsPicker.padding(DS.Spacing.space3)
             } else {
                 quickModelPicker
             }
         }
-        .padding(DS.Spacing.space3)
-        .frame(
-            width: PickyComposerToolbarMetrics.runtimePickerWidth,
-            height: pickerScreen == .quick ? PickyComposerToolbarMetrics.runtimeQuickPickerHeight : nil,
-            alignment: .topLeading
-        )
-        .background(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.surface, style: .continuous)
-                .fill(DS.Colors.surface1)
-        )
+        .frame(width: PickyComposerToolbarMetrics.settingsMenuWidth, alignment: .topLeading)
         .onAppear {
             if initialPickerScreen == .quick {
                 pickerScreen = .quick
@@ -498,21 +485,31 @@ struct PickyConversationRuntimeControlsView: View {
     }
 
     private var quickModelPicker: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            TextField(L10n.t("hud.composer.runtime.picker.search"), text: $modelQuery)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityLabel(L10n.t("hud.composer.runtime.picker.search"))
-                .onMoveCommand { moveFocusedRow($0, rows: filteredModels) }
-            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                pickerContent
+        VStack(alignment: .leading, spacing: 0) {
+            settingsSectionLabel("hud.composer.settings.model")
+            HStack(spacing: DS.Spacing.space2) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .accessibilityHidden(true)
+                TextField(L10n.t("hud.composer.runtime.picker.search"), text: $modelQuery)
+                    .textFieldStyle(.plain)
+                    .accessibilityLabel(L10n.t("hud.composer.runtime.picker.search"))
+                    .onMoveCommand { moveFocusedRow($0, rows: filteredModels) }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .font(PickyHUDTypography.status)
+            .padding(DS.Spacing.space2)
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: DS.CornerRadius.control))
+            .padding(.horizontal, DS.Spacing.space3)
+            .padding(.vertical, DS.Spacing.space1)
+            pickerContent
+            Spacer().frame(height: DS.Spacing.space1)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     var thinkingPicker: some View {
         VStack(alignment: .leading, spacing: 0) {
+            settingsBackButton
+            settingsSectionLabel("hud.composer.settings.thinking")
             ForEach(runtimeOptions?.thinkingLevels ?? [], id: \.self) { level in
                 Button {
                     isModelPickerPresented = false
@@ -523,7 +520,7 @@ struct PickyConversationRuntimeControlsView: View {
                         selected: level.rawValue == presentation.thinkingText
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PickyComposerSettingsRowButtonStyle())
                 .focusable()
                 .focused($focusedThinkingRowID, equals: level.rawValue)
                 .onMoveCommand(perform: moveFocusedThinkingRow)
@@ -534,8 +531,7 @@ struct PickyConversationRuntimeControlsView: View {
                         : ""
                 )
             }
-            Divider()
-                .padding(.vertical, DS.Spacing.space1)
+            pickerDivider
             Button {
                 isModelPickerPresented = false
                 onSetNewPickleDefaultThinking(
@@ -544,21 +540,18 @@ struct PickyConversationRuntimeControlsView: View {
             } label: {
                 pickerRowLabel(
                     text: L10n.t("hud.composer.runtime.defaultThinking"),
-                    selected: pickleRuntimeDefaults.thinkingLevel.rawValue == presentation.thinkingText
+                    selected: pickleRuntimeDefaults.thinkingLevel.rawValue == presentation.thinkingText,
+                    secondary: true
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PickyComposerSettingsRowButtonStyle())
             .focusable()
             .focused($focusedThinkingRowID, equals: Self.thinkingDefaultRowID)
             .onMoveCommand(perform: moveFocusedThinkingRow)
             .disabled(isThinkingActionInFlight)
+            Spacer().frame(height: DS.Spacing.space1)
         }
-        .padding(DS.Spacing.space2)
-        .frame(width: PickyComposerToolbarMetrics.runtimeThinkingPickerWidth)
-        .background(
-            RoundedRectangle(cornerRadius: DS.CornerRadius.surface, style: .continuous)
-                .fill(DS.Colors.surface1)
-        )
+        .frame(width: PickyComposerToolbarMetrics.settingsMenuWidth)
         .onAppear {
             let currentID = presentation.thinkingText
             focusedThinkingRowID = thinkingRowIDs.contains(currentID ?? "")
@@ -574,28 +567,28 @@ struct PickyConversationRuntimeControlsView: View {
         case .idle, .loading:
             ProgressView()
                 .controlSize(.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .frame(maxWidth: .infinity)
+                .padding(DS.Spacing.space3)
                 .accessibilityLabel(L10n.t("hud.composer.runtime.picker.loading"))
         case .failed(let message):
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
                 Text(L10n.t("hud.composer.runtime.picker.failed", message))
-                    .font(PickyHUDTypography.meta)
+                    .font(PickyHUDTypography.status)
                     .foregroundColor(DS.Colors.destructiveText)
                 Button(L10n.t("hud.composer.runtime.picker.retry"), action: onRetryRuntimeOptions)
                     .buttonStyle(.borderless)
             }
-        case .empty:
-            Text(L10n.t("hud.composer.runtime.picker.empty"))
-                .font(PickyHUDTypography.meta)
-                .foregroundColor(DS.Colors.textSecondary)
-        case .loaded:
+            .padding(DS.Spacing.space3)
+        case .empty, .loaded:
             if let currentOutsideScopeModel {
                 currentOutsideScopeNotice(currentOutsideScopeModel)
+                    .padding(.horizontal, DS.Spacing.space3)
             }
             if filteredModels.isEmpty {
                 Text(L10n.t("hud.composer.runtime.picker.empty"))
-                    .font(PickyHUDTypography.meta)
+                    .font(PickyHUDTypography.status)
                     .foregroundColor(DS.Colors.textSecondary)
+                    .padding(DS.Spacing.space3)
             } else {
                 modelRows(filteredModels) { model in
                     onSelectModel(model)
@@ -606,23 +599,31 @@ struct PickyConversationRuntimeControlsView: View {
         }
     }
 
+    private var pickerDivider: some View {
+        Divider()
+            .padding(.horizontal, DS.Spacing.space3)
+            .padding(.vertical, DS.Spacing.space2)
+    }
+
     private var quickPickerFooter: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space1) {
-            Divider()
+        VStack(alignment: .leading, spacing: 0) {
+            pickerDivider
             if let current = currentModelOption {
                 Button { onSetNewPickleDefaultModel(current) } label: {
-                    if pickleRuntimeDefaults.modelPattern == current.pattern {
-                        Label(L10n.t("hud.composer.runtime.defaultModel"), systemImage: "checkmark")
-                    } else {
-                        Text(L10n.t("hud.composer.runtime.defaultModel"))
-                    }
+                    pickerRowLabel(
+                        text: L10n.t("hud.composer.runtime.defaultModel"),
+                        selected: pickleRuntimeDefaults.modelPattern == current.pattern,
+                        secondary: true
+                    )
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(PickyComposerSettingsRowButtonStyle())
                 .disabled(isModelActionInFlight)
             }
-            Button(L10n.t("hud.composer.runtime.picker.allModels")) { openAllModels() }
-                .buttonStyle(.borderless)
-                .disabled(runtimeOptions?.globalScope == nil)
+            Button { openAllModels() } label: {
+                pickerRowLabel(text: L10n.t("hud.composer.runtime.picker.allModels"), selected: false, secondary: true, chevron: true)
+            }
+            .buttonStyle(PickyComposerSettingsRowButtonStyle())
+            .disabled(runtimeOptions?.globalScope == nil)
         }
     }
 
@@ -760,22 +761,42 @@ struct PickyConversationRuntimeControlsView: View {
     }
 
     private func modelRows(_ models: [PickySessionRuntimeModelOption], onSelect: @escaping (PickySessionRuntimeModelOption) -> Void) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+        PickyRuntimePickerListLayout(maxHeight: PickyComposerToolbarMetrics.runtimeQuickListMaximumHeight) {
+            // Measure labels only: no duplicate focus targets or actions.
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(models) { model in
-                    Button { onSelect(model) } label: {
-                        pickerRowLabel(text: model.displayName, selected: isCurrentModel(model))
+                    modelRowLabel(model)
+                }
+            }
+            .hidden()
+            .accessibilityHidden(true)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(models) { model in
+                            Button { onSelect(model) } label: {
+                                modelRowLabel(model)
+                            }
+                            .buttonStyle(PickyComposerSettingsRowButtonStyle())
+                            .focusable()
+                            .focused($focusedModelRowID, equals: model.id)
+                            .onMoveCommand { moveFocusedRow($0, rows: models) }
+                            .accessibilityLabel(model.displayName)
+                            .accessibilityValue(isCurrentModel(model) ? L10n.t("hud.composer.runtime.picker.selected") : "")
+                            .id(model.id)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .focusable()
-                    .focused($focusedModelRowID, equals: model.id)
-                    .onMoveCommand { moveFocusedRow($0, rows: models) }
-                    .accessibilityLabel(model.displayName)
-                    .accessibilityValue(isCurrentModel(model) ? L10n.t("hud.composer.runtime.picker.selected") : "")
+                }
+                .onChange(of: focusedModelRowID) { _, id in
+                    if let id { proxy.scrollTo(id) }
                 }
             }
         }
-        .frame(height: PickyComposerToolbarMetrics.runtimePickerListHeight)
+    }
+
+    private func modelRowLabel(_ model: PickySessionRuntimeModelOption) -> some View {
+        pickerRowLabel(text: model.modelId, subtitle: model.provider, selected: isCurrentModel(model))
+            .help(model.displayName)
     }
 
     private func isScopeStaged(_ model: PickySessionRuntimeModelOption) -> Bool {
@@ -848,20 +869,36 @@ struct PickyConversationRuntimeControlsView: View {
         pickerScreen = .allModels
     }
 
-    private func pickerRowLabel(text: String, selected: Bool) -> some View {
+    private func pickerRowLabel(text: String, subtitle: String? = nil, selected: Bool, secondary: Bool = false, chevron: Bool = false) -> some View {
         HStack(spacing: DS.Spacing.space2) {
-            Text(text)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: DS.Spacing.space2)
+            VStack(alignment: .leading, spacing: 2) { // design-token-exception: matches settings title/detail optical gap
+                Text(text)
+                    .font(secondary ? PickyHUDTypography.status : PickyHUDTypography.bodyCompact)
+                    .foregroundColor(secondary ? DS.Colors.textSecondary : DS.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(PickyHUDTypography.status)
+                        .foregroundColor(DS.Colors.textTertiary)
+                }
+            }
+            .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
             if selected {
                 Image(systemName: "checkmark")
+                    .font(PickyHUDTypography.statusSemibold)
+                    .foregroundColor(DS.Colors.accentText)
+                    .accessibilityHidden(true)
+            } else if chevron {
+                Image(systemName: "chevron.right")
+                    .font(PickyHUDTypography.status)
+                    .foregroundColor(DS.Colors.textTertiary)
                     .accessibilityHidden(true)
             }
         }
-        .font(PickyHUDTypography.meta)
-        .foregroundColor(DS.Colors.textPrimary)
-        .frame(maxWidth: .infinity, minHeight: PickyComposerToolbarMetrics.runtimePickerRowHeight, alignment: .leading)
+        .padding(.horizontal, DS.Spacing.space3)
+        .padding(.vertical, DS.Spacing.space2)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 
@@ -915,8 +952,7 @@ enum PickyComposerToolbarMetrics {
     static let runtimePickerNoticeHeight = DS.Spacing.space8
     static let runtimePickerNoticeIconWidth = DS.Spacing.space3
     static let runtimePickerWidth = DS.Spacing.space8 * 8
-    static let runtimeQuickPickerHeight = DS.Spacing.space8 * 8 - DS.Spacing.space2
-    static let runtimeThinkingPickerWidth = runtimePickerWidth
+    static let runtimeQuickListMaximumHeight = DS.Spacing.space8 * 8 - DS.Spacing.space2
 }
 
 /// Highlights a settings row on hover/press like a native menu item.
@@ -954,5 +990,20 @@ struct PickyComposerCappedWidthLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
+/// Short model lists hug their labels; longer lists keep a bounded scroll viewport.
+private struct PickyRuntimePickerListLayout: Layout {
+    let maxHeight: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? subviews[0].sizeThatFits(.unspecified).width
+        let height = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        return CGSize(width: width, height: min(height, maxHeight))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[1].place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }

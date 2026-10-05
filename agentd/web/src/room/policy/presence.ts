@@ -7,6 +7,7 @@
  * see: the session status and the tool call that is still running.
  */
 import type { PickyAgentSession, PickyToolActivity } from "../../../../src/protocol";
+import { t } from "../i18n";
 
 export type PresencePhase =
   | "thinking"
@@ -38,18 +39,94 @@ export function presenceTitleKey(phase: PresencePhase): string {
   return PHASE_TITLE_KEYS[phase];
 }
 
-function fileName(path: string): string {
-  const parts = path.split("/").filter((part) => part.length > 0);
-  return parts[parts.length - 1] ?? path;
+/**
+ * One string value out of a tool's argument preview, which is JSON that may be
+ * cut off mid-way. Port of `PickyToolHistoryRenderer.recoverStringValue`.
+ */
+export function recoverStringValue(json: string | undefined, key: string): string | undefined {
+  if (!json) return undefined;
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`"${escaped}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)`).exec(json);
+  if (!match || match[1] === undefined) return undefined;
+  let output = "";
+  let escaping = false;
+  for (const character of match[1]) {
+    if (escaping) {
+      output += character === "n" ? "\n" : character === "r" ? "\r" : character === "t" ? "\t" : character;
+      escaping = false;
+    } else if (character === "\\") {
+      escaping = true;
+    } else {
+      output += character;
+    }
+  }
+  if (escaping) output += "\\";
+  return output.length > 0 ? output : undefined;
 }
 
-/** A tool's argument preview is a path for the file tools; otherwise it is a summary. */
-function filePhase(name: string): PresencePhase | null {
-  const tool = name.toLowerCase();
-  if (tool === "read") return "readingFile";
-  if (tool === "edit" || tool === "multiedit") return "editingFile";
-  if (tool === "write") return "writingFile";
-  return null;
+function firstLine(text: string | undefined): string | undefined {
+  const line = text?.split(/\r?\n/)[0]?.trim();
+  return line ? line : undefined;
+}
+
+/** `read` of `.../skills/<name>/SKILL.md` is a skill step. `PickyToolActivityPresentation.skillName`. */
+export function skillName(tool: PickyToolActivity): string | undefined {
+  if (tool.name.toLowerCase() !== "read") return undefined;
+  const path = recoverStringValue(tool.argsPreview, "path");
+  if (!path) return undefined;
+  const parts = path.trim().split("/").filter((part) => part.length > 0);
+  if (parts.length < 3) return undefined;
+  if (parts[parts.length - 1]?.toLowerCase() !== "skill.md" || parts[parts.length - 3]?.toLowerCase() !== "skills") return undefined;
+  const name = parts[parts.length - 2] ?? "";
+  return /^[A-Za-z0-9._-]+$/.test(name) ? name : undefined;
+}
+
+/** File phase for `read`, `edit`/`multiedit` and `write`; a skill read is not one. */
+function fileStep(tool: PickyToolActivity): { phase: PresencePhase; name?: string; path?: string } | null {
+  let phase: PresencePhase;
+  switch (tool.name.toLowerCase()) {
+    case "read":
+      if (skillName(tool)) return null;
+      phase = "readingFile";
+      break;
+    case "edit":
+    case "multiedit":
+      phase = "editingFile";
+      break;
+    case "write":
+      phase = "writingFile";
+      break;
+    default:
+      return null;
+  }
+  const path = ["path", "file_path", "filePath", "file"]
+    .map((key) => firstLine(recoverStringValue(tool.argsPreview, key)))
+    .find((value) => value !== undefined);
+  if (!path || path.endsWith("/")) return { phase };
+  const name = path.split("/").filter((part) => part.length > 0).pop();
+  return name ? { phase, name, path } : { phase };
+}
+
+/**
+ * Detail for other tools, as `PickyConversationPresencePresentation.detail(for:)`:
+ * a skill name, a `bash`/`bash_async` title, or the delegated subagents.
+ * Anything else shows only "working": a tool's argument or output preview is
+ * raw JSON or command text, never a description.
+ */
+export function workingDetail(tool: PickyToolActivity): string | undefined {
+  const skill = skillName(tool);
+  if (skill) return t("hud.presence.skill", skill);
+  switch (tool.name.toLowerCase()) {
+    case "bash":
+    case "bash_async":
+      return firstLine(recoverStringValue(tool.argsPreview, "title"));
+    case "subagent": {
+      const agents = (tool.subagentSummary?.agents ?? []).map((agent) => firstLine(agent)).filter((agent): agent is string => !!agent);
+      return agents.length > 0 ? t("hud.presence.subagent", agents.join(", ")) : undefined;
+    }
+    default:
+      return undefined;
+  }
 }
 
 export function runningTool(tools: PickyToolActivity[] | undefined): PickyToolActivity | undefined {
@@ -72,27 +149,11 @@ export function derivePresence(session: PickyAgentSession): Presence | null {
   if (!tool) {
     return { phase: "thinking", startedAt: session.updatedAt };
   }
-  const phase = filePhase(tool.name);
-  if (phase) {
-    const path = (tool.argsPreview ?? tool.preview ?? "").trim();
-    return {
-      phase,
-      detail: path ? fileName(path) : undefined,
-      detailHelp: path || undefined,
-      startedAt: tool.startedAt,
-    };
+  const file = fileStep(tool);
+  if (file) {
+    return { phase: file.phase, detail: file.name, detailHelp: file.path, startedAt: tool.startedAt };
   }
-  const subagents = tool.subagentSummary?.agents ?? [];
-  if (subagents.length > 0) {
-    return { phase: "working", detail: subagentDetailKeyArgs(subagents), startedAt: tool.startedAt };
-  }
-  const preview = (tool.preview ?? tool.argsPreview ?? "").trim();
-  return { phase: "working", detail: preview || undefined, startedAt: tool.startedAt };
-}
-
-/** "worker에게 맡김" for one agent, "worker 외 2개에게 맡김" is not a catalog string, so join them. */
-function subagentDetailKeyArgs(agents: string[]): string {
-  return agents.join(", ");
+  return { phase: "working", detail: workingDetail(tool), startedAt: tool.startedAt };
 }
 
 /** mm:ss elapsed since `startedAt`, like the HUD's hover badge. */

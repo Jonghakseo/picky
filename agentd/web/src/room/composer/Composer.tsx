@@ -26,6 +26,7 @@ import {
   draftRestoringQueuedInputs,
   effectiveBashMode,
   placeholderKey,
+  submitStatus,
 } from "../policy/composer";
 import { sendTimingOptions } from "../policy/schedule";
 import type { SlashCommand } from "../policy/slash";
@@ -85,11 +86,12 @@ export function Composer(props: ComposerProps): JSX.Element {
   const pendingCaret = useRef<number | null>(null);
 
   const status = session?.status ?? "waiting_for_input";
+  const sendStatus = submitStatus(status, session?.agentCycle?.phase);
   const bashMode = isMain ? "none" : effectiveBashMode(draft, attachments.length);
   const isRunning = status === "running";
   const border = composerBorderState({ bashMode, isRunning, isFocused: focused });
-  const submitKind: SubmitKind = isMain ? "steer" : defaultSubmitKind(status);
-  const afterReplyKind = isMain ? null : afterCurrentReplySubmitKind(status);
+  const submitKind: SubmitKind = isMain ? "steer" : defaultSubmitKind(sendStatus);
+  const afterReplyKind = isMain ? null : afterCurrentReplySubmitKind(sendStatus);
   const uploading = attachments.some((item) => !item.uploadId && !item.failed);
   const canSend = draft.trim().length > 0 || attachments.some((item) => item.uploadId);
   const sendEnabled = canSend && props.online && props.macConnected && !uploading;
@@ -207,7 +209,7 @@ export function Composer(props: ComposerProps): JSX.Element {
 
   const placeholder = isMain
     ? t("remote.room.composer.placeholder.steer")
-    : t(placeholderKey(status, session?.agentCycle?.phase === "compacting"));
+    : t(placeholderKey(sendStatus, session?.agentCycle?.phase === "compacting"));
   const showStop = isMain ? props.mainBusy : canStop(status, (session?.messages ?? []).length > 0);
 
   return (

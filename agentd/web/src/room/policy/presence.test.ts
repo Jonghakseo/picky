@@ -70,3 +70,13 @@ describe("presence line detail (HUD parity)", () => {
     expect(presence?.detail).toBe("worker, reviewer에게 맡김");
   });
 });
+
+describe("presence while only background work runs", () => {
+  it("drops the line once the agent has answered, even though the session is still running", () => {
+    const base = { status: "running", updatedAt: "2026-10-05T06:00:00.000Z", tools: [] } as unknown as PickyAgentSession;
+    const cycle = (phase: string) => ({ cycleId: "c", runtimeInstanceId: "r", phase, controlGeneration: 0 });
+    expect(derivePresence({ ...base, agentCycle: cycle("responding") } as PickyAgentSession)?.phase).toBe("thinking");
+    expect(derivePresence({ ...base, agentCycle: cycle("idle") } as PickyAgentSession)).toBeNull();
+    expect(derivePresence({ ...base, agentCycle: cycle("settled") } as PickyAgentSession)).toBeNull();
+  });
+});

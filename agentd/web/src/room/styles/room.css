@@ -2808,3 +2808,141 @@ textarea.composer-editor::placeholder {
   overflow-wrap: anywhere;
   min-width: 0;
 }
+
+/* ---- background work ----------------------------------------------------
+ * PickyRunningTaskFooterView.swift: a 28pt summary row (state symbol, title,
+ * "· status", chevron) that expands into 28pt task rows. The phone keeps the
+ * layout and raises rows to 36px for touch. */
+.bg-work {
+  margin: var(--ds-space-2) var(--ds-space-3) 0;
+  font: var(--hud-type-label-semibold);
+  color: var(--ds-color-text-secondary);
+}
+
+.bg-work-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--ds-space-2);
+  border-radius: var(--ds-radius-compact);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.bg-work-bar:active {
+  background: var(--ds-color-surface3, var(--ds-color-surface2));
+}
+
+.bg-work-title {
+  flex: none;
+}
+
+.bg-work-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-work-chevron {
+  display: flex;
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.bg-work-list {
+  max-height: 180px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.bg-work-row,
+.bg-work-group,
+.bg-work-note {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: 36px;
+  padding: 0 var(--ds-space-2);
+}
+
+.bg-work-row.is-indented {
+  padding-left: var(--ds-space-6, 24px);
+}
+
+.bg-work-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-color-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-work-group .bg-work-name {
+  flex: none;
+  max-width: 50%;
+}
+
+.bg-work-counts {
+  flex: 1;
+  min-width: 0;
+  color: var(--ds-color-text-secondary);
+}
+
+.bg-work-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.bg-work-time {
+  flex: none;
+  min-width: 42px;
+  color: var(--ds-color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bg-work-glyph {
+  flex: none;
+}
+
+/* PickyBackgroundWorkState.color */
+.is-running > .bg-work-glyph,
+.bg-work-glyph.is-running,
+.bg-work-state.is-running {
+  color: var(--ds-color-info);
+}
+
+.bg-work-state.is-completed,
+.bg-work-glyph.is-completed {
+  color: var(--ds-color-success-text);
+}
+
+.bg-work-state.is-failed,
+.bg-work-glyph.is-failed,
+.bg-work-result.is-failed {
+  color: var(--ds-color-destructive-text);
+}
+
+.bg-work-state.is-interrupted,
+.bg-work-state.is-unknown,
+.bg-work-glyph.is-unknown,
+.bg-work-result.is-unknown,
+.bg-work-note.is-warning {
+  color: var(--ds-color-warning-text);
+}
+
+.bg-work-result .bg-work-name {
+  color: inherit;
+}
+
+.bg-work-note span {
+  white-space: normal;
+}

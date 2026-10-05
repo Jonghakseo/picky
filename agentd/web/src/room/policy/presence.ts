@@ -144,6 +144,10 @@ export function derivePresence(session: PickyAgentSession): Presence | null {
     return session.pendingExtensionUiRequest ? null : { phase: "waitingForInput" };
   }
   if (session.status !== "running" && session.status !== "queued") return null;
+  // Background work (bash_async, subagents) keeps the session running after the
+  // agent has answered. The HUD drops the line then; the work shows in the
+  // background-work footer instead of as a "thinking" that never ends.
+  if (!isAgentResponding(session)) return null;
 
   const tool = runningTool(session.tools);
   if (!tool) {
@@ -154,6 +158,12 @@ export function derivePresence(session: PickyAgentSession): Presence | null {
     return { phase: file.phase, detail: file.name, detailHelp: file.path, startedAt: tool.startedAt };
   }
   return { phase: "working", detail: workingDetail(tool), startedAt: tool.startedAt };
+}
+
+/** `isAgentResponding` in `PickyConversationListView.presence(for:)`. */
+export function isAgentResponding(session: Pick<PickyAgentSession, "agentCycle">): boolean {
+  const phase = session.agentCycle?.phase;
+  return phase !== "idle" && phase !== "settled";
 }
 
 /** mm:ss elapsed since `startedAt`, like the HUD's hover badge. */

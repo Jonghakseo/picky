@@ -11,6 +11,7 @@ import {
   effectiveBashMode,
   placeholderKey,
   queueItemText,
+  submitStatus,
 } from "./composer";
 
 function queued(partial: Partial<PickyQueueItem> & { id: string; text: string }): PickyQueueItem {
@@ -29,6 +30,15 @@ describe("submit kind", () => {
     expect(afterCurrentReplySubmitKind("running")).toBe("followUp");
     expect(afterCurrentReplySubmitKind("cancelled")).toBeNull();
     expect(afterCurrentReplySubmitKind("failed")).toBeNull();
+  });
+});
+
+describe("a Pickle kept running only by background work", () => {
+  it("takes a new message as a follow-up once the agent is idle, like a finished one", () => {
+    expect(defaultSubmitKind(submitStatus("running", "idle"))).toBe("followUp");
+    expect(defaultSubmitKind(submitStatus("running", "settled"))).toBe("followUp");
+    expect(defaultSubmitKind(submitStatus("running", "responding"))).toBe("steer");
+    expect(defaultSubmitKind(submitStatus("running", undefined))).toBe("steer");
   });
 });
 

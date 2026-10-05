@@ -9,6 +9,7 @@ import type { JSX } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import type { RemoteCommand } from "../../../src/remote/protocol";
+import { BackgroundWorkFooter } from "./BackgroundWorkFooter";
 import { Composer } from "./composer/Composer";
 import { draftRestoringQueuedInputs } from "./policy/composer";
 import type { RoomViewProps } from "./contract";
@@ -181,6 +182,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
           </button>
         ) : null}
         {failure ? <div class="composer-note is-error">{failure}</div> : null}
+        {isMain ? null : <BackgroundWorkFooter session={vm.session} now={now} />}
         <Composer
           sessionId={vm.room.id}
           isMain={isMain}

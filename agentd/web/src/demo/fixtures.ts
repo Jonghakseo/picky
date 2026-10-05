@@ -125,7 +125,10 @@ const toolImageSession = session({
   updatedAt: at(8),
   lastSummary: "수집기 두 대를 백그라운드로 돌리는 중",
   activitySummary: { read: 7, bash: 11, edit: 2, write: 0, thinking: 4, other: 1 },
+  // The agent already answered; only the two background commands keep it running.
+  agentCycle: { cycleId: "cycle-7", runtimeInstanceId: "rt-1", phase: "idle", controlGeneration: 1 },
   asyncTasks: [backgroundTask("bg-1", "로그 수집기 재색인", 20), backgroundTask("bg-2", "지표 백필", 12)],
+  completionTickets: [],
   asyncWorkSummary: {
     tracking: "ready",
     activeRootCount: 2,
@@ -221,6 +224,7 @@ function backgroundTask(taskId: string, title: string, minutesAgo: number): NonN
     controlGeneration: 1,
     createdAt: at(minutesAgo),
     updatedAt: at(1),
+    details: { startedAt: at(minutesAgo - 1) },
   };
 }
 

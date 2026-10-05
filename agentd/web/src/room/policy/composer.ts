@@ -18,6 +18,16 @@ export type SubmitKind = "steer" | "followUp";
 export type BashMode = "none" | "visible" | "private";
 export type ComposerBorderState = "bash" | "running" | "focused" | "rest";
 
+/**
+ * The status the composer acts on: `PickySessionMetadata.submitStatus`. A
+ * session kept running only by background work, with the agent idle, takes a
+ * new message as a follow-up, the way a finished one does.
+ */
+export function submitStatus(status: SessionStatus, agentPhase: string | undefined): SessionStatus {
+  if (status === "running" && (agentPhase === "idle" || agentPhase === "settled")) return "completed";
+  return status;
+}
+
 /** What the send button does by default for this session status. */
 export function defaultSubmitKind(status: SessionStatus): SubmitKind {
   switch (status) {

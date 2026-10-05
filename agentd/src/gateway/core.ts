@@ -64,6 +64,8 @@ export class GatewayCore {
   private readonly throttle = new PushThrottle();
   private readonly lastMainSendAt = new Map<string, number>();
   private readonly mainUnread = new Set<string>();
+  /** Pickles with a `session.markRead` on its way to the hub, so a burst of rebuilds asks once. */
+  private readonly markReadInFlight = new Set<string>();
 
   constructor(options: GatewayCoreOptions) {
     this.config = options.config;
@@ -191,6 +193,25 @@ export class GatewayCore {
     });
     this.broadcast({ type: "rooms", ...this.roomsResult });
     void this.evaluatePush(this.roomsResult.rooms);
+    this.markViewedRoomsRead();
+  }
+
+  /**
+   * A Pickle a phone is looking at has been read, the way an open HUD card is:
+   * clear its unread mark on the Mac. Runs when the room opens, when the list
+   * marks it unread while it is on screen, and when the app comes back to the
+   * foreground with the room still open.
+   */
+  markViewedRoomsRead(): void {
+    for (const room of this.roomsResult.rooms) {
+      if (!room.unread || room.id === MAIN_ROOM_ID || this.markReadInFlight.has(room.id)) continue;
+      const viewer = [...this.clients].find((client) => client.visible && client.openRooms.has(room.id));
+      if (!viewer || !this.hub.connected) continue;
+      this.markReadInFlight.add(room.id);
+      void this.hub.request(viewer.deviceId, { type: "session.markRead", sessionId: room.id })
+        .catch((error: unknown) => logGateway("mark read failed", { sessionId: room.id, error: errorMessage(error) }))
+        .finally(() => this.markReadInFlight.delete(room.id));
+    }
   }
 
   /* --------------------------------------------------------------- */
@@ -398,6 +419,7 @@ export class GatewayCore {
    */
   async openRoom(client: ClientHandle, sessionId: string, forceRefresh = false): Promise<void> {
     client.openRooms.add(sessionId);
+    this.markViewedRoomsRead();
     const entry = this.daemons.entry(sessionId);
     if (entry && entry.complete && !forceRefresh) {
       this.sendSessionSnapshot(client, sessionId);

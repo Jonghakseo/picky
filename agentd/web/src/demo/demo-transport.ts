@@ -80,6 +80,10 @@ export class DemoTransport implements Transport {
   send(message: RemoteClientMessage): void {
     switch (message.type) {
       case "room.open":
+        // The gateway clears unread for a room a phone is looking at.
+        this.later(() => this.patchRoom(message.roomId, { unread: false }), 0);
+        this.later(() => this.sendRoomState(message.roomId), 0);
+        break;
       case "room.resync":
         this.later(() => this.sendRoomState(message.roomId), 0);
         break;

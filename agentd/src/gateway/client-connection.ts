@@ -85,6 +85,7 @@ export class ClientConnection implements ClientHandle {
         return;
       case "visibility":
         this.visible = message.visible;
+        if (message.visible) this.core.markViewedRoomsRead();
         return;
       case "room.open":
         await this.openRoom(message.roomId, false);

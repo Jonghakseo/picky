@@ -187,11 +187,18 @@ describe("a phone from pairing to revocation", () => {
       client.send({ type: "hello", protocolVersion: REMOTE_PROTOCOL_VERSION, visible: true, locale: "ko-KR" });
       const rooms = await client.waitFor((message) => message.type === "rooms");
       expect((rooms.rooms as Array<{ id: string }>).map((room) => room.id)).toContain(seededSessionId);
+      // The hub marks a new Pickle unread; reading it on the phone must clear the mark on the Mac.
+      expect((rooms.rooms as Array<{ id: string; unread: boolean }>).find((room) => room.id === seededSessionId)?.unread).toBe(true);
 
       client.send({ type: "room.open", roomId: seededSessionId });
       const snapshot = await client.waitFor((message) => message.type === "session.snapshot");
       expect(snapshot.sessionId).toBe(seededSessionId);
       expect((snapshot.projection as { id?: string } | undefined)?.id).toBe(seededSessionId);
+      await client.waitFor(
+        (message) => message.type === "rooms"
+          && (message.rooms as Array<{ id: string; unread: boolean }>).some((room) => room.id === seededSessionId && !room.unread),
+        10_000,
+      );
 
       const probe = `E2E 후속 메시지 ${randomBytes(4).toString("hex")}`;
       const commandId = `cmd-${randomBytes(6).toString("hex")}`;

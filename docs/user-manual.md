@@ -1118,3 +1118,52 @@ To experiment without touching the default, point **Hub → Settings → Account
 1. Open **Hub → Recent Conversation**.
 2. Click **Copy resume command** and paste `pi --session ...` into your own shell.
 3. Work directly in the Pi TUI. Hub keeps following the same session file.
+
+## 15. Remote access from your phone
+
+Remote access lets you check on Pickles and the Picky conversation from your phone, answer their questions, and send instructions while you are away from the Mac. The phone opens a web app that you add to its Home Screen. It reaches the Mac over a path you set up yourself (your Tailscale tailnet or your Cloudflare Tunnel); Picky runs no server of its own.
+
+Remote access is off until you turn it on. A paired phone can do what the HUD can do on this Mac, including running shell commands, so pair only devices you own and revoke the ones you stop using.
+
+### 15.1 Turn it on
+
+1. Open Hub → Settings → **Remote access** and turn on **Use remote access**. Picky starts a small server on `127.0.0.1:17640`. It listens only on this Mac; the entrance below carries traffic to it.
+2. Choose an entrance:
+   - **Tailscale Serve**: install Tailscale on the Mac and the phone and sign in to the same tailnet. Press **Turn Serve on**. The address is `https://<this Mac's MagicDNS name>`. Serve needs HTTPS certificates enabled for the tailnet; if they are off, the Tailscale CLI prints a link to the admin console, and the settings page shows that message. If you cannot enable them (for example on a company tailnet you do not administer), use Cloudflare Tunnel instead.
+   - **Cloudflare Tunnel**: run your own named tunnel with a hostname on your domain that points at `http://127.0.0.1:17640`, then paste its https address. Quick Tunnels are not supported because their address changes, and a Home Screen app and its notifications belong to one address. Cloudflare Access can sit in front as an extra login.
+   - **This Mac only**: opens at `http://127.0.0.1:17640` in a browser on this Mac. Use it to try the app; notifications and offline start need https, so they stay off here.
+3. The status line shows the address your phone uses.
+
+Picky has to be running and the Mac awake for the phone to connect. **Prevent sleep** keeps the Mac from idle sleep while remote access runs; closing the lid still puts it to sleep.
+
+### 15.2 Connect a phone
+
+1. Press **Connect a phone**. A QR code and an 8-character pairing code (`XXXX-XXXX`) appear. The code works once and expires after 5 minutes; five wrong attempts end it.
+2. On the phone, open the address in Safari, tap Share, choose **Add to Home Screen**, and open Picky from the Home Screen.
+3. Inside that app, scan the QR code with **Scan QR** or type the code.
+
+Pair inside the Home Screen app, not in Safari: iOS keeps the Home Screen app's login separate from Safari, so a pairing made in Safari does not carry over. After repeated failed attempts from the same address, pairing is blocked for 15 minutes.
+
+### 15.3 Using it on the phone
+
+- **Room list**: Picky (the main conversation) stays at the top, then Pickles by recent activity. Dock groups appear as filters, archived Pickles sit at the bottom, and unread marks are shared with the Mac dock. **New Pickle** creates one in a pinned or recent folder.
+- **Rooms** look like the HUD conversation card. Tap a bubble to see what the Mac shows on hover (sent time, open as report, elapsed time).
+- **Sending**: while a Pickle runs, send delivers guidance to the current work; otherwise it sends a follow-up. The arrow next to send offers "after this response", scheduled times, and a custom time. Return inserts a new line; the send button sends. A message starting with `!` runs a shell command, as on the Mac.
+- **Stop**: when background tasks are running, you choose between stopping the response only and stopping the background tasks too. Queued messages move back into the phone's composer.
+- **Questions** from Pickles and Picky can be answered in the room.
+- **Photos**: attach up to 10 images (20 MB each). They are saved on the Mac and sent as file paths, like files dropped on the HUD composer.
+- **Dictation**: the mic records on the phone; the Mac transcribes it with the speech recognition service and language set in Picky, adds the text to the composer, and does not send it. Recordings stop after 5 minutes and are deleted after transcription. If the Mac's speech recognition is not allowed, use **Dictation permission** → **Ask for permission** on the Mac first; a phone request never opens a permission prompt on the Mac.
+- **Files**: links to files in a conversation, tool images, and artifacts open a read-only preview (text up to its first 1 MB, Markdown, images, PDF; HTML and SVG open with scripts disabled). Only files the conversation refers to can be opened.
+- **Work panel**: the header opens Artifacts and Changes. The terminal stays on the Mac.
+- Messages you send to Picky from the phone do not show a cursor bubble or speak on the Mac.
+- Mac-only features: Push-to-Talk, screen context, the embedded terminal, Pi terminal sync, and dock drag.
+
+### 15.4 Notifications
+
+In the Home Screen app, open Settings and turn on **Pickle notifications** (iOS 16.4 or later, https entrance only). The phone is notified when a Pickle waits for your answer, finishes, or stops with an error, and when Picky replies to a message you sent from that phone. Nothing is sent for the room you have open. The app icon badge counts the rooms waiting for you. **Send a test notification** checks the setup.
+
+### 15.5 Devices and revoking
+
+The Mac lists paired phones under **Paired phones** with their last connection and notification state. **Revoke** disconnects that phone at once; it needs a new pairing code to come back. On the phone, Settings → **Disconnect this device** does the same from the other side.
+
+Picky keeps remote access data in `~/Library/Application Support/Picky/Remote/`: paired devices (only token hashes), notification keys, an audit log of pairing, commands, and file access (it records the full command line of `!` shell commands, but not message text or recordings), and uploaded photos (deleted after 7 days).

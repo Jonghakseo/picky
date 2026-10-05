@@ -26,6 +26,7 @@ export const PICKY_USER_GUIDE_SECTIONS = [
   "12. Report viewer",
   "13. Settings reference",
   "14. Common workflows",
+  "15. Remote access from your phone",
 ] as const;
 
 const USER_GUIDE_SECTIONS_DESCRIPTION = `Available sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`;

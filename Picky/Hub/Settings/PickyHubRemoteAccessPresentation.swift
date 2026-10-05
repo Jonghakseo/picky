@@ -22,12 +22,16 @@ enum PickyHubRemoteAccessStatus: Equatable {
     /// nothing to open. Pairing is unavailable in this state for the two
     /// entrances that need a public origin.
     case runningWithoutAddress
+    /// The gateway is up and Picky's own temporary tunnel is still getting its
+    /// address. Nothing for the user to fix yet.
+    case waitingForAddress
     case failed(reason: String)
 
     static func resolve(
         isEnabled: Bool,
         gatewayState: PickyRemoteGatewayState,
-        entranceURL: String?
+        entranceURL: String?,
+        isEntranceAddressPending: Bool = false
     ) -> PickyHubRemoteAccessStatus {
         guard isEnabled else { return .off }
         switch gatewayState {
@@ -38,7 +42,9 @@ enum PickyHubRemoteAccessStatus: Equatable {
         case .failed(let reason):
             return .failed(reason: reason)
         case .running:
-            guard let entranceURL, !entranceURL.isEmpty else { return .runningWithoutAddress }
+            guard let entranceURL, !entranceURL.isEmpty else {
+                return isEntranceAddressPending ? .waitingForAddress : .runningWithoutAddress
+            }
             return .running(address: entranceURL)
         }
     }
@@ -49,6 +55,7 @@ enum PickyHubRemoteAccessStatus: Equatable {
         case .starting: .neutral
         case .running: .success
         case .runningWithoutAddress: .warning
+        case .waitingForAddress: .neutral
         case .failed: .error
         }
     }
@@ -59,6 +66,7 @@ enum PickyHubRemoteAccessStatus: Equatable {
         case .starting: L10n.t("settings.remote.status.starting")
         case .running(let address): L10n.t("settings.remote.status.running", address)
         case .runningWithoutAddress: L10n.t("settings.remote.status.runningWithoutAddress")
+        case .waitingForAddress: L10n.t("settings.remote.status.waitingForAddress")
         case .failed(let reason): reason
         }
     }

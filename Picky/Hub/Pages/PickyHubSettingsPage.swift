@@ -203,12 +203,6 @@ struct PickyHubSettingsPage: View {
         case .workspace:
             embedded(.pickle)
             PickyHubPickleFolderControls(settingsViewModel: settingsViewModel)
-        case .remote:
-            PickyHubRemoteAccessSection(
-                settingsViewModel: settingsViewModel,
-                controller: dependencies.remoteAccess,
-                modalHost: modalHost
-            )
         case .privacy:
             PickyHubClassificationSettingsView(statisticsStore: dependencies.statisticsStore)
             PickyHubNotificationControls(settingsViewModel: settingsViewModel)
@@ -872,8 +866,9 @@ private struct PickyHubAdvancedControls: View {
     }
 }
 
-/// Shared settings primitives: the remote-access section under
-/// `Picky/Hub/Settings` builds its rows from the same three types.
+/// Shared settings primitives: the remote-access page
+/// (`Picky/Hub/Settings/PickyHubRemoteAccessSection.swift`) builds its rows
+/// from the same three types.
 struct PickyHubSettingsList<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {

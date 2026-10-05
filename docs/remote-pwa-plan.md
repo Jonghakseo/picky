@@ -11,7 +11,7 @@ Picky와 Pickle 세션은 지금처럼 내 맥에서 실행하고, 밖에서는 
 
 ## 결정
 
-1~5는 2026-10-04, 6~9는 2026-10-05에 정했다. 8과 9는 구현을 시작하며 코드를 확인하고 바꾼 결정이고, 자세한 근거는 `docs/remote-pwa-implementation.md` 1절에 있다.
+1~5는 2026-10-04, 6~10은 2026-10-05에 정했다. 8과 9는 구현을 시작하며 코드를 확인하고 바꾼 결정이고, 자세한 근거는 `docs/remote-pwa-implementation.md` 1절에 있다.
 
 | # | 결정 | 이유 |
 |---|---|---|
@@ -24,6 +24,7 @@ Picky와 Pickle 세션은 지금처럼 내 맥에서 실행하고, 밖에서는 
 | 7 | 대화 속 파일 링크는 폰에서 읽기 전용 미리보기로 연다 | HUD는 링크를 맥의 기본 앱으로 연다. 폰에서 같은 일을 하면 파일이 맥 화면에만 열려 폰 사용자는 볼 수 없다([파일 미리보기](#파일-미리보기)) |
 | 8 | gateway가 각 데몬에 v2 projection 구독자로 직접 붙는다. 앱은 프레임을 중계하지 않고 데몬 목록과 세션 소유(child가 있으면 child)만 알려 준다 | 앱은 프레임 원문을 버리고 Swift projection 타입은 디코딩만 한다. 데몬은 구독자를 여럿 받을 수 있고 복구 요청도 소켓별로 막는다. 그래서 앱 메인 스레드 중계 비용이 아예 생기지 않는다 |
 | 9 | 세션 명령은 gateway가 HUD와 같은 데몬 명령으로 소유 데몬에 직접 보낸다. Pickle 생성, 메인 대화, 읽음, 보관, 받아쓰기만 허브가 앱 안에서 처리한다 | HUD 세션 명령은 검증 뒤 데몬 명령 하나를 보내는 얇은 래퍼다. 앱에 남는 동작은 `select`와 맥 컴포저 복원처럼 폰에서 피해야 할 부수효과뿐이다. CLI 진입 명령을 쓰지 않으므로 결정 3의 취지는 그대로다 |
+| 10 | Cloudflare 입구에 Picky가 `cloudflared`로 여는 임시 주소(Quick Tunnel)를 둔다. 도메인을 직접 연결한 터널은 "내 도메인" 방식으로 남는다. 원격 접속은 설정 안의 그룹이 아니라 Hub의 별도 메뉴로 둔다 | 계정과 도메인 없이 바로 쓸 수 있다. 대신 터널이 다시 열릴 때마다 주소가 바뀌어 폰을 다시 연결해야 하고, 설정 화면이 그때 안내한다. 원격 접속은 한 번 정하는 설정이 아니라 페어링, 해제, 주소 확인처럼 자주 다루는 기능이다 |
 
 ## 구조
 
@@ -77,7 +78,7 @@ flowchart TB
 - 모든 플랜에 DDoS 방어가 기본으로 들어 있다([문서](https://developers.cloudflare.com/ddos-protection/about/)).
 - 무료 플랜의 레이트 리밋은 규칙 1개, IP 기준, 집계·차단 모두 10초다([문서](https://developers.cloudflare.com/waf/rate-limiting-rules/)). 세밀한 조정은 어렵다.
 - Access는 선택 계층이다. Access 정책을 통과한 사용자만 맥까지 오고, `access.required`를 켜면 cloudflared가 Access JWT 없는 요청을 거부한다([문서](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/origin-parameters/)). Access 일회용 코드의 시도 횟수 제한은 공식 문서에서 찾지 못했다.
-- 공개 호스트네임을 쓰려면 Cloudflare에 올린 도메인이 필요하다. Quick Tunnel은 테스트용이고([문서](https://developers.cloudflare.com/tunnel/setup/)) 실행할 때마다 주소가 바뀐다. 홈 화면 앱과 Web Push 구독은 주소(출처)에 묶이므로 주소가 바뀌면 앱을 다시 설치하고 알림을 다시 허용해야 한다. pi-pocket은 Quick Tunnel이 이벤트 스트림을 붙잡아 두는 문제 때문에 롱폴링으로 자동 전환한다. 그래서 쓰지 않는다.
+- 공개 호스트네임을 쓰려면 Cloudflare에 올린 도메인이 필요하다. Quick Tunnel은 테스트용이고([문서](https://developers.cloudflare.com/tunnel/setup/)) 실행할 때마다 주소가 바뀐다. 홈 화면 앱과 Web Push 구독은 주소(출처)에 묶이므로 주소가 바뀌면 앱을 다시 설치하고 알림을 다시 허용해야 한다. pi-pocket은 Quick Tunnel이 이벤트 스트림을 붙잡아 두는 문제 때문에 롱폴링으로 자동 전환한다. 처음에는 쓰지 않기로 했지만, 도메인 없이도 쓸 수 있게 결정 10으로 "임시 주소" 방식에 넣었다. 이 PWA는 이벤트 스트림이 아니라 WebSocket을 쓰고, Quick Tunnel 뒤에서도 실시간 프레임이 막히지 않았다(27ms).
 
 ## 경험 동일성 규칙
 
@@ -212,7 +213,7 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
 | 명령 중복 | 요청 id로 같은 메시지를 두 번 보내지 않는다 | 같은 방식(명령 id 중복 제거) |
 | 인증 | 소유자 토큰은 해시로 저장하고 1년짜리 쿠키에 담는다. 초대 코드는 15분짜리 1회용이고, 실패 차단은 없다 | 쿠키 속성과 해시 저장을 가져온다. 기기별 토큰, 즉시 해제, 실패 차단은 유지한다 |
 | 다른 사이트 요청 차단 | `Sec-Fetch-Site`로 다른 사이트에서 온 로그인·초대 요청을 거부한다 | WebSocket과 상태를 바꾸는 요청 모두에 출처 확인을 둔다 |
-| 접속 방식 | local, LAN, Quick Tunnel, tailnet IP(http) | Tailscale Serve와 도메인 있는 Cloudflare Tunnel만 쓴다. https가 있어야 서비스 워커와 푸시가 동작한다 |
+| 접속 방식 | local, LAN, Quick Tunnel, tailnet IP(http) | Tailscale Serve와 Cloudflare Tunnel(내 도메인, 또는 Picky가 여는 임시 주소)을 쓴다. https가 있어야 서비스 워커와 푸시가 동작한다 |
 | Web Push | 의존성 없이 직접 구현한다. 푸시 서비스 주소 허용 목록, 기기 10대, 보고 있는 방은 알리지 않기, 아이콘 배지 | 4단계 규칙으로 가져온다 |
 | 알림에서 허용·거절 | 알림 버튼으로 답한다. 호출 전체가 한 줄에 보일 때만 허용 버튼을 준다 | iOS에서 안 되므로 열린 확인 사항으로 둔다 |
 | 다른 앱에서 공유 | Web Share Target(Android) | iOS에서 안 되므로 범위 밖이다 |

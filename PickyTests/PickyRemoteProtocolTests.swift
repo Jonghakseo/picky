@@ -126,10 +126,36 @@ struct PickyRemoteAccessSettingsTests {
         #expect(settings.publicURL(tailscaleHostname: "mac.ts.net") == "https://mac.ts.net")
         #expect(settings.publicURL(tailscaleHostname: nil) == nil)
         settings.entrance = .cloudflare
+        settings.cloudflareMode = .custom
         settings.cloudflareURL = "https://picky.example.com/"
         #expect(settings.publicURL(tailscaleHostname: "mac.ts.net") == "https://picky.example.com")
         settings.entrance = .localOnly
         #expect(settings.publicURL(tailscaleHostname: "mac.ts.net") == nil)
+    }
+
+    @Test func settingsSavedBeforeTheTemporaryAddressKeepTheTunnelTheUserTyped() throws {
+        // Files written before `cloudflareMode` existed: a saved address means
+        // the user runs their own tunnel, and must not be swapped for a
+        // temporary one that changes on every restart.
+        let withAddress = Data(#"{"remoteAccess":{"enabled":true,"entrance":"cloudflare","cloudflareURL":"https://picky.example.com"}}"#.utf8)
+        let mine = try JSONDecoder().decode(PickySettings.self, from: withAddress).remoteAccess
+        #expect(mine.cloudflareMode == .custom)
+        #expect(mine.usesQuickTunnel == false)
+        #expect(mine.publicURL(tailscaleHostname: nil, quickTunnelURL: "https://a-b.trycloudflare.com") == "https://picky.example.com")
+
+        let withoutAddress = Data(#"{"remoteAccess":{"enabled":true,"entrance":"cloudflare"}}"#.utf8)
+        let fresh = try JSONDecoder().decode(PickySettings.self, from: withoutAddress).remoteAccess
+        #expect(fresh.cloudflareMode == .quick)
+        #expect(fresh.usesQuickTunnel)
+        #expect(fresh.publicURL(tailscaleHostname: nil) == nil)
+        #expect(fresh.publicURL(tailscaleHostname: nil, quickTunnelURL: "https://a-b.trycloudflare.com") == "https://a-b.trycloudflare.com")
+    }
+
+    @Test func onlyAnEnabledCloudflareEntranceInTemporaryModeNeedsPickysTunnel() {
+        #expect(PickyRemoteAccessSettings(enabled: true, entrance: .cloudflare, cloudflareMode: .quick).usesQuickTunnel)
+        #expect(!PickyRemoteAccessSettings(enabled: false, entrance: .cloudflare, cloudflareMode: .quick).usesQuickTunnel)
+        #expect(!PickyRemoteAccessSettings(enabled: true, entrance: .cloudflare, cloudflareMode: .custom).usesQuickTunnel)
+        #expect(!PickyRemoteAccessSettings(enabled: true, entrance: .tailscale, cloudflareMode: .quick).usesQuickTunnel)
     }
 }
 

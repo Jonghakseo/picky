@@ -100,6 +100,8 @@ struct PickyHubRootView: View {
             PickyHubPluginsPage(dependencies: dependencies)
         case .conversation:
             PickyHubConversationPage(dependencies: dependencies)
+        case .remote:
+            PickyHubRemotePage(dependencies: dependencies)
         case .settings:
             PickyHubSettingsPage(dependencies: dependencies)
         }

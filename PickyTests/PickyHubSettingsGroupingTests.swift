@@ -17,7 +17,6 @@ struct PickyHubSettingsGroupingTests {
             .voice,
             .overlay,
             .workspace,
-            .remote,
             .privacy,
             .advanced,
         ])

@@ -43,6 +43,18 @@ struct PickyHubRemoteAccessPresentationTests {
         #expect(status(enabled: true, gateway: .running(port: 17640), entranceURL: "") == .runningWithoutAddress)
     }
 
+    @Test func aTemporaryAddressOnItsWayIsNotReportedAsMissingSetup() {
+        let waiting = PickyHubRemoteAccessStatus.resolve(
+            isEnabled: true,
+            gatewayState: .running(port: 17640),
+            entranceURL: nil,
+            isEntranceAddressPending: true
+        )
+        #expect(waiting == .waitingForAddress)
+        #expect(waiting.tone == .neutral)
+        #expect(waiting.retryTitle == nil)
+    }
+
     @Test func keepsTheGatewayReasonAndOffersARestartOnlyOnFailure() {
         let failed = status(enabled: true, gateway: .failed("gateway exited with 9"), entranceURL: nil)
         #expect(failed.message == "gateway exited with 9")

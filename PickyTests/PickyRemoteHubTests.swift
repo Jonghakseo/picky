@@ -123,6 +123,35 @@ private final class FakeGateway: PickyRemoteGatewayControlling {
     }
 }
 
+@MainActor
+private final class FakeQuickTunnel: PickyQuickTunnelControlling {
+    private(set) var state: PickyQuickTunnelState = .stopped
+    var onStateChange: ((PickyQuickTunnelState) -> Void)?
+    private(set) var startPorts: [Int] = []
+    private(set) var stopCount = 0
+    private(set) var waitedStopCount = 0
+
+    func start(port: Int) {
+        startPorts.append(port)
+        if state == .stopped { transition(to: .starting) }
+    }
+
+    func stop() {
+        stopCount += 1
+        transition(to: .stopped)
+    }
+
+    func stopAndWaitForExit() {
+        waitedStopCount += 1
+        transition(to: .stopped)
+    }
+
+    func transition(to next: PickyQuickTunnelState) {
+        state = next
+        onStateChange?(next)
+    }
+}
+
 /// One websocket the hub can be driven over, with the frames the gateway would
 /// have sent enqueued by the test.
 private final class FakeHubSocket: PickyWebSocketTask, @unchecked Sendable {
@@ -394,7 +423,9 @@ struct PickyRemoteAccessControllerTests {
         let topology = FakeTopologySource()
         let sessions = FakeRemoteSessions()
         let mainAgent = FakeRemoteMainAgent()
+        let quickTunnel = FakeQuickTunnel()
         var readiness: PickyRemoteDictationReadiness = .ready
+        var rememberedQuickTunnelURL: String?
     }
 
     private func make(
@@ -414,6 +445,11 @@ struct PickyRemoteAccessControllerTests {
             ),
             dictationReadiness: { harness.readiness },
             tailscale: PickyTailscaleService(executableURL: nil),
+            quickTunnel: harness.quickTunnel,
+            quickTunnelAddressMemory: PickyQuickTunnelAddressMemory(
+                load: { harness.rememberedQuickTunnelURL },
+                save: { harness.rememberedQuickTunnelURL = $0 }
+            ),
             appSupportRoot: URL(fileURLWithPath: NSTemporaryDirectory()),
             appVersion: "1.2.3",
             macName: "Test Mac",
@@ -549,6 +585,100 @@ struct PickyRemoteAccessControllerTests {
             Issue.record("Expected a failed state, got \(controller.gatewayState)")
             return
         }
+    }
+
+    private static let temporary = PickyRemoteAccessSettings(enabled: true, entrance: .cloudflare, cloudflareMode: .quick)
+
+    @Test func theTemporaryAddressComesFromPickysTunnelAndReachesTheGateway() throws {
+        let harness = Harness()
+        let controller = make(harness, settings: Self.temporary)
+        #expect(harness.quickTunnel.startPorts == [17640])
+
+        harness.gateway.transition(to: .running(port: 17640))
+        harness.transport.simulateConnected()
+        // No address yet: pairing waits, and the status says so without
+        // asking the user to set anything up.
+        #expect(controller.publicURL == nil)
+        #expect(controller.isEntranceAddressPending)
+        #expect(PickyHubRemotePairingAvailability.resolve(
+            isRunning: controller.isRunning,
+            isHubConnected: controller.isHubConnected,
+            entrance: controller.settings.entrance,
+            publicURL: controller.publicURL
+        ) == .needsEntrance)
+
+        harness.quickTunnel.transition(to: .running(url: "https://argued-libraries.trycloudflare.com"))
+        #expect(controller.publicURL == "https://argued-libraries.trycloudflare.com")
+        #expect(controller.entranceURL == "https://argued-libraries.trycloudflare.com")
+        #expect(!controller.isEntranceAddressPending)
+        let config = try #require(harness.transport.lastConfig())
+        #expect(config.publicUrl == "https://argued-libraries.trycloudflare.com")
+    }
+
+    @Test func theTunnelFollowsTheSettingsAndOutlivesAGatewayRestart() {
+        let harness = Harness()
+        let controller = make(harness, settings: Self.temporary)
+        harness.quickTunnel.transition(to: .running(url: "https://a-b.trycloudflare.com"))
+
+        // A gateway restart must not cost the phone its address.
+        harness.gateway.transition(to: .failed("exited"))
+        harness.gateway.transition(to: .running(port: 17640))
+        controller.restartGateway()
+        #expect(harness.quickTunnel.stopCount == 0)
+        #expect(controller.publicURL == "https://a-b.trycloudflare.com")
+
+        var mine = Self.temporary
+        mine.cloudflareMode = .custom
+        mine.cloudflareURL = "https://picky.example.com"
+        controller.apply(settings: mine)
+        #expect(harness.quickTunnel.stopCount == 1)
+        #expect(controller.publicURL == "https://picky.example.com")
+
+        controller.apply(settings: Self.temporary)
+        #expect(harness.quickTunnel.state == .starting)
+
+        var off = Self.temporary
+        off.enabled = false
+        controller.apply(settings: off)
+        #expect(harness.quickTunnel.stopCount == 2)
+
+        let custom = make(Harness(), settings: PickyRemoteAccessSettings(enabled: true, entrance: .cloudflare, cloudflareURL: "https://picky.example.com"))
+        #expect(custom.quickTunnelState == .stopped)
+    }
+
+    @Test func quittingStopsTheTunnelAndWaitsForIt() {
+        let harness = Harness()
+        let controller = make(harness, settings: Self.temporary)
+        controller.stopForAppTermination()
+        #expect(harness.quickTunnel.waitedStopCount == 1)
+    }
+
+    @Test func aNewTemporaryAddressAsksPairedPhonesToPairAgain() {
+        let harness = Harness()
+        harness.rememberedQuickTunnelURL = "https://old-words.trycloudflare.com"
+        let controller = make(harness, settings: Self.temporary)
+        harness.gateway.transition(to: .running(port: 17640))
+        harness.transport.simulateConnected()
+
+        harness.quickTunnel.transition(to: .running(url: "https://new-words.trycloudflare.com"))
+        #expect(harness.rememberedQuickTunnelURL == "https://new-words.trycloudflare.com")
+        // No phone holds the old address yet, so there is nothing to say.
+        #expect(!controller.showsQuickTunnelAddressChange)
+
+        let seen = Date(timeIntervalSince1970: 2_000_000_000)
+        harness.transport.onMessage?(.devices([
+            PickyRemoteDevice(id: "d1", name: "Fold", createdAt: seen, lastSeenAt: seen, online: false, pushEnabled: false)
+        ]))
+        #expect(controller.showsQuickTunnelAddressChange)
+
+        // Pairing through the new address is what resolves it.
+        harness.transport.onMessage?(.pairingEnded(reason: .paired, deviceName: "Fold"))
+        #expect(!controller.showsQuickTunnelAddressChange)
+
+        // The same address coming back (a reconnect inside one run) is no change.
+        harness.quickTunnel.transition(to: .starting)
+        harness.quickTunnel.transition(to: .running(url: "https://new-words.trycloudflare.com"))
+        #expect(!controller.showsQuickTunnelAddressChange)
     }
 
     @Test func theLocalOnlyEntranceHasNoPublicURLButStillHasAnAddressToOpen() {

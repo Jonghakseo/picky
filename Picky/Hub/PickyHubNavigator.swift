@@ -18,7 +18,6 @@ enum PickyHubSettingsGroup: String, CaseIterable, Identifiable {
     case voice
     case overlay
     case workspace
-    case remote
     case privacy
     case advanced
 

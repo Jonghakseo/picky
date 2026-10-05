@@ -28,6 +28,13 @@ import Testing
 private enum RemoteGatewayIntegrationSwitch {
     static let environmentKey = "PICKY_REMOTE_GATEWAY_INTEGRATION"
     static var isEnabled: Bool { ProcessInfo.processInfo.environment[environmentKey] == "1" }
+
+    /// Reaches Cloudflare over the internet, so it has its own switch and
+    /// needs Homebrew's `cloudflared`.
+    static let quickTunnelKey = "PICKY_REMOTE_QUICK_TUNNEL_INTEGRATION"
+    static var isQuickTunnelEnabled: Bool {
+        ProcessInfo.processInfo.environment[quickTunnelKey] == "1" && PickyCloudflaredCLI.locate() != nil
+    }
 }
 
 // MARK: - Minimal sources (no daemons needed)
@@ -119,19 +126,22 @@ private enum IntegrationSupport {
 /// Stands in for the phone's browser: no cookie jar, so every request carries
 /// exactly the cookie the test decided to send.
 private struct PhoneHTTPClient {
-    let port: Int
+    /// The address the phone opened: loopback, or the tunnel's https origin.
+    let origin: String
     private let session: URLSession
 
     init(port: Int) {
-        self.port = port
+        self.init(origin: "http://127.0.0.1:\(port)")
+    }
+
+    init(origin: String) {
+        self.origin = origin
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false
         configuration.httpCookieStorage = nil
         configuration.timeoutIntervalForRequest = 15
         self.session = URLSession(configuration: configuration)
     }
-
-    var origin: String { "http://127.0.0.1:\(port)" }
 
     struct Response {
         var status: Int
@@ -305,5 +315,108 @@ struct PickyRemoteGatewayIntegrationTests {
         }
         #expect(!launcher.isRunning)
         #expect(!controller.isHubConnected)
+    }
+
+    /// What the quick tunnel test needs from the shared setup.
+    private struct RealStack {
+        let controller: PickyRemoteAccessController
+        let appSupportRoot: URL
+        let port: Int
+    }
+
+    private func makeRealStack(settings: (Int) -> PickyRemoteAccessSettings) throws -> RealStack {
+        let agentdRoot = IntegrationSupport.repositoryRoot().appendingPathComponent("agentd", isDirectory: true)
+        try #require(
+            FileManager.default.fileExists(atPath: agentdRoot.appendingPathComponent("dist/gateway/main.js").path),
+            "Build the gateway first: pnpm --dir agentd run build"
+        )
+        let port = try #require(IntegrationSupport.freeLoopbackPort(), "No free loopback port")
+        let appSupportRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("picky-remote-integration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: appSupportRoot, withIntermediateDirectories: true)
+        var environment = ProcessInfo.processInfo.environment
+        environment["PICKY_AGENTD_ROOT"] = agentdRoot.path
+        environment["PATH"] = PickyAgentDaemonConfiguration.augmentedExecutablePATH(from: environment)
+        let command = try PickyRemoteGatewayCommandResolver.resolve(environment: environment, bundleResourceURL: nil)
+        var remembered: String?
+        let controller = PickyRemoteAccessController(
+            settings: settings(port),
+            gateway: PickyRemoteGatewayLauncher(appSupportRoot: appSupportRoot, resolveCommand: { command }),
+            transport: PickyRemoteHubClient(),
+            overlaySource: EmptyOverlaySource(),
+            topologySource: EmptyTopologySource(),
+            requestHandler: PickyRemoteHubRequestHandler(sessions: nil, mainAgent: nil, dictation: nil),
+            dictationReadiness: { .unavailable },
+            tailscale: PickyTailscaleService(executableURL: nil),
+            quickTunnelAddressMemory: PickyQuickTunnelAddressMemory(load: { remembered }, save: { remembered = $0 }),
+            appSupportRoot: appSupportRoot,
+            appVersion: "integration",
+            macName: "Integration Mac",
+            tokenFactory: PickyRemoteGatewayCommandResolver.randomHubToken
+        )
+        return RealStack(controller: controller, appSupportRoot: appSupportRoot, port: port)
+    }
+
+    /// The temporary Cloudflare address end to end: Picky's own `cloudflared`
+    /// gets an address, the gateway learns it, and a phone outside this Mac
+    /// pairs through it over https.
+    @Test(.enabled(if: RemoteGatewayIntegrationSwitch.isQuickTunnelEnabled), .timeLimit(.minutes(3)))
+    func theTemporaryAddressPairsAPhoneThroughCloudflare() async throws {
+        let stack = try makeRealStack { port in
+            PickyRemoteAccessSettings(enabled: true, entrance: .cloudflare, cloudflareMode: .quick, port: port)
+        }
+        let controller = stack.controller
+        let pidFile = stack.appSupportRoot.appendingPathComponent("Remote/cloudflared.pid")
+        defer {
+            controller.stopForAppTermination()
+            try? FileManager.default.removeItem(at: stack.appSupportRoot)
+        }
+
+        try await waitUntil("the hub socket is connected", timeout: 30) { controller.isHubConnected }
+        try await waitUntil("Cloudflare hands out a temporary address", timeout: 60) {
+            controller.quickTunnelState.url != nil
+        }
+        let address = try #require(controller.quickTunnelState.url)
+        #expect(address.hasSuffix(".trycloudflare.com"))
+        #expect(controller.publicURL == address)
+        #expect(FileManager.default.fileExists(atPath: pidFile.path))
+
+        // The gateway builds the pairing link from hub.config, so this proves
+        // the address reached it.
+        controller.startPairing()
+        try await waitUntil("a pairing code arrives") {
+            if case .waiting = controller.pairing { return true }
+            return false
+        }
+        guard case .waiting(let session) = controller.pairing else { return }
+        #expect(session.url?.hasPrefix(address + "/#pair=") == true)
+
+        // A fresh hostname can be missing for a few seconds, and asking that
+        // early caches "not found" for trycloudflare.com's 60-second negative
+        // TTL, so the wait has to outlast it.
+        let phone = PhoneHTTPClient(origin: address)
+        var me: PhoneHTTPClient.Response?
+        let deadline = Date().addingTimeInterval(100)
+        while Date() < deadline {
+            if let response = try? await phone.me(cookie: nil), response.status == 200 {
+                me = response
+                break
+            }
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        let unpaired = try #require(me, "\(address)/api/me never answered through Cloudflare")
+        #expect(unpaired.json["paired"] as? Bool == false)
+        // Reached over https, so the gateway sets Secure cookies and allows push.
+        #expect(unpaired.json["insecure"] as? Bool == false)
+
+        let paired = try await phone.pair(code: session.code, deviceName: "Tunnel phone")
+        #expect(paired.status == 200)
+        #expect(paired.setCookie?.contains("Secure") == true)
+        let cookie = try #require(PhoneHTTPClient.deviceToken(fromSetCookie: paired.setCookie))
+        #expect(try await phone.me(cookie: cookie).json["paired"] as? Bool == true)
+
+        controller.apply(settings: PickyRemoteAccessSettings(enabled: false, entrance: .cloudflare, cloudflareMode: .quick, port: stack.port))
+        #expect(controller.quickTunnelState == .stopped)
+        #expect(!FileManager.default.fileExists(atPath: pidFile.path))
     }
 }

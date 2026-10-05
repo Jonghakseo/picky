@@ -23,6 +23,20 @@ protocol PickyRemoteGatewayControlling: AnyObject {
 
 extension PickyRemoteGatewayLauncher: PickyRemoteGatewayControlling {}
 
+/// Remembers the last temporary address across launches, so a new one after a
+/// restart can be called out even though the old phones are still listed.
+struct PickyQuickTunnelAddressMemory {
+    var load: () -> String?
+    var save: (String) -> Void
+
+    static let userDefaultsKey = "PickyRemoteQuickTunnelLastURL"
+
+    static let userDefaults = PickyQuickTunnelAddressMemory(
+        load: { UserDefaults.standard.string(forKey: userDefaultsKey) },
+        save: { UserDefaults.standard.set($0, forKey: userDefaultsKey) }
+    )
+}
+
 @MainActor
 final class PickyRemoteAccessController: ObservableObject {
     /// What the "폰 연결" sheet shows. `ended` stays until the user dismisses
@@ -47,6 +61,10 @@ final class PickyRemoteAccessController: ObservableObject {
     @Published private(set) var isTailscaleBusy = false
     @Published private(set) var tailscaleError: String?
     @Published private(set) var dictation: PickyRemoteDictationReadiness = .unavailable
+    @Published private(set) var quickTunnelState: PickyQuickTunnelState = .stopped
+    /// The temporary address differs from the one phones last paired through.
+    /// Cleared by the next successful pairing or when the user dismisses it.
+    @Published private(set) var quickTunnelAddressChanged = false
 
     let macName: String
 
@@ -57,6 +75,8 @@ final class PickyRemoteAccessController: ObservableObject {
     private let requestHandler: PickyRemoteHubRequestHandler
     private let dictationReadiness: () -> PickyRemoteDictationReadiness
     private let tailscale: PickyTailscaleService
+    private let quickTunnel: any PickyQuickTunnelControlling
+    private let quickTunnelAddressMemory: PickyQuickTunnelAddressMemory
     private let appSupportRoot: URL
     private let appVersion: String
     private let tokenFactory: () -> String
@@ -76,6 +96,8 @@ final class PickyRemoteAccessController: ObservableObject {
         requestHandler: PickyRemoteHubRequestHandler,
         dictationReadiness: @escaping () -> PickyRemoteDictationReadiness,
         tailscale: PickyTailscaleService = PickyTailscaleService(),
+        quickTunnel: (any PickyQuickTunnelControlling)? = nil,
+        quickTunnelAddressMemory: PickyQuickTunnelAddressMemory = .userDefaults,
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
         macName: String = ProcessInfo.processInfo.hostName,
@@ -89,6 +111,8 @@ final class PickyRemoteAccessController: ObservableObject {
         self.requestHandler = requestHandler
         self.dictationReadiness = dictationReadiness
         self.tailscale = tailscale
+        self.quickTunnel = quickTunnel ?? PickyCloudflareQuickTunnel(appSupportRoot: appSupportRoot)
+        self.quickTunnelAddressMemory = quickTunnelAddressMemory
         self.appSupportRoot = appSupportRoot
         self.appVersion = appVersion
         self.macName = macName
@@ -101,7 +125,20 @@ final class PickyRemoteAccessController: ObservableObject {
 
     /// The https origin the phone opens. `nil` while the entrance is not usable
     /// yet, which is what disables pairing.
-    var publicURL: String? { settings.publicURL(tailscaleHostname: tailscaleStatus?.magicDNSName) }
+    var publicURL: String? {
+        settings.publicURL(tailscaleHostname: tailscaleStatus?.magicDNSName, quickTunnelURL: quickTunnelState.url)
+    }
+
+    /// The entrance is still producing its address, so "no address" is a wait,
+    /// not a setup problem.
+    var isEntranceAddressPending: Bool {
+        settings.usesQuickTunnel && (quickTunnelState == .starting || quickTunnelState == .stopped)
+    }
+
+    /// Only worth saying while some phone still holds the old address.
+    var showsQuickTunnelAddressChange: Bool {
+        settings.usesQuickTunnel && quickTunnelAddressChanged && !devices.isEmpty
+    }
 
     /// Address to open on this Mac when the entrance is loopback only.
     var localURL: String { "http://127.0.0.1:\(settings.port)" }
@@ -124,6 +161,7 @@ final class PickyRemoteAccessController: ObservableObject {
     func apply(settings updated: PickyRemoteAccessSettings) {
         let previous = settings
         settings = updated
+        defer { reconcileQuickTunnel() }
         if updated.enabled != previous.enabled || updated.port != previous.port {
             guard updated.enabled else {
                 stopGateway()
@@ -153,7 +191,41 @@ final class PickyRemoteAccessController: ObservableObject {
     func stopForAppTermination() {
         releaseKeepAwake()
         transport.disconnect()
+        quickTunnel.stopAndWaitForExit()
         gateway.stopAndWaitForExit()
+    }
+
+    /// "Check again" after installing `cloudflared`, or "try again" after a
+    /// failure the backoff has not retried yet.
+    func restartQuickTunnel() {
+        guard settings.usesQuickTunnel else { return }
+        quickTunnel.stop()
+        quickTunnel.start(port: settings.port)
+    }
+
+    func dismissQuickTunnelAddressChange() {
+        quickTunnelAddressChanged = false
+    }
+
+    /// The tunnel follows the settings, not the gateway: it can wait in front
+    /// of a gateway that is still starting, and a gateway restart must not
+    /// cost the phone its address.
+    private func reconcileQuickTunnel() {
+        if settings.usesQuickTunnel {
+            quickTunnel.start(port: settings.port)
+        } else if quickTunnel.state != .stopped {
+            quickTunnel.stop()
+        }
+    }
+
+    private func handleQuickTunnelState(_ state: PickyQuickTunnelState) {
+        quickTunnelState = state
+        if let url = state.url {
+            let previous = quickTunnelAddressMemory.load()
+            if let previous, previous != url { quickTunnelAddressChanged = true }
+            quickTunnelAddressMemory.save(url)
+        }
+        sendConfig()
     }
 
     private func startGateway() {
@@ -192,6 +264,9 @@ final class PickyRemoteAccessController: ObservableObject {
         transport.onMessage = { [weak self] message in
             self?.handle(message)
         }
+        quickTunnel.onStateChange = { [weak self] state in
+            self?.handleQuickTunnelState(state)
+        }
         overlaySource?.remoteOverlayPublisher
             .throttle(for: Self.overlayThrottle, scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] snapshot in
@@ -205,6 +280,7 @@ final class PickyRemoteAccessController: ObservableObject {
             }
             .store(in: &cancellables)
         if settings.enabled { startGateway() }
+        reconcileQuickTunnel()
     }
 
     // MARK: - Hub messages out
@@ -265,6 +341,7 @@ final class PickyRemoteAccessController: ObservableObject {
             pairing = .waiting(PickyRemotePairingSession(code: code, expiresAt: expiresAt, url: url))
         case .pairingEnded(let reason, let deviceName):
             pairing = .ended(reason: reason, deviceName: deviceName)
+            if reason == .paired { quickTunnelAddressChanged = false }
         case .devices(let devices):
             self.devices = devices
         case .request(let requestId, _, let request):

@@ -2,7 +2,7 @@
 //  PickyHubRemoteAccessSection.swift
 //  Picky
 //
-//  The "원격 접속" settings group. Everything here reads from
+//  The body of the "원격 접속" hub page (`PickyHubRemotePage`). Everything here reads from
 //  `PickyRemoteAccessController`; the only state this file owns is the text the
 //  user is still typing and the speech authorization it just asked for.
 //
@@ -49,7 +49,8 @@ private struct PickyHubRemoteAccessControls: View {
         PickyHubRemoteAccessStatus.resolve(
             isEnabled: remote.enabled,
             gatewayState: controller.gatewayState,
-            entranceURL: controller.entranceURL
+            entranceURL: controller.entranceURL,
+            isEntranceAddressPending: controller.isEntranceAddressPending
         )
     }
 
@@ -177,7 +178,7 @@ private struct PickyHubRemoteAccessControls: View {
                 case .tailscale:
                     PickyHubRemoteTailscaleRows(controller: controller)
                 case .cloudflare:
-                    PickyHubRemoteCloudflareRow(settingsViewModel: settingsViewModel)
+                    PickyHubRemoteCloudflareRows(settingsViewModel: settingsViewModel, controller: controller)
                 case .localOnly:
                     PickyHubSettingsRow(
                         title: "settings.remote.localOnly.address",
@@ -271,6 +272,116 @@ private struct PickyHubRemoteTailscaleRows: View {
             // The CLI prints the admin link that enables HTTPS certificates, so
             // the raw message is more useful than a rewritten one.
             PickyHubRemoteRowMessage(tone: .error, message: error)
+        }
+    }
+}
+
+/// The address source picker plus the rows of whichever source is chosen.
+private struct PickyHubRemoteCloudflareRows: View {
+    @ObservedObject var settingsViewModel: PickySettingsViewModel
+    @ObservedObject var controller: PickyRemoteAccessController
+
+    private var mode: PickyRemoteCloudflareMode { settingsViewModel.settings.remoteAccess.cloudflareMode }
+
+    var body: some View {
+        PickyHubSettingsRow(
+            title: "settings.remote.cloudflare.mode",
+            detail: LocalizedStringKey(
+                mode == .quick
+                    ? "settings.remote.cloudflare.mode.quick.detail"
+                    : "settings.remote.cloudflare.mode.custom.detail"
+            )
+        ) {
+            PickyHubMenuPicker(
+                title: L10n.t("settings.remote.cloudflare.mode"),
+                selection: Binding(
+                    get: { mode },
+                    set: { next in
+                        settingsViewModel.settings.remoteAccess.cloudflareMode = next
+                        settingsViewModel.save()
+                    }
+                ),
+                options: PickyRemoteCloudflareMode.allCases.map {
+                    PickyNativeMenuOption(value: $0, title: L10n.t($0.titleKey))
+                }
+            )
+            .frame(width: PickyHubRemoteLayout.menuWidth)
+        }
+        switch mode {
+        case .quick:
+            PickyHubRemoteQuickTunnelRow(controller: controller, isEnabled: settingsViewModel.settings.remoteAccess.enabled)
+        case .custom:
+            PickyHubRemoteCloudflareRow(settingsViewModel: settingsViewModel)
+        }
+    }
+}
+
+/// The temporary address Picky's own `cloudflared` received, or why there is
+/// none. Errors keep `cloudflared`'s wording because it names the cause.
+private struct PickyHubRemoteQuickTunnelRow: View {
+    @ObservedObject var controller: PickyRemoteAccessController
+    let isEnabled: Bool
+
+    var body: some View {
+        switch controller.quickTunnelState {
+        case .notInstalled:
+            PickyHubSettingsRow(
+                title: "settings.remote.cloudflare.quick.address",
+                detail: "settings.remote.cloudflare.quick.notInstalled"
+            ) {
+                PickyHubButton(
+                    title: "settings.remote.tailscale.recheck",
+                    role: .secondary,
+                    systemImage: "arrow.clockwise",
+                    action: { controller.restartQuickTunnel() }
+                )
+            }
+        case .running(let url):
+            PickyHubSettingsRow(
+                title: "settings.remote.cloudflare.quick.address",
+                detail: "settings.remote.cloudflare.quick.address.detail"
+            ) {
+                PickyHubRemoteAddressLabel(address: url)
+            }
+        case .starting:
+            PickyHubSettingsRow(
+                title: "settings.remote.cloudflare.quick.address",
+                detail: "settings.remote.cloudflare.quick.starting"
+            ) {
+                ProgressView().controlSize(.small)
+            }
+        case .stopped:
+            PickyHubSettingsRow(
+                title: "settings.remote.cloudflare.quick.address",
+                detail: LocalizedStringKey(
+                    isEnabled ? "settings.remote.cloudflare.quick.starting" : "settings.remote.cloudflare.quick.off"
+                )
+            ) {
+                EmptyView()
+            }
+        case .failed(let reason):
+            PickyHubSettingsRow(
+                title: "settings.remote.cloudflare.quick.address",
+                detail: "settings.remote.cloudflare.quick.failed"
+            ) {
+                PickyHubButton(
+                    title: "settings.remote.status.retry",
+                    role: .secondary,
+                    systemImage: "arrow.clockwise",
+                    action: { controller.restartQuickTunnel() }
+                )
+            }
+            PickyHubRemoteRowMessage(tone: .error, message: reason)
+        }
+        if controller.showsQuickTunnelAddressChange {
+            PickyHubInlineStatus(
+                tone: .warning,
+                message: L10n.t("settings.remote.cloudflare.quick.changed"),
+                actionTitle: "common.close",
+                action: { controller.dismissQuickTunnelAddressChange() }
+            )
+            .padding(.horizontal, PickyHubTheme.Spacing.rowHorizontal)
+            .padding(.vertical, PickyHubTheme.Spacing.rowVertical)
         }
     }
 }

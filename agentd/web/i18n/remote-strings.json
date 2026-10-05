@@ -31,7 +31,7 @@
   "remote.install.continueAnyway": { "ko": "이 브라우저에서 연결", "en": "Pair in this browser" },
 
   "remote.pair.title": { "ko": "이 폰 연결하기", "en": "Connect this phone" },
-  "remote.pair.body": { "ko": "Mac의 Picky 설정에서 '폰 연결'을 열고, 뜬 QR을 찍거나 코드를 입력해 주세요", "en": "Open \"Connect a phone\" in Picky settings on your Mac, then scan the QR or enter the code" },
+  "remote.pair.body": { "ko": "Mac의 Picky에서 원격 접속 > 폰 연결을 열고, 뜬 QR을 찍거나 코드를 입력해 주세요", "en": "On your Mac, open Remote access > Connect a phone in Picky, then scan the QR or enter the code" },
   "remote.pair.scan.idle": { "ko": "카메라로 QR을 찍을 수 있어요", "en": "You can scan the QR with the camera" },
   "remote.pair.scan.start": { "ko": "QR 찍기", "en": "Scan QR" },
   "remote.pair.scan.stop": { "ko": "카메라 끄기", "en": "Stop camera" },

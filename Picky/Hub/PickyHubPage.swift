@@ -17,6 +17,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
     case calendar
     case plugins
     case conversation
+    case remote
     case settings
 
     var id: String { rawValue }
@@ -30,6 +31,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case .calendar: "hub.nav.calendar"
         case .plugins: "hub.nav.plugins"
         case .conversation: "hub.nav.conversation"
+        case .remote: "hub.nav.remote"
         case .settings: "hub.nav.settings"
         }
     }
@@ -43,6 +45,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case .calendar: L10n.t("hub.nav.calendar")
         case .plugins: L10n.t("hub.nav.plugins")
         case .conversation: L10n.t("hub.nav.conversation")
+        case .remote: L10n.t("hub.nav.remote")
         case .settings: L10n.t("hub.nav.settings")
         }
     }
@@ -57,6 +60,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case .calendar: "calendar"
         case .plugins: "powerplug"
         case .conversation: "bubble.left"
+        case .remote: "iphone.radiowaves.left.and.right"
         case .settings: "slider.horizontal.3"
         }
     }
@@ -71,6 +75,7 @@ enum PickyHubPage: String, CaseIterable, Identifiable, Codable {
         case "calendar", "cron": .calendar
         case "plugins", "extensions": .plugins
         case "conversation", "messages": .conversation
+        case "remote", "remote-access": .remote
         case "settings": .settings
         default: nil
         }

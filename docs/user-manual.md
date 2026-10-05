@@ -1127,10 +1127,12 @@ Remote access is off until you turn it on. A paired phone can do what the HUD ca
 
 ### 15.1 Turn it on
 
-1. Open Hub → Settings → **Remote access** and turn on **Use remote access**. Picky starts a small server on `127.0.0.1:17640`. It listens only on this Mac; the entrance below carries traffic to it.
+1. Open **Remote access** in the Hub sidebar and turn on **Use remote access**. Picky starts a small server on `127.0.0.1:17640`. It listens only on this Mac; the entrance below carries traffic to it.
 2. Choose an entrance:
    - **Tailscale Serve**: install Tailscale on the Mac and the phone and sign in to the same tailnet. Press **Turn Serve on**. The address is `https://<this Mac's MagicDNS name>`. Serve needs HTTPS certificates enabled for the tailnet; if they are off, the Tailscale CLI prints a link to the admin console, and the settings page shows that message. If you cannot enable them (for example on a company tailnet you do not administer), use Cloudflare Tunnel instead.
-   - **Cloudflare Tunnel**: run your own named tunnel with a hostname on your domain that points at `http://127.0.0.1:17640`, then paste its https address. Quick Tunnels are not supported because their address changes, and a Home Screen app and its notifications belong to one address. Cloudflare Access can sit in front as an extra login.
+   - **Cloudflare Tunnel**, with one of two addresses:
+     - **Temporary address**: Picky runs `cloudflared` (install it with `brew install cloudflared`) and shows the `https://<words>.trycloudflare.com` address it gets. No Cloudflare account is needed. The address changes whenever the tunnel opens again, including every time Picky restarts. A Home Screen app and its notifications belong to one address, so after a change pair the phone again, add the Home Screen app again from the new address, and turn notifications back on; the page says so when it happens. Cloudflare offers these tunnels for testing, without an uptime guarantee.
+     - **My domain**: run your own named tunnel with a hostname on your domain that points at `http://127.0.0.1:17640`, then paste its https address. It does not change. Cloudflare Access can sit in front as an extra login.
    - **This Mac only**: opens at `http://127.0.0.1:17640` in a browser on this Mac. Use it to try the app; notifications and offline start need https, so they stay off here.
 3. The status line shows the address your phone uses.
 

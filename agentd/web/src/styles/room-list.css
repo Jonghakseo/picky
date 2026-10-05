@@ -229,6 +229,9 @@
   align-items: center;
   gap: var(--ds-space-2);
   min-width: 0;
+  /* Keeps the row height when an idle Picky room has neither status nor preview. */
+  font: var(--hud-type-status);
+  min-height: 1lh;
 }
 
 /* Status is icon plus word, never color alone. */
@@ -255,7 +258,7 @@
   text-overflow: ellipsis;
 }
 
-.row-summary::before {
+.row-status + .row-summary::before {
   content: "·";
   padding-inline-end: var(--ds-space-1);
 }

@@ -176,10 +176,13 @@ function RoomRow({ room, now, locale }: { room: RemoteRoom; now: Date; locale: "
           <span class="row-time">{formatRoomTime(room.updatedAt, now, locale, t("remote.time.yesterday"))}</span>
         </span>
         <span class="row-bottom">
-          <span class="row-status">
-            <StatusGlyph status={room.status} />
-            <span>{t(statusLabelKey(room.status))}</span>
-          </span>
+          {room.status === "idle" ? null : (
+            // An idle Picky room has nothing to report; "queued" or "done" would both mislead.
+            <span class="row-status">
+              <StatusGlyph status={room.status} />
+              <span>{t(statusLabelKey(room.status))}</span>
+            </span>
+          )}
           {room.preview && <span class="row-summary">{room.preview}</span>}
         </span>
       </span>

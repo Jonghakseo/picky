@@ -96,10 +96,11 @@ export function Header(props: HeaderProps): JSX.Element {
           <PickleGlyph class="pi-glyph" />
         </span>
         {corner ? <span class="pi-badge-corner attention">{corner}</span> : null}
-        <span class="sr-only">{t("hud.header.target.accessibilityLabel", statusLabel)}</span>
+        {status === "idle" ? null : <span class="sr-only">{t("hud.header.target.accessibilityLabel", statusLabel)}</span>}
       </span>
       <span class="hdr-title">{title}</span>
-      <span class="hdr-status">{statusLabel}</span>
+      {/* An idle Picky room shows no status: "done" would claim a turn that never ran. */}
+      {status === "idle" ? null : <span class="hdr-status">{statusLabel}</span>}
       {contextUsage ? (
         <span class={`ctx ${contextBandClass(percent)}`}>
           <span class="ctx-bar">

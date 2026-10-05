@@ -130,6 +130,7 @@ flowchart TB
 
 - 마이크를 누르면 녹음하기 전에 맥이 받아쓸 수 있는지 확인한다(음성 인식 서비스 설정, Apple 음성 인식 권한). 안 되면 녹음하지 않고 이유를 보여 준다.
 - 폰은 `MediaRecorder`로 녹음한다. iOS Safari는 14부터 지원하고([MDN](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder#browser_compatibility)), 마이크는 https에서만 열린다. 다시 누르면 녹음을 맥으로 보내고, 취소하면 버린다.
+- 녹음 형식은 맥의 `AVAudioFile`이 열 수 있어야 한다. Android Chrome 154 실기기에서 확인하니 기본값 `audio/webm;codecs=opus`와 `audio/mp4`(안에 Opus)는 열리지 않고 `audio/mp4;codecs=mp4a.40.2`(AAC)만 열렸다. 그래서 AAC를 먼저 요청하고, WebKit(iOS)에서는 AAC로 녹음되는 `audio/mp4`를 다음으로 쓰고, 둘 다 안 되면 Web Audio로 16kHz WAV를 만든다(`agentd/web/src/room/policy/recording.ts`).
 - 맥은 녹음을 PCM으로 풀어 HUD 받아쓰기와 같은 음성 인식 서비스 세션에 넣는다(`Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`). 맥 마이크는 쓰지 않는다. OpenAI, Azure OpenAI, ElevenLabs 연결은 지금도 녹음을 모았다가 끝날 때 한 번에 올리므로, 녹음 파일을 넣어도 같은 방식으로 받아쓴다.
 - 폰 요청으로 맥에 권한 대화상자를 띄우지 않는다. 음성 인식 서비스가 Apple 음성 인식이고 권한을 아직 묻지 않았다면, 맥에서 원격 접속을 켤 때 허용 버튼을 보여 준다.
 - 녹음은 받아쓰기가 끝나면 지운다. 길이 상한은 5분(초기값)이고, 넘으면 녹음을 멈추고 받아쓴다. 녹음과 받아쓴 글은 감사 로그에 남기지 않는다.

@@ -169,6 +169,11 @@ enum PickyInteractionEvent: Equatable, Codable {
     /// contextID so the cursor loading state is visible until the matching quickReply
     /// arrives. inputID is synthesized at capture time (CLI does not own one).
     case externalContextCaptured(inputID: UUID, text: String, context: PickyContextPacket)
+    /// Main-agent submission from a paired phone. It only registers the
+    /// `.remote` owner for the captured contextID; the Mac's cursor, overlay,
+    /// and speech lifecycle are deliberately left untouched because the reply
+    /// belongs on the phone.
+    case remoteContextCaptured(context: PickyContextPacket)
     case agentSubmissionAccepted(contextID: String?, sessionID: String, inputID: UUID?)
     case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case narrationChunk(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, shouldSpeak: Bool, shouldSpeakFinalReply: Bool)
@@ -223,7 +228,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case appStarted, permissionsChanged, cursorPreferenceChanged
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
-        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk
+        case voiceContextCaptured, externalContextCaptured, remoteContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk
         case visualNarrationSegmentPrepared, visualNarrationSegmentSentence, visualNarrationSegmentCommitted
         case streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, mainAgentSessionReset, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationParked, pointerAnimationFinished
@@ -296,6 +301,9 @@ enum PickyInteractionEvent: Equatable, Codable {
                 text: try payload.decode(String.self, forKey: .text),
                 context: try payload.decode(PickyContextPacket.self, forKey: .context)
             )
+        case .remoteContextCaptured:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .remoteContextCaptured(context: try payload.decode(PickyContextPacket.self, forKey: .context))
         case .agentSubmissionAccepted:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .agentSubmissionAccepted(
@@ -483,6 +491,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .externalContextCaptured(let inputID, let text, let context):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .externalContextCaptured)
             try payload.encode(inputID, forKey: .inputID); try payload.encode(text, forKey: .text); try payload.encode(context, forKey: .context)
+        case .remoteContextCaptured(let context):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .remoteContextCaptured)
+            try payload.encode(context, forKey: .context)
         case .agentSubmissionAccepted(let contextID, let sessionID, let inputID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .agentSubmissionAccepted)
             try payload.encodeIfPresent(contextID, forKey: .contextID); try payload.encode(sessionID, forKey: .sessionID); try payload.encodeIfPresent(inputID, forKey: .inputID)

@@ -20,6 +20,8 @@ enum PickyMainTurnCancellationSource: String {
     case escapeDoubleTap
     case stopButton
     case voiceBargeIn
+    /// Stop pressed on a paired phone.
+    case remote
 }
 
 enum PickyMainCancelPillPolicy {

@@ -131,6 +131,10 @@ struct PickyInteractionReducing {
             applyVoiceContextCaptured(inputID: inputID, transcript: transcript, context: context, targetSessionID: targetSessionID)
         case .externalContextCaptured(let inputID, let text, let context):
             applyExternalContextCaptured(inputID: inputID, text: text, context: context)
+        case .remoteContextCaptured(let context):
+            // The phone owns the reply: no cursor, overlay, or speech here.
+            state.contextOwnership[context.id] = .remote
+            record(.stateChanged, "Remote context registered")
         case .agentSubmissionAccepted(let contextID, let sessionID, let inputID):
             applyAgentSubmissionAccepted(contextID: contextID, sessionID: sessionID, inputID: inputID)
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
@@ -925,6 +929,7 @@ struct PickyInteractionReducing {
         deadline: Date,
         inputID: UUID?
     ) {
+        if state.contextOwnership[contextID] == .remote { record(.accepted, "Remote reply stays on the phone, not on this Mac"); return }
         state.queuedSpeechReplies.removeAll()
         state = state.removingOverlayReason(.waitingForVoiceResponse)
         preemptSpeakingOutputIfNeeded()

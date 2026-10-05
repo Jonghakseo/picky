@@ -25,6 +25,9 @@ struct PickyHubDependencies {
     let statisticsStore: PickyHubStatisticsStore
     let quickStartLauncher: PickyHubQuickStartLauncher
     let pluginCatalog: PickyHubPluginCatalogViewModel
+    /// Absent under unit tests and whenever the app runs without the remote
+    /// hub composed, so the settings section renders its unavailable state.
+    let remoteAccess: PickyRemoteAccessController?
 
     var permissions: PickyPermissionMonitor { companionManager.permissions }
 }

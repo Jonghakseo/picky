@@ -790,6 +790,7 @@ final class PickyHubRenderGalleryFixture {
     let pluginReloadController: PickyPluginReloadController
     let statisticsStore: PickyHubStatisticsStore
     let dependencies: PickyHubDependencies
+    let remoteAccess: PickyRemoteAccessController
 
     private let temporaryRoot: URL
     private let defaults: UserDefaults
@@ -898,10 +899,56 @@ final class PickyHubRenderGalleryFixture {
             defaults: defaults,
             projectionTimeoutNanoseconds: 100_000_000
         )
+        // Remote access renders from a controller with a fake gateway and a fake
+        // socket: no Node process, no Tailscale CLI, no listening port. The
+        // settings copy in the view model matches what the controller was built
+        // with, which is what the app's save hook keeps in sync at runtime.
+        let remoteSettings = PickyRemoteAccessSettings(
+            enabled: true,
+            entrance: .cloudflare,
+            cloudflareURL: "https://picky.example.com",
+            keepAwake: true
+        )
+        let remoteGateway = PickyHubRenderGalleryRemoteGateway()
+        let remoteTransport = PickyHubRenderGalleryRemoteTransport()
+        remoteAccess = PickyRemoteAccessController(
+            settings: remoteSettings,
+            gateway: remoteGateway,
+            transport: remoteTransport,
+            overlaySource: nil,
+            topologySource: nil,
+            requestHandler: PickyRemoteHubRequestHandler(sessions: nil, mainAgent: nil, dictation: nil),
+            dictationReadiness: { .ready },
+            tailscale: PickyTailscaleService(executableURL: nil),
+            appSupportRoot: temporaryRoot,
+            appVersion: "gallery",
+            macName: "Gallery Mac",
+            tokenFactory: { "gallery-token" }
+        )
+        remoteTransport.deliver(.devices([
+            PickyRemoteDevice(
+                id: "device-1",
+                name: "iPhone",
+                createdAt: Date(timeIntervalSince1970: 1_767_225_600),
+                lastSeenAt: Date(timeIntervalSince1970: 1_767_225_600),
+                online: true,
+                pushEnabled: true
+            ),
+            PickyRemoteDevice(
+                id: "device-2",
+                name: "iPad",
+                createdAt: Date(timeIntervalSince1970: 1_767_139_200),
+                lastSeenAt: nil,
+                online: false,
+                pushEnabled: false
+            ),
+        ]))
+        let settingsViewModel = PickySettingsViewModel(store: settingsStore)
+        settingsViewModel.settings.remoteAccess = remoteSettings
         dependencies = PickyHubDependencies(
             companionManager: companionManager,
             sessionListViewModel: sessionListViewModel,
-            settingsViewModel: PickySettingsViewModel(store: settingsStore),
+            settingsViewModel: settingsViewModel,
             settingsStore: settingsStore,
             appearanceStore: appearanceStore,
             fontScaleStore: fontScaleStore,
@@ -913,7 +960,8 @@ final class PickyHubRenderGalleryFixture {
             modalHost: PickyHubModalHost(),
             statisticsStore: statisticsStore,
             quickStartLauncher: quickStartLauncher,
-            pluginCatalog: pluginCatalog
+            pluginCatalog: pluginCatalog,
+            remoteAccess: remoteAccess
         )
     }
 
@@ -1041,4 +1089,33 @@ private final class PickyHubRenderGalleryThumbnailBlocker: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+/// Reports the gateway as running the moment it is started, without a process.
+@MainActor
+private final class PickyHubRenderGalleryRemoteGateway: PickyRemoteGatewayControlling {
+    private(set) var state: PickyRemoteGatewayState = .stopped {
+        didSet { if state != oldValue { onStateChange?(state) } }
+    }
+    var onStateChange: ((PickyRemoteGatewayState) -> Void)?
+
+    func start(port: Int, hubToken: String, appSupportRoot: URL) {
+        state = .running(port: port)
+    }
+
+    func stop() { state = .stopped }
+    func stopAndWaitForExit() { stop() }
+}
+
+/// Connects instantly, drops everything it is asked to send, and lets the
+/// fixture hand the controller a gateway message.
+@MainActor
+private final class PickyHubRenderGalleryRemoteTransport: PickyRemoteHubTransport {
+    var onMessage: ((PickyGatewayToHubMessage) -> Void)?
+    var onConnectedChange: ((Bool) -> Void)?
+
+    func connect(url: URL, token: String) { onConnectedChange?(true) }
+    func disconnect() { onConnectedChange?(false) }
+    func send(_ message: PickyHubToGatewayMessage) {}
+    func deliver(_ message: PickyGatewayToHubMessage) { onMessage?(message) }
 }

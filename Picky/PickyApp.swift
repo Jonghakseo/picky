@@ -206,6 +206,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private let hubForegroundContextPreserver = PickyHubForegroundContextPreserver()
     private nonisolated let appActivationRouter: PickyAppActivationRouter
     private lazy var hubSettingsViewModel = PickySettingsViewModel(store: settingsStore, persistence: settingsPersistence)
+    /// Remote phone access. Composed only outside unit tests, and only after
+    /// the session list and companion exist, because the hub hands phone
+    /// requests straight to them. Nothing listens until the user turns the
+    /// setting on; `apply(settings:)` below is what starts and stops it.
+    private var remoteAccessController: PickyRemoteAccessController?
+    private lazy var remoteDictationTranscriber = PickyRemoteDictationTranscriber()
+    private lazy var remoteMainAgentAdapter = PickyRemoteMainAgentAdapter(companion: companionManager)
 
     override init() {
         self.appActivationRouter = PickyAppActivationRouter()
@@ -254,6 +261,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let updated = self.settingsStore.load()
             self.updaterController.updateAutomaticChecksPreference(updated.updatesAutomaticChecksEnabled)
+            self.remoteAccessController?.apply(settings: updated.remoteAccess)
             // Re-applying the same choice is cheap and idempotent; this
             // keeps the language in sync when the settings JSON is edited
             // externally (tests, debug tooling).
@@ -310,6 +318,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // admin auth (typical fresh /usr/local/bin) is left for the user
             // to confirm explicitly via Settings → Install Shell Command.
             autoInstallShellCommandIfPermitted()
+            composeRemoteAccess()
         }
         wireExternalEntryProvider(on: hudAgentClientRouter)
         wirePushToTalkControlHandler(on: hudAgentClientRouter)
@@ -350,7 +359,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 curated: PickyCuratedPluginsViewModel(),
                 pluginReloadController: pluginReloadController,
                 bundled: PickyExtensionsSectionViewModel()
-            )
+            ),
+            remoteAccess: remoteAccessController
         )
         let hubWindowController = PickyHubWindowController(
             dependencies: hubDependencies,
@@ -402,6 +412,30 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             interruptedPickleCount: PickyUpdateRestartPolicy.interruptedPickleCount(
                 statuses: hudSessionViewModel.sessions.map(\.status)
             )
+        )
+    }
+
+    /// Builds the remote hub. The gateway process starts here only when the
+    /// user left remote access on; otherwise the controller sits idle and the
+    /// settings toggle starts it later through `apply(settings:)`.
+    private func composeRemoteAccess() {
+        let transcriber = remoteDictationTranscriber
+        remoteAccessController = PickyRemoteAccessController(
+            settings: settingsStore.load().remoteAccess,
+            gateway: PickyRemoteGatewayLauncher(appSupportRoot: daemonConfiguration.appSupportRoot),
+            transport: PickyRemoteHubClient(),
+            overlaySource: hudSessionViewModel,
+            topologySource: PickyRemoteDaemonTopologyProvider(
+                pool: agentDaemonPool,
+                token: daemonConfiguration.token,
+                primaryPort: daemonConfiguration.port
+            ),
+            requestHandler: PickyRemoteHubRequestHandler(
+                sessions: hudSessionViewModel,
+                mainAgent: remoteMainAgentAdapter,
+                dictation: transcriber
+            ),
+            dictationReadiness: { transcriber.readiness() }
         )
     }
 
@@ -555,6 +589,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         stopMainThreadWatchdog()
         secureSurfaceWindowCoordinator.stop()
         companionManager.stop()
+        remoteAccessController?.stopForAppTermination()
         hudOverlayManager.stop()
         agentDaemonPool.terminateAllChildren(waitForExit: true)
         daemonLauncher.stopAndWaitForExit()

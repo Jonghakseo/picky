@@ -385,6 +385,10 @@ enum PickyContextOwner: Equatable, Codable {
     /// the protocol-level origin tag to this case. It intentionally mirrors
     /// .quickInputText for presentation (cursor bubble + TTS).
     case cli
+    /// Submitted from a paired phone over remote access. Nobody is necessarily
+    /// at the Mac, so this owner deliberately shows no cursor bubble and plays
+    /// no speech: the reply belongs on the phone, not on the desktop.
+    case remote
     case system
     case unknown
 
@@ -392,7 +396,7 @@ enum PickyContextOwner: Equatable, Codable {
         switch self {
         case .voice, .metadataVoice:
             true
-        case .text, .quickInputText, .metadataText, .metadataQuickInput, .cli, .system, .unknown:
+        case .text, .quickInputText, .metadataText, .metadataQuickInput, .cli, .remote, .system, .unknown:
             false
         }
     }
@@ -401,7 +405,7 @@ enum PickyContextOwner: Equatable, Codable {
         switch self {
         case .text, .quickInputText, .metadataText, .metadataQuickInput, .cli:
             true
-        case .voice, .metadataVoice, .system, .unknown:
+        case .voice, .metadataVoice, .remote, .system, .unknown:
             false
         }
     }
@@ -410,7 +414,7 @@ enum PickyContextOwner: Equatable, Codable {
         switch self {
         case .quickInputText, .metadataQuickInput, .cli:
             true
-        case .text, .voice, .metadataText, .metadataVoice, .system, .unknown:
+        case .text, .voice, .metadataText, .metadataVoice, .remote, .system, .unknown:
             false
         }
     }

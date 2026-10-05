@@ -784,6 +784,9 @@ struct PickySettings: Codable, Equatable {
     /// older than the grouping feature — `PickySessionListViewModel` seeds it
     /// from the legacy `manualOrder` UserDefaults on first migration.
     var dockLayout: PickyDockLayout
+    /// Remote phone access over the user's own tailnet or tunnel. Off by
+    /// default; see docs/remote-pwa-plan.md.
+    var remoteAccess: PickyRemoteAccessSettings
 
     /// Absolute persistence bounds. The live drag clamp narrows the upper bound
     /// further per-screen so at least one dock handle slot (`keepVisible`) stays
@@ -874,7 +877,8 @@ struct PickySettings: Codable, Equatable {
         detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:],
         reportViewerOutlinePresented: Bool = false,
         gitChipActions: PickyGitChipActions = .empty,
-        dockLayout: PickyDockLayout = .empty
+        dockLayout: PickyDockLayout = .empty,
+        remoteAccess: PickyRemoteAccessSettings = .defaults
     ) {
         self.defaultCwd = defaultCwd
         self.mainAgentCwd = mainAgentCwd ?? defaultCwd
@@ -948,6 +952,7 @@ struct PickySettings: Codable, Equatable {
         self.reportViewerOutlinePresented = reportViewerOutlinePresented
         self.gitChipActions = gitChipActions
         self.dockLayout = dockLayout
+        self.remoteAccess = remoteAccess
     }
 
     static func defaultUpdateChannel(forReleaseChannel releaseChannel: String) -> PickyUpdateChannel {
@@ -1044,7 +1049,8 @@ struct PickySettings: Codable, Equatable {
             detachedPanelFrames: [:],
             reportViewerOutlinePresented: false,
             gitChipActions: .empty,
-            dockLayout: .empty
+            dockLayout: .empty,
+            remoteAccess: .defaults
         )
     }
 
@@ -1169,6 +1175,7 @@ struct PickySettings: Codable, Equatable {
         case reportViewerOutlinePresented
         case gitChipActions
         case dockLayout
+        case remoteAccess
     }
 
     init(from decoder: Decoder) throws {
@@ -1261,6 +1268,9 @@ struct PickySettings: Codable, Equatable {
         // legacy manualOrder UserDefaults so existing reorders survive the
         // upgrade.
         dockLayout = try container.decodeIfPresent(PickyDockLayout.self, forKey: .dockLayout) ?? defaults.dockLayout
+        // Missing on every settings file written before remote access shipped.
+        // Decoding to the defaults keeps remote access off after an update.
+        remoteAccess = try container.decodeIfPresent(PickyRemoteAccessSettings.self, forKey: .remoteAccess) ?? defaults.remoteAccess
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),

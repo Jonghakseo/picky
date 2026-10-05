@@ -203,6 +203,12 @@ struct PickyHubSettingsPage: View {
         case .workspace:
             embedded(.pickle)
             PickyHubPickleFolderControls(settingsViewModel: settingsViewModel)
+        case .remote:
+            PickyHubRemoteAccessSection(
+                settingsViewModel: settingsViewModel,
+                controller: dependencies.remoteAccess,
+                modalHost: modalHost
+            )
         case .privacy:
             PickyHubClassificationSettingsView(statisticsStore: dependencies.statisticsStore)
             PickyHubNotificationControls(settingsViewModel: settingsViewModel)
@@ -549,7 +555,7 @@ private struct PickyHubSettingsNavigationHeightPreference: PreferenceKey {
 }
 
 private enum PickyHubSettingsLayout {
-    /// Seven badges read as a balanced 4 + 3 directory instead of leaving an orphan on wide layouts.
+    /// Badges read as a balanced directory (4 + 4) instead of leaving an orphan on wide layouts.
     static let maximumBadgesPerRow = 4
     /// Bounds native popup menus without changing the width of other row controls.
     static let nativeMenuWidth: CGFloat = 180
@@ -866,7 +872,9 @@ private struct PickyHubAdvancedControls: View {
     }
 }
 
-private struct PickyHubSettingsList<Content: View>: View {
+/// Shared settings primitives: the remote-access section under
+/// `Picky/Hub/Settings` builds its rows from the same three types.
+struct PickyHubSettingsList<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {
         VStack(spacing: 0) { content() }
@@ -874,7 +882,7 @@ private struct PickyHubSettingsList<Content: View>: View {
     }
 }
 
-private struct PickyHubSettingsRow<Control: View>: View {
+struct PickyHubSettingsRow<Control: View>: View {
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
     @ViewBuilder let control: () -> Control
@@ -940,7 +948,7 @@ private struct PickyHubSettingsDisclosure<Content: View>: View {
     }
 }
 
-private struct PickyHubSettingsNotice: View {
+struct PickyHubSettingsNotice: View {
     let text: LocalizedStringKey
     var body: some View {
         Text(text)

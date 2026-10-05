@@ -11,13 +11,14 @@
 import Combine
 import Foundation
 
-/// The seven settings groups rendered on the Settings page, in mockup order.
+/// The settings groups rendered on the Settings page, in mockup order.
 enum PickyHubSettingsGroup: String, CaseIterable, Identifiable {
     case general
     case agents
     case voice
     case overlay
     case workspace
+    case remote
     case privacy
     case advanced
 

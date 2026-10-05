@@ -10,7 +10,7 @@ import { MAIN_ROOM_ID } from "../../../src/remote/constants";
 import type { RemoteRoom } from "../../../src/remote/protocol";
 import type { RoomActions, RoomViewModel } from "../room/contract";
 import { t } from "../app/i18n";
-import { navigate } from "../app/navigation";
+import { goBack, navigate } from "../app/navigation";
 import type { AppStore } from "../app/store";
 
 export function RoomScreen({ store, roomId }: { store: AppStore; roomId: string }): JSX.Element {
@@ -46,7 +46,7 @@ export function RoomScreen({ store, roomId }: { store: AppStore; roomId: string 
     openExternal: (url) => {
       globalThis.open(url, "_blank", "noopener,noreferrer");
     },
-    back: () => navigate({ name: "rooms" }),
+    back: () => goBack({ name: "rooms" }),
     loadDraft: () => store.loadDraft(roomId),
     saveDraft: (text) => store.saveDraft(roomId, text),
     feedback: (kind) => {

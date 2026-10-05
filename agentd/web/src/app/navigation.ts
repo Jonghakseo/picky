@@ -27,17 +27,31 @@ export function navigate(route: Route, options: { replace?: boolean } = {}): voi
   // so a demo session stays a demo session.
   const keep = preservedQuery();
   const url = keep ? `${href}${href.includes("?") ? "&" : "?"}${keep}` : href;
-  if (options.replace) history.replaceState(null, "", url);
-  else history.pushState(null, "", url);
+  // The depth counts entries this page pushed, so "back" can tell an in-app
+  // step from the entry the PWA was opened at (a notification or a link).
+  const depth = inAppDepth();
+  if (options.replace) history.replaceState({ pickyDepth: depth }, "", url);
+  else history.pushState({ pickyDepth: depth + 1 }, "", url);
   currentLocation.value = { route };
 }
 
+/**
+ * Returns to the previous in-app screen, so the screen comes back the way it
+ * was left (the room list keeps its group filter). Opened straight into a
+ * screen, there is nothing in-app to return to and the fallback replaces it.
+ */
 export function goBack(fallback: Route = { name: "rooms" }): void {
-  if (history.length > 1) {
+  if (inAppDepth() > 0) {
     history.back();
     return;
   }
   navigate(fallback, { replace: true });
+}
+
+function inAppDepth(): number {
+  const state: unknown = globalThis.history?.state;
+  const depth = typeof state === "object" && state !== null ? (state as { pickyDepth?: unknown }).pickyDepth : undefined;
+  return typeof depth === "number" && depth > 0 ? depth : 0;
 }
 
 const PRESERVED_PARAMS = ["demo", "theme", "scale"];

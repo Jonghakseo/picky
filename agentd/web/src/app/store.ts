@@ -67,6 +67,11 @@ export class AppStore {
   readonly insecure = signal(false);
   /** True once a `rooms` message has arrived, so the list can tell empty from not-yet-loaded. */
   readonly roomsLoaded = signal(false);
+  /**
+   * The room list's group filter. It lives here, not in the list screen, so
+   * opening a Pickle and coming back shows the same group.
+   */
+  readonly roomListGroup = signal<string | undefined>(undefined);
 
   readonly locale: Locale = currentLocale();
 

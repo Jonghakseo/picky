@@ -31,7 +31,7 @@ function groupClass(color: string): string {
 }
 
 export function RoomListScreen({ store }: { store: AppStore }): JSX.Element {
-  const groupFilter = useSignal<string | undefined>(undefined);
+  const groupFilter = store.roomListGroup;
   const archiveOpen = useSignal(false);
   const sheetOpen = useSignal(false);
 

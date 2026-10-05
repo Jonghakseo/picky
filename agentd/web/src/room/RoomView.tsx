@@ -166,6 +166,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
           session={vm.session}
           mainBusy={vm.main?.busy === true}
           macConnected={vm.macConnected}
+          online={vm.online}
           dictationAvailability={vm.dictation}
           draft={draft}
           onDraft={onDraft}

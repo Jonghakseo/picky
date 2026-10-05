@@ -34,6 +34,13 @@ export interface RoomViewModel {
   loading: boolean;
   /** False when Picky.app is not connected to the gateway: commands will fail with `macOffline`. */
   macConnected: boolean;
+  /**
+   * The phone's own socket to the gateway is open. While it is down the shell
+   * shows a reconnecting banner and commands could only wait, so sending is
+   * paused instead of queueing silently (seen on a real device: a tap did
+   * nothing visible until the connection came back).
+   */
+  online: boolean;
   dictation: RemoteDictationAvailability;
   /** Locale used for copy and dates ("ko" | "en"). */
   locale: "ko" | "en";

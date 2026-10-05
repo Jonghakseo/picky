@@ -1909,9 +1909,14 @@
  * on a 390pt page. Values follow the same tokens.
  * ==================================================================== */
 
+/* A flex child of #app (100dvh), not position: fixed: the shell's reconnecting
+ * banner sits above it in the same column, and a fixed room covered it (seen on
+ * a real Android phone). The keyboard inset is measured against innerHeight,
+ * which is the same box either way. */
 .room-view {
-  position: fixed;
-  inset: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   /* `--keyboard-inset` is set from visualViewport so the composer rides above

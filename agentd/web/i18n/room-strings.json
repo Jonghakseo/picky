@@ -3,6 +3,7 @@
 
   "remote.room.composer.placeholder.steer": { "ko": "메시지 보내기", "en": "Message" },
   "remote.room.composer.sendFailed": { "ko": "보내지 못했어요. 잠시 뒤 다시 시도해 주세요.", "en": "Couldn't send it. Try again in a moment." },
+  "remote.room.composer.reconnecting": { "ko": "다시 연결되면 보낼 수 있어요", "en": "You can send once the connection is back" },
   "remote.room.composer.macOffline": { "ko": "Mac에 연결되어야 보낼 수 있어요", "en": "Connect to your Mac to send" },
   "remote.room.composer.editingScheduled": { "ko": "예약 메시지를 고치는 중이에요", "en": "Editing a scheduled message" },
   "remote.room.composer.editingQueued": { "ko": "대기 중인 메시지를 고치는 중이에요", "en": "Editing a queued message" },

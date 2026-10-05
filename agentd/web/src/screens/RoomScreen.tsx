@@ -29,6 +29,7 @@ export function RoomScreen({ store, roomId }: { store: AppStore; roomId: string 
     main,
     loading: roomId === MAIN_ROOM_ID ? runtime.loading && main === undefined : runtime.loading,
     macConnected: store.mac.value.connected,
+    online: store.connection.value === "open",
     dictation: store.mac.value.dictation,
     locale: store.locale,
   };

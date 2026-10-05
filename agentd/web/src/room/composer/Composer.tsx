@@ -53,6 +53,8 @@ export interface ComposerProps {
   session?: PickyAgentSession;
   mainBusy: boolean;
   macConnected: boolean;
+  /** The phone's socket to the gateway is open (`RoomViewModel.online`). */
+  online: boolean;
   dictationAvailability: RemoteDictationAvailability;
   draft: string;
   onDraft: (text: string) => void;
@@ -84,7 +86,7 @@ export function Composer(props: ComposerProps): JSX.Element {
   const afterReplyKind = isMain ? null : afterCurrentReplySubmitKind(status);
   const uploading = attachments.some((item) => !item.uploadId && !item.failed);
   const canSend = draft.trim().length > 0 || attachments.some((item) => item.uploadId);
-  const sendEnabled = canSend && props.macConnected && !uploading;
+  const sendEnabled = canSend && props.online && props.macConnected && !uploading;
 
   const dictation = useDictation({
     availability: props.dictationAvailability,
@@ -190,7 +192,7 @@ export function Composer(props: ComposerProps): JSX.Element {
   return (
     <>
       <VoiceRow dictation={dictation} now={props.now} />
-      <Note edit={props.edit} macConnected={props.macConnected} attachments={attachments} />
+      <Note edit={props.edit} online={props.online} macConnected={props.macConnected} attachments={attachments} />
       <div class="room-composer">
         <div class={`composer is-${border}`}>
           {attachments.length > 0 ? (
@@ -303,7 +305,7 @@ export function Composer(props: ComposerProps): JSX.Element {
                         class="send-chevron"
                         type="button"
                         aria-label={t("hud.composer.sendTiming.accessibilityLabel")}
-                        disabled={!canSend || !props.macConnected}
+                        disabled={!canSend || !props.online || !props.macConnected}
                         onClick={() => setTimingOpen(true)}
                       >
                         <ChevronUp />
@@ -471,13 +473,16 @@ function VoiceRow({
 /** Why sending is blocked, or what the composer is editing right now. */
 function Note({
   edit,
+  online,
   macConnected,
   attachments,
 }: {
   edit: QueueEdit | null;
+  online: boolean;
   macConnected: boolean;
   attachments: Attachment[];
 }): JSX.Element | null {
+  if (!online) return <div class="composer-note">{t("remote.room.composer.reconnecting")}</div>;
   if (!macConnected) return <div class="composer-note is-error">{t("remote.room.composer.macOffline")}</div>;
   if (attachments.some((item) => item.failed)) {
     return <div class="composer-note is-error">{t("remote.room.attachment.failed")}</div>;

@@ -6,7 +6,10 @@
  * hub. It never reads or writes `~/Library/Application Support/Picky` and never
  * connects to 17631 or 17640, so the user's running Picky is untouched.
  *
- * Flags: `--web-root <dir>`, `--no-seed`, `--agentd-port <n>`, `--gateway-port <n>`.
+ * Flags: `--web-root <dir>`, `--no-seed`, `--agentd-port <n>`, `--gateway-port <n>`,
+ * `--public-url <https url>`. The last one is the address a tunnel in front of
+ * the gateway serves (for example a Cloudflare Quick Tunnel); the hub reports
+ * it like the app does, so the pairing link and the Web Push subject use it.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, rm } from "node:fs/promises";
@@ -31,6 +34,7 @@ function print(line: string): void {
 
 interface DevOptions {
   webRoot?: string;
+  publicUrl?: string;
   seed: boolean;
   daemonPort: number;
   gatewayPort: number;
@@ -44,6 +48,12 @@ function parseArgs(argv: readonly string[]): DevOptions {
       const value = argv[index + 1];
       if (!value) throw new Error("--web-root needs a directory");
       options.webRoot = resolve(value);
+      index += 1;
+    }
+    if (argv[index] === "--public-url") {
+      const value = argv[index + 1];
+      if (!value || !/^https:\/\/[^/]+$/.test(value)) throw new Error("--public-url needs an https origin without a path");
+      options.publicUrl = value;
       index += 1;
     }
     if (argv[index] === "--agentd-port" || argv[index] === "--gateway-port") {
@@ -81,7 +91,7 @@ const gatewayConfig = parseGatewayConfig({
 });
 const gateway = new GatewayServer({ config: gatewayConfig });
 const boundPort = await gateway.start();
-const publicUrl = `http://127.0.0.1:${boundPort}`;
+const publicUrl = options.publicUrl ?? `http://127.0.0.1:${boundPort}`;
 print(`picky-gateway listening on 127.0.0.1:${boundPort}`);
 
 const hub = new StandInHub({

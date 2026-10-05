@@ -223,7 +223,7 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
 
 - iOS 홈 화면 앱에서 Access 로그인이 유지되는지 확인한다(2단계 실기기). 범위 밖 링크는 Safari View Controller로 열리므로, 로그인 뒤 쿠키가 앱에 남는지 확실하지 않다. 안 되면 Cloudflare 경로는 Access 없이 gateway 인증과 엣지 방어로 운영한다.
 - 홈 화면 앱 안에서 카메라로 QR을 스캔할 수 있는지 확인한다(2단계). 안 되면 코드 입력 방식에 시도 횟수 제한을 둔다.
-- 실기기 확인이 남았다. 2026-10-05 Android(Galaxy Z Fold8, Chrome 154)를 USB로 dev 하네스에 붙여 페어링, 방 목록, 한글 입력과 보내기, 사진 첨부, 연결 끊김과 재연결을 확인했고, 폰 녹음 파일이 맥(`AVAudioFile`)에서 열리는 것까지 봤다. 재시작한 실제 앱, iPhone 홈 화면 앱, 두 입구(Tailscale Serve, Cloudflare Tunnel), 잠긴 폰의 푸시 수신(그 폰 Chrome이 알림 요청을 거부하도록 설정돼 있었다), 맥 음성 인식 서비스 네 가지는 아직 실기기로 확인하지 않았다.
+- 실기기 확인이 남았다. 2026-10-05 Android(Galaxy Z Fold8, Chrome 154)를 USB로 dev 하네스에 붙여 페어링, 방 목록, 한글 입력과 보내기, 사진 첨부, 연결 끊김과 재연결을 확인했고, 폰 녹음 파일이 맥(`AVAudioFile`)에서 열리는 것까지 봤다. 같은 날 Cloudflare Quick Tunnel 뒤의 dev 하네스에 데스크톱 Chrome으로 접속해 페어링(Secure 쿠키), `wss` 연결, 전송 후 실시간 프레임(27ms), 터널 경유 `/hub` 차단, 교차 출처 403을 확인했다. 그래서 Cloudflare 경로의 WebSocket은 막히지 않는다. 재시작한 실제 앱, iPhone 홈 화면 앱, Tailscale Serve 입구, 폰에서의 Cloudflare 접속, 잠긴 폰의 푸시 수신(그 폰 Chrome이 알림 요청을 거부하도록 설정돼 있었다), 맥 음성 인식 서비스 네 가지는 아직 실기기로 확인하지 않았다.
 
 구현하며 닫은 항목:
 

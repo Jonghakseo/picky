@@ -367,8 +367,13 @@
   padding: 8px 10px;
   color: var(--ds-color-text-body);
   font: var(--hud-type-body);
-  /* bubbleLineHeightMultiple = 1.19: PickyMarkdownInlineTextView.swift:506 */
-  line-height: 1.19;
+  /* AppKit's bubbleLineHeightMultiple (1.19, PickyMarkdownInlineTextView.swift)
+   * multiplies the font's natural line height, not its point size. SF at 13pt
+   * lays out at 16pt (NSLayoutManager.defaultLineHeight), so the HUD line box
+   * is 16 * 1.19 = 19.04pt, 1.465x the font size. CSS line-height multiplies
+   * the font size, so the ratio has to be composed here. */
+  --bubble-line-height: 1.465;
+  line-height: var(--bubble-line-height);
   overflow-wrap: anywhere;
 }
 
@@ -453,6 +458,15 @@
   /* leader is drawn semibold at body size: PickyMarkdownInlineTextView.swift:224 */
   font: var(--hud-type-body-semibold);
   color: var(--ds-color-text-body);
+}
+
+/* The `font` shorthand resets line-height to normal; HUD headings share the
+ * bubble paragraph style, so they keep the bubble line height. */
+.md > h1,
+.md > h2,
+.md > h3,
+.md li::before {
+  line-height: var(--bubble-line-height, normal);
 }
 
 .md strong {

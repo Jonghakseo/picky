@@ -21,7 +21,9 @@ body {
   background: var(--ds-color-background);
   color: var(--ds-color-text-primary);
   font: var(--hud-type-body);
-  -webkit-font-smoothing: antialiased;
+  /* No -webkit-font-smoothing override: AppKit draws HUD text with the system
+   * default smoothing, and `antialiased` renders visibly thinner strokes in
+   * macOS browsers. iOS ignores the property either way. */
   /* HUD text breaks Hangul at word boundaries (AppKit's standard line-break
    * strategy includes hangulWordPriority); browsers break between syllables. */
   word-break: keep-all;

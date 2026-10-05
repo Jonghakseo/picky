@@ -2258,6 +2258,149 @@ textarea.composer-editor::placeholder {
   color: var(--ds-color-accent-text);
 }
 
+/* Uncommitted line counts beside the changes tab label. */
+.panel-tab-counts {
+  margin-left: 6px;
+}
+
+.panel-tab-counts .work-git-pair {
+  font: var(--hud-type-meta-monospaced-medium);
+}
+
+/* ---------- Git summary at the top of the work panel ----------
+ * The phone's copy of the HUD context line and its details popover
+ * (PickyConversationContextLineView.swift): repository · branch,
+ * push/pull counts, branch total with the uncommitted subset dimmed at 0.72
+ * (uncommittedMetricOpacity), then the working folder with a copy button.
+ * Push and pull stay read-only here: running them from the phone would
+ * change the remote repository without the Mac in front of the user. */
+.work-git {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px var(--ds-space-3) var(--ds-space-1);
+  border-bottom: 1px solid var(--ds-color-border-subtle);
+}
+
+.work-git-row,
+.work-git-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.work-git-icon {
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.work-git-repo {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--hud-type-body-compact-semibold);
+  color: var(--ds-color-text-primary);
+}
+
+.work-git-sep {
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.work-git-branch {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--hud-type-body-compact-monospaced);
+  color: var(--ds-color-text-body);
+}
+
+.work-git-position {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: var(--ds-radius-pill);
+  font: var(--hud-type-status-monospaced-medium);
+}
+
+.work-git-position.is-ahead {
+  color: var(--ds-color-accent-text);
+  background: var(--ds-color-accent-subtle);
+}
+
+.work-git-position.is-behind {
+  color: var(--ds-color-warning-text);
+  background: color-mix(in srgb, var(--ds-color-warning) 14%, transparent);
+}
+
+.work-git-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  padding-left: 20px;
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+}
+
+.work-git-pair {
+  display: inline-flex;
+  gap: 4px;
+  font: var(--hud-type-status-monospaced-medium);
+}
+
+.work-git-pair.is-dim {
+  opacity: 0.72;
+}
+
+.work-git-add {
+  color: var(--ds-color-success-text);
+}
+
+.work-git-del {
+  color: var(--ds-color-destructive-text);
+}
+
+.work-git-path {
+  min-height: 36px;
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-tertiary);
+}
+
+.work-git-path-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 44pt tap target without growing the row: the hit area overhangs it. */
+.work-git-copy {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  margin-left: auto;
+  color: var(--ds-color-accent-text);
+}
+
+.work-git-copy::after {
+  content: "";
+  position: absolute;
+  inset: -6px -4px;
+}
+
+.work-git-copy.is-copied {
+  color: var(--ds-color-success-text);
+}
+
 .panel-list {
   display: flex;
   flex-direction: column;

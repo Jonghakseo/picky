@@ -46,6 +46,18 @@ export function demoQueryResult(query: RemoteQuery): unknown {
           { name: "handoff-to-picky", description: "Continue this work in Picky", source: "extension" },
         ],
       };
+    case "session.gitSummary":
+      return {
+        sessionId: query.sessionId,
+        isGitRepo: true,
+        repositoryName: "picky",
+        branchName: "feat/remote-git-summary",
+        hasUncommittedChanges: true,
+        uncommitted: { insertions: 5, deletions: 1 },
+        branch: { insertions: 19, deletions: 3 },
+        aheadCount: 1,
+        behindCount: 0,
+      };
     case "session.diff":
       return {
         sessionId: query.sessionId,

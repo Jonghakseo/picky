@@ -34,6 +34,7 @@ import { sessionWithAppendedLog } from "./session-log-append.js";
 import type { AgentRuntime, RuntimeCreateOptions, RewindTarget, RuntimeAutocompleteApplyRequest, RuntimeAutocompleteCapabilities, RuntimeAutocompleteCompletion, RuntimeAutocompleteQuery, RuntimeAutocompleteSuggestions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { ToolHistoryDetailService, type ToolHistoryDetailRequest } from "./application/tool-history-detail.js";
 import { readSessionDiff, type SessionDiffResult } from "./application/session-diff.js";
+import { readSessionGitSummary, type SessionGitSummary } from "./application/session-git-summary.js";
 import { KeyedSerialQueue } from "./domain/keyed-serial-queue.js";
 import { executeUserBash as runUserBash, type UserBashDeps } from "./application/user-bash-execution.js";
 import { UserOperationTracker } from "./application/user-operation-tracker.js";
@@ -981,6 +982,9 @@ export class SessionSupervisor extends EventEmitter {
   getToolHistoryDetail(request: ToolHistoryDetailRequest) { return this.toolHistoryDetail.read(request); }
   async getSessionDiff(sessionId: string, view: SessionDiffView): Promise<SessionDiffResult> {
     return readSessionDiff(this.mustGet(sessionId).cwd, view);
+  }
+  async getSessionGitSummary(sessionId: string): Promise<SessionGitSummary> {
+    return readSessionGitSummary(this.mustGet(sessionId).cwd);
   }
   async rewindToEntry(sessionId: string, entryId: string): Promise<PickyAgentSession> {
     await this.asyncControls.prepareReplacement(sessionId);

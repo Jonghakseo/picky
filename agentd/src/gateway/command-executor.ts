@@ -137,6 +137,13 @@ export async function executeQuery(context: CommandContext, query: RemoteQuery):
     return { commands: Array.isArray(event.commands) ? event.commands : [] };
   }
 
+  if (query.type === "session.gitSummary") {
+    return await owner.request(
+      (commandId) => ({ type: "getSessionGitSummary", sessionId: query.sessionId, requestId: commandId }),
+      (candidate) => candidate.type === "sessionGitSummaryResult" && candidate.sessionId === query.sessionId,
+    ).catch(rethrowAsRemote);
+  }
+
   const event = await owner.request(
     (commandId) => ({ type: "getSessionDiff", sessionId: query.sessionId, view: query.view, requestId: commandId }),
     (candidate) => candidate.type === "sessionDiffResult" && candidate.sessionId === query.sessionId,

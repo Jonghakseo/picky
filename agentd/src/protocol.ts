@@ -144,6 +144,7 @@ export const PickySessionDiffFileSchema = z.object({
   truncated: z.boolean(),
 });
 export type PickySessionDiffFile = z.infer<typeof PickySessionDiffFileSchema>;
+const PickySessionGitLineCountsSchema = z.object({ insertions: z.number().int().nonnegative(), deletions: z.number().int().nonnegative() });
 export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), title: z.string(), path: z.string().optional(), url: z.string().url().optional(), updatedAt: isoTimestamp });
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
 export const PickySubagentToolSummarySchema = z.object({
@@ -804,6 +805,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   }),
   CommandBaseSchema.extend({ type: z.literal("listRewindTargets"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("getSessionDiff"), sessionId: z.string(), view: PickySessionDiffViewSchema, requestId: z.string().min(1) }),
+  // Remote gateway only: the HUD computes the same Git context in Swift.
+  CommandBaseSchema.extend({ type: z.literal("getSessionGitSummary"), sessionId: z.string(), requestId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getToolHistoryDetail"), sessionId: z.string().min(1), toolCallId: z.string().min(1), expectedSessionFile: z.string().min(1), part: z.enum(["arguments", "result"]), cursor: z.string().min(1).max(128).optional() }),
   CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   // Recovery snapshots are unicast only and require a socket already locked to
@@ -1081,6 +1084,19 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
     filesTruncated: z.boolean(),
     errorMessage: z.string().optional(),
     requestId: z.string().min(1),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("sessionGitSummaryResult"),
+    sessionId: z.string(),
+    requestId: z.string().min(1),
+    isGitRepo: z.boolean(),
+    repositoryName: z.string().optional(),
+    branchName: z.string().optional(),
+    hasUncommittedChanges: z.boolean(),
+    uncommitted: PickySessionGitLineCountsSchema,
+    branch: PickySessionGitLineCountsSchema.optional(),
+    aheadCount: z.number().int().nonnegative(),
+    behindCount: z.number().int().nonnegative(),
   }),
   EventBaseSchema.extend({
     type: z.literal("toolHistoryDetailResult"),

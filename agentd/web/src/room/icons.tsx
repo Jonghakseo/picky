@@ -307,3 +307,39 @@ export function CheckCircle({ size = 11, class: className }: IconProps): JSX.Ele
     </svg>
   );
 }
+
+export function Branch({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("point.3.connected.trianglepath.dotted", size, className)} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width={1.4}>
+      <circle cx="4" cy="3.5" r="1.6" />
+      <circle cx="4" cy="12.5" r="1.6" />
+      <circle cx="12" cy="5.5" r="1.6" />
+      <path d="M4 5.1v5.8M12 7.1c0 3-8 1.8-8 3.8" stroke-linecap="round" />
+    </svg>
+  );
+}
+
+export function Folder({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("folder", size, className)} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width={1.4}>
+      <path d="M1.8 4.2a1 1 0 0 1 1-1h3.4l1.4 1.6h5.6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z" stroke-linejoin="round" />
+    </svg>
+  );
+}
+
+export function DocOnDoc({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("doc.on.doc", size, className)} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width={1.4}>
+      <rect x="5" y="5" width="8.5" height="9" rx="1.5" />
+      <path d="M3 10.5V3.5a1 1 0 0 1 1-1h6" stroke-linecap="round" />
+    </svg>
+  );
+}
+
+export function Checkmark({ size = 11, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("checkmark", size, className)} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width={1.6}>
+      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  );
+}

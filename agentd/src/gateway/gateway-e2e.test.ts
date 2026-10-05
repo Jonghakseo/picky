@@ -236,6 +236,13 @@ describe("a phone from pairing to revocation", () => {
       expect(slash.ok).toBe(true);
       expect((slash.data as { commands: Array<{ name: string }> }).commands.map((command) => command.name)).toContain("skill:mock-skill");
 
+      // The work panel's Git summary is answered by the session's daemon. The seeded
+      // Pickle runs in a plain temp folder, so the answer is "not a repository".
+      client.send({ type: "query", queryId: "q-git", query: { type: "session.gitSummary", sessionId: seededSessionId } });
+      const gitSummary = await client.waitFor((message) => message.type === "query.result" && message.queryId === "q-git");
+      expect(gitSummary.ok).toBe(true);
+      expect(gitSummary.data).toMatchObject({ type: "sessionGitSummaryResult", sessionId: seededSessionId, isGitRepo: false, aheadCount: 0 });
+
       const probe = `E2E 후속 메시지 ${randomBytes(4).toString("hex")}`;
       const commandId = `cmd-${randomBytes(6).toString("hex")}`;
       client.send({

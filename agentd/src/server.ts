@@ -475,6 +475,10 @@ export class AgentdServer {
         const result = await this.options.supervisor.getSessionDiff(cmd.sessionId, cmd.view);
         this.send(ws, { type: "sessionDiffResult", sessionId: cmd.sessionId, view: cmd.view, requestId: cmd.requestId, ...result });
       },
+      getSessionGitSummary: async (cmd) => {
+        const result = await this.options.supervisor.getSessionGitSummary(cmd.sessionId);
+        this.send(ws, { type: "sessionGitSummaryResult", sessionId: cmd.sessionId, requestId: cmd.requestId, ...result });
+      },
       rewindSession: async (cmd) => {
         await this.options.supervisor.rewindToEntry(cmd.sessionId, cmd.entryId);
       },
@@ -1160,6 +1164,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "listRewindTargets":
     case "getToolHistoryDetail":
     case "getSessionDiff":
+    case "getSessionGitSummary":
     case "duplicatePickleSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "autocompleteQuery":
@@ -1309,6 +1314,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, targets: event.targets.length };
     case "sessionDiffResult":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, view: event.view, isGitRepo: event.isGitRepo ? 1 : 0, files: event.files.length, errorChars: event.errorMessage?.length };
+    case "sessionGitSummaryResult":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, isGitRepo: event.isGitRepo ? 1 : 0, ahead: event.aheadCount, behind: event.behindCount };
     case "sessionRewound":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, editorTextChars: event.editorText?.length, removedIds: event.removedIds.length };
     case "sessionReplyWritingUpdated":

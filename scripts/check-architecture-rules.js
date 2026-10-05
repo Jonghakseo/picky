@@ -274,6 +274,8 @@ const EXTERNAL_ONLY_PROTOCOL_COMMANDS = new Set([
   "getPickySettings",
   "setPickySettings",
   "listDockGroups",
+  // The remote gateway's work panel; the HUD reads Git state in Swift.
+  "getSessionGitSummary",
 ]);
 const EXTERNAL_ONLY_PROTOCOL_EVENTS = new Set([
   "dockGroupsSnapshot",
@@ -282,6 +284,7 @@ const EXTERNAL_ONLY_PROTOCOL_EVENTS = new Set([
   "externalEntryAck",
   "pickySettingsAck",
   "pushToTalkControlAck",
+  "sessionGitSummaryResult",
 ]);
 
 // Reads the `type: z.literal("...")` discriminators of a `const <name> = [ ... ]`

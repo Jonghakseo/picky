@@ -14,6 +14,15 @@ import type { RoomActions } from "./contract";
 import { onTablistKeyDown, useDialog } from "../ui/use-dialog";
 import { t } from "./i18n";
 import { changeCounts, diffLineKind, parseDiffResult, type DiffResult } from "./policy/diff";
+import {
+  changesTabCounts,
+  compactWorkspacePath,
+  gitSummaryPresentation,
+  parseGitSummary,
+  type GitMetricPair,
+  type GitSummary,
+} from "./policy/git-summary";
+import { Branch, Checkmark, DocOnDoc, Folder } from "./icons";
 
 export type WorkTab = "artifacts" | "changes";
 
@@ -29,7 +38,24 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
   const [view, setView] = useState<PickySessionDiffView>("unstaged");
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const [gitSummary, setGitSummary] = useState<GitSummary | null>(null);
   const dialog = useDialog<HTMLDivElement>({ onDismiss });
+
+  // Refreshed when the Pickle changes state, which is when its work lands.
+  // A daemon too old to answer leaves the summary empty; the folder row still shows.
+  const sessionStatus = session?.status;
+  useEffect(() => {
+    let cancelled = false;
+    void actions.query({ type: "session.gitSummary", sessionId }).then((result) => {
+      if (cancelled) return;
+      setGitSummary(result.ok ? parseGitSummary(result.data) : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, sessionStatus]);
+  const tabCounts = changesTabCounts(gitSummary);
 
   useEffect(() => {
     if (tab !== "changes") return;
@@ -68,6 +94,7 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
             <span class="sr-only">{t("common.close")}</span>
           </button>
         </div>
+        <GitSummarySection cwd={session?.cwd} summary={gitSummary} />
         <div class="panel-tabs" role="tablist" onKeyDown={onTablistKeyDown}>
           {(["artifacts", "changes"] as WorkTab[]).map((option) => (
             <button
@@ -82,6 +109,12 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
               onClick={() => setTab(option)}
             >
               {t(option === "artifacts" ? "hud.utilityPanel.tab.artifacts" : "hud.utilityPanel.tab.changes")}
+              {option === "changes" && tabCounts ? (
+                <span class="panel-tab-counts">
+                  <span class="sr-only">, {t("remote.room.work.git.uncommitted")}</span>
+                  <MetricPair pair={tabCounts} />
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -99,6 +132,96 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function GitSummarySection({ cwd, summary }: { cwd?: string; summary: GitSummary | null }): JSX.Element | null {
+  const presentation = summary ? gitSummaryPresentation(summary) : undefined;
+  const path = cwd?.trim();
+  if (!presentation && !path) return null;
+  return (
+    <section class="work-git" aria-label={t("hud.context.details.accessibilityLabel")}>
+      {presentation ? (
+        <div class="work-git-row">
+          <Branch size={14} class="work-git-icon" />
+          {presentation.repositoryName ? <span class="work-git-repo">{presentation.repositoryName}</span> : null}
+          {presentation.repositoryName && presentation.branchLabel ? (
+            <span class="work-git-sep" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
+          {presentation.branchLabel ? <span class="work-git-branch">{presentation.branchLabel}</span> : null}
+          {presentation.ahead > 0 ? (
+            <span class="work-git-position is-ahead" role="img" aria-label={t("remote.room.work.git.ahead", presentation.ahead)}>
+              ↑{presentation.ahead}
+            </span>
+          ) : null}
+          {presentation.behind > 0 ? (
+            <span class="work-git-position is-behind" role="img" aria-label={t("remote.room.work.git.behind", presentation.behind)}>
+              ↓{presentation.behind}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {presentation?.total ? (
+        <div class="work-git-metrics">
+          <span>{t(presentation.total.isBranch ? "remote.room.work.git.branchTotal" : "remote.room.work.git.uncommitted")}</span>
+          <MetricPair pair={presentation.total.pair} />
+          {presentation.uncommitted ? (
+            <>
+              <span class="work-git-sep" aria-hidden="true">
+                ·
+              </span>
+              <span>{t("remote.room.work.git.uncommitted")}</span>
+              <MetricPair pair={presentation.uncommitted} dim />
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {path ? <WorkspacePath path={path} /> : null}
+    </section>
+  );
+}
+
+function MetricPair({ pair, dim = false }: { pair: GitMetricPair; dim?: boolean }): JSX.Element {
+  return (
+    <span class={`work-git-pair${dim ? " is-dim" : ""}`}>
+      {pair.insertions ? <span class="work-git-add">{pair.insertions}</span> : null}
+      {pair.deletions ? <span class="work-git-del">{pair.deletions}</span> : null}
+    </span>
+  );
+}
+
+function WorkspacePath({ path }: { path: string }): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1_500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const clipboard = globalThis.navigator?.clipboard;
+  const label = t(copied ? "hud.context.workspace.copy.copied" : "hud.context.workspace.copy.help");
+  return (
+    <div class="work-git-path">
+      <Folder size={14} class="work-git-icon" />
+      <span class="work-git-path-text">{compactWorkspacePath(path)}</span>
+      {clipboard ? (
+        <button
+          class={`work-git-copy${copied ? " is-copied" : ""}`}
+          type="button"
+          aria-label={label}
+          title={label}
+          onClick={() => {
+            void clipboard.writeText(path).then(
+              () => setCopied(true),
+              () => setCopied(false),
+            );
+          }}
+        >
+          {copied ? <Checkmark size={14} /> : <DocOnDoc size={14} />}
+        </button>
+      ) : null}
     </div>
   );
 }

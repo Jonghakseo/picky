@@ -1148,14 +1148,16 @@ Pair inside the Home Screen app, not in Safari: iOS keeps the Home Screen app's 
 
 ### 15.3 Using it on the phone
 
-- **Room list**: Picky (the main conversation) stays at the top, then Pickles by recent activity. Dock groups appear as filters, archived Pickles sit at the bottom, and unread marks are shared with the Mac dock. **New Pickle** creates one in a pinned or recent folder.
+- **Room list**: Picky (the main conversation) stays at the top, then Pickles by recent activity. Dock groups appear as filters and stay selected when you return from a room. Archived Pickles sit at the bottom, and reading a room clears its unread mark on both the phone and Mac dock. Archiving from a room returns to the list after the Mac confirms. **New Pickle** creates one in a pinned or recent folder.
 - **Rooms** look like the HUD conversation card. Tap a bubble to see what the Mac shows on hover (sent time, open as report, elapsed time).
 - **Sending**: while a Pickle runs, send delivers guidance to the current work; after it completes, send starts a follow-up. For a cancelled or failed Pickle, send resumes or retries the work. The arrow next to send offers "after this response", scheduled times, and a custom time. "After this response" is unavailable for cancelled or failed Pickles; timed delivery accepts text only, so attaching a photo disables it. Picky's main room does not offer scheduled delivery. Return inserts a new line; the send button sends. A message starting with `!` runs a shell command, as on the Mac.
+- **Commands**: type `/` in a Pickle composer to see matching slash commands, prompts, and skills. Tap a suggestion to insert it, add any arguments, then send.
+- **Background work**: a summary above the Pickle composer expands into command and subagent states, elapsed time, and delivery results. When only background work remains, the composer sends a follow-up instead of guidance to an active response. Stopping an individual background task stays on the Mac.
 - **Stop**: when background tasks are running, you choose between stopping the response only and stopping the background tasks too. Queued messages move back into the phone's composer.
 - **Questions** from Pickles and Picky can be answered in the room.
 - **Photos**: attach up to 10 images (20 MB each). They are saved on the Mac and sent as file paths, like files dropped on the HUD composer.
 - **Dictation**: the mic records on the phone; the Mac transcribes it with the speech recognition service and language set in Picky, adds the text to the composer, and does not send it. Recordings stop after 5 minutes and are deleted after transcription. If the Mac's speech recognition is not allowed, use **Dictation permission** → **Ask for permission** on the Mac first; a phone request never opens a permission prompt on the Mac.
-- **Files**: links to files in a conversation, tool images, and artifacts open a read-only preview (text up to its first 1 MB, Markdown, images, PDF; HTML and SVG open with scripts disabled). Only files the conversation refers to can be opened.
+- **Files**: links to files in a conversation, tool images, and artifacts open a read-only preview (text up to its first 1 MB, Markdown, images, PDF; HTML and SVG open with scripts disabled). Only files the conversation refers to can be opened. Picky's main room also shows images read by the main agent; these image rows last until the remote gateway restarts.
 - **Work panel**: the header opens Artifacts and Changes. The terminal stays on the Mac.
 - Messages you send to Picky from the phone do not show a cursor bubble or speak on the Mac.
 - Mac-only features: Push-to-Talk, screen context, the embedded terminal, Pi terminal sync, and dock drag.

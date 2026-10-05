@@ -48,7 +48,17 @@ Hub behavior:
 The sidebar contains these eight destinations:
 
 - **Dashboard**: an update card when a new Picky version is ready, setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
-- **Statistics**: local work and AI-usage summaries. Filter by period and project, then switch between Work and Usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
+- **Statistics**: local AI-usage and work summaries, with **AI usage** as the first tab. Filter by period (**Last 7 days** ends today) and project. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
+
+### 2.2 Plan limits
+
+The top of **Statistics → AI usage** shows a **Plan limits** card for each Claude or ChatGPT subscription Picky is signed in to through Pi. Signed-out providers and free plans do not appear.
+
+- Each card shows the remaining share of the 5-hour **Session** and **Weekly** limits with their reset times, the number of available **Limit resets**, and **Status** and **Dashboard** links to the provider's pages. A plan with only a weekly window shows **No data** for Session.
+- A tick on each bar marks what would be left at an even pace until the reset. **Ahead of pace** appears when the remaining share is more than 5 points below it.
+- Picky checks every 5 minutes; **Refresh** checks immediately. If a check fails, the card keeps the last values dimmed and says how old they are.
+- **Show in menu bar** adds a menu bar item for that provider, right of the Picky icon, with its logo and the remaining session and weekly share. Clicking it opens this tab.
+- The limits come from the providers' undocumented usage endpoints and may show **No data** if a provider changes them.
 - **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
 - **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.
 - **Scheduled jobs**: a read-only calendar of schedules registered with the Cron plugin. Week or month view shows recorded runs and dashed projections for recurring jobs, with an agenda list and filters; click a day entry to read or copy the instructions of that run. Create or manage schedules on the Plugins page by talking to Picky.
@@ -58,13 +68,13 @@ The sidebar contains these eight destinations:
 
 Closing a guide, plugin detail, or settings confirmation returns keyboard focus to the control that opened it. With macOS **Keyboard navigation** enabled, press Space to activate that control again.
 
-### 2.2 Recent Conversation
+### 2.3 Recent Conversation
 
 **Recent Conversation** is the Picky main-agent chat. You can review Markdown-rendered prompts and replies, send a direct message from the bottom composer, or start a **New session**. Direct messages capture current desktop context through the same local-first flow as voice and Quick Input.
 
 Once the daemon reports a session file, Hub also shows **Copy resume command**, which copies `cd <cwd> && pi --session <file>` so you can continue the same session in your own shell.
 
-### 2.3 Plugins
+### 2.4 Plugins
 
 Picky never modifies your Pi coding-agent directory on launch. Plugin installation is opt-in. By default that directory is `~/.pi/agent`, or the `PI_CODING_AGENT_DIR` configured in Settings/environment.
 
@@ -99,13 +109,13 @@ The **MCP servers** tab on the Plugins page connects [Model Context Protocol](ht
 
 Adding, removing, enabling, or changing a server's scope applies to live sessions through the same automatic reload. MCP tools are reached through Pi's `codemode` tool by default; a server's `exposure` setting in `mcp.json` changes that. Every Pickle starts its own connections to the stdio servers in its scope.
 
-### 2.4 Settings
+### 2.5 Settings
 
 Settings keeps its category jump links visible while you scroll through seven groups: **General**, **Accounts and agents**, **Voice and input**, **Screen and overlays**, **Pickles and workspace**, **Notifications, permissions, and privacy**, and **Advanced and diagnostics**. Group headings include a short summary; the Main Agent area further separates workspace and instructions, model and reasoning, screen capture, armed-Pickle delivery, and runtime paths into focused cards. Most toggles and menus save immediately. Directory and provider text fields retain their own drafts and show **Save changes** / **Saved** status.
 
 The **Accounts and agents** group includes Pi OAuth connections for OpenAI Codex and Anthropic. Use **Refresh** to query the current status, **Sign in** or **Reconnect** to authenticate in your browser, and **Disconnect** to remove a provider after confirmation. ChatGPT also offers **Sign in with code**: copy the displayed code, open the sign-in page, and enter it there. Picky waits for approval and connects the account automatically; **Cancel** stops the attempt and clears the code. Claude uses browser sign-in only. Completing either sign-in or disconnect refreshes authentication for the current Picky/Pickle daemon sessions.
 
-### 2.5 Sidebar controls
+### 2.6 Sidebar controls
 
 The controls at the bottom of the sidebar are always available:
 
@@ -377,7 +387,7 @@ Click a Pickle dock icon to open its card.
 
 The card contains:
 
-- Header with title, status badge, and menu.
+- Header with title, status badge, and menu. Clicking the context percentage opens a popover that can compact the conversation and, when the Pickle's model runs on a subscription shown under Plan limits, lists that plan's session and weekly limits.
 - Context line with working folder, Git/PR/link badges.
 - Conversation history as a messenger thread with Markdown-rendered replies and day dividers (**Today**, **Yesterday**, then dates). Hover a bubble to see its send time. Thinking is not shown in the thread; while a Pickle is replying, a line under the last bubble shows **Working · <step>** while a tool runs (the current checklist step, shell command title, skill, or delegated agent), **Preparing next step** while the agent writes out its next tool call, a short writing phrase such as **Choosing words** while reply text streams, and **Thinking** otherwise, with the elapsed time on hover. The last step stays on the line through pauses shorter than 5 seconds. The line disappears once the reply finishes, even if background work keeps running.
 - Picky replies always render in full in the HUD, including Markdown tables rendered as cell grids, and can still be opened as reports. Only user message bubbles keep the **Show more** and collapse controls. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays in the Pi session file).

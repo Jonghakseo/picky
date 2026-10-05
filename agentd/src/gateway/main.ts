@@ -8,7 +8,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseGatewayConfig } from "./config.js";
-import { GatewayServer } from "./server.js";
+import { GATEWAY_PORT_IN_USE_EXIT_CODE, GatewayPortInUseError, GatewayServer } from "./server.js";
 import { startParentExitWatcher } from "../parent-watchdog.js";
 import { logGateway } from "./log.js";
 
@@ -23,7 +23,14 @@ logGateway("startup", {
 });
 
 const server = new GatewayServer({ config });
-const boundPort = await server.start();
+const boundPort = await server.start().catch((error: unknown) => {
+  // A busy port cannot be retried into working, so the launcher gets a line it
+  // can turn into "port N is taken" instead of restarting every 30 s.
+  if (!(error instanceof GatewayPortInUseError)) throw error;
+  process.stderr.write(error.stderrLine);
+  logGateway("port in use", { port: error.port });
+  process.exit(GATEWAY_PORT_IN_USE_EXIT_CODE);
+});
 // Readiness line the hub waits for, written straight to stdout so it is never
 // filtered by the structured logger's env switch.
 process.stdout.write(`picky-gateway listening on 127.0.0.1:${boundPort}\n`);

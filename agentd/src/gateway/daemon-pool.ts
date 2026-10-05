@@ -66,6 +66,7 @@ export class DaemonPool {
     this.primaryUrl = topology.primaryUrl;
     const wanted = new Set<string>([...(topology.primaryUrl ? [topology.primaryUrl] : []), ...topology.children.map((child) => child.url)]);
 
+    const orphaned: string[] = [];
     for (const [url, link] of this.links) {
       if (wanted.has(url)) {
         link.updateToken(topology.token);
@@ -73,7 +74,7 @@ export class DaemonPool {
       }
       link.stop();
       this.links.delete(url);
-      this.dropProjectionsOwnedBy(url);
+      orphaned.push(...this.dropProjectionsOwnedBy(url));
     }
 
     for (const url of wanted) {
@@ -87,7 +88,19 @@ export class DaemonPool {
       this.links.set(url, link);
       link.start();
     }
+
+    // Releasing a child daemon does not end its sessions: they stay in the
+    // shared store and the primary still projects them. Without re-seeding, the
+    // room list skips an id with no projection and the Pickle disappears from
+    // the phone. A primary that is not connected yet re-bootstraps everything
+    // on its own, so there is nothing to ask for in that case.
+    const primary = this.primaryUrl ? this.links.get(this.primaryUrl) : undefined;
+    if (primary?.connected) {
+      for (const sessionId of orphaned) void this.recoverFrom(sessionId, "owner-released");
+    }
+
     this.listener.onConnectionChange();
+    this.listener.onSessionsChanged();
   }
 
   stop(): void {
@@ -212,11 +225,15 @@ export class DaemonPool {
     this.listener.onSessionsChanged();
   }
 
-  private dropProjectionsOwnedBy(url: string): void {
+  /** Returns the ids of the sessions that just lost their folded projection. */
+  private dropProjectionsOwnedBy(url: string): string[] {
+    const dropped: string[] = [];
     for (const [sessionId, entry] of this.projections) {
       if (entry.ownerUrl !== url) continue;
       this.projections.delete(sessionId);
+      dropped.push(sessionId);
       this.listener.onSessionReset(sessionId);
     }
+    return dropped;
   }
 }

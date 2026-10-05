@@ -27,6 +27,27 @@ export interface GatewayServerOptions {
   pushFetch?: PushFetch;
 }
 
+/** Stderr marker the Swift launcher matches to stop its restart loop. */
+export const GATEWAY_PORT_IN_USE_MARKER = "PICKY_GATEWAY_PORT_IN_USE";
+/** Exit code that goes with the marker; anything else stays a plain failure. */
+export const GATEWAY_PORT_IN_USE_EXIT_CODE = 3;
+
+/**
+ * The configured port is taken. Retrying cannot help, so the launcher has to
+ * tell the user instead of restarting every 30 s with "exited with status 1".
+ */
+export class GatewayPortInUseError extends Error {
+  constructor(readonly port: number) {
+    super(`port ${port} is already in use`);
+    this.name = "GatewayPortInUseError";
+  }
+
+  /** The one line the launcher parses, terminated so it is never merged. */
+  get stderrLine(): string {
+    return `${GATEWAY_PORT_IN_USE_MARKER}:${this.port}\n`;
+  }
+}
+
 export class GatewayServer {
   readonly core: GatewayCore;
   private readonly api: ApiRouter;
@@ -53,13 +74,24 @@ export class GatewayServer {
     server.on("upgrade", (request, socket, head) => this.handleUpgrade(request, socket, head));
     this.httpServer = server;
 
-    this.boundPort = await new Promise<number>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(this.options.config.port, GATEWAY_LOOPBACK_HOST, () => {
-        const address = server.address();
-        resolve(typeof address === "object" && address ? address.port : this.options.config.port);
+    try {
+      this.boundPort = await new Promise<number>((resolve, reject) => {
+        server.once("error", (error: NodeJS.ErrnoException) => {
+          reject(error.code === "EADDRINUSE" ? new GatewayPortInUseError(this.options.config.port) : error);
+        });
+        server.listen(this.options.config.port, GATEWAY_LOOPBACK_HOST, () => {
+          const address = server.address();
+          resolve(typeof address === "object" && address ? address.port : this.options.config.port);
+        });
       });
-    });
+    } catch (error) {
+      // The core is already running at this point; a start that never bound
+      // must not leave daemon links and timers behind.
+      this.core.stop();
+      server.close();
+      this.httpServer = undefined;
+      throw error;
+    }
     return this.boundPort;
   }
 

@@ -38,9 +38,6 @@ function hostOf(endpoint: string): string {
   }
 }
 
-/** The Mac has to decode, transcribe and clean up; speech can take a while. */
-export const DICTATION_TIMEOUT_MS = 120_000;
-
 type ApiHandler = (request: IncomingMessage, response: ServerResponse, facts: RequestFacts) => void | Promise<void>;
 
 export class ApiRouter {
@@ -284,7 +281,9 @@ export class ApiRouter {
     await writeFileAtomic(filePath, body);
 
     try {
-      const data = await this.core.hub.request(device.id, { type: "dictation.transcribe", filePath, mime }, DICTATION_TIMEOUT_MS);
+      // The timeout comes from hubRequestTimeoutMs: dictation gets more room
+      // than the Mac's own budget so the phone sees its answer, not `timeout`.
+      const data = await this.core.hub.request(device.id, { type: "dictation.transcribe", filePath, mime });
       const text = (data as { text?: unknown } | undefined)?.text;
       this.core.audit.record({ action: "dictation", deviceId: device.id, bytes: body.byteLength, ok: typeof text === "string" });
       sendJson(response, 200, typeof text === "string" && text.trim()

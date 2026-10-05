@@ -16,6 +16,18 @@ import { errorMessage, logGateway } from "./log.js";
 import { randomId } from "./storage.js";
 
 export const HUB_REQUEST_TIMEOUT_MS = 20_000;
+/** The Mac has to decode, transcribe and clean up; speech can take a while. */
+export const DICTATION_TIMEOUT_MS = 120_000;
+
+/**
+ * This timer starts when the request leaves the gateway, while the Mac's
+ * 120 s budget starts after it decodes the audio. With equal values the
+ * gateway always gives up first and the phone sees `timeout` instead of the
+ * transcript the Mac was about to send.
+ */
+export function hubRequestTimeoutMs(request: HubRequest): number {
+  return request.type === "dictation.transcribe" ? DICTATION_TIMEOUT_MS + 30_000 : HUB_REQUEST_TIMEOUT_MS;
+}
 
 export type HubOverlay = Extract<HubToGatewayMessage, { type: "hub.overlay" }>;
 export type HubConfig = Extract<HubToGatewayMessage, { type: "hub.config" }>;
@@ -80,7 +92,7 @@ export class HubLink {
     this.socket?.send(JSON.stringify(message));
   }
 
-  async request(deviceId: string, request: HubRequest, timeoutMs = HUB_REQUEST_TIMEOUT_MS): Promise<unknown> {
+  async request(deviceId: string, request: HubRequest, timeoutMs = hubRequestTimeoutMs(request)): Promise<unknown> {
     if (!this.socket) throw new HubRequestError("macOffline", "Picky on the Mac is not connected.");
     const requestId = `req_${randomId(8)}`;
     return new Promise<unknown>((resolve, reject) => {

@@ -1,0 +1,26 @@
+{
+  "$comment": "Phone-only copy for the conversation room (web/src/room/**). Catalog keys stay in Picky/Resources/Localizable.xcstrings so the HUD and the phone read the same; only wording that exists on the phone alone belongs here. Keys must not collide with web/i18n/remote-strings.json.",
+
+  "remote.room.composer.placeholder.steer": { "ko": "메시지 보내기", "en": "Message" },
+  "remote.room.composer.sendFailed": { "ko": "보내지 못했어요. 잠시 뒤 다시 시도해 주세요.", "en": "Couldn't send it. Try again in a moment." },
+  "remote.room.composer.macOffline": { "ko": "Mac에 연결되어야 보낼 수 있어요", "en": "Connect to your Mac to send" },
+  "remote.room.composer.editingScheduled": { "ko": "예약 메시지를 고치는 중이에요", "en": "Editing a scheduled message" },
+  "remote.room.composer.editingQueued": { "ko": "대기 중인 메시지를 고치는 중이에요", "en": "Editing a queued message" },
+
+  "remote.room.schedule.sheet.title": { "ko": "보낼 시간", "en": "Send time" },
+  "remote.room.schedule.custom.send": { "ko": "예약", "en": "Schedule" },
+
+  "remote.room.newMessages": { "ko": "새 메시지", "en": "New messages" },
+  "remote.room.loading": { "ko": "대화를 불러오는 중이에요", "en": "Loading the conversation" },
+
+  "remote.room.attachment.uploading": { "ko": "올리는 중", "en": "Uploading" },
+  "remote.room.attachment.failed": { "ko": "올리지 못했어요", "en": "Upload failed" },
+  "remote.room.attachment.remove": { "ko": "첨부 빼기", "en": "Remove attachment" },
+
+  "remote.room.voice.cancel": { "ko": "녹음 취소", "en": "Cancel recording" },
+  "remote.room.voice.listening.hint": { "ko": "다시 누르면 입력란에 넣어요", "en": "Press again to add it to the input" },
+  "remote.room.voice.permission.hint": { "ko": "iPhone 설정의 Safari에서 마이크 접근을 켜 주세요", "en": "Turn on microphone access under Safari in iPhone Settings" },
+  "remote.room.voice.macUnavailable": { "ko": "Mac에서 받아쓸 수 없어요", "en": "Can't transcribe on your Mac" },
+  "remote.room.voice.macUnavailable.permission.hint": { "ko": "Mac의 시스템 설정에서 Picky의 음성 인식을 허용해 주세요", "en": "Allow speech recognition for Picky in System Settings on your Mac" },
+  "remote.room.voice.macUnavailable.service.hint": { "ko": "Mac의 Picky 설정에서 음성 인식 서비스를 확인해 주세요", "en": "Check the speech recognition service in Picky settings on your Mac" }
+}

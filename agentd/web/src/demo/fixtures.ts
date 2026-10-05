@@ -366,7 +366,7 @@ export const demoFolders: RemoteFolders = {
 
 export const demoMac: RemoteMacState = {
   connected: true,
-  name: "종학의 MacBook Pro",
+  name: "MacBook Pro",
   appVersion: "0.9.3-beta.2",
   dictation: { available: true },
 };

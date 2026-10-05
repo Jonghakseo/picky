@@ -1,0 +1,212 @@
+/**
+ * Pickle settings behind the composer chip.
+ * Source: PickyConversationRuntimeControlsView.swift (sections, rows, toggles).
+ * The keyboard shortcut hints (⌃P, ⌘N) are left out: a phone has no such keys.
+ */
+import { useState } from "preact/hooks";
+import type { JSX } from "preact";
+
+import type { ThinkingLevel } from "../../../../src/protocol";
+import { ChevronRight } from "../icons";
+import { t } from "../i18n";
+
+export interface RuntimeModelOption {
+  provider: string;
+  modelId: string;
+  displayName: string;
+  fastModeSupported?: boolean;
+}
+
+export interface RuntimeOptions {
+  models: RuntimeModelOption[];
+  thinkingLevels: ThinkingLevel[];
+}
+
+export const THINKING_LEVELS: ThinkingLevel[] = ["off", "low", "medium", "high", "max"];
+
+/**
+ * The gateway relays whatever the daemon answers for `session.runtimeOptions`.
+ * Only the fields this sheet draws are required, so a daemon that adds fields
+ * does not break the sheet and one that answers nothing still opens it.
+ */
+export function parseRuntimeOptions(data: unknown): RuntimeOptions {
+  const record = (data ?? {}) as { models?: unknown; thinkingLevels?: unknown };
+  const models: RuntimeModelOption[] = Array.isArray(record.models)
+    ? record.models.flatMap((entry) => {
+        const model = entry as Partial<RuntimeModelOption>;
+        if (typeof model.provider !== "string" || typeof model.modelId !== "string") return [];
+        return [
+          {
+            provider: model.provider,
+            modelId: model.modelId,
+            displayName: typeof model.displayName === "string" ? model.displayName : model.modelId,
+            fastModeSupported: model.fastModeSupported === true,
+          },
+        ];
+      })
+    : [];
+  const levels = Array.isArray(record.thinkingLevels)
+    ? record.thinkingLevels.filter((level): level is ThinkingLevel =>
+        THINKING_LEVELS.includes(level as ThinkingLevel),
+      )
+    : [];
+  return { models, thinkingLevels: levels.length > 0 ? levels : THINKING_LEVELS };
+}
+
+export interface SettingsSheetProps {
+  options: RuntimeOptions | null;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  fastMode: boolean;
+  fastModeSupported: boolean;
+  notifyMain: boolean;
+  notifyMacOS: boolean;
+  onSelectModel: (model: RuntimeModelOption) => void;
+  onSelectThinking: (level: ThinkingLevel) => void;
+  onToggleFast: (enabled: boolean) => void;
+  onToggleNotify: (target: "main" | "macos", enabled: boolean) => void;
+  onDismiss: () => void;
+}
+
+type Page = "root" | "model" | "thinking";
+
+export function SettingsSheet(props: SettingsSheetProps): JSX.Element {
+  const [page, setPage] = useState<Page>("root");
+  return (
+    <div class="sheet-backdrop" onClick={props.onDismiss}>
+      <div class="sheet-anchor is-leading" onClick={(event: MouseEvent) => event.stopPropagation()}>
+        <div class="settings-menu" role="dialog">
+          {page === "root" ? <RootPage {...props} onOpen={setPage} /> : null}
+          {page === "model" ? (
+            <ListPage
+              title={t("hud.composer.settings.model")}
+              onBack={() => setPage("root")}
+              rows={(props.options?.models ?? []).map((model) => ({
+                id: `${model.provider}/${model.modelId}`,
+                title: model.displayName,
+                selected: props.model === model.modelId || props.model === `${model.provider}/${model.modelId}`,
+                onSelect: () => {
+                  props.onSelectModel(model);
+                  setPage("root");
+                },
+              }))}
+            />
+          ) : null}
+          {page === "thinking" ? (
+            <ListPage
+              title={t("hud.composer.settings.thinking")}
+              onBack={() => setPage("root")}
+              rows={(props.options?.thinkingLevels ?? THINKING_LEVELS).map((level) => ({
+                id: level,
+                title: level,
+                selected: props.thinkingLevel === level,
+                onSelect: () => {
+                  props.onSelectThinking(level);
+                  setPage("root");
+                },
+              }))}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RootPage(props: SettingsSheetProps & { onOpen: (page: Page) => void }): JSX.Element {
+  return (
+    <>
+      <div class="settings-section">{t("hud.composer.settings.title")}</div>
+      <button class="settings-row" type="button" onClick={() => props.onOpen("model")}>
+        <span class="settings-row-title">{t("hud.composer.settings.model")}</span>
+        <span class="settings-row-value">{compactModelName(props.model) ?? ""}</span>
+        <span class="settings-row-chevron">
+          <ChevronRight />
+        </span>
+      </button>
+      <button class="settings-row" type="button" onClick={() => props.onOpen("thinking")}>
+        <span class="settings-row-title">{t("hud.composer.settings.thinking")}</span>
+        <span class="settings-row-value">{props.thinkingLevel ?? ""}</span>
+        <span class="settings-row-chevron">
+          <ChevronRight />
+        </span>
+      </button>
+      {props.fastModeSupported ? (
+        <ToggleRow
+          title={t("hud.composer.settings.fast")}
+          detail={t("hud.composer.settings.fast.detail")}
+          on={props.fastMode}
+          onToggle={() => props.onToggleFast(!props.fastMode)}
+        />
+      ) : null}
+      <div class="settings-divider" role="separator" />
+      <div class="settings-section">{t("hud.composer.settings.completion")}</div>
+      <ToggleRow
+        title={t("hud.composer.settings.notifyMain")}
+        on={props.notifyMain}
+        onToggle={() => props.onToggleNotify("main", !props.notifyMain)}
+      />
+      <ToggleRow
+        title={t("hud.composer.settings.notifyMacOS")}
+        on={props.notifyMacOS}
+        onToggle={() => props.onToggleNotify("macos", !props.notifyMacOS)}
+      />
+    </>
+  );
+}
+
+function ToggleRow({
+  title,
+  detail,
+  on,
+  onToggle,
+}: {
+  title: string;
+  detail?: string;
+  on: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  return (
+    <button class="settings-row is-toggle" type="button" role="switch" aria-checked={on} onClick={onToggle}>
+      <span class="settings-row-text">
+        <span class="settings-row-title">{title}</span>
+        {detail ? <span class="settings-row-detail">{detail}</span> : null}
+      </span>
+      <span class={`switch${on ? " is-on" : ""}`} aria-hidden="true">
+        <span class="switch-knob" />
+      </span>
+    </button>
+  );
+}
+
+interface ListRow {
+  id: string;
+  title: string;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+function ListPage({ title, rows, onBack }: { title: string; rows: ListRow[]; onBack: () => void }): JSX.Element {
+  return (
+    <>
+      <button class="settings-row" type="button" onClick={onBack}>
+        <span class="settings-row-title">{title}</span>
+        <span class="settings-row-value">{t("hud.composer.settings.back.accessibilityLabel")}</span>
+      </button>
+      <div class="settings-divider" role="separator" />
+      {rows.map((row) => (
+        <button key={row.id} class="settings-row" type="button" onClick={row.onSelect}>
+          <span class="settings-row-title">{row.title}</span>
+          {row.selected ? <span class="settings-row-value">{t("common.selected")}</span> : null}
+        </button>
+      ))}
+    </>
+  );
+}
+
+/** Chip model name without the vendor prefix, like `PickyComposerRuntimePresentation`. */
+export function compactModelName(identifier: string | undefined): string | undefined {
+  if (!identifier) return undefined;
+  const parts = identifier.split("/").filter((part) => part.length > 0);
+  return parts[parts.length - 1] ?? identifier;
+}

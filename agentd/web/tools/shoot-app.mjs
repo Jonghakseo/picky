@@ -49,6 +49,14 @@ const SHOTS = [
   { name: "preview-markdown", url: "/preview?room=s-webhook&path=/Users/you/Pickles/picky/docs/report.md&demo=1" },
   { name: "preview-image", url: "/preview?room=s-webhook&path=/Users/you/Pickles/picky/shot.png&demo=1" },
   { name: "preview-unsupported", url: "/preview?room=s-webhook&path=/Users/you/Pickles/picky/build/Picky.zip&demo=1" },
+  // Conversation rooms (src/room). The demo fixtures cover one state per room.
+  { name: "room-running", url: "/room/s-archive?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-question", url: "/room/s-webhook?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-completed", url: "/room/s-release?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-failed", url: "/room/s-queue-migration?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-queued", url: "/room/s-docs?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-tool-image", url: "/room/s-pipeline?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-main", url: "/room/main?demo=1", steps: [{ wait: 300 }] },
 ];
 
 const MIME = {

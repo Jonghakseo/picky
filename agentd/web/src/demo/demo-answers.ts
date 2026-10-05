@@ -37,6 +37,15 @@ export function demoQueryResult(query: RemoteQuery): unknown {
         ],
         thinkingLevels: ["off", "low", "medium", "high", "max"],
       };
+    case "session.slashCommands":
+      return {
+        commands: [
+          { name: "compact", description: "Compact the conversation context", source: "builtin" },
+          { name: "skill:review", description: "Review the current changes", source: "skill" },
+          { name: "reload", description: "Reload extensions and skills", source: "builtin" },
+          { name: "handoff-to-picky", description: "Continue this work in Picky", source: "extension" },
+        ],
+      };
     case "session.diff":
       return {
         sessionId: query.sessionId,

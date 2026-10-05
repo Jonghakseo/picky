@@ -200,6 +200,12 @@ describe("a phone from pairing to revocation", () => {
         10_000,
       );
 
+      // The composer's slash autocomplete reads the Pickle's own command list from its daemon.
+      client.send({ type: "query", queryId: "q-slash", query: { type: "session.slashCommands", sessionId: seededSessionId } });
+      const slash = await client.waitFor((message) => message.type === "query.result" && message.queryId === "q-slash");
+      expect(slash.ok).toBe(true);
+      expect((slash.data as { commands: Array<{ name: string }> }).commands.map((command) => command.name)).toContain("skill:mock-skill");
+
       const probe = `E2E 후속 메시지 ${randomBytes(4).toString("hex")}`;
       const commandId = `cmd-${randomBytes(6).toString("hex")}`;
       client.send({

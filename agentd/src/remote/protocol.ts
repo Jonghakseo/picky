@@ -200,6 +200,8 @@ export type RemoteCommand = z.infer<typeof RemoteCommandSchema>;
 export const RemoteQuerySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session.runtimeOptions"), sessionId: IdSchema }),
   z.object({ type: z.literal("session.diff"), sessionId: IdSchema, view: z.enum(["unstaged", "staged"]) }),
+  /** The Pickle's slash commands (extensions, prompts, skills, built-ins), for composer autocomplete. */
+  z.object({ type: z.literal("session.slashCommands"), sessionId: IdSchema }),
 ]);
 export type RemoteQuery = z.infer<typeof RemoteQuerySchema>;
 

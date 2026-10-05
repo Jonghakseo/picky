@@ -1253,6 +1253,68 @@
     calc(var(--ds-space-3) + env(safe-area-inset-bottom));
 }
 
+/* Slash autocomplete (PickyComposerAutocompletePanelView.swift): accent mono
+ * name, source capsule, one-line description, four rows before it scrolls.
+ * Rows are 40px instead of the HUD's 24pt so a thumb can hit them. */
+.slash-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: calc(4 * 40px + 3px + 2 * var(--ds-space-1));
+  margin-bottom: var(--ds-space-2);
+  padding: var(--ds-space-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--ds-radius-extra-large);
+  background: var(--ds-color-surface1);
+  box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--ds-color-border-subtle) 70%, transparent),
+    0 8px 12px rgba(0, 0, 0, 0.18);
+}
+
+.slash-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 6px;
+  border-radius: var(--ds-radius-compact);
+  text-align: left;
+}
+
+.slash-row:active {
+  background: color-mix(in srgb, var(--ds-color-accent-subtle) 55%, transparent);
+}
+
+.slash-name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  color: var(--ds-color-accent-text);
+  font: var(--hud-type-label-monospaced-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-source {
+  flex: none;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-color-surface2) 75%, transparent);
+  color: var(--ds-color-text-tertiary);
+  font: 600 var(--hud-size-minimum-text) var(--hud-font-family);
+}
+
+.slash-description {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-color-text-secondary);
+  font: var(--hud-type-status);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* composerSurface (PickyConversationComposerView.swift:403-416):
  * VStack(spacing: space1), padding leading 12 / trailing 8 / top 12 / bottom 8,
  * surface2 @ 0.55 fill on DS.CornerRadius.medium. */

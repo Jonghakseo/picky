@@ -28,6 +28,8 @@ import {
   placeholderKey,
 } from "../policy/composer";
 import { sendTimingOptions } from "../policy/schedule";
+import type { SlashCommand } from "../policy/slash";
+import { SLASH_SOURCE_LABEL, parseSlashCommands, slashCompletion, slashQuery, slashSuggestions } from "../policy/slash";
 import type { AbortScope, StopChoice } from "../policy/stop";
 import { stopChoiceForSession } from "../policy/stop";
 import { locale } from "../i18n";
@@ -77,6 +79,10 @@ export function Composer(props: ComposerProps): JSX.Element {
   const [stopSheet, setStopSheet] = useState<Exclude<StopChoice, "immediate"> | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const editor = useRef<HTMLTextAreaElement | null>(null);
+  const [caret, setCaret] = useState<number | undefined>(undefined);
+  const slash = useSlashCommands(isMain ? null : sessionId, isMain ? null : slashQuery(draft, caret ?? draft.length), actions);
+  const suggestions = slash ? slashSuggestions(draft, caret, slash) : [];
+  const pendingCaret = useRef<number | null>(null);
 
   const status = session?.status ?? "waiting_for_input";
   const bashMode = isMain ? "none" : effectiveBashMode(draft, attachments.length);
@@ -100,7 +106,22 @@ export function Composer(props: ComposerProps): JSX.Element {
     if (!node) return;
     node.style.height = "auto";
     node.style.height = `${Math.min(node.scrollHeight, 78)}px`;
+    // Accepting a suggestion rewrites the draft; put the caret after "/name ".
+    if (pendingCaret.current !== null) {
+      node.setSelectionRange(pendingCaret.current, pendingCaret.current);
+      setCaret(pendingCaret.current);
+      pendingCaret.current = null;
+    }
   }, [draft]);
+
+  function acceptSlash(command: SlashCommand): void {
+    const next = slashCompletion(draft, caret, command);
+    pendingCaret.current = next.caret;
+    onDraft(next.text);
+    editor.current?.focus();
+  }
+
+  const trackCaret = (event: JSX.TargetedEvent<HTMLTextAreaElement>): void => setCaret(event.currentTarget.selectionStart);
 
   const uploadIds = useMemo(
     () => attachments.map((item) => item.uploadId).filter((id): id is string => typeof id === "string"),
@@ -194,6 +215,7 @@ export function Composer(props: ComposerProps): JSX.Element {
       <VoiceRow dictation={dictation} now={props.now} />
       <Note edit={props.edit} online={props.online} macConnected={props.macConnected} attachments={attachments} />
       <div class="room-composer">
+        {suggestions.length > 0 ? <SlashPanel suggestions={suggestions} onAccept={acceptSlash} /> : null}
         <div class={`composer is-${border}`}>
           {attachments.length > 0 ? (
             <div class="composer-attachments">
@@ -221,7 +243,13 @@ export function Composer(props: ComposerProps): JSX.Element {
             rows={1}
             value={draft}
             placeholder={placeholder}
-            onInput={(event: JSX.TargetedEvent<HTMLTextAreaElement>) => onDraft(event.currentTarget.value)}
+            onInput={(event: JSX.TargetedEvent<HTMLTextAreaElement>) => {
+              setCaret(event.currentTarget.selectionStart);
+              onDraft(event.currentTarget.value);
+            }}
+            onSelect={trackCaret}
+            onClick={trackCaret}
+            onKeyUp={trackCaret}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onCompositionStart={() => setComposing(true)}
@@ -363,6 +391,53 @@ export function Composer(props: ComposerProps): JSX.Element {
         <StopChoiceSheet choice={stopSheet} onStop={(scope) => void abort(scope)} onDismiss={() => setStopSheet(null)} />
       ) : null}
     </>
+  );
+}
+
+/**
+ * The Pickle's slash commands, fetched once a "/" word is being typed and kept
+ * for the room. A failed fetch tries again the next time a "/" word starts,
+ * not on every keystroke. `null` until a list is available.
+ */
+function useSlashCommands(sessionId: string | null, query: string | null, actions: RoomActions): SlashCommand[] | null {
+  const [held, setHeld] = useState<{ sessionId: string; commands: SlashCommand[] } | null>(null);
+  const inFlight = useRef<string | null>(null);
+  const typing = query !== null;
+  useEffect(() => {
+    if (!sessionId || !typing) return;
+    if (held?.sessionId === sessionId || inFlight.current === sessionId) return;
+    inFlight.current = sessionId;
+    void actions.query({ type: "session.slashCommands", sessionId }).then((response) => {
+      if (inFlight.current !== sessionId) return;
+      inFlight.current = null;
+      if (response.ok) setHeld({ sessionId, commands: parseSlashCommands(response.data) });
+    });
+    // `actions` is rebuilt every render by the shell.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, typing, held]);
+  return held && held.sessionId === sessionId ? held.commands : null;
+}
+
+/** Rows above the composer, as `PickyComposerAutocompletePanelView` draws them. */
+function SlashPanel({ suggestions, onAccept }: { suggestions: SlashCommand[]; onAccept: (command: SlashCommand) => void }): JSX.Element {
+  return (
+    <div class="slash-panel" role="listbox" aria-label={t("remote.room.slash.accessibilityLabel")}>
+      {suggestions.map((command) => (
+        <button
+          key={`${command.source}:${command.name}`}
+          class="slash-row"
+          type="button"
+          role="option"
+          // Keep the keyboard up: the textarea must not lose focus on the tap.
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => onAccept(command)}
+        >
+          <span class="slash-name">/{command.name}</span>
+          <span class="slash-source">{SLASH_SOURCE_LABEL[command.source]}</span>
+          {command.description ? <span class="slash-description">{command.description}</span> : null}
+        </button>
+      ))}
+    </div>
   );
 }
 

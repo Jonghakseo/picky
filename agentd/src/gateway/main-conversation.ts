@@ -19,6 +19,18 @@ export function remoteMainMessages(messages: readonly PickyMainAgentMessage[]): 
   }));
 }
 
+/**
+ * Whether a daemon `quickReply` ends a main agent turn. The daemon sends
+ * `mainTurnSettled` only for turns without a reply; a turn that answers ends
+ * with `quickReply` instead (main-agent-coordinator), which is also how the Mac
+ * clears its waiting state. A Pickle's own spoken reply uses the same event
+ * with `replyKind: "main"` and its `sessionId`; that one says nothing about
+ * the main conversation.
+ */
+export function quickReplyEndsMainTurn(event: { readonly [key: string]: unknown }): boolean {
+  return !(event.replyKind === "main" && typeof event.sessionId === "string" && event.sessionId.length > 0);
+}
+
 export interface MainConversationListener {
   onMessage: (message: RemoteMainMessage) => void;
   onActivity: (activity: PickyMainActivity | undefined, busy: boolean) => void;
@@ -73,6 +85,17 @@ export class MainConversation {
     this.listener.onActivity(this.activity, this.busy);
   }
 
+  /**
+   * The turn is over without a daemon event saying so: the user aborted it
+   * (agentd's abort has no settle event) or the submit itself failed.
+   */
+  markTurnSettled(): void {
+    if (!this.turnInFlight && this.activity === undefined) return;
+    this.turnInFlight = false;
+    this.activity = undefined;
+    this.listener.onActivity(undefined, this.busy);
+  }
+
   reset(): void {
     this.messages = [];
     this.activity = undefined;
@@ -116,6 +139,9 @@ export class MainConversation {
         this.turnInFlight = false;
         this.activity = undefined;
         this.listener.onActivity(undefined, this.busy);
+        return true;
+      case "quickReply":
+        if (quickReplyEndsMainTurn(event)) this.markTurnSettled();
         return true;
       default:
         return false;

@@ -24,6 +24,8 @@ export interface CommandContext {
   waitForSession: (sessionId: string, timeoutMs: number) => Promise<boolean>;
   audit: AuditLog;
   onMainSend: (deviceId: string) => void;
+  /** The main turn ended without a daemon event: aborted, or the submit failed. */
+  onMainSettled: () => void;
 }
 
 export class RemoteCommandError extends Error {
@@ -56,7 +58,14 @@ export async function executeCommand(
     }
     case "hub": {
       if (plan.request.type === "main.send") context.onMainSend(deviceId);
-      return context.hubRequest(deviceId, plan.request).catch(rethrowAsRemote);
+      try {
+        const result = await context.hubRequest(deviceId, plan.request);
+        if (plan.request.type === "main.abort") context.onMainSettled();
+        return result;
+      } catch (error) {
+        if (plan.request.type === "main.send") context.onMainSettled();
+        return rethrowAsRemote(error);
+      }
     }
     case "pickleCreate":
       return createPickle(context, deviceId, plan.cwd, plan.text);

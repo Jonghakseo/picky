@@ -262,6 +262,7 @@ export class GatewayCore {
         this.lastMainSendAt.set(deviceId, Date.now());
         this.main.markTurnStarted();
       },
+      onMainSettled: () => this.main.markTurnSettled(),
     };
   }
 

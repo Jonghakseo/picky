@@ -51,6 +51,8 @@ const MAIN_EVENT_TYPES = new Set([
   "mainExtensionUiRequested",
   "mainExtensionUiCancelled",
   "mainTurnSettled",
+  // A main turn that produced a reply ends with this, not mainTurnSettled.
+  "quickReply",
 ]);
 
 export class DaemonPool {

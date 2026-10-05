@@ -17,6 +17,7 @@ struct PickyHubRemoteDevicesSection: View {
     private var availability: PickyHubRemotePairingAvailability {
         PickyHubRemotePairingAvailability.resolve(
             isRunning: controller.isRunning,
+            isHubConnected: controller.isHubConnected,
             entrance: controller.settings.entrance,
             publicURL: controller.publicURL
         )

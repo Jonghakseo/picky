@@ -107,26 +107,54 @@ extension PickySessionListViewModel: PickyRemoteOverlaySource, PickyRemoteSessio
 
 // MARK: - Daemon topology
 
+/// The slice of `PickyAgentDaemonPool` the topology needs. A child is announced
+/// before its port is known, so the source has to report both the membership
+/// and the moment an address arrives.
+@MainActor
+protocol PickyRemoteChildDaemonSource: AnyObject {
+    var remoteChildSessionIDs: Set<String> { get }
+    func remoteChildEndpoint(for sessionID: String) -> (host: String, port: Int)?
+    /// Emits the current child ids whenever that set changes **or** a child's
+    /// endpoint resolves.
+    var remoteChildDaemonChanges: AnyPublisher<Set<String>, Never> { get }
+}
+
+extension PickyAgentDaemonPool: PickyRemoteChildDaemonSource {
+    var remoteChildSessionIDs: Set<String> { activeChildSessionIds }
+
+    func remoteChildEndpoint(for sessionID: String) -> (host: String, port: Int)? {
+        guard let endpoint = endpoint(for: sessionID) else { return nil }
+        return (endpoint.host, endpoint.port)
+    }
+
+    var remoteChildDaemonChanges: AnyPublisher<Set<String>, Never> {
+        $activeChildSessionIds
+            .combineLatest($childEndpointRevision)
+            .map { ids, _ in ids }
+            .eraseToAnyPublisher()
+    }
+}
+
 /// Reads the daemon endpoints the router currently owns. Republished whenever
-/// a child daemon is spawned or released.
+/// a child daemon is spawned, released, or finishes booting.
 @MainActor
 final class PickyRemoteDaemonTopologyProvider: PickyRemoteDaemonTopologySource {
-    private let pool: PickyAgentDaemonPool
+    private let pool: any PickyRemoteChildDaemonSource
     private let token: String
     private let primaryPort: Int
 
-    init(pool: PickyAgentDaemonPool, token: String, primaryPort: Int) {
+    init(pool: any PickyRemoteChildDaemonSource, token: String, primaryPort: Int) {
         self.pool = pool
         self.token = token
         self.primaryPort = primaryPort
     }
 
     func currentRemoteDaemonTopology() -> PickyRemoteDaemonTopology {
-        topology(for: pool.activeChildSessionIds)
+        topology(for: pool.remoteChildSessionIDs)
     }
 
     var remoteDaemonTopologyPublisher: AnyPublisher<PickyRemoteDaemonTopology, Never> {
-        pool.$activeChildSessionIds
+        pool.remoteChildDaemonChanges
             .map { [weak self] ids in
                 self?.topology(for: ids) ?? PickyRemoteDaemonTopology(token: "", primaryURL: nil, children: [])
             }
@@ -136,7 +164,7 @@ final class PickyRemoteDaemonTopologyProvider: PickyRemoteDaemonTopologySource {
 
     private func topology(for sessionIDs: Set<String>) -> PickyRemoteDaemonTopology {
         let children = sessionIDs.sorted().compactMap { sessionID -> PickyRemoteDaemonChild? in
-            guard let endpoint = pool.endpoint(for: sessionID) else { return nil }
+            guard let endpoint = pool.remoteChildEndpoint(for: sessionID) else { return nil }
             return PickyRemoteDaemonChild(
                 sessionId: sessionID,
                 url: "ws://\(endpoint.host):\(endpoint.port)"

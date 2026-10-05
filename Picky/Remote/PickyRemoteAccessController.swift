@@ -125,7 +125,14 @@ final class PickyRemoteAccessController: ObservableObject {
         let previous = settings
         settings = updated
         if updated.enabled != previous.enabled || updated.port != previous.port {
-            if updated.enabled { startGateway() } else { stopGateway() }
+            guard updated.enabled else {
+                stopGateway()
+                return
+            }
+            // A new port means a new gateway. Dropping the socket first keeps
+            // the hub from holding a connection to the process being replaced.
+            if previous.enabled { stopGateway() }
+            startGateway()
             return
         }
         guard updated.enabled else { return }

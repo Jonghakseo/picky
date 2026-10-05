@@ -8,6 +8,7 @@
 //  Mac and it must be startable and stoppable on its own.
 //
 
+import Darwin
 import Foundation
 import Security
 
@@ -166,10 +167,53 @@ enum PickyRemoteGatewayState: Equatable {
     }
 }
 
+/// What the launcher does when the gateway process exits. Pulled out of the
+/// launcher so the "a busy port stops the restart loop" rule can be read and
+/// tested without a process.
+enum PickyRemoteGatewayExitDecision: Equatable {
+    /// Nobody asked for a gateway anymore.
+    case stopped
+    /// The port is taken; retrying on a schedule would only repeat the failure.
+    case portInUse(port: Int)
+    case restart(status: Int32)
+
+    static func resolve(status: Int32, desiredPort: Int?, reportedPortConflict: Int?) -> Self {
+        guard let desiredPort else { return .stopped }
+        if let reportedPortConflict { return .portInUse(port: reportedPortConflict) }
+        if status == PickyRemoteGatewayLauncher.portInUseExitStatus { return .portInUse(port: desiredPort) }
+        return .restart(status: status)
+    }
+}
+
+/// Waiting for a SIGTERM'd gateway to go away. Separate from the launcher so
+/// the escalation can be exercised without spawning Node.
+enum PickyRemoteGatewayTermination {
+    nonisolated static let gracePeriod: TimeInterval = 2.0
+    nonisolated static let pollInterval: TimeInterval = 0.05
+
+    /// Polls `isRunning` until the grace period runs out. Returns `true` when
+    /// the process is still alive and therefore needs SIGKILL.
+    nonisolated static func needsKillAfterGracePeriod(
+        isRunning: () -> Bool,
+        now: () -> Date = Date.init,
+        sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+    ) -> Bool {
+        let deadline = now().addingTimeInterval(gracePeriod)
+        while isRunning() && now() < deadline {
+            sleep(pollInterval)
+        }
+        return isRunning()
+    }
+}
+
 @MainActor
 final class PickyRemoteGatewayLauncher {
     /// `picky-gateway listening on 127.0.0.1:<port>` marks readiness.
     static let readyLinePrefix = "picky-gateway listening on 127.0.0.1:"
+    /// Printed by the gateway on its own stderr line when the port is taken.
+    static let portInUseLinePrefix = "PICKY_GATEWAY_PORT_IN_USE:"
+    /// The exit code that goes with it, for the case where stderr was lost.
+    nonisolated static let portInUseExitStatus: Int32 = 3
     private static let maxLogFileSize: Int64 = 5 * 1024 * 1024
     private static let maxLogRotations = 3
     private static let restartBackoffSeconds: [TimeInterval] = [1, 2, 5, 10, 30]
@@ -185,11 +229,17 @@ final class PickyRemoteGatewayLauncher {
     private var restartTask: Task<Void, Never>?
     private var consecutiveFailures = 0
     private var stdoutBuffer: [UInt8] = []
+    private var stderrBuffer: [UInt8] = []
     private var logFileSizes: [String: Int64] = [:]
     private var launchGeneration = 0
     private var desiredPort: Int?
     private var desiredToken: String?
     private var desiredAppSupportRoot: URL?
+    private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
+    /// Set from the gateway's own stderr marker. Cleared on every `start`, so a
+    /// settings change is what lets the launcher try again.
+    private var reportedPortConflict: Int?
 
     init(appSupportRoot: URL = PickyAppSupport.defaultRoot(), fileManager: FileManager = .default) {
         self.logDirectory = appSupportRoot.appendingPathComponent("Logs", isDirectory: true)
@@ -203,43 +253,63 @@ final class PickyRemoteGatewayLauncher {
         desiredToken = hubToken
         desiredAppSupportRoot = appSupportRoot
         consecutiveFailures = 0
+        reportedPortConflict = nil
         launch()
     }
 
     func stop() {
+        shutdown(waitForExit: false)
+    }
+
+    /// Called on app termination. Same as `stop()` but waits for the gateway's
+    /// own cleanup, with SIGKILL as the deadline so quitting can never hang on
+    /// a gateway stuck in its SIGTERM handler.
+    func stopAndWaitForExit() {
+        shutdown(waitForExit: true)
+    }
+
+    private func shutdown(waitForExit: Bool) {
         desiredPort = nil
         desiredToken = nil
         desiredAppSupportRoot = nil
         restartTask?.cancel()
         restartTask = nil
         launchGeneration &+= 1
-        terminateProcess()
+        terminateProcess(waitForExit: waitForExit)
         state = .stopped
     }
 
-    /// Called on app termination. Same as `stop()` but waits briefly so the
-    /// gateway's own cleanup runs before the app disappears.
-    func stopAndWaitForExit() {
+    private func terminateProcess(waitForExit: Bool = false) {
+        // Detach the pipes first: a handler left attached keeps firing into the
+        // next launch's generation check and holds the file handles open.
+        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stdoutPipe = nil
+        stderrPipe = nil
         let running = process
-        stop()
+        self.process = nil
         guard let running, running.isRunning else { return }
-        running.waitUntilExit()
+        running.terminationHandler = nil
+        running.terminate()
+        if waitForExit {
+            Self.escalateTermination(of: running)
+        } else {
+            DispatchQueue.global(qos: .utility).async { Self.escalateTermination(of: running) }
+        }
     }
 
-    private func terminateProcess() {
-        guard let process, process.isRunning else {
-            self.process = nil
-            return
-        }
-        process.terminationHandler = nil
-        process.terminate()
-        self.process = nil
+    /// Blocks the calling thread, so the non-waiting path runs it off-main.
+    nonisolated private static func escalateTermination(of process: Process) {
+        guard PickyRemoteGatewayTermination.needsKillAfterGracePeriod(isRunning: { process.isRunning }) else { return }
+        Darwin.kill(process.processIdentifier, SIGKILL)
+        process.waitUntilExit()
     }
 
     private func launch() {
         guard let port = desiredPort, let token = desiredToken, let appSupportRoot = desiredAppSupportRoot else { return }
         terminateProcess()
         stdoutBuffer.removeAll(keepingCapacity: true)
+        stderrBuffer.removeAll(keepingCapacity: true)
         state = .starting
 
         let command: PickyRemoteGatewayCommand
@@ -276,8 +346,10 @@ final class PickyRemoteGatewayLauncher {
         stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            Task { @MainActor [weak self] in self?.append(data, to: "gateway.stderr.log") }
+            Task { @MainActor [weak self] in self?.handleStderr(data, generation: generation) }
         }
+        self.stdoutPipe = stdoutPipe
+        self.stderrPipe = stderrPipe
         process.terminationHandler = { [weak self] finished in
             let status = finished.terminationStatus
             Task { @MainActor [weak self] in self?.handleExit(status: status, generation: generation) }
@@ -309,21 +381,49 @@ final class PickyRemoteGatewayLauncher {
         }
     }
 
+    private func handleStderr(_ data: Data, generation: Int) {
+        append(data, to: "gateway.stderr.log")
+        guard generation == launchGeneration else { return }
+        stderrBuffer.append(contentsOf: data)
+        while let newlineIndex = stderrBuffer.firstIndex(of: 0x0A) {
+            let lineBytes = Array(stderrBuffer[..<newlineIndex])
+            stderrBuffer.removeSubrange(0...newlineIndex)
+            let trimmed = lineBytes.last == 0x0D ? Array(lineBytes.dropLast()) : lineBytes
+            guard let line = String(bytes: trimmed, encoding: .utf8) else { continue }
+            if let port = Self.portInUse(from: line) { reportedPortConflict = port }
+        }
+    }
+
     static func readyPort(from line: String) -> Int? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix(readyLinePrefix) else { return nil }
         return Int(trimmed.dropFirst(readyLinePrefix.count).prefix(while: \.isNumber))
     }
 
+    static func portInUse(from line: String) -> Int? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix(portInUseLinePrefix) else { return nil }
+        return Int(trimmed.dropFirst(portInUseLinePrefix.count).prefix(while: \.isNumber))
+    }
+
     private func handleExit(status: Int32, generation: Int) {
         guard generation == launchGeneration else { return }
         process = nil
-        guard desiredPort != nil else {
+        switch PickyRemoteGatewayExitDecision.resolve(
+            status: status,
+            desiredPort: desiredPort,
+            reportedPortConflict: reportedPortConflict
+        ) {
+        case .stopped:
             state = .stopped
-            return
+        case .portInUse(let port):
+            // Restarting into an occupied port just repeats the message every
+            // 30 seconds. The user has to free the port or pick another one.
+            state = .failed(L10n.t("settings.remote.error.portInUse", String(port)))
+        case .restart(let status):
+            state = .failed(L10n.t("settings.remote.error.exited", String(status)))
+            scheduleRestart()
         }
-        state = .failed(L10n.t("settings.remote.error.exited", String(status)))
-        scheduleRestart()
     }
 
     private func scheduleRestart() {

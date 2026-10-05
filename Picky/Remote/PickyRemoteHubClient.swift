@@ -24,10 +24,13 @@ final class PickyRemoteHubClient: PickyRemoteHubTransport {
     var onMessage: ((PickyGatewayToHubMessage) -> Void)?
     var onConnectedChange: ((Bool) -> Void)?
 
-    private let session: URLSession
-    private var task: URLSessionWebSocketTask?
+    private let factory: PickyWebSocketTaskMaking
+    private var task: PickyWebSocketTask?
     private var receiveLoop: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    /// Frames go out in the order `send` was called: the handshake has to reach
+    /// the gateway before the snapshots that follow it.
+    private var sendChain: Task<Void, Never>?
     private var url: URL?
     private var token: String?
     private var attempt = 0
@@ -36,14 +39,18 @@ final class PickyRemoteHubClient: PickyRemoteHubTransport {
         didSet { if isConnected != oldValue { onConnectedChange?(isConnected) } }
     }
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(factory: PickyWebSocketTaskMaking = URLSessionPickyWebSocketTaskFactory()) {
+        self.factory = factory
     }
 
     func connect(url: URL, token: String) {
         self.url = url
         self.token = token
         attempt = 0
+        // A reconnect scheduled by an earlier drop would otherwise open a
+        // second socket behind this one; the gateway drops the first, and the
+        // handshake that went out on it is lost.
+        cancelReconnect()
         openSocket()
     }
 
@@ -57,6 +64,7 @@ final class PickyRemoteHubClient: PickyRemoteHubTransport {
         receiveLoop = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
+        sendChain = nil
         isConnected = false
     }
 
@@ -65,25 +73,32 @@ final class PickyRemoteHubClient: PickyRemoteHubTransport {
         guard let data = try? PickyRemoteProtocolCodec.encodeHubMessage(message),
               let text = String(data: data, encoding: .utf8)
         else { return }
-        task.send(.string(text)) { error in
-            guard error != nil else { return }
-            Task { @MainActor [weak self] in self?.handleDrop() }
+        let previous = sendChain
+        sendChain = Task { @MainActor [weak self] in
+            await previous?.value
+            do {
+                try await task.send(.string(text))
+            } catch {
+                self?.handleDrop()
+            }
         }
     }
 
     private func openSocket() {
         guard let url, let token else { return }
+        cancelReconnect()
         receiveLoop?.cancel()
         task?.cancel(with: .goingAway, reason: nil)
+        // Every socket starts disconnected, so each one that comes up produces
+        // its own false -> true transition and therefore its own handshake.
+        isConnected = false
 
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let socket = session.webSocketTask(with: request)
+        let socket = factory.makeWebSocketTask(url: url, token: token)
         task = socket
+        sendChain = nil
         generation &+= 1
         let currentGeneration = generation
         socket.resume()
-        isConnected = true
 
         receiveLoop = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -107,8 +122,12 @@ final class PickyRemoteHubClient: PickyRemoteHubTransport {
         case .data(let raw): data = raw
         @unknown default: data = nil
         }
-        guard let data, let decoded = try? PickyRemoteProtocolCodec.decodeGatewayMessage(data) else { return }
+        // The upgrade is only confirmed once the gateway actually speaks (it
+        // sends `gateway.hello` on accept). `resume()` alone also succeeds for a
+        // 401 or a dead port, and anything sent in that window is thrown away.
         attempt = 0
+        isConnected = true
+        guard let data, let decoded = try? PickyRemoteProtocolCodec.decodeGatewayMessage(data) else { return }
         onMessage?(decoded)
     }
 
@@ -120,6 +139,11 @@ final class PickyRemoteHubClient: PickyRemoteHubTransport {
         task?.cancel(with: .abnormalClosure, reason: nil)
         task = nil
         scheduleReconnect()
+    }
+
+    private func cancelReconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
     }
 
     private func scheduleReconnect() {

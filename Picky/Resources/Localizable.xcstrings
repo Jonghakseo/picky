@@ -29946,6 +29946,295 @@
           }
         }
       }
+    },
+    "settings.remote.error.portInUse": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another app is using port %@. Quit it, then turn remote access on again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 앱이 %@ 포트를 쓰고 있어요. 그 앱을 끈 뒤 원격 접속을 다시 켜 주세요."
+          }
+        }
+      },
+      "comment": "Gateway failed to start because the port was taken. %@ is the port number."
+    },
+    "settings.remote.pair.disabledDisconnected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to the access server. Try again in a moment."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "접속 서버에 연결하는 중이에요. 잠시 후 다시 시도해 주세요."
+          }
+        }
+      },
+      "comment": "Pairing is unavailable while the hub socket is down."
+    },
+    "settings.remote.error.notBuilt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The access server file is missing at %@. Rebuild or reinstall Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 접속 서버 파일이 없어요. Picky를 다시 빌드하거나 설치해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.runtimeMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky's bundled runtime is missing at %@. Reinstall Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 Picky 실행 파일이 없어요. Picky.app을 다시 설치해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.missingExecutable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The %@ command wasn't found. Install it, then turn remote access on again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 명령을 찾지 못했어요. 설치한 뒤 원격 접속을 다시 켜 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.exited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The access server stopped (exit code %@). Restarting it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "접속 서버가 멈췄어요(종료 코드 %@). 다시 시작하고 있어요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.protocolMismatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app and the access server are different versions. Rebuild or reinstall Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱과 접속 서버의 버전이 맞지 않아요. Picky를 다시 빌드하거나 설치해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.appUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky on the Mac isn't ready yet. Try again in a moment."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac의 Picky가 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.sessionMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Pickle isn't on the Mac. It may have been deleted."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle이 Mac에 없어요. 이미 삭제됐을 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.emptyMessage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There's nothing to send."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보낼 내용이 없어요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.abortFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't stop Picky. Try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 멈추지 못했어요. 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.dictationUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Mac can't transcribe right now. Check speech recognition settings on the Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac에서 받아쓸 수 없어요. Mac의 음성 인식 설정을 확인해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.dictationNoSpeech": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No speech detected. Try speaking again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성이 감지되지 않았어요. 다시 말해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.dictationUnreadable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The recording couldn't be read. Record again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "녹음 파일을 읽지 못했어요. 다시 녹음해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.error.dictationTimedOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcription took too long and stopped. Try a shorter recording."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기가 너무 오래 걸려 멈췄어요. 더 짧게 녹음해 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.tailscale.error.notInstalled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale isn't installed. Install it, sign in, then try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale이 설치돼 있지 않아요. 설치하고 로그인한 뒤 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "settings.remote.tailscale.error.generic": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Tailscale command failed. Check that you're signed in to Tailscale."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale 명령이 실패했어요. Tailscale 앱에서 로그인 상태를 확인해 주세요."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -151,6 +151,12 @@ final class PickyAgentDaemonPool: ObservableObject {
 
     @Published private(set) var activeChildSessionIds: Set<String> = []
 
+    /// Bumped every time a child's endpoint becomes known. `activeChildSessionIds`
+    /// changes at spawn start, when `endpoint(for:)` is still nil, so an observer
+    /// that needs the address (the remote daemon topology) has nothing to react
+    /// to without this.
+    @Published private(set) var childEndpointRevision = 0
+
     /// Closure invoked when an already-ready child daemon exits unexpectedly. Phase 2 disables
     /// the launcher's auto-restart for child role, so a post-ready crash invalidates the cached
     /// endpoint immediately. The router subscribes to this hook so it can disconnect the cached
@@ -365,6 +371,7 @@ final class PickyAgentDaemonPool: ObservableObject {
         spawnTimeoutTasks[sessionId]?.cancel()
         spawnTimeoutTasks.removeValue(forKey: sessionId)
         child.resolve(.success(endpoint))
+        childEndpointRevision &+= 1
     }
 
     private func scheduleSpawnTimeout(sessionId: String, timeout: TimeInterval) {

@@ -11,6 +11,20 @@
 import Foundation
 
 enum PickyRemoteOverlayBuilder {
+    /// The gateway validates `hub.overlay` against a schema and drops the whole
+    /// message when any array is too long, so a Mac with thousands of archived
+    /// Pickles would silently stop updating the phone. Mirrors the limits in
+    /// `agentd/src/remote/hub-protocol.ts`.
+    enum Limits {
+        static let activeSessions = 2000
+        static let archivedSessions = 5000
+        static let unreadSessions = 2000
+        static let groups = 200
+        static let groupMembers = 2000
+        static let groupNameCharacters = 200
+        static let folders = 100
+    }
+
     static func build(
         activeSessionIDs: [String],
         archivedSessionIDs: [String],
@@ -27,25 +41,31 @@ enum PickyRemoteOverlayBuilder {
         let archivedSet = Set(archived)
         let knownIDs = activeSet.union(archivedSet)
 
-        let groups = dockLayout.groups.map { group in
+        let groups = dockLayout.groups.prefix(Limits.groups).map { group in
             PickyRemoteOverlayGroup(
                 id: group.id,
-                name: group.displayName,
+                name: String(group.displayName.prefix(Limits.groupNameCharacters)),
                 color: String(describing: group.color),
-                memberIds: deduplicated(group.memberSessionIDs).filter { knownIDs.contains($0) }
+                memberIds: Array(
+                    deduplicated(group.memberSessionIDs)
+                        .filter { knownIDs.contains($0) }
+                        .prefix(Limits.groupMembers)
+                )
             )
         }
 
+        let activeIDs = Array(active.filter { !archivedSet.contains($0) }.prefix(Limits.activeSessions))
+
         return PickyRemoteOverlaySnapshot(
-            activeSessionIds: active.filter { !archivedSet.contains($0) },
-            archivedSessionIds: archived,
+            activeSessionIds: activeIDs,
+            archivedSessionIds: Array(archived.prefix(Limits.archivedSessions)),
             // Unread for a session the phone cannot see would be a badge with
             // nothing behind it.
-            unreadSessionIds: active.filter { unreadSessionIDs.contains($0) },
-            groups: groups,
+            unreadSessionIds: Array(activeIDs.filter { unreadSessionIDs.contains($0) }.prefix(Limits.unreadSessions)),
+            groups: Array(groups),
             folders: PickyRemoteOverlayFolders(
-                pinned: deduplicated(pinnedFolders),
-                recent: deduplicated(recentFolders)
+                pinned: Array(deduplicated(pinnedFolders).prefix(Limits.folders)),
+                recent: Array(deduplicated(recentFolders).prefix(Limits.folders))
             )
         )
     }

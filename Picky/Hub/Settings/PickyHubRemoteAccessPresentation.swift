@@ -76,13 +76,19 @@ enum PickyHubRemotePairingAvailability: Equatable {
     case available
     case needsRemoteAccessOn
     case needsEntrance
+    /// The gateway runs but the hub socket is down, so `hub.pairing.start`
+    /// would be dropped on the way out and the sheet would wait for a code that
+    /// is never requested.
+    case needsConnection
 
     static func resolve(
         isRunning: Bool,
+        isHubConnected: Bool,
         entrance: PickyRemoteEntrance,
         publicURL: String?
     ) -> PickyHubRemotePairingAvailability {
         guard isRunning else { return .needsRemoteAccessOn }
+        guard isHubConnected else { return .needsConnection }
         // Loopback pairing still works from this Mac's own browser, which is
         // how the PWA is tested before a tunnel exists.
         if entrance == .localOnly { return .available }
@@ -98,6 +104,7 @@ enum PickyHubRemotePairingAvailability: Equatable {
         case .available: "settings.remote.pair.detail"
         case .needsRemoteAccessOn: "settings.remote.pair.disabledOff"
         case .needsEntrance: "settings.remote.pair.disabledEntrance"
+        case .needsConnection: "settings.remote.pair.disabledDisconnected"
         }
     }
 }

@@ -53,17 +53,31 @@ struct PickyHubRemoteAccessPresentationTests {
 
     @Test func allowsLoopbackPairingWithoutAPublicAddress() {
         #expect(
-            PickyHubRemotePairingAvailability.resolve(isRunning: true, entrance: .localOnly, publicURL: nil)
+            PickyHubRemotePairingAvailability.resolve(isRunning: true, isHubConnected: true, entrance: .localOnly, publicURL: nil)
                 == .available
         )
         #expect(
-            PickyHubRemotePairingAvailability.resolve(isRunning: true, entrance: .tailscale, publicURL: nil)
+            PickyHubRemotePairingAvailability.resolve(isRunning: true, isHubConnected: true, entrance: .tailscale, publicURL: nil)
                 == .needsEntrance
         )
         #expect(
-            PickyHubRemotePairingAvailability.resolve(isRunning: false, entrance: .localOnly, publicURL: nil)
+            PickyHubRemotePairingAvailability.resolve(isRunning: false, isHubConnected: false, entrance: .localOnly, publicURL: nil)
                 == .needsRemoteAccessOn
         )
+    }
+
+    /// `hub.pairing.start` is dropped while the socket is down, so the sheet
+    /// would sit on "waiting for a code" that nobody asked for.
+    @Test func pairingIsUnavailableWhileTheHubSocketIsDown() {
+        let availability = PickyHubRemotePairingAvailability.resolve(
+            isRunning: true,
+            isHubConnected: false,
+            entrance: .cloudflare,
+            publicURL: "https://picky.example.com"
+        )
+        #expect(availability == .needsConnection)
+        #expect(availability.isAvailable == false)
+        #expect(availability.detailKey == "settings.remote.pair.disabledDisconnected")
     }
 
     @Test func asksForSpeechPermissionOnlyWhileTheAnswerIsStillOpen() {

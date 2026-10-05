@@ -156,6 +156,37 @@ struct PickyRemoteOverlayBuilderTests {
         #expect(group?.memberIds == ["s1"])
         #expect(group?.name == "Untitled")
     }
+
+    /// The gateway validates `hub.overlay` as a whole and drops the message when
+    /// any array is too long, so one oversized list would stop every overlay
+    /// update to the phone.
+    @Test func oversizedListsAreClampedToWhatTheGatewayAccepts() {
+        let archived = (0..<(PickyRemoteOverlayBuilder.Limits.archivedSessions + 50)).map { "a\($0)" }
+        let active = (0..<(PickyRemoteOverlayBuilder.Limits.activeSessions + 50)).map { "s\($0)" }
+        let longName = String(repeating: "n", count: PickyRemoteOverlayBuilder.Limits.groupNameCharacters + 40)
+        let groups = (0..<(PickyRemoteOverlayBuilder.Limits.groups + 10)).map { index in
+            PickyDockGroup(id: "g\(index)", name: longName, memberSessionIDs: active)
+        }
+        let folders = (0..<(PickyRemoteOverlayBuilder.Limits.folders + 20)).map { "/tmp/f\($0)" }
+
+        let snapshot = PickyRemoteOverlayBuilder.build(
+            activeSessionIDs: active,
+            archivedSessionIDs: archived,
+            unreadSessionIDs: Set(active),
+            dockLayout: PickyDockLayout(entries: groups.map { PickyDockEntry.group($0) }),
+            pinnedFolders: folders,
+            recentFolders: folders
+        )
+
+        #expect(snapshot.activeSessionIds.count == PickyRemoteOverlayBuilder.Limits.activeSessions)
+        #expect(snapshot.archivedSessionIds.count == PickyRemoteOverlayBuilder.Limits.archivedSessions)
+        #expect(snapshot.unreadSessionIds.count <= PickyRemoteOverlayBuilder.Limits.unreadSessions)
+        #expect(snapshot.groups.count == PickyRemoteOverlayBuilder.Limits.groups)
+        #expect(snapshot.groups.allSatisfy { $0.name.count == PickyRemoteOverlayBuilder.Limits.groupNameCharacters })
+        #expect(snapshot.groups.allSatisfy { $0.memberIds.count <= PickyRemoteOverlayBuilder.Limits.groupMembers })
+        #expect(snapshot.folders.pinned.count == PickyRemoteOverlayBuilder.Limits.folders)
+        #expect(snapshot.folders.recent.count == PickyRemoteOverlayBuilder.Limits.folders)
+    }
 }
 
 struct PickyRemotePairingTests {

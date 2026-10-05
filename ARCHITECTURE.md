@@ -1,10 +1,12 @@
 # Picky Current Architecture
 
-_Last updated: 2026-05-06_
+_Last updated: 2026-10-05_
 
 ## 1. Product shape
 
 Picky is a local-first macOS command center for Pi sessions. It is not a generic chat app and it should not become a workflow router. The app captures neutral desktop context, sends it to local Pi through `picky-agentd`, and renders long-running Pickles in the Picky dock.
+
+The Mac app and optional phone PWA are two control surfaces for the same local sessions. The Mac provides desktop context and local process lifecycle; the phone lets the user follow and direct work remotely. Neither the browser nor the gateway becomes an agent runtime, and remote access does not move execution to a Picky-operated backend.
 
 Core principle:
 
@@ -43,6 +45,20 @@ local Pi environment
 
 `picky-agentd` runs as a child process of `Picky.app`. The primary daemon owns the fixed port and the main agent; each manual Pickle can additionally run in its own child daemon bound to the Pickle's cwd. Ownership of session projections across those connections is decided by `PickyProjectionOwnershipLedger`; see `docs/per-pickle-daemon-topology.md`. The primary writes connection info under Picky app support so Pi extensions can discover it.
 
+### Optional remote control surface
+
+```text
+Phone PWA
+  -> user's Tailscale Serve or Cloudflare Tunnel
+  -> local gateway
+       -> primary / child agentd: session projections and session commands
+       -> Picky.app remote hub: app-owned actions and desktop metadata
+```
+
+The app starts the gateway only when remote access is enabled. The gateway serves the PWA, authenticates paired devices, routes commands, and publishes session updates. It is the network-facing boundary, not the owner of agent execution. The app still owns daemon lifecycle and desktop integration; Pi still interprets requests and performs work.
+
+Remote access is optional. Turning it off leaves local Picky use intact. The PWA and gateway ship with the Mac app rather than as an independently operated web service. Product decisions and detailed contracts live in [the remote plan](docs/remote-pwa-plan.md) and [implementation guide](docs/remote-pwa-implementation.md).
+
 ## 4. Main data flows
 
 ### New voice/text task
@@ -59,6 +75,13 @@ local Pi environment
 - Voice follow-up uses an explicit target snapshot at hotkey press time: the armed input target if one is set, otherwise the main agent. The pointer position and card hover are ignored.
 - Per-Pickle voice input is the composer microphone button (`PickyComposerDictationController`). It reuses the dictation engine but appends the transcript to that composer's draft instead of dispatching a turn.
 - Follow-up context source is `voice-follow-up` or `text-follow-up` when a session target is known.
+
+### Phone interaction
+
+- The gateway reads session projections from the owning daemons and routes session commands back to them. The PWA renders that state rather than maintaining a second authoritative session store.
+- App-owned actions, including Pickle creation, main-agent input, archive, shared unread state, and dictation, pass through the remote hub. Creating a Pickle uses the Mac's existing child-daemon lifecycle.
+- Remote input does not implicitly capture the Mac screen, select a Mac conversation, speak a reply, show a cursor bubble, or open a system permission prompt. These desktop effects are separate from controlling the session.
+- The phone follows the same meaning for session status, questions, follow-up, steering, and stopping, with touch controls in place of desktop interactions. Screen capture and the embedded terminal remain Mac surfaces.
 
 ### Extension UI
 
@@ -103,6 +126,7 @@ Picky/
   QuickInput/                            quick text input panel and double-tap detector
   Interaction/                           interaction state/effects/reducer/runtime/journal
   MainAgent/                             always-on main-agent transcript store
+  Remote/                                gateway lifecycle, remote hub, app-owned action adapters
   Localization/                          locale manager and localized string helpers
   Feedback/                              feedback capture and HUD perf instrumentation
   Updates/                               Sparkle update controller and UI
@@ -194,6 +218,9 @@ agentd/src/
     extension-ui-request-mapper.ts      pure request mapping
     pickle-terminal-waiter.ts           CLI --wait replies from projection commits
 
+  gateway/                              separate remote server: pairing, transport, command routing
+  remote/                               phone/gateway and hub/gateway contracts
+
   domain/
     artifacts.ts                        artifact merge helpers
     changed-files.ts                    changed-file merge helpers
@@ -216,6 +243,8 @@ agentd/src/
     pi-extension-command-runner.ts      Pi RPC child runner
 ```
 
+The browser client lives in `agentd/web/`. It renders the phone UI, reuses the TypeScript session projection reducer, and is bundled with the gateway in the app. Its presentation state is not a replacement for daemon session ownership.
+
 `SessionSupervisor` remains the stable facade for app-visible operations: `load`, `list`, `get`, `route`, `create`, `followUp`, `steer`, `abort`, `answerExtensionUi`, and artifact/report materialization through the application-layer stores.
 
 ## 7. Protocol and state model
@@ -227,6 +256,8 @@ The app-daemon protocol is owned in both languages:
 - Fixtures/contracts: `contracts/`
 
 Protocol changes must update fixtures and both Swift/TypeScript tests in the same PR.
+
+Remote access adds two boundaries without replacing the app-daemon protocol: PWA-to-gateway contracts in `agentd/src/remote/protocol.ts`, and hub-to-gateway contracts in `agentd/src/remote/hub-protocol.ts` with Swift models in `Picky/Remote/PickyRemoteProtocol.swift`. The gateway is a `core` daemon client. Keep transport-specific authentication and routing separate from the shared session model; see [remote contracts and data flow](docs/remote-pwa-implementation.md).
 
 Each connection has a client profile, `core` or `desktop` (`agentd/src/domain/client-profile.ts`). Core is platform-neutral session control, which is all the `picky` CLI needs; desktop additionally owns overlay windows, cursor narration/TTS, and the embedded terminal. A client declares its profile in the optional `profile` field of `registerAppCapabilities`; a client that omits it is classified `desktop` when it registers an app bridge capability and `core` otherwise, and a client that never registers is `core`. The daemon drops events in `DESKTOP_ONLY_EVENT_TYPES` for core connections. Only `broadcast` is gated: unicast replies to a requesting socket always go through, so a CLI never loses the answer to its own command. A new event defaults to core until it is added to that set.
 

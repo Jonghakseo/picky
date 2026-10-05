@@ -92,6 +92,12 @@ The ledger decides how those overlapping views combine:
 The five failed approaches that led to these rules are recorded in
 `docs/archive/cross-daemon-session-ownership.md`.
 
+### Remote access uses the same execution owners
+
+The optional phone PWA reaches these daemons through a local gateway. The Mac app's remote hub reports the daemon topology; the gateway subscribes to session projections and sends session commands to the owning daemon. The gateway and browser do not host another Pi runtime or create an independent copy of a Pickle.
+
+App-owned actions, including creating and archiving Pickles, still go through the Mac hub and its existing lifecycle. Gateway connection and projection recovery are separate from the desktop ownership ledger described above. Their rules are documented in the [remote implementation guide](remote-pwa-implementation.md#25-daemon-links), rather than duplicated here.
+
 ## 4. Where to look
 
 | Concern | File |

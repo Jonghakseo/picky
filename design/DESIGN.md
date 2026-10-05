@@ -2,14 +2,16 @@
 title: Picky Design System
 version: 0.1.0-draft
 status: draft
-last_updated: 2026-09-26
+last_updated: 2026-10-05
 ---
 
 # Picky Design System
 
 Picky는 데스크톱 위에서 장기 실행되는 Pi 작업의 상태와 다음 행동을 한눈에 보여주는 조용한 macOS command center다.
 
-이 문서는 Picky 디자인 시스템의 단일 진입점이자 최상위 제품 디자인 기준이다. 외부 레퍼런스의 외형을 복제하지 않고, Picky의 제품 목적과 macOS 플랫폼 관습에 맞게 원칙을 해석한다.
+선택 기능인 폰 PWA는 같은 로컬 작업을 원격으로 확인하고 조작하는 화면이다. 실행 위치와 대화의 의미는 그대로 두고, 사용자가 접근하는 화면을 확장한다.
+
+이 문서는 Picky 디자인 시스템의 단일 진입점이자 최상위 제품 디자인 기준이다. 외부 레퍼런스의 외형을 복제하지 않고, Picky의 제품 목적과 각 화면이 실행되는 플랫폼의 관습에 맞게 원칙을 해석한다.
 
 ## 1. Product promise
 
@@ -32,7 +34,7 @@ UI chrome은 이 정보와 행동보다 앞에 나서지 않는다.
 - **Activity first:** 제품 사진이 아니라 대화, 작업 상태, 도구 활동, 결과물이 주인공이다.
 - **Quiet chrome:** 장식보다 내용과 상태의 대비로 위계를 만든다.
 - **Explicit state:** 색상만으로 상태를 표현하지 않고 아이콘, 문구, 위치를 함께 사용한다.
-- **Native behavior:** macOS의 키보드, 포인터, appearance, material, window 관습을 존중한다.
+- **Native behavior:** Mac에서는 macOS의 키보드·포인터·창 관습을, 폰에서는 브라우저와 터치 입력 관습을 존중한다.
 - **Local confidence:** 로컬 실행과 장기 세션의 지속성, 복구 가능성, 사용자 통제감을 시각적으로 지지한다.
 
 ## 3. Sources of truth
@@ -40,7 +42,7 @@ UI chrome은 이 정보와 행동보다 앞에 나서지 않는다.
 디자인 결정이 충돌할 때 다음 순서를 따른다.
 
 1. 사용자 안전, 접근성, Picky의 제품 불변 조건
-2. Apple macOS Human Interface Guidelines와 시스템 동작
+2. 대상 플랫폼의 접근성·입력 관습과 시스템 동작. Mac에서는 Apple macOS Human Interface Guidelines를 따른다.
 3. 이 문서와 [PRINCIPLES.md](./PRINCIPLES.md)
 4. [TOKENS.md](./TOKENS.md), [COMPONENTS.md](./COMPONENTS.md), 제품 문구의 [UX_WRITING.md](./UX_WRITING.md)
 5. 외부 시각 레퍼런스
@@ -56,6 +58,12 @@ UI chrome은 이 정보와 행동보다 앞에 나서지 않는다.
 - light/dark appearance와 키보드 중심 조작을 지원해야 한다.
 - 안전에 필요한 상태와 확인 절차는 유지한다. 화면 목적과 무관한 진행 정보와 내부 기술 상태는 기본 화면에 노출하지 않는다.
 - 시각 변경이 HUD 성능, 레이아웃 안정성, 텍스트 입력을 악화시키면 안 된다.
+
+### Mac과 폰의 일관성
+
+대화, 작업 상태, 질문, 전송·중단의 의미와 주요 용어는 두 화면에서 유지한다. 같은 상태를 다른 의미나 색으로 표현하지 않는다. 일관성은 모든 화면과 컨트롤을 그대로 복제한다는 뜻이 아니다. Mac의 hover·키보드 중심 조작은 폰에서 발견 가능한 터치 조작으로 바꾸고, 화면 캡처·터미널 등 Mac 전용 기능의 경계를 유지한다.
+
+구체적인 화면 대응은 [원격 PWA 설계](../docs/remote-pwa-plan.md)를 따른다.
 
 ## 5. System overview
 

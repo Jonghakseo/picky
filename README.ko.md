@@ -28,6 +28,12 @@ Pi는 요청에 바로 답하거나 오래 걸리는 일을 별도 Pi 세션인 
 
 Picky는 로컬 Pi 세션의 클라이언트 레이어이며 별도의 텔레메트리를 전송하지 않습니다. 선택한 모델이나 도구는 네트워크를 사용할 수 있습니다.
 
+## 폰에서도 같은 작업 이어가기
+
+선택 기능인 휴대폰 웹 앱에서 Mac을 떠나서도 같은 Picky·Pickle 대화의 진행 상태를 확인하고, 질문에 답하고, 새 지시를 보낼 수 있습니다. 세션은 계속 Mac에서 실행됩니다. 폰은 별도 에이전트 서비스가 아니라 같은 작업을 조작하는 또 하나의 화면입니다.
+
+Hub의 **원격 접속**을 켜고 사용자의 Tailscale 또는 Cloudflare 연결을 통해 폰을 페어링하세요. 원격 접속은 기본으로 꺼져 있으며, Picky가 실행 중이고 Mac이 깨어 있어야 합니다. Picky가 운영하는 서버는 사용하지 않습니다. 자세한 내용은 [폰 연결과 사용법](docs/user-manual.md#15-remote-access-from-your-phone)을 참고하세요. 베타 빌드는 [릴리즈 목록](https://github.com/Jonghakseo/picky/releases)에서 받을 수 있습니다.
+
 ## 시작하기
 
 macOS 14.2 이상과 로컬에 설치된 Pi가 필요합니다. [Releases](https://github.com/Jonghakseo/picky/releases/latest)에서 Picky를 내려받거나 소스에서 직접 빌드하세요.

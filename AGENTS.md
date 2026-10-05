@@ -4,6 +4,8 @@
 
 Picky is a local-first macOS command center for Pi sessions. It captures neutral desktop context, sends it to local Pi through `picky-agentd`, and shows long-running Pickles in the Picky dock. Picky should stay thin: context capture, overlay/session UI, and session control. Pi remains responsible for interpreting intent, choosing skills/tools/MCPs, and doing the work.
 
+The optional phone PWA is another control surface for the same local sessions, not a separate agent runtime. The Mac app owns desktop integration and local process lifecycle; the gateway authenticates paired devices and connects them to the app and session-owning daemons. Keep product structure in [ARCHITECTURE.md](ARCHITECTURE.md), with remote implementation details in [docs/remote-pwa-implementation.md](docs/remote-pwa-implementation.md).
+
 ## Response language
 
 - Always answer the user in Korean.
@@ -51,6 +53,8 @@ picky-agentd (Node/TypeScript)
   -> Pi SDK runtime
 local ~/.pi/agent skills/extensions/MCP/tools
 ```
+
+The optional remote path is `phone PWA -> user-managed Tailscale/Cloudflare -> local gateway`. The gateway connects directly to session-owning daemons for session state and commands, and to the app's remote hub for app-owned actions. It does not host Pi sessions. Remote actions must not implicitly capture the Mac screen, change its selected conversation, or trigger desktop voice, cursor presentation, or permission prompts. Mac and phone share session semantics while adapting input and presentation to their platform.
 
 Default daemon port is `127.0.0.1:17631`. Mock runtime is available via `PICKY_AGENTD_RUNTIME=mock`.
 

@@ -138,4 +138,4 @@ Tests: gateway units and an end-to-end test over real sockets (gateway, mock dae
 
 ## 6. Packaging
 
-`agentd/package.json` `build` compiles TypeScript and then runs the web build, so `dist/gateway/` and `dist/web/` ship inside `Picky.app/Contents/Resources/agentd` through `scripts/package-agentd-runtime.sh`. Remote access is off by default and nothing listens until the user turns it on.
+`agentd/package.json` `build` compiles TypeScript and then runs the web build, so `dist/gateway/` and `dist/web/` ship inside `Picky.app/Contents/Resources/agentd` through `scripts/package-agentd-runtime.sh`. The script fails when `dist/gateway/main.js` or the PWA entry files (`index.html`, `sw.js`, `manifest.webmanifest`) are missing from the runtime, because the app starts the gateway only when the user turns remote access on and a missing file would surface only then. Remote access is off by default and nothing listens until the user turns it on.

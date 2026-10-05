@@ -97,8 +97,20 @@ if [[ ! -d "${RUNTIME_DIR}/node_modules" ]]; then
   exit 1
 fi
 
+# Remote access (docs/remote-pwa-implementation.md 6): the app launches
+# dist/gateway/main.js only when the user turns remote access on, and the
+# gateway serves the PWA from dist/web. A runtime without them would fail only
+# at that moment, far from the build that dropped them.
+for remote_file in dist/gateway/main.js dist/web/index.html dist/web/sw.js dist/web/manifest.webmanifest; do
+  if [[ ! -f "${RUNTIME_DIR}/${remote_file}" ]]; then
+    echo "❌ Packaged agentd runtime is missing ${remote_file}: ${RUNTIME_DIR}" >&2
+    exit 1
+  fi
+done
+
 node --check "${RUNTIME_DIR}/dist/index.js" >/dev/null
 node --check "${RUNTIME_DIR}/dist/cli.js" >/dev/null
+node --check "${RUNTIME_DIR}/dist/gateway/main.js" >/dev/null
 
 cat <<EOF
 ✅ picky-agentd runtime is ready.

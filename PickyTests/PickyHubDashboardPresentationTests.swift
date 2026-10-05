@@ -29,7 +29,7 @@ struct PickyHubDashboardPresentationTests {
     }
 
     @Test func choosesEmptyWorkTitleForEveryPeriod() {
-        #expect(String(describing: PickyHubDashboardPresentation.emptyWorkTitle(period: .thisWeek)).contains("thisWeek"))
+        #expect(String(describing: PickyHubDashboardPresentation.emptyWorkTitle(period: .lastSevenDays)).contains("lastSevenDays"))
         #expect(String(describing: PickyHubDashboardPresentation.emptyWorkTitle(period: .thisMonth)).contains("thisMonth"))
         #expect(String(describing: PickyHubDashboardPresentation.emptyWorkTitle(period: .lastThreeMonths)).contains("lastThreeMonths"))
         #expect(String(describing: PickyHubDashboardPresentation.emptyWorkTitle(period: .all)).contains("all"))

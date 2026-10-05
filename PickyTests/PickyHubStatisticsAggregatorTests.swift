@@ -19,8 +19,8 @@ struct PickyHubStatisticsAggregatorTests {
         let snapshot = PickyHubStatisticsSnapshot(
             generatedAt: now,
             records: [
-                record(id: "before", project: "picky", activity: date("2026-07-12T23:59:59Z")),
-                record(id: "boundary", project: "picky", activity: date("2026-07-13T00:00:00Z")),
+                record(id: "before", project: "picky", activity: date("2026-07-09T23:59:59Z")),
+                record(id: "boundary", project: "picky", activity: date("2026-07-10T00:00:00Z")),
                 record(id: "other-project", project: "site", activity: date("2026-07-16T11:00:00Z"))
             ],
             usageSamples: [],
@@ -29,7 +29,7 @@ struct PickyHubStatisticsAggregatorTests {
 
         let result = PickyHubStatisticsAggregator.records(
             in: snapshot,
-            filter: .init(period: .thisWeek, project: "picky"),
+            filter: .init(period: .lastSevenDays, project: "picky"),
             now: now,
             calendar: calendar
         )
@@ -64,14 +64,14 @@ struct PickyHubStatisticsAggregatorTests {
                 usage(day: "2026-07-14", project: "picky", input: 10, output: 5, cache: 2),
                 usage(day: "2026-07-15", project: "picky", input: 20, output: 10, cache: 4),
                 usage(day: "2026-07-15", project: "other", input: 100, output: 100, cache: 100),
-                usage(day: "2026-07-12", project: "picky", input: 100, output: 100, cache: 100)
+                usage(day: "2026-07-09", project: "picky", input: 100, output: 100, cache: 100)
             ],
             pendingClassificationCount: 0
         )
 
         let summary = PickyHubStatisticsAggregator.usageSummary(
             in: snapshot,
-            filter: .init(period: .thisWeek, project: "picky"),
+            filter: .init(period: .lastSevenDays, project: "picky"),
             now: now,
             calendar: calendar
         )
@@ -84,17 +84,18 @@ struct PickyHubStatisticsAggregatorTests {
         #expect(summary.models.count == 1)
     }
 
-    @Test func fillsContinuousDaysForTheCurrentWeek() {
-        let now = date("2026-07-16T12:00:00Z")
+    @Test func chartsTheLastSevenDaysEndingTodayEvenOnAMonday() {
+        // 2026-07-13 is a Monday. A Monday-to-Sunday week would chart six empty future days.
+        let now = date("2026-07-13T12:00:00Z")
         let days = [
-            PickyHubUsageDay(day: "2026-07-13", totalTokens: 10),
-            PickyHubUsageDay(day: "2026-07-15", totalTokens: 30)
+            PickyHubUsageDay(day: "2026-07-08", totalTokens: 10),
+            PickyHubUsageDay(day: "2026-07-13", totalTokens: 30)
         ]
 
-        let result = PickyHubStatisticsAggregator.continuousDays(days, period: .thisWeek, now: now, calendar: calendar)
+        let result = PickyHubStatisticsAggregator.continuousDays(days, period: .lastSevenDays, now: now, calendar: calendar)
 
-        #expect(result.map(\.day) == ["2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19"])
-        #expect(result.map(\.totalTokens) == [10, 0, 30, 0, 0, 0, 0])
+        #expect(result.map(\.day) == ["2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-11", "2026-07-12", "2026-07-13"])
+        #expect(result.map(\.totalTokens) == [0, 10, 0, 0, 0, 0, 30])
     }
 
     @Test func dateConversionRespectsTheRequestedTimeZoneAndRejectsInvalidDays() {
@@ -111,8 +112,8 @@ struct PickyHubStatisticsAggregatorTests {
         let result = PickyHubStatisticsAggregator.continuousDays([
             .init(day: "2026-07-13", totalTokens: 10),
             .init(day: "2026-07-13", totalTokens: 20)
-        ], period: .thisWeek, now: date("2026-07-16T12:00:00Z"), calendar: calendar)
-        #expect(result.first?.totalTokens == 30)
+        ], period: .lastSevenDays, now: date("2026-07-16T12:00:00Z"), calendar: calendar)
+        #expect(result.first { $0.day == "2026-07-13" }?.totalTokens == 30)
         #expect(result.count == 7)
     }
 

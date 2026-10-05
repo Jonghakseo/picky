@@ -141,7 +141,8 @@ struct PickyHubStatisticsSnapshot: Codable, Equatable {
 }
 
 enum PickyHubStatisticsPeriod: String, CaseIterable, Identifiable {
-    case thisWeek
+    /// Today and the six days before it, so the chart never shows empty future days.
+    case lastSevenDays
     case thisMonth
     case lastThreeMonths
     case all
@@ -150,7 +151,7 @@ enum PickyHubStatisticsPeriod: String, CaseIterable, Identifiable {
 
     private var titleLocalizationKey: String {
         switch self {
-        case .thisWeek: "hub.stats.period.thisWeek"
+        case .lastSevenDays: "hub.stats.period.lastSevenDays"
         case .thisMonth: "hub.stats.period.thisMonth"
         case .lastThreeMonths: "hub.stats.period.lastThreeMonths"
         case .all: "hub.stats.period.all"
@@ -163,10 +164,8 @@ enum PickyHubStatisticsPeriod: String, CaseIterable, Identifiable {
     /// Inclusive lower bound, `nil` for all time.
     func startDate(now: Date, calendar: Calendar) -> Date? {
         switch self {
-        case .thisWeek:
-            var weekCalendar = calendar
-            weekCalendar.firstWeekday = 2
-            return weekCalendar.dateInterval(of: .weekOfYear, for: now)?.start
+        case .lastSevenDays:
+            return calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now))
         case .thisMonth:
             return calendar.dateInterval(of: .month, for: now)?.start
         case .lastThreeMonths:
@@ -179,7 +178,7 @@ enum PickyHubStatisticsPeriod: String, CaseIterable, Identifiable {
 
 /// Project filter. `nil` project means every project.
 struct PickyHubStatisticsFilter: Equatable {
-    var period: PickyHubStatisticsPeriod = .thisWeek
+    var period: PickyHubStatisticsPeriod = .lastSevenDays
     var project: String?
 }
 
@@ -338,12 +337,7 @@ enum PickyHubStatisticsAggregator {
         calendar: Calendar = .current
     ) -> [PickyHubUsageDay] {
         let byDay = Dictionary(days.map { ($0.day, $0.totalTokens) }, uniquingKeysWith: +)
-        let end: Date = {
-            if period == .thisWeek, let start = period.startDate(now: now, calendar: calendar) {
-                return calendar.date(byAdding: .day, value: 6, to: start) ?? now
-            }
-            return calendar.startOfDay(for: now)
-        }()
+        let end = calendar.startOfDay(for: now)
         var start = period.startDate(now: now, calendar: calendar)
         if start == nil {
             guard let first = days.map(\.day).min(), let parsed = date(fromDay: first, calendar: calendar) else { return days }

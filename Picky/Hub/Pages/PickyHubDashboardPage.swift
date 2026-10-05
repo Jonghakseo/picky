@@ -653,7 +653,7 @@ enum PickyHubDashboardPresentation {
     static func workScope(filter: PickyHubStatisticsFilter) -> String {
         let periodKey: String
         switch filter.period {
-        case .thisWeek: periodKey = "hub.stats.period.thisWeek"
+        case .lastSevenDays: periodKey = "hub.stats.period.lastSevenDays"
         case .thisMonth: periodKey = "hub.stats.period.thisMonth"
         case .lastThreeMonths: periodKey = "hub.stats.period.lastThreeMonths"
         case .all: periodKey = "hub.stats.period.all"
@@ -663,7 +663,7 @@ enum PickyHubDashboardPresentation {
 
     static func emptyWorkTitle(period: PickyHubStatisticsPeriod) -> LocalizedStringKey {
         switch period {
-        case .thisWeek: "hub.dashboard.work.empty.thisWeek"
+        case .lastSevenDays: "hub.dashboard.work.empty.lastSevenDays"
         case .thisMonth: "hub.dashboard.work.empty.thisMonth"
         case .lastThreeMonths: "hub.dashboard.work.empty.lastThreeMonths"
         case .all: "hub.dashboard.work.empty.all"

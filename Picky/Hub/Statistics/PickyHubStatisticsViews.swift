@@ -236,7 +236,7 @@ struct PickyHubUsageLineChart: View {
         guard let date = PickyHubStatisticsAggregator.date(fromDay: day) else { return day }
         let formatter = DateFormatter()
         formatter.locale = locale
-        formatter.dateFormat = period == .thisWeek ? "EEEEE" : "M/d"
+        formatter.dateFormat = "M/d"
         return formatter.string(from: date)
     }
 }

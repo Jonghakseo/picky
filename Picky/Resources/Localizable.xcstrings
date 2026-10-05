@@ -16557,22 +16557,6 @@
         }
       }
     },
-    "hub.stats.period.thisWeek": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This week"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이번 주"
-          }
-        }
-      }
-    },
     "hub.stats.period.thisMonth": {
       "localizations": {
         "en": {
@@ -17545,22 +17529,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "이번 기간 %lld개 Pickle"
-          }
-        }
-      }
-    },
-    "hub.dashboard.work.empty.thisWeek": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No records for this week yet"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아직 이번 주 기록이 없어요"
           }
         }
       }
@@ -30567,6 +30535,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "원격"
+          }
+        }
+      }
+    },
+    "hub.stats.period.lastSevenDays": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last 7 days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 7일"
+          }
+        }
+      }
+    },
+    "hub.dashboard.work.empty.lastSevenDays": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No records in the last 7 days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 7일 동안의 기록이 없어요"
           }
         }
       }

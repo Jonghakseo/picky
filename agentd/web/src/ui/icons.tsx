@@ -134,13 +134,15 @@ function stroke(path: JSX.Element, { size = 16, class: className }: IconProps, w
 export const PlusIcon = (props: IconProps): JSX.Element => stroke(<path d="M8 3v10M3 8h10" />, props, 1.8);
 export const ChevronRightIcon = (props: IconProps): JSX.Element => stroke(<path d="M6 3.5L10.5 8 6 12.5" />, props);
 export const ChevronLeftIcon = (props: IconProps): JSX.Element => stroke(<path d="M10 3.5L5.5 8 10 12.5" />, props, 1.8);
+/** SF Symbols `gearshape`: an eight-tooth gear with a hole. A circle with rays read as a theme (sun) toggle. */
 export const GearIcon = (props: IconProps): JSX.Element =>
   stroke(
     <g>
-      <circle cx="8" cy="8" r="2.2" />
-      <path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7L3.6 3.6" />
+      <path d="M6.72 2.86L6.98 1.18L9.02 1.18L9.28 2.86L10.73 3.46L12.10 2.45L13.55 3.90L12.54 5.27L13.14 6.72L14.82 6.98L14.82 9.02L13.14 9.28L12.54 10.73L13.55 12.10L12.10 13.55L10.73 12.54L9.28 13.14L9.02 14.82L6.98 14.82L6.72 13.14L5.27 12.54L3.90 13.55L2.45 12.10L3.46 10.73L2.86 9.28L1.18 9.02L1.18 6.98L2.86 6.72L3.46 5.27L2.45 3.90L3.90 2.45L5.27 3.46Z" />
+      <circle cx="8" cy="8" r="2.1" />
     </g>,
     props,
+    1.3,
   );
 export const ArchiveIcon = (props: IconProps): JSX.Element =>
   stroke(

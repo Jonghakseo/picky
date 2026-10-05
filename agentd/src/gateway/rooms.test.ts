@@ -131,23 +131,32 @@ describe("preview priority", () => {
     const room = build([withEverything({
       pendingExtensionUiRequest: { id: "r1", sessionId: "s1", createdAt: "2026-01-01T00:00:00Z", requestId: "r1", method: "notify", prompt: "저장했어요" },
     } as Partial<PickyAgentSession>)]).rooms.find((item) => item.id === "s1");
-    expect(room?.preview).toBe("summary line");
+    expect(room?.preview).toBe("last reply");
     expect(room?.pendingQuestion).toBe(false);
   });
 
-  it("prefers the summary, then the final answer, then the last reply", () => {
-    expect(previewOf(withEverything({}))).toBe("summary line");
+  it("shows the newest message, never the daemon's status line", () => {
+    // Seen on a phone: every running Pickle read "Agent started".
+    expect(previewOf(withEverything({ lastSummary: "Agent started" }))).toBe("last reply");
+    // A turn the agent has not answered yet shows what the user asked.
     expect(previewOf(session("s1", {
-      finalAnswer: "final answer",
-      messages: [{ id: "m1", kind: "agent_text", createdAt: "2026-01-01T00:00:00Z", text: "last reply" }],
-    } as Partial<PickyAgentSession>))).toBe("final answer");
-    expect(previewOf(session("s1", {
+      status: "running",
+      lastSummary: "Agent started",
       messages: [
-        { id: "m1", kind: "agent_text", createdAt: "2026-01-01T00:00:00Z", text: "older" },
-        { id: "m2", kind: "agent_text", createdAt: "2026-01-01T00:01:00Z", text: "last reply" },
+        { id: "m1", kind: "agent_text", createdAt: "2026-01-01T00:00:00Z", text: "older reply" },
+        { id: "m2", kind: "user_text", createdAt: "2026-01-01T00:01:00Z", text: "PR 올려 줘" },
+        { id: "m3", kind: "agent_activity", createdAt: "2026-01-01T00:01:05Z" },
       ],
-    } as Partial<PickyAgentSession>))).toBe("last reply");
-    expect(previewOf(session("s1"))).toBeUndefined();
+    } as Partial<PickyAgentSession>))).toBe("PR 올려 줘");
+    // A summary-only projection has no journal; the final answer stands in.
+    expect(previewOf(session("s1", { lastSummary: "Completed", finalAnswer: "final answer" } as Partial<PickyAgentSession>))).toBe("final answer");
+    expect(previewOf(session("s1", { lastSummary: "Agent started" } as Partial<PickyAgentSession>))).toBeUndefined();
+  });
+
+  it("reads markdown as text", () => {
+    expect(truncatePreview("**머지했어요.** [#5633](https://github.com/x/y/pull/5633)의 `main` 반영을 확인했어요"))
+      .toBe("머지했어요. #5633의 main 반영을 확인했어요");
+    expect(truncatePreview("## 결과\n- 첫째\n> 인용")).toBe("결과 첫째 인용");
   });
 
   it("collapses whitespace and cuts long text to one line", () => {

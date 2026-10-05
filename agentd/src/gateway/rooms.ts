@@ -105,7 +105,10 @@ function pickleRoom(
   overlayState: { unread: boolean; archived: boolean; groupIds: string[] },
 ): RemoteRoom {
   const question = session.pendingExtensionUiRequest;
-  const preview = truncatePreview(questionPreview(session) ?? session.lastSummary ?? lastAssistantText(session));
+  // `lastSummary` is the daemon's status line ("Agent started", "Steering
+  // message sent", "Running bash: ..."), not something a person wrote; a
+  // messenger list shows the newest message in the conversation instead.
+  const preview = truncatePreview(questionPreview(session) ?? latestMessageText(session));
   return {
     id: session.id,
     kind: "pickle",
@@ -134,19 +137,33 @@ function questionPreview(session: PickyAgentSession): string | undefined {
   return request.prompt ?? request.title ?? request.description;
 }
 
-function lastAssistantText(session: PickyAgentSession): string | undefined {
-  if (session.finalAnswer) return session.finalAnswer;
+/**
+ * The newest thing said in the conversation: the agent's reply, or the user's
+ * own message while the agent has not answered it yet. Without a journal
+ * (a summary-only projection) the final answer stands in.
+ */
+function latestMessageText(session: PickyAgentSession): string | undefined {
   const messages = session.messages ?? [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message.kind === "agent_text" && message.text) return message.text;
+    if ((message.kind === "agent_text" || message.kind === "user_text") && message.text?.trim()) return message.text;
   }
-  return undefined;
+  return session.finalAnswer;
+}
+
+/** Markdown as it reads: link and image text, no emphasis, code ticks, headings or quote and list markers. */
+export function plainPreviewText(text: string): string {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|~~)(.+?)\1/g, "$2")
+    .replace(/`+([^`]+)`+/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+)/gm, "");
 }
 
 export function truncatePreview(text: string | undefined): string | undefined {
   if (!text) return undefined;
-  const collapsed = text.replace(/\s+/g, " ").trim();
+  const collapsed = plainPreviewText(text).replace(/\s+/g, " ").trim();
   if (!collapsed) return undefined;
   return collapsed.length > PREVIEW_MAX_CHARS ? `${collapsed.slice(0, PREVIEW_MAX_CHARS - 1)}…` : collapsed;
 }

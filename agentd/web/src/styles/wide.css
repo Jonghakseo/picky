@@ -40,16 +40,15 @@
   background: var(--ds-color-surface1);
 }
 
-/* The open room, and hover where there is a pointer. */
+/* The open room, and hover where there is a pointer. Full-bleed rows, like the
+ * list's own dividers: a rounded fill floated inside a square list. */
 .wide-list .room-row.is-selected {
   background: var(--ds-color-surface2);
-  border-radius: var(--ds-radius-control);
 }
 
 @media (hover: hover) {
   .wide-list .room-row:not(.is-selected):hover {
     background: color-mix(in srgb, var(--ds-color-surface2) 55%, transparent);
-    border-radius: var(--ds-radius-control);
   }
 }
 

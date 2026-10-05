@@ -29,16 +29,19 @@ function headerValue(headers: IncomingHttpHeaders, name: string): string | undef
 }
 
 /**
- * `CF-Connecting-IP` first, then the left-most `X-Forwarded-For` entry, then
- * the socket. Both headers are trusted because nothing but a loopback tunnel
- * can reach this server, and both tunnels we support set them.
+ * `CF-Connecting-IP` first, then the right-most `X-Forwarded-For` entry, then
+ * the socket. The gateway listens on loopback only, so the one hop in front of
+ * it is the local tunnel: Cloudflare overwrites `CF-Connecting-IP` at its edge,
+ * and Tailscale Serve appends the address it saw to `X-Forwarded-For`. Earlier
+ * entries come from the client and can be forged, so they must not key the
+ * lockout.
  */
 export function clientIpOf(request: IncomingMessage): string {
   const cloudflare = headerValue(request.headers, "cf-connecting-ip")?.trim();
   if (cloudflare) return cloudflare;
   const forwarded = headerValue(request.headers, "x-forwarded-for");
-  const first = forwarded?.split(",")[0]?.trim();
-  if (first) return first;
+  const last = forwarded?.split(",").map((entry) => entry.trim()).filter(Boolean).at(-1);
+  if (last) return last;
   return request.socket.remoteAddress ?? "unknown";
 }
 

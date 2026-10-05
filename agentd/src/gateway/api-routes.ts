@@ -25,6 +25,18 @@ import { isAllowedPushEndpoint } from "./push/sender.js";
 import { UploadRejected } from "./uploads.js";
 import { dataPath, ensureDirectory, randomId, writeFileAtomic } from "./storage.js";
 import { errorMessage, logGateway } from "./log.js";
+import { z } from "zod";
+
+/** Body of DELETE /api/push/subscription; optional because the browser may have dropped the subscription already. */
+const PushEndpointBodySchema = z.object({ endpoint: z.string().url().max(2048) });
+
+function hostOf(endpoint: string): string {
+  try {
+    return new URL(endpoint).hostname;
+  } catch {
+    return "invalid";
+  }
+}
 
 /** The Mac has to decode, transcribe and clean up; speech can take a while. */
 export const DICTATION_TIMEOUT_MS = 120_000;
@@ -120,7 +132,8 @@ export class ApiRouter {
 
   private me(request: IncomingMessage, response: ServerResponse, facts: RequestFacts): void {
     const device = this.authenticate(request, facts);
-    const macName = this.core.hub.hello?.macName;
+    // The Mac name often contains the owner's name; only paired devices see it.
+    const macName = device ? this.core.hub.hello?.macName : undefined;
     const body: RemoteMeResponse = {
       paired: device !== undefined,
       ...(device ? { device: { id: device.id, name: device.name } } : {}),
@@ -294,18 +307,18 @@ export class ApiRouter {
   private async pushSubscription(request: IncomingMessage, response: ServerResponse, facts: RequestFacts): Promise<void> {
     const device = this.requireDevice(request, response, facts);
     if (!device) return;
-    const parsed = RemotePushSubscriptionSchema.safeParse(await readJsonBody(request));
+    const body = await readJsonBody(request);
+    if (facts.method === "DELETE") {
+      await this.removePushSubscriptions(device.id, body);
+      sendJson(response, 200, { subscribed: false });
+      return;
+    }
+    const parsed = RemotePushSubscriptionSchema.safeParse(body);
     if (!parsed.success) {
       sendError(response, remoteError("invalid", "That push subscription is not valid."));
       return;
     }
     const endpointHost = new URL(parsed.data.endpoint).hostname;
-    if (facts.method === "DELETE") {
-      await this.core.devices.removeSubscription(device.id, parsed.data.endpoint);
-      this.core.audit.record({ action: "push.unsubscribe", deviceId: device.id, endpointHost });
-      sendJson(response, 200, { subscribed: false });
-      return;
-    }
     if (!isAllowedPushEndpoint(parsed.data.endpoint)) {
       sendError(response, remoteError("rejected", "That push service is not supported."));
       return;
@@ -314,6 +327,22 @@ export class ApiRouter {
     this.core.audit.record({ action: "push.subscribe", deviceId: device.id, endpointHost });
     this.core.publishDevices();
     sendJson(response, 200, { subscribed: true });
+  }
+
+  /**
+   * DELETE takes `{ endpoint }` when the phone still knows its subscription and
+   * nothing when it does not (the browser already dropped it); without an
+   * endpoint every subscription of this device goes.
+   */
+  private async removePushSubscriptions(deviceId: string, body: unknown): Promise<void> {
+    const endpoint = PushEndpointBodySchema.safeParse(body).data?.endpoint;
+    const device = this.core.devices.get(deviceId);
+    const endpoints = endpoint ? [endpoint] : (device?.pushSubscriptions.map((subscription) => subscription.endpoint) ?? []);
+    for (const target of endpoints) {
+      await this.core.devices.removeSubscription(deviceId, target);
+      this.core.audit.record({ action: "push.unsubscribe", deviceId, endpointHost: hostOf(target) });
+    }
+    this.core.publishDevices();
   }
 
   private async pushTest(request: IncomingMessage, response: ServerResponse, facts: RequestFacts): Promise<void> {

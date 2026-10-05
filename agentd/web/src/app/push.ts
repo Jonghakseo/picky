@@ -54,6 +54,7 @@ export async function enablePush(transport: Transport, vapidKey: string): Promis
 export async function disablePush(transport: Transport): Promise<void> {
   const registration = await navigator.serviceWorker?.getRegistration();
   const subscription = await registration?.pushManager.getSubscription();
+  const endpoint = subscription?.endpoint;
   await subscription?.unsubscribe();
-  await transport.pushUnsubscribe();
+  await transport.pushUnsubscribe(endpoint);
 }

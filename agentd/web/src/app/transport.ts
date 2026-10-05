@@ -43,7 +43,8 @@ export interface Transport {
   fileUrl(roomId: string, path: string): string;
 
   pushSubscribe(subscription: RemotePushSubscription): Promise<void>;
-  pushUnsubscribe(): Promise<void>;
+  /** Pass the endpoint while the browser still has it; without one the gateway drops every subscription of this device. */
+  pushUnsubscribe(endpoint?: string): Promise<void>;
   pushTest(): Promise<void>;
 }
 

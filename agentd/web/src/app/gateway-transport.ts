@@ -186,8 +186,11 @@ export class GatewayTransport implements Transport {
     });
   }
 
-  async pushUnsubscribe(): Promise<void> {
-    await requestJson<unknown>("/api/push/subscription", { method: "DELETE" });
+  async pushUnsubscribe(endpoint?: string): Promise<void> {
+    await requestJson<unknown>("/api/push/subscription", {
+      method: "DELETE",
+      ...(endpoint ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint }) } : {}),
+    });
   }
 
   async pushTest(): Promise<void> {

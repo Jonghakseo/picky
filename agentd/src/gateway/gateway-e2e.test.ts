@@ -120,6 +120,12 @@ describe("a phone from pairing to revocation", () => {
     expect(gateway.core.pairing.isActive()).toBe(true);
   });
 
+  it("keeps the Mac name from unpaired visitors", async () => {
+    const me = await (await fetch(`${origin}/api/me`)).json() as { paired: boolean; macName?: string };
+    expect(me.paired).toBe(false);
+    expect(me.macName).toBeUndefined();
+  });
+
   it("pairs with the code the Mac is showing and sets the device cookie", async () => {
     const code = gateway.core.pairing.current()?.display ?? "";
     const response = await pair(code);
@@ -137,7 +143,23 @@ describe("a phone from pairing to revocation", () => {
 
     // One code pairs one device.
     expect(gateway.core.pairing.isActive()).toBe(false);
-    expect((await (await fetch(`${origin}/api/me`, { headers: { cookie } })).json() as { paired: boolean }).paired).toBe(true);
+    const me = await (await fetch(`${origin}/api/me`, { headers: { cookie } })).json() as { paired: boolean; macName?: string };
+    expect(me.paired).toBe(true);
+    expect(me.macName).toBeTruthy();
+  });
+
+  it("drops every push subscription of the device when DELETE carries no endpoint", async () => {
+    const headers = { cookie, origin, "content-type": "application/json" };
+    const subscription = (endpoint: string) => JSON.stringify({ endpoint, keys: { p256dh: "BPub", auth: "secret" } });
+    for (const endpoint of ["https://fcm.googleapis.com/fcm/send/a", "https://web.push.apple.com/b"]) {
+      expect((await fetch(`${origin}/api/push/subscription`, { method: "POST", headers, body: subscription(endpoint) })).status).toBe(200);
+    }
+    const deviceId = gateway.core.devices.list()[0]?.id ?? "";
+    expect(gateway.core.devices.get(deviceId)?.pushSubscriptions).toHaveLength(2);
+
+    const removed = await fetch(`${origin}/api/push/subscription`, { method: "DELETE", headers: { cookie, origin } });
+    expect(removed.status).toBe(200);
+    expect(gateway.core.devices.get(deviceId)?.pushSubscriptions).toHaveLength(0);
   });
 
   it("refuses a WebSocket upgrade from another origin, and one with no cookie", async () => {

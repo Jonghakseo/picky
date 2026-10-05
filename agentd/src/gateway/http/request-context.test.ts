@@ -18,7 +18,9 @@ function request(headers: IncomingHttpHeaders, remoteAddress = "127.0.0.1"): Inc
 describe("client IP", () => {
   it("prefers CF-Connecting-IP, then the first X-Forwarded-For entry, then the socket", () => {
     expect(clientIpOf(request({ "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.1" }))).toBe("203.0.113.7");
-    expect(clientIpOf(request({ "x-forwarded-for": "198.51.100.1, 10.0.0.1" }))).toBe("198.51.100.1");
+    // Tailscale Serve appends the peer it saw; a client-supplied left-most entry must not win.
+    expect(clientIpOf(request({ "x-forwarded-for": "198.51.100.1, 10.0.0.1" }))).toBe("10.0.0.1");
+    expect(clientIpOf(request({ "x-forwarded-for": "1.2.3.4" }))).toBe("1.2.3.4");
     expect(clientIpOf(request({}, "100.64.0.3"))).toBe("100.64.0.3");
   });
 });

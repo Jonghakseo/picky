@@ -55,12 +55,16 @@ export function UserBubble({ text, time, pending, onOpenExternal, onOpenFile }: 
   const body = foldable && !expanded ? truncatedMarkdown(text) : text;
   return (
     <div class={`row row--user${tapped ? " row--tapped" : ""}`}>
+      {/* The HUD puts a user bubble's time on its left, so the bubble itself
+          stays flush with the right edge (PickyBubbleTimestampAccessory). */}
       {pending ? (
         <div class="sendtime sendtime--pinned">
           <Clock />
           <span class="sr-only">{t("common.sending")}</span>
         </div>
-      ) : null}
+      ) : (
+        <div class="sendtime">{time ?? ""}</div>
+      )}
       <div class="bubble bubble--user" onClick={() => setTapped((value) => !value)}>
         <Markdown text={body} onOpenExternal={onOpenExternal} onOpenFile={onOpenFile} />
         {foldable ? (
@@ -77,7 +81,6 @@ export function UserBubble({ text, time, pending, onOpenExternal, onOpenFile }: 
           </button>
         ) : null}
       </div>
-      {pending ? null : <div class="sendtime">{time ?? ""}</div>}
     </div>
   );
 }

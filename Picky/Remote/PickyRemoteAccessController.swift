@@ -32,8 +32,8 @@ struct PickyQuickTunnelAddressMemory {
     static let userDefaultsKey = "PickyRemoteQuickTunnelLastURL"
 
     static let userDefaults = PickyQuickTunnelAddressMemory(
-        load: { UserDefaults.standard.string(forKey: userDefaultsKey) },
-        save: { UserDefaults.standard.set($0, forKey: userDefaultsKey) }
+        load: { PickyRuntimeEnvironment.userDefaults.string(forKey: userDefaultsKey) },
+        save: { PickyRuntimeEnvironment.userDefaults.set($0, forKey: userDefaultsKey) }
     )
 }
 

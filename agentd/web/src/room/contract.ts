@@ -44,6 +44,12 @@ export interface RoomViewModel {
   dictation: RemoteDictationAvailability;
   /** Locale used for copy and dates ("ko" | "en"). */
   locale: "ko" | "en";
+  /**
+   * "wide" when the room is the right pane next to the room list (768px and
+   * up): no back button, a centred reading column, menus kept inside the pane.
+   * Missing means "phone".
+   */
+  layout?: "phone" | "wide";
 }
 
 export interface RoomActions {

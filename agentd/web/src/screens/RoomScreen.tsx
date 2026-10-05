@@ -13,7 +13,7 @@ import { t } from "../app/i18n";
 import { goBack, navigate } from "../app/navigation";
 import type { AppStore } from "../app/store";
 
-export function RoomScreen({ store, roomId }: { store: AppStore; roomId: string }): JSX.Element {
+export function RoomScreen({ store, roomId, wide = false }: { store: AppStore; roomId: string; wide?: boolean }): JSX.Element {
   useEffect(() => {
     store.openRoom(roomId);
     return () => store.closeRoom(roomId);
@@ -32,6 +32,7 @@ export function RoomScreen({ store, roomId }: { store: AppStore; roomId: string 
     online: store.connection.value === "open",
     dictation: store.mac.value.dictation,
     locale: store.locale,
+    layout: wide ? "wide" : "phone",
   };
 
   const actions: RoomActions = {

@@ -13,7 +13,18 @@ import { pushBlockedKey } from "../app/push-policy";
 import type { AppStore } from "../app/store";
 import { BellIcon, ChevronLeftIcon, Spinner } from "../ui/icons";
 
-export function SettingsScreen({ store, platform, buildId }: { store: AppStore; platform: PlatformFacts; buildId: string }): JSX.Element {
+export function SettingsScreen({
+  store,
+  platform,
+  buildId,
+  wide = false,
+}: {
+  store: AppStore;
+  platform: PlatformFacts;
+  buildId: string;
+  /** Right pane of the wide layout: the list is beside it, so there is nothing to go back to. */
+  wide?: boolean;
+}): JSX.Element {
   const subscribed = useSignal(false);
   const busy = useSignal(false);
   const message = useSignal<string | undefined>(undefined);
@@ -68,9 +79,11 @@ export function SettingsScreen({ store, platform, buildId }: { store: AppStore; 
   return (
     <div class="app-shell">
       <div class="app-topbar bordered app-side-inset">
-        <button class="icon-button" type="button" aria-label={t("remote.room.back")} onClick={() => goBack()}>
-          <ChevronLeftIcon size={17} />
-        </button>
+        {wide ? null : (
+          <button class="icon-button" type="button" aria-label={t("remote.room.back")} onClick={() => goBack()}>
+            <ChevronLeftIcon size={17} />
+          </button>
+        )}
         <span class="app-topbar-title">{t("remote.settings.title")}</span>
       </div>
 

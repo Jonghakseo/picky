@@ -6,9 +6,11 @@ import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import type { JSX } from "preact";
 import { t } from "../app/i18n";
+import { neighbourRoom, useWideLayout } from "../app/layout";
 import { currentLocation, navigate, startNavigation } from "../app/navigation";
 import { normalizePairingCode } from "../app/pairing";
 import type { PlatformFacts } from "../app/platform";
+import type { Route } from "../app/router";
 import type { AppStore } from "../app/store";
 import { IconSprite, Spinner } from "../ui/icons";
 import { FilePreviewScreen } from "./FilePreviewScreen";
@@ -28,6 +30,7 @@ export interface AppProps {
 
 export function App({ store, platform, buildId, demo }: AppProps): JSX.Element {
   const forcePair = useSignal(false);
+  const wide = useWideLayout();
 
   useEffect(() => startNavigation(), []);
 
@@ -88,9 +91,30 @@ export function App({ store, platform, buildId, demo }: AppProps): JSX.Element {
     <>
       <IconSprite />
       <ConnectionBanner store={store} />
-      {renderRoute()}
+      {wide && location.route.name !== "pair" ? (
+        <WideShell store={store} route={location.route}>
+          {renderWideMain(location.route)}
+        </WideShell>
+      ) : (
+        renderRoute()
+      )}
     </>
   );
+
+  /** The right-hand pane of the wide layout. The list is always beside it. */
+  function renderWideMain(route: Route): JSX.Element {
+    switch (route.name) {
+      case "room":
+        return <RoomScreen store={store} roomId={route.roomId} wide />;
+      case "settings":
+        return <SettingsScreen store={store} platform={platform} buildId={buildId} wide />;
+      case "preview":
+        return <FilePreviewScreen store={store} roomId={route.roomId} path={route.path} />;
+      case "pair":
+      case "rooms":
+        return <WideEmpty />;
+    }
+  }
 
   function renderRoute(): JSX.Element {
     switch (location.route.name) {
@@ -105,6 +129,50 @@ export function App({ store, platform, buildId, demo }: AppProps): JSX.Element {
         return <RoomListScreen store={store} />;
     }
   }
+}
+
+/**
+ * List and open room side by side. The list stays mounted while rooms change,
+ * so its filter, scroll position and archive section stay as they were.
+ */
+function WideShell({ store, route, children }: { store: AppStore; route: Route; children: JSX.Element }): JSX.Element {
+  const selected = route.name === "room" || route.name === "preview" ? route.roomId : undefined;
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey || event.isComposing) return;
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      const order = [...document.querySelectorAll<HTMLElement>(".wide-list .room-row[data-room-id]")]
+        .map((row) => row.dataset.roomId ?? "")
+        .filter((id) => id.length > 0);
+      const next = neighbourRoom(order, selected, event.key === "ArrowDown" ? 1 : -1);
+      event.preventDefault();
+      if (!next) return;
+      navigate({ name: "room", roomId: next });
+      document.querySelector(`.wide-list .room-row[data-room-id="${CSS.escape(next)}"]`)?.scrollIntoView({ block: "nearest" });
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [selected]);
+
+  return (
+    <div class="wide-shell">
+      <nav class="wide-list" aria-label={t("messages.title")}>
+        <RoomListScreen store={store} selectedRoomId={selected} />
+      </nav>
+      <main class="wide-main">{children}</main>
+    </div>
+  );
+}
+
+/** Right pane with no room open. A room is never opened on its own: opening one marks it read. */
+function WideEmpty(): JSX.Element {
+  return (
+    <div class="wide-empty">
+      <span class="wide-empty-title">{t("remote.wide.empty.title")}</span>
+      <span class="wide-empty-body">{t("remote.wide.empty.body")}</span>
+    </div>
+  );
 }
 
 /** One line, above the screen: the socket is down and the app is retrying. */

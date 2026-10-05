@@ -7,6 +7,8 @@
   "remote.room.unavailable": { "ko": "대화를 아직 불러올 수 없어요", "en": "This conversation isn't available yet" },
 
   "remote.roomList.newPickle": { "ko": "새 Pickle", "en": "New Pickle" },
+  "remote.wide.empty.title": { "ko": "대화를 골라 주세요", "en": "Choose a conversation" },
+  "remote.wide.empty.body": { "ko": "왼쪽에서 Picky나 Pickle을 고르면 여기에 열려요.", "en": "Pick Picky or a Pickle on the left to open it here." },
   "remote.roomList.filter.all": { "ko": "전체", "en": "All" },
   "remote.roomList.pinned": { "ko": "고정됨", "en": "Pinned" },
   "remote.roomList.empty.title": { "ko": "아직 Pickle이 없어요", "en": "No Pickles yet" },

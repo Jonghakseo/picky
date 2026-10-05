@@ -128,8 +128,9 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
   }
 
   const isMain = vm.room.kind === "main";
+  const wide = vm.layout === "wide";
   return (
-    <div class="room-view" ref={root}>
+    <div class={`room-view${wide ? " is-wide" : ""}`} ref={root}>
       <Header
         title={vm.room.title}
         status={vm.room.status}
@@ -139,6 +140,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
         archiveBusy={archiveBusy}
         showWork={!isMain}
         showMenu={false}
+        showBack={!wide}
         onBack={actions.back}
         onWork={() => setWorkOpen(true)}
         onArchive={() => void toggleArchive()}

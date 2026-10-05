@@ -50,7 +50,7 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
   }, [tab, view, sessionId]);
 
   return (
-    <div class="sheet-backdrop" onClick={onDismiss}>
+    <div class="sheet-backdrop work-sheet" onClick={onDismiss}>
       <div
         class="sheet-panel"
         role="dialog"

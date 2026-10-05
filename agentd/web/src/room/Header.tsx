@@ -30,6 +30,8 @@ export interface HeaderProps {
   /** Hidden for the main room, which produces no artifacts or diffs of its own. */
   showWork: boolean;
   showMenu: boolean;
+  /** Hidden in the wide layout, where the room list is already on screen. */
+  showBack?: boolean;
   onBack: () => void;
   onArchive?: () => void;
   onWork?: () => void;
@@ -90,11 +92,13 @@ export function Header(props: HeaderProps): JSX.Element {
   const percent = contextUsage?.percent;
   const label = contextLabel(percent);
   return (
-    <header class={`room-header ${STATUS_CLASS[status]}`}>
-      <button class="hdr-back" type="button" onClick={props.onBack}>
-        <ChevronLeft />
-        <span class="sr-only">{t("remote.room.back")}</span>
-      </button>
+    <header class={`room-header ${STATUS_CLASS[status]}${props.showBack === false ? " no-back" : ""}`}>
+      {props.showBack === false ? null : (
+        <button class="hdr-back" type="button" onClick={props.onBack}>
+          <ChevronLeft />
+          <span class="sr-only">{t("remote.room.back")}</span>
+        </button>
+      )}
       <span class="pi-badge">
         <span class="pi-badge-tile">
           <PickleGlyph class="pi-glyph" />

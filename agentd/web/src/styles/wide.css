@@ -1,0 +1,160 @@
+/* ---- wide layout (768px and up) ------------------------------------------
+ * The room list sits beside the open room, like a desktop messenger. The phone
+ * layout below 768px is untouched; every rule here is scoped to .wide-shell or
+ * to a room rendered with layout "wide" (.room-view.is-wide). */
+
+.wide-shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.wide-list {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 288px;
+  min-height: 0;
+  border-right: 1px solid var(--ds-color-border-subtle);
+}
+
+@media (min-width: 1024px) {
+  .wide-list {
+    width: 320px;
+  }
+}
+
+.wide-list > .app-shell,
+.wide-main > .app-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.wide-main {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ds-color-surface1);
+}
+
+/* The open room, and hover where there is a pointer. */
+.wide-list .room-row.is-selected {
+  background: var(--ds-color-surface2);
+  border-radius: var(--ds-radius-control);
+}
+
+@media (hover: hover) {
+  .wide-list .room-row:not(.is-selected):hover {
+    background: color-mix(in srgb, var(--ds-color-surface2) 55%, transparent);
+    border-radius: var(--ds-radius-control);
+  }
+}
+
+.wide-list .room-row.is-selected + .room-row,
+.wide-list .room-row + .room-row.is-selected {
+  box-shadow: none;
+}
+
+.wide-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-6);
+  color: var(--ds-color-text-tertiary);
+  text-align: center;
+}
+
+.wide-empty-title {
+  color: var(--ds-color-text-secondary);
+  font: var(--hud-type-body-semibold);
+}
+
+/* Settings and other shell pages keep a readable column in the wide pane. */
+.wide-main .app-scroll > * {
+  max-width: 640px;
+  margin-inline: auto;
+}
+
+/* ---- the room as the right pane ----------------------------------------- */
+.room-header.no-back {
+  padding-left: var(--ds-space-4);
+}
+
+/* A 760px reading column for messages, work, notes and the composer. */
+.room-view.is-wide .room-scroll .msgs,
+.room-view.is-wide .room-foot > * {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.room-view.is-wide .room-foot > .room-composer {
+  width: 100%;
+}
+
+/* Menus and sheets belong to the room, not the window: they dim and anchor
+ * inside the pane and line up with the reading column. */
+.room-view.is-wide .sheet-backdrop {
+  position: absolute;
+}
+
+.room-view.is-wide .sheet-anchor {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+/* Work panel: a drawer from the right up to 1199px... */
+.room-view.is-wide .sheet-backdrop.work-sheet {
+  align-items: flex-end;
+  justify-content: stretch;
+}
+
+.room-view.is-wide .work-sheet .sheet-panel {
+  width: 360px;
+  max-width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: -12px 0 24px rgb(0 0 0 / 0.28);
+}
+
+/* ...and a third column from 1200px that leaves the conversation readable. */
+@media (min-width: 1200px) {
+  .room-view.is-wide:has(> .work-sheet) {
+    padding-right: 360px;
+  }
+
+  .room-view.is-wide .sheet-backdrop.work-sheet {
+    left: auto;
+    width: 360px;
+    background: none;
+    border-left: 1px solid var(--ds-color-border-subtle);
+  }
+
+  .room-view.is-wide .work-sheet .sheet-panel {
+    box-shadow: none;
+  }
+}
+
+/* New Pickle and other full sheets: a centred dialog instead of a bottom sheet. */
+@media (min-width: 768px) {
+  /* Above the right pane, which is positioned and comes later in the page. */
+  .sheet-scrim {
+    z-index: 20;
+    align-items: center;
+    justify-content: center;
+    padding: var(--ds-space-6);
+  }
+
+  .sheet-scrim > .sheet {
+    width: min(480px, 100%);
+    border-radius: var(--ds-radius-panel);
+    padding-bottom: 0;
+  }
+}

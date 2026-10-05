@@ -30,7 +30,7 @@ function groupClass(color: string): string {
   return known.includes(color) ? `group-${color}` : "";
 }
 
-export function RoomListScreen({ store }: { store: AppStore }): JSX.Element {
+export function RoomListScreen({ store, selectedRoomId }: { store: AppStore; selectedRoomId?: string }): JSX.Element {
   const groupFilter = store.roomListGroup;
   const archiveOpen = useSignal(false);
   const sheetOpen = useSignal(false);
@@ -78,7 +78,7 @@ export function RoomListScreen({ store }: { store: AppStore }): JSX.Element {
 
         <div class="list-rows">
           {rooms.map((room) => (
-            <RoomRow key={room.id} room={room} now={now} locale={store.locale} />
+            <RoomRow key={room.id} room={room} now={now} locale={store.locale} selected={room.id === selectedRoomId} />
           ))}
 
           {store.roomsLoaded.value && pickles.length === 0 && (
@@ -103,7 +103,10 @@ export function RoomListScreen({ store }: { store: AppStore }): JSX.Element {
                   <ChevronRightIcon size={13} />
                 </span>
               </button>
-              {archiveOpen.value && archived.map((room) => <RoomRow key={room.id} room={room} now={now} locale={store.locale} />)}
+              {archiveOpen.value &&
+                archived.map((room) => (
+                  <RoomRow key={room.id} room={room} now={now} locale={store.locale} selected={room.id === selectedRoomId} />
+                ))}
             </>
           )}
         </div>
@@ -137,9 +140,10 @@ function MacOfflineBanner(): JSX.Element {
   );
 }
 
-function RoomRow({ room, now, locale }: { room: RemoteRoom; now: Date; locale: "ko" | "en" }): JSX.Element {
+function RoomRow({ room, now, locale, selected }: { room: RemoteRoom; now: Date; locale: "ko" | "en"; selected: boolean }): JSX.Element {
   const isMain = room.id === MAIN_ROOM_ID;
   const classes = ["room-row", statusClass(room.status)];
+  if (selected) classes.push("is-selected");
   if (room.pinned || isMain) classes.push("pinned");
   if (room.unread) classes.push("unread");
 
@@ -147,6 +151,8 @@ function RoomRow({ room, now, locale }: { room: RemoteRoom; now: Date; locale: "
     <a
       class={classes.join(" ")}
       href={`/room/${encodeURIComponent(room.id)}`}
+      data-room-id={room.id}
+      aria-current={selected ? "page" : undefined}
       onClick={(event) => {
         event.preventDefault();
         navigate({ name: "room", roomId: room.id });

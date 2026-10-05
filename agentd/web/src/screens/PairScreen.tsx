@@ -93,21 +93,12 @@ export function PairScreen({ transport, platform, initialCode, onPaired }: PairS
           <h1 class="page-title">{t("remote.pair.title")}</h1>
           <p class="page-body">{t("remote.pair.body")}</p>
 
-          <div class="scanner">
-            <video ref={video} playsInline muted style={scanning.value ? undefined : "display:none"} />
-            {scanning.value ? (
-              <div class="scanner-frame" />
-            ) : (
-              <div class="scanner-placeholder">
-                <CameraIcon size={28} />
-                <span>{t("remote.pair.scan.idle")}</span>
-              </div>
-            )}
+          {/* Mounted but hidden while idle: the scanner needs the <video> element
+              the moment the button is pressed, before the next render. */}
+          <div class="scanner" hidden={!scanning.value}>
+            <video ref={video} playsInline muted />
+            <div class="scanner-frame" />
           </div>
-
-          <button class="secondary-button" type="button" onClick={() => void toggleScanner()}>
-            {t(scanning.value ? "remote.pair.scan.stop" : "remote.pair.scan.start")}
-          </button>
 
           <div class="field-group">
             <label class="field-label" for="pair-code">
@@ -150,6 +141,14 @@ export function PairScreen({ transport, platform, initialCode, onPaired }: PairS
 
           <button class="primary-button" type="button" disabled={busy.value || !isCompletePairingCode(code.value)} onClick={() => void submit(code.value)}>
             {t(busy.value ? "remote.pair.connecting" : "remote.pair.submit")}
+          </button>
+
+          {/* Secondary on purpose: most people type the code. A Home Screen app
+              on iOS keeps its own login, so scanning the Mac's QR with the system
+              camera opens Safari instead; scanning in here pairs this app. */}
+          <button class="secondary-button" type="button" onClick={() => void toggleScanner()}>
+            <CameraIcon size={16} />
+            {t(scanning.value ? "remote.pair.scan.stop" : "remote.pair.scan.start")}
           </button>
         </div>
       </div>

@@ -32,7 +32,6 @@
 
   "remote.pair.title": { "ko": "이 폰 연결하기", "en": "Connect this phone" },
   "remote.pair.body": { "ko": "Mac의 Picky에서 원격 접속 > 폰 연결을 열고, 뜬 QR을 찍거나 코드를 입력해 주세요", "en": "On your Mac, open Remote access > Connect a phone in Picky, then scan the QR or enter the code" },
-  "remote.pair.scan.idle": { "ko": "카메라로 QR을 찍을 수 있어요", "en": "You can scan the QR with the camera" },
   "remote.pair.scan.start": { "ko": "QR 찍기", "en": "Scan QR" },
   "remote.pair.scan.stop": { "ko": "카메라 끄기", "en": "Stop camera" },
   "remote.pair.code.label": { "ko": "연결 코드", "en": "Pairing code" },
@@ -44,8 +43,8 @@
   "remote.pair.error.locked": { "ko": "시도가 너무 많아요. 15분 뒤에 다시 해 주세요", "en": "Too many tries. Try again in 15 minutes." },
   "remote.pair.error.macOffline": { "ko": "Mac이 연결되어 있지 않아요. Mac에서 Picky를 열어 주세요", "en": "Your Mac isn't connected. Open Picky on your Mac." },
   "remote.pair.error.failed": { "ko": "연결하지 못했어요. 잠시 뒤 다시 해 주세요", "en": "Couldn't connect. Try again in a moment." },
-  "remote.pair.camera.denied": { "ko": "카메라를 쓸 수 없어요. 아래에 코드를 입력해 주세요", "en": "Camera access is off. Enter the code below instead." },
-  "remote.pair.camera.unavailable": { "ko": "이 기기에서는 카메라를 열 수 없어요. 아래에 코드를 입력해 주세요", "en": "The camera isn't available here. Enter the code below instead." },
+  "remote.pair.camera.denied": { "ko": "카메라를 쓸 수 없어요. 코드를 입력해 주세요", "en": "Camera access is off. Enter the code instead." },
+  "remote.pair.camera.unavailable": { "ko": "이 기기에서는 카메라를 열 수 없어요. 코드를 입력해 주세요", "en": "The camera isn't available here. Enter the code instead." },
 
   "remote.revoked.title": { "ko": "이 기기의 연결이 해제됐어요", "en": "This device was disconnected" },
   "remote.revoked.body": { "ko": "Mac에서 새 코드를 띄워 다시 연결해 주세요", "en": "Show a new code on your Mac and pair again" },

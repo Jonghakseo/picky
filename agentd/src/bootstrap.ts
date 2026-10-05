@@ -19,9 +19,18 @@ import { buildPickyRuntimeContract } from "./domain/picky-runtime-contract.js";
 import { createPickyRuntimeContractExtension } from "./runtime/picky-runtime-contract-extension.js";
 import { EdgeTTSService } from "./edge-tts-service.js";
 import { PiOAuthService } from "./runtime/pi-oauth-service.js";
+import { PiSubscriptionCredentials } from "./runtime/pi-subscription-credentials.js";
+import { UsageLimitsService } from "./application/usage-limits-service.js";
 import { PiTextCompleter } from "./runtime/pi-text-completer.js";
 import { HubStatisticsService } from "./application/hub-statistics-service.js";
 import { PickleClassifier } from "./application/pickle-classifier.js";
+
+/** Primary-only, and real provider endpoints only: the mock runtime has no Pi credentials to check. */
+function createUsageLimitsService(config: Pick<AgentdConfig, "mode" | "useMockRuntime">): UsageLimitsService | undefined {
+  return config.mode === "primary" && !config.useMockRuntime
+    ? new UsageLimitsService({ credentials: new PiSubscriptionCredentials() })
+    : undefined;
+}
 
 export type AgentdMode = "primary" | "child";
 
@@ -241,6 +250,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     piOAuth: config.mode === "primary" ? new PiOAuthService() : undefined,
     hubStatistics,
     pickleClassifier,
+    usageLimits: createUsageLimitsService(config),
   });
   appPickleBridgeRef.current = (request) => server.requestPickleBridgeFromApp(request);
 

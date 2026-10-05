@@ -198,6 +198,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// `pluginsReloaded` broadcasts and exposes a single async `reload()` the
     /// extensions section invokes after install/uninstall.
     private lazy var pluginReloadController = PickyPluginReloadController(client: hudAgentClientRouter)
+    /// Subscription plan limits shared by the Hub, the menu bar, and the HUD.
+    private lazy var usageLimitsStore = PickyUsageLimitsStore(client: hudAgentClientRouter)
+    private var usageStatusItemsController: PickyUsageStatusItemsController?
     /// Owned at the app delegate so hub page selection survives the window
     /// being closed. `PickyDeepLinkDispatcher` routes `picky://` clicks
     /// through `present(deepLink:)`.
@@ -312,6 +315,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // Subscribed before the view model consumes its first event, because
             // projection frames are never replayed to a late subscriber.
             companionManager.bindSessionProjectionTransitions(to: hudSessionViewModel.sessionProjectionTransitions)
+            hudOverlayManager.usageLimitsStore = usageLimitsStore
             hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require
@@ -360,7 +364,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 pluginReloadController: pluginReloadController,
                 bundled: PickyExtensionsSectionViewModel()
             ),
-            remoteAccess: remoteAccessController
+            remoteAccess: remoteAccessController,
+            usageLimitsStore: Self.isRunningUnitTests ? nil : usageLimitsStore
         )
         let hubWindowController = PickyHubWindowController(
             dependencies: hubDependencies,
@@ -381,6 +386,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyDeepLinkDispatcher.shared.configure { [weak self] link in
             self?.statusItemController?.present(deepLink: link)
         }
+        if !Self.isRunningUnitTests {
+            startUsageLimits(hubWindowController: hubWindowController)
+        }
         companionManager.start()
         // Auto-open the hub only when the user still needs to finish macOS
         // permissions setup; the dashboard hosts the prerequisites surface.
@@ -399,6 +407,22 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             self?.hubWindowController?.show()
         }
         return false
+    }
+
+    /// Polls plan limits and keeps the pinned menu bar items in sync. Clicking
+    /// a usage item or "View all limits" in the HUD opens Statistics > AI usage.
+    private func startUsageLimits(hubWindowController: PickyHubWindowController) {
+        let openUsage: () -> Void = { [weak self, weak hubWindowController] in
+            self?.hubNavigator.showStatistics(tab: .usage)
+            hubWindowController?.show()
+        }
+        usageLimitsStore.openUsageInHub = openUsage
+        usageStatusItemsController = PickyUsageStatusItemsController(
+            store: usageLimitsStore,
+            openUsage: openUsage,
+            didChangeItemSet: { [weak self] in self?.statusItemController?.moveToLeadingEdge() }
+        )
+        usageLimitsStore.start()
     }
 
     /// Every "install the downloaded update" entry point lands here so the

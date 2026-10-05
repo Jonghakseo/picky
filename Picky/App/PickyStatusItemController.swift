@@ -61,6 +61,16 @@ final class PickyStatusItemController: NSObject, NSMenuDelegate {
         hubWindowController.show(fromDisplayID: clickedDisplayID ?? statusItemDisplayID)
     }
 
+    /// Recreates the Picky item so it sits left of status items added later
+    /// (macOS inserts each new item to the left of the existing ones).
+    func moveToLeadingEdge() {
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+        statusItem = nil
+        createStatusItem()
+    }
+
     // MARK: - Status item
 
     private var statusItemDisplayID: CGDirectDisplayID? {

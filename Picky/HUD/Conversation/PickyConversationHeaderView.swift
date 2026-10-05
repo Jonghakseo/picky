@@ -919,11 +919,14 @@ struct PickyConversationHeaderMetaPresentation {
     let contextDisplay: PickyHeaderContextUsageDisplay?
     let modelText: String?
     let thinkingLevelText: String?
+    /// Subscription whose plan limits this Pickle's model counts against.
+    let usageLimitsProvider: PickyUsageLimitsProviderID?
 
     init(assistantRun: PickyAssistantRunMetadata?, contextUsage: PickyContextUsage?) {
         contextDisplay = contextUsage.map(PickyHeaderContextUsageDisplay.init(usage:))
         modelText = assistantRun?.headerModelText
         thinkingLevelText = assistantRun?.headerThinkingLevelText
+        usageLimitsProvider = PickyUsageLimitsProviderID.forModel(assistantRun?.model)
     }
 
     var hasContent: Bool {
@@ -959,6 +962,7 @@ struct PickyHeaderSessionMetaPill: View {
 
     @State private var isContextPopoverPresented = false
     @State private var isContextControlHovered = false
+    @Environment(\.pickyUsageLimitsStore) private var usageLimitsStore
 
     var body: some View {
         Group {
@@ -972,14 +976,22 @@ struct PickyHeaderSessionMetaPill: View {
                 .background(contextControlBackground)
                 .onHover { isContextControlHovered = $0 }
                 .pickyInstantPopover(isPresented: $isContextPopoverPresented, arrowEdge: .top) {
-                    PickyHeaderContextCompactionPopoverView(
-                        display: contextDisplay,
-                        compactionPresentation: compactionPresentation,
-                        onCompact: {
-                            isContextPopoverPresented = false
-                            onCompact()
+                    VStack(alignment: .leading, spacing: 0) {
+                        PickyHeaderContextCompactionPopoverView(
+                            display: contextDisplay,
+                            compactionPresentation: compactionPresentation,
+                            onCompact: {
+                                isContextPopoverPresented = false
+                                onCompact()
+                            }
+                        )
+                        if let usageLimitsStore, let provider = presentation.usageLimitsProvider {
+                            PickyHeaderUsageLimitsPopoverSection(store: usageLimitsStore, providerID: provider) {
+                                isContextPopoverPresented = false
+                                usageLimitsStore.openUsageInHub?()
+                            }
                         }
-                    )
+                    }
                 }
                 .help(L10n.t("hud.contextCompaction.open.help"))
             }
@@ -1088,6 +1100,26 @@ struct PickyHeaderContextCompactionPopoverView: View {
                 .font(PickyHUDTypography.status)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Plan limits appended under the context popover. Renders nothing when the
+/// model's provider is not a subscription Picky is signed in to.
+struct PickyHeaderUsageLimitsPopoverSection: View {
+    @ObservedObject var store: PickyUsageLimitsStore
+    let providerID: PickyUsageLimitsProviderID
+    let onOpenHub: () -> Void
+
+    var body: some View {
+        if store.provider(providerID) != nil {
+            VStack(alignment: .leading, spacing: 0) {
+                Divider().overlay(DS.Colors.borderSubtle)
+                PickyHUDUsageLimitsSection(store: store, providerID: providerID, onOpenHub: onOpenHub)
+                    .padding(DS.Spacing.space4)
+            }
+            .frame(width: PickyHUDDockLayout.contextCompactionPopoverWidth)
+            .background(DS.Colors.surface1)
         }
     }
 }

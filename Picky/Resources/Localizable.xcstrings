@@ -30539,6 +30539,477 @@
         }
       }
     },
+    "usageLimits.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan limits"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요금제 한도"
+          }
+        }
+      }
+    },
+    "usageLimits.caption": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows only subscribed Claude and ChatGPT accounts. Checked every 5 minutes. The tick marks what would be left at an even pace until the reset."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구독 중인 Claude·ChatGPT 계정만 표시하고, 5분마다 새로 확인해요. 세로선은 초기화까지 고르게 썼을 때 남아 있어야 할 양이에요."
+          }
+        }
+      }
+    },
+    "usageLimits.session": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션"
+          }
+        }
+      },
+      "comment": "5-hour rolling usage window"
+    },
+    "usageLimits.weekly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekly"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주간"
+          }
+        }
+      },
+      "comment": "7-day usage window"
+    },
+    "usageLimits.remaining": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld%% left"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld%% 남음"
+          }
+        }
+      },
+      "comment": "Remaining share of a plan limit window"
+    },
+    "usageLimits.noData": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No data"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정보 없음"
+          }
+        }
+      }
+    },
+    "usageLimits.reset.unknown": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset time unknown"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "초기화 시각 정보 없음"
+          }
+        }
+      }
+    },
+    "usageLimits.reset.in": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resets in %1$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 후 초기화"
+          }
+        }
+      },
+      "comment": "%1$@ is a duration such as 2h 14m"
+    },
+    "usageLimits.duration.daysHours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldd %2$lldh"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld일 %2$lld시간"
+          }
+        }
+      }
+    },
+    "usageLimits.duration.days": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldd"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld일"
+          }
+        }
+      }
+    },
+    "usageLimits.duration.hoursMinutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldh %2$lldm"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld시간 %2$lld분"
+          }
+        }
+      }
+    },
+    "usageLimits.duration.hours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldh"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld시간"
+          }
+        }
+      }
+    },
+    "usageLimits.duration.minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldm"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld분"
+          }
+        }
+      }
+    },
+    "usageLimits.resets.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limit resets"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "리셋권"
+          }
+        }
+      },
+      "comment": "One-off grants that refill the session and weekly limits"
+    },
+    "usageLimits.resets.available": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld available"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld개 보유"
+          }
+        }
+      }
+    },
+    "usageLimits.resets.none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "없음"
+          }
+        }
+      }
+    },
+    "usageLimits.resets.expires": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The earliest reset expires in %1$@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가장 빨리 만료되는 리셋권은 %1$@ 후 만료돼요."
+          }
+        }
+      }
+    },
+    "usageLimits.checked.never": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not checked yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 확인 전"
+          }
+        }
+      }
+    },
+    "usageLimits.checked.justNow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked just now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "방금 확인"
+          }
+        }
+      }
+    },
+    "usageLimits.checked.minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked %1$lldm ago"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld분 전 확인"
+          }
+        }
+      }
+    },
+    "usageLimits.checked.staleJustNow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last value from just now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "방금 전 값"
+          }
+        }
+      }
+    },
+    "usageLimits.checked.staleMinutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Value from %1$lldm ago"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld분 전 값"
+          }
+        }
+      }
+    },
+    "usageLimits.error.stale": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't refresh limits. Showing the last checked values."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한도를 새로 불러오지 못했어요. 마지막으로 확인한 값이에요."
+          }
+        }
+      }
+    },
+    "usageLimits.error.unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't load limits. Try refreshing."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한도를 불러오지 못했어요. 새로고침해 보세요."
+          }
+        }
+      }
+    },
+    "usageLimits.link.status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태"
+          }
+        }
+      },
+      "comment": "Opens the provider's service status page"
+    },
+    "usageLimits.link.dashboard": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dashboard"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대시보드"
+          }
+        }
+      },
+      "comment": "Opens the provider's usage page"
+    },
+    "usageLimits.menuBar.toggle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in menu bar"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메뉴 막대에 표시"
+          }
+        }
+      }
+    },
+    "usageLimits.menuBar.accessibility": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ usage: session %2$@, weekly %3$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 사용량: 세션 %2$@, 주간 %3$@"
+          }
+        }
+      }
+    },
+    "usageLimits.openHub": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View all limits"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 한도 보기"
+          }
+        }
+      }
+    },
     "hub.stats.period.lastSevenDays": {
       "localizations": {
         "en": {
@@ -30567,6 +31038,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "최근 7일 동안의 기록이 없어요"
+          }
+        }
+      }
+    },
+    "usageLimits.pace.ahead": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahead of pace"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예상보다 빠름"
+          }
+        }
+      },
+      "comment": "Usage is ahead of an even pace until the reset"
+    },
+    "usageLimits.pace.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At an even pace until the reset, about %1$lld%% would be left now."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "초기화까지 고르게 쓰면 지금 약 %1$lld%%가 남아 있어야 해요."
           }
         }
       }

@@ -34,6 +34,7 @@ import { packageCommandHandlers } from "./features/package/handlers.js";
 import { piOAuthCommandHandlers } from "./features/pi-oauth/handlers.js";
 import { hubCommandHandlers } from "./features/hub/handlers.js";
 import { HubStatisticsBroker } from "./features/hub/hub-statistics-broker.js";
+import { usageLimitsCommandHandlers, type UsageLimitsPort } from "./features/usage-limits/handlers.js";
 import type { CommandHandlerMap, EventPayload, ParsedCommand } from "./features/slice-contract.js";
 import type { HubStatisticsServiceLike } from "./application/hub-statistics-service.js";
 import type { PickleClassifier } from "./application/pickle-classifier.js";
@@ -62,6 +63,8 @@ export interface AgentdServerOptions {
   hubStatistics?: HubStatisticsServiceLike;
   /** Primary-only classifier lifecycle, stopped with the daemon. */
   pickleClassifier?: PickleClassifier;
+  /** Primary-only subscription limit checks; absent with the mock runtime. */
+  usageLimits?: UsageLimitsPort;
 }
 export const APP_PICKLE_HANDOFF_UNAVAILABLE = "Picky app handoff unavailable";
 const APP_PICKLE_HANDOFF_TIMEOUT = "Picky app handoff timed out";
@@ -623,6 +626,11 @@ export class AgentdServer {
         socket: ws,
         mcpServers: this.mcpServers,
         statistics: this.hubStatistics,
+        send: (socket, event) => { this.send(socket, event); },
+      }),
+      ...usageLimitsCommandHandlers({
+        socket: ws,
+        usageLimits: this.options.usageLimits,
         send: (socket, event) => { this.send(socket, event); },
       }),
     };
@@ -1203,6 +1211,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, count: command.disabledBuiltinTools.length };
     case "setMainAgentTTSEnabled":
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
+    case "getUsageLimits":
+      return { commandId: command.id, type: command.type, force: command.force ? 1 : 0 };
     case "getHubStatistics":
     case "resetHubStatistics":
     case "configureHubStatistics":
@@ -1268,6 +1278,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount, failedCount: event.failedCount ?? 0 };
     case "hubStatisticsResult":
       return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, records: event.snapshot?.records.length, samples: event.snapshot?.usageSamples.length, errorChars: event.errorMessage?.length };
+    case "usageLimitsResult":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, providers: event.snapshot?.providers.length, errorChars: event.errorMessage?.length ?? undefined };
     case "mcpServerList": return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, servers: event.servers.length, configErrors: event.configErrors.length };
     case "mcpServerOperationCompleted":
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, name: event.name, ok: event.ok ? 1 : 0, errorCode: event.errorCode };

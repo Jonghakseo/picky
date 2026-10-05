@@ -155,7 +155,7 @@ struct PickyHubDashboardPage: View {
                 title: "hub.dashboard.work.filteredTitle",
                 linkTitle: "hub.dashboard.work.showAll"
             ) {
-                navigator.showStatistics()
+                navigator.showStatistics(tab: .work)
             }
             Text(PickyHubDashboardPresentation.workScope(filter: statisticsStore.filter))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)

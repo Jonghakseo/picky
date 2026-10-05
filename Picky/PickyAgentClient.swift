@@ -589,6 +589,8 @@ private extension PickyEventEnvelope {
             return "type=pluginsReloaded id=\(id) request=\(summary.requestId ?? "none") picky=\(summary.pickyReloaded ? 1 : 0) reloaded=\(summary.pickleReloadedCount) aborted=\(summary.pickleAbortedCount) deferred=\(summary.pickleDeferredCount)"
         case .hubStatisticsResult(let result):
             return "type=hubStatisticsResult id=\(id) command=\(result.commandId) ok=\(result.ok ? 1 : 0) records=\(result.snapshot?.records.count ?? 0) samples=\(result.snapshot?.usageSamples.count ?? 0)"
+        case .usageLimitsResult(let result):
+            return "type=usageLimitsResult id=\(id) command=\(result.commandId) ok=\(result.ok ? 1 : 0) providers=\(result.snapshot?.providers.count ?? 0)"
         case .packageUpdatesAvailable(let updates):
             return "type=packageUpdatesAvailable id=\(id) command=\(updates.commandId) sources=\(updates.sources.count)"
         case .packageConflicts(let result):

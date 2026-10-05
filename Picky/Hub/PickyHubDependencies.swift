@@ -28,6 +28,8 @@ struct PickyHubDependencies {
     /// Absent under unit tests and whenever the app runs without the remote
     /// hub composed, so the settings section renders its unavailable state.
     let remoteAccess: PickyRemoteAccessController?
+    /// Subscription plan limits. Absent under unit tests, which hides the section.
+    var usageLimitsStore: PickyUsageLimitsStore? = nil
 
     var permissions: PickyPermissionMonitor { companionManager.permissions }
 }

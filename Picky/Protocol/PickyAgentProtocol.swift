@@ -384,9 +384,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case removeMcpServer
     case signInMcpServer
     case signOutMcpServer
-    case getHubStatistics
-    case resetHubStatistics
-    case configureHubStatistics
+    case getHubStatistics, resetHubStatistics, configureHubStatistics, getUsageLimits
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {
@@ -441,7 +439,7 @@ enum PickyEvent: Equatable {
     case sessionProjectionBootstrapComplete(PickySessionProjectionBootstrapComplete)
     case sessionResourcesReloaded(sessionId: String)
     case pluginsReloaded(PickyPluginsReloadedEvent)
-    case hubStatisticsResult(PickyHubStatisticsResultEvent)
+    case hubStatisticsResult(PickyHubStatisticsResultEvent), usageLimitsResult(PickyUsageLimitsResultEvent)
     case packageUpdatesAvailable(PickyPackageUpdatesAvailableEvent)
     case packageConflicts(PickyPackageConflictsEvent)
     case packageOperationProgress(PickyPackageOperationProgressEvent)
@@ -592,6 +590,7 @@ enum PickyEvent: Equatable {
             return .pluginsReloaded(try PickyPluginsReloadedEvent(from: decoder))
         case "hubStatisticsResult":
             return .hubStatisticsResult(try PickyHubStatisticsResultEvent(from: decoder))
+        case "usageLimitsResult": return .usageLimitsResult(try PickyUsageLimitsResultEvent(from: decoder))
         case "packageUpdatesAvailable":
             return .packageUpdatesAvailable(try PickyPackageUpdatesAvailableEvent(from: decoder))
         case "packageConflicts":

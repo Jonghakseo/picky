@@ -9,7 +9,7 @@ struct PickyHubStatisticsPage: View {
     let dependencies: PickyHubDependencies
     @EnvironmentObject private var navigator: PickyHubNavigator
     @EnvironmentObject private var statisticsStore: PickyHubStatisticsStore
-    @State private var selectedTab: PickyHubStatisticsTab = .work
+    @State private var selectedTab: PickyHubStatisticsTab = .usage
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -89,8 +89,8 @@ struct PickyHubStatisticsPage: View {
 
     private var tabs: some View {
         HStack(spacing: PickyHubTheme.Spacing.field) {
-            statisticsTab(.work, title: "hub.stats.tab.work")
             statisticsTab(.usage, title: "hub.stats.tab.usage")
+            statisticsTab(.work, title: "hub.stats.tab.work")
             Spacer(minLength: 0)
         }
         .padding(.top, PickyHubTheme.Spacing.group)
@@ -99,8 +99,8 @@ struct PickyHubStatisticsPage: View {
         .accessibilityLabel(Text("hub.stats.tabs.accessibility"))
         .onMoveCommand { direction in
             switch direction {
-            case .left: selectedTab = .work
-            case .right: selectedTab = .usage
+            case .left: selectedTab = .usage
+            case .right: selectedTab = .work
             default: break
             }
         }
@@ -128,6 +128,9 @@ struct PickyHubStatisticsPage: View {
     @ViewBuilder
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if selectedTab == .usage, let usageLimitsStore = dependencies.usageLimitsStore {
+                PickyHubUsageLimitsSection(store: usageLimitsStore)
+            }
             switch statisticsStore.state {
             case .idle, .loading:
                 PickyHubLoadingRow(message: "hub.stats.loading")
@@ -160,6 +163,7 @@ struct PickyHubStatisticsPage: View {
             }
             PickyHubTextLink(title: "hub.stats.refresh") {
                 statisticsStore.refresh()
+                if selectedTab == .usage { dependencies.usageLimitsStore?.refresh() }
             }
         }
         .padding(.top, PickyHubTheme.Spacing.group)

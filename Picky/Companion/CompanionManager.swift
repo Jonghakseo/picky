@@ -2131,7 +2131,7 @@ final class CompanionManager: ObservableObject {
             // here as well would be a second, independently-timed consumer.
             break
         case .sessionResourcesReloaded, .pluginsReloaded,
-             .hubStatisticsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted:
+             .hubStatisticsResult, .usageLimitsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted:
             // Progress events are already represented in the HUD. They should not
             // replace a cursor bubble that is currently speaking/showing a real
             // response, otherwise generic text like "작업 진행 중…" hides the answer.

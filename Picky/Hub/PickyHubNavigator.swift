@@ -37,8 +37,8 @@ enum PickyHubSettingsGroup: String, CaseIterable, Identifiable {
 }
 
 enum PickyHubStatisticsTab: String, CaseIterable, Identifiable {
-    case work
     case usage
+    case work
 
     var id: String { rawValue }
 }

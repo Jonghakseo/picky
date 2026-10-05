@@ -1,0 +1,32 @@
+{
+  "id": "event-usage-limits-result",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-05T15:00:00.000Z",
+  "type": "usageLimitsResult",
+  "commandId": "cmd-get-usage-limits",
+  "ok": true,
+  "errorMessage": null,
+  "snapshot": {
+    "checkedAt": "2026-10-05T15:00:00.000Z",
+    "providers": [
+      {
+        "provider": "anthropic",
+        "plan": "Max 20x",
+        "checkedAt": "2026-10-05T15:00:00.000Z",
+        "errorMessage": null,
+        "session": { "usedPercent": 7, "resetsAt": "2026-10-05T17:40:00.030Z" },
+        "weekly": { "usedPercent": 3, "resetsAt": "2026-10-06T22:00:00.030Z" },
+        "resets": { "available": 1, "nextExpiresAt": "2026-10-22T16:00:00.000Z" }
+      },
+      {
+        "provider": "openai-codex",
+        "plan": "Plus",
+        "checkedAt": "2026-10-05T14:35:00.000Z",
+        "errorMessage": "HTTP 503",
+        "session": null,
+        "weekly": { "usedPercent": 20, "resetsAt": "2026-10-09T20:30:02.000Z" },
+        "resets": { "available": 2, "nextExpiresAt": "2026-10-22T20:31:42.482Z" }
+      }
+    ]
+  }
+}

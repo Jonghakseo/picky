@@ -18,6 +18,7 @@ final class PickyHUDOverlayManager {
     let appearanceStore: PickyAppearanceStore
     let fontScaleStore: PickyAppFontScaleStore
     let visibilityStore: PickyHUDVisibilityStore
+    var usageLimitsStore: PickyUsageLimitsStore? // Plan limits for the context popover; set before start(), nil in tests.
     private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
     let dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
     let dockGroupListChildEffectExecutor = PickyHUDDockGroupListChildEffectExecutor()
@@ -676,7 +677,7 @@ final class PickyHUDOverlayManager {
             },
             externalDragPresentationStore: externalDragPresentationStore
         )
-            .environmentObject(appearanceStore)
+            .environmentObject(appearanceStore).environment(\.pickyUsageLimitsStore, usageLimitsStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
         let scaledHudRoot = PickyAppFontScaleRoot(store: fontScaleStore) { hudRoot }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { scaledHudRoot })

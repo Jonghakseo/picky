@@ -1,0 +1,6 @@
+{
+  "id": "cmd-get-usage-limits",
+  "protocolVersion": "2026-08-25",
+  "type": "getUsageLimits",
+  "force": true
+}

@@ -88,7 +88,7 @@
 
 /* A 760px reading column for messages, work, notes and the composer. */
 .room-view.is-wide .room-scroll .msgs,
-.room-view.is-wide .room-foot > * {
+.room-view.is-wide .room-foot > :not(.sheet-backdrop) {
   max-width: 760px;
   margin-inline: auto;
 }
@@ -98,9 +98,13 @@
 }
 
 /* Menus and sheets belong to the room, not the window: they dim and anchor
- * inside the pane and line up with the reading column. */
-.room-view.is-wide .sheet-backdrop {
-  position: absolute;
+ * inside the pane and line up with the reading column. The composer's menus
+ * render inside .room-foot (position: relative), so an absolute backdrop would
+ * cover only the input strip: the conversation could not dismiss the menu and
+ * the menu hung off the top of the strip. Layout containment makes the room
+ * the containing block of the fixed backdrop instead, wherever it is nested. */
+.room-view.is-wide {
+  contain: layout;
 }
 
 .room-view.is-wide .sheet-anchor {

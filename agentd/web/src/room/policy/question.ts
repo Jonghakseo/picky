@@ -42,6 +42,31 @@ export function answerableMethod(request: PickyExtensionUiRequest): AnswerableMe
   }
 }
 
+/**
+ * Picks what a question row draws.
+ *
+ * The journal keeps a copy of the request as it was recorded, and the gateway
+ * may trim it on the way to the phone, so the copy can arrive without its
+ * `questions`, `options` or `text`. While the daemon still waits, the live
+ * `pendingExtensionUiRequest` is the truth; once it is answered or cancelled,
+ * the copy is all that is left and the bubble is history anyway.
+ */
+export interface ResolvedQuestion {
+  request: PickyExtensionUiRequest;
+  /** The daemon is still waiting for this answer. */
+  active: boolean;
+}
+
+export function resolveQuestionRequest(
+  copy: PickyExtensionUiRequest,
+  pending: PickyExtensionUiRequest | undefined,
+  cancelledAt?: string,
+): ResolvedQuestion {
+  const matches = pending !== undefined && pending.id === copy.id;
+  const active = matches && !cancelledAt;
+  return { request: active && pending ? pending : copy, active };
+}
+
 /** Cancelling any question sends this; the daemon reads it as "no answer". */
 export const CANCELLED_ANSWER = { cancelled: true } as const;
 

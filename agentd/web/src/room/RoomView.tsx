@@ -16,6 +16,7 @@ import { ArrowDown } from "./icons";
 import { setLocale, t } from "./i18n";
 import type { QueueEdit } from "./MessageList";
 import { MessageList } from "./MessageList";
+import { WorkPanel } from "./WorkPanel";
 import "./styles/room.css";
 
 /** Below this many pixels from the bottom, new messages scroll into view. */
@@ -28,6 +29,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
   const [failure, setFailure] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => actions.loadDraft());
   const [edit, setEdit] = useState<QueueEdit | null>(null);
+  const [workOpen, setWorkOpen] = useState(false);
   const now = useNow(isLive(vm.room.status) || vm.main?.busy === true);
 
   setLocale(vm.locale);
@@ -37,6 +39,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
     setDraft(actions.loadDraft());
     setEdit(null);
     setFailure(null);
+    setWorkOpen(false);
     // A different room is a different conversation: start at its latest message.
     setAtBottom(true);
     setHasNew(false);
@@ -116,8 +119,10 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
         status={vm.room.status}
         contextUsage={vm.session?.contextUsage ? { percent: vm.session.contextUsage.percent } : undefined}
         showArchive={!isMain}
+        showWork={!isMain}
         showMenu={false}
         onBack={actions.back}
+        onWork={() => setWorkOpen(true)}
         onArchive={() => void send({ type: "session.archive", sessionId: vm.room.id, archived: !vm.room.archived })}
       />
       <div
@@ -171,6 +176,9 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
           now={now}
         />
       </div>
+      {workOpen ? (
+        <WorkPanel sessionId={vm.room.id} session={vm.session} actions={actions} onDismiss={() => setWorkOpen(false)} />
+      ) : null}
     </div>
   );
 }

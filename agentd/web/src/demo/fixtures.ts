@@ -197,6 +197,24 @@ const askQuestionSession = session({
           { value: "fixed", label: "고정 30초", description: "운영이 예측하기 쉬워요" },
         ],
         required: true,
+        allowOther: true,
+      },
+      {
+        id: "alerts",
+        type: "checkbox",
+        prompt: "어디로 알릴까요?",
+        options: [
+          { value: "slack", label: "Slack" },
+          { value: "email", label: "이메일" },
+          { value: "none", label: "알리지 않기" },
+        ],
+        default: ["slack"],
+      },
+      {
+        id: "note",
+        type: "text",
+        prompt: "덧붙일 조건이 있나요?",
+        placeholder: "예: 결제 실패만 재시도",
       },
     ],
   }),
@@ -240,7 +258,10 @@ const inputSession = session({
     prompt: "회전한 키를 어떤 이름으로 저장할까요?",
     text: "PAYMENTS_WEBHOOK_2026Q4",
   }),
-  messages: [message({ id: "k1", kind: "user_text", text: "결제 API 키 회전해 줘", createdAt: at(75), originatedBy: "user" })],
+  messages: [
+    message({ id: "k1", kind: "user_text", text: "결제 API 키 회전해 줘", createdAt: at(75), originatedBy: "user" }),
+    message({ id: "k2", kind: "agent_question", createdAt: at(70), question: question({ id: "q-input", sessionId: "s-keys", method: "input", title: "새 키 이름" }) }),
+  ],
 });
 
 const selectSession = session({
@@ -256,7 +277,50 @@ const selectSession = session({
     title: "어떤 모델로 돌릴까요?",
     options: ["claude-sonnet-4-6", "gpt-5-codex", "gemini-3-pro"],
   }),
-  messages: [message({ id: "ms1", kind: "user_text", text: "세 모델로 같은 과제를 돌려서 비교해 줘", createdAt: at(85), originatedBy: "user" })],
+  messages: [
+    message({ id: "ms1", kind: "user_text", text: "세 모델로 같은 과제를 돌려서 비교해 줘", createdAt: at(85), originatedBy: "user" }),
+    message({ id: "ms2", kind: "agent_question", createdAt: at(80), question: question({ id: "q-select", sessionId: "s-models", method: "select", title: "어떤 모델로 돌릴까요?" }) }),
+  ],
+});
+
+const editorSession = session({
+  id: "s-notes",
+  title: "회고 메모 다듬기",
+  status: "waiting_for_input",
+  updatedAt: at(64),
+  lastSummary: "초안을 고쳐 주세요",
+  pendingExtensionUiRequest: question({
+    id: "q-editor",
+    sessionId: "s-notes",
+    method: "editor",
+    title: "회고 초안",
+    prompt: "고칠 부분을 바로 적어 주세요.",
+    text: "이번 주에는 원격 접속 설계를 마쳤다.",
+  }),
+  messages: [
+    message({ id: "n1", kind: "user_text", text: "이번 주 회고 초안 써 줘", createdAt: at(68), originatedBy: "user" }),
+    message({ id: "n2", kind: "agent_question", createdAt: at(64), question: question({ id: "q-editor", sessionId: "s-notes", method: "editor", title: "회고 초안" }) }),
+  ],
+});
+
+/** Two short options: the layout policy keeps these on one row beside Cancel. */
+const selectInlineSession = session({
+  id: "s-flags",
+  title: "기능 플래그 정리",
+  status: "waiting_for_input",
+  updatedAt: at(78),
+  lastSummary: "지금 켤까요?",
+  pendingExtensionUiRequest: question({
+    id: "q-flag",
+    sessionId: "s-flags",
+    method: "select",
+    title: "새 플래그를 지금 켤까요?",
+    options: ["켜기", "나중에"],
+  }),
+  messages: [
+    message({ id: "fl1", kind: "user_text", text: "쓰지 않는 기능 플래그 정리해 줘", createdAt: at(82), originatedBy: "user" }),
+    message({ id: "fl2", kind: "agent_question", createdAt: at(78), question: question({ id: "q-flag", sessionId: "s-flags", method: "select", title: "새 플래그를 지금 켤까요?" }) }),
+  ],
 });
 
 const completedSession = session({
@@ -341,6 +405,8 @@ export const demoSessions: PickyAgentSession[] = [
   confirmSession,
   inputSession,
   selectSession,
+  selectInlineSession,
+  editorSession,
   failedSession,
   queuedSession,
   cancelledSession,

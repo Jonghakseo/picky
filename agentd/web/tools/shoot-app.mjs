@@ -57,6 +57,38 @@ const SHOTS = [
   { name: "room-queued", url: "/room/s-docs?demo=1", steps: [{ wait: 300 }] },
   { name: "room-tool-image", url: "/room/s-pipeline?demo=1", steps: [{ wait: 300 }] },
   { name: "room-main", url: "/room/main?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-confirm", url: "/room/s-deploy?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-select-stacked", url: "/room/s-models?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-select-inline", url: "/room/s-flags?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-input", url: "/room/s-keys?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-editor", url: "/room/s-notes?demo=1", steps: [{ wait: 300 }] },
+  { name: "room-mac-offline", url: "/room/s-archive?demo=1&state=offline", steps: [{ wait: 300 }] },
+  { name: "room-long-markdown", url: "/room/s-release?demo=1", steps: [{ wait: 300 }, { scrollToBottom: ".room-scroll" }] },
+  {
+    name: "room-work-artifacts",
+    url: "/room/s-release?demo=1",
+    steps: [{ wait: 300 }, { click: ".hdr-work" }, { wait: 200 }],
+  },
+  {
+    name: "room-work-changes",
+    url: "/room/s-release?demo=1",
+    steps: [{ wait: 300 }, { click: ".hdr-work" }, { wait: 200 }, { click: ".panel-tabs .panel-tab:nth-child(2)" }, { wait: 300 }],
+  },
+  {
+    name: "room-settings-sheet",
+    url: "/room/s-archive?demo=1",
+    steps: [{ wait: 300 }, { click: ".settings-chip" }, { wait: 300 }],
+  },
+  {
+    name: "room-send-timing",
+    url: "/room/s-archive?demo=1",
+    steps: [{ wait: 300 }, { type: [".composer-editor", "내일 아침에 보내줘"] }, { click: ".send-chevron" }, { wait: 200 }],
+  },
+  {
+    name: "room-stop-choice",
+    url: "/room/s-pipeline?demo=1",
+    steps: [{ wait: 300 }, { click: ".toolbar-icon.is-stop" }, { wait: 200 }],
+  },
 ];
 
 const MIME = {
@@ -176,9 +208,11 @@ function stepScript(step) {
   }
   const [selector, text] = step.type;
   // Preact listens for input events, so set the value natively and dispatch one.
+  // The composer is a textarea, so the setter comes from the element's own class.
   return `(() => { const el = document.querySelector(${JSON.stringify(selector)});
     if (!el) throw new Error("no element for ${selector}");
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
     setter.call(el, ${JSON.stringify(text)});
     el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`;
 }

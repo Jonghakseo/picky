@@ -3,6 +3,7 @@
  * gateway, same frame shapes (snapshot then transactions with a revision
  * chain), so the store, the reducer and the room UI run their real code paths.
  */
+import { IMAGE_PATH, demoQueryResult, drawDemoImage } from "./demo-answers";
 import type {
   PickyAgentSession,
   PickySessionMessage,
@@ -47,6 +48,7 @@ export class DemoTransport implements Transport {
   private main: RemoteMainState = structuredClone(demoMain);
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private counter = 0;
+  private readonly imageUrls = new Map<string, string>();
 
   constructor(private readonly options: DemoOptions = {}) {
     const rooms = demoRooms();
@@ -84,9 +86,19 @@ export class DemoTransport implements Transport {
       case "command":
         this.later(() => this.runCommand(message.commandId, message.command), 120);
         break;
-      case "query":
-        this.later(() => this.emit({ type: "query.result", queryId: message.queryId, ok: false, error: { code: "unsupported", message: "demo" } }), 60);
+      case "query": {
+        const data = demoQueryResult(message.query);
+        this.later(
+          () =>
+            this.emit(
+              data === undefined
+                ? { type: "query.result", queryId: message.queryId, ok: false, error: { code: "unsupported", message: "demo" } }
+                : { type: "query.result", queryId: message.queryId, ok: true, data },
+            ),
+          60,
+        );
         break;
+      }
       case "ping":
         this.emit({ type: "pong", t: message.t });
         break;
@@ -139,8 +151,18 @@ export class DemoTransport implements Transport {
     };
   }
 
+  /**
+   * Demo mode has no Mac behind it, so an image path would 404. The bytes are
+   * drawn here instead and handed over as a `data:` URL, which the CSP allows
+   * for images and which keeps demo pictures out of `web/public`.
+   */
   fileUrl(_roomId: string, path: string): string {
-    return `/api/files/raw?path=${encodeURIComponent(path)}`;
+    if (!IMAGE_PATH.test(path)) return `/api/files/raw?path=${encodeURIComponent(path)}`;
+    const cached = this.imageUrls.get(path);
+    if (cached) return cached;
+    const drawn = drawDemoImage(path);
+    this.imageUrls.set(path, drawn);
+    return drawn;
   }
 
   async pushSubscribe(_subscription: RemotePushSubscription): Promise<void> {}

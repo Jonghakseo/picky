@@ -9,7 +9,7 @@
 import type { JSX } from "preact";
 
 import type { RemoteRoomStatus } from "../../../src/remote/protocol";
-import { ArchiveBox, ChevronLeft, Ellipsis, PickleGlyph } from "./icons";
+import { ArchiveBox, ChevronLeft, Ellipsis, ListBullet, PickleGlyph } from "./icons";
 import { t } from "./i18n";
 
 export interface ContextUsage {
@@ -23,9 +23,12 @@ export interface HeaderProps {
   contextUsage?: ContextUsage;
   /** Hidden for the main room, which cannot be archived from here. */
   showArchive: boolean;
+  /** Hidden for the main room, which produces no artifacts or diffs of its own. */
+  showWork: boolean;
   showMenu: boolean;
   onBack: () => void;
   onArchive?: () => void;
+  onWork?: () => void;
   onMenu?: () => void;
 }
 
@@ -108,6 +111,12 @@ export function Header(props: HeaderProps): JSX.Element {
           <span class="ctx-label">{label}</span>
           <span class="sr-only">{t("hud.conversation.meta.context", label)}</span>
         </span>
+      ) : null}
+      {props.showWork ? (
+        <button class="hdr-icon hdr-work" type="button" onClick={props.onWork}>
+          <ListBullet />
+          <span class="sr-only">{t("hud.utilityPanel.accessibilityLabel")}</span>
+        </button>
       ) : null}
       {props.showArchive ? (
         <button class="hdr-icon hdr-archive" type="button" onClick={props.onArchive}>

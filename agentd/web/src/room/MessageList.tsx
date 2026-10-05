@@ -31,6 +31,7 @@ import { queueItemText } from "./policy/composer";
 import type { ErrorRecovery } from "./policy/message";
 import { CONTINUE_PROMPT_KEY, bubbleKind, errorRecovery, visibleActivityCounts } from "./policy/message";
 import { derivePresence } from "./policy/presence";
+import { resolveQuestionRequest } from "./policy/question";
 import { absoluteDetail, relativeTitle } from "./policy/schedule";
 
 export type QueueEdit =
@@ -83,9 +84,9 @@ function SessionRows({ sessionId, session, actions, send, onEdit, now }: Message
         rows.push(<AgentBubble key={message.id} text={message.text ?? ""} time={time} {...links} />);
         break;
       case "question": {
-        const request = message.question;
-        if (!request) break;
-        const active = session_.pendingExtensionUiRequest?.id === request.id && !message.cancelledAt;
+        const copy = message.question;
+        if (!copy) break;
+        const { request, active } = resolveQuestionRequest(copy, session_.pendingExtensionUiRequest, message.cancelledAt);
         rows.push(
           <QuestionBubble
             key={message.id}

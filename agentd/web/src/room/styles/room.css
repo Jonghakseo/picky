@@ -275,6 +275,11 @@
   height: 18px;
 }
 
+.hdr-work {
+  width: 24px;
+  height: 24px;
+}
+
 /* ====================================================================
  * Message bubbles
  * Source prototype: docs/prototypes/picky-remote-pwa/chat-bubbles.css
@@ -1500,8 +1505,16 @@
 }
 
 /* The 28 + 20 split control is shorter than 44pt; both halves keep their visual
- * width and grow their hit area vertically. */
-.send::after {
+ * width and grow their hit area vertically. Each button carries its own ::after:
+ * one drawn by the .send container sat above both buttons and swallowed every
+ * tap (caught by web/tools/hit-test.mjs). */
+.send-main,
+.send-chevron {
+  position: relative;
+}
+
+.send-main::after,
+.send-chevron::after {
   content: "";
   position: absolute;
   inset: calc(50% - 22px) 0 auto 0;

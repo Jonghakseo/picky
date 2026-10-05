@@ -134,7 +134,7 @@ Source `agentd/web/`, built by `agentd/web/build.mjs` (esbuild) into `agentd/dis
 
 `pnpm --dir agentd run dev:remote` starts a mock-runtime primary agentd (temporary app support dir, port 17732), the gateway (port 17741) and a Node stand-in for the hub that reports the mock daemon, a small overlay, and answers hub requests (`pickle.create` and `main.send` through the mock daemon, `dictation.transcribe` with fixed text). It starts pairing and prints the URL and code. It never touches the user's running Picky or `~/Library/Application Support/Picky`.
 
-Tests: gateway units and an end-to-end test over real sockets (gateway, mock daemon, stand-in hub, WebSocket client) in `agentd/src/gateway/*.test.ts`; shared rules in `agentd/src/remote/*.test.ts`; Swift Testing suites `PickyTests/PickyRemote*Tests.swift` that decode `contracts/remote/hub/` and drive the request handler with fakes; browser checks at 390 pt in light and dark from the demo mode and the dev harness.
+Tests: gateway units and an end-to-end test over real sockets (gateway, mock daemon, stand-in hub, WebSocket client) in `agentd/src/gateway/*.test.ts`; shared rules in `agentd/src/remote/*.test.ts`; Swift Testing suites `PickyTests/PickyRemote*Tests.swift` that decode `contracts/remote/hub/` and drive the request handler with fakes; browser checks at 390 pt in light and dark from the demo mode and the dev harness. `pnpm --dir agentd run check:web-taps` (web/tools/hit-test.mjs, needs Chrome) checks that every visible control on the demo screens receives a tap at its center; screenshots cannot show a transparent layer that swallows taps.
 
 ## 6. Packaging
 

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { PickyAgentSession, ThinkingLevel } from "../../../../src/protocol";
 import type { RemoteCommand, RemoteDictationAvailability } from "../../../../src/remote/protocol";
 import type { RoomActions } from "../contract";
-import { ArrowUp, ChevronUp, Mic, Paperclip, StopFill, Terminal, VoiceWarning, Waveform, Xmark } from "../icons";
+import { ArrowTurnDownRight, ArrowUp, ChevronDownSmall, Mic, Paperclip, PlayFill, StopFill, Terminal, VoiceWarning, Waveform, Xmark } from "../icons";
 import { t } from "../i18n";
 import type { QueueEdit } from "../MessageList";
 import type { SubmitKind } from "../policy/composer";
@@ -27,6 +27,8 @@ import {
   effectiveBashMode,
   placeholderKey,
   returnKeyAction,
+  settingsChipParts,
+  submitPresentation,
   submitStatus,
 } from "../policy/composer";
 import { sendTimingOptions } from "../policy/schedule";
@@ -262,6 +264,8 @@ export function Composer(props: ComposerProps): JSX.Element {
   const placeholder = isMain
     ? t("remote.room.composer.placeholder.steer")
     : t(placeholderKey(sendStatus, session?.agentCycle?.phase === "compacting"));
+  // The Picky room only sends; it has no follow-up of its own.
+  const submit_ = submitPresentation(isMain ? null : submitKind, bashMode);
   const showStop = isMain ? props.mainBusy : canStop(status, (session?.messages ?? []).length > 0);
 
   return (
@@ -413,13 +417,11 @@ export function Composer(props: ComposerProps): JSX.Element {
                   <button
                     class="send-main"
                     type="button"
-                    aria-label={t(
-                      submitKind === "followUp" ? "hud.composer.submit.followUp" : "hud.composer.submit.send",
-                    )}
+                    aria-label={t(submit_.labelKey)}
                     disabled={!sendEnabled}
                     onClick={() => void submit(submitKind)}
                   >
-                    <ArrowUp />
+                    {submit_.icon === "play" ? <PlayFill /> : submit_.icon === "turnDownRight" ? <ArrowTurnDownRight /> : <ArrowUp />}
                   </button>
                   {isMain ? null : (
                     <>
@@ -431,7 +433,7 @@ export function Composer(props: ComposerProps): JSX.Element {
                         disabled={!canSend || !props.online || !props.macConnected}
                         onClick={() => setTimingOpen(true)}
                       >
-                        <ChevronUp />
+                        <ChevronDownSmall />
                       </button>
                     </>
                   )}
@@ -584,33 +586,36 @@ function useHardwareKeyboard(): boolean {
 }
 
 /** Model and fast mode at a glance, opening the Pickle settings menu. */
+/** Model, thinking level and Fast at a glance (`opus-5-5 · high`), opening the Pickle settings menu. */
 function SettingsChip({ session, onOpen }: { session?: PickyAgentSession; onOpen: () => void }): JSX.Element {
-  const model = session?.currentAssistantRun?.model;
-  const fast = session?.fastMode === true;
+  const { model, suffixes } = settingsChipParts(session?.currentAssistantRun, session?.fastMode === true, t("hud.composer.settings.chip.fast"));
+  const value = [model, ...suffixes].filter((part): part is string => part !== null).join(", ");
   return (
     <button
       class="settings-chip"
       type="button"
-      aria-label={t("hud.composer.settings.accessibilityLabel")}
+      // The HUD's label plus its accessibilityValue: what it is, then what is set.
+      aria-label={value ? `${t("hud.composer.settings.accessibilityLabel")}, ${value}` : t("hud.composer.settings.accessibilityLabel")}
       onClick={onOpen}
     >
       {model ? (
         <span class="chip-model">
           <span class="chip-text">{model}</span>
         </span>
-      ) : (
-        <span class="chip-text">{t("hud.composer.settings.chip.empty")}</span>
-      )}
-      {fast ? (
-        <>
-          <span class="chip-sep" aria-hidden="true">
-            ·
-          </span>
-          <span class="chip-text">{t("hud.composer.settings.chip.fast")}</span>
-        </>
       ) : null}
+      {suffixes.map((suffix, index) => (
+        <>
+          {index > 0 || model ? (
+            <span class="chip-sep" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
+          <span class="chip-text">{suffix}</span>
+        </>
+      ))}
+      {!model && suffixes.length === 0 ? <span class="chip-text">{t("hud.composer.settings.chip.empty")}</span> : null}
       <span class="chip-chevron" aria-hidden="true">
-        <ChevronUp />
+        <ChevronDownSmall />
       </span>
     </button>
   );

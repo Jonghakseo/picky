@@ -56,6 +56,47 @@ export function returnKeyAction(event: {
   return "submit";
 }
 
+/**
+ * Model name for the settings chip: the last path component without the
+ * vendor prefix. `PickyAssistantRunMetadata.compactModelName`.
+ */
+export function compactModelName(rawModel: string): string {
+  const leaf = rawModel.split("/").filter((part) => part.length > 0).at(-1) ?? rawModel;
+  for (const prefix of ["claude-", "openai-"]) {
+    if (leaf.startsWith(prefix)) return leaf.slice(prefix.length);
+  }
+  return leaf;
+}
+
+/**
+ * What the settings chip shows: the compact model, then the thinking level,
+ * then Fast only while it is on (it costs more). `PickyConversationRuntimeControlsView`
+ * settings chip with `PickyComposerRuntimePresentation`.
+ */
+export function settingsChipParts(run: { model?: string; thinkingLevel?: string } | undefined, fastMode: boolean, fastLabel: string): {
+  model: string | null;
+  suffixes: string[];
+} {
+  const model = run?.model?.trim() ? compactModelName(run.model.trim()) : null;
+  const suffixes: string[] = [];
+  const thinking = run?.thinkingLevel?.trim();
+  if (thinking) suffixes.push(thinking);
+  if (fastMode) suffixes.push(fastLabel);
+  return { model, suffixes };
+}
+
+export type SubmitIcon = "arrowUp" | "turnDownRight" | "play";
+
+/**
+ * The send button's icon and label, `PickyComposerSubmitPresentation`: a
+ * follow-up turns down-right, a shell command plays, anything else goes up.
+ */
+export function submitPresentation(kind: SubmitKind | null, bashMode: BashMode): { labelKey: string; icon: SubmitIcon } {
+  const labelKey = kind === "steer" ? "hud.composer.submit.steer" : kind === "followUp" ? "hud.composer.submit.followUp" : "hud.composer.submit.send";
+  if (bashMode !== "none") return { labelKey, icon: "play" };
+  return { labelKey, icon: kind === "followUp" ? "turnDownRight" : "arrowUp" };
+}
+
 /** What the send button does by default for this session status. */
 export function defaultSubmitKind(status: SessionStatus): SubmitKind {
   switch (status) {

@@ -10,8 +10,11 @@ import {
   draftRestoringQueuedInputs,
   effectiveBashMode,
   placeholderKey,
+  compactModelName,
   queueItemText,
   returnKeyAction,
+  settingsChipParts,
+  submitPresentation,
   submitStatus,
 } from "./composer";
 
@@ -117,5 +120,21 @@ describe("Return key", () => {
     expect(key({ composing: true })).toBe("none");
     expect(key({ hardwareKeyboard: false })).toBe("none");
     expect(key({ key: "a" })).toBe("none");
+  });
+});
+
+describe("settings chip and send button, as the HUD draws them", () => {
+  it("shows the compact model, the thinking level, and Fast only while it is on", () => {
+    expect(compactModelName("anthropic/claude-opus-5-5")).toBe("opus-5-5");
+    expect(compactModelName("openai-gpt-5")).toBe("gpt-5");
+    expect(settingsChipParts({ model: "claude-opus-5-5", thinkingLevel: "high" }, false, "Fast")).toEqual({ model: "opus-5-5", suffixes: ["high"] });
+    expect(settingsChipParts({ model: "claude-opus-5-5", thinkingLevel: "high" }, true, "Fast").suffixes).toEqual(["high", "Fast"]);
+    expect(settingsChipParts(undefined, false, "Fast")).toEqual({ model: null, suffixes: [] });
+  });
+
+  it("turns down-right for a follow-up and plays for a shell command", () => {
+    expect(submitPresentation("followUp", "none")).toEqual({ labelKey: "hud.composer.submit.followUp", icon: "turnDownRight" });
+    expect(submitPresentation("steer", "none")).toEqual({ labelKey: "hud.composer.submit.steer", icon: "arrowUp" });
+    expect(submitPresentation("followUp", "visible").icon).toBe("play");
   });
 });

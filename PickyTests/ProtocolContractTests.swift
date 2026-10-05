@@ -966,6 +966,20 @@ struct ProtocolContractTests {
         #expect((omittedAnnotation.spotlight ?? false) == (explicitFalseAnnotation.spotlight ?? false))
     }
 
+    @Test func decodesRectTranslationWithParagraphsLabelAndSpotlight() throws {
+        let request = try annotationOverlayRequest(
+            from: JSONDecoder.pickyAgentProtocolDecoder(),
+            annotation: #"{"id":"translation","shape":"rect","x":10,"y":20,"w":300,"h":80,"text":"First paragraph.\n\nSecond paragraph.","label":"Source","spotlight":true}"#
+        )
+        let annotation = try #require(request.annotations.first)
+        #expect(annotation.shape == .rect)
+        #expect(annotation.text == "First paragraph.\n\nSecond paragraph.")
+        #expect(annotation.label == "Source")
+        #expect(annotation.spotlight == true)
+        let roundTripped = try JSONDecoder().decode(PickyAnnotationOverlayRequest.self, from: JSONEncoder().encode(request))
+        #expect(roundTripped == request)
+    }
+
     @Test func decodesStructuredPATHCommands() throws {
         let request = try annotationOverlayRequest(
             from: JSONDecoder.pickyAgentProtocolDecoder(),
@@ -995,10 +1009,10 @@ struct ProtocolContractTests {
         #expect(legacy == current)
     }
 
-    @Test func rejectsRetiredAnnotationCircleAndTargetShapes() {
+    @Test func rejectsRetiredAnnotationCircleTargetAndTextShapes() {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
 
-        for shape in ["circle", "target"] {
+        for shape in ["circle", "target", "text"] {
             #expect(throws: DecodingError.self) {
                 _ = try decoder.decode(
                     PickyEventEnvelope.self,

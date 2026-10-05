@@ -349,8 +349,8 @@ describe("protocol contract fixtures", () => {
     expect(() => EventEnvelopeSchema.parse(annotationOverlayEvent({ ...annotation, spotlight: true }))).toThrow("path does not support spotlight");
   });
 
-  it("rejects retired annotation circle and target shapes", () => {
-    for (const shape of ["circle", "target"]) {
+  it("rejects retired annotation circle, target, and text shapes", () => {
+    for (const shape of ["circle", "target", "text"]) {
       expect(() => EventEnvelopeSchema.parse(annotationOverlayEvent({ id: `annotation-${shape}`, shape }))).toThrow();
     }
   });
@@ -1217,11 +1217,19 @@ describe("tool history structured result compatibility", () => {
   });
 });
 
-describe("annotation overlay text shape", () => {
-  it("accepts a text callout and rejects text fields on other shapes or missing bodies", () => {
-    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "t", shape: "text", x: 1, y: 2, w: 3, h: 4, text: "번역" }).success).toBe(true);
-    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "t", shape: "text", x: 1, y: 2, w: 3, h: 4 }).success).toBe(false);
-    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "t", shape: "text", x: 1, y: 2, w: 3, h: 4, text: "a", spotlight: true }).success).toBe(false);
-    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "r", shape: "rect", x: 1, y: 2, w: 3, h: 4, text: "a" }).success).toBe(false);
+describe("annotation overlay rect translation body", () => {
+  it("accepts a rect callout with a body and rejects bodies on shapes that cannot render one", () => {
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "r", shape: "rect", x: 1, y: 2, w: 3, h: 4, text: "번역", label: "제목", spotlight: true }).success).toBe(true);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "r", shape: "rect", x: 1, y: 2, w: 3, h: 4 }).success).toBe(true);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "r", shape: "rect", x: 1, y: 2, w: 3, h: 4, text: "" }).success).toBe(false);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "r", shape: "rect", x: 1, y: 2, w: 3, h: 4, text: "   " }).success).toBe(false);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "r", shape: "rect", x: 1, y: 2, w: 3, h: 4, text: "가".repeat(501) }).success).toBe(false);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({ id: "l", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4, text: "번역" }).success).toBe(false);
+    expect(PickyAnnotationOverlayAnnotationSchema.safeParse({
+      id: "p",
+      shape: "path",
+      commands: [{ type: "move", x: 1, y: 1 }, { type: "line", x: 2, y: 2 }],
+      text: "번역",
+    }).success).toBe(false);
   });
 });

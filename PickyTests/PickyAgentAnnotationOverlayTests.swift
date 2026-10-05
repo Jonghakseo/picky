@@ -50,17 +50,25 @@ struct PickyAgentAnnotationOverlayTests {
         #expect(target.screenLocation.x < 210)
     }
 
-    @Test func resolvesTextCalloutsAndRejectsEmptyText() throws {
+    @Test func resolvesRectCalloutsWithLabelAndSpotlightAndRejectsInvalidText() throws {
         let resolved = try #require(PickyAnnotationOverlayResolver.resolve(request(annotations: [
-            annotation(id: "text", shape: .text, x: 200, y: 50, w: 100, h: 100, text: "  번역  "),
+            annotation(id: "text", shape: .rect, x: 200, y: 50, w: 100, h: 100, spotlight: true, label: "원문", text: "  첫 문단\n\n둘째 문단  "),
         ])).first)
         #expect(resolved.rect == CGRect(x: 200, y: 225, width: 50, height: 50))
-        #expect(resolved.text == "번역")
-        #expect(resolved.label == nil)
+        #expect(resolved.text == "첫 문단\n\n둘째 문단")
+        #expect(resolved.label == "원문")
+        #expect(resolved.spotlight)
 
+        for invalid in ["   ", String(repeating: "가", count: 501), String(repeating: "😀", count: 251)] {
+            #expect(throws: PickyAnnotationOverlayResolveError.self) {
+                _ = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
+                    annotation(id: "invalid", shape: .rect, x: 0, y: 0, w: 10, h: 10, text: invalid),
+                ]))
+            }
+        }
         #expect(throws: PickyAnnotationOverlayResolveError.self) {
             _ = try PickyAnnotationOverlayResolver.resolve(request(annotations: [
-                annotation(id: "empty", shape: .text, x: 0, y: 0, w: 10, h: 10, text: "   "),
+                annotation(id: "line", shape: .line, x1: 0, y1: 0, x2: 10, y2: 10, text: "not a rectangle"),
             ]))
         }
     }
@@ -191,6 +199,41 @@ struct PickyAgentAnnotationOverlayTests {
 
         #expect(manager.agentAnnotations.isEmpty)
         #expect(!manager.showsAgentAnnotationDismissControl)
+    }
+
+    @Test func visualNarrationRectTranslationReachesTheVisibleOverlayAndSurvivesTurnSettlement() async throws {
+        let manager = CompanionManager(agentClient: FakePickyAgentClient())
+        manager.ttsPlaybackEnabled = false
+        defer { manager.stop() }
+        let body = "첫 문단\n\n둘째 문단"
+        let identity = PickyVisualNarrationSegmentIdentity(
+            contextId: "context", contextGeneration: 1, turnToken: "turn",
+            segmentId: "translation", ordinal: 0
+        )
+        manager.applyAgentEvent(.mainVisualNarrationSegmentPrepared(.init(
+            identity: identity,
+            visual: .annotations(request(annotations: [
+                annotation(id: "translated-rect", shape: .rect, x: 200, y: 50, w: 100, h: 100,
+                           label: "원문", text: body),
+            ], contextGeneration: 1))
+        )))
+        manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(.init(
+            identity: identity, index: 0, text: "번역을 화면에 표시했어요.",
+            originSource: .textFollowUp, replyKind: .main, sessionId: nil
+        )))
+        manager.applyAgentEvent(.mainVisualNarrationSegmentCommitted(.init(
+            identity: identity, text: "번역을 화면에 표시했어요.", sentenceCount: 1,
+            originSource: .textFollowUp, replyKind: .main, sessionId: nil
+        )))
+        manager.applyAgentEvent(.mainTurnSettled(contextId: "context"))
+        try await waitUntil { manager.agentAnnotations.first?.text == body }
+        let visible = try #require(manager.agentAnnotations.first)
+        #expect(visible.shape == .rect)
+        #expect(visible.rect == CGRect(x: 200, y: 225, width: 50, height: 50))
+        #expect(visible.label == "원문")
+        #expect(manager.latestAgentSessionSummary == "번역을 화면에 표시했어요.")
+        manager.dismissAgentAnnotations()
+        try await waitUntil { manager.agentAnnotations.isEmpty }
     }
 
     @Test func companionManagerPermanentlyClearsSettledAnnotationsOnSceneMismatch() async throws {
@@ -808,7 +851,7 @@ struct PickyAgentAnnotationOverlayTests {
             ).height
         }
 
-        // 500 characters, the TEXT limit, on a wide screen under a wide paragraph.
+        // 500 characters, the RECT text limit, on a wide screen under a wide paragraph.
         let long = String(repeating: "캐시된 문서를 다시 검사해서 바뀐 스키마를 반영해요. ", count: 17).prefix(500)
         let wide = PickyAnnotationTextLayoutPolicy.calloutBodySize(text: String(long), anchorWidth: 900, screenWidth: 1440)
         #expect(wide.width <= PickyAnnotationTextLayoutPolicy.calloutMaxWidth)
@@ -818,6 +861,11 @@ struct PickyAgentAnnotationOverlayTests {
         // Same text under a narrow label still widens rather than growing past six lines first.
         let narrowAnchor = PickyAnnotationTextLayoutPolicy.calloutBodySize(text: String(long), anchorWidth: 80, screenWidth: 1440)
         #expect(narrowAnchor.width > PickyAnnotationTextLayoutPolicy.calloutMinWrapWidth)
+
+        let fourLines = PickyAnnotationTextLayoutPolicy.calloutBodySize(
+            text: "첫째 문단\n둘째 문단\n셋째 문단\n넷째 문단", anchorWidth: 320, screenWidth: 1440
+        )
+        #expect(fourLines.width == 320, "line spacing alone must not widen a four-line translation")
 
         // Short text hugs its content; small screens cap the width.
         let short = PickyAnnotationTextLayoutPolicy.calloutBodySize(text: "로그인", anchorWidth: 600, screenWidth: 1440)
@@ -859,6 +907,45 @@ struct PickyAgentAnnotationOverlayTests {
             for other in items where other.id != item.id {
                 #expect(!frame.intersects(other.rect), "Callout \(item.id) covers the text of \(other.id)")
             }
+        }
+    }
+
+    @Test func bottomEdgeRectCalloutAvoidsItsOutlineLabel() throws {
+        let source = CGRect(x: 16, y: 368, width: 220, height: 48)
+        let item = PickyAnnotationTextItem(id: "caption", rect: source, text: "번역을 표시합니다.", visualStyle: .fallback)
+        let label = CGRect(x: 16, y: 340, width: 100, height: 20)
+        let layout = try #require(PickyAnnotationTextLayoutPolicy.layout(
+            [item], screenSize: CGSize(width: 260, height: 440), avoiding: [label]
+        )[item.id])
+        #expect(!layout.frame.intersects(source))
+        #expect(!layout.frame.intersects(label))
+    }
+
+    @Test func longRectTranslationUsesAvailableSideWidthWithoutCoveringTheSource() throws {
+        let screen = CGSize(width: 960, height: 560)
+        let source = CGRect(x: 48, y: 152, width: 352, height: 230)
+        let text = String(repeating: "원문을 보면서 번역을 읽습니다. 문단 사이의 여백을 유지합니다.\n\n", count: 5)
+        let item = PickyAnnotationTextItem(id: "long", rect: source, text: text, visualStyle: .fallback)
+        let layout = try #require(PickyAnnotationTextLayoutPolicy.layout([item], screenSize: screen)[item.id])
+        #expect(!layout.frame.intersects(source))
+        #expect(CGRect(origin: .zero, size: screen).insetBy(dx: 16, dy: 16).contains(layout.frame))
+        #expect(layout.frame.minX >= source.maxX)
+    }
+
+    @Test func rectTranslationCardsStayInsideNarrowScreensAndConnectToTheirSource() throws {
+        let screen = CGSize(width: 260, height: 440)
+        for source in [CGRect(x: 16, y: 16, width: 220, height: 48),
+                       CGRect(x: 16, y: 368, width: 220, height: 48)] {
+            let item = PickyAnnotationTextItem(id: "edge", rect: source,
+                text: "첫 문단입니다.\n\n둘째 문단도 원문을 덮지 않고 표시합니다.", visualStyle: .fallback)
+            let layout = try #require(PickyAnnotationTextLayoutPolicy.layout([item], screenSize: screen)[item.id])
+            #expect(CGRect(origin: .zero, size: screen).insetBy(dx: 16, dy: 16).contains(layout.frame))
+            #expect(!layout.frame.intersects(source))
+            #expect((source.minX...source.maxX).contains(layout.connectorStart.x))
+            #expect((source.minY...source.maxY).contains(layout.connectorStart.y))
+            #expect(layout.connectorStart.y == source.minY || layout.connectorStart.y == source.maxY)
+            #expect((layout.frame.minX...layout.frame.maxX).contains(layout.connectorEnd.x))
+            #expect(layout.connectorEnd.y == layout.frame.minY || layout.connectorEnd.y == layout.frame.maxY)
         }
     }
 

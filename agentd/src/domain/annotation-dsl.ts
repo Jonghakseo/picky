@@ -1,13 +1,19 @@
 import { ANNOTATION_TEXT_MAX_LENGTH, type AnnotationInput } from "./annotation-validation.js";
 import { parseAnnotationSvgPath } from "./annotation-svg-path.js";
 
-const KNOWN_VERBS = ["RECT", "LINE", "PATH", "TEXT", "SCREEN"] as const;
+const KNOWN_VERBS = ["RECT", "LINE", "PATH", "SCREEN"] as const;
+/**
+ * Verbs Picky no longer renders. They stay recognizable so a stale tag from an older
+ * transcript is dropped instead of leaking raw DSL into the spoken reply.
+ */
+const RETIRED_VERBS = ["TEXT"] as const;
 type KnownVerb = typeof KNOWN_VERBS[number];
 export type AnnotationDslVisualVerb = Exclude<KnownVerb, "SCREEN">;
 
 /** Matches a complete DSL opener; partial openers are handled incrementally below. */
 export const ANNOTATION_DSL_TAG_OPEN_PATTERN = /^\[\s*([A-Za-z]+)\s*:/;
 const knownVerbSet = new Set<string>(KNOWN_VERBS);
+const retiredVerbSet = new Set<string>(RETIRED_VERBS);
 const HEAL_ORDER = [
   "verb case/whitespace",
   "argument spacing/separator",
@@ -125,7 +131,9 @@ export class AnnotationDslParser {
       }
 
       const body = source.slice(open + opener[0].length, close);
-      if (!knownVerbSet.has(verb)) {
+      if (retiredVerbSet.has(verb)) {
+        droppedTags.push(`retired verb ${verb}`);
+      } else if (!knownVerbSet.has(verb)) {
         droppedTags.push(`unknown verb ${verb}`);
       } else if (hasNestedUnquotedBracket(body)) {
         droppedTags.push(`nested tag in ${verb}`);
@@ -193,7 +201,7 @@ export class AnnotationDslParser {
       return { tag: { kind: "screen", screenId } };
     }
 
-    const label = verb === "TEXT" ? undefined : optionalText(args, "label", heals);
+    const label = optionalText(args, "label", heals);
     if (label === null) return { error: `${verb} has invalid label` };
     const screenId = this.screenId;
     const coordinate = (key: string): number | undefined => finiteNumber(args[key], heals);
@@ -217,21 +225,23 @@ export class AnnotationDslParser {
       case "RECT": {
         const fields = required("x", "y", "w", "h");
         if (!fields) return { error: "RECT requires x, y, w, and h" };
-        annotation = { ...this.annotationBase("rect", label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
+        const hasText = "text" in args;
+        const text = hasText ? calloutText(args.text, heals) : undefined;
+        // A provided body that fails validation drops the whole tag: a bare rectangle would
+        // silently lose the translation the agent meant to show.
+        if (hasText && !text) return { error: `RECT text must be 1 to ${ANNOTATION_TEXT_MAX_LENGTH} characters` };
+        annotation = {
+          ...this.annotationBase("rect", label),
+          ...fields,
+          ...(spotlight === undefined ? {} : { spotlight }),
+          ...(text === undefined ? {} : { text }),
+        };
         break;
       }
       case "LINE": {
         const fields = required("x1", "y1", "x2", "y2");
         if (!fields) return { error: "LINE requires x1, y1, x2, and y2" };
         annotation = { ...this.annotationBase("line", label), ...fields, ...(spotlight === undefined ? {} : { spotlight }) };
-        break;
-      }
-      case "TEXT": {
-        const fields = required("x", "y", "w", "h");
-        if (!fields) return { error: "TEXT requires x, y, w, and h" };
-        const text = calloutText(args.text, heals);
-        if (!text) return { error: "TEXT requires text up to 500 characters" };
-        annotation = { ...this.annotationBase("text", undefined), ...fields, text };
         break;
       }
       case "PATH": {
@@ -269,21 +279,22 @@ function healingSummary(verb: KnownVerb, heals: ReadonlySet<HealReason>): string
 
 function allowedKeysFor(verb: KnownVerb): ReadonlySet<string> {
   switch (verb) {
-    case "RECT": return new Set(["x", "y", "w", "h", "label", "spotlight"]);
+    case "RECT": return new Set(["x", "y", "w", "h", "label", "spotlight", "text"]);
     case "LINE": return new Set(["x1", "y1", "x2", "y2", "label", "spotlight"]);
     case "PATH": return new Set(["d", "label"]);
-    case "TEXT": return new Set(["x", "y", "w", "h", "text"]);
     case "SCREEN": return new Set(["id"]);
   }
 }
 
 function isVisualVerb(value: string): value is AnnotationDslVisualVerb {
-  return value === "RECT" || value === "LINE" || value === "PATH" || value === "TEXT";
+  return value === "RECT" || value === "LINE" || value === "PATH";
 }
 
 function isPartialKnownOpener(value: string): boolean {
   const partial = value.match(/^\[\s*([A-Za-z]*)\s*$/)?.[1];
-  return partial !== undefined && KNOWN_VERBS.some((verb) => verb.startsWith(partial.toUpperCase()));
+  if (partial === undefined) return false;
+  const upper = partial.toUpperCase();
+  return [...KNOWN_VERBS, ...RETIRED_VERBS].some((verb) => verb.startsWith(upper));
 }
 
 function findTagClose(source: string, start: number): number | undefined {
@@ -463,7 +474,7 @@ function optionalText(args: Record<string, ParsedValue>, key: string, heals: Set
 }
 
 /**
- * TEXT body: quoted, trimmed, `\n` escapes become line breaks, never longer
+ * RECT `text` body: quoted, trimmed, `\n` escapes become line breaks, never longer
  * than `ANNOTATION_TEXT_MAX_LENGTH` so the DSL and the validator agree.
  */
 function calloutText(value: ParsedValue | undefined, heals: Set<HealReason>): string | undefined {

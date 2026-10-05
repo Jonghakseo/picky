@@ -260,27 +260,54 @@ describe("AnnotationDslParser", () => {
     expect(ANNOTATION_DSL_TAG_OPEN_PATTERN.test("[rect: x=1]")).toBe(true);
   });
 
-  it("parses TEXT callouts with line-break escapes and quoted brackets", () => {
+  it("parses a RECT translation body with line-break escapes and quoted brackets", () => {
     const parser = new AnnotationDslParser();
-    const result = parser.feed('[TEXT: x=40 y=92 w=520 h=36 text="요금 [연간]\\n월 환산 20% 할인"] 화면에 띄웠어요.');
+    const result = parser.feed('[RECT: x=40 y=92 w=520 h=36 label="요금" spotlight text="요금 [연간]\\n월 환산 20% 할인"] 화면에 띄웠어요.');
 
     expect(result.droppedTags).toEqual([]);
     expect(result.cleanText).toBe(" 화면에 띄웠어요.");
     expect(result.completedTags).toEqual([
-      { kind: "annotation", annotation: { id: "dsl-1", shape: "text", x: 40, y: 92, w: 520, h: 36, text: "요금 [연간]\n월 환산 20% 할인" } },
+      {
+        kind: "annotation",
+        annotation: {
+          id: "dsl-1",
+          shape: "rect",
+          x: 40,
+          y: 92,
+          w: 520,
+          h: 36,
+          label: "요금",
+          spotlight: true,
+          text: "요금 [연간]\n월 환산 20% 할인",
+        },
+      },
     ]);
-    expect(result.streamItems[0]).toEqual({ kind: "visualBoundary", verb: "TEXT" });
+    expect(result.streamItems[0]).toEqual({ kind: "visualBoundary", verb: "RECT" });
   });
 
-  it("drops TEXT without text or with text beyond 500 characters, and ignores label/spotlight", () => {
+  it("keeps a plain RECT textless and drops a RECT whose body is empty or beyond 500 characters", () => {
     const parser = new AnnotationDslParser();
     const tooLong = "가".repeat(501);
-    const result = parser.feed(`[TEXT: x=1 y=2 w=3 h=4] [TEXT: x=1 y=2 w=3 h=4 text="${tooLong}"] [TEXT: x=1 y=2 w=3 h=4 text="ok" label="x" spotlight]`);
+    const result = parser.feed(`[RECT: x=1 y=2 w=3 h=4 label="영역"] [RECT: x=1 y=2 w=3 h=4 text=""] [RECT: x=1 y=2 w=3 h=4 text="${tooLong}"]`);
 
-    expect(result.droppedTags).toEqual(["TEXT requires text up to 500 characters", "TEXT requires text up to 500 characters"]);
-    expect(result.completedTags).toEqual([
-      { kind: "annotation", annotation: { id: "dsl-1", shape: "text", x: 1, y: 2, w: 3, h: 4, text: "ok" } },
+    expect(result.droppedTags).toEqual([
+      "RECT text must be 1 to 500 characters",
+      "RECT text must be 1 to 500 characters",
     ]);
-    expect(result.healedTags).toEqual(["TEXT: unknown key ignored"]);
+    expect(result.completedTags).toEqual([
+      { kind: "annotation", annotation: { id: "dsl-1", shape: "rect", x: 1, y: 2, w: 3, h: 4, label: "영역" } },
+    ]);
+  });
+
+  it("drops the retired TEXT tag without speaking its raw DSL, even when it arrives split", () => {
+    const parser = new AnnotationDslParser();
+    const first = parser.feed("번역할게요. [TE");
+    const second = parser.feed('XT: x=40 y=92 w=520 h=36 text="월 반복 매출"] 화면에 띄웠어요.');
+
+    expect(first.cleanText).toBe("번역할게요. ");
+    expect(second.cleanText).toBe(" 화면에 띄웠어요.");
+    expect(second.completedTags).toEqual([]);
+    expect(second.droppedTags).toEqual(["retired verb TEXT"]);
+    expect(second.streamItems.some((item) => item.kind === "visualBoundary")).toBe(false);
   });
 });

@@ -4,7 +4,7 @@
 //
 //  Offscreen renders for design/proposals/messenger-ux-2026-10.md. Every scene
 //  mounts the production components named in that proposal; only the desktop
-//  backdrop under the TEXT overlay is a fixture standing in for another app.
+//  backdrop under the RECT callout overlay is a fixture standing in for another app.
 //
 
 import AppKit
@@ -230,12 +230,16 @@ struct PickyMessengerUXRenderGalleryTests {
     // MARK: Translation overlay
 
     private func translateOverlay() -> some View {
-        let items = TranslationBackdrop.blocks.map { block in
-            PickyAnnotationTextItem(id: block.id, rect: block.rect, text: block.translation, visualStyle: .fallback)
+        let frame = CGRect(origin: .zero, size: Self.screenSize)
+        let annotations = TranslationBackdrop.blocks.map { block in
+            PickyAgentAnnotation(id: block.id, shape: .rect, displayFrame: frame,
+                rect: CGRect(x: block.rect.minX, y: Self.screenSize.height - block.rect.maxY,
+                             width: block.rect.width, height: block.rect.height),
+                label: nil, text: block.translation)
         }
         return ZStack(alignment: .topLeading) {
             TranslationBackdrop()
-            PickyAnnotationTextOverlayView(items: items, screenSize: Self.screenSize)
+            PickyAgentAnnotationOverlayView(screenFrame: frame, annotations: annotations)
         }
         .frame(width: Self.screenSize.width, height: Self.screenSize.height, alignment: .topLeading)
     }

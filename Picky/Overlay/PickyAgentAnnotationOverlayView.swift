@@ -33,13 +33,33 @@ struct PickyAgentAnnotationOverlayView: View {
         }
     }
 
-    /// TEXT callouts, in tag order, with their original text box in local coordinates.
+    /// RECT callouts, in tag order, with their source box in local coordinates.
     private var textItems: [PickyAnnotationTextItem] {
         annotationsForScreen.compactMap { annotation in
-            guard annotation.shape == .text, let text = annotation.text, let rect = localRect(annotation.rect) else {
+            guard annotation.shape == .rect, let text = annotation.text, let rect = localRect(annotation.rect) else {
                 return nil
             }
             return PickyAnnotationTextItem(id: annotation.id, rect: rect, text: text, visualStyle: annotation.visualStyle)
+        }
+    }
+
+    /// Labels and uncaptioned rectangles also occupy screen space.
+    private var calloutObstacles: [CGRect] {
+        annotationsForScreen.flatMap { annotation -> [CGRect] in
+            var rects: [CGRect] = []
+            if annotation.text == nil, let rect = localRect(annotation.rect) {
+                rects.append(rect)
+            }
+            if let label = annotation.label {
+                let size = annotationLabelSize(label)
+                if let center = PickyAnnotationLabelGeometry.outlineAnchor(
+                    for: annotation, screenFrame: screenFrame, labelSize: size
+                ) {
+                    rects.append(CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                                        width: size.width, height: size.height))
+                }
+            }
+            return rects
         }
     }
 
@@ -71,7 +91,7 @@ struct PickyAgentAnnotationOverlayView: View {
                 }
             }
             if !textItems.isEmpty {
-                PickyAnnotationTextOverlayView(items: textItems, screenSize: screenFrame.size)
+                PickyAnnotationTextOverlayView(items: textItems, screenSize: screenFrame.size, obstacles: calloutObstacles)
             }
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
@@ -85,7 +105,7 @@ struct PickyAgentAnnotationOverlayView: View {
     private func shape(_ annotation: PickyAgentAnnotation) -> some View {
         switch annotation.shape {
         case .rect:
-            if let rect = localRect(annotation.rect) {
+            if annotation.text == nil, let rect = localRect(annotation.rect) {
                 PickyRoughStrokeView(
                     paths: PickyAnnotationRoughGeometry.rectanglePaths(id: annotation.id, rect: rect),
                     visualStyle: annotation.visualStyle
@@ -105,9 +125,6 @@ struct PickyAgentAnnotationOverlayView: View {
                     visualStyle: annotation.visualStyle
                 )
             }
-        case .text:
-            // Rendered as a group by `PickyAnnotationTextOverlayView` so callouts avoid each other.
-            EmptyView()
         }
     }
 
@@ -244,8 +261,6 @@ enum PickyAnnotationLabelGeometry {
                 CGPoint(x: localBounds.midX, y: localBounds.minY - labelGap - halfHeight),
                 CGPoint(x: localBounds.midX, y: localBounds.maxY + labelGap + halfHeight),
             ]
-        case .text:
-            return nil
         }
 
         return candidates.first(where: { fits($0, screenSize: screenSize, labelSize: labelSize) })
@@ -380,7 +395,7 @@ enum PickyAnnotationSpotlightMaskGeometry {
                     width: abs(localEnd.x - localStart.x) + linePadding * 2,
                     height: abs(localEnd.y - localStart.y) + linePadding * 2
                 ))
-            case .path, .text:
+            case .path:
                 return nil
             }
         }

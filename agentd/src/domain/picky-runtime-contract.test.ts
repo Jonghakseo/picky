@@ -29,12 +29,21 @@ describe("buildPickyRuntimeContract", () => {
     expect(contract).toContain("Do not expose internal tool logs verbatim");
   });
 
-  it("keeps spoken narration mandatory even when TEXT callouts carry the translation", () => {
+  it("keeps spoken narration mandatory even when a RECT callout carries the translation", () => {
     const contract = buildPickyRuntimeContract(new Set());
 
     expect(contract).toContain("Always speak as well: never reply with tags only.");
-    expect(contract).toContain("When TEXT callouts already show a translation or explanation");
+    expect(contract).toContain("When RECT `text` callouts already show a translation or explanation");
     expect(contract).toContain("still say at least one short sentence");
+  });
+
+  it("documents translation as a RECT argument and never mentions the retired TEXT tag", () => {
+    const contract = buildPickyRuntimeContract(new Set());
+
+    expect(contract).toContain("text=\"optional translation\"");
+    expect(contract).toContain("Add `text` to a RECT");
+    expect(contract).toContain("at most 500 characters");
+    expect(contract).not.toContain("[TEXT:");
   });
 
   it("overrides stale bootstrap copies still sitting in the transcript", () => {
@@ -48,6 +57,7 @@ describe("buildPickyRuntimeContract", () => {
     // the agent to draw, and only an explicit prohibition can outrank it.
     expect(contract).toContain("Never emit `[RECT:`, `[LINE:`, `[PATH:`, or `[SCREEN:` tags");
     expect(contract).not.toContain("[RECT: x=<number>");
+    expect(contract).not.toContain("Add `text` to a RECT");
     expect(contract).toContain("picky pickle-create");
     expect(contract).toContain("### Direct reply style for Picky TTS");
   });

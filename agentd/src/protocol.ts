@@ -576,7 +576,7 @@ export const PickyPointerOverlayRequestSchema = z.object({
 });
 export type PickyPointerOverlayRequest = z.infer<typeof PickyPointerOverlayRequestSchema>;
 
-const PickyAnnotationShapeSchema = z.enum(["rect", "line", "path", "text"]);
+const PickyAnnotationShapeSchema = z.enum(["rect", "line", "path"]);
 const PickyAnnotationPathCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.enum(["move", "line"]), x: z.number().finite(), y: z.number().finite() }),
   z.object({
@@ -600,13 +600,10 @@ export const PickyAnnotationOverlayAnnotationSchema = z.object({
   commands: z.array(PickyAnnotationPathCommandSchema).min(2).max(32).optional(),
   spotlight: z.boolean().optional(),
   label: z.string().optional(),
-  text: z.string().min(1).max(ANNOTATION_TEXT_MAX_LENGTH).optional(),
+  text: z.string().trim().min(1).max(ANNOTATION_TEXT_MAX_LENGTH).optional(),
   clamped: z.boolean().optional(),
 }).superRefine((annotation, context) => {
-  if (annotation.shape === "text") {
-    if (!annotation.text) context.addIssue({ code: z.ZodIssueCode.custom, message: "text requires text", path: ["text"] });
-    if (annotation.spotlight !== undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "text does not support spotlight", path: ["spotlight"] });
-  } else if (annotation.text !== undefined) {
+  if (annotation.shape !== "rect" && annotation.text !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: `${annotation.shape} does not support text`, path: ["text"] });
   }
   if (annotation.shape === "path") {

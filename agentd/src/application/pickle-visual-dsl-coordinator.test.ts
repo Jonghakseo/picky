@@ -120,6 +120,39 @@ describe("PickleVisualDslCoordinator", () => {
     });
   });
 
+  it("carries a streamed RECT translation body into the overlay request without speaking it", () => {
+    const { coordinator, events } = coordinatorEvents();
+    coordinator.activate(coordinator.createLease("pickle-1", context()));
+
+    expect(coordinator.consumeAssistantDelta("pickle-1", '[RECT: x=40 y=92 w=520 h=36 label="요금" spotlight text="요금 [연간]')).toBe("");
+    expect(coordinator.consumeAssistantDelta("pickle-1", '\\n월 환산 20% 할인"] 화면에 띄웠어요.')).toBe(" 화면에 띄웠어요.");
+    coordinator.finishAssistantMessage("pickle-1");
+
+    const prepared = events.find((event) => event.type === "mainVisualNarrationSegmentPrepared");
+    expect(prepared).toMatchObject({
+      visual: {
+        kind: "annotations",
+        request: {
+          annotations: [{
+            shape: "rect",
+            x: 40,
+            y: 92,
+            w: 520,
+            h: 36,
+            label: "요금",
+            spotlight: true,
+            text: "요금 [연간]\n월 환산 20% 할인",
+          }],
+        },
+      },
+    });
+    for (const event of events) {
+      if ("text" in event && typeof event.text === "string") expect(event.text).not.toContain("[RECT:");
+    }
+    expect(events.filter((event) => event.type === "mainVisualNarrationSegmentSentence"))
+      .toEqual([expect.objectContaining({ text: "화면에 띄웠어요." })]);
+  });
+
   it("drops an unfinished tag when the assistant message ends", () => {
     const { coordinator, events } = coordinatorEvents();
     coordinator.activate(coordinator.createLease("pickle-1", context()));

@@ -12,7 +12,7 @@ enum PickyAnnotationOverlayMode: String, Codable, Equatable {
 }
 
 enum PickyAnnotationOverlayShape: String, Codable, Equatable {
-    case rect, line, path, text
+    case rect, line, path
 }
 
 enum PickyAnnotationPathCommandType: String, Codable, Equatable {
@@ -48,6 +48,9 @@ struct PickyAnnotationPathCommand: Codable, Equatable {
 }
 
 struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
+    /// Matches agentd ANNOTATION_TEXT_MAX_LENGTH (JavaScript string length).
+    static let maximumTextUTF16Length = 500
+
     let id: String
     let shape: PickyAnnotationOverlayShape
     let x: Double?
@@ -61,7 +64,7 @@ struct PickyAnnotationOverlayAnnotation: Codable, Equatable, Identifiable {
     let commands: [PickyAnnotationPathCommand]?
     let spotlight: Bool?
     let label: String?
-    /// Callout body for `.text` annotations.
+    /// Optional callout body for `.rect` annotations.
     let text: String?
     let clamped: Bool?
 

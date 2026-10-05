@@ -1,7 +1,7 @@
 import type { ScreenshotSize } from "./pointer-validation.js";
 
-export const ANNOTATION_SHAPES = ["rect", "line", "path", "text"] as const;
-/** TEXT callouts carry a translation or short explanation, not a document. */
+export const ANNOTATION_SHAPES = ["rect", "line", "path"] as const;
+/** A rect callout carries a translation or short explanation, not a document. */
 export const ANNOTATION_TEXT_MAX_LENGTH = 500;
 export type AnnotationShape = typeof ANNOTATION_SHAPES[number];
 export type AnnotationMode = "replace" | "append" | "clear";
@@ -24,7 +24,7 @@ export interface AnnotationInput {
   commands?: AnnotationPathCommand[];
   spotlight?: boolean;
   label?: string;
-  /** Callout body for `text` annotations. */
+  /** Translation or explanation attached to a `rect` annotation. */
   text?: string;
 }
 
@@ -34,6 +34,8 @@ export interface ClampedAnnotation extends AnnotationInput {
 
 export function clampAnnotation(annotation: AnnotationInput, screenshotSize: ScreenshotSize): ClampedAnnotation {
   const input = normalizeAnnotation(annotation);
+  const textProvided = annotation.text !== undefined;
+  if (textProvided && input.shape !== "rect") throw new Error(`${input.shape} does not support text.`);
   let clamped = false;
   const coordinate = (value: number | undefined, axis: "x" | "y", field: string): number => {
     const finite = requiredFinite(value, field);
@@ -42,8 +44,14 @@ export function clampAnnotation(annotation: AnnotationInput, screenshotSize: Scr
     return bounded;
   };
   switch (input.shape) {
-    case "rect":
+    case "rect": {
+      // An empty or oversized body must fail loudly: silently dropping it would turn a
+      // translation callout into a bare rectangle and lose the agent's actual message.
+      if (textProvided && (!input.text || input.text.length > ANNOTATION_TEXT_MAX_LENGTH)) {
+        throw new Error(`rect text requires 1 to ${ANNOTATION_TEXT_MAX_LENGTH} characters.`);
+      }
       return clampRect(input, screenshotSize, coordinate, clamped);
+    }
     case "line":
       return withClamped(input, {
         x1: coordinate(input.x1, "x", "x1"),
@@ -53,13 +61,6 @@ export function clampAnnotation(annotation: AnnotationInput, screenshotSize: Scr
       }, clamped);
     case "path":
       return clampPath(input, coordinate, clamped);
-    case "text": {
-      if (input.spotlight !== undefined) throw new Error("text does not support spotlight.");
-      if (!input.text || input.text.length > ANNOTATION_TEXT_MAX_LENGTH) {
-        throw new Error(`text requires 1 to ${ANNOTATION_TEXT_MAX_LENGTH} characters.`);
-      }
-      return clampRect(input, screenshotSize, coordinate, clamped);
-    }
   }
 }
 

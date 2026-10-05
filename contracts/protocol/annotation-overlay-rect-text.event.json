@@ -1,0 +1,29 @@
+{
+  "id": "event-annotations-rect-text-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-07-19T00:00:07.000Z",
+  "type": "annotationOverlayRequested",
+  "request": {
+    "id": "annotations-rect-text-001",
+    "mode": "replace",
+    "contextId": "context-route-001",
+    "contextGeneration": 1,
+    "screenId": "screen1",
+    "annotations": [
+      {
+        "id": "rect-text-1",
+        "shape": "rect",
+        "x": 320,
+        "y": 180,
+        "w": 220,
+        "h": 24,
+        "label": "Headline",
+        "spotlight": true,
+        "text": "월 반복 매출\n지난달 대비 12% 증가"
+      },
+      { "id": "rect-2", "shape": "rect", "x": 640, "y": 360, "w": 120, "h": 60, "label": "Start here" }
+    ],
+    "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
+    "screenshotSize": { "width": 1280, "height": 827 }
+  }
+}

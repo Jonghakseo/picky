@@ -448,7 +448,7 @@ struct PickyAgentAnnotation: Equatable, Codable, Identifiable {
     var pathCommands: [PickyAgentAnnotationPathCommand]?
     var spotlight: Bool
     let label: String?
-    /// Callout body for `.text` annotations; `rect` is the original text box.
+    /// Optional callout body for `.rect` annotations; `rect` is the source box.
     var text: String?
     let visualStyle: PickyAnnotationVisualStyle
 

@@ -33,11 +33,23 @@ describe("annotation validation", () => {
     expect(() => clampAnnotation({ id: "path", shape: "path", commands: [{ type: "move", x: 1, y: 1 }, { type: "line", x: 2, y: 2 }], spotlight: true }, screenshotSize)).toThrow("does not support spotlight");
   });
 
-  it("clamps TEXT boxes like rectangles and requires a bounded text body", () => {
-    expect(clampAnnotation({ id: "text", shape: "text", x: 90, y: 70, w: 30, h: 20, text: "  번역  " }, screenshotSize))
-      .toMatchObject({ x: 90, y: 70, w: 10, h: 10, text: "번역", clamped: true });
-    expect(() => clampAnnotation({ id: "text", shape: "text", x: 1, y: 1, w: 2, h: 2, text: "   " }, screenshotSize)).toThrow("text requires");
-    expect(() => clampAnnotation({ id: "text", shape: "text", x: 1, y: 1, w: 2, h: 2, text: "a".repeat(501) }, screenshotSize)).toThrow("text requires");
-    expect(() => clampAnnotation({ id: "text", shape: "text", x: 1, y: 1, w: 2, h: 2, text: "a", spotlight: true }, screenshotSize)).toThrow("does not support spotlight");
+  it("clamps a rect carrying a translation body and keeps its label and spotlight", () => {
+    expect(clampAnnotation({ id: "rect", shape: "rect", x: 90, y: 70, w: 30, h: 20, text: "  번역\n두 줄  ", label: "제목", spotlight: true }, screenshotSize))
+      .toMatchObject({ x: 90, y: 70, w: 10, h: 10, text: "번역\n두 줄", label: "제목", spotlight: true, clamped: true });
+  });
+
+  it("rejects an empty or oversized rect body instead of drawing a bare rectangle", () => {
+    expect(() => clampAnnotation({ id: "rect", shape: "rect", x: 1, y: 1, w: 2, h: 2, text: "   " }, screenshotSize)).toThrow("rect text requires");
+    expect(() => clampAnnotation({ id: "rect", shape: "rect", x: 1, y: 1, w: 2, h: 2, text: "가".repeat(501) }, screenshotSize)).toThrow("rect text requires");
+  });
+
+  it("rejects a translation body on shapes that cannot render one", () => {
+    expect(() => clampAnnotation({ id: "line", shape: "line", x1: 1, y1: 2, x2: 3, y2: 4, text: "번역" }, screenshotSize)).toThrow("line does not support text");
+    expect(() => clampAnnotation({
+      id: "path",
+      shape: "path",
+      commands: [{ type: "move", x: 1, y: 1 }, { type: "line", x: 2, y: 2 }],
+      text: "번역",
+    }, screenshotSize)).toThrow("path does not support text");
   });
 });

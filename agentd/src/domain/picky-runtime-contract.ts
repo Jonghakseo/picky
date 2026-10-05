@@ -72,7 +72,7 @@ function buildVisualOverlaySection(disabledBuiltinTools: ReadonlySet<string>): s
     "The `label` argument is optional for RECT, LINE, and PATH; omit it when no text label is needed.",
     "",
     "Drawing shapes:",
-    "- [RECT: x=<number> y=<number> w=<number> h=<number> label=\"short label\" spotlight]",
+    "- [RECT: x=<number> y=<number> w=<number> h=<number> label=\"short label\" spotlight text=\"optional translation\"]",
     "- [LINE: x1=<number> y1=<number> x2=<number> y2=<number> label=\"short label\" spotlight=true]",
     "- [PATH: d=\"M <x> <y> L <x> <y> C <c1x> <c1y> <c2x> <c2y> <x> <y>\" label=\"short label\"]",
     "- PATH `d` is a quoted, single-subpath SVG path using absolute screenshot coordinates. The canonical v1 subset is uppercase M (move), L (line), and C (cubic Bézier), with every command letter written explicitly. Start with exactly one M and use 2 to 32 total commands.",
@@ -84,10 +84,10 @@ function buildVisualOverlaySection(disabledBuiltinTools: ReadonlySet<string>): s
     "- Example (walking through several areas, tag first, then its sentence): [RECT: x=112 y=253 w=1416 h=238 label=\"Tags\"] The top Tags block classifies the error. [RECT: x=112 y=520 w=1416 h=300 label=\"Contexts\"] Below it, Contexts holds the runtime environment.",
     "",
     "Translating or explaining on-screen text:",
-    "- [TEXT: x=<number> y=<number> w=<number> h=<number> text=\"translated text\"] underlines the original text box and attaches a bubble with your text beside it. The original stays visible.",
-    "- Use the tight bounds of one original text block per TEXT tag, in reading order. `text` is required, at most 500 characters; write \\n for a line break. TEXT takes no label or spotlight.",
-    "- Prefer TEXT over reading a translation or explanation aloud. Do not repeat the TEXT contents in your reply; say only what the bubbles do not already show, e.g. that the translation is on screen.",
-    "- Example: [TEXT: x=40 y=92 w=520 h=36 text=\"<the heading translated into the user's language>\"] <one short sentence saying the translation is on screen>",
+    "- Add `text` to a RECT to attach a translation or explanation beside that box. The box marks the original text, which stays visible, and your `text` appears in a connected bubble.",
+    "- Use the tight bounds of one original text block per RECT, in reading order. `text` is at most 500 characters; write \\n for a line break. A RECT with `text` still accepts `label` and `spotlight`.",
+    "- Prefer a RECT `text` callout over reading a translation or explanation aloud. Do not repeat the callout contents in your reply; say only what the bubbles do not already show, e.g. that the translation is on screen.",
+    "- Example: [RECT: x=40 y=92 w=520 h=36 text=\"<the heading translated into the user's language>\"] <one short sentence saying the translation is on screen>",
   ];
 }
 
@@ -99,6 +99,6 @@ function buildReplyStyleSection(): string[] {
     "2. If awkward-to-hear details like URLs, file paths, session IDs, or code identifiers are necessary, place them inside parentheses `( ... )` at the end of the sentence. Picky's TTS layer automatically skips parenthesised content during playback while still showing it on screen.",
     "3. Keep every reply short: one or two sentences by default, never more than three unless the user asks for detail. Lead with the answer. Do not narrate which tools you used, restate the question, or add closing offers.",
     "4. When delegating to a Pickle or calling a tool, follow the tool-use rules above as-is; apply this reply style only to the text answer that goes directly to the user.",
-    "5. When TEXT callouts already show a translation or explanation, do not read their contents aloud again; still say at least one short sentence, following the visual overlay narration rules above.",
+    "5. When RECT `text` callouts already show a translation or explanation, do not read their contents aloud again; still say at least one short sentence, following the visual overlay narration rules above.",
   ];
 }

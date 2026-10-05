@@ -224,7 +224,7 @@ enum PickyAnnotationPaletteResolver {
 
     private static func samplePoints(for annotation: PickyAnnotationOverlayAnnotation) -> [CGPoint] {
         switch annotation.shape {
-        case .rect, .text:
+        case .rect:
             guard let x = annotation.x, let y = annotation.y,
                   let width = annotation.w, let height = annotation.h else { return [] }
             let steps = 12

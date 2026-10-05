@@ -77,6 +77,12 @@ enum PickyAnnotationOverlayResolver {
                 y: displayFrame.maxY - sourceY * yScale
             )
         }
+        let text = normalizedLabel(annotation.text)
+        if annotation.text != nil {
+            guard annotation.shape == .rect, let text, text.utf16.count <= PickyAnnotationOverlayAnnotation.maximumTextUTF16Length else {
+                throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "text")
+            }
+        }
         switch annotation.shape {
         case .rect:
             return PickyAgentAnnotation(
@@ -86,6 +92,7 @@ enum PickyAnnotationOverlayResolver {
                 rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
                 spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
+                text: text,
                 visualStyle: visualStyle
             )
         case .line:
@@ -97,22 +104,6 @@ enum PickyAnnotationOverlayResolver {
                 endPoint: try point(annotation.x2, annotation.y2, "x2", "y2"),
                 spotlight: annotation.spotlight ?? false,
                 label: normalizedLabel(annotation.label),
-                visualStyle: visualStyle
-            )
-        case .text:
-            guard annotation.spotlight == nil else {
-                throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "spotlight")
-            }
-            guard let text = normalizedLabel(annotation.text) else {
-                throw PickyAnnotationOverlayResolveError.invalidGeometry(annotationID: annotation.id, field: "text")
-            }
-            return PickyAgentAnnotation(
-                id: annotation.id,
-                shape: annotation.shape,
-                displayFrame: displayFrame,
-                rect: try rect(annotation, displayFrame: displayFrame, xScale: xScale, yScale: yScale),
-                label: nil,
-                text: text,
                 visualStyle: visualStyle
             )
         case .path:

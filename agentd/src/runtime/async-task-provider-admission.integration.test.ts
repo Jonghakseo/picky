@@ -46,9 +46,8 @@ function completionText(request: unknown, taskId: string): string {
 // Keep required async-provider coverage independent of optional, historical
 // memory/cron integration suites that use PICKY_TEST_EXTENSION_ROOT.
 function providerPackageRoot(): string {
-  const root = process.env.PICKY_TEST_ASYNC_PROVIDER_ROOT ?? process.env.PICKY_TEST_EXTENSION_ROOT;
-  if (!root) throw new Error("PICKY_TEST_ASYNC_PROVIDER_ROOT must name the provider package root");
-  return root;
+  return process.env.PICKY_TEST_ASYNC_PROVIDER_ROOT ?? process.env.PICKY_TEST_EXTENSION_ROOT
+    ?? fileURLToPath(new URL("../../vendor/async-task-providers", import.meta.url));
 }
 
 // bash_async (0.2.3+) delivers a completion inside the same agent run when the job finishes

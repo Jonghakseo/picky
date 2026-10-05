@@ -173,6 +173,9 @@ export const PickyMainActivitySchema = z.object({
   status: z.enum(["running", "succeeded", "failed"]).optional(),
   argsPreview: z.string().optional(),
   thinkingPreview: z.string().optional(),
+  /** A finished `read` that returned an image: the absolute path on disk, so the phone can show it. */
+  imagePath: z.string().optional(),
+  imageMimeType: z.string().optional(),
 });
 export type PickyMainActivity = z.infer<typeof PickyMainActivitySchema>;
 export const PickyTodoTaskSchema = z.object({

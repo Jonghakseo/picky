@@ -8,7 +8,17 @@
  *
  * Pure, so the allowlist can be tested without a filesystem.
  */
-import type { PickyAgentSession } from "../protocol.js";
+/**
+ * The parts of a conversation that can mention a file. A Pickle's session
+ * satisfies it as is; the Picky room builds one from its transcript.
+ */
+export interface FileReferenceSource {
+  cwd?: string;
+  messages?: ReadonlyArray<{ text?: string }>;
+  tools?: ReadonlyArray<{ argsPreview?: string }>;
+  artifacts?: ReadonlyArray<{ path?: string }>;
+  changedFiles?: ReadonlyArray<{ path?: string }>;
+}
 
 /** Tool arguments that name a file. Mirrors the HUD's tool-detail rendering. */
 const PATH_ARGUMENT_KEYS = new Set(["path", "file_path", "filePath", "paths", "image", "images", "imagePath", "image_path"]);
@@ -16,7 +26,7 @@ const PATH_ARGUMENT_KEYS = new Set(["path", "file_path", "filePath", "paths", "i
 /** `[label](target)`, including the `<...>` form and an optional title. */
 const MARKDOWN_LINK = /\[(?:\\.|[^\]\\])*\]\(\s*(<[^>]*>|[^()\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
 
-export function extractFileReferences(session: PickyAgentSession): string[] {
+export function extractFileReferences(session: FileReferenceSource): string[] {
   const references = new Set<string>();
 
   for (const message of session.messages ?? []) {

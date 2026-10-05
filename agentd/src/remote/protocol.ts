@@ -84,6 +84,12 @@ export interface RemoteMainMessage {
   role: "user" | "assistant";
   text: string;
   createdAt: string;
+  /**
+   * An image the main agent read (`text` is empty). The daemon's transcript is
+   * text only, so the gateway records these from finished `read` activity;
+   * they last as long as the gateway process.
+   */
+  image?: { path: string; mimeType?: string; toolName: string };
 }
 
 export interface RemoteMainState {

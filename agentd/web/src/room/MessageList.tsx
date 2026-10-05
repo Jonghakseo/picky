@@ -256,6 +256,18 @@ function MainRows({ main, send, actions, now }: MessageListProps & { main: Remot
       previousDay = at;
     }
     const time = at === null ? null : timeOfDay(at, language);
+    const image = message.image;
+    if (image) {
+      rows.push(
+        <ToolImageBubble
+          key={message.id}
+          toolImage={{ toolName: image.toolName, path: image.path, ...(image.mimeType ? { mimeType: image.mimeType } : {}) }}
+          src={actions.fileUrl(image.path)}
+          onOpen={() => actions.openFile(image.path)}
+        />,
+      );
+      continue;
+    }
     rows.push(
       message.role === "user" ? (
         <UserBubble

@@ -38,8 +38,28 @@ export interface MainConversationListener {
   onStateReplaced: (state: RemoteMainState) => void;
 }
 
+/** Images kept for the Picky room; older ones drop off like the HUD's 100-message transcript. */
+export const MAIN_IMAGE_RETENTION = 50;
+
+/**
+ * The daemon transcript and the gateway's image rows in time order. Ties keep
+ * the image after the text, which is the order they happened in a turn.
+ */
+export function mergeMainTranscript(texts: readonly RemoteMainMessage[], images: readonly RemoteMainMessage[]): RemoteMainMessage[] {
+  if (images.length === 0) return [...texts];
+  const merged: RemoteMainMessage[] = [];
+  let next = 0;
+  for (const text of texts) {
+    while (next < images.length && images[next].createdAt < text.createdAt) merged.push(images[next++]);
+    merged.push(text);
+  }
+  while (next < images.length) merged.push(images[next++]);
+  return merged;
+}
+
 export class MainConversation {
   private messages: RemoteMainMessage[] = [];
+  private images: RemoteMainMessage[] = [];
   private activity?: PickyMainActivity;
   private pendingQuestion?: PickyExtensionUiRequest;
   private turnInFlight = false;
@@ -48,7 +68,7 @@ export class MainConversation {
 
   state(): RemoteMainState {
     return {
-      messages: this.messages,
+      messages: mergeMainTranscript(this.messages, this.images),
       ...(this.activity ? { activity: this.activity } : {}),
       ...(this.pendingQuestion ? { pendingQuestion: this.pendingQuestion } : {}),
       busy: this.busy,
@@ -72,6 +92,18 @@ export class MainConversation {
 
   lastUpdatedAt(): string | undefined {
     return this.messages.at(-1)?.createdAt;
+  }
+
+  /**
+   * What the Picky room mentions, for the file API: link targets in the
+   * replies and the images it read. Same rule as a Pickle room: the phone opens
+   * a file only because the conversation already points at it.
+   */
+  fileReferences(): { messages: Array<{ text: string }>; artifacts: Array<{ path: string }> } {
+    return {
+      messages: this.messages.map((message) => ({ text: message.text })),
+      artifacts: this.images.flatMap((message) => (message.image ? [{ path: message.image.path }] : [])),
+    };
   }
 
   replaceMessages(messages: readonly PickyMainAgentMessage[]): void {
@@ -98,6 +130,7 @@ export class MainConversation {
 
   reset(): void {
     this.messages = [];
+    this.images = [];
     this.activity = undefined;
     this.pendingQuestion = undefined;
     this.turnInFlight = false;
@@ -124,6 +157,7 @@ export class MainConversation {
       }
       case "mainActivityUpdated":
         this.activity = event.activity as PickyMainActivity | undefined;
+        this.recordImage(this.activity);
         this.listener.onActivity(this.activity, this.busy);
         return true;
       case "mainExtensionUiRequested":
@@ -146,5 +180,25 @@ export class MainConversation {
       default:
         return false;
     }
+  }
+
+  /** A finished `read` that returned an image becomes a row, as `toolImage` does in a Pickle. */
+  private recordImage(activity: PickyMainActivity | undefined): void {
+    if (activity?.kind !== "tool" || activity.status !== "succeeded" || !activity.imagePath) return;
+    const id = `image:${activity.toolCallId ?? activity.imagePath}`;
+    if (this.images.some((held) => held.id === id)) return;
+    const message: RemoteMainMessage = {
+      id,
+      role: "assistant",
+      text: "",
+      createdAt: new Date().toISOString(),
+      image: {
+        path: activity.imagePath,
+        toolName: activity.toolName ?? "read",
+        ...(activity.imageMimeType ? { mimeType: activity.imageMimeType } : {}),
+      },
+    };
+    this.images = [...this.images, message].slice(-MAIN_IMAGE_RETENTION);
+    this.listener.onMessage(message);
   }
 }

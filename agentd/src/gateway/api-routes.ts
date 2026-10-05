@@ -245,7 +245,7 @@ export class ApiRouter {
     if (!device) return undefined;
     const sessionId = facts.url.searchParams.get("sessionId") ?? "";
     const requestedPath = facts.url.searchParams.get("path") ?? "";
-    const session = this.core.session(sessionId);
+    const session = this.core.fileReferenceSource(sessionId);
     if (!session || !requestedPath) {
       sendError(response, remoteError("notFound", "That file is not part of this conversation."));
       return undefined;

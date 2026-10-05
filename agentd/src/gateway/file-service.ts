@@ -12,15 +12,14 @@
 import { open, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import type { PickyAgentSession } from "../protocol.js";
 import { REMOTE_LIMITS } from "../remote/constants.js";
 import type { RemoteFileKind } from "../remote/protocol.js";
-import { extractFileReferences } from "./file-references.js";
+import { extractFileReferences, type FileReferenceSource } from "./file-references.js";
 
 export const MAX_PREVIEW_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export interface FileAccessContext {
-  session: PickyAgentSession;
+  session: FileReferenceSource;
   home?: string;
 }
 

@@ -23,6 +23,7 @@ import type { PickyAgentSession } from "../protocol.js";
 import type { RemoteMacState, RemoteRoom, RemoteServerMessage } from "../remote/protocol.js";
 import type { HubRequest } from "../remote/hub-protocol.js";
 import type { CommandContext } from "./command-executor.js";
+import type { FileReferenceSource } from "./file-references.js";
 import type { GatewayConfig } from "./config.js";
 import type { PushFetch } from "./push/sender.js";
 
@@ -154,6 +155,12 @@ export class GatewayCore {
 
   session(sessionId: string): PickyAgentSession | undefined {
     return this.daemons.projection(sessionId);
+  }
+
+  /** What a room has mentioned, for `/api/files/*`. The Picky room has no projection of its own. */
+  fileReferenceSource(roomId: string): FileReferenceSource | undefined {
+    if (roomId === MAIN_ROOM_ID) return this.main.fileReferences();
+    return this.session(roomId);
   }
 
   /* --------------------------------------------------------------- */

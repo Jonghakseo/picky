@@ -504,6 +504,15 @@ export const demoMain: RemoteMainState = {
   messages: [
     { id: "mm1", role: "user", text: "오늘 돌린 Pickle 중에 실패한 거 정리해 줘", createdAt: at(26) },
     { id: "mm2", role: "assistant", text: "실패는 하나예요. 알림 큐 마이그레이션이 pnpm build 종료 코드 1로 멈췄어요.", createdAt: at(25) },
+    { id: "mm2b", role: "user", text: "이 화면도 봐 줘", createdAt: at(24) },
+    {
+      id: "image:mm-read",
+      role: "assistant",
+      text: "",
+      createdAt: at(24),
+      image: { path: "/Users/you/Pickles/picky/build/render-gallery/read-image/tool-image-landscape.png", mimeType: "image/png", toolName: "read" },
+    },
+    { id: "mm2c", role: "assistant", text: "실패한 빌드 로그 화면이네요. 종료 코드 1이 마지막 줄에 있어요.", createdAt: at(23) },
     { id: "mm3", role: "user", text: "원격 접속도 켜 줘", createdAt: at(2) },
   ],
 };

@@ -4755,6 +4755,20 @@ describe("SessionSupervisor", () => {
     });
   });
 
+  it("names the image a finished main read returned", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-activity-image-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const activities: Array<Record<string, unknown> | undefined> = [];
+    supervisor.on("mainActivity", (activity) => activities.push(activity));
+
+    await supervisor.route(context("look at this"));
+    mainRuntime.handle?.emit({ type: "tool", toolCallId: "tool-main-img", name: "read", status: "succeeded", imagePath: "/tmp/shot.png", imageMimeType: "image/png" });
+    await settle();
+
+    expect(activities.at(-1)).toMatchObject({ toolCallId: "tool-main-img", status: "succeeded", imagePath: "/tmp/shot.png", imageMimeType: "image/png" });
+  });
+
   it("throttles main thinking activity and clears it after a terminal status", async () => {
     vi.useFakeTimers();
     try {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { extractFileReferences } from "./file-references.js";
 import { MainConversation } from "./main-conversation.js";
 
 /** What a phone in the Picky room sees: the last `busy` the gateway broadcast. */
@@ -64,5 +65,49 @@ describe("the Picky room's running state", () => {
     aborted.main.handleEvent({ type: "mainActivityUpdated", activity: { kind: "tool", toolName: "bash", status: "running" } });
     aborted.main.markTurnSettled();
     expect(aborted.busy()).toBe(false);
+  });
+});
+
+describe("images the main agent read", () => {
+  const readImage = (toolCallId: string, imagePath: string) => ({
+    type: "mainActivityUpdated",
+    activity: { kind: "tool", toolCallId, toolName: "read", status: "succeeded", imagePath, imageMimeType: "image/jpeg" },
+  });
+
+  it("show up in the Picky room after the text before them, once each, and survive a transcript reload", () => {
+    const { main } = room();
+    main.handleEvent({ type: "mainMessagesSnapshot", messages: [{ role: "user", text: "이거 봐줘", createdAt: "2000-01-01T00:00:00.000Z" }] });
+    main.handleEvent(readImage("call-1", "/uploads/7973.jpg"));
+    main.handleEvent(readImage("call-1", "/uploads/7973.jpg"));
+    main.handleEvent({ type: "mainMessageAppended", message: { role: "assistant", text: "고양이네요", createdAt: "2999-01-01T00:00:00.000Z" } });
+
+    const rows = () => main.state().messages.map((message) => message.image?.path ?? message.text);
+    expect(rows()).toEqual(["이거 봐줘", "/uploads/7973.jpg", "고양이네요"]);
+
+    // The primary daemon re-sends its text-only transcript on reconnect.
+    main.handleEvent({
+      type: "mainMessagesSnapshot",
+      messages: [
+        { role: "user", text: "이거 봐줘", createdAt: "2000-01-01T00:00:00.000Z" },
+        { role: "assistant", text: "고양이네요", createdAt: "2999-01-01T00:00:00.000Z" },
+      ],
+    });
+    expect(rows()).toEqual(["이거 봐줘", "/uploads/7973.jpg", "고양이네요"]);
+    expect(main.lastAssistantText()).toBe("고양이네요");
+  });
+
+  it("ignore a read that is still running, failed, or returned text", () => {
+    const { main } = room();
+    main.handleEvent({ type: "mainActivityUpdated", activity: { kind: "tool", toolCallId: "a", toolName: "read", status: "running" } });
+    main.handleEvent({ type: "mainActivityUpdated", activity: { kind: "tool", toolCallId: "b", toolName: "read", status: "failed" } });
+    main.handleEvent({ type: "mainActivityUpdated", activity: { kind: "tool", toolCallId: "c", toolName: "read", status: "succeeded" } });
+    expect(main.state().messages).toEqual([]);
+  });
+
+  it("are files the Picky room may open, like its own reply links", () => {
+    const { main } = room();
+    main.handleEvent(readImage("call-1", "/uploads/7973.jpg"));
+    main.handleEvent({ type: "mainMessageAppended", message: { role: "assistant", text: "[보고서](/tmp/report.md)", createdAt: "2999-01-01T00:00:00.000Z" } });
+    expect(extractFileReferences(main.fileReferences()).sort()).toEqual(["/tmp/report.md", "/uploads/7973.jpg"]);
   });
 });

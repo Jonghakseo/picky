@@ -886,6 +886,8 @@ export class MainAgentCoordinator {
         toolName: event.name,
         status: event.status,
         argsPreview: event.argsPreview ?? event.preview,
+        ...(event.status === "succeeded" && event.imagePath ? { imagePath: event.imagePath } : {}),
+        ...(event.status === "succeeded" && event.imagePath && event.imageMimeType ? { imageMimeType: event.imageMimeType } : {}),
       });
       return;
     }

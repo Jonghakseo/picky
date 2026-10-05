@@ -137,7 +137,7 @@ When the user asks about a feature, start here before broad searching:
 - MCP servers (Pi built-in MCP, per-server `pickyScope`, Hub management): `agentd/src/runtime/picky-mcp.ts`, `agentd/src/runtime/mcp-server-admin.ts`, `Picky/Hub/Plugins/PickyHubMcpServers*.swift`, `Picky/Hub/Plugins/PickyMcpServerClient.swift`
 - Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/Artifacts/` (`PickyArtifactReporter.swift`, `PickyReportViewer.swift`)
 - Pi extension handoff command: `pi-extensions/picky-handoff/`
-- Remote phone access through a PWA (plan, not implemented): `docs/remote-pwa-plan.md` holds the decisions, security layers, UX parity rules, and phase pass criteria. Overlapping Telegram plan: `docs/telegram-remote-main-mvp-plan.md`
+- Remote phone access through a PWA: `docs/remote-pwa-plan.md` holds the decisions, security layers, UX parity rules, phase pass criteria, and open device checks; `docs/remote-pwa-implementation.md` describes the gateway (`agentd/src/gateway/`), the PWA (`agentd/web/`), and the Swift hub (`Picky/Remote/`)
 - HUD perf instrumentation / profiling playbook: `Picky/Feedback/PickyPerf.swift`, `docs/perf-profiling.md` (use this before guessing at HUD lag root causes)
 - Swift Concurrency guidelines (MainActor-first, measure before optimizing, GCD migration): `docs/swift-concurrency.md` (follow this when adding/refactoring async Swift code)
 - Refactoring principles and safety gates: `docs/refactoring-principles.md` (follow this before structural splits; establish characterization coverage first, reusing existing tests where sufficient, extract pure policies before splitting facades, keep line-count checks warning-first, and preserve the Picky neutral-context / Pi-intent boundary)

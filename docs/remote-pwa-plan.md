@@ -93,7 +93,7 @@ flowchart TB
 - 폰 조작이 맥 HUD에서 선택된 세션을 바꾸지 않게 한다. 지금 `PickySessionViewModel.followUp`은 `select`를 호출한다.
 - `abortRestoringQueuedInputs`는 대기 입력을 맥 composer에 되돌린다. 폰에서 중단할 때는 폰 쪽으로 되돌리는 처리가 따로 필요하다.
 
-`remote` 출처 값은 모델이 "사용자가 맥 앞에 없다"는 것을 알아야 하는 문제가 3단계에서 확인될 때만 추가한다. `docs/telegram-remote-main-mvp-plan.md`도 같은 이유로 `remote`를 제안해 두었으므로, 추가하게 되면 함께 진행한다.
+`remote` 출처 값은 모델이 "사용자가 맥 앞에 없다"는 것을 알아야 하는 문제가 3단계에서 확인될 때만 추가한다.
 
 ## 화면
 
@@ -223,12 +223,12 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
 
 - iOS 홈 화면 앱에서 Access 로그인이 유지되는지 확인한다(2단계 실기기). 범위 밖 링크는 Safari View Controller로 열리므로, 로그인 뒤 쿠키가 앱에 남는지 확실하지 않다. 안 되면 Cloudflare 경로는 Access 없이 gateway 인증과 엣지 방어로 운영한다.
 - 홈 화면 앱 안에서 카메라로 QR을 스캔할 수 있는지 확인한다(2단계). 안 되면 코드 입력 방식에 시도 횟수 제한을 둔다.
-- 텔레그램 원격 계획과의 관계를 정한다. 같은 원격 감독 수요를 다루므로 둘 다 진행할지 결정해야 한다.
 - 실기기 확인이 남았다. 2026-10-05 Android(Galaxy Z Fold8, Chrome 154)를 USB로 dev 하네스에 붙여 페어링, 방 목록, 한글 입력과 보내기, 사진 첨부, 연결 끊김과 재연결을 확인했고, 폰 녹음 파일이 맥(`AVAudioFile`)에서 열리는 것까지 봤다. 재시작한 실제 앱, iPhone 홈 화면 앱, 두 입구(Tailscale Serve, Cloudflare Tunnel), 잠긴 폰의 푸시 수신(그 폰 Chrome이 알림 요청을 거부하도록 설정돼 있었다), 맥 음성 인식 서비스 네 가지는 아직 실기기로 확인하지 않았다.
-- 알림에서 바로 답하기(확인·선택 질문)는 Android Chrome에서만 된다. iOS Safari는 알림 버튼(`actions`)을 지원하지 않는다([MDN](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification#browser_compatibility)). 넣는다면 pi-pocket처럼 질문 전체가 알림에 다 보일 때만 버튼을 준다.
 
 구현하며 닫은 항목:
 
 - 복구 스냅샷이 앱의 projection 처리와 섞이는 문제와 앱 메인 스레드 중계 비용은 결정 8로 없어졌다. gateway가 데몬에 직접 붙고, 데몬은 복구 요청을 소켓별로 처리한다.
 - 방 목록은 목업 검수에서 기본안(Picky 방 고정, 최근 활동 순, 그룹 필터, 읽음 공유)으로 확정했다.
 - PWA는 Preact와 `@preact/signals`로 만들었다(`docs/remote-pwa-implementation.md` 4절).
+- 알림에서 바로 답하기는 넣지 않는다(2026-10-05 결정). Android Chrome에서만 되고 iOS Safari는 알림 버튼(`actions`)을 지원하지 않는다([MDN](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification#browser_compatibility)). 알림을 누르면 그 방이 열리는 동작만 둔다.
+- 텔레그램 원격 계획은 진행하지 않기로 하고 문서를 지웠다(2026-10-05). 원격 감독은 이 PWA로 한다.

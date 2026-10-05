@@ -22,8 +22,8 @@ enum PickyConversationHistoryWindowPolicy {
     /// daemon no longer trims the journal for the app: a projection snapshot
     /// carries the whole message list, so this window is purely a render
     /// decision and "Load more" walks backwards through what already arrived.
-    static let baseTurnCount = 10
-    static let loadMoreTurnStep = 10
+    static let baseTurnCount = 5
+    static let loadMoreTurnStep = 5
 
     /// Index of the first message to render, or nil when every message is visible
     /// (fewer user turns than the base window, or no `userText` at all).

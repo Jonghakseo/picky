@@ -120,8 +120,8 @@ struct PickyConversationListView: View {
             ZStack {
                 ScrollView(.vertical, showsIndicators: false) {
                     // Eager VStack instead of LazyVStack: `visibleMessages` already
-                    // trims to the last ten user turns (older history loads in
-                    // ten-turn steps via the pill below), so the row
+                    // trims to the last five user turns (older history loads in
+                    // five-turn steps via the pill below), so the row
                     // count is bounded and laziness gains little. Lazy materialization
                     // also broke `proxy.scrollTo(bottomAnchorID, anchor: .bottom)`
                     // for long-content sessions: the 1pt sentinel hadn't been laid
@@ -720,8 +720,8 @@ struct PickyConversationListView: View {
         visibleQueue.steers
     }
 
-    /// 카드 안에는 기본적으로 마지막 10개 user turn부터 끝까지 노출.
-    /// "이전 턴 더 보기" 버튼이 anchor(user_text id)를 뒤로 옮겨 10턴씩 확장하며,
+    /// 카드 안에는 기본적으로 마지막 5개 user turn부터 끝까지 노출.
+    /// "이전 턴 더 보기" 버튼이 anchor(user_text id)를 뒤로 옮겨 5턴씩 확장하며,
     /// anchor는 절대 id라 새 턴이 스트리밍돼도 펼친 히스토리는 유지된다.
     /// 정책은 `PickyConversationHistoryWindowPolicy` 참조.
     var visibleMessages: [PickySessionMessage] {

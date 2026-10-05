@@ -61,6 +61,36 @@ export function slashCompletion(text: string, caret: number | undefined, command
   return { text: `${name} ${remainder}`, caret: name.length + 1 };
 }
 
+export type SlashKeyAction = "none" | "next" | "previous" | "accept" | "dismiss";
+
+/**
+ * Keys inside the open suggestion list, as the HUD composer handles them:
+ * arrows move the selection, Return or Tab takes it, Esc closes the list.
+ * Only a hardware keyboard sends arrows. Return and Tab take a row only once
+ * the composer knows a hardware keyboard is in use (`keyboard`), so a phone
+ * keyboard's Return still starts a new line. Return with Shift, Option or
+ * Command keeps its composer meaning.
+ */
+export function slashKeyAction(event: {
+  key: string;
+  shiftKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  composing: boolean;
+  keyboard: boolean;
+}): SlashKeyAction {
+  if (event.composing) return "none";
+  const modified = event.altKey || event.metaKey || event.ctrlKey;
+  if (event.key === "ArrowDown" && !modified) return "next";
+  if (event.key === "ArrowUp" && !modified) return "previous";
+  if (event.key === "Escape") return "dismiss";
+  if (!event.keyboard) return "none";
+  if (event.key === "Enter" && !event.shiftKey && !modified) return "accept";
+  if (event.key === "Tab" && !event.shiftKey && !modified) return "accept";
+  return "none";
+}
+
 /** Parses the gateway's `session.slashCommands` answer, dropping anything malformed. */
 export function parseSlashCommands(data: unknown): SlashCommand[] {
   const list = (data as { commands?: unknown } | null)?.commands;

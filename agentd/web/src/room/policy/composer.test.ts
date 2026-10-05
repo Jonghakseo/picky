@@ -105,12 +105,12 @@ describe("Return key", () => {
   const key = (overrides: Partial<Parameters<typeof returnKeyAction>[0]> = {}) =>
     returnKeyAction({ key: "Enter", shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, composing: false, hardwareKeyboard: true, ...overrides });
 
-  it("sends with a keyboard the way the HUD does, and opens send timing with Command or Control", () => {
+  it("sends with a keyboard the way the HUD does", () => {
     expect(key()).toBe("submit");
     expect(key({ shiftKey: true })).toBe("newline");
     expect(key({ altKey: true })).toBe("submitAfterReply");
-    expect(key({ metaKey: true })).toBe("openSendTiming");
-    expect(key({ ctrlKey: true })).toBe("openSendTiming");
+    // The HUD has no Command-Return of its own; it sends like Return.
+    expect(key({ metaKey: true })).toBe("submit");
   });
 
   it("leaves Return alone while Korean is composing and on a phone keyboard", () => {

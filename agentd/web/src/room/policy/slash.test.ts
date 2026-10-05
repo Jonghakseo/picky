@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parseSlashCommands, slashCompletion, slashSuggestions, type SlashCommand } from "./slash";
+import { parseSlashCommands, slashCompletion, slashKeyAction, slashSuggestions, type SlashCommand } from "./slash";
 
 const commands: SlashCommand[] = [
   { name: "skill:review", source: "skill" },
@@ -52,5 +52,29 @@ describe("the gateway's command list", () => {
     expect(parseSlashCommands({ commands: [{ name: "a", source: "skill", description: "d" }, { name: "" }, null, { name: "b", source: "weird" }] }))
       .toEqual([{ name: "a", source: "skill", description: "d" }, { name: "b", source: "extension" }]);
     expect(parseSlashCommands(null)).toEqual([]);
+  });
+});
+
+describe("keys in the open list", () => {
+  const press = (key: string, overrides: Partial<Parameters<typeof slashKeyAction>[0]> = {}) =>
+    slashKeyAction({ key, shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, composing: false, keyboard: true, ...overrides });
+
+  it("moves with the arrows, takes the row with Return or Tab, and closes with Esc", () => {
+    expect(press("ArrowDown")).toBe("next");
+    expect(press("ArrowUp")).toBe("previous");
+    expect(press("Enter")).toBe("accept");
+    expect(press("Tab")).toBe("accept");
+    expect(press("Escape")).toBe("dismiss");
+  });
+
+  it("leaves Shift-Return, Option-Return and an IME commit to the composer", () => {
+    expect(press("Enter", { shiftKey: true })).toBe("none");
+    expect(press("Enter", { altKey: true })).toBe("none");
+    expect(press("Enter", { composing: true })).toBe("none");
+  });
+
+  it("keeps a phone keyboard's Return as a new line until a hardware key is seen", () => {
+    expect(press("Enter", { keyboard: false })).toBe("none");
+    expect(press("ArrowDown", { keyboard: false })).toBe("next");
   });
 });

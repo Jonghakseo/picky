@@ -31,7 +31,7 @@ import {
 } from "../policy/composer";
 import { sendTimingOptions } from "../policy/schedule";
 import type { SlashCommand } from "../policy/slash";
-import { SLASH_SOURCE_LABEL, parseSlashCommands, slashCompletion, slashQuery, slashSuggestions } from "../policy/slash";
+import { SLASH_SOURCE_LABEL, parseSlashCommands, slashCompletion, slashKeyAction, slashQuery, slashSuggestions } from "../policy/slash";
 import type { AbortScope, StopChoice } from "../policy/stop";
 import { stopChoiceForSession } from "../policy/stop";
 import { locale } from "../i18n";
@@ -83,13 +83,18 @@ export function Composer(props: ComposerProps): JSX.Element {
   const editor = useRef<HTMLTextAreaElement | null>(null);
   const [caret, setCaret] = useState<number | undefined>(undefined);
   const slash = useSlashCommands(isMain ? null : sessionId, isMain ? null : slashQuery(draft, caret ?? draft.length), actions);
-  const hardwareKeyboard = useHardwareKeyboard();
+  const pointerKeyboard = useHardwareKeyboard();
+  // An arrow key proves a hardware keyboard even where the pointer is a finger
+  // (an iPad with a keyboard case), so Return then takes the selected row.
+  const [keyboardSeen, setKeyboardSeen] = useState(false);
+  const hardwareKeyboard = pointerKeyboard || keyboardSeen;
   // Esc hides the list for the draft it was pressed on; typing brings it back.
   const [slashDismissedFor, setSlashDismissedFor] = useState<string | null>(null);
   const suggestions = slash && slashDismissedFor !== draft ? slashSuggestions(draft, caret, slash) : [];
   const [slashIndex, setSlashIndex] = useState(0);
   const selectedSlash = Math.min(slashIndex, Math.max(0, suggestions.length - 1));
   const pendingCaret = useRef<number | null>(null);
+  const slashListId = `slash-${sessionId}`;
 
   const status = session?.status ?? "waiting_for_input";
   const sendStatus = submitStatus(status, session?.agentCycle?.phase);
@@ -134,27 +139,37 @@ export function Composer(props: ComposerProps): JSX.Element {
   const trackCaret = (event: JSX.TargetedEvent<HTMLTextAreaElement>): void => setCaret(event.currentTarget.selectionStart);
 
   /** Arrow keys move through the slash list, Return or Tab take the row, Esc closes it, as in the HUD. */
-  function handleSlashKey(event: JSX.TargetedKeyboardEvent<HTMLTextAreaElement>): boolean {
+  function handleSlashKey(event: JSX.TargetedKeyboardEvent<HTMLTextAreaElement>, composingNow: boolean): boolean {
     const count = suggestions.length;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      setSlashIndex((selectedSlash + step + count) % count);
-      return true;
+    const action = slashKeyAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      composing: composingNow,
+      keyboard: hardwareKeyboard,
+    });
+    if (action === "none") return false;
+    event.preventDefault();
+    switch (action) {
+      case "next":
+      case "previous": {
+        setKeyboardSeen(true);
+        const step = action === "next" ? 1 : -1;
+        setSlashIndex((selectedSlash + step + count) % count);
+        break;
+      }
+      case "accept": {
+        const command = suggestions[selectedSlash];
+        if (command) acceptSlash(command);
+        break;
+      }
+      case "dismiss":
+        setSlashDismissedFor(draft);
+        break;
     }
-    const plainReturn = event.key === "Enter" && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey;
-    if (plainReturn || (event.key === "Tab" && !event.shiftKey)) {
-      event.preventDefault();
-      const command = suggestions[selectedSlash];
-      if (command) acceptSlash(command);
-      return true;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setSlashDismissedFor(draft);
-      return true;
-    }
-    return false;
+    return true;
   }
 
   function closeTiming(): void {
@@ -255,7 +270,13 @@ export function Composer(props: ComposerProps): JSX.Element {
       <Note edit={props.edit} online={props.online} macConnected={props.macConnected} attachments={attachments} />
       <div class="room-composer">
         {suggestions.length > 0 ? (
-          <SlashPanel suggestions={suggestions} selectedIndex={hardwareKeyboard ? selectedSlash : -1} onAccept={acceptSlash} />
+          <SlashPanel
+            id={slashListId}
+            suggestions={suggestions}
+            selectedIndex={hardwareKeyboard ? selectedSlash : -1}
+            onHover={setSlashIndex}
+            onAccept={acceptSlash}
+          />
         ) : null}
         <div class={`composer is-${border}`}>
           {attachments.length > 0 ? (
@@ -284,6 +305,13 @@ export function Composer(props: ComposerProps): JSX.Element {
             rows={1}
             value={draft}
             placeholder={placeholder}
+            // A combobox: the caret stays in the field while the list's active row
+            // is announced, so arrow navigation works with VoiceOver too.
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={suggestions.length > 0}
+            aria-controls={suggestions.length > 0 ? slashListId : undefined}
+            aria-activedescendant={suggestions.length > 0 && hardwareKeyboard ? slashOptionId(slashListId, selectedSlash) : undefined}
             onInput={(event: JSX.TargetedEvent<HTMLTextAreaElement>) => {
               setCaret(event.currentTarget.selectionStart);
               onDraft(event.currentTarget.value);
@@ -303,7 +331,7 @@ export function Composer(props: ComposerProps): JSX.Element {
                 event.stopPropagation();
                 return;
               }
-              if (hardwareKeyboard && suggestions.length > 0 && !imeComposing && handleSlashKey(event)) return;
+              if (suggestions.length > 0 && handleSlashKey(event, imeComposing)) return;
               const action = returnKeyAction({
                 key: event.key,
                 shiftKey: event.shiftKey,
@@ -315,10 +343,6 @@ export function Composer(props: ComposerProps): JSX.Element {
               });
               if (action === "none" || action === "newline") return;
               event.preventDefault();
-              if (action === "openSendTiming") {
-                if (!isMain && canSend && props.online && props.macConnected) setTimingOpen(true);
-                return;
-              }
               if (!sendEnabled) return;
               // The Picky room has no "after this reply": its queue is the main agent's.
               void submit(action === "submitAfterReply" && afterReplyKind !== null ? afterReplyKind : submitKind);
@@ -483,14 +507,23 @@ function useSlashCommands(sessionId: string | null, query: string | null, action
 }
 
 /** Rows above the composer, as `PickyComposerAutocompletePanelView` draws them. */
+function slashOptionId(listId: string, index: number): string {
+  return `${listId}-option-${index}`;
+}
+
 function SlashPanel({
+  id,
   suggestions,
   selectedIndex,
+  onHover,
   onAccept,
 }: {
+  id: string;
   suggestions: SlashCommand[];
   /** Keyboard selection; -1 on a touch screen, where rows are only tapped. */
   selectedIndex: number;
+  /** A pointer over a row moves the keyboard selection to it, as in the HUD. */
+  onHover: (index: number) => void;
   onAccept: (command: SlashCommand) => void;
 }): JSX.Element {
   const panel = useRef<HTMLDivElement | null>(null);
@@ -498,10 +531,16 @@ function SlashPanel({
     panel.current?.querySelector(".slash-row.is-selected")?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
   return (
-    <div class="slash-panel" role="listbox" aria-label={t("remote.room.slash.accessibilityLabel")} ref={panel}>
+    <div class="slash-panel" id={id} role="listbox" aria-label={t("remote.room.slash.accessibilityLabel")} ref={panel}>
       {suggestions.map((command, index) => (
         <button
           key={`${command.source}:${command.name}`}
+          id={slashOptionId(id, index)}
+          // The caret stays in the composer; rows are reached with the arrows.
+          tabIndex={-1}
+          onPointerEnter={(event: PointerEvent) => {
+            if (event.pointerType === "mouse") onHover(index);
+          }}
           class={`slash-row${index === selectedIndex ? " is-selected" : ""}`}
           type="button"
           role="option"

@@ -27,8 +27,7 @@ struct PickyConversationComposerView: View {
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
     let focusRequestID: Int
-    /// Bumped by the HUD when Esc outside this editor should stop the run.
-    let stopRequestID: Int
+    let stopRequestID: Int // bumped by the HUD when Esc outside the editor should stop
     let focusStackHeightTier: PickyConversationFocusStackHeightTier
     let isUtilityPanelOpen: Bool
     let isCommandShortcutHintVisible: Bool
@@ -220,9 +219,7 @@ struct PickyConversationComposerView: View {
         .onChange(of: focusRequestID) { _, _ in
             focusComposerIfPossible()
         }
-        .onChange(of: stopRequestID) { _, _ in
-            stopIfPossible()
-        }
+        .onChange(of: stopRequestID) { _, _ in stopIfPossible() }
         .onChange(of: scheduledNow) { _, presentation in
             scheduled.reconcile(with: presentation)
         }
@@ -817,9 +814,7 @@ struct PickyConversationComposerView: View {
             commands.clearScreenContextTarget(sessionID: session.id)
             return true
         }
-        // Esc in the composer never falls through to the panel's
-        // cancelOperation (which would close the card mid-sentence). It stops a
-        // running Pickle, keeping the draft, and is a no-op otherwise.
+        // Never fall through to the panel's cancelOperation, which closes the card.
         stopIfPossible()
         return true
     }

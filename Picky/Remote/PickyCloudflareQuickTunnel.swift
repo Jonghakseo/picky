@@ -60,7 +60,12 @@ enum PickyCloudflaredCLI {
     static func arguments(port: Int) -> [String] {
         // `--no-autoupdate`: an update would restart the process and change the
         // address under a paired phone.
-        ["tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:\(port)"]
+        // `--protocol http2`: without the flag a Quick Tunnel pins QUIC and never
+        // falls back, so a network that drops UDP 7844 leaves it retrying
+        // forever with no address. `auto` does fall back, but only after about
+        // two and a half minutes of failed QUIC dials. HTTP/2 over TCP works
+        // on those networks and only covers the Mac-to-Cloudflare hop.
+        ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://127.0.0.1:\(port)"]
     }
 }
 

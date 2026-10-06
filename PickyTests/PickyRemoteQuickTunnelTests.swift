@@ -72,7 +72,7 @@ struct PickyRemoteQuickTunnelTests {
         try await waitUntil("the stand-in starts") { sandbox.arguments != nil }
         try await Task.sleep(nanoseconds: 300_000_000)
         #expect(tunnel.state == .starting)
-        #expect(sandbox.arguments == "tunnel --no-autoupdate --url http://127.0.0.1:17640")
+        #expect(sandbox.arguments == "tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:17640")
     }
 
     @Test func aRunningTunnelKeepsItsAddressAndStopsCleanly() async throws {

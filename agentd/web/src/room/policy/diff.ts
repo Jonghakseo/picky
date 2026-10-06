@@ -25,6 +25,22 @@ export interface DiffResult {
 
 const STATUSES: DiffFileStatus[] = ["added", "modified", "deleted", "renamed", "untracked"];
 
+/** The one-letter git status the HUD changes tab shows (`PickySessionDiffPresentation.statusLetter`). */
+export function diffStatusLetter(status: DiffFileStatus): string {
+  switch (status) {
+    case "added":
+      return "A";
+    case "modified":
+      return "M";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "untracked":
+      return "?";
+  }
+}
+
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
 }

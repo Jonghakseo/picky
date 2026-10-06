@@ -67,7 +67,8 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
         actions.feedback?.("success");
         return true;
       }
-      setFailure(result.error.message || t("remote.room.composer.sendFailed"));
+      // The gateway's error text is English diagnostics; the phone shows its own copy by code.
+      setFailure(t(result.error.code === "macOffline" ? "remote.room.composer.macOffline" : "remote.room.composer.sendFailed"));
       actions.feedback?.("error");
       return false;
     },

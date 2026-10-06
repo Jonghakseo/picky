@@ -25,6 +25,17 @@ export interface RuntimeOptions {
 
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "low", "medium", "high", "max"];
 
+/** The HUD thinking picker lists `PickyMainAgentThinkingLevel.displayName`, not the raw level. */
+const THINKING_LABEL_KEY = {
+  off: "enum.thinking.off",
+  minimal: "enum.thinking.minimal",
+  low: "enum.thinking.low",
+  medium: "enum.thinking.medium",
+  high: "enum.thinking.high",
+  xhigh: "enum.thinking.xhigh",
+  max: "enum.thinking.max",
+} satisfies Record<ThinkingLevel, string>;
+
 /**
  * The gateway relays whatever the daemon answers for `session.runtimeOptions`.
  * Only the fields this sheet draws are required, so a daemon that adds fields
@@ -111,7 +122,7 @@ export function SettingsSheet(props: SettingsSheetProps): JSX.Element {
               onBack={() => setPage("root")}
               rows={(props.options?.thinkingLevels ?? THINKING_LEVELS).map((level) => ({
                 id: level,
-                title: level,
+                title: t(THINKING_LABEL_KEY[level]),
                 selected: props.thinkingLevel === level,
                 onSelect: () => {
                   props.onSelectThinking(level);

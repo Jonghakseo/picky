@@ -13,7 +13,7 @@ import type { PickySessionDiffView } from "../../../src/protocol";
 import type { RoomActions } from "./contract";
 import { onTablistKeyDown, useDialog } from "../ui/use-dialog";
 import { t } from "./i18n";
-import { changeCounts, diffLineKind, parseDiffResult, type DiffResult } from "./policy/diff";
+import { changeCounts, diffLineKind, diffStatusLetter, parseDiffResult, type DiffResult } from "./policy/diff";
 import {
   changesTabCounts,
   compactWorkspacePath,
@@ -65,7 +65,12 @@ export function WorkPanel({ sessionId, session, actions, onDismiss }: WorkPanelP
     void actions.query({ type: "session.diff", sessionId, view }).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
-        setDiffError(result.error.message || t("hud.changes.error", ""));
+        // The gateway's error text is English diagnostics; the phone shows its own copy by code.
+        setDiffError(
+          result.error.code === "macOffline"
+            ? t("hud.changes.error", t("remote.mac.offline.title"))
+            : t("remote.room.changes.failed"),
+        );
         return;
       }
       setDiff(parseDiffResult(result.data));
@@ -244,7 +249,6 @@ function Artifacts({ session, actions }: { session?: PickyAgentSession; actions:
               <span class="panel-row-title">{artifact.title}</span>
               <span class="panel-row-detail">{path ?? url ?? t("hud.artifactTray.missing")}</span>
             </span>
-            <span class="panel-badge">{artifact.kind}</span>
           </button>
         );
       })}
@@ -282,7 +286,7 @@ function Changes({
           </button>
         ))}
       </div>
-      {error ? <div class="panel-empty">{t("hud.changes.error", error)}</div> : null}
+      {error ? <div class="panel-empty">{error}</div> : null}
       {!error && diff === null ? <div class="panel-empty">{t("hud.changes.loading")}</div> : null}
       {diff && !diff.isGitRepo ? <div class="panel-empty">{t("hud.changes.notGitRepository")}</div> : null}
       {diff && diff.isGitRepo && diff.files.length === 0 ? (
@@ -310,7 +314,7 @@ function Changes({
                 {changeCounts(file.additions, file.deletions)}
               </span>
             </span>
-            <span class="panel-badge">{file.status}</span>
+            <span class="panel-badge">{diffStatusLetter(file.status)}</span>
           </div>
           <pre class="diff">
             {file.diff.split("\n").map((line, index) => (

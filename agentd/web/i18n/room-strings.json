@@ -2,6 +2,7 @@
   "$comment": "Phone-only copy for the conversation room (web/src/room/**). Catalog keys stay in Picky/Resources/Localizable.xcstrings so the HUD and the phone read the same; only wording that exists on the phone alone belongs here. Keys must not collide with web/i18n/remote-strings.json.",
 
   "remote.room.composer.placeholder.steer": { "ko": "메시지 보내기", "en": "Message" },
+  "remote.room.changes.failed": { "ko": "변경사항을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.", "en": "Couldn't load changes. Try again in a moment." },
   "remote.room.composer.sendFailed": { "ko": "보내지 못했어요. 잠시 뒤 다시 시도해 주세요.", "en": "Couldn't send it. Try again in a moment." },
   "remote.room.composer.reconnecting": { "ko": "다시 연결되면 보낼 수 있어요", "en": "You can send once the connection is back" },
   "remote.room.composer.macOffline": { "ko": "Mac에 연결되어야 보낼 수 있어요", "en": "Connect to your Mac to send" },

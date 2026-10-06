@@ -48,6 +48,8 @@ struct PickyConversationCardView: View {
     var fixedHeight: CGFloat?
     var isPreviewMode = false
     var focusRequestID = 0
+    /// Bumped by the HUD when Esc outside the composer should stop the run.
+    var stopRequestID = 0
     var isCommandShortcutHintVisible = false
     var isOptionModifierPressed = false
     var isUtilityPanelOpen = false
@@ -77,6 +79,7 @@ struct PickyConversationCardView: View {
         fixedHeight: CGFloat? = nil,
         isPreviewMode: Bool = false,
         focusRequestID: Int = 0,
+        stopRequestID: Int = 0,
         isCommandShortcutHintVisible: Bool = false,
         isOptionModifierPressed: Bool = false,
         isUtilityPanelOpen: Bool = false,
@@ -85,6 +88,7 @@ struct PickyConversationCardView: View {
         onConversationViewportHeightChange: ((CGFloat) -> Void)? = nil
     ) {
         self.viewModel = viewModel
+        self.stopRequestID = stopRequestID
         self.sessionStore = sessionStore
         self.onArchiveSession = onArchiveSession
         self.onClose = onClose
@@ -291,6 +295,7 @@ struct PickyConversationCardView: View {
                 droppedFilePaths: $droppedFilePaths,
                 isFileDropTargeted: isFileDropTargeted,
                 focusRequestID: focusRequestID &+ composerFocusRequestID,
+                stopRequestID: stopRequestID,
                 focusStackHeightTier: heightTier,
                 isUtilityPanelOpen: isUtilityPanelOpen,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,

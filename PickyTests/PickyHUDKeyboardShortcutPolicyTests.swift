@@ -19,6 +19,18 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(PickyHUDKeyboardShortcutPolicy.cycleDirection(keyCode: 0, charactersIgnoringModifiers: "x") == nil)
     }
 
+    /// Esc on an active Pickle is a stop request, never a silent dismissal of
+    /// the run the user is watching; only a card with nothing to stop closes.
+    @Test func cardEscapeStopsActiveRunsAndClosesIdleCards() {
+        for status in [PickySessionStatus.running, .queued, .waiting_for_input] {
+            #expect(PickyHUDKeyboardShortcutPolicy.cardEscapeOutcome(status: status) == .stop)
+        }
+        for status in [PickySessionStatus.blocked, .completed, .failed, .cancelled] {
+            #expect(PickyHUDKeyboardShortcutPolicy.cardEscapeOutcome(status: status) == .close)
+        }
+        #expect(PickyHUDKeyboardShortcutPolicy.cardEscapeOutcome(status: nil) == .close)
+    }
+
     @Test func composerFocusShortcutRequiresPlainReturnOrKeypadEnter() {
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: []) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 76, modifiers: []) == true)

@@ -94,6 +94,7 @@ struct PickyHUDView: View {
     @State private var isCommandShortcutHintVisible = false
     @State private var isOptionModifierPressed = false
     @State private var composerFocusRequestID = 0
+    @State private var composerStopRequestID = 0
     @State private var utilityPanelOpenSessionIDs: Set<String> = []
     @State private var utilityPanelResizeStartHeight: CGFloat?
     @State private var utilityPanelHeightOverride: CGFloat?
@@ -473,6 +474,7 @@ struct PickyHUDView: View {
                     fixedHeight: placement.fixedCardHeight,
                     isPreviewMode: false,
                     focusRequestID: composerFocusRequestID,
+                    stopRequestID: composerStopRequestID,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                     isOptionModifierPressed: isOptionModifierPressed,
                     isUtilityPanelOpen: utilityPanelIsOpen,
@@ -1150,10 +1152,9 @@ struct PickyHUDView: View {
             return true
         }
 
-        // Esc closes the expanded Pickle card just like Cmd+W, but only when no
-        // text input is focused. The composer's own .onKeyPress(.escape) handles
-        // autocomplete dismissal and stop-if-possible while the input is focused;
-        // intercepting here would steal that behavior.
+        // Outside a text input, Esc stops a running Pickle and closes an idle
+        // card (Cmd+W always closes). The composer's own Esc handler owns the
+        // focused-input case: autocomplete dismissal first, then the same stop.
         // Esc closes an open group list first, even from the composer, so the
         // floating panel can never outlive the key press that dismisses it.
         if flags.isEmpty,
@@ -1174,7 +1175,14 @@ struct PickyHUDView: View {
            event.keyCode == Self.escKeyCode,
            heldSession != nil,
            !isEditableTextInputFocused(in: keyWindow) {
-            closeHeldSession()
+            switch PickyHUDKeyboardShortcutPolicy.cardEscapeOutcome(status: activeCard?.status) {
+            case .stop:
+                // Routed through the composer so the background-task stop
+                // choice and stop error stay owned by one stop path.
+                composerStopRequestID &+= 1
+            case .close:
+                closeHeldSession()
+            }
             return true
         }
 

@@ -8,7 +8,23 @@
 
 import AppKit
 
+/// What a plain Esc does to the opened Pickle card when no text editor or
+/// transient surface (autocomplete, group list, drag, popover) claimed it.
+enum PickyHUDCardEscapeOutcome: Equatable {
+    /// Stop the run, like Pi's single-Esc abort. The card stays open.
+    case stop
+    /// Nothing to stop, so Esc dismisses the card (same as Cmd+W).
+    case close
+}
+
 enum PickyHUDKeyboardShortcutPolicy {
+    /// A running card must never vanish from the Esc the user meant as "stop";
+    /// closing remains available through Cmd+W. An idle card closes.
+    static func cardEscapeOutcome(status: PickySessionStatus?) -> PickyHUDCardEscapeOutcome {
+        guard let status, PickyComposerStopPolicy.canStop(status) else { return .close }
+        return .stop
+    }
+
     private static let leftBracketKeyCode: UInt16 = 33
     private static let rightBracketKeyCode: UInt16 = 30
     private static let rKeyCode: UInt16 = 15

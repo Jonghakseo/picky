@@ -32,6 +32,7 @@ import {
   submitStatus,
 } from "../policy/composer";
 import { sendTimingOptions } from "../policy/schedule";
+import { SingleFlightSubmitter, draftAfterFailedSend } from "../policy/submit";
 import type { SlashCommand } from "../policy/slash";
 import { SLASH_SOURCE_LABEL, parseSlashCommands, slashCompletion, slashKeyAction, slashQuery, slashSuggestions } from "../policy/slash";
 import type { AbortScope, StopChoice } from "../policy/stop";
@@ -96,6 +97,13 @@ export function Composer(props: ComposerProps): JSX.Element {
   const [slashIndex, setSlashIndex] = useState(0);
   const selectedSlash = Math.min(slashIndex, Math.max(0, suggestions.length - 1));
   const pendingCaret = useRef<number | null>(null);
+  // One send at a time: Return pressed again while the first send waits for the
+  // Mac would otherwise post the same text again under a new command id.
+  const [sending, setSending] = useState(false);
+  const [submitter] = useState(() => new SingleFlightSubmitter(setSending));
+  // The draft as of the latest render, read after an await to restore a failed send.
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
   const slashListId = `slash-${sessionId}`;
 
   const status = session?.status ?? "waiting_for_input";
@@ -107,7 +115,7 @@ export function Composer(props: ComposerProps): JSX.Element {
   const afterReplyKind = isMain ? null : afterCurrentReplySubmitKind(sendStatus);
   const uploading = attachments.some((item) => !item.uploadId && !item.failed);
   const canSend = draft.trim().length > 0 || attachments.some((item) => item.uploadId);
-  const sendEnabled = canSend && props.online && props.macConnected && !uploading;
+  const sendEnabled = canSend && props.online && props.macConnected && !uploading && !sending;
 
   const dictation = useDictation({
     availability: props.dictationAvailability,
@@ -195,21 +203,40 @@ export function Composer(props: ComposerProps): JSX.Element {
       const text = draft.trim();
       const edit = props.edit;
       if (edit) {
-        if (text.length === 0) return;
-        const command: RemoteCommand =
-          edit.kind === "scheduled"
-            ? { type: "session.scheduled.edit", sessionId, scheduledId: edit.scheduledId, text }
-            : { type: "session.queue.edit", sessionId, itemId: edit.itemId, text };
-        if (await send(command)) clear();
+        // An edit keeps its draft until the Mac accepts it: clearing early would
+        // also leave edit mode, and a retry would then send a new message.
+        await submitter.run<RemoteCommand>({
+          take: () => {
+            if (text.length === 0) return null;
+            return edit.kind === "scheduled"
+              ? { type: "session.scheduled.edit", sessionId, scheduledId: edit.scheduledId, text }
+              : { type: "session.queue.edit", sessionId, itemId: edit.itemId, text };
+          },
+          send,
+          onSuccess: clear,
+        });
         return;
       }
-      if (text.length === 0 && uploadIds.length === 0) return;
-      const command: RemoteCommand = isMain
-        ? { type: "main.send", text, uploadIds: uploadIds.length > 0 ? uploadIds : undefined }
-        : { type: "session.send", sessionId, text, kind, uploadIds: uploadIds.length > 0 ? uploadIds : undefined };
-      if (await send(command)) clear();
+      await submitter.run({
+        take: () => {
+          if (text.length === 0 && uploadIds.length === 0) return null;
+          const command: RemoteCommand = isMain
+            ? { type: "main.send", text, uploadIds: uploadIds.length > 0 ? uploadIds : undefined }
+            : { type: "session.send", sessionId, text, kind, uploadIds: uploadIds.length > 0 ? uploadIds : undefined };
+          const snapshot = { command, draft, attachments };
+          // Clear before the round trip so Return visibly worked.
+          onDraft("");
+          setAttachments([]);
+          return snapshot;
+        },
+        send: (snapshot) => send(snapshot.command),
+        onFailure: (snapshot) => {
+          onDraft(draftAfterFailedSend(latestDraft.current, snapshot.draft));
+          setAttachments((list) => [...snapshot.attachments, ...list]);
+        },
+      });
     },
-    [clear, draft, isMain, props.edit, send, sessionId, uploadIds],
+    [attachments, clear, draft, isMain, onDraft, props.edit, send, sessionId, submitter, uploadIds],
   );
 
   async function attach(files: FileList | null): Promise<void> {
@@ -430,7 +457,7 @@ export function Composer(props: ComposerProps): JSX.Element {
                         class="send-chevron"
                         type="button"
                         aria-label={t("hud.composer.sendTiming.accessibilityLabel")}
-                        disabled={!canSend || !props.online || !props.macConnected}
+                        disabled={!canSend || !props.online || !props.macConnected || sending}
                         onClick={() => setTimingOpen(true)}
                       >
                         <ChevronDownSmall />
@@ -458,9 +485,10 @@ export function Composer(props: ComposerProps): JSX.Element {
           onSchedule={(delayMs) => {
             setTimingOpen(false);
             const text = draft.trim();
-            if (text.length === 0) return;
-            void send({ type: "session.schedule", sessionId, text, delayMs }).then((ok) => {
-              if (ok) clear();
+            void submitter.run<RemoteCommand>({
+              take: () => (text.length === 0 ? null : { type: "session.schedule", sessionId, text, delayMs }),
+              send,
+              onSuccess: clear,
             });
           }}
           onDismiss={closeTiming}

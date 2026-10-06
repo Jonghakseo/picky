@@ -87,7 +87,7 @@ When a client opens a room the gateway sends the newest snapshot it holds; if th
 
 ### 2.6 Rooms
 
-The room list is rebuilt (debounced 150 ms) from projections plus `hub.overlay`: the main room first (`MAIN_ROOM_ID`, title "Picky"), then sessions in `activeSessionIds` and `archivedSessionIds` (without an overlay: every session, archived by the projection flag). Order: pinned, then `updatedAt` descending. `preview` prefers a pending question prompt, then `lastSummary`, then the last assistant message. Status presentation uses `agentd/src/remote/status-presentation.ts`.
+The room list is rebuilt (debounced 150 ms) from projections plus `hub.overlay`: the main room first (`MAIN_ROOM_ID`, title "Picky"), then sessions in `activeSessionIds` and `archivedSessionIds` (without an overlay: every session, archived by the projection flag). Order: active rooms keep the Mac Dock order from `activeSessionIds` (the app flattens `PickyDockLayout` with `PickyDockProjector.cycleSessionIDs`, so group members are contiguous); ungrouped pinned rooms go first; archived rooms follow, newest `updatedAt` first. Without an overlay, `createdAt` ascending stands in for dock order. Activity never reorders a room. `preview` prefers a pending question prompt, then `lastSummary`, then the last assistant message. Status presentation uses `agentd/src/remote/status-presentation.ts`.
 
 ### 2.7 Commands
 

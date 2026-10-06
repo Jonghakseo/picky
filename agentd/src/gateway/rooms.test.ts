@@ -47,24 +47,49 @@ function build(sessions: PickyAgentSession[], options: { overlay?: HubOverlay; m
 }
 
 describe("room ordering", () => {
-  it("keeps the main room first, then pinned, then most recent activity", () => {
-    const rooms = build([
-      session("old", { updatedAt: "2026-01-01T00:00:00Z" }),
-      session("new", { updatedAt: "2026-01-03T00:00:00Z" }),
-      session("pinned", { updatedAt: "2026-01-02T00:00:00Z", pinned: true }),
-    ]).rooms;
+  it("keeps the Mac Dock order when activity changes, with ungrouped pinned rooms first", () => {
+    const dock = overlay({
+      activeSessionIds: ["a", "b", "pinned", "c"],
+      groups: [{ id: "g1", name: "G", color: "teal", memberIds: ["b", "c"] }],
+    });
+    const before = build(
+      [session("a"), session("b"), session("pinned", { pinned: true }), session("c")],
+      { overlay: dock },
+    ).rooms;
+    // A reply lands on "c": only its activity changes, not the order.
+    const after = build(
+      [session("a"), session("b"), session("pinned", { pinned: true }), session("c", { updatedAt: "2026-01-09T00:00:00Z" })],
+      { overlay: dock },
+    ).rooms;
 
-    expect(rooms.map((room) => room.id)).toEqual([MAIN_ROOM_ID, "pinned", "new", "old"]);
-    expect(rooms[0].kind).toBe("main");
-    expect(rooms[0].title).toBe(MAIN_ROOM_TITLE);
+    expect(before.map((room) => room.id)).toEqual([MAIN_ROOM_ID, "pinned", "a", "b", "c"]);
+    expect(after.map((room) => room.id)).toEqual(before.map((room) => room.id));
+    expect(before[0].kind).toBe("main");
+    expect(before[0].title).toBe(MAIN_ROOM_TITLE);
   });
 
-  it("orders two pinned rooms by recent activity as well", () => {
+  it("leaves a pinned group member inside its group", () => {
+    const rooms = build(
+      [session("a"), session("b", { pinned: true })],
+      { overlay: overlay({ activeSessionIds: ["a", "b"], groups: [{ id: "g1", name: "G", color: "teal", memberIds: ["b"] }] }) },
+    ).rooms;
+    expect(rooms.map((room) => room.id)).toEqual([MAIN_ROOM_ID, "a", "b"]);
+  });
+
+  it("orders by creation before the overlay arrives, not by activity", () => {
     const rooms = build([
-      session("a", { updatedAt: "2026-01-01T00:00:00Z", pinned: true }),
-      session("b", { updatedAt: "2026-01-05T00:00:00Z", pinned: true }),
+      session("second", { createdAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }),
+      session("first", { createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-05T00:00:00Z" }),
     ]).rooms;
-    expect(rooms.map((room) => room.id)).toEqual([MAIN_ROOM_ID, "b", "a"]);
+    expect(rooms.map((room) => room.id)).toEqual([MAIN_ROOM_ID, "first", "second"]);
+  });
+
+  it("lists archived rooms after active ones, newest first", () => {
+    const rooms = build(
+      [session("live"), session("old", { updatedAt: "2026-01-01T00:00:00Z" }), session("recent", { updatedAt: "2026-01-03T00:00:00Z" })],
+      { overlay: overlay({ activeSessionIds: ["live"], archivedSessionIds: ["old", "recent"] }) },
+    ).rooms;
+    expect(rooms.map((room) => room.id)).toEqual([MAIN_ROOM_ID, "live", "recent", "old"]);
   });
 });
 

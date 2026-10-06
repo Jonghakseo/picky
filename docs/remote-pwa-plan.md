@@ -102,9 +102,10 @@ flowchart TB
 
 ### 방 목록 (기본안, 목업 검수에서 확정)
 
-- 맨 위에 Picky 방(메인 대화)을 고정하고, 그 아래 Pickle 방을 최근 활동 순으로 둔다. 고정한 Pickle은 Picky 방 바로 아래에 둔다.
+- 맨 위에 Picky 방(메인 대화)을 고정하고, 그 아래 Pickle 방을 맥 Dock 순서로 둔다. 여러 Pickle이 동시에 응답해도 행 위치가 바뀌지 않게 하려고 최근 활동 순은 쓰지 않는다(2026-10-06 변경). 그룹에 속하지 않은 고정 Pickle은 Picky 방 바로 아래에 둔다.
+- 시각은 상대 표기(조금 전, N분 전, N시간 전, 이후 어제·요일·날짜)로 쓰고 1분마다 갱신한다.
 - 행에는 제목, 상태(아이콘과 글자를 함께 써서 색만으로 구분하지 않는다), 마지막 요약 한 줄, 시각, 읽지 않음 표시를 둔다.
-- Dock 그룹은 목록 위 필터로 보여 준다. 보관한 Pickle은 목록 맨 아래 "보관함"에서 연다.
+- Dock 그룹은 목록 안의 접는 섹션으로 보여 준다. 헤더는 접힘·펼침 모두 같은 얇은 줄(화살표, 그룹 색 점, 이름, Pickle 수, 읽지 않음 점)이다. 접힘 상태는 폰의 `localStorage`에만 저장하고 맥 Dock에는 반영하지 않는다. 시안은 `docs/prototypes/picky-remote-pwa/room-list-groups.html`. 보관한 Pickle은 목록 맨 아래 "보관함"에서 연다.
 - 읽음 상태는 맥과 공유한다. 단일 출처는 앱의 `PickySessionViewModel.unreadSessionIDs`이고, 폰에서 방을 열면 맥 Dock의 읽지 않음 표시도 꺼진다.
 - 새 Pickle은 최근·고정 폴더 중에서 골라 만든다(3단계). 폰에서 맥 폴더를 탐색하지 않는다.
 
@@ -229,7 +230,7 @@ HUD는 SwiftUI, PWA는 웹이라 공유하는 화면 코드가 없다. 그대로
 구현하며 닫은 항목:
 
 - 복구 스냅샷이 앱의 projection 처리와 섞이는 문제와 앱 메인 스레드 중계 비용은 결정 8로 없어졌다. gateway가 데몬에 직접 붙고, 데몬은 복구 요청을 소켓별로 처리한다.
-- 방 목록은 목업 검수에서 기본안(Picky 방 고정, 최근 활동 순, 그룹 필터, 읽음 공유)으로 확정했다.
+- 방 목록은 목업 검수에서 기본안(Picky 방 고정, 최근 활동 순, 그룹 필터, 읽음 공유)으로 확정했다. 이후 2026-10-06에 Dock 순서와 접는 그룹 섹션으로 바꿨다.
 - PWA는 Preact와 `@preact/signals`로 만들었다(`docs/remote-pwa-implementation.md` 4절).
 - 알림에서 바로 답하기는 넣지 않는다(2026-10-05 결정). Android Chrome에서만 되고 iOS Safari는 알림 버튼(`actions`)을 지원하지 않는다([MDN](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification#browser_compatibility)). 알림을 누르면 그 방이 열리는 동작만 둔다.
 - 텔레그램 원격 계획은 진행하지 않기로 하고 문서를 지웠다(2026-10-05). 원격 감독은 이 PWA로 한다.

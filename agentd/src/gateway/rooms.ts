@@ -49,9 +49,11 @@ export function buildRoomList({ sessions, overlay, main }: RoomListInput): RoomL
   const groupIdsBySession = groupIndexOf(overlay);
   const unread = new Set(overlay?.unreadSessionIds ?? []);
   const archived = new Set(overlay?.archivedSessionIds ?? []);
+  // The overlay carries the Mac Dock order. Before it arrives there is no dock,
+  // so creation order stands in: a Pickle's place never depends on activity.
   const visible = overlay
     ? [...overlay.activeSessionIds, ...overlay.archivedSessionIds]
-    : [...sessions.keys()];
+    : [...sessions.values()].sort(compareCreation).map((session) => session.id);
 
   const pickleRooms: RemoteRoom[] = [];
   const seen = new Set<string>();
@@ -66,19 +68,32 @@ export function buildRoomList({ sessions, overlay, main }: RoomListInput): RoomL
       groupIds: groupIdsBySession.get(sessionId) ?? [],
     }));
   }
-  pickleRooms.sort(compareRooms);
+  const ordered = orderRooms(pickleRooms);
 
   return {
-    rooms: [mainRoom(main), ...pickleRooms],
+    rooms: [mainRoom(main), ...ordered],
     groups: (overlay?.groups ?? []).map((group) => ({ id: group.id, name: group.name, color: group.color })),
     folders: overlay?.folders ?? { pinned: [], recent: [] },
   };
 }
 
-/** Pinned first, then most recent activity; the HUD dock orders the same way. */
-function compareRooms(left: RemoteRoom, right: RemoteRoom): number {
-  if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
-  return (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "");
+/**
+ * Active rooms keep the dock order they arrived in, so a reply never moves a
+ * row. Ungrouped pinned rooms go first; a pinned group member stays in its
+ * group, because the phone draws a group where its first member sits. Archived
+ * rooms are not live, so they stay newest first.
+ */
+function orderRooms(rooms: RemoteRoom[]): RemoteRoom[] {
+  const active = rooms.filter((room) => !room.archived);
+  const hoisted = (room: RemoteRoom) => room.pinned && room.groupIds.length === 0;
+  const archived = rooms
+    .filter((room) => room.archived)
+    .sort((left, right) => (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""));
+  return [...active.filter(hoisted), ...active.filter((room) => !hoisted(room)), ...archived];
+}
+
+function compareCreation(left: PickyAgentSession, right: PickyAgentSession): number {
+  return (left.createdAt ?? "").localeCompare(right.createdAt ?? "") || left.id.localeCompare(right.id);
 }
 
 function mainRoom(main: MainRoomInput): RemoteRoom {

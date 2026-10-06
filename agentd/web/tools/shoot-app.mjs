@@ -9,7 +9,7 @@
  * Writes build/render-gallery/remote-pwa-app/<shot>-<theme>.png.
  *
  * Headless Chrome is driven over CDP instead of `--screenshot` because half of
- * these states only exist after a tap (archive section, group filter, sheets).
+ * these states only exist after a tap (archive section, collapsed group, sheets).
  * Chrome runs with a throwaway profile and is killed by pid, so a browser the
  * user already has open is never touched.
  */
@@ -30,7 +30,7 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 /** click/type/wait run in the page between load and capture. */
 const SHOTS = [
   { name: "room-list", url: "/?demo=1" },
-  { name: "room-list-filtered", url: "/?demo=1", steps: [{ click: ".list-filters .filter-chip:nth-child(2)" }] },
+  { name: "room-list-group-collapsed", url: "/?demo=1", steps: [{ click: ".group-section .group-header" }] },
   { name: "room-list-archive-open", url: "/?demo=1", steps: [{ click: ".archived-row" }] },
   { name: "room-list-empty", url: "/?demo=1&state=empty" },
   { name: "room-list-mac-offline", url: "/?demo=1&state=offline" },

@@ -11,6 +11,7 @@
 | `index.html` | 검수 보드. 파트별 시안(390pt)과 HUD 렌더 갤러리 이미지를 나란히 놓고, 라이트/다크를 함께 바꾼다 |
 | `chat-bubbles`, `presence-and-activity`, `question`, `composer`, `header` | HUD에서 옮긴 파트. 각각 `.html`과 `.css` |
 | `room-list` | 새 디자인인 방 목록 |
+| `room-list-groups` | 방 목록 개정안: 맥 Dock 순서 고정, 접는 그룹 섹션(접힘·펼침 같은 얇은 헤더), 상대 시각. 운영 PWA에 반영됨 |
 | `tokens.css` | `Picky/DesignSystem.swift`와 `Picky/HUD/PickyHUDTypography.swift`에서 생성한 토큰. 손으로 고치지 않는다 |
 | `base.css`, `theme.js` | 페이지 틀. `?theme=light\|dark`, `?scale=1.3`(앱 글꼴 배율)을 처리한다 |
 | `strings.ko.json`, `strings.en.json` | 시안이 쓰는 문구를 `Picky/Resources/Localizable.xcstrings`에서 뽑은 것 |

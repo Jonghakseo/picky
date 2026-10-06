@@ -186,6 +186,27 @@ struct PickyRemoteOverlayBuilderTests {
         #expect(group?.name == "Untitled")
     }
 
+    /// The phone list follows the Mac Dock so rows stay put while replies arrive:
+    /// layout entries first (group members contiguous), then Pickles the layout
+    /// has not reconciled yet in the registry order.
+    @Test func activeSessionsFollowTheDockLayoutOrder() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "solo"),
+            .group(PickyDockGroup(id: "g1", name: "G", color: .teal, memberSessionIDs: ["m2", "m1"])),
+            .session(id: "last")
+        ])
+        let overlay = PickyRemoteOverlayBuilder.build(
+            activeSessionIDs: ["new", "m1", "last", "solo", "m2"],
+            archivedSessionIDs: [],
+            unreadSessionIDs: [],
+            dockLayout: layout,
+            pinnedFolders: [],
+            recentFolders: []
+        )
+
+        #expect(overlay.activeSessionIds == ["solo", "m2", "m1", "last", "new"])
+    }
+
     /// The gateway validates `hub.overlay` as a whole and drops the message when
     /// any array is too long, so one oversized list would stop every overlay
     /// update to the phone.

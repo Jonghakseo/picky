@@ -3,29 +3,35 @@ import { fileName, formatBytes, formatRoomTime, roomTimeStyle } from "./format";
 
 const now = new Date("2026-10-05T14:21:00+09:00");
 
-describe("roomTimeStyle", () => {
-  it("shows a clock time for today", () => {
-    expect(roomTimeStyle(new Date("2026-10-05T09:12:00+09:00"), now).kind).toBe("time");
+const labels = {
+  justNow: "조금 전",
+  minutes: (count: number) => `${count}분 전`,
+  hours: (count: number) => `${count}시간 전`,
+  yesterday: "어제",
+};
+
+describe("formatRoomTime", () => {
+  it("says how long ago for the first day", () => {
+    expect(formatRoomTime("2026-10-05T14:20:30+09:00", now, "ko", labels)).toBe("조금 전");
+    expect(formatRoomTime("2026-10-05T14:09:00+09:00", now, "ko", labels)).toBe("12분 전");
+    expect(formatRoomTime("2026-10-05T11:50:00+09:00", now, "ko", labels)).toBe("2시간 전");
+    // Yesterday by the calendar but under a day ago: still hours.
+    expect(formatRoomTime("2026-10-04T23:59:00+09:00", now, "ko", labels)).toBe("14시간 전");
   });
 
-  it("says yesterday for yesterday, even a minute ago by the clock", () => {
-    expect(roomTimeStyle(new Date("2026-10-04T23:59:00+09:00"), now).kind).toBe("yesterday");
+  it("treats a timestamp slightly ahead of the phone clock as just now", () => {
+    expect(formatRoomTime("2026-10-05T14:22:00+09:00", now, "ko", labels)).toBe("조금 전");
   });
 
-  it("uses a weekday inside the last week and a date beyond it", () => {
+  it("falls back to yesterday, a weekday, then a date after a day", () => {
+    expect(formatRoomTime("2026-10-04T09:00:00+09:00", now, "ko", labels)).toBe("어제");
     expect(roomTimeStyle(new Date("2026-10-01T10:00:00+09:00"), now).kind).toBe("weekday");
     expect(roomTimeStyle(new Date("2026-09-20T10:00:00+09:00"), now).kind).toBe("date");
   });
-});
-
-describe("formatRoomTime", () => {
-  it("renders the yesterday label the caller supplies", () => {
-    expect(formatRoomTime("2026-10-04T18:00:00+09:00", now, "ko", "어제")).toBe("어제");
-  });
 
   it("renders nothing for a missing or broken timestamp", () => {
-    expect(formatRoomTime(undefined, now, "ko", "어제")).toBe("");
-    expect(formatRoomTime("not a date", now, "ko", "어제")).toBe("");
+    expect(formatRoomTime(undefined, now, "ko", labels)).toBe("");
+    expect(formatRoomTime("not a date", now, "ko", labels)).toBe("");
   });
 });
 

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>룸 리스트 · 도크 순서 + 접는 그룹 시안</title>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="room-list.css">
+  <link rel="stylesheet" href="room-list-groups.css">
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <symbol id="pickle-glyph" viewBox="0 0 512 512">
+      <path fill="currentColor" fill-rule="evenodd" d="M481 195.71L435.32 152.47L420.72 91.29L359.54 76.69L316.3 31.01L256.01 48.95L195.72 31.01L152.48 76.69L91.3 91.29L76.7 152.47L31.02 195.71L48.96 256L31.02 316.29L76.7 359.53L91.3 420.71L152.48 435.31L195.72 480.99L256.01 463.05L316.3 480.99L359.54 435.31L420.72 420.71L435.32 359.53L481 316.29L463.06 256L481 195.71Z M179.1 291.39C158.16 291.39 141.19 270.17 141.19 244C141.19 217.83 158.16 196.61 179.1 196.61C200.04 196.61 217.01 217.83 217.01 244C217.01 270.17 200.04 291.39 179.1 291.39Z M332.9 291.39C311.96 291.39 294.99 270.17 294.99 244C294.99 217.83 311.96 196.61 332.9 196.61C353.84 196.61 370.81 217.83 370.81 244C370.81 270.17 353.84 291.39 332.9 291.39Z"/>
+    </symbol>
+    <symbol id="st-running" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" fill="currentColor"/></symbol>
+    <symbol id="st-waiting" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4v5" stroke="var(--ds-color-surface1)" stroke-width="2" stroke-linecap="round"/><circle cx="8" cy="11.6" r="1.1" fill="var(--ds-color-surface1)"/></symbol>
+    <symbol id="st-completed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.8 8.3l2.2 2.2 4.2-4.6" fill="none" stroke="var(--ds-color-surface1)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="st-failed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" fill="none" stroke="var(--ds-color-surface1)" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="chevron" viewBox="0 0 16 16"><path d="M6 3.5L10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <main class="proto-page">
+    <div class="proto-title">방 목록 · 도크 순서 고정 + 접는 그룹</div>
+    <p class="proto-note">정렬: Picky 고정 → 고정(pin) 피클 → Mac 도크 순서(<code>PickyDockLayout.entries</code>). 응답이 와도 행 위치는 그대로이고 시각·상태만 바뀝니다. 상단 그룹 필터 칩은 없애고 그룹을 접는 섹션으로 바꿨습니다.</p>
+
+    <section class="proto-state">
+      <div class="proto-caption">1. 기본 (그룹 펼침 · 그룹 접힘 섞임)</div>
+      <div class="proto-controls">
+        <button class="proto-button" type="button" data-simulate="s1">응답 도착 시뮬레이션</button>
+      </div>
+      <div class="proto-room"><div class="list-screen" id="s1"></div></div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">2. 그룹 모두 접힘 (헤더는 펼침과 같고 화살표 방향만 다름)</div>
+      <div class="proto-room"><div class="list-screen" id="s2"></div></div>
+    </section>
+  </main>
+
+  <script>
+    const LABEL = { running: "실행 중", waiting: "입력 대기", completed: "완료", failed: "실패" };
+    const CLS = { running: "is-running", waiting: "is-waiting", completed: "is-completed", failed: "is-failed" };
+
+    // Mac Dock order. Groups are entries; their members keep stored member order.
+    const fixture = () => [
+      { kind: "session", s: { id: "p1", title: "보안 점검 공격 IP 27개 조사", status: "running", ago: 12, preview: "Logs Insights가 도는 동안 4/15 전후를 비교" } },
+      { kind: "group", id: "g1", name: "Tailwind 레이어", color: "amber", collapsed: false, members: [
+        { id: "p2", title: "핫픽스: Tailwind 레이어 충돌로 무너진 버튼", status: "running", ago: 4, preview: "스팟 상세 3차 run의 tw-parity 결과 확인" },
+        { id: "p3", title: "개발환경: styled(X)×Tailwind 레이어", status: "running", ago: 1, preview: "Button 루트 클래스 중 어떤 것이 항상 이기는지" },
+        { id: "p4", title: "다른 UI의 동일 문제 조사", status: "waiting", ago: 0, preview: "Card도 같은 패턴인데 같이 고칠까요?", unread: true },
+      ] },
+      { kind: "group", id: "g2", name: "도크 리팩터", color: "teal", collapsed: true, members: [
+        { id: "p5", title: "피클 전환 레이아웃 시프트 분석", status: "running", ago: 1, preview: "Before/after를 한 번에 확인합니다" },
+        { id: "p6", title: "지역도메인", status: "completed", ago: 0, preview: "setup이 성공했습니다(frontend/pa...)", unread: true },
+      ] },
+      { kind: "session", s: { id: "p7", title: "슬랙 링크 확인 및 결제 제어 의미 설명", status: "completed", ago: 1, preview: "결제 제어는 카드사가 비용을 대는 프로모션", unread: true } },
+      { kind: "session", s: { id: "p8", title: "릴리즈 노트 초안", status: "failed", ago: 135, preview: "gh release 권한이 없어 중단" } },
+    ];
+
+    // Relative time for the room list: 조금 전 · N분 전 · N시간 전 · 어제 · N일 전.
+    function relTime(minutes) {
+      if (minutes < 1) return "조금 전";
+      if (minutes < 60) return `${minutes}분 전`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}시간 전`;
+      const days = Math.floor(hours / 24);
+      return days === 1 ? "어제" : `${days}일 전`;
+    }
+
+    const statusIcon = (status) => `<svg width="10" height="10" viewBox="0 0 16 16" aria-hidden="true"><use href="#st-${status}"/></svg>`;
+
+    function row(s) {
+      const running = s.status === "running";
+      return `<a class="room-row ${CLS[s.status]}${s.unread ? " unread" : ""}" href="#" data-id="${s.id}">
+        <span class="avatar${running ? " is-running" : ""}">
+          ${running ? '<span class="avatar-ring"></span>' : ""}
+          <svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg>
+          ${s.unread ? '<span class="avatar-unread"></span><span class="sr-only">읽지 않음</span>' : ""}
+        </span>
+        <span class="row-main">
+          <span class="row-top"><span class="row-title">${s.title}</span><span class="row-time">${relTime(s.ago)}</span></span>
+          <span class="row-bottom">
+            <span class="row-status">${statusIcon(s.status)}<span>${LABEL[s.status]}</span></span>
+            <span class="row-summary">${s.preview}</span>
+          </span>
+        </span>
+      </a>`;
+    }
+
+    // One header for both states: chevron, group dot, name, member count, and a
+    // new-activity dot when any member is unread. Collapsing only hides the rows.
+    function group(g, forceCollapsed) {
+      const expanded = forceCollapsed ? false : !g.collapsed;
+      const unread = g.members.some((m) => m.unread);
+      return `<div class="group-section group-${g.color}" aria-expanded="${expanded}" data-group="${g.id}">
+        <button class="group-header" type="button" aria-expanded="${expanded}">
+          <span class="group-chevron"><svg width="12" height="12" aria-hidden="true"><use href="#chevron"/></svg></span>
+          <span class="group-dot" aria-hidden="true"></span>
+          <span class="group-name">${g.name}</span>
+          <span class="group-count">${g.members.length}<span class="sr-only">개</span></span>
+          ${unread ? '<span class="group-unread" aria-hidden="true"></span><span class="sr-only">새 소식 있음</span>' : ""}
+        </button>
+        <div class="group-members">${g.members.map(row).join("")}</div>
+      </div>`;
+    }
+
+    const picky = `<a class="room-row pinned is-running" href="#">
+      <span class="avatar picky"><svg class="avatar-glyph" viewBox="0 0 512 512" aria-hidden="true"><use href="#pickle-glyph"/></svg></span>
+      <span class="row-main">
+        <span class="row-top"><span class="row-title">Picky</span><span class="row-time">조금 전</span></span>
+        <span class="row-bottom"><span class="row-status">${statusIcon("running")}<span>실행 중</span></span><span class="row-summary">피클 3개 진행 상황을 정리하는 중</span></span>
+      </span>
+    </a>`;
+
+    function render(target, entries, forceCollapsed = false) {
+      const el = document.getElementById(target);
+      el.innerHTML = `
+        <div class="list-topbar">
+          <span class="list-topbar-title">메시지</span>
+          <button class="list-new" type="button"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>새 Pickle</span></button>
+        </div>
+        <div class="list-rows">
+          ${picky}
+          ${entries.map((e) => (e.kind === "group" ? group(e, forceCollapsed) : row(e.s))).join("")}
+        </div>`;
+      el.querySelectorAll(".group-header").forEach((button) => {
+        button.addEventListener("click", () => {
+          const g = entries.find((x) => x.id === button.closest(".group-section").dataset.group);
+          g.collapsed = !g.collapsed;
+          render(target, entries, false);
+        });
+      });
+    }
+
+    const state1 = fixture();
+    render("s1", state1);
+    render("s2", fixture(), true);
+
+    // Fires "responses" at random running Pickles: time and status change, rows stay put.
+    document.querySelector('[data-simulate="s1"]').addEventListener("click", () => {
+      const all = state1.flatMap((e) => (e.kind === "group" ? e.members : [e.s]));
+      const picks = all.sort(() => Math.random() - 0.5).slice(0, 3);
+      const order = ["running", "running", "waiting", "completed"];
+      const changed = new Set();
+      for (const s of picks) {
+        s.ago = 0;
+        s.status = order[Math.floor(Math.random() * order.length)];
+        s.unread = s.status !== "running";
+        s.preview = s.status === "running" ? "새 도구 호출 결과를 읽는 중" : s.status === "waiting" ? "다음 단계로 넘어갈까요?" : "작업을 마쳤어요";
+        changed.add(s.id);
+      }
+      render("s1", state1);
+      changed.forEach((id) => document.querySelector(`#s1 [data-id="${id}"]`)?.classList.add("row-flash"));
+    });
+  </script>
+</body>
+</html>

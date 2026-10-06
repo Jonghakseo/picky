@@ -30,6 +30,7 @@ import type {
 import { CommandRegistry, type CommandResult } from "./commands";
 import { currentLocale, type Locale } from "./i18n";
 import { decideSnapshot, decideTransaction } from "./room-sync";
+import { loadCollapsedGroups, saveCollapsedGroups } from "./room-sections";
 import type { ConnectionStatus, Transport } from "./transport";
 
 export type PairingState = "unknown" | "unpaired" | "paired" | "revoked";
@@ -68,10 +69,11 @@ export class AppStore {
   /** True once a `rooms` message has arrived, so the list can tell empty from not-yet-loaded. */
   readonly roomsLoaded = signal(false);
   /**
-   * The room list's group filter. It lives here, not in the list screen, so
-   * opening a Pickle and coming back shows the same group.
+   * Room list groups the user folded on this phone. Lives here, not in the list
+   * screen, so opening a Pickle and coming back keeps them folded; persisted so
+   * a reload does too.
    */
-  readonly roomListGroup = signal<string | undefined>(undefined);
+  readonly collapsedGroups = signal<ReadonlySet<string>>(loadCollapsedGroups(globalThis.localStorage));
 
   readonly locale: Locale = currentLocale();
 
@@ -147,6 +149,13 @@ export class AppStore {
         resolve({ ok: false, error: { code: "timeout", message: "query timed out" } });
       }, 30_000);
     });
+  }
+
+  toggleGroupCollapsed(groupId: string): void {
+    const next = new Set(this.collapsedGroups.value);
+    if (!next.delete(groupId)) next.add(groupId);
+    this.collapsedGroups.value = next;
+    saveCollapsedGroups(globalThis.localStorage, next);
   }
 
   /* ---- drafts -------------------------------------------------------- */

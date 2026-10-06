@@ -1,0 +1,121 @@
+/* Proposal: room list in Mac Dock order with collapsible group sections.
+ * Replaces the group filter chips. Reuses room-list.css rows unchanged; only
+ * the group header (identical in both states) and the member rail are new.
+ *   - order        = PickyDockLayout.entries (Mac Dock order), not updatedAt
+ *   - group color  = PickyDockGroupColor accent (PickyDockLayout.swift:44-:55)
+ *   - collapsed    = PickyDockGroup.isCollapsed as the initial state
+ */
+
+.group-section {
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle);
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  /* Thin section header. Full-width, so the target is still wide; height
+   * stays under the 44pt minimum on purpose to keep the list dense. */
+  min-height: 32px;
+  padding: 0 var(--ds-space-3);
+  text-align: start;
+  color: var(--ds-color-text-secondary);
+  background: color-mix(in srgb, var(--group) 6%, transparent);
+}
+
+.group-header:active {
+  background: color-mix(in srgb, var(--group) 12%, transparent);
+}
+
+.group-chevron {
+  display: flex;
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+  transition: transform var(--ds-motion-fast, 150ms) ease;
+}
+
+.group-section[aria-expanded="true"] .group-chevron {
+  transform: rotate(90deg);
+}
+
+.group-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--ds-radius-circle);
+  background: var(--group);
+}
+
+.group-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--hud-type-status-semibold);
+  color: var(--ds-color-text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.group-count {
+  flex: none;
+  font: var(--hud-type-meta-monospaced-medium);
+  color: var(--ds-color-text-tertiary);
+}
+
+/* Same 7pt notification dot as a room's unread mark, pushed to the trailing edge. */
+.group-unread {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-inline-start: auto;
+  border-radius: var(--ds-radius-circle);
+  background: var(--ds-color-notification);
+}
+
+/* Member rows keep full width (no indent eats the title on a phone); a 2pt rail
+ * in the group color marks membership instead. */
+.group-members {
+  position: relative;
+}
+
+.group-members::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--group) 70%, transparent);
+}
+
+.group-section[aria-expanded="false"] .group-members {
+  display: none;
+}
+
+.group-members .room-row:first-child {
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle);
+}
+
+/* Review-only controls. */
+.proto-controls {
+  display: flex;
+  gap: var(--ds-space-2);
+  padding: 0 var(--ds-space-4) var(--ds-space-2);
+}
+
+.proto-button {
+  height: 28px;
+  padding: 0 var(--ds-space-3);
+  border: 1px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-pill);
+  font: var(--hud-type-status-medium);
+  color: var(--ds-color-text-secondary);
+}
+
+.row-flash {
+  animation: row-flash 900ms ease-out;
+}
+
+@keyframes row-flash {
+  from { background: var(--ds-color-accent-subtle); }
+  to { background: transparent; }
+}

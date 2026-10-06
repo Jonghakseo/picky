@@ -7,10 +7,9 @@
   "remote.room.unavailable": { "ko": "대화를 아직 불러올 수 없어요", "en": "This conversation isn't available yet" },
 
   "remote.roomList.newPickle": { "ko": "새 Pickle", "en": "New Pickle" },
-  "remote.roomList.filter.label": { "ko": "그룹 필터", "en": "Group filter" },
   "remote.wide.empty.title": { "ko": "대화를 골라 주세요", "en": "Choose a conversation" },
   "remote.wide.empty.body": { "ko": "왼쪽에서 Picky나 Pickle을 고르면 여기에 열려요.", "en": "Pick Picky or a Pickle on the left to open it here." },
-  "remote.roomList.filter.all": { "ko": "전체", "en": "All" },
+  "remote.roomList.group.label": { "ko": "%1$@ 그룹, Pickle %2$lld개", "en": "%1$@ group, %2$lld Pickles" },
   "remote.roomList.pinned": { "ko": "고정됨", "en": "Pinned" },
   "remote.roomList.empty.title": { "ko": "아직 Pickle이 없어요", "en": "No Pickles yet" },
 
@@ -23,6 +22,9 @@
   "remote.mac.offline.body": { "ko": "Mac이 깨어 있고 Picky가 켜져 있는지 확인해 주세요", "en": "Check that your Mac is awake and Picky is running" },
   "remote.connection.reconnecting": { "ko": "다시 연결하는 중이에요", "en": "Reconnecting" },
   "remote.loading": { "ko": "불러오는 중", "en": "Loading" },
+  "remote.time.justNow": { "ko": "조금 전", "en": "Just now" },
+  "remote.time.minutesAgo": { "ko": "%lld분 전", "en": "%lld min ago" },
+  "remote.time.hoursAgo": { "ko": "%lld시간 전", "en": "%lld hr ago" },
   "remote.time.yesterday": { "ko": "어제", "en": "Yesterday" },
 
   "remote.install.title": { "ko": "홈 화면에 추가해 주세요", "en": "Add Picky to your Home Screen" },

@@ -33,7 +33,13 @@ enum PickyRemoteOverlayBuilder {
         pinnedFolders: [String],
         recentFolders: [String]
     ) -> PickyRemoteOverlaySnapshot {
-        let active = deduplicated(activeSessionIDs)
+        // Mac Dock order, not the registry's: the phone list keeps rows where the
+        // dock keeps tiles, so a reply arriving never moves a Pickle. Group
+        // members stay contiguous, which is how the phone rebuilds its sections.
+        let active = PickyDockProjector.cycleSessionIDs(
+            layout: dockLayout,
+            activeSessionIDs: deduplicated(activeSessionIDs)
+        )
         let activeSet = Set(active)
         // A session can only be in one list. The archive list wins for an id
         // that somehow appears in both so the phone never shows it twice.

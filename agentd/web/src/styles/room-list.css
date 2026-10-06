@@ -35,58 +35,88 @@
   transform: translate(-50%, -50%);
 }
 
-/* ---- group filter chips -------------------------------------------------- */
-.list-filters {
-  /* Horizontal gutter comes from .app-side-inset so the safe area adds to it. */
-  --app-gutter: var(--ds-space-3);
-  display: flex;
-  flex: none;
-  gap: var(--ds-space-2);
-  padding-bottom: var(--ds-space-3);
-  overflow-x: auto;
-  scrollbar-width: none;
+/* ---- dock group sections ------------------------------------------------
+ * Reviewed proposal: docs/prototypes/picky-remote-pwa/room-list-groups.html.
+ * One thin header for both states; collapsing only hides the member rows.
+ * Group accent = PickyDockGroupColor (PickyDockLayout.swift:44-:55). */
+.group-section {
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle);
 }
 
-.list-filters::-webkit-scrollbar {
-  display: none;
-}
-
-.filter-chip {
-  position: relative;
+.group-header {
   display: flex;
-  flex: none;
   align-items: center;
-  gap: var(--ds-space-1);
-  height: 28px;
-  padding: 0 var(--ds-space-3);
-  border: 1px solid var(--ds-color-border-subtle);
-  border-radius: var(--ds-radius-pill);
-  font: var(--hud-type-status-medium);
-  color: var(--ds-color-text-secondary);
-  white-space: nowrap;
-}
-
-.filter-chip::before {
-  content: "";
-  position: absolute;
-  inset: 50% auto auto 50%;
+  gap: var(--ds-space-2);
   width: 100%;
-  height: 44px;
-  transform: translate(-50%, -50%);
+  /* Under the 44pt minimum on purpose to keep the list dense; the target spans
+   * the full row width. */
+  min-height: 32px;
+  padding: 0 var(--ds-space-3);
+  text-align: start;
+  color: var(--ds-color-text-secondary);
+  background: color-mix(in srgb, var(--group, var(--ds-color-text-tertiary)) 6%, transparent);
 }
 
-/* Group accent dot, the same hue the Mac Dock group uses (PickyDockLayout.swift:44-:55). */
-.filter-dot {
-  width: 7px;
-  height: 7px;
+.group-header:active {
+  background: color-mix(in srgb, var(--group, var(--ds-color-text-tertiary)) 12%, transparent);
+}
+
+.group-chevron {
+  display: flex;
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.group-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
   border-radius: var(--ds-radius-circle);
   background: var(--group, var(--ds-color-text-tertiary));
 }
 
-.filter-chip.selected {
-  border-color: color-mix(in srgb, var(--group, var(--ds-color-accent-text)) 55%, transparent);
-  color: var(--group, var(--ds-color-accent-text));
-  background: color-mix(in srgb, var(--group, var(--ds-color-accent-text)) 12%, transparent);
+.group-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--hud-type-status-semibold);
+  color: var(--ds-color-text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.group-count {
+  flex: none;
+  font: var(--hud-type-meta-monospaced-medium);
+  color: var(--ds-color-text-tertiary);
+}
+
+/* Same 7pt notification dot as a room's unread mark, on the trailing edge. */
+.group-unread {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-inline-start: auto;
+  border-radius: var(--ds-radius-circle);
+  background: var(--ds-color-notification);
+}
+
+/* Member rows keep full width (an indent would eat the title on a phone); a
+ * 2pt rail in the group color marks membership instead. */
+.group-members {
+  position: relative;
+}
+
+.group-members::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: color-mix(in srgb, var(--group, var(--ds-color-text-tertiary)) 70%, transparent);
+}
+
+.group-members .room-row:first-child {
+  box-shadow: inset 0 0.5px 0 var(--ds-color-border-subtle);
 }
 
 .group-teal { --group: var(--ds-group-teal); }

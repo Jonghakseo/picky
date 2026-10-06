@@ -745,6 +745,64 @@ struct PickyTurnCardViewTests {
         #expect(stabilizer.displayed == waiting)
     }
 
+    /// A finished bash used to keep reading "working" and then gave way to
+    /// "preparing". It now reads "done" (or "failed") with its title for five
+    /// seconds after it ends, unless another tool starts first.
+    @Test func finishedWorkStepReadsDoneForFiveSecondsAfterItEnds() {
+        let t0 = Date(timeIntervalSince1970: 5_000)
+        let ended = t0.addingTimeInterval(4)
+        func bash(_ id: String, _ status: String, title: String, endedAt: Date? = nil) -> PickyToolActivity {
+            PickyToolActivity(toolCallId: id, name: "bash", status: status,
+                              argsPreview: #"{"command":"x","title":"\#(title)"}"#, endedAt: endedAt)
+        }
+        func live(active: PickyToolActivity?, last: PickyToolActivity?, preparing: Bool = false) -> PickyConversationPresencePresentation {
+            PickyConversationPresencePresentation.make(
+                isRunning: true, isWaitingForInput: false, activeTool: active, lastTool: last,
+                isPreparingToolCall: preparing, startedAt: nil)!
+        }
+        let running = bash("b1", "running", title: "빈도 측정 재실행")
+        let finished = bash("b1", "succeeded", title: "빈도 측정 재실행", endedAt: ended)
+        var stabilizer = PickyConversationPresenceStabilizer()
+
+        _ = stabilizer.update(target: live(active: running, last: running), now: t0)
+        #expect(stabilizer.displayed?.phase == .working)
+
+        // Thinking, then preparing the next call, both read as the finished step.
+        _ = stabilizer.update(target: live(active: nil, last: finished), now: ended)
+        #expect(stabilizer.displayed?.phase == .workCompleted)
+        #expect(stabilizer.displayed?.title == L10n.t("hud.presence.workCompleted"))
+        #expect(stabilizer.displayed?.title != "hud.presence.workCompleted")
+        #expect(stabilizer.displayed?.detail == "빈도 측정 재실행")
+        let wait = stabilizer.update(target: live(active: nil, last: finished, preparing: true), now: ended.addingTimeInterval(2))
+        #expect(stabilizer.displayed?.phase == .workCompleted)
+        #expect(abs((wait ?? 0) - 3) < 0.001)
+
+        // Five seconds after the end, the live phase shows again.
+        _ = stabilizer.update(target: live(active: nil, last: finished, preparing: true), now: ended.addingTimeInterval(5))
+        #expect(stabilizer.displayed?.phase == .preparing)
+
+        // A failed step reads "failed"; a new tool replaces it before the hold ends.
+        let failedAt = ended.addingTimeInterval(10)
+        let failed = bash("b2", "failed", title: "테스트 목록 확인", endedAt: failedAt)
+        _ = stabilizer.update(target: live(active: nil, last: failed), now: failedAt)
+        #expect(stabilizer.displayed?.phase == .workFailed)
+        #expect(stabilizer.displayed?.title != "hud.presence.workFailed")
+        let next = bash("b3", "running", title: "빌드")
+        _ = stabilizer.update(target: live(active: next, last: next), now: failedAt.addingTimeInterval(2))
+        #expect(stabilizer.displayed?.phase == .working)
+        #expect(stabilizer.displayed?.detail == "빌드")
+
+        // A step that ended long ago (HUD reopened later) is not shown as done.
+        var reopened = PickyConversationPresenceStabilizer()
+        _ = reopened.update(target: live(active: nil, last: finished), now: ended.addingTimeInterval(60))
+        #expect(reopened.displayed?.phase == .thinking)
+
+        // bash_async returns once its job launches, so it never reads as done.
+        let launched = PickyToolActivity(toolCallId: "a", name: "bash_async", status: "succeeded",
+                                         argsPreview: #"{"title":"빌드"}"#, endedAt: ended)
+        #expect(live(active: nil, last: launched).finishedWork == nil)
+    }
+
     /// Back-to-back short tools used to swap the line several times a second,
     /// which read as flicker. Every change now stays up for a minimum interval
     /// and the latest pending value shows once it ends.

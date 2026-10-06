@@ -26701,6 +26701,38 @@
         }
       }
     },
+    "hud.presence.workCompleted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Step done"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 완료"
+          }
+        }
+      }
+    },
+    "hud.presence.workFailed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Step failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 실패"
+          }
+        }
+      }
+    },
     "hud.presence.writing.choosingWords": {
       "localizations": {
         "en": {

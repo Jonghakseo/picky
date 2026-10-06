@@ -661,6 +661,7 @@ struct PickyConversationListView: View {
             isRunning: session.status == .running || session.status == .queued,
             isWaitingForInput: session.status == .waiting_for_input,
             activeTool: session.activeTool,
+            lastTool: session.tools.last,
             isWritingReply: session.isWritingReply,
             isPreparingToolCall: session.isPreparingToolCall,
             autoRetry: session.autoRetry,

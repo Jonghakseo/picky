@@ -26,6 +26,11 @@ struct PickyConversationPresencePresentation: Equatable {
         case editingFile
         case writingFile
         case working
+        /// A "working" tool just finished. Shown instead of thinking, preparing,
+        /// or writing for `PickyConversationPresenceStabilizer.finishedWorkHold`
+        /// after it ends, so the line names the step the model is reacting to.
+        case workCompleted
+        case workFailed
         /// Pi is waiting to re-send a failed model request. The detail carries
         /// the provider's code and message: without them a user cannot tell a
         /// passing rate limit from a request that can never succeed.
@@ -51,6 +56,24 @@ struct PickyConversationPresencePresentation: Equatable {
     /// Tooltip for the detail when it is shortened, such as the full path
     /// behind a file name. Defaults to the detail itself.
     var detailHelp: String? = nil
+    /// The last tool when it was a finished "working" step. Set only on the
+    /// thinking, preparing, and writing phases; the stabilizer decides whether
+    /// it is still recent enough to show.
+    var finishedWork: FinishedWork? = nil
+
+    struct FinishedWork: Equatable {
+        let toolCallId: String
+        let failed: Bool
+        let detail: String?
+        let endedAt: Date?
+    }
+
+    /// The line shown while `finishedWork` is held.
+    var finishedWorkPresentation: Self? {
+        guard let finishedWork else { return nil }
+        return Self(phase: finishedWork.failed ? .workFailed : .workCompleted,
+                    detail: finishedWork.detail, startedAt: startedAt)
+    }
 
     var title: String {
         switch phase {
@@ -61,6 +84,8 @@ struct PickyConversationPresencePresentation: Equatable {
         case .editingFile: L10n.t("hud.presence.editingFile")
         case .writingFile: L10n.t("hud.presence.writingFile")
         case .working: L10n.t("hud.liveStep.working")
+        case .workCompleted: L10n.t("hud.presence.workCompleted")
+        case .workFailed: L10n.t("hud.presence.workFailed")
         case .retrying(let attempt, let maxAttempts): L10n.t("hud.presence.retrying", attempt, maxAttempts)
         case .waitingForInput: L10n.t("hud.conversation.status.waiting")
         }
@@ -88,6 +113,7 @@ struct PickyConversationPresencePresentation: Equatable {
         isRunning: Bool,
         isWaitingForInput: Bool,
         activeTool: PickyToolActivity?,
+        lastTool: PickyToolActivity? = nil,
         isWritingReply: Bool = false,
         isPreparingToolCall: Bool = false,
         autoRetry: PickyAutoRetryStatus? = nil,
@@ -114,13 +140,28 @@ struct PickyConversationPresencePresentation: Equatable {
             }
             return Self(phase: .working, detail: detail(for: activeTool), startedAt: startedAt)
         }
+        let finishedWork = lastTool.flatMap(finishedWork(for:))
         if isPreparingToolCall {
-            return Self(phase: .preparing, detail: nil, startedAt: startedAt)
+            return Self(phase: .preparing, detail: nil, startedAt: startedAt, finishedWork: finishedWork)
         }
         if isWritingReply {
-            return Self(phase: .writing, detail: nil, startedAt: startedAt)
+            return Self(phase: .writing, detail: nil, startedAt: startedAt, finishedWork: finishedWork)
         }
-        return Self(phase: .thinking, detail: nil, startedAt: startedAt)
+        return Self(phase: .thinking, detail: nil, startedAt: startedAt, finishedWork: finishedWork)
+    }
+
+    /// A finished tool that read as "working" while it ran. File tools keep
+    /// their own titles. `bash_async` and `subagent` return as soon as they
+    /// launch background work, and a question tool ends with the user's answer,
+    /// so none of those reads as a completed step.
+    static func finishedWork(for tool: PickyToolActivity) -> FinishedWork? {
+        guard !tool.isActive, fileStep(for: tool) == nil else { return nil }
+        let name = tool.name.lowercased()
+        guard !["bash_async", "subagent", "ask_user_question"].contains(name) else { return nil }
+        let failed = tool.didFail
+        guard failed || tool.status == "succeeded" else { return nil }
+        return FinishedWork(toolCallId: tool.toolCallId, failed: failed,
+                            detail: detail(for: tool), endedAt: tool.endedAt)
     }
 
     /// "429 · Usage credits are required for fast mode." The message is the
@@ -196,15 +237,40 @@ struct PickyConversationPresencePresentation: Equatable {
 struct PickyConversationPresenceStabilizer: Equatable {
     static let workingGrace: TimeInterval = 5
     static let minimumDisplayDuration: TimeInterval = 1.5
+    /// How long a finished "working" step reads "done" or "failed" while the
+    /// model thinks, prepares, or writes. A new running tool replaces it at once.
+    static let finishedWorkHold: TimeInterval = 5
 
     private(set) var displayed: PickyConversationPresencePresentation?
     private var displayedSince: Date?
     /// When the live value first stopped reporting a step (working, preparing, or writing).
     private var leftStepAt: Date?
+    /// The finished tool being held and when it ended (or was first seen ended).
+    private var finishedWorkID: String?
+    private var finishedWorkEndedAt: Date?
 
     /// Applies `target` at `now` and returns how long to wait before calling
     /// again, or nil when the displayed value already matches the target.
-    mutating func update(target: PickyConversationPresencePresentation, now: Date) -> TimeInterval? {
+    mutating func update(target live: PickyConversationPresencePresentation, now: Date) -> TimeInterval? {
+        var target = live
+        var holdRemaining: TimeInterval?
+        if let work = live.finishedWork, let held = live.finishedWorkPresentation {
+            if finishedWorkID != work.toolCallId {
+                finishedWorkID = work.toolCallId
+                finishedWorkEndedAt = work.endedAt.map { min($0, now) } ?? now
+            }
+            let remaining = (finishedWorkEndedAt ?? now).addingTimeInterval(Self.finishedWorkHold).timeIntervalSince(now)
+            if remaining > 0 {
+                target = held
+                holdRemaining = remaining
+            }
+        }
+        let wait = apply(target, now: now)
+        guard let holdRemaining else { return wait }
+        return min(wait ?? holdRemaining, holdRemaining)
+    }
+
+    private mutating func apply(_ target: PickyConversationPresencePresentation, now: Date) -> TimeInterval? {
         guard let displayed, let displayedSince,
               target.phase != .waitingForInput, displayed.phase != .waitingForInput else {
             show(target, at: now)
@@ -234,7 +300,8 @@ struct PickyConversationPresenceStabilizer: Equatable {
     private static func isStep(_ phase: PickyConversationPresencePresentation.Phase?) -> Bool {
         switch phase {
         case .working, .preparing, .writing, .retrying, .readingFile, .editingFile, .writingFile: true
-        case .thinking, .waitingForInput, nil: false
+        // A finished step already had its hold; leaving it applies normally.
+        case .thinking, .workCompleted, .workFailed, .waitingForInput, nil: false
         }
     }
 

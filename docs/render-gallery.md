@@ -70,7 +70,7 @@ pass-through, drag gestures, or keyboard focus. The standalone prototype under
 ./scripts/render-ui-gallery.sh conversation-context
 ```
 
-This target writes seven 2× Korean scenes under `build/render-gallery/conversation-context/`: the production header context control, available popover content in dark and light appearance, the unavailable action state, active compaction progress, and context-band ramp states in dark and light appearance. `PickyConversationHeaderRenderGalleryTests` renders the production SwiftUI components without creating an app window. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove native popover anchoring or click-outside dismissal.
+This target writes nine 2× Korean scenes under `build/render-gallery/conversation-context/`: the production header context control, available popover content in dark and light appearance, the unavailable action state, active compaction progress, context-band ramp states in dark and light appearance, and the full production card with Command shortcut hints shown in dark and light appearance (checks that header badges stay inside the card's clip bounds). `PickyConversationHeaderRenderGalleryTests` renders the production SwiftUI components without creating an app window. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove native popover anchoring or click-outside dismissal.
 
 ## Conversation composer gallery
 

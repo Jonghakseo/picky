@@ -232,6 +232,16 @@ struct PickyConversationHeaderRenderGalleryTests {
                 appearance: .light,
                 content: AnyView(contextBandRamp)
             ),
+            Scene(
+                name: "card-command-hints-dark-ko.png",
+                appearance: .dark,
+                content: AnyView(PickyConversationCardShortcutHintRenderScene(id: "card-command-hints-dark"))
+            ),
+            Scene(
+                name: "card-command-hints-light-ko.png",
+                appearance: .light,
+                content: AnyView(PickyConversationCardShortcutHintRenderScene(id: "card-command-hints-light"))
+            ),
         ]
     }
 
@@ -590,11 +600,36 @@ private struct PickyConversationComposerRenderScene: View {
         notifyMainOnCompletion: Bool = false,
         notifyMacOSOnCompletion: Bool = false
     ) {
+        let session = Self.makeSession(
+            id: id,
+            model: model,
+            notifyMainOnCompletion: notifyMainOnCompletion,
+            notifyMacOSOnCompletion: notifyMacOSOnCompletion
+        )
+        let viewModel = PickySessionListViewModel(
+            client: LocalStubPickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: PickyConversationComposerRenderDraftStore(),
+            composerAttachmentDraftStore: PickyConversationComposerRenderAttachmentStore()
+        )
+        viewModel.updateComposerDraft(draft, sessionID: session.id)
+        self.session = session
+        self.isOptionModifierPressed = isOptionModifierPressed
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    static func makeSession(
+        id: String,
+        title: String = "Composer render",
+        model: String = "openai-codex/gpt-5.6",
+        notifyMainOnCompletion: Bool = false,
+        notifyMacOSOnCompletion: Bool = false
+    ) -> PickySessionListViewModel.SessionCard {
         let date = Date(timeIntervalSince1970: 1_775_000_000)
-        let session = PickySessionListViewModel.SessionCard.fromAgentSession(
+        return PickySessionListViewModel.SessionCard.fromAgentSession(
             PickyAgentSession(
                 id: id,
-                title: "Composer render",
+                title: title,
                 status: .running,
                 cwd: "/tmp/picky",
                 createdAt: date,
@@ -637,16 +672,6 @@ private struct PickyConversationComposerRenderScene: View {
                 notifyMacOSOnCompletion: notifyMacOSOnCompletion
             )
         )
-        let viewModel = PickySessionListViewModel(
-            client: LocalStubPickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            composerDraftStore: PickyConversationComposerRenderDraftStore(),
-            composerAttachmentDraftStore: PickyConversationComposerRenderAttachmentStore()
-        )
-        viewModel.updateComposerDraft(draft, sessionID: session.id)
-        self.session = session
-        self.isOptionModifierPressed = isOptionModifierPressed
-        _viewModel = StateObject(wrappedValue: viewModel)
     }
 
     var body: some View {
@@ -656,6 +681,36 @@ private struct PickyConversationComposerRenderScene: View {
             isOptionModifierPressed: isOptionModifierPressed
         )
         .frame(width: PickyHUDDockLayout.detailWidth)
+    }
+}
+
+/// The full production card with the Command shortcut hints shown, so badge
+/// overflow is judged against the card's real padding and clip bounds.
+@MainActor
+private struct PickyConversationCardShortcutHintRenderScene: View {
+    private let session: PickySessionListViewModel.SessionCard
+    @StateObject private var viewModel: PickySessionListViewModel
+
+    init(id: String) {
+        session = PickyConversationComposerRenderScene.makeSession(
+            id: id,
+            title: "단축키 힌트 렌더"
+        )
+        _viewModel = StateObject(wrappedValue: PickySessionListViewModel(
+            client: LocalStubPickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: PickyConversationComposerRenderDraftStore(),
+            composerAttachmentDraftStore: PickyConversationComposerRenderAttachmentStore()
+        ))
+    }
+
+    var body: some View {
+        PickyConversationCardView(
+            viewModel: viewModel,
+            session: session,
+            fixedHeight: PickyConversationCardHeightPolicy.minimumHeight,
+            isCommandShortcutHintVisible: true
+        )
     }
 }
 

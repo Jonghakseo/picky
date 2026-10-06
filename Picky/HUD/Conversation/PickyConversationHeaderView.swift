@@ -618,9 +618,12 @@ struct PickyConversationArchiveButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(PickyConversationArchiveButtonStyle())
-        .overlay(alignment: .topTrailing) {
+        // Centered above the button: a trailing offset pushes the badge under
+        // the overflow menu (archive) or past the card's clip edge (close).
+        .overlay(alignment: .top) {
             PickyShortcutKeyBadge(label: "\u{232B}")
-                .offset(x: 9, y: -7)
+                .fixedSize()
+                .offset(y: -7)
                 .opacity(isCommandShortcutHintVisible ? 1 : 0)
                 .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
                 .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
@@ -673,9 +676,12 @@ struct PickyConversationCloseButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(PickyConversationCloseButtonStyle())
-        .overlay(alignment: .topTrailing) {
+        // Centered above the button: a trailing offset pushes the badge under
+        // the overflow menu (archive) or past the card's clip edge (close).
+        .overlay(alignment: .top) {
             PickyShortcutKeyBadge(label: "W")
-                .offset(x: 9, y: -7)
+                .fixedSize()
+                .offset(y: -7)
                 .opacity(isCommandShortcutHintVisible ? 1 : 0)
                 .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
                 .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)

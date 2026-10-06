@@ -125,6 +125,39 @@ struct PickyRemoteQuickTunnelTests {
         #expect(reason.hasPrefix("failed to request quick Tunnel"))
     }
 
+    @Test func aTunnelCloudflareDeletedIsReplacedWithANewAddress() async throws {
+        let sandbox = try Sandbox()
+        // cloudflared does not exit on this error; it retries the dead tunnel
+        // forever (seen in a real run after the Mac was offline for hours).
+        let firstRun = Self.realStartLines + [
+            #"2026-10-06T13:06:21Z ERR Register tunnel error from server side error="Unauthorized: Tunnel not found" connIndex=0 event=0 ip=198.41.200.193"#,
+        ]
+        let secondRun = [
+            #"2026-10-06T13:06:24Z INF |  https://fresh-words-here.trycloudflare.com  |"#,
+            Self.realStartLines[3],
+        ]
+        let echo: ([String]) -> String = { lines in
+            lines.map { "printf '%s\\n' '\($0.replacingOccurrences(of: "'", with: "'\\''"))' >&2" }.joined(separator: "\n")
+        }
+        let marker = sandbox.root.appendingPathComponent("ran-once").path
+        let executable = try sandbox.script(lines: [], then: """
+            if [ -f "\(marker)" ]; then
+            \(echo(secondRun))
+            else
+            touch "\(marker)"
+            \(echo(firstRun))
+            fi
+            exec sleep 30
+            """)
+        let tunnel = PickyCloudflareQuickTunnel(appSupportRoot: sandbox.root, locateExecutable: { executable })
+        defer { tunnel.stopAndWaitForExit() }
+
+        tunnel.start(port: 17640)
+        try await waitUntil("a new tunnel replaces the deleted one") {
+            tunnel.state == .running(url: "https://fresh-words-here.trycloudflare.com")
+        }
+    }
+
     @Test func noCloudflaredMeansNotInstalledAndCheckingAgainFindsIt() async throws {
         let sandbox = try Sandbox()
         let executable = try sandbox.script(lines: Self.realStartLines, then: "exec sleep 30")

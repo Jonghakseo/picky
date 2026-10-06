@@ -86,6 +86,15 @@ enum PickyQuickTunnelLogParser {
         line.contains("Registered tunnel connection")
     }
 
+    /// Cloudflare deleted this Quick Tunnel, typically after the Mac was
+    /// offline or asleep for a while. `cloudflared` keeps retrying the dead
+    /// tunnel forever without exiting, and its address no longer resolves, so
+    /// only a fresh run (with a new address) brings the phone back.
+    ///   `ERR Register tunnel error from server side error="Unauthorized: Tunnel not found" ...`
+    static func reportsTunnelGone(_ line: String) -> Bool {
+        line.contains(" ERR ") && line.contains("Tunnel not found")
+    }
+
     /// The message part of an `ERR` line, without the timestamp and level.
     /// The origin certificate warning is ignored: a Quick Tunnel needs no
     /// certificate, and `cloudflared` prints it on every start.
@@ -269,7 +278,9 @@ final class PickyCloudflareQuickTunnel: PickyQuickTunnelControlling {
         appendLog(data)
         guard generation == launchGeneration else { return }
         stderrBuffer.append(contentsOf: data)
-        while let newlineIndex = stderrBuffer.firstIndex(of: 0x0A) {
+        // `handle(line:)` may relaunch, which bumps the generation; lines
+        // still buffered belong to the abandoned run.
+        while generation == launchGeneration, let newlineIndex = stderrBuffer.firstIndex(of: 0x0A) {
             let lineBytes = Array(stderrBuffer[..<newlineIndex])
             stderrBuffer.removeSubrange(0...newlineIndex)
             guard let line = String(bytes: lineBytes, encoding: .utf8) else { continue }
@@ -283,6 +294,10 @@ final class PickyCloudflareQuickTunnel: PickyQuickTunnelControlling {
         }
         if let message = PickyQuickTunnelLogParser.errorMessage(in: line) {
             lastError = message
+        }
+        if PickyQuickTunnelLogParser.reportsTunnelGone(line) {
+            abandonDeadTunnel()
+            return
         }
         // The address is printed before the edge accepts the connection;
         // a phone opening it in between gets Cloudflare's error page.
@@ -301,6 +316,15 @@ final class PickyCloudflareQuickTunnel: PickyQuickTunnelControlling {
             return
         }
         state = .failed(lastError ?? L10n.t("settings.remote.cloudflare.quick.error.exited", String(status)))
+        scheduleRestart()
+    }
+
+    private func abandonDeadTunnel() {
+        launchGeneration &+= 1
+        terminateProcess()
+        pidFile.remove()
+        stderrBuffer.removeAll(keepingCapacity: true)
+        state = .failed(lastError ?? L10n.t("settings.remote.cloudflare.quick.error.exited", "1"))
         scheduleRestart()
     }
 

@@ -1,6 +1,7 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createReadPickyUserGuideTool, PICKY_USER_GUIDE_SECTIONS, readPickyUserGuide } from "./user-guide-tool.js";
 
@@ -53,6 +54,13 @@ describe("readPickyUserGuide", () => {
     expect(result.section).toBe("2. Menu bar companion panel");
     expect(result.content).toContain("Panel details");
     expect(result.content).not.toContain("Shortcut details");
+  });
+
+  it("advertises exactly the top-level sections of the bundled manual", async () => {
+    const manual = await readFile(fileURLToPath(new URL("../../../docs/user-manual.md", import.meta.url)), "utf8");
+    const headings = [...manual.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
+
+    expect(headings).toEqual([...PICKY_USER_GUIDE_SECTIONS]);
   });
 
   it("lists available sections in the tool description", () => {

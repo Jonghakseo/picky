@@ -13,7 +13,7 @@ const FALLBACK_EXCERPT_CHAR_LIMIT = 6_000;
 
 export const PICKY_USER_GUIDE_SECTIONS = [
   "1. First launch and prerequisites",
-  "2. Menu bar companion panel",
+  "2. Picky Hub",
   "3. Global shortcuts",
   "4. Push-to-Talk voice input",
   "5. Quick Input text input",
@@ -22,11 +22,11 @@ export const PICKY_USER_GUIDE_SECTIONS = [
   "8. Pickle conversation card",
   "9. Pickle menus",
   "10. HUD keyboard shortcuts",
-  "11. Pi terminal overlay and inline terminal",
+  "11. Resume a Pi session in your own terminal",
   "12. Report viewer",
   "13. Settings reference",
   "14. Common workflows",
-  "15. Remote access from your phone",
+  "15. Web access: this Mac's browser and your phone",
 ] as const;
 
 const USER_GUIDE_SECTIONS_DESCRIPTION = `Available sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`;

@@ -10,7 +10,7 @@ import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 
 const root = process.env.PICKY_W0_ROOT;
 assert.ok(root, 'isolated root is required');
-assert.ok(['1.0.0', '0.85.0'].includes(VERSION), 'review characterization before changing SDK versions');
+assert.ok(['1.0.4', '0.85.0'].includes(VERSION), 'review characterization before changing SDK versions');
 const trace = [];
 const record = (event, data = {}) => trace.push({ event, ...data });
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -128,7 +128,7 @@ async function settlement(fenced) {
     await f.session.prompt('INITIAL'); await f.session.waitForIdle(); await stop;
     assert.equal(f.requests.length, fenced || VERSION === '0.85.0' ? 1 : 2);
     assert.equal(f.state.blocked, fenced ? 1 : 0);
-    if (!fenced && VERSION === '1.0.0') assert.ok(f.observations.some(m => m.details?.deliveryId === 'delivery-settled'));
+    if (!fenced && VERSION === '1.0.4') assert.ok(f.observations.some(m => m.details?.deliveryId === 'delivery-settled'));
     record('settlement', { fenced, externalRequests: f.requests.length, admissionRejections: f.state.blocked });
   } finally { await f.close(); }
 }

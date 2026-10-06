@@ -567,6 +567,29 @@ system messages는 `0.86`~`0.99.0`에서 이미 들어왔다. 세션 파일 버�
   `node scripts/test-async-provider-package.mjs` 통과.
 - Xcode 앱 빌드와 실행 중인 앱의 수동 smoke는 실행하지 않았다. Swift 코드는 바뀌지 않았다.
 
+### 1.0.0 -> 1.0.4
+
+공식 근거: [Pi CHANGELOG](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md).
+이 범위의 릴리즈는 `1.0.1`~`1.0.4`다. `pi-ai`, `pi-coding-agent`, `pi-tui`만 함께 올린다.
+
+- `1.0.3`에서 Azure provider가 `azure-openai-responses`에서 `azure`로 바뀐다. Picky 코드는 이
+  이름을 쓰지 않는다. fast mode 정책은 OpenAI·Anthropic 허용 목록만 보므로 두 이름 모두 제외된다.
+  `fast-mode-policy.test.ts`의 제외 예시만 `azure`로 바꾼다. 사용자 `auth.json`·`settings.json`의
+  provider 키 이전은 사용자 Pi 설정 몫이고, 옛 이름으로 저장된 세션은 재개 때 다른 모델로 넘어간다.
+- `1.0.1`의 `pi.registerToolRenderer()`, MCP 프로젝트 override, `oauth.clientRegistration: "cimd"`,
+  `1.0.2`의 `samplingParamsByThinkingLevel`, `1.0.4`의 `--tools` 패턴·`--no-mcp`는 CLI·TUI·설정
+  기능이라 Picky가 따로 대응하지 않는다. `ToolLoadout.getPromptGuidelines()` 추가는 Picky가
+  `prepareLoadout`을 쓰지 않아 영향이 없다.
+- MCP 종료가 연결 중인 서버를 기다리도록 고쳐졌다(#10249). `picky-mcp.ts`가 dist에서 읽는
+  `extensions/mcp/config.js`, `core/mcp-servers.js`, `extensions/mcp/cli.js`, `core/auth-storage.js`
+  경로는 그대로다.
+- `createLocalShellOperations`는 1.0.4에서도 cwd 검사 뒤 abort를 다시 확인하지 않는다.
+  기존 패치를 `patches/pi-coding-agent@1.0.4.patch`로 옮긴다.
+- async task 특성 테스트의 SDK 버전 가드를 `1.0.4`로 바꾼다. 기대 동작은 그대로다.
+- `1.0.1`에서 published package의 `npm-shrinkwrap.json`이 빠졌다. Picky는 pnpm lockfile로
+  transitive 버전을 고정하므로 영향이 없다. lockfile 변화는 Pi 계열 패키지와
+  `@anthropic-ai/sdk` 0.124.0 → 0.129.0이다.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

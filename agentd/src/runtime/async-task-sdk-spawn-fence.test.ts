@@ -10,7 +10,7 @@ const installedSDK = fileURLToPath(new URL("../../node_modules/@earendil-works/p
 // Explicit acceptance targets are mandatory if supplied, never silently skipped.
 const targets: Record<string, string> = process.env.PICKY_SDK_SPAWN_FENCE_TARGETS
   ? JSON.parse(process.env.PICKY_SDK_SPAWN_FENCE_TARGETS) as Record<string, string>
-  : { "1.0.0": installedSDK };
+  : { "1.0.4": installedSDK };
 if (Object.keys(targets).length === 0) throw new Error("At least one SDK target is required");
 
 for (const [version, sdk] of Object.entries(targets)) {

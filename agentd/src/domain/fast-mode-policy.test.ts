@@ -9,7 +9,7 @@ describe("fast mode policy", () => {
       ["anthropic", "claude-opus-5-5"], ["anthropic", "claude-opus-5"], ["anthropic", "claude-opus-4-8"], ["anthropic", "claude-opus-4-8-20260115"],
     ];
     const unsupported = [
-      ["openai-codex", "gpt-5.3-codex-spark"], ["openai-codex", "gpt-5.1"], ["azure-openai-responses", "gpt-6-sol"], ["openrouter", "gpt-5.5"],
+      ["openai-codex", "gpt-5.3-codex-spark"], ["openai-codex", "gpt-5.1"], ["azure", "gpt-6-sol"], ["openrouter", "gpt-5.5"],
       ["anthropic", "claude-opus-4-7"], ["anthropic", "claude-opus-4-6"], ["anthropic", "claude-sonnet-5"], ["amazon-bedrock", "claude-opus-5-5"],
     ];
     for (const [provider, id] of supported) expect(isFastModeSupported({ provider: provider!, id: id! }), `${provider}/${id}`).toBe(true);
@@ -36,7 +36,7 @@ describe("fast mode policy", () => {
 
   it("leaves unsupported models and non-object payloads unchanged", () => {
     const payload = { model: "gpt-6-sol", input: [] };
-    expect(applyFastModeToPayload(payload, { provider: "azure-openai-responses", id: "gpt-6-sol" })).toBe(payload);
+    expect(applyFastModeToPayload(payload, { provider: "azure", id: "gpt-6-sol" })).toBe(payload);
     expect(applyFastModeToPayload("raw", { provider: "openai-codex", id: "gpt-5.5" })).toBe("raw");
   });
 });

@@ -10,6 +10,7 @@ import type { ThinkingLevel } from "../../../../src/protocol";
 import { ChevronRight } from "../icons";
 import { useDialog } from "../../ui/use-dialog";
 import { t } from "../i18n";
+import { stopInsideMenu } from "./sheet-anchor";
 
 export interface RuntimeModelOption {
   provider: string;
@@ -98,7 +99,7 @@ export function SettingsSheet(props: SettingsSheetProps): JSX.Element {
   }, [page]);
   return (
     <div class="sheet-backdrop" onClick={props.onDismiss}>
-      <div class="sheet-anchor is-leading" onClick={(event: MouseEvent) => event.stopPropagation()}>
+      <div class="sheet-anchor is-leading" onClick={stopInsideMenu}>
         <div class="settings-menu" role="dialog" aria-modal="true" aria-label={t("hud.composer.settings.title")} ref={dialog}>
           {page === "root" ? <RootPage {...props} onOpen={setPage} /> : null}
           {page === "model" ? (

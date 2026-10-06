@@ -9,6 +9,7 @@ import type { JSX } from "preact";
 import { ChevronRight } from "../icons";
 import { useDialog } from "../../ui/use-dialog";
 import { t } from "../i18n";
+import { stopInsideMenu } from "./sheet-anchor";
 import type { SendTiming, SendTimingOption } from "../policy/schedule";
 import { delayMilliseconds, isWithinScheduleLimit } from "../policy/schedule";
 
@@ -57,7 +58,7 @@ export function SendTimingMenu(props: SendTimingMenuProps): JSX.Element {
 
   return (
     <div class="sheet-backdrop" onClick={props.onDismiss}>
-      <div class="sheet-anchor is-trailing" ref={menu} onKeyDown={onKeyDown} onClick={(event: MouseEvent) => event.stopPropagation()}>
+      <div class="sheet-anchor is-trailing" ref={menu} onKeyDown={onKeyDown} onClick={stopInsideMenu}>
         {custom === null ? (
           <div class="send-timing-menu" role="menu" aria-labelledby="send-timing-title">
             <div class="send-timing-title" id="send-timing-title">{t("hud.composer.sendTiming.title")}</div>

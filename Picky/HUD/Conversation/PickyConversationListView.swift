@@ -180,9 +180,8 @@ struct PickyConversationListView: View {
                 // fresh ScrollView would otherwise lay out its first frame at the
                 // top and only reach the bottom after `.task(id:)` plus the
                 // deferred `proxy.scrollTo`, flashing the oldest turn for 2-3
-                // frames on every Pickle switch. Anchor only the initial offset:
-                // size-change and short-content alignment stay top-based.
-                .modifier(PickyConversationInitialBottomOffset())
+                // frames on every Pickle switch.
+                .pickyInitialBottomScrollAnchor()
                 .scrollPosition(
                     id: Binding(
                         get: { historyScrollTargetID },
@@ -1035,16 +1034,6 @@ struct PickyConversationListView: View {
 
     private static let bottomAnchorID = "__picky_conversation_bottom_anchor__"
     private static let scrollCoordinateSpace = "PickyConversationScrollViewport"
-}
-
-private struct PickyConversationInitialBottomOffset: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 15.0, *) {
-            content.defaultScrollAnchor(.bottom, for: .initialOffset)
-        } else {
-            content
-        }
-    }
 }
 
 private struct PickyConversationScrollViewportPreferenceKey: PreferenceKey {

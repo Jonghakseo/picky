@@ -76,6 +76,9 @@ private struct PickyHubConversationTimeline: View {
                     .padding(.horizontal, PickyHubTheme.Layout.contentHorizontalPadding)
                     .frame(maxWidth: .infinity)
                 }
+                // Open on the newest message in the first frame; the deferred
+                // onAppear scroll alone showed the oldest one first.
+                .pickyInitialBottomScrollAnchor()
                 .coordinateSpace(name: bottomAnchorID)
                 .onPreferenceChange(PickyHubConversationBottomPreference.self) { bottom in
                     isNearBottom = PickyHubConversationPolicy.isNearBottom(bottom: bottom, viewportHeight: viewport.size.height)

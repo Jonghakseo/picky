@@ -1216,6 +1216,47 @@ struct PickyConversationCardViewTests {
         #expect(reportedGrowths.allSatisfy { $0 <= 54 })
     }
 
+    /// Switching Pickles remounts the list (`.id(sessionID)`). The first frame
+    /// the new ScrollView commits must already show the latest turn; reaching
+    /// the bottom only after the deferred `proxy.scrollTo` flashes the oldest
+    /// turn for a few frames on every switch.
+    @Test func longTranscriptFirstLayoutIsAlreadyPinnedToLatestTurn() throws {
+        guard #available(macOS 15.0, *) else { return }
+        let session = makeConversationSession(status: .completed, messages: [
+            message("u-long", kind: .userText, text: "Question"),
+            message("a-long", kind: .agentText, text: String(repeating: "Long answer line\n", count: 200)),
+        ])
+        let host = NSHostingView(rootView: PickyConversationListView(
+            session: session,
+            viewModel: makeViewModel()
+        ).frame(width: PickyHUDDockLayout.detailWidth, height: 300))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PickyHUDDockLayout.detailWidth, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+
+        // One synchronous layout pass, no run-loop turn: `.task` and the
+        // deferred scrollTo have not run, matching the first switched frame.
+        host.layoutSubtreeIfNeeded()
+
+        let scrollView = try #require(descendantScrollViews(in: host).first)
+        let documentHeight = try #require(scrollView.documentView).frame.height
+        let visible = scrollView.documentVisibleRect
+        #expect(documentHeight > visible.height * 2, "fixture must overflow the viewport")
+        let distanceFromBottom = scrollView.documentView?.isFlipped == false
+            ? visible.minY
+            : documentHeight - visible.maxY
+        #expect(
+            distanceFromBottom <= PickyConversationScrollPolicy.bottomPinThreshold,
+            "first frame showed offset \(visible) of \(documentHeight)"
+        )
+    }
+
     @Test func renderedConversationCardHeightDoesNotFollowTranscriptContentHeight() {
         let viewModel = makeViewModel()
         let shortSession = makeConversationSession(status: .completed, messages: [
@@ -2715,6 +2756,10 @@ private func message(
         subagentInvocation: subagentInvocation,
         attachedImagesCount: attachedImagesCount
     )
+}
+
+private func descendantScrollViews(in root: NSView) -> [NSScrollView] {
+    ((root as? NSScrollView).map { [$0] } ?? []) + root.subviews.flatMap(descendantScrollViews(in:))
 }
 
 private func descendantTextViews(in root: NSView) -> [NSTextView] {

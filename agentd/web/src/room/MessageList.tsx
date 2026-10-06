@@ -235,7 +235,7 @@ function SessionRows({ sessionId, session, actions, send, onEdit, onRestore, now
     );
   }
 
-  const presence = derivePresence(session_);
+  const presence = derivePresence(session_, now);
   if (presence) rows.push(<PresenceRow key="presence" presence={presence} now={now} />);
 
   return <div class="msgs">{rows}</div>;

@@ -80,3 +80,24 @@ describe("presence while only background work runs", () => {
     expect(derivePresence({ ...base, agentCycle: cycle("settled") } as PickyAgentSession)).toBeNull();
   });
 });
+
+describe("presence right after a step finishes (HUD parity)", () => {
+  const ended = "2026-10-05T06:00:10.000Z";
+  const at = (seconds: number) => Date.parse(ended) + seconds * 1000;
+  const finished = (name: string, status: string): PickyAgentSession =>
+    running({ name, status, argsPreview: '{"command":"x","title":"빈도 측정 재실행"}', endedAt: ended } as Partial<PickyToolActivity> & { name: string });
+
+  it("reads done or failed with the step title for five seconds, then thinking", () => {
+    expect(derivePresence(finished("bash", "succeeded"), at(0.5))).toMatchObject({ phase: "workCompleted", detail: "빈도 측정 재실행" });
+    expect(derivePresence(finished("bash", "failed"), at(4.9))).toMatchObject({ phase: "workFailed", detail: "빈도 측정 재실행" });
+    expect(derivePresence(finished("bash", "succeeded"), at(5))?.phase).toBe("thinking");
+  });
+
+  it("gives way to a running tool and skips tools that only launch background work", () => {
+    const session = finished("bash", "succeeded");
+    const next = { toolCallId: "call-2", name: "read", status: "running", argsPreview: '{"path":"/a/b.ts"}' } as PickyToolActivity;
+    expect(derivePresence({ ...session, tools: [...(session.tools ?? []), next] }, at(1))?.phase).toBe("readingFile");
+    expect(derivePresence(finished("bash_async", "succeeded"), at(1))?.phase).toBe("thinking");
+    expect(derivePresence(finished("subagent", "succeeded"), at(1))?.phase).toBe("thinking");
+  });
+});

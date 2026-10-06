@@ -15,6 +15,8 @@ export type PresencePhase =
   | "editingFile"
   | "writingFile"
   | "working"
+  | "workCompleted"
+  | "workFailed"
   | "waitingForInput";
 
 export interface Presence {
@@ -32,6 +34,8 @@ const PHASE_TITLE_KEYS: Record<PresencePhase, string> = {
   editingFile: "hud.presence.editingFile",
   writingFile: "hud.presence.writingFile",
   working: "hud.liveStep.working",
+  workCompleted: "hud.presence.workCompleted",
+  workFailed: "hud.presence.workFailed",
   waitingForInput: "hud.conversation.status.waiting",
 };
 
@@ -138,8 +142,32 @@ export function runningTool(tools: PickyToolActivity[] | undefined): PickyToolAc
   return undefined;
 }
 
+/**
+ * How long a finished "working" step reads "done" or "failed" before the line
+ * returns to "thinking". `PickyConversationPresenceStabilizer.finishedWorkHold`.
+ */
+export const FINISHED_WORK_HOLD_MS = 5_000;
+
+/**
+ * The last tool when it is a "working" step that ended less than
+ * `FINISHED_WORK_HOLD_MS` ago. File tools keep their own titles; `bash_async`
+ * and `subagent` return once their background work launches, and a question
+ * tool ends with the user's answer, so none of those reads as done.
+ * `PickyConversationPresencePresentation.finishedWork(for:)`.
+ */
+function finishedWork(tools: PickyToolActivity[] | undefined, now: number): Presence | null {
+  const tool = tools?.[tools.length - 1];
+  if (!tool || fileStep(tool)) return null;
+  if (["bash_async", "subagent", "ask_user_question"].includes(tool.name.toLowerCase())) return null;
+  const failed = tool.status === "failed";
+  if (!failed && tool.status !== "succeeded") return null;
+  const ended = tool.endedAt ? Date.parse(tool.endedAt) : Number.NaN;
+  if (Number.isNaN(ended) || now - ended >= FINISHED_WORK_HOLD_MS) return null;
+  return { phase: failed ? "workFailed" : "workCompleted", detail: workingDetail(tool), startedAt: tool.startedAt };
+}
+
 /** `null` while nothing is in flight: the room shows no line at all. */
-export function derivePresence(session: PickyAgentSession): Presence | null {
+export function derivePresence(session: PickyAgentSession, now: number = Date.now()): Presence | null {
   if (session.status === "waiting_for_input") {
     return session.pendingExtensionUiRequest ? null : { phase: "waitingForInput" };
   }
@@ -151,7 +179,7 @@ export function derivePresence(session: PickyAgentSession): Presence | null {
 
   const tool = runningTool(session.tools);
   if (!tool) {
-    return { phase: "thinking", startedAt: session.updatedAt };
+    return finishedWork(session.tools, now) ?? { phase: "thinking", startedAt: session.updatedAt };
   }
   const file = fileStep(tool);
   if (file) {

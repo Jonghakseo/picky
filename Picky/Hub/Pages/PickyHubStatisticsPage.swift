@@ -130,6 +130,7 @@ struct PickyHubStatisticsPage: View {
         VStack(alignment: .leading, spacing: 0) {
             if selectedTab == .usage, let usageLimitsStore = dependencies.usageLimitsStore {
                 PickyHubUsageLimitsSection(store: usageLimitsStore)
+                    .id(PickyHubStatisticsAnchor.planLimits.rawValue)
             }
             switch statisticsStore.state {
             case .idle, .loading:
@@ -176,7 +177,7 @@ struct PickyHubStatisticsPage: View {
         }
         guard let anchor = navigator.pendingStatisticsAnchor else { return }
         navigator.pendingStatisticsAnchor = nil
-        selectedTab = .work
+        selectedTab = anchor.tab
         DispatchQueue.main.async {
             withAnimation(PickyHubTheme.Motion.page) {
                 proxy.scrollTo(anchor.rawValue, anchor: .top)

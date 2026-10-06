@@ -191,4 +191,7 @@ final class PickyHubNavigator: ObservableObject {
 enum PickyHubStatisticsAnchor: String {
     case workPattern
     case pickleRecords
+    case planLimits
+
+    var tab: PickyHubStatisticsTab { self == .planLimits ? .usage : .work }
 }

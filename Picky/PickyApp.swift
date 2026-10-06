@@ -413,7 +413,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// a usage item or "View all limits" in the HUD opens Statistics > AI usage.
     private func startUsageLimits(hubWindowController: PickyHubWindowController) {
         let openUsage: () -> Void = { [weak self, weak hubWindowController] in
-            self?.hubNavigator.showStatistics(tab: .usage)
+            self?.hubNavigator.showStatistics(tab: .usage, anchor: .planLimits)
             hubWindowController?.show()
         }
         usageLimitsStore.openUsageInHub = openUsage

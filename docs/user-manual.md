@@ -57,7 +57,7 @@ The top of **Statistics → AI usage** shows a **Plan limits** card for each Cla
 - Each card shows the remaining share of the 5-hour **Session** and **Weekly** limits with their reset times, the number of available **Limit resets**, and **Status** and **Dashboard** links to the provider's pages. A plan with only a weekly window shows **No data** for Session.
 - A tick on each bar marks what would be left at an even pace until the reset. **Ahead of pace** appears when the remaining share is more than 5 points below it.
 - Picky checks every 5 minutes; **Refresh** checks immediately. If a check fails, the card keeps the last values dimmed and says how old they are.
-- **Show in menu bar** adds a menu bar item for that provider, right of the Picky icon, with its logo and the remaining session and weekly share. Clicking it opens this tab.
+- **Show in menu bar** adds that provider to a single usage item right of the Picky icon, showing each pinned logo with its remaining session and weekly share. Clicking anywhere on the item opens Plan limits.
 - The limits come from the providers' undocumented usage endpoints and may show **No data** if a provider changes them.
 - **Guides & Updates**: bundled guides and release updates. Opening a card shows its video in Hub when available.
 - **Quick Start**: creates a new Pickle from one of four guided flows: build a landing page, build a native app, start an app guide, or organize files. Start in the default working directory or choose a folder. If a previous launch is still recoverable, resume it instead of creating a duplicate Pickle.

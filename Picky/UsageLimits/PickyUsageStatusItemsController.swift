@@ -2,9 +2,10 @@
 //  PickyUsageStatusItemsController.swift
 //  Picky
 //
-//  One menu bar item per provider the user pinned in Hub > Statistics > AI
-//  usage. Each shows the provider logo with the remaining session/weekly share
-//  and opens that Hub tab on click. The Picky item stays to the left of them.
+//  A single menu bar item for every provider the user pinned in Hub >
+//  Statistics > AI usage. It shows each provider logo with the remaining
+//  session/weekly share, and a click anywhere on it opens plan limits.
+//  The Picky item stays to its left.
 //
 
 import AppKit
@@ -14,12 +15,12 @@ import Combine
 final class PickyUsageStatusItemsController {
     private let store: PickyUsageLimitsStore
     private let openUsage: () -> Void
-    /// Called after usage items were added or removed. macOS inserts a new
+    /// Called after the usage item was added or removed. macOS inserts a new
     /// status item to the left of existing ones, so the Picky item must be
     /// recreated afterwards to stay leftmost.
     private let didChangeItemSet: () -> Void
-    private var items: [PickyUsageLimitsProviderID: NSStatusItem] = [:]
-    private var visibleOrder: [PickyUsageLimitsProviderID] = []
+    /// One item for every pinned provider, so the whole strip is a single click target.
+    private var item: NSStatusItem?
     private var cancellable: AnyCancellable?
 
     init(store: PickyUsageLimitsStore, openUsage: @escaping () -> Void, didChangeItemSet: @escaping () -> Void) {
@@ -36,24 +37,23 @@ final class PickyUsageStatusItemsController {
 
     func update() {
         let providers = store.menuBarProviders
-        let order = providers.map(\.provider)
-        if order != visibleOrder {
-            items.values.forEach { NSStatusBar.system.removeStatusItem($0) }
-            items = [:]
-            // Created right to left so they read Claude, ChatGPT from the left.
-            for id in order.reversed() {
-                items[id] = makeItem()
+        guard !providers.isEmpty else {
+            if let item {
+                NSStatusBar.system.removeStatusItem(item)
+                self.item = nil
+                didChangeItemSet()
             }
-            visibleOrder = order
+            return
+        }
+        if item == nil {
+            item = makeItem()
             didChangeItemSet()
         }
-        for provider in providers {
-            guard let button = items[provider.provider]?.button else { continue }
-            button.image = PickyUsageStatusItemRenderer.image(for: provider)
-            let label = PickyUsageStatusItemRenderer.accessibilityLabel(for: provider)
-            button.setAccessibilityLabel(label)
-            button.toolTip = label
-        }
+        guard let button = item?.button else { return }
+        button.image = PickyUsageStatusItemRenderer.stripImage(for: providers)
+        let label = providers.map(PickyUsageStatusItemRenderer.accessibilityLabel(for:)).joined(separator: "\n")
+        button.setAccessibilityLabel(label)
+        button.toolTip = label
     }
 
     private func makeItem() -> NSStatusItem {
@@ -77,6 +77,24 @@ enum PickyUsageStatusItemRenderer {
             PickyUsageLimitsPresentation.remainingText(provider.session),
             PickyUsageLimitsPresentation.remainingText(provider.weekly)
         )
+    }
+
+    /// Pinned providers side by side in one template image (Claude, then ChatGPT).
+    static func stripImage(for providers: [PickyUsageLimitsProvider]) -> NSImage {
+        let parts: [NSImage] = providers.map { Self.image(for: $0) }
+        let gap: CGFloat = 10
+        let height = parts.map { $0.size.height }.max() ?? NSStatusBar.system.thickness
+        let width = parts.map { $0.size.width }.reduce(0, +) + gap * CGFloat(max(0, parts.count - 1))
+        let strip = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            var x: CGFloat = 0
+            for part in parts {
+                part.draw(in: NSRect(x: x, y: (height - part.size.height) / 2, width: part.size.width, height: part.size.height))
+                x += part.size.width + gap
+            }
+            return true
+        }
+        strip.isTemplate = true
+        return strip
     }
 
     /// Template image: logo plus the remaining share. Session and weekly stack

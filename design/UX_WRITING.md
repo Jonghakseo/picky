@@ -130,4 +130,4 @@ View의 문자열만 보지 않는다. 액션, 상태 projection, 설정 저장,
 
 - [Apple HIG: Writing](https://developer.apple.com/design/human-interface-guidelines/writing): 명확한 행동 라벨, 일관된 용어, 상황에 맞는 말투, 다음 행동을 알려주는 오류·빈 상태.
 - [Apple Style Guide](https://help.apple.com/applestyleguide/#/): 영어 표기와 기술 용어의 스타일 참고.
-- [기존 UX writing 전후 비교표](../docs/ux-writing-before-after.md): 실제 적용 사례. 현재 코드의 동작을 대신하는 명세는 아니다.
+- [기존 UX writing 전후 비교표](../docs/archive/ux-writing-before-after.md): 실제 적용 사례. 현재 코드의 동작을 대신하는 명세는 아니다.

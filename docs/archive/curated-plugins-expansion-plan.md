@@ -2,7 +2,7 @@
 
 # Curated 플러그인 추가: web-access · vcc-ko · 스킬 5종
 
-2026-09-29 · 설계 / 구현 준비 · 개정 2
+2026-09-29 · 구현 완료 (2026-10-06 확인) · 개정 2
 
 ---
 
@@ -283,9 +283,9 @@ a4의 `md-to-a4-html.mjs`가 Pi 설치 레이아웃(`<agentDir>/npm/node_modules
 - [x] `packages/web-access` 이전, LICENSE·README, `publish:web-access`
 - [x] `check-workspace.mjs`에 스킬 패키지 분기
 - [x] `packages/skill-*` 5개, excalidraw `prepack` 빌드, a4 `dependencies`, 스킬 문서 경로 수정, 스킬별 `references/setup.md`
-- [ ] `verify:strict` → 패키지별 `pnpm run deploy`
+- [x] `verify:strict` → 패키지별 `pnpm run deploy` (6개 패키지 npm 배포 확인)
 - [x] 임시 `PI_CODING_AGENT_DIR`에 설치해 레이아웃 스모크
-- [ ] my-pi 로컬 원본 삭제(별도 커밋)
+- [ ] my-pi 로컬 원본 삭제(별도 커밋, `Jonghakseo/my-pi` 저장소 작업이라 이 저장소 범위 밖)
 
 **단계 1: 안전장치 (Picky)**
 - [x] 정적 판정기 `curated-package-conflicts.ts` + 제공 리소스 목록

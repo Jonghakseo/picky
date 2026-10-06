@@ -388,11 +388,11 @@ Changes:
   ...) stay: they are the daemon's domain event bus and are consumed by tests
   and by the terminal waiter, not wire events.
 
-Deferred (P1-2c): Swift still decodes and applies the v1 events, and ~330 Swift
-tests inject sessions through `sessionUpdated` fixtures. The TypeScript schemas
-for those 15 events are retained, marked wire-dead, until the Swift decoder,
-`PickySessionListViewModel` v1 apply path, router `sessionCache`, and the test
-fixtures move to v2 projection injection in one change.
+Completed in P1-2c (`faa9851d5`, 2026-10-04): the 15 wire-dead TypeScript
+schemas, the Swift `PickyEvent` cases and decoders, the view model v1 apply
+path, and the router `sessionCache` were deleted in one change. Swift tests now
+build v2 snapshots and transactions through `PickyProjectionEventFixtures`; the
+remaining `events.sessionUpdated(...)` test helpers emit v2 frames, not v1 JSON.
 
 #### 2026-09-06 typed `lastRequest` replaces log-prefix parsing
 

@@ -8,7 +8,7 @@ The goal is to find a setting, understand its effect, and change its value witho
 
 Use existing DS spacing and Hub typography/color tokens. Reading descriptions use secondary text, not disabled-adjacent tertiary text. Embedded cards regain identifying headings. No material, shadow, new animation, or custom focus ring is needed. Native menus and toggles retain their behavior. Jump buttons keep native Button actions and keyboard semantics with a multiline SwiftUI label and immediate hover/pressed state layers; AppKit's bordered button truncated long English labels in the first render. No jump animation is introduced beyond the existing Reduce Motion-aware scroll.
 
-References: [Picky principles](../design/PRINCIPLES.md), [tokens](../design/TOKENS.md), [audit rubric](../design/AUDIT.md), Apple [Layout](https://developer.apple.com/design/human-interface-guidelines/layout), [Menus](https://developer.apple.com/design/human-interface-guidelines/menus), and [Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility).
+References: [Picky principles](../../design/PRINCIPLES.md), [tokens](../../design/TOKENS.md), [audit rubric](../../design/AUDIT.md), Apple [Layout](https://developer.apple.com/design/human-interface-guidelines/layout), [Menus](https://developer.apple.com/design/human-interface-guidelines/menus), and [Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility).
 
 ## Baseline score
 

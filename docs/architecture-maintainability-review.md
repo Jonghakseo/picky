@@ -32,6 +32,8 @@ _작성일: 2026-09-06 · 기준 커밋: `a739298ad`_
 | `Picky/PickyAgentProtocol.swift` | 1,465 | 64 |
 | `agentd/src/protocol.ts` | 1,133 | 61 |
 
+> 2026-10-06 참고: 위 수치는 기준 커밋 시점 측정값이다. 이후 `32ec55c08`에서 폴더가 재편돼 `Picky/CompanionManager.swift`는 `Picky/Companion/`, `Picky/PickyAgentProtocol.swift`는 `Picky/Protocol/`로 옮겨졌고, §8의 리팩터로 대형 파일 라인 수도 크게 줄었다(예: `pi-sdk-runtime.ts` 1,538줄 → 304줄). 현재 값은 다시 측정한다.
+
 ## 2. 잘 되어 있는 것 (유지할 것)
 
 짧게만 적는다. 이 항목들은 뒤의 개선안이 기대는 기반이다.

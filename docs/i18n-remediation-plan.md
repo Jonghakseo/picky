@@ -11,6 +11,10 @@ has 850 keys as of 2026-08-30, complete `en` and `ko` translations, no empty
 values, and no format-placeholder mismatches. The gaps are code paths that bypass the catalog
 or use the system locale instead of Picky's selected locale.
 
+File paths were updated on 2026-10-06 after the folder reorganization (`32ec55c08`)
+and the Hub window replaced the companion panel. Line numbers still point at the
+2026-08-30 audit snapshot, so treat them as hints and re-locate the code with `rg`.
+
 This plan does not translate user/agent-authored content, paths, model names,
 tool names, debug logs, Pi-only prompts, or developer CLI output.
 
@@ -110,13 +114,13 @@ a localized format style, not a `String` passed to `Text`.
 
 | Surface | Locations |
 | --- | --- |
-| Dock group creation | `Picky/HUD/PickyDockGroupCreatorView.swift:61-162` |
-| Dock preview, unread state, session status/fallbacks | `Picky/HUD/PickyHUDDockIconView.swift:144-203,1227-1335` |
-| Tool activity status, risk, cwd fallback | `Picky/HUD/PickyToolActivityRow.swift:20-60` |
+| Dock group creation | `Picky/HUD/Dock/PickyDockGroupCreatorView.swift:61-162` |
+| Dock preview, unread state, session status/fallbacks | `Picky/HUD/Dock/PickyHUDDockIconView.swift:144-203,1227-1335` |
+| Tool activity status, risk, cwd fallback | `Picky/HUD/ToolHistory/PickyToolActivityRow.swift:20-60` |
 | Question bubble controls/statuses | `Picky/HUD/Conversation/Bubbles/PickyQuestionBubbleView.swift:26-28,107-250` |
 | Error, typing, compacting, tool-call, extension bubble labels | `Picky/HUD/Conversation/Bubbles/PickyErrorBubbleView.swift:27`; `PickyTypingBubbleView.swift:32,54-56`; `PickyToolCallInlineRow.swift:51,61-72`; `PickyAgentBubbleView.swift:95`; `PickyCompactStatusViews.swift:39`; `PickyOpenAsReportHoverIcon.swift:39` |
 | Composer/header/menu/context-line/terminal controls | `Picky/HUD/Conversation/PickyConversationComposerView.swift:313-314,336,361-362,446,871-872,1438-1439`; `PickyConversationHeaderView.swift:170-171,307,348-349,851-852,873`; `PickyConversationMenu.swift:63`; `PickyConversationContextLineView.swift:199,221,250,293`; `PickyInlineTerminalCardView.swift:112,186,205,223,255`; `PickySessionExtendedTerminalView.swift:265` |
-| Report, archive, dock, history, list, resize UI | `Picky/HUD/PickyReportViewer.swift:939-943,1061-1090`; `PickyHUDArchivedSessionsListView.swift:120,186`; `PickyHUDArchiveUndoToast.swift:103`; `PickyHUDDockRailView.swift:925-926`; `PickyToolHistoryViewer.swift:244,481,488,501,518,617`; `PickyConversationListView.swift:465,559`; `PickyHUDView.swift:374` |
+| Report, archive, dock, history, list, resize UI | `Picky/HUD/Artifacts/PickyReportViewer.swift:939-943,1061-1090`; `PickyHUDArchivedSessionsListView.swift:120,186`; `PickyHUDArchiveUndoToast.swift:103`; `PickyHUDDockRailView.swift:925-926`; `PickyToolHistoryViewer.swift:244,481,488,501,518,617`; `PickyConversationListView.swift:465,559`; `PickyHUDView.swift:374` |
 
 ## Priority 2 — remaining AppKit and shortcut UI
 
@@ -124,8 +128,7 @@ a localized format style, not a `String` passed to `Text`.
   - `Picky/App/PickyAppMenuInstaller.swift:31-160`
   - `Picky/HUD/Conversation/Bubbles/PickyUserBubbleSurfaceView.swift:230-235`
   - `Picky/HUD/Conversation/Bubbles/PickyMarkdownInlineTextView.swift:585-596`
-  - `Picky/Companion/CompanionPanelHeaderView.swift:19,35-36`
-  - `Picky/Companion/CompanionPanelMessagesView.swift:184`
+  - `Picky/Hub/Settings/CompanionPanelMessagesView.swift:184`
   - `Picky/QuickInput/QuickInputPanelView.swift:21-23,239,253,524`
   - `Picky/Shortcuts/ShortcutCaptureRecorder.swift:38-45,191,209,226`
 - **Action:** Localize app/right-click menu entries, panel tooltips and labels,
@@ -139,14 +142,13 @@ a localized format style, not a `String` passed to `Text`.
 ### Use Picky's effective locale everywhere
 
 - **Locations:**
-  - `Picky/Companion/CompanionPanelSettingsView.swift:241,838`
+  - `Picky/Hub/Settings/CompanionPanelSettingsView.swift:241,838`
   - `Picky/HUD/Conversation/PickyRewindPickerView.swift:189-191`
   - `Picky/HUD/Conversation/PickyConversationHeaderView.swift:948-950`
   - `Picky/HUD/Conversation/Bubbles/PickyActivitySummaryView.swift:120-122`
-  - `Picky/Companion/CompanionPanelStatusView.swift:321`
-  - `Picky/Companion/PickyMainAgentTranscriptRow.swift:50`
-  - `Picky/HUD/PickyToolHistoryEntry.swift:213-214`
-  - `Picky/HUD/PickyToolHistoryViewer.swift:642-645`
+  - `Picky/Hub/Settings/PickyMainAgentTranscriptRow.swift:50`
+  - `Picky/HUD/ToolHistory/PickyToolHistoryEntry.swift:213-214`
+  - `Picky/HUD/ToolHistory/PickyToolHistoryViewer.swift:642-645`
   - `agentd/src/application/runtime-event-handler.ts:546-548`
 - **Action:** Resolve language labels through `LocaleManager.stringsBundle` and
   `effectiveLocale`, not process-default `String(localized:)`. Inject
@@ -157,7 +159,7 @@ a localized format style, not a `String` passed to `Text`.
 ### Add plural and list formatting
 
 - **Locations:** `Picky/Resources/Localizable.xcstrings:2008` and count-bearing
-  strings; `Picky/Companion/CompanionPanelExtensionsView.swift:334-335`.
+  strings; `Picky/Hub/Plugins/CompanionPanelExtensionsView.swift:334-335`.
 - **Action:** Add string-catalog plural variations for singular/plural English
   copy and remove literals such as `session(s)`. Use `ListFormatter` with the
   effective locale, or a complete localized sentence, instead of manually

@@ -278,7 +278,7 @@ Transient busy statuses that are intentionally ignored must not settle the lease
 A protocol change must update all contract owners:
 
 - `agentd/src/protocol.ts`
-- `Picky/PickyAgentProtocol.swift`
+- `Picky/Protocol/PickyAgentProtocol.swift`
 - `contracts/protocol/pickle-visual-turn-settled.event.json` or equivalent fixture
 - `agentd/src/protocol.test.ts`
 - `PickyTests/ProtocolContractTests.swift`
@@ -476,7 +476,7 @@ Do not use `agentAnnotations.isEmpty`, dismiss-control visibility, or scene-reco
 
 ### Swift app
 
-- `Picky/PickyAgentProtocol.swift`
+- `Picky/Protocol/PickyAgentProtocol.swift`
   - decode the producer barrier
 - `Picky/Interaction/PickyInteractionEvent.swift`
   - local start/cancel and protocol settlement events

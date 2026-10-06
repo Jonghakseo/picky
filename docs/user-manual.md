@@ -461,7 +461,7 @@ Keyboard behavior inside the composer:
 | Return | Submit default action. |
 | Shift + Return | Insert newline. |
 | Option + Return | Submit follow-up when available. |
-| Escape | Dismiss autocomplete; if armed, cancel screen context; if empty, stop active session. |
+| Escape | Dismiss autocomplete; if armed, cancel screen context; otherwise stop an active session and keep the draft. Esc in the composer never closes the card. |
 | Tab | Accept selected autocomplete. |
 | Shift + Tab | Cycle thinking level. |
 | Control + P | Cycle model forward. |
@@ -692,7 +692,7 @@ These work when a Pickle card/HUD panel is active.
 | Shortcut | Action |
 | --- | --- |
 | Cmd + W | Close the open Pickle card, including immediately after it gains focus; keep the dock and session running. |
-| Escape | Close an open folder member list first, otherwise close the card when no text input is focused. |
+| Escape | Close an open folder member list first. Otherwise, when no text input is focused, stop the opened Pickle if it is running, queued, or waiting for input, or close the card if it is idle. Cmd+W always closes. |
 | Return | Open the highlighted row while a folder member list is open, otherwise focus the active composer when no text input is focused. |
 | Up / Down | Move the highlight in an open folder member list, when no text input is focused. |
 | Cmd + 1…9 | Activate that top-level dock slot: open/close a Pickle (including a one-Pickle group), open a larger group’s member list, or open the picker for an empty group. While a member list is open, these select its rows instead. |

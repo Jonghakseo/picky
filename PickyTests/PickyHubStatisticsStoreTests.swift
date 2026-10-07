@@ -195,6 +195,41 @@ struct PickyHubStatisticsStoreTests {
         #expect(!navigator.shouldRefreshStatistics)
     }
 
+    @Test func earnedBadgesSurviveASnapshotThatNoLongerProvesThem() async throws {
+        let suite = "PickyHubStatisticsStoreTests.badges.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let started = Date(timeIntervalSince1970: 1_784_000_000)
+        let withPickle = PickyHubStatisticsSnapshot(
+            generatedAt: started,
+            records: [PickyHubPickleRecord(
+                id: "first", title: "First", project: "picky", cwd: nil,
+                createdAt: started, lastActivityAt: started,
+                followUpCount: 0, delegationCount: 0, reviewCount: 0, category: .fix
+            )],
+            usageSamples: [],
+            pendingClassificationCount: 0
+        )
+
+        func load(_ snapshot: PickyHubStatisticsSnapshot) async throws -> PickyHubStatisticsStore {
+            let client = FakePickyAgentClient()
+            client.beforeSend = { command in client.emit(Self.reply(commandID: command.id, snapshot: snapshot)) }
+            let store = PickyHubStatisticsStore(client: client, defaults: defaults)
+            store.refresh()
+            try await waitUntil(timeoutMs: 2_000) { store.state.snapshot != nil }
+            return store
+        }
+
+        let first = try await load(withPickle)
+        #expect(first.earnedBadges[.firstPickle] == started)
+
+        // A later snapshot without the record, as after a wiped Statistics folder.
+        let relaunched = try await load(.empty)
+        #expect(relaunched.earnedBadges[.firstPickle] == started)
+        let board = PickyHubBadgePolicy.board(snapshot: .empty, earned: relaunched.earnedBadges)
+        #expect(board.badges.first { $0.kind == .firstPickle }?.earnedAt == started)
+    }
+
     private func waitUntil(timeoutMs: Int, _ condition: @escaping @MainActor () -> Bool) async throws {
         try await withPickyTestTimeout("statistics command sent", timeout: .milliseconds(timeoutMs)) {
             while !(await condition()) {

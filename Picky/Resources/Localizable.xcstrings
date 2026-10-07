@@ -31208,7 +31208,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld to go"
+            "value": "%lld days to go"
           }
         },
         "ko": {
@@ -31256,13 +31256,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld Pickles · %2$lld active days"
+            "value": "%1$lld Pickles on %2$lld active days so far"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pickle %1$lld개 · 활동한 날 %2$lld일"
+            "value": "지금까지 Pickle %1$lld개 · 활동한 날 %2$lld일"
           }
         }
       }
@@ -31960,13 +31960,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This month counts Pickles started this month. Results include reports, links, and files."
+            "value": "This month counts Pickles started this month. Changed files are the files Pickles reported changing; results include reports, links, and files."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이번 달 수치는 이번 달에 시작한 Pickle 기준이에요. 결과물에는 리포트·링크·파일이 포함돼요."
+            "value": "이번 달 수치는 이번 달에 시작한 Pickle 기준이에요. 바꾼 파일은 Pickle이 작업 결과로 보고한 파일이고, 결과물에는 리포트·링크·파일이 포함돼요."
           }
         }
       }

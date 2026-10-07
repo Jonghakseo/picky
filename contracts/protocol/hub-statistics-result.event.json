@@ -15,6 +15,7 @@
         "cwd": "/workspace/picky",
         "createdAt": "2026-08-31T00:00:00.000Z",
         "lastActivityAt": "2026-09-01T00:00:00.000Z",
+        "status": "completed",
         "followUpCount": 2,
         "delegationCount": 1,
         "reviewCount": 1,

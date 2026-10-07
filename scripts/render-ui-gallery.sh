@@ -143,6 +143,15 @@ if [ "$TARGET" = "hub" ]; then
     hub-statisticsReset-wide-dark.png
     hub-statisticsReset-wide-light.png
     hub-statisticsReset-narrow-dark.png
+    hub-remote-wide-dark.png
+    hub-remote-wide-light.png
+    hub-remote-narrow-dark.png
+    hub-statisticsBadges-wide-dark.png
+    hub-statisticsBadges-wide-light.png
+    hub-statisticsBadges-narrow-dark.png
+    hub-statisticsHallOfFame-wide-dark.png
+    hub-statisticsHallOfFame-wide-light.png
+    hub-statisticsHallOfFame-narrow-dark.png
   )
 
   rm -rf "$OUTPUT"

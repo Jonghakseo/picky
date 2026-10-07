@@ -17,8 +17,9 @@ struct PickyHubStatisticsRhythmTab: View {
 
     var body: some View {
         let records = PickyHubStatisticsAggregator.records(in: snapshot, filter: statisticsStore.filter)
+        let dailyCounts = PickyHubRhythmPolicy.dailyCounts(records: snapshot.records)
         VStack(alignment: .leading, spacing: 0) {
-            habit
+            habit(dailyCounts: dailyCounts)
             HStack(alignment: .firstTextBaseline, spacing: PickyHubTheme.Spacing.field) {
                 PickyHubSubsectionTitle(title: "hub.stats.rhythm.pattern.title")
                 Spacer(minLength: 0)
@@ -42,7 +43,9 @@ struct PickyHubStatisticsRhythmTab: View {
                 }
                 .padding(.top, PickyHubTheme.Spacing.group)
             } else {
-                PickyHubHourPatternCard(pattern: PickyHubRhythmPolicy.hourPattern(records: records))
+                PickyHubHourPatternCard(pattern: PickyHubRhythmPolicy.hourPattern(
+                    records: PickyHubStatisticsAggregator.startedRecords(in: snapshot, filter: statisticsStore.filter)
+                ))
                     .padding(.top, PickyHubTheme.Spacing.field)
                 PickyHubWorkDistribution(insights: PickyHubStatisticsAggregator.workInsights(for: records))
                     .padding(.top, PickyHubTheme.Spacing.group)
@@ -62,19 +65,23 @@ struct PickyHubStatisticsRhythmTab: View {
     }
 
     @ViewBuilder
-    private var habit: some View {
-        let streak = PickyHubRhythmPolicy.activityCalendar(records: snapshot.records, weekCount: 1)
+    private func habit(dailyCounts: [Date: Int]) -> some View {
+        let streak = PickyHubRhythmPolicy.streaks(
+            activeDays: Set(dailyCounts.keys),
+            today: Calendar.current.startOfDay(for: Date()),
+            calendar: .current
+        )
         if contentWidth / fontScale >= 600 {
             HStack(alignment: .top, spacing: PickyHubTheme.Spacing.field) {
-                PickyHubStreakCard(current: streak.currentStreak, longest: streak.longestStreak)
+                PickyHubStreakCard(current: streak.current, longest: streak.longest)
                     .frame(width: 220)
-                PickyHubActivityCalendarCard(records: snapshot.records)
+                PickyHubActivityCalendarCard(dailyCounts: dailyCounts)
             }
             .fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
-                PickyHubStreakCard(current: streak.currentStreak, longest: streak.longestStreak)
-                PickyHubActivityCalendarCard(records: snapshot.records)
+                PickyHubStreakCard(current: streak.current, longest: streak.longest)
+                PickyHubActivityCalendarCard(dailyCounts: dailyCounts)
             }
         }
     }
@@ -188,7 +195,7 @@ private struct PickyHubActivityCalendarCard: View {
     static let weekdayColumn: CGFloat = 22
     static let maximumWeeks = 26
 
-    let records: [PickyHubPickleRecord]
+    let dailyCounts: [Date: Int]
     @Environment(\.locale) private var locale
     @State private var gridWidth: CGFloat = 0
 
@@ -199,7 +206,7 @@ private struct PickyHubActivityCalendarCard: View {
     }
 
     var body: some View {
-        let activity = PickyHubRhythmPolicy.activityCalendar(records: records, weekCount: weekCount)
+        let activity = PickyHubRhythmPolicy.activityCalendar(dailyCounts: dailyCounts, weekCount: weekCount)
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
             HStack(alignment: .firstTextBaseline, spacing: PickyHubTheme.Spacing.related) {
                 Text("hub.stats.rhythm.calendar.title")

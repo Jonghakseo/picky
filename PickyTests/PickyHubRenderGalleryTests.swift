@@ -47,6 +47,7 @@ struct PickyHubRenderGalleryTests {
         let logicalSize: CGSize
         let widthClass: String
         var dialog: String? = nil
+        var statisticsTab: PickyHubStatisticsTab? = nil
     }
 
     private struct Manifest: Encodable {
@@ -371,7 +372,11 @@ struct PickyHubRenderGalleryTests {
         try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
             var manifestScenes: [ManifestScene] = []
             for scene in makeScenes() {
-                fixture.navigator.select(scene.page)
+                if let tab = scene.statisticsTab {
+                    fixture.navigator.showStatistics(tab: tab)
+                } else {
+                    fixture.navigator.select(scene.page)
+                }
                 configureModal(scene, fixture: fixture)
                 let rendered = try render(scene, fixture: fixture)
                 try validate(rendered.bitmap, for: scene)
@@ -649,7 +654,21 @@ struct PickyHubRenderGalleryTests {
                 )
             }
         }
-        return pages + dialogs
+        let statisticsTabs: [(PickyHubStatisticsTab, String)] = [(.badges, "statisticsBadges"), (.hallOfFame, "statisticsHallOfFame")]
+        let tabs = statisticsTabs.flatMap { tab, name in
+            [(Appearance.dark, "wide"), (.light, "wide"), (.dark, "narrow")].map { appearance, widthClass in
+                Scene(
+                    page: .statistics,
+                    name: "hub-\(name)-\(widthClass)-\(appearance.rawValue).png",
+                    appearance: appearance,
+                    logicalSize: widthClass == "narrow" ? PickyHubTheme.Layout.minimumWindowSize : PickyHubTheme.Layout.defaultWindowSize,
+                    widthClass: widthClass,
+                    statisticsTab: tab
+                )
+            }
+        }
+        // Dialog scenes go last: a dismissed modal can linger in the next offscreen render.
+        return pages + tabs + dialogs
     }
 
     private func configureModal(_ scene: Scene, fixture: PickyHubRenderGalleryFixture) {
@@ -977,9 +996,9 @@ final class PickyHubRenderGalleryFixture {
     private static let statisticsSnapshot = PickyHubStatisticsSnapshot(
         generatedAt: Date(timeIntervalSince1970: 1_784_000_120),
         records: [
-            PickyHubPickleRecord(id: "gallery-fix", title: "Refine Hub gallery", project: "picky", cwd: "/tmp/picky", createdAt: Date(timeIntervalSince1970: 1_783_900_000), lastActivityAt: Date(timeIntervalSince1970: 1_784_000_000), followUpCount: 3, delegationCount: 2, reviewCount: 1, category: .fix),
-            PickyHubPickleRecord(id: "gallery-research", title: "Compare local renderers", project: "picky", cwd: "/tmp/picky", createdAt: Date(timeIntervalSince1970: 1_783_800_000), lastActivityAt: Date(timeIntervalSince1970: 1_783_990_000), followUpCount: 1, delegationCount: 1, reviewCount: 2, category: .research),
-            PickyHubPickleRecord(id: "gallery-create", title: "Build a workflow", project: "studio", cwd: "/tmp/studio", createdAt: Date(timeIntervalSince1970: 1_783_700_000), lastActivityAt: Date(timeIntervalSince1970: 1_783_980_000), followUpCount: 0, delegationCount: 1, reviewCount: 0, category: .create),
+            PickyHubPickleRecord(id: "gallery-fix", title: "Refine Hub gallery", project: "picky", cwd: "/tmp/picky", createdAt: Date(timeIntervalSince1970: 1_783_900_000), lastActivityAt: Date(timeIntervalSince1970: 1_784_000_000), followUpCount: 3, delegationCount: 2, reviewCount: 1, category: .fix, status: "completed", changedFileCount: 6, artifactCount: 1, toolCallCount: 42, subagentCount: 2, activeDurationMs: 2_820_000, totalTokens: 38_500),
+            PickyHubPickleRecord(id: "gallery-research", title: "Compare local renderers", project: "picky", cwd: "/tmp/picky", createdAt: Date(timeIntervalSince1970: 1_783_800_000), lastActivityAt: Date(timeIntervalSince1970: 1_783_990_000), followUpCount: 1, delegationCount: 1, reviewCount: 2, category: .research, status: "completed", changedFileCount: 0, artifactCount: 2, toolCallCount: 18, subagentCount: 3, activeDurationMs: 5_460_000, totalTokens: 10_500),
+            PickyHubPickleRecord(id: "gallery-create", title: "Build a workflow", project: "studio", cwd: "/tmp/studio", createdAt: Date(timeIntervalSince1970: 1_783_700_000), lastActivityAt: Date(timeIntervalSince1970: 1_783_980_000), followUpCount: 0, delegationCount: 1, reviewCount: 0, category: .create, status: "completed", changedFileCount: 11, artifactCount: 0, toolCallCount: 27, subagentCount: 0, activeDurationMs: 1_500_000, totalTokens: 0),
         ],
         usageSamples: [
             PickyHubUsageSample(day: "2026-07-13", provider: "Anthropic", model: "Claude Sonnet", project: "picky", inputTokens: 12_000, outputTokens: 3_000, cacheTokens: 1_500),

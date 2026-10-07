@@ -65,6 +65,8 @@ struct PickyHubPickleRecord: Codable, Identifiable, Equatable {
     /// Reviewer/verifier style subagent passes.
     let reviewCount: Int
     let category: PickyHubWorkCategory
+    /// Session status when last seen (`completed`, `failed`, ...). Older daemons omit it.
+    var status: String? = nil
     /// Files the Pickle reported as changed. Older daemons omit the result
     /// fields below, which then decode as zero.
     var changedFileCount: Int = 0
@@ -76,8 +78,11 @@ struct PickyHubPickleRecord: Codable, Identifiable, Equatable {
     var activeDurationMs: Int = 0
     var totalTokens: Int = 0
 
+    /// Finished successfully, or an older daemon that does not report status.
+    var isCompleted: Bool { status == nil || status == "completed" }
+
     private enum CodingKeys: String, CodingKey {
-        case id, title, project, cwd, createdAt, lastActivityAt, followUpCount, delegationCount, reviewCount, category
+        case id, title, project, cwd, createdAt, lastActivityAt, followUpCount, delegationCount, reviewCount, category, status
         case changedFileCount, artifactCount, toolCallCount, subagentCount, activeDurationMs, totalTokens
     }
 }
@@ -96,6 +101,7 @@ extension PickyHubPickleRecord {
             delegationCount: try container.decode(Int.self, forKey: .delegationCount),
             reviewCount: try container.decode(Int.self, forKey: .reviewCount),
             category: try container.decode(PickyHubWorkCategory.self, forKey: .category),
+            status: try container.decodeIfPresent(String.self, forKey: .status),
             changedFileCount: try container.decodeIfPresent(Int.self, forKey: .changedFileCount) ?? 0,
             artifactCount: try container.decodeIfPresent(Int.self, forKey: .artifactCount) ?? 0,
             toolCallCount: try container.decodeIfPresent(Int.self, forKey: .toolCallCount) ?? 0,
@@ -280,6 +286,23 @@ enum PickyHubStatisticsAggregator {
                 return true
             }
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
+    }
+
+    /// Records started within the filter. Hour-of-day patterns use start time,
+    /// so their period must match on `createdAt`, not on last activity.
+    static func startedRecords(
+        in snapshot: PickyHubStatisticsSnapshot,
+        filter: PickyHubStatisticsFilter,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [PickyHubPickleRecord] {
+        let start = filter.period.startDate(now: now, calendar: calendar)
+        return snapshot.records.filter { record in
+            if record.createdAt > now { return false }
+            if let start, record.createdAt < start { return false }
+            if let project = filter.project, record.project != project { return false }
+            return true
+        }
     }
 
     static func projects(in snapshot: PickyHubStatisticsSnapshot) -> [String] {

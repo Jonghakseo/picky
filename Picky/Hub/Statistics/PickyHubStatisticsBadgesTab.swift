@@ -2,19 +2,21 @@
 //  PickyHubStatisticsBadgesTab.swift
 //  Picky
 //
-//  배지 tab. Badges are recomputed from the whole snapshot on every load, so
-//  the page filter never hides one and earned dates need no extra storage.
+//  배지 tab. Badges are derived from the whole snapshot, so the page filter
+//  never hides one. The statistics store also remembers earned badges, so a
+//  badge stays earned when later history no longer proves it.
 //
 
 import SwiftUI
 
 struct PickyHubStatisticsBadgesTab: View {
     let snapshot: PickyHubStatisticsSnapshot
+    @EnvironmentObject private var statisticsStore: PickyHubStatisticsStore
     @Environment(\.pickyHubContentWidth) private var contentWidth
     @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
-        let board = PickyHubBadgePolicy.board(snapshot: snapshot)
+        let board = PickyHubBadgePolicy.board(snapshot: snapshot, earned: statisticsStore.earnedBadges)
         let columnCount = contentWidth / fontScale >= 640 ? 4 : (contentWidth / fontScale >= 420 ? 3 : 2)
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.field) {
             PickyHubBadgeBanner(board: board)

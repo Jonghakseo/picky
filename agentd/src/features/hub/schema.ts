@@ -25,6 +25,7 @@ const PickyHubPickleRecordSchema = z.object({
   cwd: z.string().nullable().optional(),
   createdAt: isoTimestamp,
   lastActivityAt: isoTimestamp,
+  status: z.string().optional(),
   followUpCount: z.number().int().nonnegative(),
   delegationCount: z.number().int().nonnegative(),
   reviewCount: z.number().int().nonnegative(),

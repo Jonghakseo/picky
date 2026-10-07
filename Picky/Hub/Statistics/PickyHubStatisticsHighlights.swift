@@ -4,8 +4,9 @@
 //
 //  Pure policies behind the Statistics tabs that go beyond plain totals:
 //  activity rhythm (streaks, daily calendar, hour pattern), badges, and the
-//  Pickle hall of fame. Everything derives from the daemon snapshot, so
-//  badge dates need no separate persistence and survive reinstalls.
+//  Pickle hall of fame. Everything derives from the daemon snapshot, whose
+//  statistics history keeps Pickles that were purged or deleted. Earned badges
+//  are additionally remembered by the statistics store.
 //
 
 import Foundation
@@ -27,8 +28,10 @@ struct PickyHubActivityCalendar: Equatable {
     let weeks: [[PickyHubActivityDay?]]
     let currentStreak: Int
     let longestStreak: Int
+    /// All Pickles and active days ever recorded.
     let pickleCount: Int
     let activeDayCount: Int
+    /// Busiest day among the shown weeks; scales the colour levels.
     let maximumDailyCount: Int
 
     /// 0 for no activity, then 1...4 relative to the busiest day shown.
@@ -58,32 +61,46 @@ struct PickyHubHourPattern: Equatable {
 }
 
 enum PickyHubRhythmPolicy {
+    /// Pickles started per local day. Computed once per snapshot; the calendar
+    /// card re-lays out weeks from it as the window width changes.
+    static func dailyCounts(
+        records: [PickyHubPickleRecord],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [Date: Int] {
+        var counts: [Date: Int] = [:]
+        for record in records where record.createdAt <= now {
+            counts[calendar.startOfDay(for: record.createdAt), default: 0] += 1
+        }
+        return counts
+    }
+
     static func activityCalendar(
         records: [PickyHubPickleRecord],
         weekCount: Int,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> PickyHubActivityCalendar {
-        let today = calendar.startOfDay(for: now)
-        var countsByDay: [Date: Int] = [:]
-        for record in records where record.createdAt <= now {
-            countsByDay[calendar.startOfDay(for: record.createdAt), default: 0] += 1
-        }
+        activityCalendar(dailyCounts: dailyCounts(records: records, now: now, calendar: calendar), weekCount: weekCount, now: now, calendar: calendar)
+    }
 
+    static func activityCalendar(
+        dailyCounts countsByDay: [Date: Int],
+        weekCount: Int,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> PickyHubActivityCalendar {
+        let today = calendar.startOfDay(for: now)
         let weekCount = max(1, weekCount)
         let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
         let firstWeekStart = calendar.date(byAdding: .weekOfYear, value: -(weekCount - 1), to: currentWeekStart) ?? currentWeekStart
         var weeks: [[PickyHubActivityDay?]] = []
-        var shownCount = 0
-        var shownDays = 0
         var maximum = 0
         for week in 0..<weekCount {
             guard let weekStart = calendar.date(byAdding: .weekOfYear, value: week, to: firstWeekStart) else { continue }
             weeks.append((0..<7).map { offset in
                 guard let date = calendar.date(byAdding: .day, value: offset, to: weekStart), date <= today else { return nil }
                 let count = countsByDay[date] ?? 0
-                shownCount += count
-                if count > 0 { shownDays += 1 }
                 maximum = max(maximum, count)
                 return PickyHubActivityDay(date: date, count: count)
             })
@@ -94,8 +111,9 @@ enum PickyHubRhythmPolicy {
             weeks: weeks,
             currentStreak: streaks.current,
             longestStreak: streaks.longest,
-            pickleCount: shownCount,
-            activeDayCount: shownDays,
+            // Totals cover the whole history, not only the weeks that fit on screen.
+            pickleCount: countsByDay.values.reduce(0, +),
+            activeDayCount: countsByDay.count,
             maximumDailyCount: maximum
         )
     }
@@ -221,8 +239,12 @@ struct PickyHubBadgeBoard: Equatable {
 }
 
 enum PickyHubBadgePolicy {
+    /// `earned` holds badges recorded on earlier loads. A recorded badge stays
+    /// earned even when the snapshot no longer proves it, for example after a
+    /// follow-up lands on a Pickle that once finished without one.
     static func board(
         snapshot: PickyHubStatisticsSnapshot,
+        earned: [PickyHubBadgeKind: Date] = [:],
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> PickyHubBadgeBoard {
@@ -231,7 +253,7 @@ enum PickyHubBadgePolicy {
         let today = calendar.startOfDay(for: now)
         let currentStreak = PickyHubRhythmPolicy.streaks(activeDays: activeDays, today: today, calendar: calendar).current
 
-        let badges = PickyHubBadgeKind.allCases.map { kind -> PickyHubBadge in
+        let computed = PickyHubBadgeKind.allCases.map { kind -> PickyHubBadge in
             switch kind {
             case .firstPickle:
                 return badge(kind, events: records.map(\.createdAt))
@@ -250,7 +272,7 @@ enum PickyHubBadgePolicy {
             case .busyDay:
                 return busyDay(records: records, calendar: calendar)
             case .noFollowUp:
-                return badge(kind, events: records.filter { $0.followUpCount == 0 }.map(\.lastActivityAt).filter { $0 <= now }.sorted())
+                return badge(kind, events: records.filter { $0.followUpCount == 0 && $0.isCompleted }.map(\.lastActivityAt).filter { $0 <= now }.sorted())
             case .explorer:
                 var seen = Set<String>()
                 let firsts = records.compactMap { record -> Date? in
@@ -260,6 +282,14 @@ enum PickyHubBadgePolicy {
             }
         }
 
+        let badges = computed.map { badge -> PickyHubBadge in
+            guard let recorded = earned[badge.kind] else { return badge }
+            return PickyHubBadge(
+                kind: badge.kind,
+                earnedAt: min(recorded, badge.earnedAt ?? recorded),
+                progress: badge.kind.target
+            )
+        }
         let recent = badges
             .filter { badge in
                 guard let earnedAt = badge.earnedAt else { return false }
@@ -406,14 +436,16 @@ enum PickyHubHallOfFamePolicy {
         calendar: Calendar = .current
     ) -> PickyHubHallOfFame {
         let monthStart = calendar.dateInterval(of: .month, for: now)?.start ?? now
+        // Totals and awards share one set, so a leader always counts toward the totals.
+        let eligible = records.filter { $0.createdAt <= now }
         var allTime = PickyHubResultTotals()
         var thisMonth = PickyHubResultTotals()
-        for record in records where record.createdAt <= now {
+        for record in eligible {
             allTime.add(record)
             if record.createdAt >= monthStart { thisMonth.add(record) }
         }
         let awards = PickyHubAwardKind.allCases.compactMap { kind -> PickyHubAward? in
-            let leader = records.max { lhs, rhs in
+            let leader = eligible.max { lhs, rhs in
                 let l = kind.value(of: lhs)
                 let r = kind.value(of: rhs)
                 if l != r { return l < r }

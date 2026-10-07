@@ -202,7 +202,8 @@ describe("HubStatisticsService", () => {
       const deletedAndNewSnapshot = await restarted.snapshot();
       expect(parsedPaths).toEqual([newFile]);
       expect(parseCount).toBe(1);
-      expect(deletedAndNewSnapshot.usageSamples.reduce((total, sample) => total + sample.inputTokens, 0)).toBe(660);
+      // pickle-18's transcript is gone, but its recorded usage stays in the statistics history.
+      expect(deletedAndNewSnapshot.usageSamples.reduce((total, sample) => total + sample.inputTokens, 0)).toBe(670);
       const changedRecords = await Promise.all((await readdir(derivedDirectory))
         .filter((file) => file.endsWith(".json"))
         .map(async (file) => JSON.parse(await readFile(join(derivedDirectory, file), "utf8")) as { sourcePath: string }));
@@ -288,7 +289,8 @@ describe("HubStatisticsService", () => {
         throw Object.assign(new Error("Derived-cache deletion failed"), { code });
       });
 
-      await expect(service.snapshot()).resolves.toMatchObject({ records: [], usageSamples: [] });
+      // The removed Pickle survives in the statistics history; the snapshot must still resolve.
+      await expect(service.snapshot()).resolves.toMatchObject({ records: [expect.objectContaining({ id: "pickle" })] });
       expect(unlink).toHaveBeenCalledTimes(1);
     } finally {
       vi.mocked(unlink).mockReset().mockImplementation(actual.unlink);
@@ -385,6 +387,66 @@ describe("HubStatisticsService", () => {
       parseCount = 0;
       await new HubStatisticsService(root, { parsePiUsageJsonl: parser }).snapshot();
       expect(parseCount).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a deleted Pickle's record and usage so statistics never roll back", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-hub-statistics-history-"));
+    try {
+      const sessions = join(root, "sessions");
+      await mkdir(sessions, { recursive: true });
+      const keptFile = join(root, "kept.jsonl");
+      const purgedFile = join(root, "purged.jsonl");
+      await writeFile(keptFile, JSON.stringify(assistantEntry("kept-answer")) + "\n");
+      await writeFile(purgedFile, JSON.stringify(assistantEntry("purged-answer")) + "\n");
+      await writeFile(join(sessions, "kept.json"), JSON.stringify(session("kept", 1, { piSessionFilePath: keptFile })));
+      await writeFile(join(sessions, "purged.json"), JSON.stringify(session("purged", 1, {
+        title: "Long refactor",
+        piSessionFilePath: purgedFile,
+        changedFiles: [{ path: "a.ts", status: "modified" }],
+      })));
+      const before = await new HubStatisticsService(root).snapshot();
+
+      // Simulate the archived-Pickle purge: the session and its transcript disappear.
+      await unlink(join(sessions, "purged.json"));
+      await unlink(purgedFile);
+      const after = await new HubStatisticsService(root).snapshot();
+
+      expect(after.records.map((record) => record.id).sort()).toEqual(["kept", "purged"]);
+      expect(after.records.find((record) => record.id === "purged")).toMatchObject({
+        title: "Long refactor",
+        changedFileCount: 1,
+        totalTokens: 39,
+      });
+      const tokens = (snapshot: typeof before) => snapshot.usageSamples
+        .reduce((total, sample) => total + sample.inputTokens + sample.outputTokens + sample.cacheTokens, 0);
+      expect(tokens(after)).toBe(tokens(before));
+      // A Pickle that is gone cannot be classified, so it never counts as pending.
+      expect(after.pendingClassificationCount).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("clears classifications of retired Pickles on reset while keeping their records", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-hub-statistics-history-reset-"));
+    try {
+      await mkdir(join(root, "sessions"), { recursive: true });
+      await mkdir(join(root, "Statistics"), { recursive: true });
+      await writeFile(join(root, "sessions", "gone.json"), JSON.stringify(session("gone", 1)));
+      await writeFile(join(root, "Statistics", "classifications.json"), JSON.stringify({
+        version: 1,
+        entries: { gone: { category: "research", fingerprint: "f", classifiedAt: "2026-09-03T00:00:00.000Z", attempts: 1 } },
+      }));
+      const service = new HubStatisticsService(root);
+      expect((await service.snapshot()).records[0]?.category).toBe("research");
+      await unlink(join(root, "sessions", "gone.json"));
+
+      const reset = await service.reset();
+
+      expect(reset.records).toEqual([expect.objectContaining({ id: "gone", category: "unclassified" })]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

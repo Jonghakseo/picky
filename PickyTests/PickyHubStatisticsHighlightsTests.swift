@@ -36,7 +36,7 @@ struct PickyHubStatisticsHighlightsTests {
         #expect(broken.currentStreak == 0)
     }
 
-    @Test func calendarStopsAtTodayAndCountsOnlyShownDays() {
+    @Test func calendarStopsAtTodayWhileTotalsCoverTheWholeHistory() {
         // Thursday, 2026-07-16; weeks start on Monday.
         let now = date("2026-07-16T09:00:00Z")
         let records = [
@@ -51,8 +51,9 @@ struct PickyHubStatisticsHighlightsTests {
         #expect(activity.weeks.count == 2)
         let currentWeek = activity.weeks[1]
         #expect(currentWeek.map { $0?.count } == [2, 0, 0, 1, nil, nil, nil])
-        #expect(activity.pickleCount == 3)
-        #expect(activity.activeDayCount == 2)
+        // The June Pickle is outside the shown weeks but still counts toward the totals.
+        #expect(activity.pickleCount == 4)
+        #expect(activity.activeDayCount == 3)
         #expect(activity.level(for: currentWeek[0]!) == 4)
         #expect(activity.level(for: currentWeek[1]!) == 0)
     }
@@ -126,6 +127,42 @@ struct PickyHubStatisticsHighlightsTests {
         #expect(stale.recentlyEarned == nil)
     }
 
+    @Test func recordedBadgesStayEarnedAndUnfinishedPicklesDoNotCountAsOneAndDone() {
+        let now = date("2026-07-20T12:00:00Z")
+        var running = record(id: "running", created: date("2026-07-19T10:00:00Z"))
+        running.status = "running"
+        var failed = record(id: "failed", created: date("2026-07-19T11:00:00Z"))
+        failed.status = "failed"
+        var done = record(id: "done", created: date("2026-07-19T12:00:00Z"))
+        done.status = "completed"
+        let snapshot = PickyHubStatisticsSnapshot(generatedAt: now, records: [running, failed, done], usageSamples: [], pendingClassificationCount: 0)
+        let recorded = date("2026-05-01T09:00:00Z")
+
+        let board = PickyHubBadgePolicy.board(snapshot: snapshot, earned: [.explorer: recorded], now: now, calendar: calendar)
+        let badge = { (kind: PickyHubBadgeKind) in board.badges.first { $0.kind == kind }! }
+
+        #expect(badge(.noFollowUp).progress == 1)
+        // One project today, but explorer was earned before and stays earned at its first date.
+        #expect(badge(.explorer).earnedAt == recorded)
+        #expect(badge(.explorer).progress == PickyHubBadgeKind.explorer.target)
+    }
+
+    @Test func hourPatternPeriodMatchesStartTimeNotLastActivity() {
+        let now = date("2026-07-16T12:00:00Z")
+        var revived = record(id: "revived", created: date("2026-04-01T02:00:00Z"))
+        revived = PickyHubPickleRecord(
+            id: revived.id, title: revived.title, project: "picky", cwd: nil,
+            createdAt: revived.createdAt, lastActivityAt: date("2026-07-15T10:00:00Z"),
+            followUpCount: 0, delegationCount: 0, reviewCount: 0, category: .fix
+        )
+        let fresh = record(id: "fresh", created: date("2026-07-14T09:00:00Z"))
+        let snapshot = PickyHubStatisticsSnapshot(generatedAt: now, records: [revived, fresh], usageSamples: [], pendingClassificationCount: 0)
+        let filter = PickyHubStatisticsFilter(period: .lastSevenDays)
+
+        #expect(PickyHubStatisticsAggregator.records(in: snapshot, filter: filter, now: now, calendar: calendar).count == 2)
+        #expect(PickyHubStatisticsAggregator.startedRecords(in: snapshot, filter: filter, now: now, calendar: calendar).map(\.id) == ["fresh"])
+    }
+
     // MARK: Hall of fame
 
     @Test func hallOfFameTotalsThisMonthByStartAndOmitsEmptyRecords() throws {
@@ -148,6 +185,12 @@ struct PickyHubStatisticsHighlightsTests {
         // Tied durations go to the more recent Pickle; no one used tokens, so that record is absent.
         #expect(fame.awards.map(\.kind) == [.longestWork, .mostChangedFiles, .mostSubagents, .mostFollowUps])
         #expect(fame.awards.map(\.record.id) == ["july-a", "june", "july-b", "july-b"])
+
+        // A record stamped in the future counts neither toward totals nor awards.
+        var future = record(id: "future", created: date("2026-08-01T10:00:00Z"))
+        future.activeDurationMs = 99_000_000
+        let withFuture = PickyHubHallOfFamePolicy.hallOfFame(records: [june, julyA, julyB, future], now: now, calendar: calendar)
+        #expect(withFuture.awards.first { $0.kind == .longestWork }?.record.id == "july-a")
     }
 
     @Test func recordsFromOlderDaemonsDecodeWithoutResultFields() throws {

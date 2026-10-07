@@ -23,6 +23,8 @@ export interface PickleStatisticsRecord {
   cwd?: string;
   createdAt: string;
   lastActivityAt: string;
+  /** Session status when last seen; badges only count finished work. */
+  status?: string;
   followUpCount: number;
   delegationCount: number;
   reviewCount: number;
@@ -102,6 +104,7 @@ export function pickleStatisticsRecord(
     ...(session.cwd ? { cwd: session.cwd } : {}),
     createdAt: session.createdAt,
     lastActivityAt: session.updatedAt,
+    status: session.status,
     followUpCount: Math.max(0, userMessageCount - (initialInstruction?.originatedBy === "user" ? 1 : 0)),
     delegationCount,
     reviewCount,

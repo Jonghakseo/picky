@@ -11,13 +11,20 @@ import {
   mergeUsageSamples,
   pickleStatisticsRecord,
   projectNameForCwd,
-  usageSampleTokens,
   type PickleClassifications,
   type PickleStatisticsRecord,
   type PickleUsageSample,
   type PiUsageEntry,
 } from "../domain/pickle-statistics.js";
 import { logAgentd } from "../local-log.js";
+import {
+  clearHistoryClassifications,
+  EMPTY_HUB_STATISTICS_HISTORY,
+  mergeHubStatisticsHistory,
+  parseHubStatisticsHistory,
+  type HistoryMergeResult,
+  type HubStatisticsHistory,
+} from "./hub-statistics-history.js";
 
 export interface HubStatisticsSnapshot {
   generatedAt: string;
@@ -83,6 +90,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
   private readonly sessionsDir: string;
   private readonly classificationsPath: string;
   private readonly classificationSettingsPath: string;
+  private readonly historyPath: string;
   private readonly piUsageDerivedCacheDirectory: string;
   private readonly parsePiUsage: (filePath: string) => Promise<PiUsageEntry[]>;
   /** Insertion order is LRU order, with the oldest entry first. */
@@ -92,11 +100,13 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
   private readonly piUsageVisibleSources = new Map<string, number>();
   private classificationGeneration = 0;
   private classificationPersistence: Promise<void> = Promise.resolve();
+  private historyPersistence: Promise<void> = Promise.resolve();
 
   constructor(private readonly appSupportDir: string, options: HubStatisticsServiceOptions = {}) {
     this.sessionsDir = join(appSupportDir, "sessions");
     this.classificationsPath = join(appSupportDir, "Statistics", "classifications.json");
     this.classificationSettingsPath = join(appSupportDir, "Statistics", "classification-settings.json");
+    this.historyPath = join(appSupportDir, "Statistics", "history.json");
     this.piUsageDerivedCacheDirectory = join(appSupportDir, "Statistics", "pi-usage-cache", PI_USAGE_DERIVED_CACHE_VERSION);
     this.parsePiUsage = options.parsePiUsageJsonl ?? parsePiUsageJsonl;
   }
@@ -123,6 +133,11 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
+    });
+    await this.enqueueHistoryPersistence(async () => {
+      const { history, serialized } = await this.readHistory();
+      if (serialized === undefined) return;
+      await this.writeHistory(JSON.stringify(clearHistoryClassifications(history)));
     });
     const [sessions, settings] = await Promise.all([this.loadSessions(), this.readClassificationSettings()]);
     return await this.snapshotFor(sessions, EMPTY_CLASSIFICATIONS, settings.classificationEnabled);
@@ -211,20 +226,83 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     classificationEnabled: boolean,
   ): Promise<HubStatisticsSnapshot> {
     const usage = await this.loadUsage(sessions);
-    const records = sessions
-      .map((session) => ({
-        ...pickleStatisticsRecord(session, classifications.entries[session.id], { homeDir: homedir() }),
-        totalTokens: usage.tokensBySession.get(session.id) ?? 0,
-      }))
-      .sort((lhs, rhs) => rhs.lastActivityAt.localeCompare(lhs.lastActivityAt));
-    const usageSamples = mergeUsageSamples(usage.samples);
+    const liveRecords = sessions.map((session) => (
+      pickleStatisticsRecord(session, classifications.entries[session.id], { homeDir: homedir() })
+    ));
+    const merged = await this.recordHistory(liveRecords, usage.samplesBySession);
+    const liveIds = new Set(liveRecords.map((record) => record.id));
+    const records = [
+      ...liveRecords.map((record) => merged.history.records[record.id] ?? record),
+      // Classifications may be reset after a Pickle is gone; prefer the current entry.
+      ...merged.retiredRecords.map((record) => ({
+        ...record,
+        category: classifications.entries[record.id]?.category ?? record.category,
+      })),
+    ].sort((lhs, rhs) => rhs.lastActivityAt.localeCompare(lhs.lastActivityAt));
+    const usageSamples = mergeUsageSamples([
+      ...usage.unownedSamples,
+      ...Object.values(merged.history.usage).flat(),
+    ]);
     return {
       generatedAt: new Date().toISOString(),
       records,
       usageSamples,
-      pendingClassificationCount: records.filter((record) => record.category === "unclassified").length,
+      // Only Pickles still on disk can be classified.
+      pendingClassificationCount: records.filter((record) => liveIds.has(record.id) && record.category === "unclassified").length,
       classificationEnabled,
     };
+  }
+
+  /** Read, merge, and persist under one queue so overlapping snapshots never drop a retired Pickle. */
+  private async recordHistory(
+    liveRecords: readonly PickleStatisticsRecord[],
+    usageBySession: ReadonlyMap<string, readonly PickleUsageSample[]>,
+  ): Promise<HistoryMergeResult> {
+    let result: HistoryMergeResult | undefined;
+    await this.enqueueHistoryPersistence(async () => {
+      const { history, serialized } = await this.readHistory();
+      result = mergeHubStatisticsHistory(history, liveRecords, usageBySession);
+      const next = JSON.stringify(result.history);
+      if (next === serialized) return;
+      try {
+        await this.writeHistory(next);
+      } catch (error) {
+        // Statistics still render from the merged state; the next snapshot retries the write.
+        logAgentd("hub statistics history write failed", { path: this.historyPath, error: messageOf(error) });
+      }
+    });
+    return result ?? mergeHubStatisticsHistory(EMPTY_HUB_STATISTICS_HISTORY, liveRecords, usageBySession);
+  }
+
+  private async readHistory(): Promise<{ history: HubStatisticsHistory; serialized?: string }> {
+    try {
+      const serialized = await readFile(this.historyPath, "utf8");
+      return { history: parseHubStatisticsHistory(JSON.parse(serialized)), serialized };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        logAgentd("hub statistics history skipped", { path: this.historyPath, error: messageOf(error) });
+      }
+      return { history: EMPTY_HUB_STATISTICS_HISTORY };
+    }
+  }
+
+  private async writeHistory(serialized: string): Promise<void> {
+    const directory = join(this.appSupportDir, "Statistics");
+    await mkdir(directory, { recursive: true });
+    const tempPath = join(directory, `.history.${process.pid}.${randomUUID()}.tmp`);
+    try {
+      await writeFile(tempPath, serialized, "utf8");
+      await rename(tempPath, this.historyPath);
+    } catch (error) {
+      await unlink(tempPath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async enqueueHistoryPersistence(operation: () => Promise<void>): Promise<void> {
+    const next = this.historyPersistence.then(operation, operation);
+    this.historyPersistence = next.catch(() => undefined);
+    await next;
   }
 
   private async readClassificationSettings(): Promise<ClassificationSettings> {
@@ -272,9 +350,10 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
   }
 
   private async loadUsage(sessions: readonly PickyAgentSession[]): Promise<{
-    samples: PickleUsageSample[];
-    /** Tokens attributed to the Pickle that owns each transcript after message deduplication. */
-    tokensBySession: Map<string, number>;
+    /** Main-agent usage, which belongs to no Pickle. */
+    unownedSamples: PickleUsageSample[];
+    /** Usage of the Pickle that owns each transcript after message deduplication. */
+    samplesBySession: Map<string, PickleUsageSample[]>;
   }> {
     const sources: UsageSource[] = sessions.flatMap((session) => session.piSessionFilePath ? [{
       filePath: normalizePiUsageSourcePath(session.piSessionFilePath),
@@ -293,8 +372,8 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     this.retainPiUsageSources(ownedSources);
     try {
       const seenMessageIds = new Set<string>();
-      const samples: PickleUsageSample[] = [];
-      const tokensBySession = new Map<string, number>();
+      const unownedSamples: PickleUsageSample[] = [];
+      const samplesBySession = new Map<string, PickleUsageSample[]>();
       for (const source of ownedSources) {
         const uniqueEntries = (await this.readPiUsage(source.filePath)).filter((entry) => {
           if (seenMessageIds.has(entry.messageId)) return false;
@@ -302,14 +381,14 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
           return true;
         });
         const sourceSamples = aggregateUsageSamples(uniqueEntries, source.project);
-        samples.push(...sourceSamples);
         if (source.sessionId) {
-          const tokens = sourceSamples.reduce((sum, sample) => sum + usageSampleTokens(sample), 0);
-          tokensBySession.set(source.sessionId, (tokensBySession.get(source.sessionId) ?? 0) + tokens);
+          samplesBySession.set(source.sessionId, [...(samplesBySession.get(source.sessionId) ?? []), ...sourceSamples]);
+        } else {
+          unownedSamples.push(...sourceSamples);
         }
       }
       await this.pruneMissingPiUsageDerivedRecords();
-      return { samples, tokensBySession };
+      return { unownedSamples, samplesBySession };
     } finally {
       this.releasePiUsageSources(ownedSources);
     }

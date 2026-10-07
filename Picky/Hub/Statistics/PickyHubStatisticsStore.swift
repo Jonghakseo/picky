@@ -49,6 +49,8 @@ final class PickyHubStatisticsStore: ObservableObject {
     @Published private(set) var classificationUpdateError: String?
     @Published private(set) var classificationEnabled = false
     @Published private(set) var lastRefreshedAt: Date?
+    /// Badges already earned, kept so a badge never disappears once shown.
+    @Published private(set) var earnedBadges: [PickyHubBadgeKind: Date] = [:]
 
     private let client: any PickyAgentClient
     private var refreshTask: Task<Void, Never>?
@@ -56,17 +58,22 @@ final class PickyHubStatisticsStore: ObservableObject {
     private let timeoutNanoseconds: UInt64
     private let now: () -> Date
     private let freshnessInterval: TimeInterval
+    private let defaults: UserDefaults
+    static let earnedBadgesKey = "PickyHubEarnedBadges"
 
     init(
         client: any PickyAgentClient,
         timeoutNanoseconds: UInt64 = 30_000_000_000,
         freshnessInterval: TimeInterval = 30,
+        defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults,
         now: @escaping () -> Date = Date.init
     ) {
         self.client = client
         self.timeoutNanoseconds = timeoutNanoseconds
         self.freshnessInterval = freshnessInterval
+        self.defaults = defaults
         self.now = now
+        earnedBadges = Self.loadEarnedBadges(from: defaults)
     }
 
     var snapshot: PickyHubStatisticsSnapshot { state.snapshot ?? .empty }
@@ -142,6 +149,7 @@ final class PickyHubStatisticsStore: ObservableObject {
             state = .loaded(snapshot)
             classificationEnabled = snapshot.classificationEnabled
             lastRefreshedAt = now()
+            recordEarnedBadges(from: snapshot)
         case .failure(let error):
             state = .failed(error.localizedDescription)
         }
@@ -191,6 +199,31 @@ final class PickyHubStatisticsStore: ObservableObject {
         } catch {
             return .failure(.failed(error.localizedDescription))
         }
+    }
+}
+
+extension PickyHubStatisticsStore {
+    /// Adds newly earned badges and keeps every earlier date. Writes only on change.
+    private func recordEarnedBadges(from snapshot: PickyHubStatisticsSnapshot) {
+        let board = PickyHubBadgePolicy.board(snapshot: snapshot, earned: earnedBadges, now: now())
+        var next = earnedBadges
+        for badge in board.badges {
+            guard let earnedAt = badge.earnedAt else { continue }
+            next[badge.kind] = min(next[badge.kind] ?? earnedAt, earnedAt)
+        }
+        guard next != earnedBadges else { return }
+        earnedBadges = next
+        defaults.set(
+            Dictionary(uniqueKeysWithValues: next.map { ($0.key.rawValue, $0.value.timeIntervalSince1970) }),
+            forKey: Self.earnedBadgesKey
+        )
+    }
+
+    private static func loadEarnedBadges(from defaults: UserDefaults) -> [PickyHubBadgeKind: Date] {
+        let stored = defaults.dictionary(forKey: earnedBadgesKey) as? [String: Double] ?? [:]
+        return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in
+            PickyHubBadgeKind(rawValue: key).map { ($0, Date(timeIntervalSince1970: value)) }
+        })
     }
 }
 

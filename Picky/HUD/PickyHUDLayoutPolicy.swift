@@ -157,6 +157,20 @@ struct PickyHUDDockMetrics: Equatable {
     var minimizedCornerRadius: CGFloat { 10 } // component exception: approved compact restore-button silhouette.
     /// Approved shell radius does not change with the dock preset.
     var outerCornerRadius: CGFloat { 14 }
+    /// Shortest notch a horizontal end edge must hold (handle and collapse).
+    var horizontalNotchMinLength: CGFloat { 23 }
+
+    /// A thin horizontal rail rounds its ends less, so the straight part of
+    /// each end edge can hold its notch. Notches over a rounded corner
+    /// would stick out of the shell outline.
+    func horizontalShellCornerRadius(thickness: CGFloat) -> CGFloat {
+        min(outerCornerRadius, max(0, (thickness - horizontalNotchMinLength) / 2))
+    }
+
+    /// Notch length that fits the straight part of a horizontal end edge.
+    func horizontalNotchLength(preferred: CGFloat, thickness: CGFloat) -> CGFloat {
+        min(preferred, max(0, thickness - 2 * horizontalShellCornerRadius(thickness: thickness)))
+    }
     var horizontalPadding: CGFloat { 2 }
     var handleAreaHeight: CGFloat { max(12, scaled(PickyHUDExpansion.dockHandleAreaHeight)) }
     var handleIdleWidth: CGFloat { max((handleNotchWidth * 0.44).rounded(), 15) }

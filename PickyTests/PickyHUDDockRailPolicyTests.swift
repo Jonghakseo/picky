@@ -81,6 +81,25 @@ struct PickyHUDDockRailPolicyTests {
         #expect([small.handleNotchWidth, medium.handleNotchWidth, large.handleNotchWidth] == [34, 50, 60])
     }
 
+    /// A notch drawn over a rounded corner sticks out of the shell outline,
+    /// so each horizontal end edge must keep a straight part that holds it.
+    @Test func horizontalEndNotchesFitTheStraightPartOfTheEndEdge() {
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            for fontScale: CGFloat in [1, 1.3] {
+                let thickness = metrics.horizontalThickness(fontScale: fontScale)
+                let radius = metrics.horizontalShellCornerRadius(thickness: thickness)
+                let straight = thickness - 2 * radius
+                for preferred in [metrics.horizontalHandleNotchWidth, metrics.collapseNotchWidth] {
+                    let notch = metrics.horizontalNotchLength(preferred: preferred, thickness: thickness)
+                    #expect(notch <= straight, "\(preset) \(fontScale)")
+                    #expect(notch >= metrics.horizontalNotchMinLength, "\(preset) \(fontScale)")
+                }
+                #expect(metrics.horizontalHandleIdleWidth < metrics.horizontalNotchMinLength)
+            }
+        }
+    }
+
     @Test func horizontalChromeLaysTheTwoUtilitiesSideBySide() {
         let metrics = PickyHUDDockMetrics(preset: .small)
         let vertical = PickyHUDDockRailLayoutPolicy.fixedChromeLength(

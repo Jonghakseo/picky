@@ -1134,7 +1134,9 @@ struct PickyHUDDockRailView: View {
     /// an `NSViewRepresentable` so AppKit owns hit testing and cursor rects.
     private var dockAnchorHandle: some View {
         let isActive = isHandleHovered || isHandleDragging
-        let notchWidth = orientation == .horizontal ? metrics.horizontalHandleNotchWidth : metrics.handleNotchWidth
+        let notchWidth = orientation == .horizontal
+            ? metrics.horizontalNotchLength(preferred: metrics.horizontalHandleNotchWidth, thickness: railCrossSize)
+            : metrics.handleNotchWidth
         return PickyHUDDockAnchorHandleHost(
             onHoverChanged: { hovering in isHandleHovered = hovering },
             onDragChanged: { delta in
@@ -1152,7 +1154,7 @@ struct PickyHUDDockRailView: View {
             height: orientation == .horizontal ? notchWidth : metrics.handleInset
         )
         .overlay(alignment: orientation == .horizontal ? .leading : .top) {
-            PickyHUDDockHandleNotch(dockSide: dockSide, metrics: metrics, isActive: isActive)
+            PickyHUDDockHandleNotch(dockSide: dockSide, metrics: metrics, isActive: isActive, edgeLength: railCrossSize)
         }
         .onDisappear {
             isHandleHovered = false

@@ -37,12 +37,15 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
         .background(surface)
         .overlay(alignment: horizontal ? .leading : .top) { handle() }
         .overlay(alignment: horizontal ? .trailing : .bottom) {
-            PickyHUDDockCollapseNotch(dockSide: dockSide, metrics: metrics, onMinimize: onMinimize)
+            PickyHUDDockCollapseNotch(dockSide: dockSide, metrics: metrics, edgeLength: crossSize, onMinimize: onMinimize)
         }
     }
 
     private var surface: some View {
-        let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
+        let radius = horizontal
+            ? metrics.horizontalShellCornerRadius(thickness: crossSize)
+            : metrics.outerCornerRadius
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return Group {
             if reduceTransparency { DS.Colors.surface1 }
             else { PickyHUDDockNativeMaterial().overlay(DS.Colors.dockShellScrim) }
@@ -75,11 +78,16 @@ struct PickyHUDDockHandleNotch: View {
     let dockSide: PickyHUDDockSide
     let metrics: PickyHUDDockMetrics
     var isActive = false
+    /// Length of the shell edge the notch sits on. A horizontal rail's end
+    /// edge is its thickness; the notch shrinks to fit its straight part.
+    var edgeLength: CGFloat? = nil
 
     var body: some View {
         let horizontal = dockSide.orientation == .horizontal
-        // A vertical list's handle widens with the dock; a horizontal rail keeps 34pt.
-        let notchWidth = horizontal ? metrics.horizontalHandleNotchWidth : metrics.handleNotchWidth
+        // A vertical list's handle widens with the dock; a horizontal one fits its end edge.
+        let notchWidth = horizontal
+            ? metrics.horizontalNotchLength(preferred: metrics.horizontalHandleNotchWidth, thickness: edgeLength ?? .infinity)
+            : metrics.handleNotchWidth
         let gripWidth = horizontal ? metrics.horizontalHandleIdleWidth : metrics.handleIdleWidth
         ZStack(alignment: .top) {
             PickyHUDDockNotchShape().fill(DS.Colors.surface3)
@@ -98,6 +106,7 @@ struct PickyHUDDockHandleNotch: View {
 struct PickyHUDDockCollapseNotch: View {
     let dockSide: PickyHUDDockSide
     let metrics: PickyHUDDockMetrics
+    var edgeLength: CGFloat? = nil
     let onMinimize: () -> Void
     @State private var hovered = false
     @FocusState private var focused: Bool
@@ -105,22 +114,25 @@ struct PickyHUDDockCollapseNotch: View {
     var body: some View {
         let horizontal = dockSide.orientation == .horizontal
         let active = hovered || focused
+        let notchWidth = horizontal
+            ? metrics.horizontalNotchLength(preferred: metrics.collapseNotchWidth, thickness: edgeLength ?? .infinity)
+            : metrics.collapseNotchWidth
         Button(action: onMinimize) {
             ZStack(alignment: horizontal ? .trailing : .bottom) {
                 Color.clear
                 PickyHUDDockNotchShape().fill(active ? DS.Colors.surface4 : DS.Colors.surface3)
-                    .frame(width: metrics.collapseNotchWidth, height: metrics.notchDepth)
+                    .frame(width: notchWidth, height: metrics.notchDepth)
                     .rotationEffect(.degrees(horizontal ? 90 : 180))
-                    .frame(width: horizontal ? metrics.notchDepth : metrics.collapseNotchWidth,
-                           height: horizontal ? metrics.collapseNotchWidth : metrics.notchDepth)
+                    .frame(width: horizontal ? metrics.notchDepth : notchWidth,
+                           height: horizontal ? notchWidth : metrics.notchDepth)
                 Image(systemName: horizontal ? "chevron.left" : "chevron.up")
                     .font(.system(size: 9, weight: .semibold)) // design-token-exception: optical glyph inside the 11pt notch; hit area is collapseHitDepth.
                     .foregroundStyle(active ? DS.Colors.textPrimary : DS.Colors.textSecondary)
-                    .frame(width: horizontal ? metrics.notchDepth : metrics.collapseNotchWidth,
-                           height: horizontal ? metrics.collapseNotchWidth : metrics.notchDepth)
+                    .frame(width: horizontal ? metrics.notchDepth : notchWidth,
+                           height: horizontal ? notchWidth : metrics.notchDepth)
             }
-            .frame(width: horizontal ? metrics.collapseHitDepth : metrics.collapseNotchWidth,
-                   height: horizontal ? metrics.collapseNotchWidth : metrics.collapseHitDepth)
+            .frame(width: horizontal ? metrics.collapseHitDepth : notchWidth,
+                   height: horizontal ? notchWidth : metrics.collapseHitDepth)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

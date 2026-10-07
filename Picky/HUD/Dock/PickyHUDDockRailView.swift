@@ -71,6 +71,10 @@ struct PickyHUDDockRailView: View {
     @State private var isDockHovered = false
     @State private var isResizeTabHovered = false
     @State private var resizeDragStartPreset: PickyHUDDockSizePreset?
+    /// Keeps the resize tab reachable for a moment after the pointer leaves
+    /// the rail. See `resizeTabGrace`.
+    @State private var isResizeTabGraced = false
+    @State private var resizeTabGraceTask: Task<Void, Never>?
     @State private var draggingSessionID: String?
     /// Raw cursor translation since the drag began. Positions the floating
     /// row; the in-flow slot is an invisible placeholder so the real row never
@@ -176,10 +180,9 @@ struct PickyHUDDockRailView: View {
         ) {
             listContent
         } utilities: {
-            let layout = orientation == .horizontal
-                ? AnyLayout(HStackLayout(spacing: metrics.utilitySpacing))
-                : AnyLayout(HStackLayout(spacing: metrics.utilitySpacing))
-            layout {
+            // Both orientations lay the utilities side by side; a thin
+            // horizontal rail cannot stack two 24pt buttons.
+            HStack(spacing: metrics.utilitySpacing) {
                 if !projection.items.isEmpty { addAgentSlotButton }
                 if let archiveAccess {
                     PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
@@ -210,6 +213,7 @@ struct PickyHUDDockRailView: View {
         }
         .onHover { hovering in
             isDockHovered = hovering
+            updateResizeTabGrace(isDockHovered: hovering)
             onDockHoverChanged(hovering)
         }
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
@@ -249,7 +253,11 @@ struct PickyHUDDockRailView: View {
         return PickyHUDDockOverflowPolicy.layout(
             contentLength: sizingLength,
             availableLength: availableRailLength,
-            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: dockSide, metrics: metrics)
+            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                dockSide: dockSide,
+                metrics: metrics,
+                hasDockAddUtility: !projection.items.isEmpty
+            )
         )
     }
 
@@ -808,6 +816,10 @@ struct PickyHUDDockRailView: View {
             if case .group(let group) = entry, group.id == groupID { return true }
             return false
         }) else { return }
+        // Without measured geometry the drag would start from rail origin 0 and
+        // jump the block to the top. Reject the pickup so a later one can retry.
+        guard let extent = topEntryExtents["group:\(groupID)"], extent.isFinite else { return }
+        let startCenter = extent.center
         if draggingSessionID != nil { handleReorderCanceled() }
         draggingGroupID = groupID
         groupDragStartLayoutIndex = layoutIndex
@@ -815,7 +827,7 @@ struct PickyHUDDockRailView: View {
         groupDragReferenceTopEntryExtents = topEntryExtents
         groupDragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
         groupDragTranslation = .zero
-        groupDragStartCenter = topEntryExtents["group:\(groupID)"]?.center ?? 0
+        groupDragStartCenter = startCenter
     }
 
     private func handleGroupDragChanged(groupID: String, translation: CGSize) {
@@ -915,18 +927,53 @@ struct PickyHUDDockRailView: View {
         }
     }
 
+    /// How long the tab stays reachable after the pointer leaves the rail.
+    /// The tab sticks out past the rail, so `isDockHovered` drops a moment
+    /// before the pointer lands on it; without the grace, reaching the tab is
+    /// a race. Keeping it hit-testable at all times instead would leave a
+    /// transparent strip beside the dock that swallows clicks meant for the
+    /// app underneath.
+    private static let resizeTabGrace: Duration = .milliseconds(350)
+
+    private func updateResizeTabGrace(isDockHovered hovering: Bool) {
+        guard !hovering else {
+            cancelResizeTabGrace()
+            return
+        }
+        resizeTabGraceTask?.cancel()
+        isResizeTabGraced = true
+        resizeTabGraceTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.resizeTabGrace)
+            guard !Task.isCancelled else { return }
+            isResizeTabGraced = false
+            resizeTabGraceTask = nil
+        }
+    }
+
+    private func cancelResizeTabGrace() {
+        resizeTabGraceTask?.cancel()
+        resizeTabGraceTask = nil
+        isResizeTabGraced = false
+    }
+
     @ViewBuilder
     private var resizeTab: some View {
         let isDragging = resizeDragStartPreset != nil
-        let isVisible = isDockHovered || isResizeTabHovered || isDragging
+        // Hit testing and the chrome frame follow visibility: an invisible tab
+        // must not block the window underneath or pull focus to the HUD.
+        let isVisible = isDockHovered || isResizeTabHovered || isResizeTabGraced || isDragging
         PickyHUDDockResizeTab(
             dockSide: dockSide,
             metrics: metrics,
             isActive: isResizeTabHovered || isDragging
         )
+        .opacity(isVisible ? 1 : 0)
         .overlay {
             PickyHUDCardResizeHandleHost(
-                onHoverChanged: { isResizeTabHovered = $0 },
+                onHoverChanged: { hovering in
+                    isResizeTabHovered = hovering
+                    if hovering { cancelResizeTabGrace() }
+                },
                 onDragChanged: handleResizeDragChanged,
                 onDragEnded: { resizeDragStartPreset = nil },
                 onDoubleClick: {},
@@ -936,9 +983,9 @@ struct PickyHUDDockRailView: View {
         .background {
             if isVisible { PickyHUDVisibleChromeFrameReporter() }
         }
-        .opacity(isVisible ? 1 : 0)
         .allowsHitTesting(isVisible)
         .offset(resizeTabOffset)
+        .onDisappear { cancelResizeTabGrace() }
         .help(L10n.t("dock.resize.help"))
         .accessibilityElement()
         .accessibilityLabel(L10n.t("dock.resize.accessibility"))
@@ -954,16 +1001,17 @@ struct PickyHUDDockRailView: View {
         }
     }
 
-    /// Snaps live while dragging: crossing the midpoint between two presets
-    /// applies the next preset immediately, so the dock follows the pointer.
+    /// Steps live while dragging: every `stepDistance` of pointer travel away
+    /// from the drag's starting preset applies the next one, so the dock
+    /// follows the pointer without reacting to a twitch.
     private func handleResizeDragChanged(_ screenDelta: CGPoint) {
         if resizeDragStartPreset == nil { resizeDragStartPreset = metrics.preset }
         guard let start = resizeDragStartPreset else { return }
         let next = PickyHUDDockResizePolicy.preset(
             start: start,
+            current: metrics.preset,
             screenDelta: screenDelta,
-            dockSide: dockSide,
-            fontScale: fontScale
+            dockSide: dockSide
         )
         if next != metrics.preset { onChangeDockSizePreset(next) }
     }

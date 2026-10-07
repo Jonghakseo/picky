@@ -19,8 +19,6 @@ enum PickyHUDArchiveHoldPolicy {
     static let feedbackStartDelay: TimeInterval = 0.2
     static let feedbackStartDelayNanoseconds: UInt64 = 200_000_000
     static let maximumDistance: CGFloat = 10
-    static let ringGapStartFraction = 0.22
-    static let ringUsableFraction = 0.73
 
     static var feedbackAnimationDuration: TimeInterval {
         max(0, duration - feedbackStartDelay)

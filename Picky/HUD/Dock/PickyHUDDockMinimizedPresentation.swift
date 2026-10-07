@@ -95,7 +95,9 @@ enum PickyHUDDockMinimizedGeometry {
         )
         let length = PickyHUDDockOverflowPolicy.layout(
             contentLength: contentLength, availableLength: availableRailLength,
-            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: dockSide, metrics: metrics)
+            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                dockSide: dockSide, metrics: metrics, hasDockAddUtility: !projection.items.isEmpty
+            )
         ).railLength
         let cross = PickyHUDDockRailLayoutPolicy.crossSize(dockSide: dockSide, metrics: metrics, fontScale: fontScale)
         return dockSide.orientation == .horizontal

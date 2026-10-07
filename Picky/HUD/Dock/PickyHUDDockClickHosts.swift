@@ -9,11 +9,60 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Hit-test holes for SwiftUI buttons drawn above a host
+
+/// Regions a click host declines so the SwiftUI buttons drawn above it can be
+/// clicked. An `NSView` child always wins AppKit hit testing over a SwiftUI
+/// view in the same hosting view, no matter which one is on top visually, so
+/// the host has to opt out of those rects explicitly.
+///
+/// Each hole is one button's frame, not a full-height strip: a row is taller
+/// than its 18pt action, and the band above and below the button still has to
+/// open, long-press, and right-click like the rest of the row.
+///
+/// Holes change hit testing only. The host keeps its full bounds and tracking
+/// area, so hover (which decides whether those buttons are shown at all) never
+/// flickers as the holes appear and disappear.
+struct PickyHUDDockClickHostHoles: Equatable {
+    /// One button-sized region, measured inward from the host's leading or
+    /// trailing edge and centered on its cross axis.
+    struct Hole: Equatable {
+        /// Distance from that edge to the button's near side.
+        var inset: CGFloat
+        var width: CGFloat
+        var height: CGFloat
+    }
+
+    var leading: Hole?
+    var trailing: Hole?
+
+    static let none = PickyHUDDockClickHostHoles()
+
+    func excludes(_ point: CGPoint, in bounds: CGRect) -> Bool {
+        if let leading, leading.contains(point, in: bounds, minX: bounds.minX + leading.inset) { return true }
+        if let trailing,
+           trailing.contains(point, in: bounds, minX: bounds.maxX - trailing.inset - trailing.width) {
+            return true
+        }
+        return false
+    }
+}
+
+extension PickyHUDDockClickHostHoles.Hole {
+    func contains(_ point: CGPoint, in bounds: CGRect, minX: CGFloat) -> Bool {
+        guard width > 0, height > 0 else { return false }
+        guard point.x >= minX, point.x <= minX + width else { return false }
+        return abs(point.y - bounds.midY) <= height / 2
+    }
+}
+
 // MARK: - Dock icon clicks (AppKit-backed for immediate single-click open)
 
 struct PickyHUDDockIconClickHost: NSViewRepresentable {
     var onHoverChanged: (Bool) -> Void
     var onOpen: () -> Void
+    /// Trailing slot of the hovered row action, left to its SwiftUI button.
+    var holes: PickyHUDDockClickHostHoles = .none
     var isScreenContextArmed: Bool
     var isScreenContextSticky: Bool
     var canCompact: Bool
@@ -108,11 +157,15 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
         applyCallbacks(to: context.coordinator)
         let view = PickyHUDDockIconClickNSView()
         view.coordinator = context.coordinator
+        view.holes = holes
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         applyCallbacks(to: context.coordinator)
+        if let view = nsView as? PickyHUDDockIconClickNSView, view.holes != holes {
+            view.holes = holes
+        }
     }
 
     private func applyCallbacks(to coordinator: Coordinator) {
@@ -145,6 +198,7 @@ struct PickyHUDDockIconClickHost: NSViewRepresentable {
 
 final class PickyHUDDockIconClickNSView: NSView {
     weak var coordinator: PickyHUDDockIconClickHost.Coordinator?
+    var holes: PickyHUDDockClickHostHoles = .none
     private var trackingArea: NSTrackingArea?
     private var archiveWorkItem: DispatchWorkItem?
     /// Captured at mouseDown in **screen coordinates** (`NSEvent.mouseLocation`).
@@ -180,7 +234,9 @@ final class PickyHUDDockIconClickNSView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(convert(point, from: superview)) ? self : nil
+        let local = convert(point, from: superview)
+        guard bounds.contains(local), !holes.excludes(local, in: bounds) else { return nil }
+        return self
     }
 
     override func mouseEntered(with event: NSEvent) {

@@ -18,14 +18,9 @@ struct PickyDockAxisExtent: Equatable {
 }
 
 enum PickyHUDDockRailLayoutPolicy {
-    static func groupCount(in projection: PickyDockProjection) -> Int {
-        projection.items.reduce(into: 0) { count, item in
-            if case .group = item { count += 1 }
-        }
-    }
-
     /// Primary-axis length of the list content (rows, headers, placeholders)
-    /// without the shell chrome. Mirrors the SwiftUI list layout.
+    /// without the shell chrome. Mirrors the SwiftUI list layout, including
+    /// the empty dock, which renders its `+` action at one row's size.
     static func listLength(
         projection: PickyDockProjection,
         activeSessionIDs: Set<String>,
@@ -33,10 +28,10 @@ enum PickyHUDDockRailLayoutPolicy {
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
-        guard !projection.items.isEmpty else { return 0 }
         switch orientation {
         case .vertical:
             let row = metrics.rowHeight(fontScale: fontScale)
+            guard !projection.items.isEmpty else { return row }
             let header = metrics.groupHeaderHeight(fontScale: fontScale)
             var length: CGFloat = 0
             var entryCount = 0
@@ -58,6 +53,7 @@ enum PickyHUDDockRailLayoutPolicy {
             return length + CGFloat(max(0, entryCount - 1)) * metrics.rowSpacing
         case .horizontal:
             let chip = metrics.chipWidth
+            guard !projection.items.isEmpty else { return chip }
             var length: CGFloat = 0
             for item in projection.items {
                 switch item {
@@ -94,7 +90,11 @@ enum PickyHUDDockRailLayoutPolicy {
             metrics: metrics,
             fontScale: fontScale
         )
-        return list + fixedChromeLength(dockSide: dockSide, metrics: metrics)
+        return list + fixedChromeLength(
+            dockSide: dockSide,
+            metrics: metrics,
+            hasDockAddUtility: !projection.items.isEmpty
+        )
     }
 
     static func crossSize(
@@ -109,12 +109,14 @@ enum PickyHUDDockRailLayoutPolicy {
 
     /// Handle, collapse notch, separator and the utility row. A horizontal
     /// rail lays its two utilities side by side, so they take two buttons of
-    /// length instead of one.
+    /// length instead of one. An empty dock moves its `+` into the list, so
+    /// only the archive utility is left beside it.
     static func fixedChromeLength(
         dockSide: PickyHUDDockSide,
-        metrics: PickyHUDDockMetrics
+        metrics: PickyHUDDockMetrics,
+        hasDockAddUtility: Bool
     ) -> CGFloat {
-        let utilities = dockSide.orientation == .horizontal
+        let utilities = dockSide.orientation == .horizontal && hasDockAddUtility
             ? metrics.utilityButtonSide * 2 + metrics.utilitySpacing
             : metrics.utilityButtonSide
         return metrics.handleInset + metrics.collapseInset + utilities

@@ -189,8 +189,9 @@ final class PickyHUDOverlayManager {
         dockSide: PickyHUDDockSide
     ) -> CGFloat {
         let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        let projection = projectedDockProjection(for: displayID)
         let contentLength = PickyHUDDockRailLayoutPolicy.contentLength(
-            projection: projectedDockProjection(for: displayID),
+            projection: projection,
             activeSessionIDs: Set(viewModel.dockState.snapshot.activeSessions.map(\.id)),
             dockSide: dockSide,
             metrics: metrics,
@@ -203,7 +204,11 @@ final class PickyHUDOverlayManager {
                 dockSide: dockSide,
                 anchorPercent: position(for: displayID).anchorPercent
             ),
-            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: dockSide, metrics: metrics)
+            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                dockSide: dockSide,
+                metrics: metrics,
+                hasDockAddUtility: !projection.items.isEmpty
+            )
         ).railLength
     }
 

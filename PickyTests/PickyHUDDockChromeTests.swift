@@ -8,6 +8,10 @@ import Testing
 struct PickyHUDDockChromeTests {
     private static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
     private static let fixtureAvailableLength: CGFloat = 800
+    /// Tight enough that every preset has to scroll. A horizontal rail needs a
+    /// larger budget because its chips run along the long axis.
+    private static let fixtureVerticalOverflowAvailableLength: CGFloat = 110
+    private static let fixtureHorizontalOverflowAvailableLength: CGFloat = 220
 
     /// Panel placement sizes the HUD from the layout policy before SwiftUI
     /// measures anything, so the rendered rail must match it exactly.
@@ -15,7 +19,7 @@ struct PickyHUDDockChromeTests {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             for side: PickyHUDDockSide in [.right, .bottom] {
-                for state in [FixtureState.collapsedGroup, .expandedGroup, .emptyGroup] {
+                for state in FixtureState.allCases {
                     let data = fixtureData(state: state)
                     let host = NSHostingView(rootView: fixture(side: side, metrics: metrics, state: state))
                     let expectedLength = PickyHUDDockOverflowPolicy.layout(
@@ -26,8 +30,10 @@ struct PickyHUDDockChromeTests {
                             metrics: metrics,
                             fontScale: 1
                         ),
-                        availableLength: Self.fixtureAvailableLength,
-                        fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: side, metrics: metrics)
+                        availableLength: Self.availableRailLength(for: state, side: side),
+                        fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                            dockSide: side, metrics: metrics, hasDockAddUtility: !data.projection.items.isEmpty
+                        )
                     ).railLength
                     let expectedCross = PickyHUDDockRailLayoutPolicy.crossSize(dockSide: side, metrics: metrics, fontScale: 1)
                     let size = host.fittingSize
@@ -35,6 +41,18 @@ struct PickyHUDDockChromeTests {
                     let renderedCross = side.orientation == .horizontal ? size.height : size.width
                     #expect(abs(renderedLength - expectedLength) < 1, "\(preset) \(side) \(state)")
                     #expect(abs(renderedCross - expectedCross) < 1, "\(preset) \(side) \(state)")
+                    if state == .emptyDock {
+                        // Independent of the list policy: an empty dock still
+                        // renders its `+` at one row's size, so the rail cannot
+                        // collapse onto the chrome alone.
+                        let oneEntry = side.orientation == .horizontal
+                            ? metrics.chipWidth
+                            : metrics.rowHeight(fontScale: 1)
+                        let minimumLength = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+                            dockSide: side, metrics: metrics, hasDockAddUtility: false
+                        ) + oneEntry
+                        #expect(renderedLength >= minimumLength - 1, "\(preset) \(side) empty dock")
+                    }
                 }
             }
         }
@@ -94,6 +112,7 @@ struct PickyHUDDockChromeTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var files: [String] = []
         try LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            #expect(statusGlyphAssetsRender(), "status glyph assets rendered blank")
             for preset in PickyHUDDockSizePreset.allCases {
                 let metrics = PickyHUDDockMetrics(preset: preset)
                 for dark in [false, true] {
@@ -145,6 +164,32 @@ struct PickyHUDDockChromeTests {
         #expect(files.count == PickyHUDDockSizePreset.allCases.count * 2 * 2 * FixtureState.allCases.count + 4 + 2)
     }
 
+    private static let statusGlyphAssetNames = ["PickleDockWait", "PickleDockHelp", "PickyCursorNormal"]
+
+    /// Status glyphs are asset-catalog images, which the rasterizer has to
+    /// treat differently from the shapes and SF Symbols around them. Without
+    /// that handling every scene draws them blank, which is easy to miss in a
+    /// 78-image gallery.
+    private func statusGlyphAssetsRender() -> Bool {
+        Self.statusGlyphAssetNames.allSatisfy { name in
+            let probe = Image(name)
+                .resizable()
+                .renderingMode(.template)
+                .foregroundStyle(Color.black)
+                .frame(width: 16, height: 16)
+            guard let bitmap = PickyRenderGalleryRasterizer.rasterize(
+                probe, logicalSize: CGSize(width: 16, height: 16), scale: 2, appearance: .aqua
+            ) else { return false }
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide
+                where (bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0) > 0.5 {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
     private enum FixtureState: String, CaseIterable {
         case collapsedGroup = "collapsed-group"
         case expandedGroup = "expanded-group"
@@ -169,13 +214,20 @@ struct PickyHUDDockChromeTests {
         return (visible, layout, projection)
     }
 
+    private static func availableRailLength(for state: FixtureState, side: PickyHUDDockSide) -> CGFloat {
+        guard state == .overflow else { return fixtureAvailableLength }
+        return side.orientation == .horizontal
+            ? fixtureHorizontalOverflowAvailableLength
+            : fixtureVerticalOverflowAvailableLength
+    }
+
     private func fixture(side: PickyHUDDockSide, metrics: PickyHUDDockMetrics, state: FixtureState) -> some View {
         let data = fixtureData(state: state)
         let archive = EmptyArchive()
         let attention = state == .attention
         return dockRail(sessions: data.sessions,
                         layout: data.layout, projection: data.projection, dockSide: side, metrics: metrics,
-                        availableRailLength: state == .overflow ? 150 : Self.fixtureAvailableLength,
+                        availableRailLength: Self.availableRailLength(for: state, side: side),
                         openedSessionID: attention ? "a" : nil,
                         unreadSessionIDs: attention ? ["c"] : [],
                         screenContextTargetSessionID: attention ? "d" : nil,

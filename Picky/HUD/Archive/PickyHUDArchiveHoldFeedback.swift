@@ -2,8 +2,8 @@
 //  PickyHUDArchiveHoldFeedback.swift
 //  Picky
 //
-//  Shared visual state for the Dock tile and group-list row hold-to-archive
-//  interaction. Both surfaces use the same timing, animation, and ring.
+//  Shared visual state for the dock row's hold-to-archive interaction: the
+//  press timing and the fill progress the row draws behind its content.
 //
 
 import Combine
@@ -55,40 +55,5 @@ final class PickyHUDArchiveHoldFeedback: ObservableObject {
                 self.progress = 1
             }
         }
-    }
-}
-
-struct PickyHUDArchiveHoldProgressRing: View {
-    let isPressing: Bool
-    let progress: Double
-    let side: CGFloat
-
-    var body: some View {
-        ZStack {
-            arc(progress: 1)
-                .opacity(0.18)
-            arc(progress: progress)
-        }
-        .frame(width: side, height: side)
-        .opacity(isPressing || progress > 0 ? 1 : 0)
-        .shadow(
-            color: DS.Colors.warning.opacity(DS.Elevation.archiveHoldRingShadowOpacity),
-            radius: DS.Elevation.archiveHoldRingShadowRadius
-        )
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    private func arc(progress: Double) -> some View {
-        Circle()
-            .trim(
-                from: PickyHUDArchiveHoldPolicy.ringGapStartFraction,
-                to: PickyHUDArchiveHoldPolicy.ringGapStartFraction + (max(0, min(progress, 1)) * PickyHUDArchiveHoldPolicy.ringUsableFraction)
-            )
-            .stroke(
-                DS.Colors.warning,
-                style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round)
-            )
-            .rotationEffect(.degrees(-90))
     }
 }

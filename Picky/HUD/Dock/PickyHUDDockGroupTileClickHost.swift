@@ -13,6 +13,8 @@ import SwiftUI
 struct PickyHUDDockGroupTileClickHost: NSViewRepresentable {
     var onHoverChanged: (Bool) -> Void
     var onActivate: () -> Void
+    /// Color dot and hovered `+`, left to their SwiftUI buttons.
+    var holes: PickyHUDDockClickHostHoles = .none
     var onReorderBegan: () -> Void
     var onReorderChanged: (CGSize) -> Void
     var onReorderEnded: (CGSize) -> Void
@@ -39,11 +41,15 @@ struct PickyHUDDockGroupTileClickHost: NSViewRepresentable {
         applyCallbacks(to: context.coordinator)
         let view = PickyHUDDockGroupTileClickNSView()
         view.coordinator = context.coordinator
+        view.holes = holes
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         applyCallbacks(to: context.coordinator)
+        if let view = nsView as? PickyHUDDockGroupTileClickNSView, view.holes != holes {
+            view.holes = holes
+        }
     }
 
     private func applyCallbacks(to coordinator: Coordinator) {
@@ -65,6 +71,7 @@ struct PickyHUDDockGroupTileClickHost: NSViewRepresentable {
 
 final class PickyHUDDockGroupTileClickNSView: NSView {
     weak var coordinator: PickyHUDDockGroupTileClickHost.Coordinator?
+    var holes: PickyHUDDockClickHostHoles = .none
     private var trackingArea: NSTrackingArea?
     private var mouseDownPoint: NSPoint?
     private var isReordering = false
@@ -83,7 +90,9 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(convert(point, from: superview)) ? self : nil
+        let local = convert(point, from: superview)
+        guard bounds.contains(local), !holes.excludes(local, in: bounds) else { return nil }
+        return self
     }
 
     override func mouseEntered(with event: NSEvent) {

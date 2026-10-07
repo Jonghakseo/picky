@@ -50,11 +50,19 @@ enum PickyRenderGalleryRasterizer {
         return bitmap
     }
 
+    /// Layers that already carry resolved contents are left alone. SwiftUI
+    /// hands an asset-catalog image to its layer as `contents`, and
+    /// `setNeedsDisplay` throws that away for an asynchronous redraw an
+    /// offscreen host never completes, so the image would be missing from the
+    /// capture. Such a layer stays at its own scale, which costs sharpness on
+    /// that one image but keeps it in the picture.
     private static func applyContentsScale(_ scale: CGFloat, to layer: CALayer?) {
         guard let layer else { return }
-        layer.contentsScale = scale
-        layer.rasterizationScale = scale
-        layer.setNeedsDisplay()
+        if layer.contents == nil {
+            layer.contentsScale = scale
+            layer.rasterizationScale = scale
+            layer.setNeedsDisplay()
+        }
         layer.sublayers?.forEach { applyContentsScale(scale, to: $0) }
     }
 }

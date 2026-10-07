@@ -9,22 +9,17 @@ import SwiftUI
 
 // MARK: - Resize
 
-/// Maps a resize-tab drag onto the nearest S/M/L preset. The dock's free
-/// edge faces the screen interior, so dragging toward the interior widens a
-/// vertical dock and thickens a horizontal one.
+/// Maps a resize-tab drag onto an S/M/L preset. The dock's free edge faces
+/// the screen interior, so dragging toward the interior widens a vertical
+/// dock and thickens a horizontal one.
+///
+/// Presets are a step scale, not a continuous width: a fixed pointer distance
+/// buys one step in either direction. Snapping to the nearest preset *width*
+/// instead would make a horizontal dock, whose three thicknesses are only a
+/// few points apart, change size after a 2pt twitch.
 enum PickyHUDDockResizePolicy {
-    /// Cross size a preset gives the rail: list width for a vertical dock,
-    /// thickness for a horizontal one.
-    static func crossSize(
-        of preset: PickyHUDDockSizePreset,
-        orientation: PickyHUDDockOrientation,
-        fontScale: CGFloat
-    ) -> CGFloat {
-        let metrics = PickyHUDDockMetrics(preset: preset)
-        return orientation == .vertical
-            ? metrics.listWidth
-            : metrics.horizontalThickness(fontScale: fontScale)
-    }
+    /// Pointer distance along the growth axis that one preset step costs.
+    static let stepDistance: CGFloat = 40
 
     /// Growth along the cross axis for a screen-space drag (AppKit, Y up).
     static func growth(screenDelta: CGPoint, dockSide: PickyHUDDockSide) -> CGFloat {
@@ -36,19 +31,30 @@ enum PickyHUDDockResizePolicy {
         }
     }
 
+    /// Resolves the preset for a drag that began at `start` while `current` is
+    /// applied. Stepping back out of the applied preset needs half a step more
+    /// travel than entering it did, so a pointer resting on a boundary cannot
+    /// flip the dock between two sizes.
     static func preset(
         start: PickyHUDDockSizePreset,
+        current: PickyHUDDockSizePreset,
         screenDelta: CGPoint,
-        dockSide: PickyHUDDockSide,
-        fontScale: CGFloat
+        dockSide: PickyHUDDockSide
     ) -> PickyHUDDockSizePreset {
-        let orientation = dockSide.orientation
-        let desired = crossSize(of: start, orientation: orientation, fontScale: fontScale)
-            + growth(screenDelta: screenDelta, dockSide: dockSide)
-        return PickyHUDDockSizePreset.allCases.min { lhs, rhs in
-            abs(crossSize(of: lhs, orientation: orientation, fontScale: fontScale) - desired)
-                < abs(crossSize(of: rhs, orientation: orientation, fontScale: fontScale) - desired)
-        } ?? start
+        let presets = PickyHUDDockSizePreset.allCases
+        guard let startIndex = presets.firstIndex(of: start) else { return current }
+        let distance = growth(screenDelta: screenDelta, dockSide: dockSide)
+        guard distance.isFinite else { return current }
+        let steps = Int((distance / stepDistance).rounded(.towardZero))
+        let index = min(max(startIndex + steps, presets.startIndex), presets.count - 1)
+        guard let currentIndex = presets.firstIndex(of: current) else { return presets[index] }
+        let appliedDistance = CGFloat(currentIndex - startIndex) * stepDistance
+        if abs(index - currentIndex) == 1,
+           abs(index - startIndex) < abs(currentIndex - startIndex),
+           abs(distance - appliedDistance) < stepDistance / 2 {
+            return current
+        }
+        return presets[index]
     }
 }
 

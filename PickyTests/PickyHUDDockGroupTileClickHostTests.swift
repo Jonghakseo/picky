@@ -38,24 +38,26 @@ struct PickyHUDDockGroupTileClickHostTests {
 
     private func renderedHeaderHost(
         onToggle: @escaping () -> Void,
-        withContextMenu: Bool = false
+        withContextMenu: Bool = false,
+        isAddPresented: Bool = false,
+        orientation: PickyHUDDockOrientation = .vertical
     ) throws -> (host: PickyHUDDockGroupTileClickNSView, hosting: NSHostingView<AnyView>) {
         let group = PickyDockGroup(id: "group", name: "Research", color: .teal, memberSessionIDs: [])
         let header = PickyHUDDockGroupHeaderRow(
             group: group,
-            orientation: .vertical,
+            orientation: orientation,
             members: [],
             unreadCount: 0,
             metrics: PickyHUDDockMetrics(preset: .large),
             isSelected: false,
             isDropTargeted: false,
-            isAddPresented: false,
+            isAddPresented: isAddPresented,
             onToggleCollapsed: onToggle,
             onSetColor: { _ in },
             onReorderBegan: {},
             onReorderChanged: { _ in },
             onReorderEnded: { _ in }
-        ) { EmptyView() }
+        ) { PickyHUDDockGroupAddButton(side: 18) {} }
         let root: AnyView = withContextMenu
             ? AnyView(header.pickyDockGroupContextMenu(
                 group: group,
@@ -67,7 +69,8 @@ struct PickyHUDDockGroupTileClickHostTests {
             ))
             : AnyView(header)
         let hosting = NSHostingView(rootView: root)
-        hosting.frame = NSRect(x: 0, y: 0, width: 196, height: 24)
+        let size = orientation == .horizontal ? hosting.fittingSize : CGSize(width: 196, height: 24)
+        hosting.frame = NSRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()
         return (try #require(findTileHost(in: hosting)), hosting)
     }
@@ -112,6 +115,102 @@ struct PickyHUDDockGroupTileClickHostTests {
         rendered.host.mouseUp(with: try mouseEvent(.leftMouseUp, at: NSPoint(x: 2, y: 1)))
 
         #expect(activations == 1)
+    }
+
+    /// An NSView child wins AppKit hit testing over any SwiftUI button in the
+    /// same hosting view, so the header host has to decline the slots its
+    /// buttons occupy. The chevron keeps toggling the group.
+    @Test func headerHostDeclinesTheColorDotAndTheNewPickleButtonButKeepsTheChevron() throws {
+        let rendered = try renderedHeaderHost(onToggle: {}, isAddPresented: true)
+        let host = rendered.host
+        let bounds = host.bounds
+        func owner(atDistanceFromTrailingEdge distance: CGFloat) -> NSView? {
+            host.hitTest(host.convert(CGPoint(x: bounds.maxX - distance, y: bounds.midY), to: host.superview))
+        }
+
+        // Color dot: 1pt leading padding plus a 6pt dot in a 4pt hit pad.
+        #expect(host.hitTest(host.convert(CGPoint(x: bounds.minX + 6, y: bounds.midY), to: host.superview)) == nil)
+        #expect(host.hitTest(host.convert(CGPoint(x: bounds.minX + 40, y: bounds.midY), to: host.superview)) === host)
+        // Trailing edge inward: 6pt padding, an 8pt chevron, 6pt spacing, then
+        // the 18pt `+`.
+        #expect(owner(atDistanceFromTrailingEdge: 10) === host)
+        #expect(owner(atDistanceFromTrailingEdge: 30) == nil)
+        #expect(owner(atDistanceFromTrailingEdge: 45) === host)
+    }
+
+    @Test func headerHostKeepsItsTrailingSlotWhileTheActionsAreHidden() throws {
+        let rendered = try renderedHeaderHost(onToggle: {})
+        let host = rendered.host
+        let point = CGPoint(x: host.bounds.maxX - 30, y: host.bounds.midY)
+
+        #expect(host.hitTest(host.convert(point, to: host.superview)) === host)
+    }
+
+    /// A header is taller than the 14pt dot and the 18pt `+`, so the band
+    /// above and below them still has to toggle, drag, and open the group menu.
+    @Test func headerHostKeepsTheBandAboveAndBelowItsButtons() throws {
+        for orientation in [PickyHUDDockOrientation.vertical, .horizontal] {
+            let rendered = try renderedHeaderHost(onToggle: {}, isAddPresented: true, orientation: orientation)
+            let host = rendered.host
+            let bounds = host.bounds
+            func owner(_ x: CGFloat, _ y: CGFloat) -> NSView? {
+                host.hitTest(host.convert(CGPoint(x: x, y: y), to: host.superview))
+            }
+            let dotX = bounds.minX + 6
+            let addX = bounds.maxX - 30
+
+            #expect(owner(dotX, bounds.midY) == nil, "\(orientation) dot center")
+            #expect(owner(addX, bounds.midY) == nil, "\(orientation) add center")
+            #expect(owner(dotX, bounds.maxY - 1) === host, "\(orientation) above the dot")
+            #expect(owner(dotX, bounds.minY + 1) === host, "\(orientation) below the dot")
+            #expect(owner(addX, bounds.maxY - 1) === host, "\(orientation) above the add button")
+            #expect(owner(addX, bounds.minY + 1) === host, "\(orientation) below the add button")
+        }
+    }
+
+    /// Same contract on a Pickle row: only the hovered archive button's own
+    /// frame leaves the host, so the rest of the row keeps opening the Pickle.
+    @Test func hoveredRowHostDeclinesOnlyTheArchiveButtonFrame() throws {
+        let metrics = PickyHUDDockMetrics(preset: .large)
+        let agentSession = PickyAgentSession(
+            id: "row", title: "Row Pickle", status: .running, cwd: "/tmp/picky",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            lastSummary: "Row", logs: [], tools: [], artifacts: [], changedFiles: []
+        )
+        let row = PickyHUDDockSessionRow(
+            session: PickyHUDDockSession(session: PickySessionCard.fromAgentSession(agentSession)),
+            orientation: .vertical,
+            isActive: false,
+            isOpened: false,
+            isScreenContextArmed: false,
+            isScreenContextSticky: false,
+            shortcutNumber: nil,
+            isCommandShortcutHintVisible: false,
+            shouldFlashCompletion: false,
+            isUnread: false,
+            metrics: metrics
+        )
+        let hosting = NSHostingView(rootView: AnyView(row.environment(\.pickyAppFontScale, 1)))
+        hosting.frame = NSRect(x: 0, y: 0, width: metrics.listWidth, height: metrics.rowHeight(fontScale: 1))
+        hosting.layoutSubtreeIfNeeded()
+        let host = try #require(findSessionIconHost(in: hosting))
+
+        #expect(host.holes == .none)
+        host.mouseEntered(with: try mouseEvent(.mouseMoved, at: .zero))
+        hosting.layoutSubtreeIfNeeded()
+
+        let bounds = host.bounds
+        let buttonX = bounds.maxX - (metrics.rowHorizontalPadding - 2) - metrics.rowActionSide / 2
+        func owner(_ x: CGFloat, _ y: CGFloat) -> NSView? {
+            host.hitTest(host.convert(CGPoint(x: x, y: y), to: host.superview))
+        }
+
+        #expect(host.holes.trailing != nil)
+        #expect(owner(buttonX, bounds.midY) == nil)
+        #expect(owner(buttonX, bounds.maxY - 1) === host)
+        #expect(owner(buttonX, bounds.minY + 1) === host)
+        #expect(owner(bounds.midX, bounds.midY) === host)
     }
 
     @Test func headerHostHandsOffReorderWithoutTogglingOnRelease() throws {

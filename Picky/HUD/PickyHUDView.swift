@@ -567,7 +567,7 @@ struct PickyHUDView: View {
                 screenContextTargetSessionID: dockSnapshot.screenContextTargetSessionID,
                 screenContextTargetSticky: dockSnapshot.screenContextTargetSticky,
                 dockSide: placement.dockSide,
-                isCommandShortcutHintVisible: isRailShortcutHintVisible,
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 pendingDoneFlashSessionIDs: dockSnapshot.pendingDoneFlashSessionIDs,
                 unreadSessionIDs: dockSnapshot.unreadSessionIDs,
                 metrics: dockMetrics,
@@ -1138,10 +1138,6 @@ struct PickyHUDView: View {
 
     private static let wKeyCode: UInt16 = 13
     private static let escKeyCode: UInt16 = 53
-
-    private var isRailShortcutHintVisible: Bool {
-        isCommandShortcutHintVisible
-    }
 }
 
 /// Full-card observation is isolated to this mounted subtree. Its explicit

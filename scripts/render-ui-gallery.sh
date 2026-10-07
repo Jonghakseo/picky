@@ -454,6 +454,8 @@ fi
 
 CHROME_OUTPUT="$ROOT/build/render-gallery/dock-chrome"
 CHROME_REQUEST="$ROOT/build/render-gallery/.dock-chrome-output-path"
+# Start from an empty directory so a renamed scene cannot linger as a stale PNG.
+rm -rf "$CHROME_OUTPUT"
 mkdir -p "$CHROME_OUTPUT"
 printf '%s\n' "$CHROME_OUTPUT" > "$CHROME_REQUEST"
 trap 'rm -f "$CHROME_REQUEST"' EXIT

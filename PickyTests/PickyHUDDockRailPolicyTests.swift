@@ -80,8 +80,10 @@ struct PickyHUDDockRailPolicyTests {
 
     @Test func horizontalChromeLaysTheTwoUtilitiesSideBySide() {
         let metrics = PickyHUDDockMetrics(preset: .small)
-        let vertical = PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: .right, metrics: metrics)
-        let horizontal = PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: .bottom, metrics: metrics)
+        let vertical = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+            dockSide: .right, metrics: metrics, hasDockAddUtility: true)
+        let horizontal = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+            dockSide: .bottom, metrics: metrics, hasDockAddUtility: true)
 
         #expect(horizontal - vertical == metrics.utilityButtonSide + metrics.utilitySpacing)
     }

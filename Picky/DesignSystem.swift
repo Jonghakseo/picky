@@ -320,9 +320,6 @@ enum DS {
     // MARK: - Elevation
 
     enum Elevation {
-        /// Component elevation for the hold-to-archive progress ring.
-        static let archiveHoldRingShadowOpacity: Double = 0.34
-        static let archiveHoldRingShadowRadius: CGFloat = 4
         /// Component elevation for the archive-progress state on a Dock tile.
         static let dockArchiveFeedbackShadowOpacity: Double = 0.30
         static let dockArchiveFeedbackShadowRadius: CGFloat = 5

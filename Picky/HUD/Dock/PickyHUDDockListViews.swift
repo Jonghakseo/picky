@@ -189,7 +189,6 @@ struct PickyHUDDockSessionRow: View {
     var moveTargetGroups: [PickyDockGroup] = []
     var onMoveToGroup: (String) -> Void = { _ in }
     var onUngroup: (() -> Void)?
-    var onHoverChanged: (Bool) -> Void = { _ in }
     var onOpen: () -> Void = {}
     var onToggleScreenContextTarget: () -> Void = {}
     var onToggleStickyScreenContextTarget: () -> Void = {}
@@ -233,11 +232,9 @@ struct PickyHUDDockSessionRow: View {
             .overlay {
                 if !isDragging {
                     PickyHUDDockIconClickHost(
-                        onHoverChanged: { hovering in
-                            isHovered = hovering
-                            onHoverChanged(hovering)
-                        },
+                        onHoverChanged: { isHovered = $0 },
                         onOpen: onOpen,
+                        holes: clickHostHoles,
                         isScreenContextArmed: isScreenContextArmed,
                         isScreenContextSticky: isScreenContextSticky,
                         canCompact: actionAvailability.canCompact,
@@ -259,7 +256,7 @@ struct PickyHUDDockSessionRow: View {
                 }
             }
             .overlay(alignment: .trailing) {
-                // Above the click host so the button receives its own click.
+                // The click host declines this slot, so the button owns it.
                 if showsArchiveAction {
                     Button(action: onArchive) {
                         Image(systemName: "archivebox")
@@ -297,6 +294,17 @@ struct PickyHUDDockSessionRow: View {
             .accessibilityHint(L10n.t("dock.pickle.interaction.help"))
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             .accessibilityAction(named: Text(L10n.t("group.list.action.archive")), onArchive)
+    }
+
+    /// The hovered archive button's own frame at the trailing edge. The band
+    /// above and below it keeps belonging to the row.
+    private var clickHostHoles: PickyHUDDockClickHostHoles {
+        guard showsArchiveAction else { return .none }
+        return PickyHUDDockClickHostHoles(trailing: .init(
+            inset: metrics.rowHorizontalPadding - 2,
+            width: metrics.rowActionSide,
+            height: metrics.rowActionSide
+        ))
     }
 
     private var content: some View {
@@ -443,8 +451,43 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
 
     private var showsActions: Bool { isHovered || isAddPresented }
 
+    private var contentSpacing: CGFloat {
+        orientation == .horizontal ? PickyHUDDockGroupHeaderLayout.horizontalSpacing : 6
+    }
+
+    private var leadingPadding: CGFloat {
+        orientation == .horizontal ? PickyHUDDockGroupHeaderLayout.horizontalLeadingPadding : 1
+    }
+
+    private var trailingPadding: CGFloat {
+        orientation == .horizontal
+            ? PickyHUDDockGroupHeaderLayout.horizontalTrailingPadding
+            : metrics.rowHorizontalPadding
+    }
+
+    /// The color dot at the leading edge and, while hovered, the `+` that sits
+    /// just inside the chevron. The chevron itself stays on the host so it
+    /// keeps toggling the group, and so does the band above and below both
+    /// buttons.
+    private var clickHostHoles: PickyHUDDockClickHostHoles {
+        let dotSide = metrics.groupHeaderDotSide + PickyHUDDockGroupHeaderLayout.dotHitPadding * 2
+        let actionWidth = orientation == .horizontal
+            ? PickyHUDDockGroupHeaderLayout.horizontalSummarySlotWidth(metrics: metrics)
+            : metrics.rowActionSide
+        return PickyHUDDockClickHostHoles(
+            leading: .init(inset: leadingPadding, width: dotSide, height: dotSide),
+            trailing: showsActions
+                ? .init(
+                    inset: trailingPadding + PickyHUDDockGroupHeaderLayout.chevronWidth + contentSpacing,
+                    width: actionWidth,
+                    height: metrics.rowActionSide
+                )
+                : nil
+        )
+    }
+
     var body: some View {
-        HStack(spacing: orientation == .horizontal ? PickyHUDDockGroupHeaderLayout.horizontalSpacing : 6) {
+        HStack(spacing: contentSpacing) {
             colorMenu
             Text(group.displayName)
                 .font(PickyHUDTypography.metaSemibold)
@@ -474,8 +517,8 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
             }
             chevron
         }
-        .padding(.leading, orientation == .horizontal ? PickyHUDDockGroupHeaderLayout.horizontalLeadingPadding : 1)
-        .padding(.trailing, orientation == .horizontal ? PickyHUDDockGroupHeaderLayout.horizontalTrailingPadding : metrics.rowHorizontalPadding)
+        .padding(.leading, leadingPadding)
+        .padding(.trailing, trailingPadding)
         .frame(
             height: orientation == .horizontal
                 ? metrics.chipHeight(fontScale: fontScale)
@@ -483,13 +526,14 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
         )
         .frame(maxWidth: orientation == .vertical ? .infinity : nil)
         .background {
-            // The native host owns click (toggle) versus drag (group reorder).
-            // Only the color menu and `+` sit above it as hit-testable views.
+            // The native host owns click (toggle) versus drag (group reorder),
+            // except in the holes it leaves for the color menu and the `+`.
             ZStack {
                 headerBackground.allowsHitTesting(false)
                 PickyHUDDockGroupTileClickHost(
                     onHoverChanged: { isHovered = $0 },
                     onActivate: onToggleCollapsed,
+                    holes: clickHostHoles,
                     onReorderBegan: onReorderBegan,
                     onReorderChanged: onReorderChanged,
                     onReorderEnded: onReorderEnded

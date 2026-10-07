@@ -57,7 +57,9 @@ final class PickyHUDOverlayManager {
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
-    var currentDockSizePreset: PickyHUDDockSizePreset
+    private var defaultDockSizePreset: PickyHUDDockSizePreset
+    private var currentDockSizesByDisplayID: [String: PickyHUDDockSizePreset]
+    private var currentGroupCollapseByDisplayID: [String: [String: Bool]]
     private var currentCardSizesByDisplayID: [String: PickyHUDCardSize]
 
     /// Per-display dock position state. Each display remembers its own side,
@@ -93,7 +95,9 @@ final class PickyHUDOverlayManager {
         self.presentSessionPanels = presentSessionPanels
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
-        self.currentDockSizePreset = settings.hudDockSizePreset
+        self.defaultDockSizePreset = settings.hudDockSizePreset
+        self.currentDockSizesByDisplayID = settings.hudDockSizePresetsByDisplayID
+        self.currentGroupCollapseByDisplayID = settings.hudDockGroupCollapseByDisplayID
         self.currentCardSizesByDisplayID = settings.hudCardSizes
         self.dockSnapshotCancellable = viewModel.dockState.$snapshot.sink { [weak self] snapshot in
             self?.consumeAuthoritativeRemovalEvent(snapshot.authoritativeRemovalEvent)
@@ -121,7 +125,7 @@ final class PickyHUDOverlayManager {
               let visibleHeight = screen(for: displayID)?.visibleFrame.height else {
             return position
         }
-        let keepVisible = dockRailCrossSize(for: position.side)
+        let keepVisible = dockRailCrossSize(for: position.side, displayID: displayID)
         let maxAnchorPercent = PickyHUDDockLayout.maxDockTopAnchorPercent(
             visibleHeight: visibleHeight,
             keepVisible: keepVisible
@@ -153,8 +157,8 @@ final class PickyHUDOverlayManager {
             cardWidth: cardWidth(for: displayID),
             dockSide: side,
             horizontalRailLength: horizontalRailLength,
-            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset),
-            dockRailCrossSize: dockRailCrossSize(for: side)
+            metrics: PickyHUDDockMetrics(preset: dockSizePreset(for: displayID)),
+            dockRailCrossSize: dockRailCrossSize(for: side, displayID: displayID)
         )
         guard side.orientation == .horizontal,
               let screen = screen(for: displayID) else {
@@ -168,17 +172,19 @@ final class PickyHUDOverlayManager {
     }
 
     /// Cross-axis thickness of the visible rail.
-    private func dockRailCrossSize(for dockSide: PickyHUDDockSide) -> CGFloat {
+    private func dockRailCrossSize(for dockSide: PickyHUDDockSide, displayID: CGDirectDisplayID?) -> CGFloat {
         PickyHUDDockRailLayoutPolicy.crossSize(
             dockSide: dockSide,
-            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset),
+            metrics: PickyHUDDockMetrics(preset: dockSizePreset(for: displayID)),
             fontScale: fontScaleStore.cgValue
         )
     }
 
-    private func projectedDockProjection(for displayID: CGDirectDisplayID) -> PickyDockProjection {
+    func projectedDockProjection(for displayID: CGDirectDisplayID) -> PickyDockProjection {
         PickyDockProjector.project(
-            layout: viewModel.dockState.snapshot.dockLayout,
+            layout: viewModel.dockState.snapshot.dockLayout.applyingGroupCollapseOverrides(
+                currentGroupCollapseByDisplayID[String(displayID)] ?? [:]
+            ),
             visibleSessionIDs: Array(viewModel.dockState.snapshot.activeSessions.reversed().map(\.id))
         )
     }
@@ -188,7 +194,7 @@ final class PickyHUDOverlayManager {
         displayID: CGDirectDisplayID,
         dockSide: PickyHUDDockSide
     ) -> CGFloat {
-        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        let metrics = PickyHUDDockMetrics(preset: dockSizePreset(for: displayID))
         let projection = projectedDockProjection(for: displayID)
         let contentLength = PickyHUDDockRailLayoutPolicy.contentLength(
             projection: projection,
@@ -368,7 +374,7 @@ final class PickyHUDOverlayManager {
         )
     }
 
-    private func makePanelEntry(displayID: CGDirectDisplayID) -> PanelEntry {
+    func makePanelEntry(displayID: CGDirectDisplayID) -> PanelEntry {
         let initialPanelWidth = panelWidth(for: displayID)
         let hudPanel = PickyHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: initialPanelWidth, height: collapsedHeight),
@@ -395,7 +401,8 @@ final class PickyHUDOverlayManager {
         let initialPosition = position(for: displayID)
         let placement = PickyHUDPlacement(
             dockSide: initialPosition.side,
-            dockSizePreset: currentDockSizePreset,
+            dockSizePreset: dockSizePreset(for: displayID),
+            dockGroupCollapseOverrides: currentGroupCollapseByDisplayID[String(displayID)] ?? [:],
             cardSize: cardSize(for: displayID),
             panelWidth: initialPanelWidth,
             availableDockRailLength: initialAvailableDockRailLength(
@@ -466,7 +473,10 @@ final class PickyHUDOverlayManager {
                 self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
             },
             onChangeDockSizePreset: { [weak self] preset in
-                self?.changeDockSizePreset(preset)
+                self?.changeDockSizePreset(preset, displayID: displayID)
+            },
+            onSetDockGroupCollapsed: { [weak self] id, collapsed in
+                self?.setDockGroupCollapsed(id: id, collapsed: collapsed, displayID: displayID)
             },
             onOpenedSessionChange: { [weak self] openedSessionID in
                 self?.actualPanelVisibilityStore.setOpenedSession(openedSessionID, for: displayID)
@@ -607,7 +617,7 @@ final class PickyHUDOverlayManager {
             // `targetFrame` uses as the panel cap in horizontal mode).
             panelCap = max(
                 0,
-                visibleHeightCap - dockRailCrossSize(for: dockSide) - PickyHUDDockLayout.panelGap
+                visibleHeightCap - dockRailCrossSize(for: dockSide, displayID: screen.pickyDisplayID) - PickyHUDDockLayout.panelGap
             )
         case .vertical:
             let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
@@ -742,8 +752,8 @@ final class PickyHUDOverlayManager {
         // Without this, fractional anchor math can land in `origin.y` for short HUDs
         // but in `height` for capped HUDs; NSPanel then floors one and ceils the other,
         // making the dock jump by 1pt while hovering between sessions.
-        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let dockRailCrossSize = dockRailCrossSize(for: pos.side)
+        let dockMetrics = PickyHUDDockMetrics(preset: dockSizePreset(for: displayID))
+        let dockRailCrossSize = dockRailCrossSize(for: pos.side, displayID: displayID)
         let keepVisible = pos.side.orientation == .vertical ? dockRailCrossSize : dockMetrics.railWidth
         let panelWidth = panelWidth(for: displayID, dockSide: pos.side)
         let visibleHeightCap = (visibleFrame.height - 160).rounded(.down)
@@ -973,8 +983,8 @@ final class PickyHUDOverlayManager {
             displayKey: String(displayID)
         )
 
-        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let dockRailCrossSize = dockRailCrossSize(for: startPos.side)
+        let dockMetrics = PickyHUDDockMetrics(preset: dockSizePreset(for: displayID))
+        let dockRailCrossSize = dockRailCrossSize(for: startPos.side, displayID: displayID)
         let keepVisible = startPos.side.orientation == .vertical ? dockRailCrossSize : dockMetrics.railWidth
         let startPanelWidth = panelWidth(for: displayID, dockSide: startPos.side)
         if startPos.side.orientation == .horizontal {
@@ -1165,7 +1175,7 @@ final class PickyHUDOverlayManager {
         let sideReserve: CGFloat
         switch dockSide.orientation {
         case .vertical:
-            sideReserve = dockRailCrossSize(for: dockSide)
+            sideReserve = dockRailCrossSize(for: dockSide, displayID: screen.pickyDisplayID)
                 + PickyHUDDockLayout.panelGap
                 + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
                 + (PickyHUDDockLayout.screenMargin * 2)
@@ -1218,12 +1228,21 @@ final class PickyHUDOverlayManager {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                let settings = self.settingsStore.load()
-                self.currentCardSizesByDisplayID = settings.hudCardSizes
-                self.applyDockSizePreset(settings.hudDockSizePreset)
+                await self?.reloadDockSettings()
             }
         }
+    }
+
+    func reloadDockSettings() async {
+        // A settings notification can arrive while a newer dock edit is still
+        // queued. Read only after those writes settle so disk cannot roll back
+        // the live presentation. New admissions during a flush join the next pass.
+        while settingsPersistence.hasPendingWork {
+            await settingsPersistence.flush()
+        }
+        let settings = settingsStore.load()
+        currentCardSizesByDisplayID = settings.hudCardSizes
+        applyDockDisplaySettings(settings)
     }
 
     private func stopSettingsObserver() {
@@ -1233,22 +1252,57 @@ final class PickyHUDOverlayManager {
         settingsObserver = nil
     }
 
-    /// Resize-tab drags apply a preset immediately and persist it, so every
-    /// display and the Settings picker follow the same S/M/L value.
-    private func changeDockSizePreset(_ preset: PickyHUDDockSizePreset) {
-        guard preset != currentDockSizePreset else { return }
-        applyDockSizePreset(preset)
-        settingsPersistence.enqueue { $0.hudDockSizePreset = preset }
+    func dockSizePreset(for displayID: CGDirectDisplayID?) -> PickyHUDDockSizePreset {
+        guard let displayID else { return defaultDockSizePreset }
+        return currentDockSizesByDisplayID[String(displayID)] ?? defaultDockSizePreset
     }
 
-    private func applyDockSizePreset(_ preset: PickyHUDDockSizePreset) {
-        guard preset != currentDockSizePreset else { return }
-        currentDockSizePreset = preset
-        for displayID in panelsByDisplayID.keys {
-            panelsByDisplayID[displayID]?.placement.dockSizePreset = preset
-            panelsByDisplayID[displayID]?.placement.panelWidth = panelWidth(for: displayID)
+    /// Keep the same three resize steps, but commit only the source display.
+    func changeDockSizePreset(_ preset: PickyHUDDockSizePreset, displayID: CGDirectDisplayID) {
+        guard preset != dockSizePreset(for: displayID) else { return }
+        currentDockSizesByDisplayID[String(displayID)] = preset
+        refreshDockPresentation(displayID: displayID)
+        settingsPersistence.enqueue { $0.hudDockSizePresetsByDisplayID[String(displayID)] = preset }
+    }
+
+    func setDockGroupCollapsed(id: String, collapsed: Bool, displayID: CGDirectDisplayID) {
+        guard let group = viewModel.dockState.snapshot.dockLayout.group(withID: id),
+              (currentGroupCollapseByDisplayID[String(displayID)]?[id] ?? group.isCollapsed) != collapsed
+        else { return }
+        currentGroupCollapseByDisplayID[String(displayID), default: [:]][id] = collapsed
+        refreshDockPresentation(displayID: displayID)
+        settingsPersistence.enqueue {
+            $0.hudDockGroupCollapseByDisplayID[String(displayID), default: [:]][id] = collapsed
         }
-        syncPanelsForCurrentScreens()
+    }
+
+    private func applyDockDisplaySettings(_ settings: PickySettings) {
+        defaultDockSizePreset = settings.hudDockSizePreset
+        currentDockSizesByDisplayID = settings.hudDockSizePresetsByDisplayID
+        currentGroupCollapseByDisplayID = settings.hudDockGroupCollapseByDisplayID
+        for displayID in panelsByDisplayID.keys {
+            refreshDockPresentation(displayID: displayID)
+        }
+    }
+
+    private func refreshDockPresentation(displayID: CGDirectDisplayID) {
+        guard let entry = panelsByDisplayID[displayID] else { return }
+        let preset = dockSizePreset(for: displayID)
+        let collapsed = currentGroupCollapseByDisplayID[String(displayID)] ?? [:]
+        let cardSize = cardSize(for: displayID)
+        guard entry.placement.dockSizePreset != preset
+                || entry.placement.dockGroupCollapseOverrides != collapsed
+                || entry.placement.cardSize != cardSize else { return }
+        if entry.placement.dockSizePreset != preset { entry.placement.dockSizePreset = preset }
+        if entry.placement.dockGroupCollapseOverrides != collapsed {
+            entry.placement.dockGroupCollapseOverrides = collapsed
+        }
+        if entry.placement.cardSize != cardSize { entry.placement.cardSize = cardSize }
+        let width = panelWidth(for: displayID)
+        if entry.placement.panelWidth != width { entry.placement.panelWidth = width }
+        if let screen = screen(for: displayID) {
+            positionPanel(on: screen, displayID: displayID)
+        }
     }
 }
 

@@ -370,6 +370,8 @@ struct PickySettingsPolishTests {
             settings.hudDockVisible = false
             settings.hudDockVisibilityByDisplayID = ["42": true]
             settings.hudDockSizePreset = .large
+            settings.hudDockSizePresetsByDisplayID = ["42": .small]
+            settings.hudDockGroupCollapseByDisplayID = ["42": ["group": true]]
             settings.mainAgentModelPattern = "external/main"
             settings.mainAgentThinkingLevel = .max
             settings.pickleAgentModelPattern = "external/pickle"
@@ -385,6 +387,8 @@ struct PickySettingsPolishTests {
         #expect(saved.hudDockVisible == false)
         #expect(saved.hudDockVisibilityByDisplayID == ["42": true])
         #expect(saved.hudDockSizePreset == .large)
+        #expect(saved.hudDockSizePresetsByDisplayID == ["42": .small])
+        #expect(saved.hudDockGroupCollapseByDisplayID == ["42": ["group": true]])
         #expect(saved.mainAgentModelPattern == "panel/main")
         #expect(saved.mainAgentThinkingLevel == .max)
         #expect(saved.pickleAgentModelPattern == "external/pickle")

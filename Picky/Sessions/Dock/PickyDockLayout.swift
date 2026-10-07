@@ -215,6 +215,20 @@ extension PickyDockLayout {
         return nil
     }
 
+    /// Screen-local presentation copy. Never persist this over the shared layout:
+    /// group membership, ordering, names and colors still belong to every display.
+    func applyingGroupCollapseOverrides(_ overrides: [String: Bool]) -> PickyDockLayout {
+        guard !overrides.isEmpty else { return self }
+        var next = self
+        for index in next.entries.indices {
+            guard case var .group(group) = next.entries[index],
+                  let collapsed = overrides[group.id] else { continue }
+            group.isCollapsed = collapsed
+            next.entries[index] = .group(group)
+        }
+        return next
+    }
+
     /// Every group expanded, for the list dock's one-time migration away from
     /// the folder dock, which persisted all groups as collapsed.
     func expandingAllGroups() -> PickyDockLayout {

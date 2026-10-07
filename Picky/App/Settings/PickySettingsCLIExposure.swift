@@ -35,7 +35,7 @@ struct PickySettingsCLIExposureError: LocalizedError, Equatable {
 enum PickySettingsCLIExposure {
     static let entries: [PickySettingsCLIEntry] = [
         .init(key: "hud.dockVisible", type: .bool, choices: nil, writable: true, mainAgentAllowed: true, supportsToggle: true, restartRequired: false, description: "Show or hide the Pickle dock."),
-        .init(key: "hud.dockSizePreset", type: .enum, choices: PickyHUDDockSizePreset.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Pickle dock size preset."),
+        .init(key: "hud.dockSizePreset", type: .enum, choices: PickyHUDDockSizePreset.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Default dock size for displays without a saved size. Resize a dock directly to save its display-specific size."),
         .init(key: "mainAgent.model", type: .string, choices: nil, writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Main agent model pattern."),
         .init(key: "mainAgent.thinkingLevel", type: .enum, choices: PickyMainAgentThinkingLevel.allCases.map(\.rawValue), writable: true, mainAgentAllowed: true, supportsToggle: false, restartRequired: false, description: "Main agent thinking level."),
         // Fast mode costs more, so only the user may change it, never the main agent itself.

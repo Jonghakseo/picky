@@ -48,6 +48,7 @@ struct PickyHUDView: View {
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
     /// Persists and applies a dock size preset chosen with the resize tab.
     var onChangeDockSizePreset: (PickyHUDDockSizePreset) -> Void = { _ in }
+    var onSetDockGroupCollapsed: (_ id: String, _ collapsed: Bool) -> Void = { _, _ in }
     /// Reports which Pickle card is open on this display (nil when none or minimized).
     var onOpenedSessionChange: (String?) -> Void = { _ in }
     @StateObject private var archiveActions = PickyHUDArchiveActionController()
@@ -93,9 +94,13 @@ struct PickyHUDView: View {
     /// Projection of the persisted dock layout against the current visible
     /// universe. Drives both render order (groups + ungrouped interleaved)
     /// and shortcut/drag hit-testing.
+    private var displayDockLayout: PickyDockLayout {
+        dockSnapshot.dockLayout.applyingGroupCollapseOverrides(placement.dockGroupCollapseOverrides)
+    }
+
     private var dockProjection: PickyDockProjection {
         PickyDockProjector.project(
-            layout: dockSnapshot.dockLayout,
+            layout: displayDockLayout,
             visibleSessionIDs: visibleSessionUniverse
         )
     }
@@ -562,7 +567,7 @@ struct PickyHUDView: View {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
                 baseProjection: dockProjection,
-                layout: dockSnapshot.dockLayout,
+                layout: displayDockLayout,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 screenContextTargetSessionID: dockSnapshot.screenContextTargetSessionID,
@@ -596,7 +601,7 @@ struct PickyHUDView: View {
                 },
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
-                onSetDockGroupCollapsed: { id, collapsed in viewModel.setDockGroupCollapsed(id: id, collapsed: collapsed) },
+                onSetDockGroupCollapsed: onSetDockGroupCollapsed,
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
                 onMoveSessionInDock: { sessionID, container in viewModel.moveSessionInDock(sessionID: sessionID, to: container) },
                 onMoveDockGroup: { id, target in viewModel.moveDockGroup(id: id, toTopLevelIndex: target) },

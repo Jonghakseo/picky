@@ -287,9 +287,7 @@ struct CompanionPanelSettingsView: View {
         case .mainAgent:
             return indexModelLabel(settings.mainAgentModelPattern)
         case .pickle:
-            let model = indexModelLabel(settings.pickleAgentModelPattern)
-            let dock = settings.hudDockSizePreset.displayName
-            return L10n.t("settings.summary.pickle", model, dock)
+            return indexModelLabel(settings.pickleAgentModelPattern)
         case .builtinTools:
             let total = PickyBuiltinTool.allCases.count
             let enabled = total - settings.disabledBuiltinTools.count
@@ -361,11 +359,6 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .pickyHubSelectableText()
                 }
-
-                Divider()
-                    .background(DS.Colors.borderSubtle.opacity(0.3))
-
-                dockSizePresetPicker
 
                 Divider()
                     .background(DS.Colors.borderSubtle.opacity(0.3))
@@ -1417,41 +1410,6 @@ struct CompanionPanelSettingsView: View {
         Text(text)
             .font(presentation.showsNavigationChrome ? PickyHUDTypography.metaSemibold : PickyHUDTypography.labelSemibold)
             .foregroundColor(presentation.showsNavigationChrome ? DS.Colors.textTertiary : PickyHubTheme.Colors.textPrimary)
-    }
-
-    private var dockSizePresetPicker: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            fieldLabel("settings.field.dockSize")
-            Group {
-                if presentation.showsNavigationChrome {
-                    Picker(L10n.t("settings.field.dockSize"), selection: $viewModel.settings.hudDockSizePreset) {
-                        ForEach(PickyHUDDockSizePreset.allCases) { preset in
-                            Text(preset.displayName).tag(preset)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .controlSize(.regular)
-                    .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-                } else {
-                    PickyHubMenuPicker(
-                        title: L10n.t("settings.field.dockSize"),
-                        selection: $viewModel.settings.hudDockSizePreset,
-                        options: PickyHUDDockSizePreset.allCases.map { .init(value: $0, title: $0.displayName) }
-                    )
-                    .frame(width: 160, alignment: .leading)
-                }
-            }
-            .onChange(of: viewModel.settings.hudDockSizePreset) { _, _ in
-                saveImmediately(for: .pickle)
-            }
-
-            Text("settings.field.dockSize.mediumNote")
-                .font(PickyHUDTypography.supporting)
-                .foregroundColor(supportingTextColor)
-                .fixedSize(horizontal: false, vertical: true)
-                .pickyHubSelectableText()
-        }
     }
 
     private func toggleRow(_ title: LocalizedStringKey, isOn: Binding<Bool>, divider: Bool, isEnabled: Bool = true) -> some View {

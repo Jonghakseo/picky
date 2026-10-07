@@ -28,6 +28,7 @@ final class PickyHUDPlacement: ObservableObject {
     /// S/M/L size preset for the dock rail. The overlay manager updates this from
     /// Settings without rebuilding the hosting view, preserving HUD hover/open state.
     @Published var dockSizePreset: PickyHUDDockSizePreset
+    @Published var dockGroupCollapseOverrides: [String: Bool]
     /// User-resized card size for this display. Nil means the card uses the
     /// built-in default width and stable default height.
     @Published var cardSize: PickyHUDCardSize?
@@ -72,6 +73,7 @@ final class PickyHUDPlacement: ObservableObject {
         availableCardMaxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
         dockSide: PickyHUDDockSide = .right,
         dockSizePreset: PickyHUDDockSizePreset = .medium,
+        dockGroupCollapseOverrides: [String: Bool] = [:],
         cardSize: PickyHUDCardSize? = nil,
         panelWidth: CGFloat = PickyHUDDockLayout.panelWidth,
         availableDockRailLength: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight
@@ -79,6 +81,7 @@ final class PickyHUDPlacement: ObservableObject {
         self.availableCardMaxHeight = availableCardMaxHeight
         self.dockSide = dockSide
         self.dockSizePreset = dockSizePreset
+        self.dockGroupCollapseOverrides = dockGroupCollapseOverrides
         self.cardSize = cardSize
         self.panelWidth = panelWidth
         self.availableDockRailLength = availableDockRailLength

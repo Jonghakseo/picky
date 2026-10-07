@@ -286,7 +286,7 @@ The dock row's glyph color, trailing dot, and completion flash reflect these sta
 | Press and hold a Pickle | Archives it after a ~1.2s hold timer; the row fills from the left while you hold, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or **Hub → Settings → Pickles and workspace → Archived sessions**. |
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
 | Right-click / Control-click | Opens the dock context menu. Use **Pin Picky Input to This Pickle** to keep routing voice and Quick Input here, or **Send Next Picky Input to This Pickle** for one message only. The menu also provides Compact, **Move to Group**, **Remove from Group** (for grouped Pickles), Archive, and Stop; Stop is disabled when the Pickle can no longer be stopped. |
-| Drag the tab on the dock's inner edge | Resizes the dock between **S**, **M**, and **L**. The tab appears while the pointer is over the dock; the dock snaps to the nearest size as you drag, and the choice is saved as the same setting as **Hub → Settings → Pickles and workspace → Dock size**. |
+| Drag the tab on the dock's inner edge | Resizes the dock between **S**, **M**, and **L** on this display only. The tab appears while the pointer is over the dock. Each display remembers its own size, just like its dock position and orientation; there is no size selector in Settings. |
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
@@ -320,7 +320,7 @@ When you start a Pickle this way, Picky creates an empty Pickle for that folder 
 
 ### 7.4 Pickle groups
 
-Group related Pickles under a header in the dock. Each header shows the group's color dot, name, and active Pickle count. Click the header to collapse or expand the group; its members appear right below it (to its right in horizontal mode). The expanded or collapsed state is saved with the dock layout. A collapsed header shows a single blue dot when any member is unread or still needs you (waiting for input, blocked, or failed), even after you read it. Running members do not mark the header; expand the group to see each Pickle's status.
+Group related Pickles under a header in the dock. Each header shows the group's color dot, name, and active Pickle count. Click the header to collapse or expand the group; its members appear right below it (to its right in horizontal mode). Each display remembers its own expanded or collapsed state. Group names, colors, membership, and ordering remain shared across displays. A collapsed header shows a single blue dot when any member is unread or still needs you (waiting for input, blocked, or failed), even after you read it. Running members do not mark the header; expand the group to see each Pickle's status.
 
 Create a group:
 
@@ -784,7 +784,7 @@ Hub Settings is one scrollable page with jump links for seven groups. The catego
 | Accounts and agents | Pi OAuth accounts, Main Agent settings, and the expandable built-in-tools list. |
 | Voice and input | Speech-to-text, text-to-speech, and global shortcuts. |
 | Screen and overlays | Cursor and speech-bubble controls. |
-| Pickles and workspace | New-Pickle defaults, dock size, folder history, and archived sessions. |
+| Pickles and workspace | New-Pickle defaults, folder history, and archived sessions. |
 | Notifications, permissions, and privacy | Optional work classification, new-Pickle notification defaults, macOS permissions, and local-data notice. |
 | Advanced and diagnostics | Main-thread watchdog, `picky` shell command, and statistics-classification reset. |
 
@@ -833,7 +833,7 @@ picky settings-set hud.dockVisible toggle --display <display-id>
 picky settings-set mainAgent.model "claude*sonnet"
 ```
 
-`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list` includes each grouped Pickle's exact group ID and name. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive` archives a Pickle, and `picky pickle-unarchive` restores it while it remains inside Picky's archived-session retention window. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for external scripting. Both `picky pickle-list` and `picky pickle-group-list` hide archived Pickles by default for every caller and output format, including JSON. Pass `--include-archived` to include them. Main-agent group lists use bounded text output.
+`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-list` includes each grouped Pickle's exact group ID and name. `picky pickle-list --archived` shows Pickles hidden from the dock; add `--query <text>` to search by ID, title, cwd, status, summary, or final answer. `picky pickle-archive` archives a Pickle, and `picky pickle-unarchive` restores it while it remains inside Picky's archived-session retention window. `picky pickle-group-remove` removes only the group and keeps members active, while `picky pickle-group-delete --archive-members --confirm` removes the group and archives its members. `picky pickle-group-list --json` returns group IDs, names, colors, legacy collapsed state, and member session IDs for external scripting. The collapsed field is the fallback for displays without a saved group state, not the state of any specific display. Both `picky pickle-list` and `picky pickle-group-list` hide archived Pickles by default for every caller and output format, including JSON. Pass `--include-archived` to include them. Main-agent group lists use bounded text output.
 
 `picky pickle-create --wait` keeps the terminal connection open until the Pickle completes, fails, or is cancelled, then prints its final answer. A `blocked` or `waiting_for_input` state does not finish the wait; resolve the request in Picky so the Pickle can continue. This option is unavailable to the Picky main agent.
 
@@ -848,7 +848,7 @@ Existing consumers of `.sessions[].id`, title, status, or artifact links should 
 | Key | Type | Notes |
 | --- | --- | --- |
 | `hud.dockVisible` | bool, `toggle` | Optional `--display <id>` targets one display; without it, all displays change together. A display ID that is not currently connected is stored as an offline override and takes effect when that display returns. |
-| `hud.dockSizePreset` | enum | Same presets as Hub → Settings → Pickles and workspace. |
+| `hud.dockSizePreset` | enum | `s`, `m`, `l`. Legacy default for displays without a saved size. Resizing a dock directly saves a display-specific size that this default does not overwrite. |
 | `cursor.visible` | bool, `toggle` | Shows or hides the Pi cursor overlay. |
 | `mainAgent.model` | string pattern | Applied to the running main session; the CLI reports `saved but not applied: <reason>` if the daemon rejects or times out. |
 | `mainAgent.thinkingLevel` | enum | Same applied/pending semantics as the model key. |
@@ -924,7 +924,6 @@ To run Picky with a completely different persona or workflow set, change **Hub �
 | Default cwd | Default working directory for new Pickles. Must be an existing directory. |
 | Pickle model | Automatic or pinned initial model for newly-created Pickles. |
 | Reasoning level | Automatic, Off, Minimal, Low, Medium, High, Extra High, Maximum. Applies as the initial setting for new Pickles; Maximum requires a Pi model that supports it. |
-| Dock size | S, M, L. |
 | Git chip actions | Optional command bound to the diff and branch chips on each Pickle card. Each slot picks a kind (Pi or shell) and a command string; empty commands leave the chip unconfigured. |
 | Archived sessions | Footer disclosure (hidden when empty). Expands to the same restore/delete list available from the HUD, so you can manage archives without leaving Settings. |
 

@@ -10379,38 +10379,6 @@
         }
       }
     },
-    "settings.field.dockSize": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dock size"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "도크 크기"
-          }
-        }
-      }
-    },
-    "settings.field.dockSize.mediumNote": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "M is the default. You can also drag the dock's inner edge to resize it."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "M이 기본 크기예요. 독 안쪽 가장자리를 끌어서 바꿀 수도 있어요."
-          }
-        }
-      }
-    },
     "settings.field.model": {
       "localizations": {
         "en": {
@@ -12157,13 +12125,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Default folder, model, reasoning, and dock size."
+            "value": "Default folder, model, and reasoning."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기본 작업 폴더, 모델, 추론, 도크 크기."
+            "value": "기본 작업 폴더, 모델, 추론."
           }
         }
       }
@@ -12494,23 +12462,6 @@
         }
       },
       "comment": "Settings index subtitle for Overlay & Notifications. Args: 1=cursor on/off phrase, 2=enabled alert count, 3=total alert count."
-    },
-    "settings.summary.pickle": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · Dock %@"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · 도크 %@"
-          }
-        }
-      },
-      "comment": "Settings index subtitle for Pickle. Args: 1=model label or 'Auto', 2=dock size short name."
     },
     "settings.summary.shortcuts": {
       "localizations": {

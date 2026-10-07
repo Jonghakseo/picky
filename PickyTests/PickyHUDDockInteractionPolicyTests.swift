@@ -2,33 +2,22 @@
 //  PickyHUDDockInteractionPolicyTests.swift
 //  PickyTests
 //
-//  Characterization coverage for HUD dock held/open/hover transition policy
-//  before moving that policy out of the layout namespace.
+//  HUD dock held/open transition policy.
 //
 
 import Testing
 @testable import Picky
 
 struct PickyHUDDockInteractionPolicyTests {
-    @Test func previewAndActiveTargetsPreferHeldThenPreview() {
-        let visibleIDs = ["first", "opened", "hovered"]
+    @Test func activeTargetIsTheHeldSessionOnlyWhileVisible() {
+        let visibleIDs = ["first", "opened"]
 
-        #expect(PickyHUDDockInteractionPolicy.previewSessionID(hoveredID: "hovered", heldID: "opened") == nil)
-        #expect(PickyHUDDockInteractionPolicy.previewSessionID(hoveredID: "hovered", heldID: nil) == "hovered")
-        #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("opened"), previewID: "hovered") == "opened")
-        #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: "hovered") == "hovered")
-        #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: nil) == nil)
+        #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("opened")) == "opened")
+        #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: .open("missing")) == nil)
+        #expect(PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: nil) == nil)
     }
 
-    @Test func hoverPreviewOpensImmediatelyAndTheMatchingTileExitOwnsItsClose() {
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterDockHover(current: nil, sessionID: "a") == "a")
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterDockHover(current: "a", sessionID: "b") == "b")
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterTileExitTimeout(current: "a", exitedSessionID: "a") == nil)
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterTileExitTimeout(current: "b", exitedSessionID: "a") == "b")
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterGroupHover(current: "a", isHovering: true) == nil)
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterGroupHover(current: "a", isHovering: false) == "a")
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: false) == nil)
-        #expect(PickyHUDDockInteractionPolicy.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: true) == "a")
+    @Test func pointerLeavingTheHUDKeepsAManuallyOpenedCard() {
         #expect(PickyHUDDockInteractionPolicy.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))
         #expect(PickyHUDDockInteractionPolicy.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == .open("opened"))
     }

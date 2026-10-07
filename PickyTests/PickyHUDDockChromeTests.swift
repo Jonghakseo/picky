@@ -7,33 +7,62 @@ import Testing
 @Suite(.serialized)
 struct PickyHUDDockChromeTests {
     private static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    private static let fixtureAvailableLength: CGFloat = 800
 
-    @Test func utilityHoverAndGroupMembershipLeaveTheRenderedRailFootprintUnchanged() {
+    /// Panel placement sizes the HUD from the layout policy before SwiftUI
+    /// measures anything, so the rendered rail must match it exactly.
+    @Test func renderedRailMatchesThePlacementPolicyForEveryPresetAndGroupState() {
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             for side: PickyHUDDockSide in [.right, .bottom] {
-                let full = NSHostingView(rootView: fixture(side: side, metrics: metrics, emptyGroup: false))
-                let empty = NSHostingView(rootView: fixture(side: side, metrics: metrics, emptyGroup: true))
-                #expect(full.fittingSize == empty.fittingSize)
-                let before = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 3, groupCount: 1,
-                    isAddSlotExpanded: false, dockSide: side, metrics: metrics, hasArchiveAccess: true)
-                let after = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 3, groupCount: 1,
-                    isAddSlotExpanded: true, dockSide: side, metrics: metrics, hasArchiveAccess: true)
-                #expect(before == after)
-                let renderedLength = side.orientation == .horizontal ? full.fittingSize.width : full.fittingSize.height
-                #expect(abs(renderedLength - before) < 1)
+                for state in [FixtureState.collapsedGroup, .expandedGroup, .emptyGroup] {
+                    let data = fixtureData(state: state)
+                    let host = NSHostingView(rootView: fixture(side: side, metrics: metrics, state: state))
+                    let expectedLength = PickyHUDDockOverflowPolicy.layout(
+                        contentLength: PickyHUDDockRailLayoutPolicy.contentLength(
+                            projection: data.projection,
+                            activeSessionIDs: Set(data.sessions.map(\.id)),
+                            dockSide: side,
+                            metrics: metrics,
+                            fontScale: 1
+                        ),
+                        availableLength: Self.fixtureAvailableLength,
+                        fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: side, metrics: metrics)
+                    ).railLength
+                    let expectedCross = PickyHUDDockRailLayoutPolicy.crossSize(dockSide: side, metrics: metrics, fontScale: 1)
+                    let size = host.fittingSize
+                    let renderedLength = side.orientation == .horizontal ? size.width : size.height
+                    let renderedCross = side.orientation == .horizontal ? size.height : size.width
+                    #expect(abs(renderedLength - expectedLength) < 1, "\(preset) \(side) \(state)")
+                    #expect(abs(renderedCross - expectedCross) < 1, "\(preset) \(side) \(state)")
+                }
             }
         }
     }
 
-    @Test func renderedHandleKeepsTheApprovedThinGripAtEveryDockSize() throws {
+    @Test func expandingAGroupGrowsTheVerticalListByItsMemberRows() {
+        let metrics = PickyHUDDockMetrics(preset: .medium)
+        let collapsed = fixtureData(state: .collapsedGroup)
+        let expanded = fixtureData(state: .expandedGroup)
+        let active = Set(collapsed.sessions.map(\.id))
+        let collapsedLength = PickyHUDDockRailLayoutPolicy.listLength(
+            projection: collapsed.projection, activeSessionIDs: active, orientation: .vertical, metrics: metrics, fontScale: 1)
+        let expandedLength = PickyHUDDockRailLayoutPolicy.listLength(
+            projection: expanded.projection, activeSessionIDs: active, orientation: .vertical, metrics: metrics, fontScale: 1)
+        // Two member rows, each with its spacing.
+        #expect(expandedLength - collapsedLength == 2 * (metrics.rowHeight(fontScale: 1) + metrics.rowSpacing))
+    }
+
+    @Test func renderedHandleGripWidensWithTheVerticalListAndStaysThinHorizontally() throws {
         for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
             for side: PickyHUDDockSide in [.right, .bottom] {
                 let horizontal = side.orientation == .horizontal
-                let view = PickyHUDDockHandleNotch(dockSide: side,
-                    metrics: PickyHUDDockMetrics(preset: preset)).environment(\.colorScheme, .light)
+                let notchWidth = horizontal ? metrics.horizontalHandleNotchWidth : metrics.handleNotchWidth
+                let gripWidth = horizontal ? metrics.horizontalHandleIdleWidth : metrics.handleIdleWidth
+                let view = PickyHUDDockHandleNotch(dockSide: side, metrics: metrics).environment(\.colorScheme, .light)
                 let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
-                    logicalSize: horizontal ? CGSize(width: 11, height: 34) : CGSize(width: 34, height: 11),
+                    logicalSize: horizontal ? CGSize(width: 11, height: notchWidth) : CGSize(width: notchWidth, height: 11),
                     scale: 2, appearance: .aqua))
                 var gripPixels: [CGPoint] = []
                 for y in 0..<bitmap.pixelsHigh {
@@ -46,8 +75,8 @@ struct PickyHUDDockChromeTests {
                 }
                 let width = try #require(gripPixels.map(\.x).max()) - #require(gripPixels.map(\.x).min()) + 1
                 let height = try #require(gripPixels.map(\.y).max()) - #require(gripPixels.map(\.y).min()) + 1
-                // The approved 15 x 2.5pt capsule at 2x, allowing antialiasing at its edges.
-                #expect(abs((horizontal ? height : width) - 30) <= 2)
+                // The grip capsule at 2x, allowing antialiasing at its edges.
+                #expect(abs((horizontal ? height : width) - gripWidth * 2) <= 2)
                 #expect(abs((horizontal ? width : height) - 5) <= 1)
             }
         }
@@ -69,9 +98,8 @@ struct PickyHUDDockChromeTests {
                 let metrics = PickyHUDDockMetrics(preset: preset)
                 for dark in [false, true] {
                     for side: PickyHUDDockSide in [.right, .bottom] {
-                        for state in ["group", "empty-group", "empty-dock", "overflow"] {
-                            let view = fixture(side: side, metrics: metrics, emptyGroup: state == "empty-group",
-                                               emptyDock: state == "empty-dock", overflow: state == "overflow")
+                        for state in FixtureState.allCases {
+                            let view = fixture(side: side, metrics: metrics, state: state)
                             let host = NSHostingView(rootView: view)
                             let size = host.fittingSize
                             let canvas = CGSize(width: ceil(size.width) + 40, height: ceil(size.height) + 40)
@@ -79,7 +107,7 @@ struct PickyHUDDockChromeTests {
                             let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(content,
                                 logicalSize: canvas, scale: 2, appearance: dark ? .darkAqua : .aqua))
                             let png = try #require(bitmap.representation(using: .png, properties: [:]))
-                            let name = "\(preset.rawValue)-\(dark ? "dark" : "light")-\(side.orientation == .horizontal ? "horizontal" : "vertical")-\(state).png"
+                            let name = "\(preset.rawValue)-\(dark ? "dark" : "light")-\(side.orientation == .horizontal ? "horizontal" : "vertical")-\(state.rawValue).png"
                             try png.write(to: directory.appendingPathComponent(name))
                             #expect(NSImage(data: png) != nil)
                             files.append(name)
@@ -91,7 +119,7 @@ struct PickyHUDDockChromeTests {
             let metrics = PickyHUDDockMetrics(preset: .medium)
             for dark in [false, true] {
                 for blackBackdrop in [false, true] {
-                    let view = fixture(side: .right, metrics: metrics)
+                    let view = fixture(side: .right, metrics: metrics, state: .expandedGroup)
                     let size = NSHostingView(rootView: view).fittingSize
                     let canvas = CGSize(width: ceil(size.width) + 40, height: ceil(size.height) + 40)
                     let content = view.padding(20)
@@ -114,24 +142,45 @@ struct PickyHUDDockChromeTests {
             }
         }
         try JSONEncoder().encode(files).write(to: directory.appendingPathComponent("manifest.json"))
-        #expect(files.count == 54)
+        #expect(files.count == PickyHUDDockSizePreset.allCases.count * 2 * 2 * FixtureState.allCases.count + 4 + 2)
     }
 
-    private func fixture(side: PickyHUDDockSide, metrics: PickyHUDDockMetrics,
-                         emptyGroup: Bool = false, emptyDock: Bool = false, overflow: Bool = false) -> some View {
-        let sessions = emptyGroup
+    private enum FixtureState: String, CaseIterable {
+        case collapsedGroup = "collapsed-group"
+        case expandedGroup = "expanded-group"
+        case emptyGroup = "empty-group"
+        case emptyDock = "empty-dock"
+        case overflow
+        /// Expanded group with an opened row, an unread row, and a Pickle armed
+        /// for the next Picky input.
+        case attention
+    }
+
+    private func fixtureData(state: FixtureState) -> (sessions: [PickyHUDDockSession], layout: PickyDockLayout, projection: PickyDockProjection) {
+        let sessions = state == .emptyGroup
             ? [session("a", .running), session("d", .failed)]
             : [session("a", .running), session("b", .waiting_for_input), session("c", .completed), session("d", .failed)]
         let group = PickyDockGroup(id: "group", name: "제품 디자인 검토", color: .gray,
-                                   memberSessionIDs: emptyGroup ? [] : ["b", "c"])
-        let layout = PickyDockLayout(entries: emptyDock ? [] : [.session(id: "a"), .group(group), .session(id: "d")])
-        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: sessions.map(\.id))
+                                   memberSessionIDs: state == .emptyGroup ? [] : ["b", "c"],
+                                   isCollapsed: state == .collapsedGroup || state == .overflow)
+        let layout = PickyDockLayout(entries: state == .emptyDock ? [] : [.session(id: "a"), .group(group), .session(id: "d")])
+        let visible = state == .emptyDock ? [] : sessions
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: visible.map(\.id))
+        return (visible, layout, projection)
+    }
+
+    private func fixture(side: PickyHUDDockSide, metrics: PickyHUDDockMetrics, state: FixtureState) -> some View {
+        let data = fixtureData(state: state)
         let archive = EmptyArchive()
-        return dockRail(sessions: emptyDock ? [] : sessions, allSessions: emptyDock ? [] : sessions,
-                        layout: layout, projection: projection, dockSide: side, metrics: metrics,
-                        availableRailLength: overflow ? 150 : 800,
-                        externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore(),
+        let attention = state == .attention
+        return dockRail(sessions: data.sessions,
+                        layout: data.layout, projection: data.projection, dockSide: side, metrics: metrics,
+                        availableRailLength: state == .overflow ? 150 : Self.fixtureAvailableLength,
+                        openedSessionID: attention ? "a" : nil,
+                        unreadSessionIDs: attention ? ["c"] : [],
+                        screenContextTargetSessionID: attention ? "d" : nil,
                         archiveAccess: PickyHUDArchivedSessionAccess(membership: archive, commands: archive))
+            .environment(\.pickyAppFontScale, 1)
     }
 
     private func session(_ id: String, _ status: PickySessionStatus) -> PickyHUDDockSession {
@@ -153,33 +202,30 @@ struct PickyHUDDockChromeTests {
 
     private func dockRail(
         sessions: [PickyHUDDockSession],
-        allSessions: [PickyHUDDockSession],
         layout: PickyDockLayout,
         projection: PickyDockProjection,
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
         availableRailLength: CGFloat,
-        externalDragPresentationStore: PickyHUDDockExternalDragRailPresentationStore,
         openedSessionID: String? = nil,
+        unreadSessionIDs: Set<String> = [],
+        screenContextTargetSessionID: String? = nil,
         archiveAccess: PickyHUDArchivedSessionAccess? = nil
     ) -> some View {
         PickyHUDDockRailView(
             sessions: sessions,
-            allSessions: allSessions,
             baseProjection: projection,
             layout: layout,
-            activeSessionID: nil,
+            activeSessionID: openedSessionID,
             openedSessionID: openedSessionID,
-            previewSessionID: nil,
-            screenContextTargetSessionID: nil,
+            screenContextTargetSessionID: screenContextTargetSessionID,
             screenContextTargetSticky: false,
             dockSide: dockSide,
             isCommandShortcutHintVisible: false,
             pendingDoneFlashSessionIDs: [],
-            unreadSessionIDs: [],
+            unreadSessionIDs: unreadSessionIDs,
             metrics: metrics,
             availableRailLength: availableRailLength,
-            onHoverSession: { _, _ in },
             onOpenSession: { _ in },
             onToggleScreenContextTarget: { _ in },
             onToggleStickyScreenContextTarget: { _ in },
@@ -197,20 +243,16 @@ struct PickyHUDDockChromeTests {
             onCreateDockGroup: { _, _ in "render-gallery-group" },
             onRenameDockGroup: { _, _ in },
             onSetDockGroupColor: { _, _ in },
-            onActivateDockGroup: { _ in },
-            onActivateDockGroupFromKeyboard: { _ in },
+            onSetDockGroupCollapsed: { _, _ in },
             onRemoveDockGroup: { _, _ in },
             onMoveSessionInDock: { _, _ in },
             onMoveDockGroup: { _, _ in },
-            pendingPickleFolderPickerRequest: nil,
-            onPickleFolderPickerPresentationAcknowledged: { _ in },
             onDockHoverChanged: { _ in },
             onAddSlotExpandedChanged: { _ in },
             onDoneFlashConsumed: { _ in },
             onDockHandleDragChanged: { _ in },
             onDockHandleDragEnded: {},
             onDockHandleDoubleClick: {},
-            externalDragPresentationStore: externalDragPresentationStore,
             archiveAccess: archiveAccess
         )
     }

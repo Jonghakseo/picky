@@ -215,19 +215,6 @@ extension PickyDockLayout {
         return nil
     }
 
-    /// Converts legacy expand/collapse persistence to the folder-only rail.
-    /// List-open state is display-local and transient, so every loaded group
-    /// returns to the persisted resting state with members not displayed.
-    func normalizedForFolderRail() -> PickyDockLayout {
-        var normalized = self
-        for index in normalized.entries.indices {
-            guard case var .group(group) = normalized.entries[index] else { continue }
-            group.isCollapsed = true
-            normalized.entries[index] = .group(group)
-        }
-        return normalized
-    }
-
     /// Drop any session id no longer present in `universe` from both
     /// top-level entries and every group's member list. Returns `true`
     /// when any change was applied.

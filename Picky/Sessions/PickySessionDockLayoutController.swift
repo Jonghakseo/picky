@@ -49,16 +49,7 @@ final class PickySessionDockLayoutController {
     ) {
         self.store = store
         self.onSaveError = onSaveError
-        let loaded = store.load()
-        let normalized = loaded.normalizedForFolderRail()
-        self.layout = normalized
-        // Legacy expanded groups are no longer a durable UI state. Persist the
-        // all-closed migration during load so disk matches runtime immediately.
-        if normalized != loaded {
-            store.enqueueSave(normalized) { result in
-                if case .failure(let error) = result { onSaveError(error) }
-            }
-        }
+        self.layout = store.load()
     }
 
     /// Keep layout entries aligned with active session IDs. Active IDs are
@@ -177,6 +168,14 @@ final class PickySessionDockLayoutController {
         return apply(next, changed: next != layout)
     }
 
+    /// Expanded groups show their members inline in the dock.
+    @discardableResult
+    func setGroupCollapsed(id: String, collapsed: Bool) -> Bool {
+        var next = layout
+        next.updateGroup(id: id) { $0.isCollapsed = collapsed }
+        return apply(next, changed: next != layout)
+    }
+
     @discardableResult
     func removeGroup(id: String, keepMembers: Bool) -> [String] {
         var next = layout
@@ -240,10 +239,12 @@ final class PickySessionDockLayoutController {
             _ = next.removeSession(memberID)
             orderedMembers.append(memberID)
         }
+        // A new group opens expanded so its members (or drop placeholder) show.
         let group = PickyDockGroup(
             name: trimmedName,
             color: PickyDockGroupColor.defaultColor,
-            memberSessionIDs: orderedMembers
+            memberSessionIDs: orderedMembers,
+            isCollapsed: false
         )
         next.entries.append(.group(group))
         return (next, group.id)
@@ -252,11 +253,10 @@ final class PickySessionDockLayoutController {
     @discardableResult
     private func apply(_ next: PickyDockLayout, changed: Bool, origin: PickyDockLayoutMutationOrigin = .explicit) -> Bool {
         if origin == .explicit { onExplicitLayoutMutation?() }
-        let normalized = next.normalizedForFolderRail()
-        let didChange = changed || normalized != layout
+        let didChange = changed || next != layout
         guard didChange else { return false }
         layoutRevision &+= 1
-        layout = normalized
+        layout = next
         persist()
         return true
     }
@@ -264,7 +264,7 @@ final class PickySessionDockLayoutController {
     @discardableResult
     private func applyPersisting(_ next: PickyDockLayout, changed: Bool, origin: PickyDockLayoutMutationOrigin = .explicit) async throws -> Bool {
         if origin == .explicit { onExplicitLayoutMutation?() }
-        let normalized = next.normalizedForFolderRail()
+        let normalized = next
         let didChange = changed || normalized != layout
         guard didChange else { return false }
 

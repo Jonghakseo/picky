@@ -168,7 +168,7 @@ Picky/
     PickyHUDPanel.swift, PickyHUDPlacement.swift, PickyHUDVisibilityStore.swift
                                          panel shell, placement, visibility
     Conversation/                        conversation card, composer, list, bubbles
-    Dock/                                dock rail, dock icons, group list/folder UI, drag-drop
+    Dock/                                list dock rows, inline group sections, resize tab, drag-drop
     ToolHistory/                         tool activity rows, history viewer, result rendering
     Archive/                             archive action controller and undo toast
     Artifacts/                           report viewer, artifacts/changes views, diff preview

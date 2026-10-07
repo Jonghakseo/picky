@@ -23,8 +23,8 @@ enum PickyDockContainer: Equatable {
 
 // MARK: - Render projection
 
-/// One top-level entry rendered in the dock rail. Groups always render as a
-/// single folder tile, regardless of their stored legacy `isCollapsed` value.
+/// One top-level entry rendered in the dock rail. A group renders as a header
+/// row; its visible members follow inline when the group is expanded.
 enum PickyDockRenderItem: Equatable {
     case session(id: String)
     case group(PickyDockGroup)
@@ -39,17 +39,18 @@ enum PickyDockRenderItem: Equatable {
     }
 }
 
-/// A keyboard/drag target for a top-level rail slot. Unlike the old model, a
-/// folder never borrows one of its members' identity or shortcut number.
+/// A drag target in the rendered list. A group header never borrows one of
+/// its members' identity or shortcut number.
 enum PickyDockSlotTarget: Equatable {
     case session(id: String, container: PickyDockContainer)
     case group(id: String)
 }
 
-/// Per-top-level position record for shortcut numbering and drag hit-testing.
+/// Per-row position record for drag hit-testing. Group headers and every
+/// visible session row (top-level or inside an expanded group) own one slot.
 struct PickyDockSlot: Equatable {
     let target: PickyDockSlotTarget
-    /// 0-based axis position. This is the index `⌘N` maps to.
+    /// 0-based position among rendered rows, headers included.
     let visibleIndex: Int
 
     var sessionID: String? {
@@ -70,17 +71,34 @@ struct PickyDockSlot: Equatable {
 
 /// Result of projecting the persisted layout against the currently-visible
 /// session universe. Every top-level entry, including an empty group, owns one
-/// render item and one slot.
+/// render item. Rows own slots in rendered order.
 struct PickyDockProjection: Equatable {
     var items: [PickyDockRenderItem]
     var slots: [PickyDockSlot]
 
     static let empty = PickyDockProjection(items: [], slots: [])
 
-    /// The top-level rail item that contains a session. Grouped sessions must
-    /// reveal their folder rather than attempting to scroll to a hidden row.
+    /// Visible session rows in rendered order. `⌘1`…`⌘9` map onto this list,
+    /// so members of a collapsed group take no number.
+    var shortcutSessionIDs: [String] { slots.compactMap(\.sessionID) }
+
+    func shortcutNumber(forSessionID sessionID: String) -> Int? {
+        guard let index = shortcutSessionIDs.firstIndex(of: sessionID) else { return nil }
+        return PickyHUDDockInteractionPolicy.numberShortcutForSessionIndex(index)
+    }
+
+    /// Visible member rows of an expanded group, in persisted member order.
+    func visibleMemberIDs(inGroup groupID: String) -> [String] {
+        slots.compactMap { slot in
+            guard case .session(let id, .group(groupID, _)) = slot.target else { return nil }
+            return id
+        }
+    }
+
+    /// The rendered row that represents a session: its own row, or the header
+    /// of the collapsed group that hides it.
     func scrollTargetID(forSessionID sessionID: String) -> String? {
-        if items.contains(.session(id: sessionID)) { return "session:\(sessionID)" }
+        if slots.contains(where: { $0.sessionID == sessionID }) { return "session:\(sessionID)" }
         for item in items {
             guard case .group(let group) = item,
                   group.memberSessionIDs.contains(sessionID)
@@ -92,8 +110,11 @@ struct PickyDockProjection: Equatable {
 }
 
 enum PickyDockProjector {
-    /// Build the folder-only rail plan. `isCollapsed` remains persisted for CLI
-    /// compatibility, but is intentionally ignored while rendering.
+    /// Build the list plan. A collapsed group contributes only its header; an
+    /// expanded group also contributes one row per visible member. Member
+    /// containers address the FULL stored member list (including archived
+    /// members kept for restore), because `move`/`insertSession` interpret
+    /// `memberIndex` against `memberSessionIDs`.
     static func project(
         layout: PickyDockLayout,
         visibleSessionIDs: [String]
@@ -118,8 +139,16 @@ enum PickyDockProjector {
             case .group(let group):
                 items.append(.group(group))
                 slots.append(PickyDockSlot(target: .group(id: group.id), visibleIndex: slotIndex))
-                seen.formUnion(group.memberSessionIDs.filter { visibleSet.contains($0) })
                 slotIndex += 1
+                for (memberIndex, id) in group.memberSessionIDs.enumerated() where visibleSet.contains(id) {
+                    seen.insert(id)
+                    guard !group.isCollapsed else { continue }
+                    slots.append(PickyDockSlot(
+                        target: .session(id: id, container: .group(id: group.id, memberIndex: memberIndex)),
+                        visibleIndex: slotIndex
+                    ))
+                    slotIndex += 1
+                }
             }
         }
 
@@ -173,14 +202,14 @@ enum PickyDockDropResolver {
     }
 
     /// A top-level insertion boundary between two adjacent rendered entries.
-    /// Folder-only rails need these explicit candidates because groups do not
-    /// expose session slot containers of their own.
+    /// A group block (header plus any expanded members) exposes this boundary
+    /// at its outer edge so a Pickle can leave or pass the group.
     struct TopLevelInsertionCandidate: Equatable {
         let topLevelIndex: Int
         let center: CGFloat
     }
 
-    /// A group folder tile and its center. Dropping here inserts into that
+    /// A group header row and its center. Dropping here inserts into that
     /// group's members.
     struct EmptyGroupCandidate: Equatable {
         let groupID: String
@@ -267,8 +296,8 @@ enum PickyDockDropResolver {
             )
         }
 
-        // Retain the member-edge resolver for list-row reordering. Rail folder
-        // tiles themselves are represented by `EmptyGroupCandidate` above.
+        // Expanded groups expose member rows; their first/last edges accept an
+        // insertion at the group's start/end. Headers are `EmptyGroupCandidate`s.
         if let edgeInsertion = resolveGroupEdgeInsertion(
             draggedSessionID: draggedSessionID,
             cursorAxis: cursorAxis,

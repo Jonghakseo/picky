@@ -23,10 +23,11 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
             content()
             Rectangle().fill(DS.Colors.borderSubtle)
                 .frame(width: horizontal ? metrics.chromeSeparatorThickness : metrics.collapseNotchWidth,
-                       height: horizontal ? metrics.collapseNotchWidth : metrics.chromeSeparatorThickness)
+                       height: horizontal ? min(metrics.collapseNotchWidth, max(0, crossSize - 12)) : metrics.chromeSeparatorThickness)
+            // Utilities sit side by side in both orientations: a thin
+            // horizontal rail cannot stack two 24pt buttons.
             utilities()
-                .frame(width: horizontal ? metrics.utilityButtonSide : nil,
-                       height: horizontal ? nil : metrics.utilityButtonSide)
+                .frame(height: metrics.utilityButtonSide)
         }
         .padding(horizontal ? .vertical : .horizontal, metrics.horizontalPadding)
         .padding(horizontal ? .leading : .top, metrics.handleInset)
@@ -77,16 +78,19 @@ struct PickyHUDDockHandleNotch: View {
 
     var body: some View {
         let horizontal = dockSide.orientation == .horizontal
+        // A vertical list's handle widens with the dock; a horizontal rail keeps 34pt.
+        let notchWidth = horizontal ? metrics.horizontalHandleNotchWidth : metrics.handleNotchWidth
+        let gripWidth = horizontal ? metrics.horizontalHandleIdleWidth : metrics.handleIdleWidth
         ZStack(alignment: .top) {
             PickyHUDDockNotchShape().fill(DS.Colors.surface3)
             Capsule().fill(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
-                .frame(width: metrics.handleIdleWidth, height: metrics.handleHeight)
+                .frame(width: gripWidth, height: metrics.handleHeight)
                 .padding(.top, DS.Spacing.space1)
         }
-        .frame(width: metrics.handleNotchWidth, height: metrics.notchDepth)
+        .frame(width: notchWidth, height: metrics.notchDepth)
         .rotationEffect(.degrees(horizontal ? -90 : 0))
-        .frame(width: horizontal ? metrics.notchDepth : metrics.handleNotchWidth,
-               height: horizontal ? metrics.handleNotchWidth : metrics.notchDepth)
+        .frame(width: horizontal ? metrics.notchDepth : notchWidth,
+               height: horizontal ? notchWidth : metrics.notchDepth)
         .allowsHitTesting(false)
     }
 }

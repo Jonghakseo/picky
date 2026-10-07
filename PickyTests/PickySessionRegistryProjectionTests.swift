@@ -207,29 +207,19 @@ struct PickySessionRegistryProjectionTests {
         )
     }
 
-    private func dockIcon(session: PickyHUDDockSession, onBodyEvaluation: @escaping () -> Void) -> PickyHUDDockIconView {
-        PickyHUDDockIconView(
+    private func dockIcon(session: PickyHUDDockSession, onBodyEvaluation: @escaping () -> Void) -> PickyHUDDockSessionRow {
+        PickyHUDDockSessionRow(
             session: session,
-            index: 0,
+            orientation: .vertical,
             isActive: false,
             isOpened: false,
-            isPreviewed: false,
             isScreenContextArmed: false,
             isScreenContextSticky: false,
-            dockSide: .right,
             shortcutNumber: nil,
             isCommandShortcutHintVisible: false,
             shouldFlashCompletion: false,
             isUnread: false,
             metrics: .medium,
-            onHoverChanged: { _ in },
-            onOpen: {},
-            onToggleScreenContextTarget: {},
-            onToggleStickyScreenContextTarget: {},
-            onCompact: {},
-            onArchive: {},
-            onStop: {},
-            onDoneFlashConsumed: {},
             onBodyEvaluation: onBodyEvaluation
         )
     }

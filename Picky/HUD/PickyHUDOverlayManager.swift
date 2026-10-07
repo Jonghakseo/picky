@@ -20,8 +20,6 @@ final class PickyHUDOverlayManager {
     let visibilityStore: PickyHUDVisibilityStore
     var usageLimitsStore: PickyUsageLimitsStore? // Plan limits for the context popover; set before start(), nil in tests.
     private let actualPanelVisibilityStore: PickyHUDActualPanelVisibilityStore
-    let dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
-    let dockGroupListChildEffectExecutor = PickyHUDDockGroupListChildEffectExecutor()
     private let screenReconfigurationEffectExecutor = PickyHUDScreenReconfigExecutor()
     private let settingsStore: PickySettingsStore
     private let settingsPersistence: PickySettingsPersistenceCoordinator
@@ -30,8 +28,6 @@ final class PickyHUDOverlayManager {
     private var visibilityCancellable: AnyCancellable?
     private var dockSnapshotCancellable: AnyCancellable?
     private var lastHandledAuthoritativeRemovalRevision: UInt64 = 0
-    /// Owns both the actual Combine subscription and child-panel content hosts.
-    var dockGroupListOverlayLifecycle: PickyHUDDockGroupListOverlayLifecycle?
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -57,58 +53,8 @@ final class PickyHUDOverlayManager {
         var toast: PickyHUDArchiveUndoToast?
     }
 
-    /// Latest base-only rail measurement for each display. It stays in HUD
-    /// coordinates until this manager combines it with the actual NSPanel frame.
-    struct ExternalDockGeometryEntry {
-        let input: PickyHUDDockExternalDragRailGeometryInput
-        let railFrame: CGRect
-    }
-
-    struct ExternalDockDragEntry {
-        let presentationStore: PickyHUDDockExternalDragRailPresentationStore
-        var coordinator: PickyHUDDockExternalDragCoordinator?
-    }
-
-    struct DockGroupListGeometry {
-        /// Tile-only frames anchor the child panel to its folder badge.
-        var badgeFrames: [String: CGRect] = [:]
-        /// Tile plus label frames keep all owning interactions out of the
-        /// outside-dismiss path without changing panel anchoring.
-        var interactionFrames: [String: CGRect] = [:]
-        var railFrame: CGRect = .zero
-        var openedSessionID: String?
-    }
-
-    struct DockGroupListChildEntry {
-        let panel: PickyHUDDockGroupListPanel
-        /// Folder tap retained until SwiftUI publishes a usable anchor frame.
-        var pendingGroupID: String?
-        var openGroupID: String?
-        /// Retained for the lifetime of one open group so SwiftUI keeps local
-        /// scroll, hover, and drag state across dock snapshot updates.
-        var model: PickyHUDDockGroupListPanelModel?
-        var badgeFrames: [String: CGRect] = [:]
-        var interactionFrames: [String: CGRect] = [:]
-        var railFrame: CGRect = .zero
-        var openedSessionID: String?
-        var localMouseDownMonitor: Any?
-        var globalMouseDownMonitor: Any?
-        /// Whether this list is pointer-owned or was deliberately pinned. Only
-        /// a pinned list registers with `dockGroupListFocusStore`.
-        var presentation: PickyHUDDockGroupListPresentation = .pinned
-    }
-
     var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
-    var dockGroupListChildrenByDisplayID: [CGDirectDisplayID: DockGroupListChildEntry] = [:]
-    var dockGroupListGeometryByDisplayID: [CGDirectDisplayID: DockGroupListGeometry] = [:]
-    /// Corridor sampling while a peek is open. Pointer containment cannot be
-    /// derived from hover events alone because the folder and panel are
-    /// separate windows with a gap between them.
-    var dockGroupPeekPollByDisplayID: [CGDirectDisplayID: Timer] = [:]
-    var dockGroupPeekOutsideSinceByDisplayID: [CGDirectDisplayID: Date] = [:]
-    var externalDockGeometryByDisplayID: [CGDirectDisplayID: ExternalDockGeometryEntry] = [:]
-    var externalDockDragsByDisplayID: [CGDirectDisplayID: ExternalDockDragEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     var currentDockSizePreset: PickyHUDDockSizePreset
@@ -149,62 +95,16 @@ final class PickyHUDOverlayManager {
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
-        self.dockGroupListOverlayLifecycle = PickyHUDDockGroupListOverlayLifecycle(
-            snapshotPublisher: viewModel.dockState.$snapshot.eraseToAnyPublisher(),
-            fontScalePublisher: fontScaleStore.$scale
-                .map { CGFloat($0) }
-                .eraseToAnyPublisher()
-        ) { [weak self] snapshot, fontScale in
-            self?.cancelStaleExternalDockDrags(snapshot: snapshot, fontScale: fontScale)
-            self?.syncDockGroupListChildrenWithSnapshot(snapshot: snapshot, fontScale: fontScale)
-        }
         self.dockSnapshotCancellable = viewModel.dockState.$snapshot.sink { [weak self] snapshot in
-            guard let self else { return }
-            self.consumeAuthoritativeRemovalEvent(snapshot.authoritativeRemovalEvent)
-            self.cancelStaleExternalDockDrags(snapshot: snapshot, fontScale: self.fontScaleStore.cgValue)
+            self?.consumeAuthoritativeRemovalEvent(snapshot.authoritativeRemovalEvent)
         }
-    }
-
-    /// Receives base rail geometry from a display-local HUD root. The payload
-    /// is intentionally retained as local SwiftUI coordinates, then converted
-    /// using the current AppKit panel frame only when a later promotion asks
-    /// for a token-frozen snapshot.
-    func handleExternalDockGeometryChange(
-        displayID: CGDirectDisplayID,
-        input: PickyHUDDockExternalDragRailGeometryInput,
-        railFrame: CGRect
-    ) {
-        guard panelsByDisplayID[displayID]?.placement.isMinimized == false,
-              railFrame.width > 0, railFrame.height > 0 else { return }
-        externalDockGeometryByDisplayID[displayID] = .init(input: input, railFrame: railFrame)
-    }
-
-    /// Work Unit 9 consumes this at promotion time. It binds the persisted
-    /// base measurement to the actual panel frame and source session identity,
-    /// never to the Rail's external preview projection.
-    func externalDockGeometrySnapshot(
-        displayID: CGDirectDisplayID,
-        draggedSessionID: String
-    ) -> PickyHUDDockExternalDragGeometrySnapshot? {
-        guard let entry = externalDockGeometryByDisplayID[displayID],
-              let panelEntry = panelsByDisplayID[displayID],
-              !panelEntry.placement.isMinimized
-        else { return nil }
-        return entry.input.screenSnapshot(
-            draggedSessionID: draggedSessionID,
-            hudRailFrame: entry.railFrame,
-            hudPanelFrame: panelEntry.panel.frame
-        )
     }
 
     /// Collapse only this display's dock. Keep its panel and placement alive so
     /// session/card state can be restored without changing persistent visibility.
     func minimizeDock(displayID: CGDirectDisplayID) {
         guard var entry = panelsByDisplayID[displayID], !entry.placement.isMinimized else { return }
-        tearDownDockSurface(displayID: displayID)
         actualPanelVisibilityStore.setOpenedSession(nil, for: displayID)
-        externalDockGeometryByDisplayID.removeValue(forKey: displayID)
-        dockGroupListGeometryByDisplayID.removeValue(forKey: displayID)
         entry.visibleChromeFrames = []
         entry.panel.minimizeDockInput()
         panelsByDisplayID[displayID] = entry
@@ -245,67 +145,35 @@ final class PickyHUDOverlayManager {
 
     private func panelWidth(for displayID: CGDirectDisplayID, dockSide: PickyHUDDockSide? = nil) -> CGFloat {
         let side = dockSide ?? position(for: displayID).side
+        var horizontalRailLength: CGFloat = 0
+        if side.orientation == .horizontal, let screen = screen(for: displayID) {
+            horizontalRailLength = horizontalDockRailLength(for: screen, displayID: displayID, dockSide: side)
+        }
         let intrinsicWidth = PickyHUDDockLayout.panelWidth(
             cardWidth: cardWidth(for: displayID),
             dockSide: side,
-            sessionCount: projectedDockSessionCount(for: displayID),
-            groupCount: projectedDockGroupCount(for: displayID),
-            isAddSlotExpanded: false,
+            horizontalRailLength: horizontalRailLength,
             metrics: PickyHUDDockMetrics(preset: currentDockSizePreset),
-            fontScale: fontScaleStore.cgValue,
             dockRailCrossSize: dockRailCrossSize(for: side)
         )
         guard side.orientation == .horizontal,
               let screen = screen(for: displayID) else {
             return intrinsicWidth
         }
-        // A horizontal rail now scrolls its sessions rather than widening the
+        // A horizontal rail scrolls its rows rather than widening the
         // transparent panel offscreen. Keep the entire panel inside the same
         // visible-frame margins used by the other horizontal placement math.
         let screenWidth = max(0, screen.visibleFrame.width - (PickyHUDDockLayout.screenMargin * 2))
         return min(intrinsicWidth, screenWidth)
     }
 
-    /// Cross-axis thickness of the visible rail. Folder identity labels can
-    /// exceed the square tile at larger app font scales, so panel placement
-    /// must reserve the same width as the SwiftUI rail shell.
+    /// Cross-axis thickness of the visible rail.
     private func dockRailCrossSize(for dockSide: PickyHUDDockSide) -> CGFloat {
-        let snapshot = viewModel.dockState.snapshot
-        let projection = PickyDockProjector.project(
-            layout: snapshot.dockLayout,
-            visibleSessionIDs: Array(snapshot.activeSessions.reversed().map(\.id))
+        PickyHUDDockRailLayoutPolicy.crossSize(
+            dockSide: dockSide,
+            metrics: PickyHUDDockMetrics(preset: currentDockSizePreset),
+            fontScale: fontScaleStore.cgValue
         )
-        let groupCount = projection.items.reduce(into: 0) { count, item in
-            if case .group = item { count += 1 }
-        }
-        let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        switch dockSide.orientation {
-        case .vertical:
-            return PickyHUDDockRailLayoutPolicy.verticalCrossSize(
-                groupCount: groupCount,
-                metrics: metrics,
-                fontScale: fontScaleStore.cgValue
-            )
-        case .horizontal:
-            return PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
-                groupCount: groupCount,
-                metrics: metrics,
-                fontScale: fontScaleStore.cgValue
-            )
-        }
-    }
-
-    /// Number of session tiles currently projected for this display's dock
-    /// rail. Uses every active session so panel sizing/clamping follows the
-    /// actual dock projection without a count cap.
-    private func projectedDockSessionCount(for displayID: CGDirectDisplayID) -> Int {
-        projectedDockProjection(for: displayID).slots.count
-    }
-
-    private func projectedDockGroupCount(for displayID: CGDirectDisplayID) -> Int {
-        projectedDockProjection(for: displayID).items.reduce(into: 0) { count, item in
-            if case .group = item { count += 1 }
-        }
     }
 
     private func projectedDockProjection(for displayID: CGDirectDisplayID) -> PickyDockProjection {
@@ -318,19 +186,15 @@ final class PickyHUDOverlayManager {
     private func horizontalDockRailLength(
         for screen: NSScreen,
         displayID: CGDirectDisplayID,
-        dockSide: PickyHUDDockSide,
-        isAddSlotExpanded: Bool = false
+        dockSide: PickyHUDDockSide
     ) -> CGFloat {
         let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let hasArchiveAccess = viewModel.archivedSessionAccess != nil
         let contentLength = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: projectedDockSessionCount(for: displayID),
-            groupCount: projectedDockGroupCount(for: displayID),
-            isAddSlotExpanded: isAddSlotExpanded,
+            projection: projectedDockProjection(for: displayID),
+            activeSessionIDs: Set(viewModel.dockState.snapshot.activeSessions.map(\.id)),
             dockSide: dockSide,
             metrics: metrics,
-            fontScale: fontScaleStore.cgValue,
-            hasArchiveAccess: hasArchiveAccess
+            fontScale: fontScaleStore.cgValue
         )
         return PickyHUDDockOverflowPolicy.layout(
             contentLength: contentLength,
@@ -339,12 +203,7 @@ final class PickyHUDOverlayManager {
                 dockSide: dockSide,
                 anchorPercent: position(for: displayID).anchorPercent
             ),
-            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
-                isAddSlotExpanded: isAddSlotExpanded,
-                dockSide: dockSide,
-                metrics: metrics,
-                hasArchiveAccess: hasArchiveAccess
-            )
+            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: dockSide, metrics: metrics)
         ).railLength
     }
 
@@ -420,8 +279,6 @@ final class PickyHUDOverlayManager {
     func stop() {
         visibilityCancellable = nil
         dockSnapshotCancellable = nil
-        dockGroupListOverlayLifecycle?.tearDownAll()
-        dockGroupListOverlayLifecycle = nil
         stopScreenParametersObserver()
         stopSettingsObserver()
         viewModel.stop()
@@ -451,17 +308,9 @@ final class PickyHUDOverlayManager {
             entry.panel.orderOut(nil)
             entry.panel.contentView = nil
         }
-        for displayID in dockGroupListChildrenByDisplayID.keys {
-            hideDockGroupListChild(displayID: displayID)
-        }
         panelsByDisplayID.removeAll()
         actualPanelVisibilityStore.removeAllPanels()
         archiveUndoToastsByDisplayID.removeAll()
-        dockGroupListChildrenByDisplayID.removeAll()
-        dockGroupListGeometryByDisplayID.removeAll()
-        for entry in externalDockDragsByDisplayID.values { _ = entry.coordinator?.cancelForTeardown() }
-        externalDockDragsByDisplayID.removeAll()
-        externalDockGeometryByDisplayID.removeAll()
     }
 
     // MARK: - Panel sync
@@ -481,17 +330,11 @@ final class PickyHUDOverlayManager {
             liveDisplayIDs: liveDisplayIDs,
             parentDisplayIDs: Set(panelsByDisplayID.keys),
             toastDisplayIDs: Set(archiveUndoToastsByDisplayID.keys),
-            childDisplayIDs: Set(dockGroupListChildrenByDisplayID.keys),
             effects: .init(
                 removeParent: { [weak self] displayID in
                     guard let self,
                           let entry = self.panelsByDisplayID.removeValue(forKey: displayID)
                     else { return }
-                    self.hideDockGroupListChild(displayID: displayID)
-                    self.externalDockGeometryByDisplayID.removeValue(forKey: displayID)
-                    if let drag = self.externalDockDragsByDisplayID.removeValue(forKey: displayID) {
-                        _ = drag.coordinator?.cancelForTeardown()
-                    }
                     entry.pendingShrinkTask?.cancel()
                     entry.panel.orderOut(nil)
                     self.actualPanelVisibilityStore.removePanel(for: displayID)
@@ -500,9 +343,6 @@ final class PickyHUDOverlayManager {
                     guard let entry = self?.archiveUndoToastsByDisplayID.removeValue(forKey: displayID) else { return }
                     entry.dismissTask?.cancel()
                     entry.panel.orderOut(nil)
-                },
-                removeChild: { [weak self] displayID in
-                    self?.tearDownDockSurface(displayID: displayID)
                 },
                 synchronizeParent: { [weak self] displayID in
                     guard let self, let screen = screensByDisplayID[displayID] else { return }
@@ -514,11 +354,7 @@ final class PickyHUDOverlayManager {
                         self.panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
                     } else {
                         self.panelsByDisplayID[displayID]?.panel.orderOut(nil)
-                        self.tearDownDockSurface(displayID: displayID)
                     }
-                },
-                synchronizeChild: { [weak self] displayID in
-                    self?.syncDockGroupListChild(displayID: displayID)
                 },
                 synchronizeToast: { [weak self] displayID in
                     self?.positionArchiveUndoToast(displayID: displayID)
@@ -550,12 +386,6 @@ final class PickyHUDOverlayManager {
         let closeRequests = PassthroughSubject<Void, Never>()
         hudPanel.onCloseRequested = { closeRequests.send() }
         actualPanelVisibilityStore.track(hudPanel, for: displayID)
-        let reportActualVisibility = hudPanel.onActualVisibilityChanged
-        hudPanel.onActualVisibilityChanged = { [weak self] isVisible in
-            reportActualVisibility?(isVisible)
-            guard !isVisible else { return }
-            Task { @MainActor in self?.tearDownDockSurface(displayID: displayID) }
-        }
 
         let initialPosition = position(for: displayID)
         let placement = PickyHUDPlacement(
@@ -570,7 +400,6 @@ final class PickyHUDOverlayManager {
             )
         )
         let openPerformanceTracker = PickyHUDOpenPerformanceTracker()
-        let externalDragPresentationStore = externalDockDragPresentationStore(for: displayID)
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
             dockState: viewModel.dockState,
@@ -631,51 +460,12 @@ final class PickyHUDOverlayManager {
             onArchiveUndoRequested: { [weak self] sessionID, title in
                 self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
             },
-            onDockGroupListToggle: { [weak self] groupID in
-                self?.toggleDockGroupListChild(displayID: displayID, groupID: groupID)
+            onChangeDockSizePreset: { [weak self] preset in
+                self?.changeDockSizePreset(preset)
             },
-            onDockSessionTileHover: { [weak self] in
-                self?.handleDockSessionTileHover(displayID: displayID)
-            },
-            onDockGroupTileHover: { [weak self] groupID, isHovering in
-                self?.handleDockGroupTileHover(
-                    displayID: displayID,
-                    groupID: groupID,
-                    isHovering: isHovering
-                )
-            },
-            onDockGroupTileDragBegin: { [weak self] _ in
-                self?.handleDockGroupTileDragBegin(displayID: displayID)
-            },
-            onDockGroupListClose: { [weak self] in
-                self?.hideDockGroupListChild(displayID: displayID)
-            },
-            onCancelExternalDockDrag: { [weak self] in
-                self?.cancelExternalDockDragForEscape(displayID: displayID) ?? false
-            },
-            onDockGroupListRowSelected: { [weak self] sessionID in
-                self?.selectDockGroupListRow(displayID: displayID, sessionID: sessionID)
-            },
-            dockGroupListFocusStore: dockGroupListFocusStore,
-            onDockGroupListGeometryChange: { [weak self] badgeFrames, interactionFrames, railFrame, isCommandHintVisible, openedSessionID in
+            onOpenedSessionChange: { [weak self] openedSessionID in
                 self?.actualPanelVisibilityStore.setOpenedSession(openedSessionID, for: displayID)
-                self?.handleDockGroupListGeometryChange(
-                    displayID: displayID,
-                    badgeFrames: badgeFrames,
-                    interactionFrames: interactionFrames,
-                    railFrame: railFrame,
-                    isCommandShortcutHintVisible: isCommandHintVisible,
-                    openedSessionID: openedSessionID
-                )
-            },
-            onExternalDockGeometryChange: { [weak self] input, railFrame in
-                self?.handleExternalDockGeometryChange(
-                    displayID: displayID,
-                    input: input,
-                    railFrame: railFrame
-                )
-            },
-            externalDragPresentationStore: externalDragPresentationStore
+            }
         )
             .environmentObject(appearanceStore).environment(\.pickyUsageLimitsStore, usageLimitsStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
@@ -721,9 +511,6 @@ final class PickyHUDOverlayManager {
         }
         if entry.placement.dockSide != pos.side {
             PickyPerf.event("placement_publish_dock_side")
-            if PickyHUDDockGroupListInteractionPolicy.openGroupIDAfterDockSideChanged() == nil {
-                tearDownDockSurface(displayID: displayID)
-            }
             entry.placement.dockSide = pos.side
         }
         let nextDockRailLength = computeAvailableDockRailLength(
@@ -768,11 +555,11 @@ final class PickyHUDOverlayManager {
             let panelCap = min((visibleFrame.height - 160).rounded(.down), dockAnchoredCap)
             return max(0, panelCap - PickyHUDExpansion.dockShadowVerticalPadding)
         case .horizontal:
-            let metrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
             let horizontalChrome = (PickyHUDDockLayout.screenMargin * 2)
                 + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
-                + (PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: metrics) * 2)
-            return max(0, visibleFrame.width - horizontalChrome)
+            return PickyHUDDockLayout.horizontalDockRailLengthBudget(
+                screenAvailableLength: max(0, visibleFrame.width - horizontalChrome)
+            )
         }
     }
 
@@ -861,13 +648,8 @@ final class PickyHUDOverlayManager {
                 return true
             }
         }
-        // Toast and group-list panels are tightly sized around their visible
-        // chrome, so the window frame is already an accurate content bound.
-        if dockGroupListChildrenByDisplayID.values.contains(where: {
-            $0.panel.isVisible && $0.panel.frame.contains(screenPoint)
-        }) {
-            return true
-        }
+        // Toast panels are tightly sized around their visible chrome, so the
+        // window frame is already an accurate content bound.
         return archiveUndoToastsByDisplayID.values.contains {
             $0.panel.isVisible && $0.panel.frame.contains(screenPoint)
         }
@@ -1154,7 +936,6 @@ final class PickyHUDOverlayManager {
     // MARK: - Dock handle drag / reset
 
     private func handleDockHandleDoubleClick(displayID: CGDirectDisplayID) {
-        _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
         dragStartPositionsByDisplayID = nil
         var pos = position(for: displayID)
         pos.side = pos.side.orientationToggled(anchorPercent: pos.anchorPercent)
@@ -1172,7 +953,6 @@ final class PickyHUDOverlayManager {
     }
 
     private func handleDockDragChanged(displayID: CGDirectDisplayID, delta: CGPoint) {
-        _ = externalDockDragsByDisplayID[displayID]?.coordinator?.cancelForTeardown()
         guard let screen = screen(for: displayID) else { return }
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.width > 0, visibleFrame.height > 0 else { return }
@@ -1399,9 +1179,6 @@ final class PickyHUDOverlayManager {
         for displayID in archiveUndoToastsByDisplayID.keys {
             positionArchiveUndoToast(displayID: displayID)
         }
-        for displayID in dockGroupListChildrenByDisplayID.keys {
-            syncDockGroupListChild(displayID: displayID)
-        }
     }
 
     func screen(for displayID: CGDirectDisplayID) -> NSScreen? {
@@ -1417,11 +1194,7 @@ final class PickyHUDOverlayManager {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                for displayID in Array(self.dockGroupListChildrenByDisplayID.keys) {
-                    self.tearDownDockSurface(displayID: displayID)
-                }
-                self.syncPanelsForCurrentScreens()
+                self?.syncPanelsForCurrentScreens()
             }
         }
     }
@@ -1455,20 +1228,17 @@ final class PickyHUDOverlayManager {
         settingsObserver = nil
     }
 
+    /// Resize-tab drags apply a preset immediately and persist it, so every
+    /// display and the Settings picker follow the same S/M/L value.
+    private func changeDockSizePreset(_ preset: PickyHUDDockSizePreset) {
+        guard preset != currentDockSizePreset else { return }
+        applyDockSizePreset(preset)
+        settingsPersistence.enqueue { $0.hudDockSizePreset = preset }
+    }
+
     private func applyDockSizePreset(_ preset: PickyHUDDockSizePreset) {
         guard preset != currentDockSizePreset else { return }
         currentDockSizePreset = preset
-        for displayID in dockGroupListChildrenByDisplayID.keys {
-            tearDownDockSurface(displayID: displayID)
-        }
-        // Slot pitch, folder bounds, and rail acceptance all depend on the
-        // preset. Require a fresh SwiftUI measurement before another list drag
-        // can promote instead of reusing geometry captured at the old size.
-        externalDockGeometryByDisplayID.removeAll()
-        // A drag whose list already closed is not reached by the loop above,
-        // and its frozen geometry was just invalidated along with everything
-        // else measured at the previous preset.
-        for entry in externalDockDragsByDisplayID.values { _ = entry.coordinator?.cancelForTeardown() }
         for displayID in panelsByDisplayID.keys {
             panelsByDisplayID[displayID]?.placement.dockSizePreset = preset
             panelsByDisplayID[displayID]?.placement.panelWidth = panelWidth(for: displayID)

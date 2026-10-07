@@ -17,7 +17,7 @@ UI_EFFECT_TESTS = {
     ("PickyTests/PickyHubWindowLifecycleTests.swift", "voiceCaptureDismissesHubAndReturnsToAccessoryBeforeRestoringExternalFocus"),
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
     ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
-    ("PickyTests/PickyHUDUnreadFocusRoutingTests.swift", "groupMemberOpenedFromAnotherWindowClosesOnFirstCommandW"),
+    ("PickyTests/PickyHUDUnreadFocusRoutingTests.swift", "sessionFocusedFromAnotherWindowClosesOnFirstCommandW"),
     ("PickyTests/PickyHubFocusPerformanceTests.swift", "productionHubFocusTransitionsMeetTheLocalLatencyBudget"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 }
@@ -25,7 +25,7 @@ UI_EFFECT_HELPERS: set[tuple[str, str]] = set()
 UI_EFFECT_CALLERS = {
     ("PickyTests/PickyIMETextViewTests.swift", "responderActionsUndoAndRedoTheFocusedEditorsPrivateHistory"),
     ("PickyTests/PickyHubNativeFocusTests.swift", "dismissingTheProductionModalReturnsKeyboardActivationToItsTrigger"),
-    ("PickyTests/PickyHUDUnreadFocusRoutingTests.swift", "groupMemberOpenedFromAnotherWindowClosesOnFirstCommandW"),
+    ("PickyTests/PickyHUDUnreadFocusRoutingTests.swift", "sessionFocusedFromAnotherWindowClosesOnFirstCommandW"),
     ("PickyTests/PickyHubFocusPerformanceTests.swift", "productionHubFocusTransitionsMeetTheLocalLatencyBudget"),
     ("PickyTests/PickySecureSurfaceWindowCoordinatorTests.swift", "secureSuppressionAndRestorationUpdateTheHUDActualVisibilityStore"),
 } | UI_EFFECT_HELPERS
@@ -79,10 +79,6 @@ REQUIRED_GUARDS = {
     "Picky/BuddyDictationManager.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }",
     "Picky/Shortcuts/ShortcutCaptureRecorder.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/Conversation/PickyConversationComposerView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
-    # installDragMonitors reports whether the full monitor set was installed,
-    # so its environment guard exits with the failure value instead of a bare return.
-    "Picky/HUD/Dock/PickyHUDDockGroupListView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }",
-    "Picky/HUD/Dock/PickyHUDOverlayManager+DockGroupList.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/HUD/PickyHUDView.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
     "Picky/Overlay/PickyInkCaptureController.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return false }",
     "Picky/Context/PickyAnnotationSceneMonitor.swift": "guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }",
@@ -100,7 +96,6 @@ def fail(message: str) -> None:
 
 
 INJECTED_LOCAL_MONITOR_CONTROLLERS = (
-    "PickyDockGroupDragReleaseMonitor",
     "PickyDockReorderDragController",
 )
 INJECTED_LOCAL_MONITOR_FILE = "Picky/HUD/Dock/PickyHUDDockReorderDragController.swift"

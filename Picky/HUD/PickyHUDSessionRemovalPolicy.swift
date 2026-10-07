@@ -11,8 +11,6 @@ struct PickyHUDSessionRemovalState: Equatable {
     var heldSession: PickyHUDDockHold?
     var pendingManualAutoOpenSessionID: String?
     var pendingRequestedOpenSessionID: String?
-    var hoverPreviewSessionID: String?
-    var suppressedHoverSessionID: String?
     var utilityPanelOpenSessionIDs: Set<String>
 }
 
@@ -36,12 +34,6 @@ enum PickyHUDSessionRemovalPolicy {
         }
         if next.pendingRequestedOpenSessionID.map(removedSessionIDs.contains) == true {
             next.pendingRequestedOpenSessionID = nil
-        }
-        if next.hoverPreviewSessionID.map(removedSessionIDs.contains) == true {
-            next.hoverPreviewSessionID = nil
-        }
-        if next.suppressedHoverSessionID.map(removedSessionIDs.contains) == true {
-            next.suppressedHoverSessionID = nil
         }
         next.utilityPanelOpenSessionIDs.subtract(removedSessionIDs)
         return (next, event.revision)

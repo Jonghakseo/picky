@@ -1713,23 +1713,11 @@ struct PickySessionViewModelTests {
         #expect(reports == [CGSize(width: 100, height: 240)])
     }
 
-    @Test func hudDockPreviewOpensImmediatelyAndClosesAfterDockLeaveTimeout() throws {
+    @Test func hudDockActiveSessionIsTheVisibleHeldSession() throws {
+        let visibleIDs = ["first", "pinned", "opened"]
         #expect(PickyHUDDockLayout.closeDelay == 0.4)
-        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "a") == "a")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: "a", sessionID: "b") == "b")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: false) == nil)
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: true) == "a")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", isDockHovered: false) == nil)
-        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))
-        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == .open("opened"))
-    }
-
-    @Test func hudDockUsesHeldSessionBeforePreview() throws {
-        let visibleIDs = ["first", "pinned", "opened", "hovered"]
-        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: "hovered", heldID: "opened") == nil)
-        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: "hovered", heldID: nil) == "hovered")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("opened"), previewID: "hovered") == "opened")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: nil) == nil)
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("opened")) == "opened")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("missing")) == nil)
     }
 
     @Test func hudDockHeldStateIsExclusiveAcrossClicks() throws {
@@ -1815,8 +1803,6 @@ struct PickySessionViewModelTests {
         #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
         #expect(PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-b", storedValues: storedValues))
 
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "agent-a", isDockHovered: false) == nil)
-        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "agent-a") == "agent-a")
         #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
     }
 
@@ -1928,22 +1914,15 @@ struct PickySessionViewModelTests {
     @Test func hudDockHorizontalPanelWidthAndClampMatchRailLength() throws {
         let metrics = PickyHUDDockMetrics(preset: .medium)
         let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
-        let sessionCount = 12
-        let railLength = PickyHUDDockLayout.horizontalDockRailLength(
-            sessionCount: sessionCount,
-            isAddSlotExpanded: false,
-            metrics: metrics
-        )
+        let railLength: CGFloat = 640
         let panelWidth = PickyHUDDockLayout.panelWidth(
             cardWidth: 1,
             dockSide: .top,
-            sessionCount: sessionCount,
-            isAddSlotExpanded: false,
+            horizontalRailLength: railLength,
             metrics: metrics
         )
-        let expectedVisibleRailWidth = railLength + (PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: metrics) * 2)
 
-        #expect(panelWidth == expectedVisibleRailWidth + (PickyHUDExpansion.dockShadowHorizontalPadding * 2))
+        #expect(panelWidth == railLength + (PickyHUDExpansion.dockShadowHorizontalPadding * 2))
 
         let clampedRight = PickyHUDDockLayout.clampedHorizontalXOffset(
             10_000,
@@ -2602,8 +2581,6 @@ struct PickySessionViewModelTests {
         let width = PickyHUDDockLayout.panelWidth(
             cardWidth: 520,
             dockSide: .right,
-            sessionCount: 3,
-            isAddSlotExpanded: false,
             metrics: metrics
         )
 

@@ -39,15 +39,6 @@ final class PickyHUDPlacement: ObservableObject {
     /// margins, HUD shadow bleed, and the current dock anchor are accounted
     /// for. Vertical rails consume this as height; horizontal rails as width.
     @Published var availableDockRailLength: CGFloat
-    /// One-shot request from a display's child list panel to the HUD root,
-    /// which owns the existing group-targeted folder creation flow.
-    @Published var dockGroupListCreateRequestGroupID: String?
-    /// One-shot stop request from a child list panel. The HUD root owns the stop choice alert,
-    /// which cannot attach to the small borderless list panel.
-    @Published var dockGroupListStopRequestSessionID: String?
-    /// Folder whose list is pinned open on this display. A hover peek stays
-    /// `nil` here, so the rail marks only the deliberate, persistent state.
-    @Published var pinnedDockGroupListGroupID: String?
 
     /// Top-left of the 32pt restore button within the expanded rail's bounds.
     /// Both orientations keep its center on the existing leading/top drag handle.
@@ -83,9 +74,7 @@ final class PickyHUDPlacement: ObservableObject {
         dockSizePreset: PickyHUDDockSizePreset = .medium,
         cardSize: PickyHUDCardSize? = nil,
         panelWidth: CGFloat = PickyHUDDockLayout.panelWidth,
-        availableDockRailLength: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
-        dockGroupListCreateRequestGroupID: String? = nil,
-        pinnedDockGroupListGroupID: String? = nil
+        availableDockRailLength: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight
     ) {
         self.availableCardMaxHeight = availableCardMaxHeight
         self.dockSide = dockSide
@@ -93,7 +82,5 @@ final class PickyHUDPlacement: ObservableObject {
         self.cardSize = cardSize
         self.panelWidth = panelWidth
         self.availableDockRailLength = availableDockRailLength
-        self.dockGroupListCreateRequestGroupID = dockGroupListCreateRequestGroupID
-        self.pinnedDockGroupListGroupID = pinnedDockGroupListGroupID
     }
 }

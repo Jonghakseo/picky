@@ -134,8 +134,11 @@ struct PickyHUDDockMetrics: Equatable {
 
     static let medium = PickyHUDDockMetrics(preset: .medium)
 
-    var railWidth: CGFloat { max(sessionTileWidth, utilityButtonSide * 2 + utilitySpacing) + horizontalPadding * 2 }
-    // Dock chrome stays usable at S without growing to session-tile size at L.
+    // MARK: Shell chrome
+
+    /// The vertical list rail width is the preset's list width.
+    var railWidth: CGFloat { listWidth }
+    // Dock chrome stays usable at S without growing to row size at L.
     var utilityButtonSide: CGFloat { 24 }
     var utilitySpacing: CGFloat { 2 }
     var chromeSpacing: CGFloat { 6 }
@@ -144,76 +147,110 @@ struct PickyHUDDockMetrics: Equatable {
     /// Edge-pinned notch keeps a shallower hit depth so it never overlaps the
     /// utilities inside `collapseInset`.
     var collapseHitDepth: CGFloat { 14 }
-    var handleNotchWidth: CGFloat { 34 }
+    /// The move handle widens with the vertical list (30% of the width), from
+    /// the original 34pt notch up to 60pt. A horizontal rail keeps 34pt.
+    var handleNotchWidth: CGFloat { min(max((listWidth * 0.3).rounded(), 34), 60) }
+    var horizontalHandleNotchWidth: CGFloat { 34 }
     var collapseNotchWidth: CGFloat { 28 }
     var notchDepth: CGFloat { 11 }
     var minimizedSide: CGFloat { 32 }
     var minimizedCornerRadius: CGFloat { 10 } // component exception: approved compact restore-button silhouette.
-    var iconSide: CGFloat { scaled(PickyHUDDockLayout.addSlotButtonSide) }
-    var iconCornerRadius: CGFloat { 9 }
-    /// Approved shell and tile radii do not change with the dock preset.
+    /// Approved shell radius does not change with the dock preset.
     var outerCornerRadius: CGFloat { 14 }
-    var sessionTileWidth: CGFloat { max(40, scaled(54)) }
-    var sessionTileHeight: CGFloat { sessionTileWidth }
-    /// Membership changes never resize a group or move neighboring tiles.
-    var emptyGroupSlotHeight: CGFloat { sessionTileHeight }
-    var sessionTileCornerRadius: CGFloat { 9 }
-    var sessionLogoSide: CGFloat { max(17, scaled(24)) }
-    var sessionSpacing: CGFloat { max(4, scaled(5)) }
     var horizontalPadding: CGFloat { 2 }
-    var topPadding: CGFloat { max(3, scaled(4)) }
-    var bottomPadding: CGFloat { max(8, scaled(10)) }
-    var addSlotTopPadding: CGFloat { max(5, scaled(7)) }
-    var addSlotButtonSide: CGFloat { iconSide }
-    var collapsedAddSlotVisualHeight: CGFloat { max(10, scaled(PickyHUDDockLayout.collapsedAddSlotVisualHeight)) }
-    var addSlotCollapsedExpansionReserve: CGFloat { 0 }
     var handleAreaHeight: CGFloat { max(12, scaled(PickyHUDExpansion.dockHandleAreaHeight)) }
-    var handleIdleWidth: CGFloat { 15 }
-    var handleActiveWidth: CGFloat { max(22, scaled(24)) }
+    var handleIdleWidth: CGFloat { max((handleNotchWidth * 0.44).rounded(), 15) }
+    var horizontalHandleIdleWidth: CGFloat { 15 }
     var handleHeight: CGFloat { 2.5 }
-    var plusFontSize: CGFloat { max(11, scaled(13)) }
-    var collapsedDashWidth: CGFloat { max(16, scaled(18)) }
-    var collapsedDashHeight: CGFloat { max(1, 1 * scale) }
-    var statusDotSide: CGFloat { max(6, scaled(8)) }
-    var archiveRingSide: CGFloat { max(36, scaled(42)) }
-    var archiveBadgeSide: CGFloat { max(12, scaled(14)) }
-    /// The folder identity label reserves its exact rendered line height plus
-    /// deliberate `space.1` vertical hit insets. The label-to-tile gap is also
-    /// `space.1`, so the full group block follows the 4pt spacing scale.
-    var groupHeaderVerticalInset: CGFloat { scaled(4) } // space.1
-    var groupHeaderContentSpacing: CGFloat { 2 }
-    var groupPreviewHeight: CGFloat { 20 }
-    var groupPreviewGlyphSide: CGFloat { 13 }
+    var plusFontSize: CGFloat { 13 }
     var chromeSeparatorThickness: CGFloat { 0.5 }
-    /// Maximum width for both the content-fitting group list and mini preview.
-    /// Dock-panel geometry scales with the dock preset. The large-preset baselines
-    /// map to the design system's 4pt spacing and shape tokens.
-    var groupListPanelWidth: CGFloat { scaled(360) }
-    var groupListPanelPadding: CGFloat { scaled(12) } // space.3
-    var groupListHeaderHeight: CGFloat { scaled(24) } // space.6
-    /// SF Symbol optical size, proportioned to its preset-scaled header.
-    var groupListHeaderAddSymbolSize: CGFloat { max(10, groupListHeaderHeight * 0.42) }
-    var groupListHeaderAccentSide: CGFloat { scaled(8) } // space.2
-    var groupListHeaderBottomSpacing: CGFloat { scaled(8) } // space.2
-    var groupListRowHeight: CGFloat { scaled(38) }
-    var groupListRowVerticalPadding: CGFloat { scaled(4) } // space.1
-    var groupListRowHorizontalPadding: CGFloat { scaled(8) } // space.2
-    /// Structural separation between list-row meaning units. Selected rows
-    /// need `space.2` clearance so their state surface never reads attached
-    /// to an adjacent row.
-    var groupListRowSpacing: CGFloat { scaled(8) } // space.2
-    var groupListRowGlyphSide: CGFloat { scaled(20) } // space.5
-    /// Fixed group-list action rail. It replaces the shortcut hint on hover
-    /// and keyboard highlight without changing row or panel geometry. Its
-    /// 20pt minimum preserves a usable compact macOS hit target at Small.
-    var groupListRowQuickActionSide: CGFloat { max(20, scaled(20)) } // space.5 compact control
-    /// SF Symbol optical size derives from its compact action target, not the
-    /// user's readable-text scale, so it remains inside every preset's button.
-    var groupListRowQuickActionSymbolSize: CGFloat { groupListRowQuickActionSide * 0.5 }
-    var groupListRowQuickActionSpacing: CGFloat { scaled(4) } // space.1
-    var groupListRowContentSpacing: CGFloat { scaled(8) } // space.2
-    var groupListPanelCornerRadius: CGFloat { scaled(12) } // radius.surface
-    var groupListRowCornerRadius: CGFloat { scaled(8) } // radius.control
+    var addSlotCollapsedExpansionReserve: CGFloat { 0 }
+
+    // MARK: List rows (S / M / L)
+
+    /// Vertical list width: S 112, M 168, L 200.
+    var listWidth: CGFloat {
+        switch preset {
+        case .small: 112
+        case .medium: 168
+        case .large: 200
+        }
+    }
+
+    /// Large rows add a second status · time line under the title.
+    var showsRowDetailLine: Bool { preset == .large }
+    /// Small rows step the title down one typography level.
+    var usesCompactRowTitle: Bool { preset == .small }
+
+    func rowHeight(fontScale: CGFloat) -> CGFloat {
+        let base: CGFloat = switch preset {
+        case .small: 23
+        case .medium: 26
+        case .large: 36
+        }
+        return (base * max(1, fontScale)).rounded(.up)
+    }
+
+    var rowGlyphSide: CGFloat {
+        switch preset {
+        case .small: 13
+        case .medium: 14
+        case .large: 16
+        }
+    }
+
+    var rowHorizontalPadding: CGFloat { preset == .small ? 5 : 6 }
+    var rowContentSpacing: CGFloat { preset == .small ? 5 : 6 }
+    var rowSpacing: CGFloat { 1 }
+    var rowCornerRadius: CGFloat { DS.CornerRadius.control }
+    var rowAttentionDotSide: CGFloat { preset == .small ? 5 : 6 }
+    var rowUnreadDotSide: CGFloat { 7 }
+    var rowActionSide: CGFloat { 18 }
+
+    func groupHeaderHeight(fontScale: CGFloat) -> CGFloat {
+        ((preset == .small ? 22 : 24) * max(1, fontScale)).rounded(.up)
+    }
+
+    var groupHeaderDotSide: CGFloat { preset == .small ? 5 : 6 }
+    /// Expanded members sit slightly inside their header.
+    var groupMemberIndent: CGFloat { preset == .small ? 4 : 6 }
+    /// Collapsed headers summarize at most this many attention glyphs.
+    var groupHeaderAttentionLimit: Int { preset == .small ? 1 : 3 }
+    var groupHeaderAttentionGlyphSide: CGFloat { preset == .small ? 10 : 11 }
+    /// Extra gap above a header that follows another entry.
+    var groupHeaderTopGap: CGFloat { 3 }
+
+    /// Horizontal chips share the row content at a fixed width.
+    var chipWidth: CGFloat {
+        switch preset {
+        case .small: 88
+        case .medium: 118
+        case .large: 150
+        }
+    }
+
+    func chipHeight(fontScale: CGFloat) -> CGFloat {
+        let base: CGFloat = switch preset {
+        case .small: 22
+        case .medium: 26
+        case .large: 38
+        }
+        return (base * max(1, fontScale)).rounded(.up)
+    }
+
+    /// Horizontal rail thickness: chip plus 6pt above and below.
+    func horizontalThickness(fontScale: CGFloat) -> CGFloat {
+        chipHeight(fontScale: fontScale) + 12
+    }
+
+    var chipSpacing: CGFloat { 3 }
+    var horizontalHeaderNameMaxWidth: CGFloat { preset == .small ? 52 : 84 }
+    /// Scroll fade length at a clipped list edge.
+    var scrollFadeLength: CGFloat { 24 }
+
+    /// Resize tab that sticks out of the free edge.
+    var resizeTabDepth: CGFloat { 8 }
+    var resizeTabLength: CGFloat { 32 }
 
     private func scaled(_ value: CGFloat) -> CGFloat {
         (value * scale).rounded(.toNearestOrAwayFromZero)
@@ -269,7 +306,11 @@ enum PickyHUDDockLabelPolicy {
 }
 
 enum PickyHUDDockLayout {
-    static let panelWidth: CGFloat = 540
+    /// Default panel width before placement measures a display: the default
+    /// card, the gap, and an M dock, plus shadow bleed on both sides.
+    static var panelWidth: CGFloat {
+        detailWidth + panelGap + railWidth + 2 * PickyHUDExpansion.dockShadowHorizontalPadding
+    }
     static let detailWidth: CGFloat = 446
     static let detailHorizontalPadding: CGFloat = 12
     static let contextCompactionPopoverWidth: CGFloat = 252
@@ -277,7 +318,8 @@ enum PickyHUDDockLayout {
     static func detailContentWidth(for detailWidth: CGFloat) -> CGFloat {
         max(0, detailWidth - (detailHorizontalPadding * 2))
     }
-    static let railWidth: CGFloat = 62
+    /// Default vertical rail width (M preset). Real callers pass the live preset width.
+    static var railWidth: CGFloat { PickyHUDDockMetrics.medium.railWidth }
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8
     /// Distance kept between the dock capsule and the screen edge.
@@ -289,9 +331,6 @@ enum PickyHUDDockLayout {
     static let closeDelay = PickyHUDDockHoverDisclosurePolicy.closeGrace
     static let closeDelayNanoseconds = PickyHUDDockHoverDisclosurePolicy.closeGraceNanoseconds
     static let defaultGitSectionExpanded = true
-    static let addSlotButtonSide: CGFloat = 36
-    static let collapsedAddSlotVisualHeight: CGFloat = 14
-    static let groupListMaxVisibleRows = 8
 
     static var addSlotCollapsedExpansionReserve: CGFloat {
         PickyHUDDockMetrics.medium.addSlotCollapsedExpansionReserve
@@ -301,58 +340,24 @@ enum PickyHUDDockLayout {
         metrics.utilityButtonSide
     }
 
-    static func dockRailSessionsHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
-        let count = max(1, sessionCount)
-        return CGFloat(count) * metrics.sessionTileHeight + CGFloat(count - 1) * metrics.sessionSpacing
-            + metrics.chromeSpacing * 2 + metrics.chromeSeparatorThickness + metrics.utilityButtonSide
-    }
-
-    static func dockRailHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
-        metrics.handleInset + metrics.collapseInset
-            + dockRailSessionsHeight(sessionCount: sessionCount, isAddSlotExpanded: isAddSlotExpanded, metrics: metrics)
-    }
-
     static func verticalDockRailCrossSize(
-        hasGroupHeaders: Bool, metrics: PickyHUDDockMetrics = .medium,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+        metrics: PickyHUDDockMetrics = .medium
     ) -> CGFloat { metrics.railWidth }
 
-    static func horizontalDockRailCrossSize(
-        hasGroupHeaders: Bool, metrics: PickyHUDDockMetrics = .medium,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
-    ) -> CGFloat {
-        max(metrics.sessionTileHeight, metrics.utilityButtonSide * 2 + metrics.utilitySpacing)
-            + metrics.horizontalPadding * 2
+    /// A horizontal rail stops at this length even on a wide screen; the
+    /// rest of its rows scroll sideways.
+    static let horizontalDockRailMaxLength: CGFloat = 720
+
+    static func horizontalDockRailLengthBudget(screenAvailableLength: CGFloat) -> CGFloat {
+        min(screenAvailableLength, horizontalDockRailMaxLength)
     }
 
-    static func dockGroupHeaderExtraLength(
-        groupHeaderCount: Int, metrics: PickyHUDDockMetrics = .medium,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
-    ) -> CGFloat { 0 }
-
-    static func horizontalDockRailLength(
-        sessionCount: Int, groupCount: Int = 0, isAddSlotExpanded: Bool,
+    static func horizontalDockRailCrossSize(
         metrics: PickyHUDDockMetrics = .medium,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
-        PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: sessionCount, groupCount: groupCount, isAddSlotExpanded: isAddSlotExpanded,
-            dockSide: .bottom, metrics: metrics, fontScale: fontScale
-        )
+        metrics.horizontalThickness(fontScale: fontScale)
     }
-
-    /// Worst-case horizontal overflow of the hover-preview card past an edge
-    /// dock icon in horizontal mode. The mini preview is centered on the icon
-    /// (`PickyHUDView.miniPreviewOffset` x = 0 for horizontal docks), so each
-    /// side may bleed up to `groupListPanelWidth/2 - sessionTileWidth/2` beyond
-    /// the rail's leading/trailing edge. The HUD reserves this much horizontal
-    /// slack around the rail so the NSPanel content view encloses the preview
-    /// instead of clipping it.
-    static func miniPreviewHorizontalReserve(metrics: PickyHUDDockMetrics) -> CGFloat {
-        max(0, (metrics.groupListPanelWidth - metrics.sessionTileWidth) / 2)
-    }
-
-
 
     static func contentSizeReservingAddSlotExpansion(
         measuredSize: CGSize,
@@ -372,14 +377,13 @@ enum PickyHUDDockLayout {
         )
     }
 
+    /// `horizontalRailLength` is the horizontal rail's on-screen length after
+    /// its overflow cap; vertical docks ignore it.
     static func panelWidth(
         cardWidth: CGFloat,
         dockSide: PickyHUDDockSide,
-        sessionCount: Int,
-        groupCount: Int = 0,
-        isAddSlotExpanded: Bool,
+        horizontalRailLength: CGFloat = 0,
         metrics: PickyHUDDockMetrics = .medium,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale,
         dockRailCrossSize: CGFloat? = nil
     ) -> CGFloat {
         switch dockSide.orientation {
@@ -389,14 +393,7 @@ enum PickyHUDDockLayout {
                 + (dockRailCrossSize ?? metrics.railWidth)
                 + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
         case .horizontal:
-            let railLength = horizontalDockRailLength(
-                sessionCount: sessionCount,
-                groupCount: groupCount,
-                isAddSlotExpanded: isAddSlotExpanded,
-                metrics: metrics,
-                fontScale: fontScale
-            ) + (miniPreviewHorizontalReserve(metrics: metrics) * 2)
-            return max(cardWidth, railLength) + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
+            return max(cardWidth, horizontalRailLength) + (PickyHUDExpansion.dockShadowHorizontalPadding * 2)
         }
     }
 
@@ -485,20 +482,8 @@ enum PickyHUDDockLayout {
     // interaction, and geometry decisions through this single policy namespace.
     // Keep these pass-throughs until call sites are split in a focused HUD
     // cleanup so behavior changes do not get mixed with namespace churn.
-    static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
-        PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: held, previewID: previewID)
-    }
-
-    static func previewSessionID(hoveredID: String?, heldID: String?) -> String? {
-        PickyHUDDockInteractionPolicy.previewSessionID(hoveredID: hoveredID, heldID: heldID)
-    }
-
-    static func previewSessionIDAfterDockHover(current: String?, sessionID: String) -> String? {
-        PickyHUDDockInteractionPolicy.previewSessionIDAfterDockHover(current: current, sessionID: sessionID)
-    }
-
-    static func previewSessionIDAfterCloseTimeout(current: String?, isDockHovered: Bool) -> String? {
-        PickyHUDDockInteractionPolicy.previewSessionIDAfterCloseTimeout(current: current, isDockHovered: isDockHovered)
+    static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?) -> String? {
+        PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: held)
     }
 
     static func heldSessionAfterCloseTimeout(current: PickyHUDDockHold?, isHUDHovered: Bool) -> PickyHUDDockHold? {
@@ -794,7 +779,7 @@ enum PickyHUDDockLayout {
     /// Maximum number of points the dock capsule may slide past the screen edge
     /// when only half the rail must remain visible. Retained for callers/tests that
     /// intentionally choose a smaller `keepVisible` than a full handle slot.
-    static let dockOverhangLimit: CGFloat = (railWidth / 2).rounded(.down)
+    static var dockOverhangLimit: CGFloat { (railWidth / 2).rounded(.down) }
 
     static func dockOverhangLimit(forRailWidth dockRailWidth: CGFloat, keepVisible: CGFloat = railWidth / 2) -> CGFloat {
         max(0, dockRailWidth - keepVisible).rounded(.down)

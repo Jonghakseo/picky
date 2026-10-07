@@ -155,6 +155,11 @@ extension PickySessionListViewModel {
         dockLayout = dockLayoutController.layout
     }
 
+    func setDockGroupCollapsed(id: String, collapsed: Bool) {
+        guard dockLayoutController.setGroupCollapsed(id: id, collapsed: collapsed) else { return }
+        dockLayout = dockLayoutController.layout
+    }
+
     /// Remove a group. When `keepMembers` is true, the members are spliced
     /// back into the top-level layout at the group's previous position (the
     /// "Ungroup" action). When false, the group's member sessions are

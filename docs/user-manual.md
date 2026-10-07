@@ -275,23 +275,34 @@ Pickle status can be:
 | failed | Failed. |
 | cancelled | Stopped/cancelled. |
 
-The dock icon color, glyph, unread dot, and completion flash reflect these states.
+The dock row's glyph color, trailing dot, and completion flash reflect these states. A running Pickle shows a ring around its glyph; Pickles that need you (waiting for input, blocked, failed) show a colored dot at the end of the row, and an unread Pickle shows a blue dot instead.
 
 ### 7.2 Dock interactions
 
 | Interaction | Result |
 | --- | --- |
-| Hover a Pickle | Shows a mini preview. |
+| Hover a Pickle | Shows an archive button at the end of the row. |
 | Click a Pickle | Opens or closes its conversation card. |
-| Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or **Hub → Settings → Pickles and workspace → Archived sessions**. |
+| Press and hold a Pickle | Archives it after a ~1.2s hold timer; the row fills from the left while you hold, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or **Hub → Settings → Pickles and workspace → Archived sessions**. |
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
-| Right-click / Control-click | Opens the dock context menu. Use **Pin Picky Input to This Pickle** to keep routing voice and Quick Input here, or **Send Next Picky Input to This Pickle** for one message only. The menu also provides Compact, Archive, and Stop; Stop is disabled when the Pickle can no longer be stopped. |
+| Right-click / Control-click | Opens the dock context menu. Use **Pin Picky Input to This Pickle** to keep routing voice and Quick Input here, or **Send Next Picky Input to This Pickle** for one message only. The menu also provides Compact, **Move to Group**, **Remove from Group** (for grouped Pickles), Archive, and Stop; Stop is disabled when the Pickle can no longer be stopped. |
+| Drag the tab on the dock's inner edge | Resizes the dock between **S**, **M**, and **L**. The tab appears while the pointer is over the dock; the dock snaps to the nearest size as you drag, and the choice is saved as the same setting as **Hub → Settings → Pickles and workspace → Dock size**. |
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
 | Click the notch at the bottom (right in horizontal mode) | Minimize the dock to a Picky logo button at the handle end. Click that button to expand the dock, or drag it to move the minimized dock without expanding it. While minimized, a badge on the button counts unread Pickles (the same Pickles that show an unread dot in the expanded dock). |
 
-Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 top-level dock slots, top to bottom. A group always counts as one slot. If it has one visible Pickle, pressing its number opens that Pickle directly; larger groups open their member list, and empty groups open the recent-folder picker. While `Cmd` is held, every numbered slot shows its badge.
+Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 visible Pickle rows, top to bottom (left to right in horizontal mode), including rows inside expanded groups. Group headers and the members of a collapsed group take no number. While `Cmd` is held, every numbered row shows its badge.
+
+Dock sizes:
+
+| Size | Vertical dock | Horizontal dock |
+| --- | --- | --- |
+| S | 112pt wide, one-line rows with smaller text | 34pt thick, one-line chips |
+| M (default) | 168pt wide, one-line rows | 38pt thick, one-line chips |
+| L | 200pt wide, two-line rows with status and time | 50pt thick, two-line chips |
+
+When the rows do not fit, only the list scrolls; the handle and bottom buttons stay put, and the edge that hides rows fades out. A horizontal dock stops growing at 720pt (or the screen width, whichever is smaller) and scrolls sideways beyond that.
 
 ### 7.3 Creating an empty Pickle
 
@@ -307,45 +318,28 @@ When you start a Pickle this way, Picky creates an empty Pickle for that folder 
 
 ### 7.4 Pickle groups
 
-Group related Pickles into one dock slot. Empty and multi-Pickle groups use a folder tile; a group with one visible Pickle renders that Pickle as a full session tile while preserving the group slot and its drop target. Empty groups use the same tile height as other groups. Each group keeps its color-marked name inside the tile, including in horizontal mode, so its identity stays visible without expanding the rail by member count.
+Group related Pickles under a header in the dock. Each header shows the group's color dot, name, and active Pickle count. Click the header to collapse or expand the group; its members appear right below it (to its right in horizontal mode). The expanded or collapsed state is saved with the dock layout. A collapsed header keeps the glyphs of members that are running or need you, plus a blue dot when any member is unread.
 
 Create a group:
 
 - Click the `+` slot → **New Group…**, give it a name, and optionally pick initial Pickles and an accent color.
-- An empty group still shows its folder tile. Click it to open the targeted recent-folder picker; the folder tile also stays a drop target for dragging existing Pickles in.
+- A new group opens expanded. An expanded group with no Pickles shows a **Drop a Pickle here** placeholder; drag Pickles onto it, or click it to start a Pickle in that group.
 
 Manage membership:
 
 - Ask the Picky main agent to organize existing Pickles. It uses the local `picky` CLI to list groups, create a named group, add/remove exact Pickle session IDs, or ungroup while keeping members. These operations update the same persisted dock layout used by the UI.
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
-- Drag a group’s folder tile to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group with active Pickles asks for confirmation before archiving them; an empty group or one whose members are already archived is removed immediately.
-- A group with one visible Pickle behaves like a normal Pickle tile when clicked: clicking it opens or closes that conversation card directly. Hovering it still shows the group's member list, including the group actions used to add another Pickle.
-- Hover any group with visible Pickles to show its member list immediately. The hover list stays open while the pointer crosses the gap into the panel, then closes after the pointer leaves the group-panel corridor. Clicking a multi-Pickle folder does not pin it open; an empty folder still opens the targeted recent-folder picker.
-- For a group with two or more visible Pickles, `Cmd + 1`…`9` or accessibility activation pins its member list for keyboard navigation. Opening a member list never changes the open conversation card; selecting a member opens its card and closes the list. The card receives keyboard focus on that display, so `Cmd + W` closes it without another click. Closing the card leaves the Pickle and dock running.
+- Drag a group header to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group with active Pickles asks for confirmation before archiving them; an empty group or one whose members are already archived is removed immediately.
+- Drag a Pickle onto a collapsed header to add it to that group, or between the rows of an expanded group to place it at that position. Members keep the order you arrange; a new reply does not move a Pickle.
 
-The member list:
+Hover a group header to reveal:
 
-- Opens as a small panel next to the folder tile. It never changes the dock's own size, and it stays on screen if the folder sits near a screen edge. Hover-opened lists are transient; keyboard-opened lists remain pinned until dismissed.
-- Each row shows the Pickle's status glyph, its title, and a second line with the time of the Pickle's last reply followed by the working folder. A trailing relative timestamp labels updates from the last minute as **Just now**. An unread Pickle shows a dot; the folder tile itself shows how many of its Pickles are unread.
-- Drag a row out of the panel and onto the dock rail to move that Pickle straight to the top level or into another group. The dock previews the landing slot while you drag and commits only when you release; releasing anywhere else leaves the Pickle where it was.
-- The folder preview and member list share the same order: Pickles with the most recent reply first, regardless of status. Background activity such as a runtime resume does not move a Pickle up. Pickles with no reply yet sit at the bottom, and equal reply times keep the existing member order. Number shortcuts follow the displayed list order.
-- Only one folder's list is open at a time, and each display keeps its own.
-- Lists longer than eight Pickles scroll inside the panel.
-- The list closes when you pick a row, press `Esc`, click elsewhere, move the dock, or its final visible Pickle is removed, moved, or archived.
-
-Row actions inside the list:
-
-| Action | Behavior |
+| Control | Behavior |
 | --- | --- |
-| Click | Opens that Pickle and closes the list. |
-| Hover or keyboard highlight | Replaces the number shortcut with quick buttons to remove the Pickle from the group or archive it. |
-| Drag | Drag the row horizontally out of the panel to move the Pickle to the dock or another group. Releasing inside the list does nothing; manual reordering within a group is not available. |
-| Press and hold | Archives, with the same hold and progress ring as a dock tile. |
-| Right-click | Stop, compact, screen-context arm, move to another group, and remove from group. |
+| `+` | Opens the recent-folder picker; the new Pickle joins this group. |
+| Color dot | Opens the color menu. |
 
-While a member list is open it owns the number keys: `Cmd + 1`…`9` select its rows instead of dock slots, and the dock's own badges hide until the list closes. With no text field focused, `Up`/`Down` move the highlight and `Return` opens the highlighted Pickle.
-
-Right-click a group’s folder tile for more actions:
+Right-click a group header for more actions:
 
 | Action | Behavior |
 | --- | --- |
@@ -358,7 +352,7 @@ Right-click a group’s folder tile for more actions:
 
 Archive methods:
 
-- Press and hold a Pickle dock icon until the hold timer completes.
+- Press and hold a Pickle row in the dock until the hold timer completes.
 - Use the dock right-click menu → **Archive**.
 - Use the conversation card menu → **Archive**.
 
@@ -692,10 +686,9 @@ These work when a Pickle card/HUD panel is active.
 | Shortcut | Action |
 | --- | --- |
 | Cmd + W | Close the open Pickle card, including immediately after it gains focus; keep the dock and session running. |
-| Escape | Close an open folder member list first. Otherwise, when no text input is focused, stop the opened Pickle if it is running, queued, or waiting for input, or close the card if it is idle. Cmd+W always closes. |
-| Return | Open the highlighted row while a folder member list is open, otherwise focus the active composer when no text input is focused. |
-| Up / Down | Move the highlight in an open folder member list, when no text input is focused. |
-| Cmd + 1…9 | Activate that top-level dock slot: open/close a Pickle (including a one-Pickle group), open a larger group’s member list, or open the picker for an empty group. While a member list is open, these select its rows instead. |
+| Escape | When no text input is focused, stop the opened Pickle if it is running, queued, or waiting for input, or close the card if it is idle. Cmd+W always closes. |
+| Return | Focus the active composer when no text input is focused. |
+| Cmd + 1…9 | Open or close the Pickle in that visible dock row, counting rows inside expanded groups. |
 | Cmd + Shift + `[` | Cycle to previous Pickle. |
 | Cmd + Shift + `]` | Cycle to next Pickle. |
 | Cmd + R | Open latest agent response as a report. |

@@ -12,8 +12,6 @@ struct PickyHUDSessionRemovalPolicyTests {
             heldSession: .open("removed"),
             pendingManualAutoOpenSessionID: "removed",
             pendingRequestedOpenSessionID: "keep",
-            hoverPreviewSessionID: "removed",
-            suppressedHoverSessionID: "keep",
             utilityPanelOpenSessionIDs: ["removed", "keep"]
         )
     }
@@ -30,8 +28,6 @@ struct PickyHUDSessionRemovalPolicyTests {
         #expect(applied.state.heldSession == nil)
         #expect(applied.state.pendingManualAutoOpenSessionID == nil)
         #expect(applied.state.pendingRequestedOpenSessionID == "keep")
-        #expect(applied.state.hoverPreviewSessionID == nil)
-        #expect(applied.state.suppressedHoverSessionID == "keep")
         #expect(applied.state.utilityPanelOpenSessionIDs == ["keep"])
     }
 
@@ -51,8 +47,6 @@ struct PickyHUDSessionRemovalPolicyTests {
             heldSession: .open("removed"),
             pendingManualAutoOpenSessionID: "removed",
             pendingRequestedOpenSessionID: nil,
-            hoverPreviewSessionID: "removed",
-            suppressedHoverSessionID: nil,
             utilityPanelOpenSessionIDs: ["removed"]
         )
 

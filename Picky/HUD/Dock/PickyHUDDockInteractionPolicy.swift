@@ -3,7 +3,7 @@
 //  Picky
 //
 //  Pure HUD dock interaction transitions. Layout math stays in
-//  PickyHUDDockLayout; held/open/hover state policy lives here.
+//  PickyHUDDockLayout; held/open state policy lives here.
 //
 
 import Foundation
@@ -27,9 +27,7 @@ enum PickyHUDArchiveHoldPolicy {
     }
 }
 
-/// Shared enablement projection for every per-Pickle Dock menu. Keeping the
-/// tile and group-list row on this policy prevents their context menus from
-/// drifting when a session status changes.
+/// Shared enablement projection for the per-Pickle dock menu.
 struct PickyHUDDockSessionActionAvailability: Equatable {
     let canCompact: Bool
     let canStop: Bool
@@ -43,34 +41,13 @@ struct PickyHUDDockSessionActionAvailability: Equatable {
 }
 
 enum PickyHUDDockInteractionPolicy {
-    static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
-        if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }
-        if let previewID, visibleIDs.contains(previewID) { return previewID }
-        return nil
-    }
-
-    static func previewSessionID(hoveredID: String?, heldID: String?) -> String? {
-        heldID == nil ? hoveredID : nil
-    }
-
-    static func previewSessionIDAfterDockHover(current: String?, sessionID: String) -> String? {
-        sessionID
-    }
-
-    static func previewSessionIDAfterTileExitTimeout(current: String?, exitedSessionID: String) -> String? {
-        current == exitedSessionID ? nil : current
-    }
-
-    static func previewSessionIDAfterGroupHover(current: String?, isHovering: Bool) -> String? {
-        isHovering ? nil : current
-    }
-
-    static func previewSessionIDAfterCloseTimeout(current: String?, isDockHovered: Bool) -> String? {
-        isDockHovered ? current : nil
+    static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?) -> String? {
+        guard let held, visibleIDs.contains(held.sessionID) else { return nil }
+        return held.sessionID
     }
 
     static func heldSessionAfterCloseTimeout(current: PickyHUDDockHold?, isHUDHovered: Bool) -> PickyHUDDockHold? {
-        // Timeout clears transient hover preview state only; manually held sessions stay open.
+        // Manually held sessions stay open when the pointer leaves.
         current
     }
 

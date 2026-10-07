@@ -452,46 +452,11 @@ if [ "$TARGET" != "dock-group" ]; then
   exit 64
 fi
 
-OUTPUT="$ROOT/build/render-gallery/dock-group"
-REQUEST_FILE="$ROOT/build/render-gallery/.dock-group-output-path"
-EXPECTED=(
-  folder-small-dark-100.png
-  folder-medium-dark-100.png
-  folder-large-light-100.png
-  folder-selected-medium-dark-100.png
-  folder-selected-large-light-100.png
-  folder-pinned-large-light-100.png
-  folder-targeted-medium-dark-100.png
-  folder-small-dark-130-cjk.png
-  folder-empty-small-dark-100.png
-  folder-empty-targeted-large-light-100.png
-  list-five-selected-small-dark-100.png
-  list-five-selected-medium-dark-100.png
-  list-five-selected-large-light-100.png
-  list-five-selected-small-dark-130.png
-  list-four-idle-medium-dark-100.png
-  list-five-highlighted-small-dark-130.png
-  list-two-selected-medium-dark-100.png
-  list-one-selected-medium-dark-100.png
-  mini-preview-completed-medium-dark-100.png
-  combined-folder-panel-medium-dark-100.png
-  rail-horizontal-three-groups-small-dark-130.png
-  rail-four-groups-open-session-large-light-dark-backdrop-100.png
-  list-five-idle-large-light-dark-backdrop-100.png
-  external-drag-feedback-medium-dark-100.png
-  external-drag-top-level-large-light-130.png
-)
-
-rm -rf "$OUTPUT"
-mkdir -p "$OUTPUT"
-printf '%s\n' "$OUTPUT" > "$REQUEST_FILE"
-trap 'rm -f "$REQUEST_FILE"' EXIT
-
 CHROME_OUTPUT="$ROOT/build/render-gallery/dock-chrome"
 CHROME_REQUEST="$ROOT/build/render-gallery/.dock-chrome-output-path"
 mkdir -p "$CHROME_OUTPUT"
 printf '%s\n' "$CHROME_OUTPUT" > "$CHROME_REQUEST"
-trap 'rm -f "$REQUEST_FILE" "$CHROME_REQUEST"' EXIT
+trap 'rm -f "$CHROME_REQUEST"' EXIT
 if pgrep -x xcodebuild >/dev/null; then
   echo "Another xcodebuild is running; wait before rendering the dock." >&2
   exit 75
@@ -501,16 +466,15 @@ if [[ "$(xcodebuild -version | head -n 1)" != "Xcode 16.3" ]]; then
   echo "The dock gallery requires Xcode 16.3." >&2
   exit 1
 fi
-echo "Rendering production dock and group galleries offscreen to $OUTPUT and $CHROME_OUTPUT"
+echo "Rendering the production list dock offscreen to $CHROME_OUTPUT"
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" \
   -derivedDataPath "$HUB_DERIVED_DATA_PATH" test \
-  -only-testing:PickyTests/PickyHUDDockGroupRenderGalleryTests \
   -only-testing:PickyTests/PickyHUDDockChromeTests \
+  -only-testing:PickyTests/PickyHUDDockListChromeTests \
   -only-testing:PickyTests/PickyHUDDockMinimizationTests \
   -only-testing:PickyTests/PickyHUDDockMinimizedPresentationTests \
   -only-testing:PickyTests/PickyHUDDockRailPolicyTests \
   -only-testing:PickyTests/PickyHUDDockGroupDropCandidateBuilderTests \
-  -only-testing:PickyTests/PickyHUDDockHandlePresentationTests \
   -only-testing:PickyTests/PickyTests
 
 python3 - "$CHROME_OUTPUT" <<'PY'
@@ -521,59 +485,18 @@ files = json.loads((output / 'manifest.json').read_text())
 expected = {f'{size}-{appearance}-{orientation}-{state}.png'
             for size in ['s', 'm', 'l'] for appearance in ['light', 'dark']
             for orientation in ['vertical', 'horizontal']
-            for state in ['group', 'empty-group', 'empty-dock', 'overflow']}
+            for state in ['collapsed-group', 'expanded-group', 'empty-group', 'empty-dock', 'overflow', 'attention']}
 expected |= {'minimized-light.png', 'minimized-dark.png'}
 expected |= {f'backdrop-{appearance}-{backdrop}.png'
              for appearance in ['light', 'dark'] for backdrop in ['white', 'black']}
 if set(files) != expected:
-    raise SystemExit('Dock chrome gallery does not contain the expected 54 scenes')
+    raise SystemExit(f'Dock chrome gallery does not contain the expected {len(expected)} scenes')
 for name in files:
     data = (output / name).read_bytes()
     if data[:8] != b'\x89PNG\r\n\x1a\n' or min(struct.unpack('>II', data[16:24])) <= 0:
         raise SystemExit(f'Invalid dock chrome image: {name}')
-print('Validated 54 production dock chrome PNGs.')
+print(f'Validated {len(expected)} production dock chrome PNGs.')
 PY
 
-python3 - "$OUTPUT" "${EXPECTED[@]}" <<'PY'
-import json
-import struct
-import sys
-from pathlib import Path
-
-output = Path(sys.argv[1])
-expected = sys.argv[2:]
-manifest_path = output / "manifest.json"
-index_path = output / "index.html"
-if not manifest_path.is_file() or manifest_path.stat().st_size == 0:
-    raise SystemExit("render gallery is missing a non-empty manifest.json")
-if not index_path.is_file() or index_path.stat().st_size == 0:
-    raise SystemExit("render gallery is missing a non-empty index.html")
-
-manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-entries = {scene["file"]: scene for scene in manifest.get("scenes", [])}
-if set(entries) != set(expected):
-    raise SystemExit(f"manifest scenes differ from expected matrix: {sorted(entries)}")
-
-signature = b"\x89PNG\r\n\x1a\n"
-for name in expected:
-    path = output / name
-    if not path.is_file() or path.stat().st_size == 0:
-        raise SystemExit(f"missing or empty render: {path}")
-    data = path.read_bytes()
-    if data[:8] != signature or data[12:16] != b"IHDR":
-        raise SystemExit(f"invalid PNG: {path}")
-    width, height = struct.unpack(">II", data[16:24])
-    scene = entries[name]
-    if width != scene["pixelWidth"] or height != scene["pixelHeight"]:
-        raise SystemExit(
-            f"manifest dimension mismatch for {name}: "
-            f"PNG={width}x{height}, manifest={scene['pixelWidth']}x{scene['pixelHeight']}"
-        )
-    if width <= 0 or height <= 0:
-        raise SystemExit(f"non-positive PNG dimensions: {path}")
-
-print(f"Validated {len(expected)} PNG renders and manifest dimensions.")
-PY
-
-printf 'Render gallery artifacts:\n  %s\n  %s\n  %s\n' \
-  "$OUTPUT" "$OUTPUT/index.html" "$OUTPUT/manifest.json"
+printf 'Render gallery artifacts:\n  %s\n  %s\n' \
+  "$CHROME_OUTPUT" "$CHROME_OUTPUT/manifest.json"

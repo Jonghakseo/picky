@@ -251,40 +251,6 @@ struct PickyTests {
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: mediumMetrics))
         #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == mediumMetrics.addSlotCollapsedExpansionReserve)
 
-        // The empty creation tile occupies the same slot as the first Pickle.
-        #expect(PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 0, isAddSlotExpanded: false, metrics: mediumMetrics)
-            == PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 1, isAddSlotExpanded: false, metrics: mediumMetrics))
-        // Each additional session grows the rail by exactly one tile plus one gap,
-        // in both orientations, and the rail chrome around the sessions stays fixed.
-        let sessionsThree = PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics)
-        let sessionsFour = PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 4, isAddSlotExpanded: false, metrics: mediumMetrics)
-        #expect(sessionsFour - sessionsThree == mediumMetrics.sessionTileHeight + mediumMetrics.sessionSpacing)
-        let railThree = PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics)
-        let railFour = PickyHUDDockLayout.dockRailHeight(sessionCount: 4, isAddSlotExpanded: false, metrics: mediumMetrics)
-        #expect(railFour - railThree == sessionsFour - sessionsThree)
-        #expect(railThree > sessionsThree)
-        let horizontalThree = PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics)
-        let horizontalFour = PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 4, isAddSlotExpanded: false, metrics: mediumMetrics)
-        #expect(horizontalFour - horizontalThree == mediumMetrics.sessionTileWidth + mediumMetrics.sessionSpacing)
-
-        // Hovering the add control never grows the rail.
-        #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - railThree == mediumMetrics.addSlotCollapsedExpansionReserve)
-        #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - horizontalThree == mediumMetrics.addSlotCollapsedExpansionReserve)
-
-        // A rail with no groups has only its ordinary top-level slot chrome.
-        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: 3,
-            isAddSlotExpanded: false,
-            dockSide: .right,
-            metrics: mediumMetrics
-        ) == railThree)
-        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: 3,
-            isAddSlotExpanded: false,
-            dockSide: .bottom,
-            metrics: mediumMetrics
-        ) == horizontalThree)
-
         #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
             measuredSize: CGSize(width: 50, height: 120),
             activeSessionID: nil,

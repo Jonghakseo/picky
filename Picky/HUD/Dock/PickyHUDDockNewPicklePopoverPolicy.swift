@@ -5,20 +5,6 @@
 //  Selects the one anchor that owns the shared new-Pickle popover.
 //
 
-enum PickyHUDDockGroupTilePresentation: Equatable {
-    case empty
-    case singleSession(sessionID: String)
-    case folder
-
-    static func resolve(visibleMemberIDs: [String]) -> Self {
-        switch visibleMemberIDs.count {
-        case 0: .empty
-        case 1: .singleSession(sessionID: visibleMemberIDs[0])
-        default: .folder
-        }
-    }
-}
-
 enum PickyHUDDockNewPicklePopoverPolicy {
     static func isPresented(
         pickerIsPresented: Bool,

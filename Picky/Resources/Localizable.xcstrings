@@ -10113,13 +10113,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "M is the default dock size."
+            "value": "M is the default. You can also drag the dock's inner edge to resize it."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "M은 기본 도크 크기예요."
+            "value": "M이 기본 크기예요. 독 안쪽 가장자리를 끌어서 바꿀 수도 있어요."
           }
         }
       }
@@ -32303,6 +32303,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "최근 30일 사용량"
+          }
+        }
+      }
+    },
+    "dock.group.empty.dropHint": {
+      "comment": "Placeholder inside an expanded dock group with no Pickles. Clicking it starts a Pickle in the group.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drop a Pickle here"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle을 끌어다 놓으세요"
+          }
+        }
+      }
+    },
+    "dock.resize.help": {
+      "comment": "Tooltip on the tab at the dock's inner edge that resizes the dock.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag to resize the dock. It snaps to S, M, or L."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끌어서 독 크기를 바꾸세요. S·M·L 중 가까운 크기에 맞춰져요."
+          }
+        }
+      }
+    },
+    "dock.resize.accessibility": {
+      "comment": "Accessibility label of the dock resize tab; the value is S, M, or L.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle dock size"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 독 크기"
           }
         }
       }

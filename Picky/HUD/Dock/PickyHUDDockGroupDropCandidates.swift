@@ -5,14 +5,14 @@
 
 import CoreGraphics
 
-/// Builds group candidates from the rail's actual frozen slot projection.
+/// Builds group-header drop candidates from the rail's frozen slot projection.
 enum PickyHUDDockGroupDropCandidateBuilder {
     static func emptyCandidates(
         slots: [PickyDockSlot],
         layout: PickyDockLayout,
         activeSessionIDs: Set<String>,
         groupDropFrames: [String: CGRect],
-        topEntryCenters: [String: CGFloat],
+        topEntryExtents: [String: PickyDockAxisExtent],
         orientation: PickyHUDDockOrientation,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat
@@ -22,7 +22,7 @@ enum PickyHUDDockGroupDropCandidateBuilder {
             layout: layout,
             activeSessionIDs: activeSessionIDs,
             groupDropFrames: groupDropFrames,
-            topEntryCenters: topEntryCenters,
+            topEntryExtents: topEntryExtents,
             orientation: orientation,
             metrics: metrics,
             fontScale: fontScale,
@@ -35,7 +35,7 @@ enum PickyHUDDockGroupDropCandidateBuilder {
         layout: PickyDockLayout,
         activeSessionIDs: Set<String>,
         groupDropFrames: [String: CGRect],
-        topEntryCenters: [String: CGFloat],
+        topEntryExtents: [String: PickyDockAxisExtent],
         orientation: PickyHUDDockOrientation,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat
@@ -45,7 +45,7 @@ enum PickyHUDDockGroupDropCandidateBuilder {
             layout: layout,
             activeSessionIDs: activeSessionIDs,
             groupDropFrames: groupDropFrames,
-            topEntryCenters: topEntryCenters,
+            topEntryExtents: topEntryExtents,
             orientation: orientation,
             metrics: metrics,
             fontScale: fontScale,
@@ -58,7 +58,7 @@ enum PickyHUDDockGroupDropCandidateBuilder {
         layout: PickyDockLayout,
         activeSessionIDs: Set<String>,
         groupDropFrames: [String: CGRect],
-        topEntryCenters: [String: CGFloat],
+        topEntryExtents: [String: PickyDockAxisExtent],
         orientation: PickyHUDDockOrientation,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat,
@@ -70,7 +70,7 @@ enum PickyHUDDockGroupDropCandidateBuilder {
                   group.memberSessionIDs.contains(where: activeSessionIDs.contains) == wantsVisibleMembers,
                   let axisGeometry = axisGeometry(
                     measuredFrame: groupDropFrames[groupID],
-                    topEntryCenter: topEntryCenters["group:\(groupID)"],
+                    topEntryLeadingEdge: topEntryExtents["group:\(groupID)"]?.lower,
                     orientation: orientation,
                     metrics: metrics,
                     fontScale: fontScale
@@ -91,7 +91,7 @@ enum PickyHUDDockGroupDropCandidateBuilder {
 
     private static func axisGeometry(
         measuredFrame: CGRect?,
-        topEntryCenter: CGFloat?,
+        topEntryLeadingEdge: CGFloat?,
         orientation: PickyHUDDockOrientation,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat
@@ -108,14 +108,16 @@ enum PickyHUDDockGroupDropCandidateBuilder {
         }
 
         // Preference publication is asynchronous. A drag can begin before the
-        // square folder frame lands, so use its top-entry center as the same
-        // visible drop range instead of dropping the folder from the list.
-        guard let topEntryCenter else { return nil }
+        // header frame lands, so derive the header's span from the leading edge
+        // of its group block instead of dropping the group from the list.
+        guard let topEntryLeadingEdge else { return nil }
         switch orientation {
         case .horizontal:
-            return (topEntryCenter, metrics.sessionTileWidth * 0.5)
+            let half = metrics.chipWidth * 0.5
+            return (topEntryLeadingEdge + half, half)
         case .vertical:
-            return (topEntryCenter, metrics.sessionTileHeight * 0.5)
+            let half = metrics.groupHeaderHeight(fontScale: fontScale) * 0.5
+            return (topEntryLeadingEdge + half, half)
         }
     }
 }

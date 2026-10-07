@@ -249,30 +249,3 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     }
 }
 
-/// The child list temporarily owns key input only while its inline name field
-/// is active. Keeping this decision value-based makes restoration safe to test
-/// without relying on WindowServer ordering.
-enum PickyHUDDockGroupListPanelKeyPolicy {
-    static func shouldRestoreOwningHUDKey(isEditing: Bool, isChildPanelKeyWindow: Bool) -> Bool {
-        !isEditing && isChildPanelKeyWindow
-    }
-}
-
-final class PickyHUDDockGroupListPanel: PickySecureSurfacePanel, PickyHUDDockGroupListContentHost {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-
-    override init(
-        contentRect: NSRect,
-        styleMask: NSWindow.StyleMask,
-        backing bufferingType: NSWindow.BackingStoreType,
-        defer flag: Bool
-    ) {
-        super.init(contentRect: contentRect, styleMask: styleMask, backing: bufferingType, defer: flag)
-        becomesKeyOnlyIfNeeded = true
-    }
-
-    func setDockGroupListContentView(_ contentView: NSView?) {
-        self.contentView = contentView
-    }
-}

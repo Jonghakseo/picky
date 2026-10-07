@@ -40,64 +40,43 @@ struct PickySessionProjectionV2ApplicationTests {
         #expect(PickyToolHistoryFilePathPolicy.urlToOpen(for: "src/file.swift", workingDirectory: model.workingDirectory)?.path == "/tmp/other/src/file.swift")
     }
 
-    @Test func assistantRepliesReorderBothGroupSurfacesWithoutPersistingManualOrder() throws {
+    @Test func assistantRepliesKeepExpandedGroupRowsInPersistedOrder() throws {
         let storage = PickyRegistrySessionProjectionStorage()
         let layoutStore = V2DockLayoutStore(layout: PickyDockLayout(entries: [
             .group(PickyDockGroup(id: "group", name: "Work", color: .blue,
-                                  memberSessionIDs: ["older", "newer", "archived"]))
+                                  memberSessionIDs: ["older", "newer", "archived"], isCollapsed: false))
         ]))
         let viewModel = makeViewModel(client: FakePickyAgentClient(), storage: storage, dockLayoutStore: layoutStore)
         apply(snapshot(sessionID: "older", title: "Older", status: .running, revision: 1), to: viewModel)
         apply(snapshot(sessionID: "newer", title: "Newer", status: .completed, revision: 1), to: viewModel)
         apply(snapshot(sessionID: "archived", title: "Archived", status: .completed, revision: 1, archived: true), to: viewModel)
-        apply(transaction(sessionID: "newer", baseRevision: 1, revision: 2,
-                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:02.000Z"}},{"type":"messageAppend","message":{"id":"newer-reply","kind":"agent_text","createdAt":"2026-08-25T00:00:02.000Z","text":"Reply"}}]"#), to: viewModel)
         viewModel.flushDockStateForTesting()
         let persisted = viewModel.dockLayout
         let savedCount = layoutStore.savedLayouts.count
 
-        func visibleIDs() throws -> [String] {
+        func renderedRows() -> [String] {
             let snapshot = viewModel.dockState.snapshot
-            let group = try #require(snapshot.dockLayout.group(withID: "group"))
-            let sessions = Dictionary(uniqueKeysWithValues: snapshot.activeSessions.map { ($0.id, $0) })
-            let rows = PickyHUDDockGroupListRowProjection.rows(
-                memberSessionIDs: snapshot.memberIDsByRecency(in: group),
-                activeSessionsByID: sessions,
-                assistantMessageAt: {
-                    viewModel.sessionCard(sessionID: $0).flatMap(PickyDockGroupRecencyPolicy.assistantMessageAt)
-                },
-                makeRow: { PickyHUDDockGroupListRowModel(session: $0, assistantMessageAt: $1) }
-            )
-            let folderIDs = snapshot.memberIDsByRecency(in: group).filter { sessions[$0] != nil }
-            #expect(PickyHUDDockFolderBadgeViewModel(memberIDs: folderIDs).glyphMemberIDs == Array(rows.map(\.id).prefix(2)))
-            #expect(PickyHUDDockGroupListKeyboardPolicy.rowID(forShortcutNumber: 1, rowIDs: rows.map(\.id)) == rows.first?.id)
-            return rows.map(\.id)
+            return PickyDockProjector.project(
+                layout: snapshot.dockLayout,
+                visibleSessionIDs: snapshot.activeSessions.map(\.id)
+            ).visibleMemberIDs(inGroup: "group")
         }
 
-        #expect(try visibleIDs() == ["newer", "older"])
-        let originalSnapshot = viewModel.dockState.snapshot
-        // Non-conversational activity (an extension setStatus during runtime
-        // resume) moves updatedAt but must not lift a Pickle above one that
-        // replied more recently.
-        apply(transaction(sessionID: "older", baseRevision: 1, revision: 2,
-                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:05.000Z"}}]"#), to: viewModel)
+        #expect(renderedRows() == ["older", "newer"])
+        apply(transaction(sessionID: "newer", baseRevision: 1, revision: 2,
+                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:02.000Z"}},{"type":"messageAppend","message":{"id":"newer-reply","kind":"agent_text","createdAt":"2026-08-25T00:00:02.000Z","text":"Reply"}}]"#), to: viewModel)
         viewModel.flushDockStateForTesting()
-        #expect(try visibleIDs() == ["newer", "older"])
-        // Both replies are inside the same 20-second preview bucket. Exact
-        // reply time, not the hover-preview refresh clock, determines order.
-        apply(transaction(sessionID: "older", baseRevision: 2, revision: 3,
-                          mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:03.000Z"}},{"type":"messageAppend","message":{"id":"older-reply","kind":"agent_text","createdAt":"2026-08-25T00:00:03.000Z","text":"Reply"}}]"#), to: viewModel)
-        viewModel.flushDockStateForTesting()
-        #expect(try visibleIDs() == ["older", "newer"])
-        #expect(originalSnapshot.groupMemberIDsByRecency["group"] == ["newer", "older", "archived"])
+        // A reply never reorders rows a user may have arranged by hand, and
+        // never writes the dock layout.
+        #expect(renderedRows() == ["older", "newer"])
         #expect(viewModel.dockLayout == persisted)
         #expect(layoutStore.savedLayouts.count == savedCount)
 
-        let sameOrderSnapshot = viewModel.dockState.snapshot
-        apply(transaction(sessionID: "older", baseRevision: 3, revision: 4,
+        let unchangedSnapshot = viewModel.dockState.snapshot
+        apply(transaction(sessionID: "older", baseRevision: 1, revision: 2,
                           mutations: #"[{"type":"metaPatch","patch":{"updatedAt":"2026-08-25T00:00:06.000Z"}}]"#), to: viewModel)
         viewModel.flushDockStateForTesting()
-        #expect(viewModel.dockState.snapshot == sameOrderSnapshot)
+        #expect(viewModel.dockState.snapshot == unchangedSnapshot)
     }
 
     @Test func bootstrapSnapshotsInstallCardsWithoutHistoricalAttentionEffects() throws {

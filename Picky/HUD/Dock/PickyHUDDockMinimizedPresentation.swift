@@ -9,8 +9,8 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
     let dockSide: PickyHUDDockSide
     let metrics: PickyHUDDockMetrics
     let projection: PickyDockProjection
+    let activeSessionIDs: Set<String>
     let availableRailLength: CGFloat
-    let hasArchiveAccess: Bool
     let activeSessionID: String?
     var unreadCount: Int = 0
     let onRestore: () -> Void
@@ -18,18 +18,14 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
     var onDragEnded: () -> Void = {}
     @ViewBuilder var expandedRail: () -> ExpandedRail
 
-    private var previewReserve: CGFloat {
-        dockSide.orientation == .horizontal
-            ? PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: metrics) : 0
-    }
-
     @ViewBuilder var body: some View {
         if !isLoading {
             Group {
             if isMinimized {
                 let size = PickyHUDDockMinimizedGeometry.railSize(
-                    projection: projection, dockSide: dockSide, metrics: metrics,
-                    availableRailLength: availableRailLength, hasArchiveAccess: hasArchiveAccess
+                    projection: projection, activeSessionIDs: activeSessionIDs,
+                    dockSide: dockSide, metrics: metrics,
+                    availableRailLength: availableRailLength
                 )
                 let origin = PickyHUDPlacement.minimizedButtonOrigin(
                     dockSide: dockSide, metrics: metrics, railSize: size
@@ -43,11 +39,9 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
                             .background(PickyHUDVisibleChromeFrameReporter())
                             .offset(x: origin.x, y: origin.y)
                     }
-                    .padding(.horizontal, previewReserve)
             } else {
                 expandedRail()
                     .background(PickyHUDVisibleChromeFrameReporter())
-                    .padding(.horizontal, previewReserve)
             }
             }
             .zIndex(10)
@@ -87,36 +81,23 @@ enum PickyHUDDockOpenRequestPolicy {
 
 @MainActor
 enum PickyHUDDockMinimizedGeometry {
-    /// Reserve the hover card's full extent past a horizontal rail, even while minimized.
-    static func horizontalPreviewReserveHeight(metrics: PickyHUDDockMetrics) -> CGFloat {
-        let estimatedPreviewHalfHeight = max(20, 25 * metrics.scale)
-        return (estimatedPreviewHalfHeight * 2) + PickyHUDDockLayout.panelGap + 8
-    }
-
     static func railSize(
         projection: PickyDockProjection,
+        activeSessionIDs: Set<String>,
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
         availableRailLength: CGFloat,
-        hasArchiveAccess: Bool
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGSize {
-        let groups = PickyHUDDockRailLayoutPolicy.groupCount(in: projection)
         let contentLength = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: projection.slots.count, groupCount: groups,
-            isAddSlotExpanded: false, dockSide: dockSide,
-            metrics: metrics, hasArchiveAccess: hasArchiveAccess
-        )
-        let fixedChrome = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
-            isAddSlotExpanded: false, dockSide: dockSide,
-            metrics: metrics, hasArchiveAccess: hasArchiveAccess
+            projection: projection, activeSessionIDs: activeSessionIDs,
+            dockSide: dockSide, metrics: metrics, fontScale: fontScale
         )
         let length = PickyHUDDockOverflowPolicy.layout(
             contentLength: contentLength, availableLength: availableRailLength,
-            fixedChromeLength: fixedChrome
+            fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: dockSide, metrics: metrics)
         ).railLength
-        let cross = PickyHUDDockRailLayoutPolicy.crossSize(
-            groupCount: groups, dockSide: dockSide, metrics: metrics
-        )
+        let cross = PickyHUDDockRailLayoutPolicy.crossSize(dockSide: dockSide, metrics: metrics, fontScale: fontScale)
         return dockSide.orientation == .horizontal
             ? CGSize(width: length, height: cross)
             : CGSize(width: cross, height: length)

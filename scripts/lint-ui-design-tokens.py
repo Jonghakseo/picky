@@ -55,7 +55,7 @@ BASELINE_PATH_ALIASES = {
     "Picky/HUD/Artifacts/PickySessionChangesView.swift": "Picky/HUD/PickySessionChangesView.swift",
     "Picky/HUD/Dock/PickyDockGroupCreatorView.swift": "Picky/HUD/PickyDockGroupCreatorView.swift",
     "Picky/HUD/Dock/PickyHUDDockGroupViews.swift": "Picky/HUD/PickyHUDDockGroupViews.swift",
-    "Picky/HUD/Dock/PickyHUDDockIconView.swift": "Picky/HUD/PickyHUDDockIconView.swift",
+    "Picky/HUD/Dock/PickyHUDDockClickHosts.swift": "Picky/HUD/PickyHUDDockIconView.swift",
     "Picky/HUD/Dock/PickyRecentPickleFolderPicker.swift": "Picky/HUD/PickyRecentPickleFolderPicker.swift",
     "Picky/HUD/ToolHistory/PickyToolActivityRow.swift": "Picky/HUD/PickyToolActivityRow.swift",
     "Picky/HUD/ToolHistory/PickyToolJSONResultView.swift": "Picky/HUD/PickyToolJSONResultView.swift",

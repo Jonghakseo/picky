@@ -4,7 +4,7 @@ _Status: core floating folder-list model implemented; follow-on drag/drop phases
 
 _Last updated: 2026-08-30_
 
-> This document is the accepted design and implementation record. Future-tense statements in the body preserve the original acceptance criteria; current shipped behavior is defined by `PickyHUDDockGroupList*`, `PickyHUDOverlayManager+DockGroupList.swift`, and their tests. The “Shipped so far” subsection remains the live record for unfinished drag/drop phases.
+> **Superseded.** The dock now renders as a list with inline, collapsible group sections, S/M/L widths chosen by dragging the dock's inner edge, and no floating member panel or hover preview. Current behavior is defined by `PickyHUDDockRailView`, `PickyHUDDockListViews`, `PickyHUDDockListChrome`, `PickyDockGrouping`, and `docs/user-manual.md` §7. This file is kept as the historical record of the folder-panel design; the types it names no longer exist.
 
 ## Summary
 

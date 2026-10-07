@@ -122,41 +122,8 @@ struct PickyHUDUnreadFocusRoutingTests {
         ) == .open("notified"))
     }
 
-    @Test func selectingGroupMemberOpensAndFocusesOnlyItsDisplay() throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PickyGroupSelectionTests-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let settings = PickySettingsStore(appSupportRoot: root)
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter()
-        )
-        viewModel.apply(.protocolEvent(events.snapshotEnvelope(session: session(id: "member"))))
-        let visibility = PickyHUDVisibilityStore(settingsStore: settings)
-        let target = FakeHUDSessionFocusPanel()
-        let other = FakeHUDSessionFocusPanel()
-        let manager = PickyHUDOverlayManager(
-            viewModel: viewModel,
-            appearanceStore: PickyAppearanceStore(settingsStore: settings),
-            fontScaleStore: PickyAppFontScaleStore(settingsStore: settings),
-            visibilityStore: visibility, settingsStore: settings,
-            presentSessionPanels: { displayID in
-                PickyHUDSessionFocusPresenter.present(
-                    targetDisplayID: displayID, panelsByDisplayID: [777: target, 888: other]
-                )
-            }
-        )
-
-        manager.selectDockGroupListRow(displayID: 777, sessionID: "member")
-
-        #expect(viewModel.selectedSessionID == "member")
-        #expect(viewModel.openSessionRequest?.sessionID == "member")
-        #expect(viewModel.openSessionRequest?.targetDisplayID == 777)
-        #expect(target.makeKeyCallCount == 1)
-        #expect(other.makeKeyCallCount == 0)
-    }
-
     @Test(.enabled(if: PickyRuntimeEnvironment.runsPrePushUIEffectTests))
-    func groupMemberOpenedFromAnotherWindowClosesOnFirstCommandW() async throws {
+    func sessionFocusedFromAnotherWindowClosesOnFirstCommandW() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("PickyGroupKeyboardTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -198,7 +165,7 @@ struct PickyHUDUnreadFocusRoutingTests {
                 panelIdentifier: panel.identifier, closeRequests: closeRequests.eraseToAnyPublisher(),
                 displayID: 777, placement: placement,
                 onSizeChange: { _, sessionID in renderedSessionID = sessionID },
-                onDockGroupListGeometryChange: { _, _, _, _, sessionID in openedSessionID = sessionID }
+                onOpenedSessionChange: { sessionID in openedSessionID = sessionID }
             )
             .environmentObject(appearance)
         })
@@ -211,7 +178,7 @@ struct PickyHUDUnreadFocusRoutingTests {
         previousWindow.makeKeyAndOrderFront(nil)
         try await waitForGroupKeyboardState { NSApp.keyWindow === previousWindow }
 
-        manager.selectDockGroupListRow(displayID: 777, sessionID: "member")
+        manager.focusSession(id: "member", targetDisplayID: 777, persistVisibility: false)
         try await waitForGroupKeyboardState {
             NSApp.keyWindow === panel && openedSessionID == "member" && renderedSessionID == "member"
         }

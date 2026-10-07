@@ -109,7 +109,7 @@ When the user asks about a feature, start here before broad searching:
 - Speech transcription/playback providers: `Picky/Companion/Dictation/AppleSpeechTranscriptionProvider.swift`, `Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`, `Picky/Companion/AzureOpenAI/`, `Picky/Companion/ElevenLabs/`, `Picky/Companion/Speech/`
 - Screen/context capture: `Picky/Context/`, `Picky/PickyAdvancedContext.swift`, `Picky/Context/PickyContextPacketAssembler.swift`
 - HUD shell / panel placement / visibility: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
-- HUD dock rail / dock icon / recent-folder picker / dock render projection: `Picky/HUD/Dock/`, in particular `PickyHUDDockRailView.swift`, `PickyHUDDockIconView.swift`, `PickyRecentPickleFolderPicker.swift`, `PickyDockGrouping.swift`. HUD size reporting stays at `Picky/HUD/PickyHUDSizeReporting.swift`
+- HUD dock (list rows, group headers, resize tab) / recent-folder picker / dock render projection: `Picky/HUD/Dock/`, in particular `PickyHUDDockRailView.swift`, `PickyHUDDockListViews.swift`, `PickyHUDDockListChrome.swift`, `PickyHUDDockClickHosts.swift`, `PickyRecentPickleFolderPicker.swift`, `PickyDockGrouping.swift`. S/M/L list dimensions live in `PickyHUDDockMetrics` (`Picky/HUD/PickyHUDLayoutPolicy.swift`). HUD size reporting stays at `Picky/HUD/PickyHUDSizeReporting.swift`
 - Persisted dock layout model (groups, entries, colors; also mutated by the Picky CLI): `Picky/Sessions/Dock/PickyDockLayout.swift`
 - Tool history / tool activity rendering: `Picky/HUD/ToolHistory/`
 - Session archive UI: `Picky/HUD/Archive/`

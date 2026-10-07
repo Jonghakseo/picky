@@ -6,63 +6,28 @@ The [Swift UI mockup runbook](../runbook/swift-ui-mockup.md) is the canonical ex
 
 ## When to use
 
-Use the render gallery whenever a change can alter the dock-group folder or list visually, including:
+Use the render gallery whenever a change can alter the list dock visually, including:
 
 - layout, spacing, padding, alignment, sizing, corner radius, material, color, shadow, typography, truncation, badges, or state backgrounds;
-- selected, idle, unread, empty-folder, and combined folder-to-panel presentation;
-- dock size presets, light/dark appearance, app font scale, or CJK text behavior;
+- collapsed and expanded group headers, empty-group placeholders, opened, unread, and screen-context rows;
+- dock size presets (S/M/L), vertical and horizontal orientation, light/dark appearance, or CJK text behavior;
 - refactors that should preserve the current appearance of a production component.
 
 Run it before requesting visual review and before considering the UI task complete. Compare the exact scenes affected by the change, not only whether the command passed. If the existing matrix does not represent the changed state, add a deterministic scene backed by the production component rather than a gallery-only imitation.
 
-The gallery is not a substitute for live interaction checks when a change concerns hover/press transitions, drag behavior, menus, popovers, accessibility focus, material/vibrancy, or child-panel anchoring. Use the gallery for the static appearance, then validate those behaviors separately without assuming a good PNG proves them.
+The gallery is not a substitute for live interaction checks when a change concerns hover/press transitions, drag behavior, menus, popovers, accessibility focus, material/vibrancy, or the resize tab. Use the gallery for the static appearance, then validate those behaviors separately without assuming a good PNG proves them.
 
-## Dock-group before/after example
-
-Follow the runbook for shared execution and review rules. This target cleans its output directory, so preserve the unchanged baseline before changing the production component:
-
-```bash
-./scripts/render-ui-gallery.sh dock-group
-BASELINE="$(mktemp -d "$PWD/build/render-gallery/dock-group-before.XXXXXX")"
-cp -R build/render-gallery/dock-group/. "$BASELINE/"
-# Make the scoped production UI change, then regenerate.
-./scripts/render-ui-gallery.sh dock-group
-```
-
-Compare the baseline with `build/render-gallery/dock-group/` using the runbook's PNG review checklist. If coverage is missing, add a production scene in `PickyTests/PickyHUDDockGroupRenderGalleryTests.swift`, add its filename to `scripts/render-ui-gallery.sh`, and update this document's scene count or coverage description. Keep fixture IDs, text, timestamps, locale, state, and geometry deterministic.
-
-## Dock-group gallery
+## Dock gallery
 
 ```bash
 ./scripts/render-ui-gallery.sh dock-group
 ```
 
-The command cleans and regenerates `build/render-gallery/dock-group/` with:
+The command writes 78 production dock images to `build/render-gallery/dock-chrome/` through `PickyHUDDockChromeTests`. The matrix covers S/M/L, light/dark, and vertical/horizontal for six states: a collapsed group, an expanded group, an expanded empty group with its drop placeholder, an empty dock, overflow, and an attention state (opened row, unread row, and a Pickle armed for the next Picky input). It adds the two 32pt restore-button appearances and four `backdrop-*` scenes that place the M dock over white and black in each appearance (the live HUD panel is transparent). The scenes mount `PickyHUDDockRailView` with its actual notches, rows, headers, utility controls, and archive access. Fixtures have fixed identities, Korean titles, statuses, and timestamps.
 
-- twenty-five 2× PNG scenes covering Small/Medium/Large, light/dark, 100%/130% app font scale, empty/non-empty folders, two selected folder scenes, one pinned light folder scene, two targeted folder scenes, one-, two-, and five-member selected lists, a five-member keyboard-highlighted quick-action list at Small/130%, a four-member idle list with no selected or keyboard-highlighted row, a deterministic completed-Pickle hover preview, a four-character Korean folder label, the folder-to-panel gap relationship, a Small/130% horizontal rail with three Korean group identities, a four-group light-appearance rail over a dark desktop with an opened session, and a light member list over a dark desktop for metadata contrast. Two external-drag scenes add a 35% source row ghost, invalid detached preview, exact target-folder acceptance, and a top-level insertion projection. Empty member lists are intentionally excluded because an open group list requires at least one visible Pickle;
-- `index.html` for direct artifact inspection;
-- `manifest.json` with separate content-logical and padded-canvas dimensions, pixel dimensions, appearance, preset, and font scale. The canvas keeps a `space.4` (16pt) review margin, exceeding the folder unread badge's documented 7pt visual top overflow (4pt offset + rounded 2.5pt shadow bleed), so intentional overlap is never mistaken for clipping.
+To compare before and after a change, copy `build/render-gallery/dock-chrome/` aside before regenerating; the command overwrites the same files. If coverage is missing, add a `FixtureState` case in `PickyTests/PickyHUDDockChromeTests.swift`, add it to the expected matrix in `scripts/render-ui-gallery.sh`, and update the count here.
 
-It runs only `PickyHUDDockGroupRenderGalleryTests`. That test uses `PickyRenderGalleryRasterizer` (offscreen `NSHostingView` bitmap cache) and the actual `PickyHUDDockGroupFolderTileView`, `PickyHUDDockCollapsedGroupBadge`, `PickyHUDDockGroupEmptySlot`, `PickyHUDDockGroupHeader`, and `PickyHUDDockGroupListView` production components. Fixtures have fixed identities, text, session states, paths, timestamps, and English locale.
-
-The test verifies PNG encoding/decoding, expected 2× canvas dimensions, non-empty alpha content, transparent canvas edges, list panel geometry from `PickyHUDDockGroupListPolicy`, and folder/header geometry from `PickyHUDDockGroupHeaderPresentation`. External-drag scenes use the production list, rail presentation store, rail projection, folder tile, and detached-preview content. It intentionally does not compare byte-for-byte or commit golden images because macOS font and material rendering varies between OS versions.
-
-### Full dock chrome
-
-The `dock-group` command also writes 54 production Dock images to
-`build/render-gallery/dock-chrome/` through `PickyHUDDockChromeTests`.
-The matrix covers S/M/L, light/dark, vertical/horizontal, populated groups,
-empty groups, an empty dock, and overflow, plus the two 32pt restore-button
-appearances and four `backdrop-*` scenes that place the M dock over white and
-black in each appearance (the live HUD panel is transparent). These mount `PickyHUDDockRailView`, including its actual inset
-notches, internal group labels, utility controls, and archive access. They do
-not recreate the standalone design-study app.
-
-The command uses Xcode 16.3 and shared `/private/tmp/PickyAgentDD` and includes
-the affected geometry, minimization, drop-candidate, handle, and core policy
-tests. Static rendering does not prove real panel anchoring, desktop
-pass-through, drag gestures, or keyboard focus. The standalone prototype under
-`build/design-prototypes/` is design reference only, not production validation.
+The same command runs the geometry contract tests: the rendered rail must match `PickyHUDDockRailLayoutPolicy` (the length and thickness panel placement uses before SwiftUI measures anything), plus the minimization, drop-candidate, resize-snap, and core policy suites. It uses Xcode 16.3 and the shared `/private/tmp/PickyAgentDD`. Offscreen renders can drop bare SF Symbols and asset-catalog status glyphs (the `+` utility, waiting/failed Pickle glyphs); check those in the running app. Static rendering does not prove real panel anchoring, desktop pass-through, drag gestures, or keyboard focus.
 
 ## Conversation context gallery
 

@@ -52,7 +52,7 @@ struct PickyHUDDockMinimizedPresentationTests {
             let frames = Frames()
             let view = PickyHUDDockMinimizedPresentation(
                 isLoading: false, isMinimized: true, dockSide: side, metrics: .medium,
-                projection: projection, availableRailLength: 400, hasArchiveAccess: true,
+                projection: projection, activeSessionIDs: ["first", "second"], availableRailLength: 400,
                 activeSessionID: "first", unreadCount: 3, onRestore: {}
             ) { Color.red.frame(width: 400, height: 400) }
                 .padding(20)
@@ -128,25 +128,24 @@ struct PickyHUDDockMinimizedPresentationTests {
             let metrics = PickyHUDDockMetrics(preset: preset)
             for side: PickyHUDDockSide in [.right, .bottom] {
                 let available: CGFloat = 150
+                let active: Set<String> = ["first", "second", "third"]
                 let size = PickyHUDDockMinimizedGeometry.railSize(
-                    projection: projection, dockSide: side, metrics: metrics,
-                    availableRailLength: available, hasArchiveAccess: true
+                    projection: projection, activeSessionIDs: active, dockSide: side, metrics: metrics,
+                    availableRailLength: available
                 )
                 let content = PickyHUDDockRailLayoutPolicy.contentLength(
-                    sessionCount: projection.slots.count, isAddSlotExpanded: false,
-                    dockSide: side, metrics: metrics, hasArchiveAccess: true
+                    projection: projection, activeSessionIDs: active,
+                    dockSide: side, metrics: metrics
                 )
                 let length = min(content, available)
                 #expect(side.orientation == .vertical ? size.height == length : size.width == length)
                 let view = PickyHUDDockMinimizedPresentation(
                     isLoading: false, isMinimized: true, dockSide: side, metrics: metrics,
-                    projection: projection, availableRailLength: available,
-                    hasArchiveAccess: true, activeSessionID: nil, onRestore: {}
+                    projection: projection, activeSessionIDs: active, availableRailLength: available,
+                    activeSessionID: nil, onRestore: {}
                 ) { Color.red.frame(width: 500, height: 500) }
                 let fitted = NSHostingView(rootView: view).fittingSize
-                let previewReserve = side.orientation == .horizontal
-                    ? PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: metrics) : 0
-                #expect(abs(fitted.width - size.width - previewReserve * 2) < 1)
+                #expect(abs(fitted.width - size.width) < 1)
                 #expect(abs(fitted.height - size.height) < 1)
             }
         }

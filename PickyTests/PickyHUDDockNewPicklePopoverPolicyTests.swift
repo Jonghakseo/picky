@@ -54,12 +54,6 @@ struct PickyHUDDockNewPicklePopoverPolicyTests {
         #expect(activeTargetGroupID == nil)
     }
 
-    @Test func groupTilePromotesExactlyOneVisibleMemberToAFullSession() {
-        #expect(PickyHUDDockGroupTilePresentation.resolve(visibleMemberIDs: []) == .empty)
-        #expect(PickyHUDDockGroupTilePresentation.resolve(visibleMemberIDs: ["only"]) == .singleSession(sessionID: "only"))
-        #expect(PickyHUDDockGroupTilePresentation.resolve(visibleMemberIDs: ["first", "second"]) == .folder)
-    }
-
     @Test func emptyGroupSlotRemainsADropDestination() {
         let layout = PickyDockLayout(entries: [
             .session(id: "loose"),

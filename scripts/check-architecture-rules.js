@@ -700,9 +700,9 @@ function lineCount(file) {
 // Lower-only ratchet: count code references after stripping Swift comments and strings.
 // When a refactor lowers this count, re-run the count, pin the new lower value here, and
 // update the self-test. Never raise this baseline; new concrete HUD references must be removed.
-// The sole HUD reference constructs an isolated preview fixture; mounted HUD
-// production code receives only PickySessionCommands and registry child stores.
-const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 1;
+// Mounted HUD production code receives only PickySessionCommands and registry
+// child stores; no HUD file references the concrete session list view model.
+const HUD_SESSION_LIST_VIEW_MODEL_REFERENCE_BASELINE = 0;
 
 // Session-shaped value types that must never be exposed as a public observable
 // collection. Renaming one of these silently disarms the rule, so the self-test

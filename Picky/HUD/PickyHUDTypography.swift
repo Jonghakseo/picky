@@ -151,17 +151,4 @@ enum PickyHUDTypography {
     static var badgeBoldRounded: Font { .system(size: Size.badge, weight: .bold, design: .rounded) }
     static var badgeMonospacedBold: Font { .system(size: Size.badge, weight: .bold, design: .monospaced) }
     static var badgeIconBold: Font { .system(size: Size.badgeIcon, weight: .bold) }
-
-    /// SF Symbol optical sizing for the Dock group-list header add action.
-    /// Its component metric scales with the header rather than readable text.
-    static func dockGroupListHeaderAddSymbol(size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold)
-    }
-
-    /// SF Symbol optical sizing for the Dock group-list quick-action rail.
-    /// Its component metric derives from the compact action target rather than
-    /// readable text, which can grow with the global app font scale.
-    static func dockGroupListQuickActionSymbol(size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold)
-    }
 }

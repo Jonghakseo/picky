@@ -172,12 +172,6 @@ struct PickyContextPacketTests {
             backing: .buffered,
             defer: false
         )
-        let dockGroupList = PickyHUDDockGroupListPanel(
-            contentRect: .zero,
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
         let hub = PickyHubWindow(
             contentRect: .zero,
             styleMask: .titled,
@@ -202,16 +196,14 @@ struct PickyContextPacketTests {
         markedChrome.isReleasedWhenClosed = false
         defer {
             hud.close()
-            dockGroupList.close()
             hub.close()
             report.close()
             markedChrome.close()
         }
 
-        // The HUD body, dock group list, and Hub window are Picky's own
-        // response surfaces, so the model must see them in screenshots.
+        // The HUD body and Hub window are Picky's own response surfaces, so
+        // the model must see them in screenshots.
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(hud))
-        #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(dockGroupList))
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(hub))
         // Artifact viewers stay visible so the model can inspect contents.
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(report))

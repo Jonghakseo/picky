@@ -41,6 +41,17 @@ enum PickyHUDKeyboardShortcutPolicy {
             && (keyCode == returnKeyCode || keyCode == keypadEnterKeyCode)
     }
 
+    /// Plain Return focuses the open card's composer only when no responder
+    /// owns the key: the panel itself is the fallback and no text input is focused.
+    static func returnFocusesComposer(
+        isPlainReturn: Bool,
+        isTextInputFocused: Bool,
+        isHUDFallbackResponder: Bool,
+        hasActiveCard: Bool
+    ) -> Bool {
+        isPlainReturn && !isTextInputFocused && isHUDFallbackResponder && hasActiveCard
+    }
+
     /// Only the panel itself or no responder represents an unintentional input
     /// fallback. Any mounted responder, including an NSHostingView, owns its
     /// own keyboard intent and must not be replaced by the composer shortcut.

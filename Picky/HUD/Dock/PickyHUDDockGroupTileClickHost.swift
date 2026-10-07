@@ -2,8 +2,9 @@
 //  PickyHUDDockGroupTileClickHost.swift
 //  Picky
 //
-//  The folder badge has one native event owner. It decides primary click
-//  versus group reordering before SwiftUI modifiers can compete for mouse-up.
+//  A group header has one native event owner. It decides primary click
+//  (collapse/expand) versus group reordering before SwiftUI modifiers can
+//  compete for mouse-up.
 //
 
 import AppKit
@@ -114,8 +115,7 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
     }
 
     /// These state-machine entries are deliberately shared with AppKit event
-    /// overrides so tests drive the rendered badge's real event owner rather
-    /// than an activation coordinator detached from pointer delivery.
+    /// overrides so tests drive the rendered header's real event owner.
     func beginInteraction(at point: NSPoint) {
         mouseDownPoint = point
         isReordering = false
@@ -145,7 +145,7 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
 
     /// `locationInWindow` uses AppKit's bottom-up window coordinates, while
     /// SwiftUI drag translations use a top-down Y axis. Normalize the native
-    /// badge path so it matches the title's SwiftUI `DragGesture` contract.
+    /// path so it matches the SwiftUI `DragGesture` translation contract.
     private func swiftUITranslation(to point: NSPoint) -> CGSize? {
         guard let mouseDownPoint else { return nil }
         return CGSize(
@@ -159,7 +159,7 @@ final class PickyHUDDockGroupTileClickNSView: NSView {
         forwardContextMenu(with: event)
     }
 
-    /// The badge is the hit-test owner, while the production menu modifier is
+    /// The header is the hit-test owner, while the production menu modifier is
     /// attached to a SwiftUI ancestor. Forward secondary and Control-clicks to
     /// that ancestor's native menu owner instead of duplicating the menu in
     /// AppKit or treating the click as activation.

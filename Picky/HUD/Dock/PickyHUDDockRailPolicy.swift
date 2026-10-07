@@ -5,44 +5,16 @@
 //  Pure layout and drag geometry used by the dock rail.
 //
 
-import Combine
 import CoreGraphics
 
-/// Display-local feedback published by the external-drag coordinator in the
-/// next wiring slice. Rail rendering observes this only as a preview input;
-/// it never uses the projected layout to measure or validate a drop.
-struct PickyHUDDockExternalDragRailPresentation: Equatable {
-    let token: UUID
-    let sessionID: String
-    let destination: PickyDockContainer?
-}
+/// Primary-axis span of a rendered top-level entry in rail coordinates. A
+/// group spans its header and any expanded member rows.
+struct PickyDockAxisExtent: Equatable {
+    var lower: CGFloat
+    var upper: CGFloat
 
-@MainActor
-final class PickyHUDDockExternalDragRailPresentationStore: ObservableObject {
-    @Published private(set) var presentation: PickyHUDDockExternalDragRailPresentation?
-
-    func show(token: UUID, sessionID: String, destination: PickyDockContainer?) {
-        presentation = .init(token: token, sessionID: sessionID, destination: destination)
-    }
-
-    func update(token: UUID, destination: PickyDockContainer?) {
-        guard let presentation, presentation.token == token else { return }
-        self.presentation = .init(token: token, sessionID: presentation.sessionID, destination: destination)
-    }
-
-    func clear(token: UUID? = nil) {
-        guard token == nil || presentation?.token == token else { return }
-        presentation = nil
-    }
-}
-
-enum PickyHUDDockExternalDragRailGeometryPolicy {
-    /// Frozen base geometry belongs to Overlay Manager while an external drag
-    /// is active. Publishing the rail's preview-reflow preferences would
-    /// otherwise replace that base snapshot with its own consequence.
-    static func shouldPublishExternalGeometry(hasActivePresentation: Bool) -> Bool {
-        !hasActivePresentation
-    }
+    var center: CGFloat { (lower + upper) * 0.5 }
+    var isFinite: Bool { lower.isFinite && upper.isFinite }
 }
 
 enum PickyHUDDockRailLayoutPolicy {
@@ -52,84 +24,102 @@ enum PickyHUDDockRailLayoutPolicy {
         }
     }
 
-    /// Membership count remains useful for callers, but no longer changes geometry.
-    static func emptyGroupCount(in projection: PickyDockProjection, activeSessionIDs: Set<String>) -> Int {
-        projection.items.reduce(into: 0) { count, item in
-            guard case .group(let group) = item,
-                  !group.memberSessionIDs.contains(where: activeSessionIDs.contains)
-            else { return }
-            count += 1
+    /// Primary-axis length of the list content (rows, headers, placeholders)
+    /// without the shell chrome. Mirrors the SwiftUI list layout.
+    static func listLength(
+        projection: PickyDockProjection,
+        activeSessionIDs: Set<String>,
+        orientation: PickyHUDDockOrientation,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+    ) -> CGFloat {
+        guard !projection.items.isEmpty else { return 0 }
+        switch orientation {
+        case .vertical:
+            let row = metrics.rowHeight(fontScale: fontScale)
+            let header = metrics.groupHeaderHeight(fontScale: fontScale)
+            var length: CGFloat = 0
+            var entryCount = 0
+            for (index, item) in projection.items.enumerated() {
+                switch item {
+                case .session:
+                    length += row
+                    entryCount += 1
+                case .group(let group):
+                    if index > 0 { length += metrics.groupHeaderTopGap }
+                    length += header
+                    entryCount += 1
+                    guard !group.isCollapsed else { continue }
+                    let members = projection.visibleMemberIDs(inGroup: group.id).count
+                    let rows = max(1, members) // an empty expanded group shows a drop placeholder
+                    length += CGFloat(rows) * row + CGFloat(rows) * metrics.rowSpacing
+                }
+            }
+            return length + CGFloat(max(0, entryCount - 1)) * metrics.rowSpacing
+        case .horizontal:
+            let chip = metrics.chipWidth
+            var length: CGFloat = 0
+            for item in projection.items {
+                switch item {
+                case .session:
+                    length += chip
+                case .group(let group):
+                    length += PickyHUDDockGroupHeaderLayout.horizontalChipWidth(
+                        name: group.displayName,
+                        count: group.memberSessionIDs.filter(activeSessionIDs.contains).count,
+                        metrics: metrics,
+                        fontScale: fontScale
+                    )
+                    guard !group.isCollapsed else { continue }
+                    let members = projection.visibleMemberIDs(inGroup: group.id).count
+                    let chips = max(1, members)
+                    length += CGFloat(chips) * chip + CGFloat(chips) * 1
+                }
+            }
+            return length + CGFloat(max(0, projection.items.count - 1)) * metrics.chipSpacing
         }
     }
 
-    /// Titles live inside tiles. Membership and label length cannot move the rail.
     static func contentLength(
-        sessionCount: Int,
-        groupCount: Int = 0,
-        emptyGroupCount: Int = 0,
-        isAddSlotExpanded: Bool,
+        projection: PickyDockProjection,
+        activeSessionIDs: Set<String>,
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale,
-        hasArchiveAccess: Bool = false
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
-        let count = max(1, sessionCount)
-        let tileLength = dockSide.orientation == .horizontal ? metrics.sessionTileWidth : metrics.sessionTileHeight
-        let tiles = CGFloat(count) * tileLength + CGFloat(count - 1) * metrics.sessionSpacing
-        return tiles + fixedChromeLength(
-            isAddSlotExpanded: isAddSlotExpanded, dockSide: dockSide,
-            metrics: metrics, hasArchiveAccess: hasArchiveAccess
+        let list = listLength(
+            projection: projection,
+            activeSessionIDs: activeSessionIDs,
+            orientation: dockSide.orientation,
+            metrics: metrics,
+            fontScale: fontScale
         )
+        return list + fixedChromeLength(dockSide: dockSide, metrics: metrics)
     }
 
     static func crossSize(
-        groupCount: Int,
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
         dockSide.orientation == .horizontal
-            ? horizontalCrossSize(groupCount: groupCount, metrics: metrics, fontScale: fontScale)
-            : verticalCrossSize(groupCount: groupCount, metrics: metrics, fontScale: fontScale)
+            ? PickyHUDDockLayout.horizontalDockRailCrossSize(metrics: metrics, fontScale: fontScale)
+            : PickyHUDDockLayout.verticalDockRailCrossSize(metrics: metrics)
     }
 
-    static func verticalCrossSize(
-        groupCount: Int,
-        metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
-    ) -> CGFloat {
-        PickyHUDDockLayout.verticalDockRailCrossSize(
-            hasGroupHeaders: groupCount > 0,
-            metrics: metrics,
-            fontScale: fontScale
-        )
-    }
-
-    static func horizontalCrossSize(
-        groupCount: Int,
-        metrics: PickyHUDDockMetrics,
-        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
-    ) -> CGFloat {
-        PickyHUDDockLayout.horizontalDockRailCrossSize(
-            hasGroupHeaders: groupCount > 0,
-            metrics: metrics,
-            fontScale: fontScale
-        )
-    }
-
-    /// Both utilities share the cross axis; adding archive access never lengthens the rail.
-    static func archiveChromeLength(hasArchiveAccess: Bool) -> CGFloat { 0 }
-
+    /// Handle, collapse notch, separator and the utility row. A horizontal
+    /// rail lays its two utilities side by side, so they take two buttons of
+    /// length instead of one.
     static func fixedChromeLength(
-        isAddSlotExpanded: Bool,
         dockSide: PickyHUDDockSide,
-        metrics: PickyHUDDockMetrics,
-        hasArchiveAccess: Bool = false
+        metrics: PickyHUDDockMetrics
     ) -> CGFloat {
-        metrics.handleInset + metrics.collapseInset + metrics.utilityButtonSide
+        let utilities = dockSide.orientation == .horizontal
+            ? metrics.utilityButtonSide * 2 + metrics.utilitySpacing
+            : metrics.utilityButtonSide
+        return metrics.handleInset + metrics.collapseInset + utilities
             + metrics.chromeSpacing * 2 + metrics.chromeSeparatorThickness
     }
-
 }
 
 /// A nominal identity for the persisted dock structure. Drag cancellation
@@ -159,65 +149,21 @@ enum PickyHUDDockRenderPolicy {
         )
     }
 
-    /// A one-Pickle group renders its member as a full session tile while the
-    /// persisted projection still owns one folder slot. Add a synthetic session
-    /// slot beside that folder slot so native session drag can start from the
-    /// visible tile without removing the group's drop target.
-    static func interactionSlots(
-        persistedProjection: PickyDockProjection,
-        layout: PickyDockLayout,
-        visibleSessionIDs: Set<String>
-    ) -> [PickyDockSlot] {
-        var result: [PickyDockSlot] = []
-        for slot in persistedProjection.slots {
-            result.append(slot)
-            guard let groupID = slot.groupID,
-                  let group = layout.group(withID: groupID)
-            else { continue }
-            let visibleMemberIDs = group.memberSessionIDs.filter(visibleSessionIDs.contains)
-            guard case .singleSession(let sessionID) = PickyHUDDockGroupTilePresentation.resolve(
-                visibleMemberIDs: visibleMemberIDs
-            ), let memberIndex = group.memberSessionIDs.firstIndex(of: sessionID)
-            else { continue }
-            result.append(PickyDockSlot(
-                target: .session(
-                    id: sessionID,
-                    container: .group(id: groupID, memberIndex: memberIndex)
-                ),
-                visibleIndex: slot.visibleIndex
-            ))
-        }
-        return result
-    }
-
-    /// A grouped Pickle is absent from the normal rail universe because its
-    /// folder owns the top-level slot. External top-level preview is the one
-    /// exception: inject it once so the existing rail placeholder/reflow can
-    /// show the prospective ungrouped position without changing normal or
-    /// folder-target projection.
-    static func externalPreviewVisibleSessionIDs(
-        base: [String],
-        draggedSessionID: String?,
-        destination: PickyDockContainer?
-    ) -> [String] {
-        guard let draggedSessionID,
-              case .topLevel? = destination,
-              !base.contains(draggedSessionID)
-        else { return base }
-        return base + [draggedSessionID]
-    }
-
-    /// Folder acceptance does not create a new linear slot. Keep the persisted
-    /// source placeholder until release so the rail and add slot remain stable
-    /// while the pointer crosses a folder. Only top-level destinations reflow
-    /// the preview to show the prospective insertion position.
+    /// Top-level and expanded-group destinations move the clear placeholder so
+    /// neighbors make room. A collapsed group accepts the Pickle without a
+    /// linear slot, so the source placeholder stays until release.
     static func sessionPreviewLayout(
         layout: PickyDockLayout,
         draggedSessionID: String,
         destination: PickyDockContainer
     ) -> PickyDockLayout {
         guard layout.container(forSessionID: draggedSessionID) != destination else { return layout }
-        guard case .topLevel = destination else { return layout }
+        switch destination {
+        case .topLevel:
+            break
+        case .group(let groupID, _):
+            guard let group = layout.group(withID: groupID), !group.isCollapsed else { return layout }
+        }
         var preview = layout
         preview.move(session: draggedSessionID, to: destination)
         return preview
@@ -233,12 +179,13 @@ enum PickyHUDDockRenderPolicy {
     }
 
     /// Builds one stable top-level insertion target for each adjacent pair
-    /// that includes a folder. Pickle-only pairs retain their existing
-    /// center-based reorder threshold. Candidate indices describe the final
-    /// post-move layout, so dropping at a boundary inserts before its right entry.
+    /// that includes a group, at the gap between the two entries' outer edges.
+    /// Pickle-only pairs retain their center-based reorder threshold. Candidate
+    /// indices describe the final post-move layout, so dropping at a boundary
+    /// inserts before its right entry.
     static func topLevelInsertionCandidates(
         visibleTopEntryIDs: [String],
-        referenceCenters: [String: CGFloat],
+        referenceExtents: [String: PickyDockAxisExtent],
         draggedSessionID: String,
         layout: PickyDockLayout
     ) -> [PickyDockDropResolver.TopLevelInsertionCandidate] {
@@ -249,10 +196,10 @@ enum PickyHUDDockRenderPolicy {
         }()
         return zip(visibleTopEntryIDs, visibleTopEntryIDs.dropFirst()).compactMap { pair in
             let (leftID, rightID) = pair
-            guard let leftCenter = referenceCenters[leftID],
-                  let rightCenter = referenceCenters[rightID],
-                  leftCenter.isFinite,
-                  rightCenter.isFinite,
+            guard let left = referenceExtents[leftID],
+                  let right = referenceExtents[rightID],
+                  left.isFinite,
+                  right.isFinite,
                   let leftLayoutIndex = layoutEntryIndex(forVisibleTopEntryID: leftID, in: layout),
                   let rightLayoutIndex = layoutEntryIndex(forVisibleTopEntryID: rightID, in: layout),
                   isGroupEntry(at: leftLayoutIndex, in: layout)
@@ -262,7 +209,7 @@ enum PickyHUDDockRenderPolicy {
             let finalIndex = rightLayoutIndex - (sourcePrecedesBoundary ? 1 : 0)
             return .init(
                 topLevelIndex: finalIndex,
-                center: (leftCenter + rightCenter) * 0.5
+                center: (left.upper + right.lower) * 0.5
             )
         }
     }
@@ -274,8 +221,8 @@ enum PickyHUDDockRenderPolicy {
         return true
     }
 
-    /// Projects the opened Pickle into its owning folder so the collapsed
-    /// rail preserves selection context without expanding the member list.
+    /// Projects the opened Pickle into its collapsed group so the header keeps
+    /// the selection context without expanding the member list.
     static func selectedGroupID(
         openedSessionID: String?,
         draggingSessionID: String?,
@@ -283,7 +230,7 @@ enum PickyHUDDockRenderPolicy {
     ) -> String? {
         guard draggingSessionID == nil, let openedSessionID else { return nil }
         for entry in layout.entries {
-            guard case .group(let group) = entry else { continue }
+            guard case .group(let group) = entry, group.isCollapsed else { continue }
             if group.memberSessionIDs.contains(openedSessionID) { return group.id }
         }
         return nil
@@ -318,14 +265,14 @@ enum PickyHUDDockRenderPolicy {
     static func nearestLayoutEntryIndex(
         cursorAxis: CGFloat,
         visibleTopEntryIDs: [String],
-        referenceCenters: [String: CGFloat],
+        referenceExtents: [String: PickyDockAxisExtent],
         layout: PickyDockLayout
     ) -> Int? {
         var nearestEntryID: String?
         var minimumDistance = CGFloat.infinity
         for entryID in visibleTopEntryIDs {
-            guard let center = referenceCenters[entryID] else { continue }
-            let distance = abs(center - cursorAxis)
+            guard let extent = referenceExtents[entryID] else { continue }
+            let distance = abs(extent.center - cursorAxis)
             if distance < minimumDistance {
                 minimumDistance = distance
                 nearestEntryID = entryID
@@ -338,7 +285,7 @@ enum PickyHUDDockRenderPolicy {
 
 enum PickyHUDDockReorderAnimationPolicy {
     /// Every top-level sibling uses one movement policy regardless of whether
-    /// it renders as a Pickle or folder. The dragged item stays cursor-driven.
+    /// it renders as a Pickle or group. The dragged item stays cursor-driven.
     static func shouldAnimate(
         item: PickyDockRenderItem,
         draggingSessionID: String?,
@@ -354,25 +301,28 @@ enum PickyHUDDockReorderAnimationPolicy {
         }
     }
 
-    /// A grouping preview can temporarily remove a top-level Pickle from the
-    /// rendered projection. Keep the rail at least as large as its persisted
-    /// drag-start projection so the capsule and add slot do not collapse while
-    /// the pointer merely crosses a folder on the way to another top-level slot.
-    static func sizingSlotCount(
-        renderedSlotCount: Int,
-        persistedSlotCount: Int,
+    /// A drag preview can move a row into or out of a collapsed group. Keep the
+    /// rail at least as long as its persisted drag-start content so the capsule
+    /// does not shrink while the pointer merely crosses a header.
+    static func sizingLength(
+        renderedLength: CGFloat,
+        persistedLength: CGFloat,
         isSessionDragging: Bool
-    ) -> Int {
-        guard isSessionDragging else { return renderedSlotCount }
-        return max(renderedSlotCount, persistedSlotCount)
+    ) -> CGFloat {
+        guard isSessionDragging else { return renderedLength }
+        return max(renderedLength, persistedLength)
     }
 }
 
 enum PickyHUDDockDragGeometry {
-    static func slotPitch(orientation: PickyHUDDockOrientation, metrics: PickyHUDDockMetrics) -> CGFloat {
+    static func slotPitch(
+        orientation: PickyHUDDockOrientation,
+        metrics: PickyHUDDockMetrics,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+    ) -> CGFloat {
         switch orientation {
-        case .horizontal: metrics.sessionTileWidth + metrics.sessionSpacing
-        case .vertical: metrics.sessionTileHeight + metrics.sessionSpacing
+        case .horizontal: metrics.chipWidth + metrics.chipSpacing
+        case .vertical: metrics.rowHeight(fontScale: fontScale) + metrics.rowSpacing
         }
     }
 
@@ -393,8 +343,7 @@ enum PickyHUDDockDragGeometry {
 
     /// The floating Pickle starts at the full source center captured at pickup,
     /// then follows the cursor translation on both axes. Keeping this separate
-    /// from the primary-axis reorder center preserves frozen hit-test geometry
-    /// while folder label chrome can offset a horizontal source vertically.
+    /// from the primary-axis reorder center preserves frozen hit-test geometry.
     static func floatingIconCenter(
         dragStartCenter: CGPoint,
         translation: CGSize
@@ -433,7 +382,15 @@ enum PickyHUDDockDragGeometry {
         }
     }
 
-    static func pullOutThreshold(metrics: PickyHUDDockMetrics) -> CGFloat {
-        metrics.railWidth * 0.5 + 40
+    /// Half the rail's cross size plus a margin: the row must clearly leave the dock.
+    static func pullOutThreshold(
+        metrics: PickyHUDDockMetrics,
+        orientation: PickyHUDDockOrientation,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
+    ) -> CGFloat {
+        let cross = orientation == .vertical
+            ? metrics.railWidth
+            : metrics.horizontalThickness(fontScale: fontScale)
+        return cross * 0.5 + 40
     }
 }

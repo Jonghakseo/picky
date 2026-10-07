@@ -36,66 +36,38 @@ struct PickyHUDDockGroupTileClickHostTests {
         ))
     }
 
-    private func renderedBadgeHost(
-        onTap: @escaping () -> Void,
-        onHoverChanged: @escaping (Bool) -> Void = { _ in },
-        onReorderBegan: @escaping () -> Void = {},
-        onReorderChanged: @escaping (CGSize) -> Void = { _ in },
-        onReorderEnded: @escaping (CGSize) -> Void = { _ in }
-    ) throws -> (host: PickyHUDDockGroupTileClickNSView, hosting: NSHostingView<PickyHUDDockCollapsedGroupBadge>) {
-        let badge = PickyHUDDockCollapsedGroupBadge(
-            members: [],
-            unreadCount: 0,
-            tint: .blue,
-            metrics: PickyHUDDockMetrics(preset: .large),
-            onTap: onTap,
-            onHoverChanged: onHoverChanged,
-            onReorderBegan: onReorderBegan,
-            onReorderChanged: onReorderChanged,
-            onReorderEnded: onReorderEnded
-        )
-        let hosting = NSHostingView(rootView: badge)
-        hosting.frame = NSRect(x: 0, y: 0, width: 54, height: 54)
-        hosting.layoutSubtreeIfNeeded()
-        return (try #require(findTileHost(in: hosting)), hosting)
-    }
-
-    private func renderedProductionFolder(
-        onTap: @escaping () -> Void
+    private func renderedHeaderHost(
+        onToggle: @escaping () -> Void,
+        withContextMenu: Bool = false
     ) throws -> (host: PickyHUDDockGroupTileClickNSView, hosting: NSHostingView<AnyView>) {
         let group = PickyDockGroup(id: "group", name: "Research", color: .teal, memberSessionIDs: [])
-        let metrics = PickyHUDDockMetrics(preset: .large)
-        let root = AnyView(
-            PickyHUDDockGroupFolderTileView(group: group, metrics: metrics, fontScale: 1) {
-                PickyHUDDockCollapsedGroupBadge(
-                    members: [],
-                    unreadCount: 0,
-                    tint: group.color.accent,
-                    metrics: metrics,
-                    onTap: onTap
-                )
-                .pickyDockGroupContextMenu(
-                    group: group,
-                    activeSessionIDs: [],
-                    onRename: {},
-                    onSetColor: { _ in },
-                    onUngroup: {},
-                    onDeleteWithArchive: {}
-                )
-            } header: { header in
-                header
-                    .pickyDockGroupContextMenu(
-                        group: group,
-                        activeSessionIDs: [],
-                        onRename: {},
-                        onSetColor: { _ in },
-                        onUngroup: {},
-                        onDeleteWithArchive: {}
-                    )
-            }
-        )
+        let header = PickyHUDDockGroupHeaderRow(
+            group: group,
+            orientation: .vertical,
+            members: [],
+            unreadCount: 0,
+            metrics: PickyHUDDockMetrics(preset: .large),
+            isSelected: false,
+            isDropTargeted: false,
+            isAddPresented: false,
+            onToggleCollapsed: onToggle,
+            onSetColor: { _ in },
+            onReorderBegan: {},
+            onReorderChanged: { _ in },
+            onReorderEnded: { _ in }
+        ) { EmptyView() }
+        let root: AnyView = withContextMenu
+            ? AnyView(header.pickyDockGroupContextMenu(
+                group: group,
+                activeSessionIDs: [],
+                onRename: {},
+                onSetColor: { _ in },
+                onUngroup: {},
+                onDeleteWithArchive: {}
+            ))
+            : AnyView(header)
         let hosting = NSHostingView(rootView: root)
-        hosting.frame = NSRect(x: 0, y: 0, width: 80, height: 90)
+        hosting.frame = NSRect(x: 0, y: 0, width: 196, height: 24)
         hosting.layoutSubtreeIfNeeded()
         return (try #require(findTileHost(in: hosting)), hosting)
     }
@@ -112,10 +84,10 @@ struct PickyHUDDockGroupTileClickHostTests {
 
     @Test func groupAndSessionNativeHostsReportOneEnterAndOneExitTransition() throws {
         var groupTransitions: [Bool] = []
-        let rendered = try renderedBadgeHost(
-            onTap: {},
-            onHoverChanged: { groupTransitions.append($0) }
-        )
+        let groupCoordinator = PickyHUDDockGroupTileClickHost.Coordinator()
+        groupCoordinator.onHoverChanged = { groupTransitions.append($0) }
+        let groupHost = PickyHUDDockGroupTileClickNSView()
+        groupHost.coordinator = groupCoordinator
         let sessionCoordinator = PickyHUDDockIconClickHost.Coordinator()
         var sessionTransitions: [Bool] = []
         sessionCoordinator.onHoverChanged = { sessionTransitions.append($0) }
@@ -123,8 +95,8 @@ struct PickyHUDDockGroupTileClickHostTests {
         sessionHost.coordinator = sessionCoordinator
         let event = try mouseEvent(.mouseMoved, at: .zero)
 
-        rendered.host.mouseEntered(with: event)
-        rendered.host.mouseExited(with: event)
+        groupHost.mouseEntered(with: event)
+        groupHost.mouseExited(with: event)
         sessionHost.mouseEntered(with: event)
         sessionHost.mouseExited(with: event)
 
@@ -132,9 +104,9 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(sessionTransitions == [true, false])
     }
 
-    @Test func renderedBadgeProductionPathActivatesExactlyOnceOnMouseUpBelowReorderThreshold() throws {
+    @Test func renderedHeaderTogglesExactlyOnceOnMouseUpBelowReorderThreshold() throws {
         var activations = 0
-        let rendered = try renderedBadgeHost(onTap: { activations += 1 })
+        let rendered = try renderedHeaderHost(onToggle: { activations += 1 })
 
         rendered.host.mouseDown(with: try mouseEvent(.leftMouseDown, at: .zero))
         rendered.host.mouseUp(with: try mouseEvent(.leftMouseUp, at: NSPoint(x: 2, y: 1)))
@@ -142,7 +114,7 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(activations == 1)
     }
 
-    @Test func renderedBadgeProductionPathHandsOffReorderWithoutActivatingOnRelease() throws {
+    @Test func headerHostHandsOffReorderWithoutTogglingOnRelease() throws {
         var activations = 0
         var began = 0
         var changes: [CGSize] = []
@@ -165,7 +137,7 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(endings == [CGSize(width: 16, height: 0)])
     }
 
-    @Test func productionBadgeConvertsWindowYTranslationToSwiftUIDragDirection() {
+    @Test func headerHostConvertsWindowYTranslationToSwiftUIDragDirection() {
         var changes: [CGSize] = []
         var endings: [CGSize] = []
         let coordinator = PickyHUDDockGroupTileClickHost.Coordinator()
@@ -186,10 +158,10 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(endings == [CGSize(width: 16, height: 30)])
     }
 
-    @Test func productionFolderSecondaryAndControlClicksForwardTheSharedMenuWithoutActivation() throws {
+    @Test func headerSecondaryAndControlClicksForwardTheSharedMenuWithoutToggling() throws {
         var activations = 0
-        let renderedFolder = try renderedProductionFolder(onTap: { activations += 1 })
-        #expect(renderedFolder.host.contextMenuForwardingTarget() != nil)
+        let renderedHeader = try renderedHeaderHost(onToggle: { activations += 1 }, withContextMenu: true)
+        #expect(renderedHeader.host.contextMenuForwardingTarget() != nil)
         #expect(PickyHUDDockGroupContextMenuPresentation.actionTitles == [
             L10n.t("group.menu.rename"),
             L10n.t("group.menu.color"),
@@ -211,7 +183,7 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(activations == 0)
     }
 
-    @Test func singleMemberGroupProductionRailUsesGroupHoverAndSessionOpenPaths() throws {
+    @Test func expandedGroupInProductionRailOpensMemberRowsAndTogglesFromTheHeader() throws {
         let metrics = PickyHUDDockMetrics(preset: .large)
         let agentSession = PickyAgentSession(
             id: "only",
@@ -227,28 +199,24 @@ struct PickyHUDDockGroupTileClickHostTests {
             changedFiles: []
         )
         let session = PickyHUDDockSession(session: PickySessionCard.fromAgentSession(agentSession))
-        let group = PickyDockGroup(id: "group", name: "Solo", color: .teal, memberSessionIDs: [session.id])
+        let group = PickyDockGroup(id: "group", name: "Solo", color: .teal, memberSessionIDs: [session.id], isCollapsed: false)
         let layout = PickyDockLayout(entries: [.group(group)])
         let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: [session.id])
         let railHeight = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: 1,
-            groupCount: 1,
-            isAddSlotExpanded: false,
+            projection: projection,
+            activeSessionIDs: [session.id],
             dockSide: .right,
-            metrics: metrics
+            metrics: metrics,
+            fontScale: 1
         )
-        var hoveredSessions: [String] = []
         var openedSessions: [String] = []
-        var activatedGroups: [String] = []
-        var hoveredGroups: [String] = []
+        var collapseRequests: [(String, Bool)] = []
         let rail = PickyHUDDockRailView(
             sessions: [session],
-            allSessions: [session],
             baseProjection: projection,
             layout: layout,
             activeSessionID: nil,
             openedSessionID: nil,
-            previewSessionID: nil,
             screenContextTargetSessionID: nil,
             screenContextTargetSticky: false,
             dockSide: .right,
@@ -257,9 +225,6 @@ struct PickyHUDDockGroupTileClickHostTests {
             unreadSessionIDs: [],
             metrics: metrics,
             availableRailLength: railHeight,
-            onHoverSession: { sessionID, isHovering in
-                if isHovering { hoveredSessions.append(sessionID) }
-            },
             onOpenSession: { openedSessions.append($0) },
             onToggleScreenContextTarget: { _ in },
             onToggleStickyScreenContextTarget: { _ in },
@@ -277,14 +242,10 @@ struct PickyHUDDockGroupTileClickHostTests {
             onCreateDockGroup: { _, _ in "new-group" },
             onRenameDockGroup: { _, _ in },
             onSetDockGroupColor: { _, _ in },
-            onActivateDockGroup: { activatedGroups.append($0) },
-            onActivateDockGroupFromKeyboard: { _ in },
-            onDockGroupTileHover: { groupID, _ in hoveredGroups.append(groupID) },
+            onSetDockGroupCollapsed: { collapseRequests.append(($0, $1)) },
             onRemoveDockGroup: { _, _ in },
             onMoveSessionInDock: { _, _ in },
             onMoveDockGroup: { _, _ in },
-            pendingPickleFolderPickerRequest: nil,
-            onPickleFolderPickerPresentationAcknowledged: { _ in },
             onDockHoverChanged: { _ in },
             onAddSlotExpandedChanged: { _ in },
             onDoneFlashConsumed: { _ in },
@@ -292,23 +253,20 @@ struct PickyHUDDockGroupTileClickHostTests {
             onDockHandleDragEnded: {},
             onDockHandleDoubleClick: {}
         )
-        let hosting = NSHostingView(rootView: rail)
-        hosting.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: PickyHUDDockRailLayoutPolicy.verticalCrossSize(groupCount: 1, metrics: metrics),
-            height: railHeight
-        )
+        let hosting = NSHostingView(rootView: rail.environment(\.pickyAppFontScale, 1))
+        hosting.frame = NSRect(x: 0, y: 0, width: metrics.railWidth, height: railHeight)
         hosting.layoutSubtreeIfNeeded()
-        let iconHost = try #require(findSessionIconHost(in: hosting))
+        let rowHost = try #require(findSessionIconHost(in: hosting))
+        let headerHost = try #require(findTileHost(in: hosting))
 
-        iconHost.mouseEntered(with: try mouseEvent(.mouseMoved, at: .zero))
-        iconHost.mouseDown(with: try mouseEvent(.leftMouseDown, at: .zero))
-        iconHost.mouseUp(with: try mouseEvent(.leftMouseUp, at: .zero))
+        rowHost.mouseDown(with: try mouseEvent(.leftMouseDown, at: .zero))
+        rowHost.mouseUp(with: try mouseEvent(.leftMouseUp, at: .zero))
+        headerHost.mouseDown(with: try mouseEvent(.leftMouseDown, at: .zero))
+        headerHost.mouseUp(with: try mouseEvent(.leftMouseUp, at: .zero))
 
-        #expect(hoveredSessions.isEmpty)
-        #expect(hoveredGroups == [group.id])
         #expect(openedSessions == [session.id])
-        #expect(activatedGroups.isEmpty)
+        #expect(collapseRequests.count == 1)
+        #expect(collapseRequests.first?.0 == group.id)
+        #expect(collapseRequests.first?.1 == true)
     }
 }

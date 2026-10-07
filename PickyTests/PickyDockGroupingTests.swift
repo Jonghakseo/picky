@@ -206,15 +206,41 @@ final class PickyDockGroupingTests: XCTestCase {
         )
     }
 
-    func testProjectorIgnoresLegacyCollapseStateForFolderRendering() {
+    func testExpandedGroupProjectsItsVisibleMembersInlineInPersistedOrder() {
         let layout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(id: "g1", name: "Web", color: .teal, memberSessionIDs: ["s1", "s2"], isCollapsed: false)),
+            .group(PickyDockGroup(id: "g1", name: "Web", color: .teal, memberSessionIDs: ["s2", "archived", "s1"], isCollapsed: false)),
             .session(id: "s3")
         ])
         let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "s2", "s3"])
         XCTAssertEqual(projection.items.count, 2)
-        XCTAssertEqual(projection.slots.map(\.visibleIndex), [0, 1])
-        XCTAssertEqual(projection.slots.first?.target, .group(id: "g1"))
+        XCTAssertEqual(
+            projection.slots.map(\.target),
+            [
+                .group(id: "g1"),
+                // Member indices address the full stored list, archived members included.
+                .session(id: "s2", container: .group(id: "g1", memberIndex: 0)),
+                .session(id: "s1", container: .group(id: "g1", memberIndex: 2)),
+                .session(id: "s3", container: .topLevel(index: 1)),
+            ]
+        )
+        XCTAssertEqual(projection.visibleMemberIDs(inGroup: "g1"), ["s2", "s1"])
+    }
+
+    func testNumberShortcutsFollowVisibleRowsAndSkipCollapsedMembers() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "s1"),
+            .group(PickyDockGroup(id: "closed", memberSessionIDs: ["hidden"])),
+            .group(PickyDockGroup(id: "open", memberSessionIDs: ["s2", "s3"], isCollapsed: false)),
+            .session(id: "s4"),
+        ])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["s1", "hidden", "s2", "s3", "s4"])
+
+        XCTAssertEqual(projection.shortcutSessionIDs, ["s1", "s2", "s3", "s4"])
+        XCTAssertEqual(projection.shortcutNumber(forSessionID: "s2"), 2)
+        XCTAssertNil(projection.shortcutNumber(forSessionID: "hidden"))
+        // The collapsed group's header stands in for its hidden member.
+        XCTAssertEqual(projection.scrollTargetID(forSessionID: "hidden"), "group:closed")
+        XCTAssertEqual(projection.scrollTargetID(forSessionID: "s3"), "session:s3")
     }
 
     func testProjectorAppendsBrandNewSessionsAtBottom() {
@@ -235,7 +261,7 @@ final class PickyDockGroupingTests: XCTestCase {
         XCTAssertEqual(projection.slots[1].visibleIndex, 1)
     }
 
-    func testThirdTopLevelShortcutResolvesToFolderTarget() {
+    func testEmptyGroupKeepsItsHeaderSlot() {
         let layout = PickyDockLayout(entries: [
             .session(id: "s1"),
             .session(id: "s2"),

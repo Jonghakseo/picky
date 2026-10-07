@@ -46,49 +46,19 @@ struct PickyHUDView: View {
     var onCardResizeDragEnded: () -> Void = { }
     var onCardResizeReset: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
-    /// The overlay manager owns the display-local child panel. Folder frames
-    /// are measured in this root's coordinate space before it positions it.
-    var onDockGroupListToggle: (_ groupID: String) -> Void = { _ in }
-    /// A regular Pickle hover has explicit pointer priority over any transient
-    /// group list whose broad folder-panel corridor also covers the tile.
-    var onDockSessionTileHover: () -> Void = { }
-    /// Raw folder hover transition. The overlay manager owns the folder-to-panel
-    /// corridor because only it knows the child panel's screen frame.
-    var onDockGroupTileHover: (_ groupID: String, _ isHovering: Bool) -> Void = { _, _ in }
-    /// A folder drag takes pointer ownership away from hover disclosure.
-    var onDockGroupTileDragBegin: (_ groupID: String) -> Void = { _ in }
-    var onDockGroupListClose: () -> Void = { }
-    /// Overlay Manager owns external drag lifetime because a nonactivating
-    /// child panel cannot reliably receive Escape itself.
-    var onCancelExternalDockDrag: () -> Bool = { false }
-    var onDockGroupListRowSelected: (_ sessionID: String) -> Void = { _ in }
-    /// Display-local list state, owned by the overlay manager. The HUD root only
-    /// reads it, so number keys and arrows resolve against whichever surface is
-    /// frontmost without the two copies drifting.
-    @ObservedObject var dockGroupListFocusStore = PickyHUDDockGroupListFocusStore()
-    var onDockGroupListGeometryChange: (_ badgeFrames: [String: CGRect], _ interactionFrames: [String: CGRect], _ railFrame: CGRect, _ isCommandHintVisible: Bool, _ openedSessionID: String?) -> Void = { _, _, _, _, _ in }
-    /// The rail reports base coordinates in the HUD root. Overlay Manager owns
-    /// the final AppKit screen conversion and retains the latest valid input.
-    var onExternalDockGeometryChange: (_ input: PickyHUDDockExternalDragRailGeometryInput, _ railFrame: CGRect) -> Void = { _, _ in }
-    @State private var externalDockGeometryInput: PickyHUDDockExternalDragRailGeometryInput?
-    /// One store per HUD root/display. Task 9 will let Overlay Manager update
-    /// this from its coordinator without coupling the Rail to event monitors.
-    @ObservedObject var externalDragPresentationStore = PickyHUDDockExternalDragRailPresentationStore()
-    @State private var dockGroupBadgeFrames: [String: CGRect] = [:]
-    @State private var dockGroupInteractionFrames: [String: CGRect] = [:]
-    @State private var dockRailFrame: CGRect = .zero
+    /// Persists and applies a dock size preset chosen with the resize tab.
+    var onChangeDockSizePreset: (PickyHUDDockSizePreset) -> Void = { _ in }
+    /// Reports which Pickle card is open on this display (nil when none or minimized).
+    var onOpenedSessionChange: (String?) -> Void = { _ in }
     @StateObject private var archiveActions = PickyHUDArchiveActionController()
     @State private var stopChoiceRequest: PickyStopChoiceRequest?
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
-    @State private var hoverPreviewSessionID: String?
-    @State private var suppressedHoverSessionID: String?
     @State private var lastHandledAuthoritativeRemovalRevision: UInt64 = 0
     @State private var isHUDHovered = false
     @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
-    @State private var hoverPreviewCloseTask: Task<Void, Never>?
     @State private var keyDownMonitor: Any?
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
@@ -102,9 +72,6 @@ struct PickyHUDView: View {
         in: PickyRuntimeEnvironment.userDefaults
     )
     @State private var isDockAddSlotExpanded = false
-    /// One-shot relay from a child group-list panel to the matching rail tile,
-    /// which owns the shared recent-folders popover anchor.
-    @StateObject private var dockGroupPickerRelay = PickyHUDDockGroupPickerRelay()
     @State private var cardResizeInteraction = PickyHUDCardResizeInteractionState()
     @State private var sizeReporter = PickyHUDSizeReporter()
 
@@ -138,12 +105,10 @@ struct PickyHUDView: View {
         cancelPendingClose()
         pendingManualAutoOpenSessionID = nil
         if heldSession?.sessionID == sessionID { heldSession = nil }
-        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-        suppressedHoverSessionID = sessionID
     }
 
-    /// Full active session-card universe, including members represented by
-    /// folders in the rail. Its fallback order remains oldest-first.
+    /// Full active session-card universe, including members of collapsed
+    /// groups. Its fallback order remains oldest-first.
     private var visibleSessions: [PickyHUDDockSession] {
         Array(dockSnapshot.activeSessions.reversed())
     }
@@ -157,8 +122,8 @@ struct PickyHUDView: View {
         )
     }
 
-    /// Active session ids remain the card universe, including members hidden
-    /// behind folders. Shortcut routing intentionally uses `dockProjection`.
+    /// Active session ids remain the card universe, including members of
+    /// collapsed groups. Number shortcuts use `dockProjection` instead.
     private var visibleSessionIDs: [String] {
         visibleSessionUniverse
     }
@@ -166,8 +131,7 @@ struct PickyHUDView: View {
     private var activeSessionID: String? {
         PickyHUDDockLayout.activeSessionID(
             visibleIDs: visibleSessionIDs,
-            held: heldSession,
-            previewID: nil
+            held: heldSession
         )
     }
 
@@ -237,39 +201,13 @@ struct PickyHUDView: View {
             .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) { frames in
                 onVisibleChromeFramesChange(frames)
             }
-            .onPreferenceChange(PickyHUDDockGroupBadgeFramePreferenceKey.self) { frames in
-                dockGroupBadgeFrames = frames
-                reportDockGroupListGeometry()
-            }
-            .onPreferenceChange(PickyHUDDockGroupInteractionFramePreferenceKey.self) { frames in
-                dockGroupInteractionFrames = frames
-                reportDockGroupListGeometry()
-            }
-            .onPreferenceChange(PickyHUDDockRailFramePreferenceKey.self) { frame in
-                guard !placement.isMinimized else { return }
-                dockRailFrame = frame
-                reportDockGroupListGeometry()
-                reportExternalDockGeometry()
-            }
-            .onChange(of: isCommandShortcutHintVisible) { _, _ in
-                reportDockGroupListGeometry()
-            }
-            .onChange(of: openedSessionID) { _, _ in
-                reportDockGroupListGeometry()
-            }
             .onChange(of: placement.isMinimized) { _, isMinimized in
                 if isMinimized { clearMinimizedDockTransientState() }
                 else { onDockRestore() }
             }
-            .onChange(of: placement.dockGroupListCreateRequestGroupID) { _, groupID in
-                guard let groupID else { return }
-                placement.dockGroupListCreateRequestGroupID = nil
-                dockGroupPickerRelay.request(groupID: groupID)
-            }
-            .onChange(of: placement.dockGroupListStopRequestSessionID) { _, sessionID in
-                guard let sessionID else { return }
-                placement.dockGroupListStopRequestSessionID = nil
-                stopSession(sessionID)
+            .onChange(of: openedSessionID) { _, openedSessionID in
+                guard !placement.isMinimized else { return }
+                onOpenedSessionChange(openedSessionID)
             }
             .onAppear {
                 installCloseShortcutMonitor()
@@ -322,8 +260,6 @@ struct PickyHUDView: View {
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
-                hoverPreviewCloseTask?.cancel()
-                hoverPreviewCloseTask = nil
                 uninstallCloseShortcutMonitor()
                 sizeReporter.cancelPendingReport()
                 resetCardResizeInteraction()
@@ -414,32 +350,12 @@ struct PickyHUDView: View {
     private var horizontalHUDContent: some View {
         VStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
             if placement.dockSide == .bottom {
-                cardOrPreviewReserve
+                conversationCard
             }
             dockRail
             if placement.dockSide == .top {
-                cardOrPreviewReserve
+                conversationCard
             }
-        }
-    }
-
-    /// Either the active conversation card, or — when nothing is open — a
-    /// transparent placeholder of preview height. The placeholder mirrors the
-    /// vertical mode's behavior of always reserving 540pt of panel width: it
-    /// keeps the NSPanel tall enough that the dock-icon hover preview can pop
-    /// into the area below/above the dock without being clipped at the panel
-    /// boundary.
-    @ViewBuilder
-    private var cardOrPreviewReserve: some View {
-        if !placement.isMinimized && activeSession != nil {
-            conversationCard
-        } else {
-            Color.clear
-                .frame(
-                    width: placement.cardWidth,
-                    height: PickyHUDDockMinimizedGeometry.horizontalPreviewReserveHeight(metrics: dockMetrics)
-                )
-                .accessibilityHidden(true)
         }
     }
 
@@ -634,8 +550,8 @@ struct PickyHUDView: View {
             dockSide: placement.dockSide,
             metrics: dockMetrics,
             projection: dockProjection,
+            activeSessionIDs: Set(visibleSessionUniverse),
             availableRailLength: placement.availableDockRailLength,
-            hasArchiveAccess: viewModel.archivedSessionAccess != nil,
             activeSessionID: activeSession?.id,
             unreadCount: dockSnapshot.unreadSessionIDs.count,
             onRestore: restoreDock,
@@ -644,13 +560,10 @@ struct PickyHUDView: View {
         ) {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
-                allSessions: dockSnapshot.activeSessions,
                 baseProjection: dockProjection,
                 layout: dockSnapshot.dockLayout,
-                groupMemberIDsByRecency: dockSnapshot.groupMemberIDsByRecency,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
-                previewSessionID: hoverPreviewSessionID,
                 screenContextTargetSessionID: dockSnapshot.screenContextTargetSessionID,
                 screenContextTargetSticky: dockSnapshot.screenContextTargetSticky,
                 dockSide: placement.dockSide,
@@ -659,7 +572,6 @@ struct PickyHUDView: View {
                 unreadSessionIDs: dockSnapshot.unreadSessionIDs,
                 metrics: dockMetrics,
                 availableRailLength: placement.availableDockRailLength,
-                onHoverSession: handleDockSessionTileHoverTransition,
                 onOpenSession: toggleOpenSession,
                 onToggleScreenContextTarget: toggleScreenContextTarget,
                 onToggleStickyScreenContextTarget: toggleStickyScreenContextTarget,
@@ -683,27 +595,17 @@ struct PickyHUDView: View {
                 },
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
-                onActivateDockGroup: activateDockGroupTileFromPointer,
-                onActivateDockGroupFromKeyboard: activateDockGroupTileFromCommandShortcut,
-                onDockGroupTileHover: handleDockGroupTileHoverTransition,
-                onDockGroupTileDragBegin: onDockGroupTileDragBegin,
-                pinnedDockGroupListGroupID: placement.pinnedDockGroupListGroupID,
+                onSetDockGroupCollapsed: { id, collapsed in viewModel.setDockGroupCollapsed(id: id, collapsed: collapsed) },
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
                 onMoveSessionInDock: { sessionID, container in viewModel.moveSessionInDock(sessionID: sessionID, to: container) },
                 onMoveDockGroup: { id, target in viewModel.moveDockGroup(id: id, toTopLevelIndex: target) },
-                pendingPickleFolderPickerRequest: dockGroupPickerRelay.request,
-                onPickleFolderPickerPresentationAcknowledged: { dockGroupPickerRelay.acknowledgePresentation(requestID: $0) },
                 onDockHoverChanged: handleDockHover,
                 onAddSlotExpandedChanged: { isDockAddSlotExpanded = $0 },
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                 onDockHandleDragChanged: onDockHandleDragChanged,
                 onDockHandleDragEnded: onDockHandleDragEnded,
                 onDockHandleDoubleClick: onDockHandleDoubleClick,
-                onExternalDragGeometryChange: { input in
-                    externalDockGeometryInput = input
-                    reportExternalDockGeometry()
-                },
-                externalDragPresentationStore: externalDragPresentationStore,
+                onChangeDockSizePreset: onChangeDockSizePreset,
                 archiveAccess: viewModel.archivedSessionAccess,
                 onMinimize: minimizeDock
             )
@@ -712,8 +614,6 @@ struct PickyHUDView: View {
 
     private func minimizeDock() {
         cancelPendingClose()
-        cancelHoverPreviewClose()
-        hoverPreviewSessionID = nil
         isDockHovered = false
         isHUDHovered = false
         isDockAddSlotExpanded = false
@@ -726,12 +626,6 @@ struct PickyHUDView: View {
 
     private func clearMinimizedDockTransientState() {
         cancelPendingClose()
-        cancelHoverPreviewClose()
-        hoverPreviewSessionID = nil
-        dockRailFrame = .zero
-        dockGroupBadgeFrames = [:]
-        dockGroupInteractionFrames = [:]
-        externalDockGeometryInput = nil
     }
 
     private func restoreDock() {
@@ -744,8 +638,6 @@ struct PickyHUDView: View {
             heldSession: heldSession,
             pendingManualAutoOpenSessionID: pendingManualAutoOpenSessionID,
             pendingRequestedOpenSessionID: pendingRequestedOpenSessionID,
-            hoverPreviewSessionID: hoverPreviewSessionID,
-            suppressedHoverSessionID: suppressedHoverSessionID,
             utilityPanelOpenSessionIDs: utilityPanelOpenSessionIDs
         )
         guard let result = PickyHUDSessionRemovalPolicy.applying(
@@ -756,26 +648,8 @@ struct PickyHUDView: View {
         heldSession = result.state.heldSession
         pendingManualAutoOpenSessionID = result.state.pendingManualAutoOpenSessionID
         pendingRequestedOpenSessionID = result.state.pendingRequestedOpenSessionID
-        hoverPreviewSessionID = result.state.hoverPreviewSessionID
-        suppressedHoverSessionID = result.state.suppressedHoverSessionID
         utilityPanelOpenSessionIDs = result.state.utilityPanelOpenSessionIDs
         lastHandledAuthoritativeRemovalRevision = result.handledRevision
-    }
-
-    private func reportExternalDockGeometry() {
-        guard !placement.isMinimized, let externalDockGeometryInput, dockRailFrame != .zero else { return }
-        onExternalDockGeometryChange(externalDockGeometryInput, dockRailFrame)
-    }
-
-    private func reportDockGroupListGeometry() {
-        guard !placement.isMinimized else { return }
-        onDockGroupListGeometryChange(
-            dockGroupBadgeFrames,
-            dockGroupInteractionFrames,
-            dockRailFrame,
-            isCommandShortcutHintVisible,
-            openedSessionID
-        )
     }
 
     private var isPointerInsideHUDSurface: Bool {
@@ -812,10 +686,6 @@ struct PickyHUDView: View {
         } else {
             scheduleCloseIfNeeded()
         }
-    }
-
-    private func isHoverPreviewSession(_ sessionID: String) -> Bool {
-        hoverPreviewSessionID == sessionID && heldSession?.sessionID != sessionID
     }
 
     private var visiblePinnedPickleCwds: [String] {
@@ -904,68 +774,6 @@ struct PickyHUDView: View {
         openHeldSession(next)
     }
 
-    private func handleDockSessionTileHoverTransition(_ sessionID: String, _ isHovering: Bool) {
-        guard isHovering else {
-            scheduleHoverPreviewClose(for: sessionID)
-            return
-        }
-        previewDockSession(sessionID)
-    }
-
-    private func handleDockGroupTileHoverTransition(_ groupID: String, _ isHovering: Bool) {
-        if isHovering {
-            cancelHoverPreviewClose()
-            hoverPreviewSessionID = PickyHUDDockInteractionPolicy.previewSessionIDAfterGroupHover(
-                current: hoverPreviewSessionID,
-                isHovering: true
-            )
-        }
-        onDockGroupTileHover(groupID, isHovering)
-    }
-
-    private func previewDockSession(_ sessionID: String) {
-        cancelHoverPreviewClose()
-        onDockSessionTileHover()
-        isDockHovered = true
-        cancelPendingClose()
-        if heldSession?.sessionID == sessionID {
-            if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-            return
-        }
-        if suppressedHoverSessionID == sessionID { return }
-        suppressedHoverSessionID = nil
-        hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
-            current: hoverPreviewSessionID,
-            sessionID: sessionID
-        )
-    }
-
-    private func scheduleHoverPreviewClose(for sessionID: String) {
-        hoverPreviewCloseTask?.cancel()
-        hoverPreviewCloseTask = Task {
-            do {
-                try await Task.sleep(
-                    nanoseconds: PickyHUDDockHoverDisclosurePolicy.closeGraceNanoseconds
-                )
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                hoverPreviewSessionID = PickyHUDDockInteractionPolicy.previewSessionIDAfterTileExitTimeout(
-                    current: hoverPreviewSessionID,
-                    exitedSessionID: sessionID
-                )
-                hoverPreviewCloseTask = nil
-            }
-        }
-    }
-
-    private func cancelHoverPreviewClose() {
-        hoverPreviewCloseTask?.cancel()
-        hoverPreviewCloseTask = nil
-    }
-
     private func toggleOpenSession(_ sessionID: String) {
         pendingManualAutoOpenSessionID = nil
         cancelPendingClose()
@@ -984,12 +792,7 @@ struct PickyHUDView: View {
             )
         }
         heldSession = nextHeldSession
-        if nextHeldSession == nil {
-            if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-            suppressedHoverSessionID = sessionID
-        } else {
-            hoverPreviewSessionID = nil
-            suppressedHoverSessionID = nil
+        if nextHeldSession != nil {
             // Record only after the held conversation card state is open.
             viewModel.markConversationCardOpened(sessionID: sessionID)
         }
@@ -1024,8 +827,6 @@ struct PickyHUDView: View {
             ?? viewModel.sessionCard(sessionID: sessionID)?.title ?? "Pickle"
         utilityPanelOpenSessionIDs.remove(sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
-        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-        if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }
         onArchiveUndoRequested(sessionID, title)
     }
 
@@ -1058,16 +859,10 @@ struct PickyHUDView: View {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                let isStillInsideHUD = isPointerInsideHUDSurface
-                hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
-                    current: hoverPreviewSessionID,
-                    isDockHovered: isDockHovered
-                )
                 heldSession = PickyHUDDockLayout.heldSessionAfterCloseTimeout(
                     current: heldSession,
-                    isHUDHovered: isStillInsideHUD
+                    isHUDHovered: isPointerInsideHUDSurface
                 )
-                if !isStillInsideHUD { suppressedHoverSessionID = nil }
                 closeExpansionTask = nil
             }
         }
@@ -1076,10 +871,8 @@ struct PickyHUDView: View {
     private func closeHeldSession() {
         pendingManualAutoOpenSessionID = nil
         pendingRequestedOpenSessionID = nil
-        guard let sessionID = heldSession?.sessionID else { return }
+        guard heldSession != nil else { return }
         heldSession = nil
-        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-        suppressedHoverSessionID = sessionID
     }
 
     private func installCloseShortcutMonitor() {
@@ -1123,28 +916,17 @@ struct PickyHUDView: View {
         let visibleIDs = cycleSessionIDs
         let activeCard = activeSessionID.flatMap { viewModel.sessionCard(sessionID: $0) }
         let isTextInputFocused = isEditableTextInputFocused(in: keyWindow)
-        let returnOutcome = PickyHUDDockGroupListKeyboardPolicy.returnOutcome(
-            for: PickyHUDDockGroupListReturnContext(
-                isPlainReturn: PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(
-                    keyCode: event.keyCode,
-                    modifiers: flags
-                ),
-                isListOpen: dockGroupListFocus.isOpen,
-                highlightedRowID: dockGroupListFocus.highlightedRowID,
-                isTextInputFocused: isTextInputFocused,
-                isHUDFallbackResponder: keyWindow.isFirstResponderFallback,
-                hasActiveCard: activeCard != nil
-            )
-        )
-        switch returnOutcome {
-        case .selectHighlightedRow(let rowID):
-            onDockGroupListRowSelected(rowID)
-            return true
-        case .focusComposer:
+        if PickyHUDKeyboardShortcutPolicy.returnFocusesComposer(
+            isPlainReturn: PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(
+                keyCode: event.keyCode,
+                modifiers: flags
+            ),
+            isTextInputFocused: isTextInputFocused,
+            isHUDFallbackResponder: keyWindow.isFirstResponderFallback,
+            hasActiveCard: activeCard != nil
+        ) {
             focusActiveComposer()
             return true
-        case .passThrough:
-            break
         }
 
         if flags == .command, event.keyCode == Self.wKeyCode, heldSession != nil {
@@ -1155,22 +937,6 @@ struct PickyHUDView: View {
         // Outside a text input, Esc stops a running Pickle and closes an idle
         // card (Cmd+W always closes). The composer's own Esc handler owns the
         // focused-input case: autocomplete dismissal first, then the same stop.
-        // Esc closes an open group list first, even from the composer, so the
-        // floating panel can never outlive the key press that dismisses it.
-        if flags.isEmpty,
-           event.keyCode == Self.escKeyCode,
-           onCancelExternalDockDrag() {
-            return true
-        }
-
-        if flags.isEmpty,
-           event.keyCode == Self.escKeyCode,
-           PickyHUDDockGroupListKeyboardPolicy.escapeOutcome(isListOpen: dockGroupListFocus.isOpen)
-           == .closeGroupList {
-            onDockGroupListClose()
-            return true
-        }
-
         if flags.isEmpty,
            event.keyCode == Self.escKeyCode,
            heldSession != nil,
@@ -1184,26 +950,6 @@ struct PickyHUDView: View {
                 closeHeldSession()
             }
             return true
-        }
-
-        if PickyHUDDockGroupListKeyboardPolicy.ownsListNavigationKeys(
-            isListOpen: dockGroupListFocus.isOpen,
-            isTextInputFocused: isTextInputFocused
-        ), flags.isEmpty {
-            switch event.keyCode {
-            case Self.upArrowKeyCode:
-                _ = dockGroupListFocusStore.moveHighlight(displayID: displayID, direction: .up)
-                return true
-            case Self.downArrowKeyCode:
-                _ = dockGroupListFocusStore.moveHighlight(displayID: displayID, direction: .down)
-                return true
-            case Self.returnKeyCode, Self.keypadEnterKeyCode:
-                guard let highlighted = dockGroupListFocus.highlightedRowID else { return false }
-                onDockGroupListRowSelected(highlighted)
-                return true
-            default:
-                break
-            }
         }
 
         if PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(
@@ -1256,33 +1002,16 @@ struct PickyHUDView: View {
         }
 
         if flags == .command, let number = Self.numberShortcutValue(for: event) {
-            // An open list owns the number keys; the rail only gets them back
-            // once the list closes.
-            if case .groupList = PickyHUDDockGroupListKeyboardPolicy.shortcutContext(
-                openGroupID: dockGroupListFocus.openGroupID
-            ) {
-                guard let rowID = PickyHUDDockGroupListKeyboardPolicy.rowID(
-                    forShortcutNumber: number,
-                    rowIDs: dockGroupListFocus.rowIDs
-                ) else { return true }
-                onDockGroupListRowSelected(rowID)
-                return true
-            }
-            let slots = dockProjection.slots
-            guard number >= 1, number <= slots.count else { return false }
-            switch slots[number - 1].target {
-            case .group(let groupID):
-                activateDockGroupTileFromCommandShortcut(groupID)
-            case .session(let sessionID, _):
-                let next = PickyHUDDockLayout.heldSessionAfterClick(
-                    current: heldSession,
-                    clicked: sessionID
-                )
-                if let next {
-                    openHeldSession(next)
-                } else {
-                    closeHeldSession()
-                }
+            // ⌘1…⌘9 follow the visible rows; members of a collapsed group take no number.
+            guard let sessionID = PickyHUDDockLayout.sessionIDForNumberShortcut(
+                visibleIDs: dockProjection.shortcutSessionIDs,
+                number: number
+            ) else { return false }
+            let next = PickyHUDDockLayout.heldSessionAfterClick(current: heldSession, clicked: sessionID)
+            if let next {
+                openHeldSession(next)
+            } else {
+                closeHeldSession()
             }
             return true
         }
@@ -1296,37 +1025,12 @@ struct PickyHUDView: View {
         return false
     }
 
-    private var dockGroupActivationCoordinator: PickyHUDDockGroupActivationCoordinator {
-        PickyHUDDockGroupActivationCoordinator(
-            visibleMemberIDs: visibleMemberIDs(inDockGroup:),
-            showFolderPicker: { dockGroupPickerRelay.request(groupID: $0) },
-            openSession: toggleOpenSession,
-            toggleMemberList: onDockGroupListToggle
-        )
-    }
-
-    private func visibleMemberIDs(inDockGroup groupID: String) -> [String] {
-        let activeSessionIDs = Set(dockSnapshot.activeSessions.map(\.id))
-        return dockSnapshot.dockLayout.group(withID: groupID)?.memberSessionIDs
-            .filter(activeSessionIDs.contains) ?? []
-    }
-
-    private func activateDockGroupTileFromPointer(_ groupID: String) {
-        dockGroupActivationCoordinator.activateFromPointer(groupID: groupID)
-    }
-
-    private func activateDockGroupTileFromCommandShortcut(_ groupID: String) {
-        dockGroupActivationCoordinator.activateFromCommandShortcut(groupID: groupID)
-    }
-
     private func openHeldSession(_ next: PickyHUDDockHold) {
         restoreDock()
         pendingManualAutoOpenSessionID = nil
         pendingRequestedOpenSessionID = nil
         cancelPendingClose()
         heldSession = next
-        hoverPreviewSessionID = nil
-        suppressedHoverSessionID = nil
         viewModel.markConversationCardOpened(sessionID: next.sessionID)
     }
 
@@ -1434,19 +1138,9 @@ struct PickyHUDView: View {
 
     private static let wKeyCode: UInt16 = 13
     private static let escKeyCode: UInt16 = 53
-    private static let upArrowKeyCode: UInt16 = 126
-    private static let downArrowKeyCode: UInt16 = 125
-    private static let returnKeyCode: UInt16 = 36
-    private static let keypadEnterKeyCode: UInt16 = 76
 
-    private var dockGroupListFocus: PickyHUDDockGroupListFocus {
-        dockGroupListFocusStore.focus(for: displayID)
-    }
-
-    /// Rail hints go quiet while a list is open, because the numbers address the
-    /// list's rows instead of the rail's slots.
     private var isRailShortcutHintVisible: Bool {
-        isCommandShortcutHintVisible && !dockGroupListFocus.isOpen
+        isCommandShortcutHintVisible
     }
 }
 

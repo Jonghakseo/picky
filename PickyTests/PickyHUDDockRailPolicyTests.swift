@@ -30,211 +30,84 @@ struct PickyHUDDockRailPolicyTests {
         #expect(didDelete)
     }
 
-    @MainActor @Test func externalPresentationStoreScopesUpdatesAndClearsToItsToken() {
-        let store = PickyHUDDockExternalDragRailPresentationStore()
-        let token = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!
-        let otherToken = UUID(uuidString: "00000000-0000-0000-0000-000000000008")!
+    // MARK: List layout
 
-        store.update(token: token, destination: .topLevel(index: 0))
-        #expect(store.presentation == nil)
-        store.show(token: token, sessionID: "grouped", destination: .topLevel(index: 1))
-        store.update(token: otherToken, destination: .group(id: "other", memberIndex: 0))
-        #expect(store.presentation == .init(token: token, sessionID: "grouped", destination: .topLevel(index: 1)))
-        store.clear(token: otherToken)
-        #expect(store.presentation != nil)
-        store.clear(token: token)
-        #expect(store.presentation == nil)
-    }
-
-    @Test func externalGeometryPublishesOnlyForRestoredBasePresentation() {
-        #expect(PickyHUDDockExternalDragRailGeometryPolicy.shouldPublishExternalGeometry(
-            hasActivePresentation: false
-        ))
-        #expect(!PickyHUDDockExternalDragRailGeometryPolicy.shouldPublishExternalGeometry(
-            hasActivePresentation: true
-        ))
-    }
-
-    @Test func singleVisibleGroupMemberGetsASessionInteractionSlotWithoutRemovingTheFolderTarget() throws {
-        let group = PickyDockGroup(
-            id: "group",
-            memberSessionIDs: ["archived", "only"]
-        )
-        let layout = PickyDockLayout(entries: [
-            .session(id: "top"),
-            .group(group),
-        ])
-        let projection = PickyDockProjector.project(
-            layout: layout,
-            visibleSessionIDs: ["top", "only"]
-        )
-
-        let slots = PickyHUDDockRenderPolicy.interactionSlots(
-            persistedProjection: projection,
-            layout: layout,
-            visibleSessionIDs: ["top", "only"]
-        )
-        let memberSlot = try #require(slots.first(where: { $0.sessionID == "only" }))
-
-        #expect(slots.compactMap(\.groupID) == ["group"])
-        #expect(memberSlot.visibleIndex == 1)
-        #expect(memberSlot.container == .group(id: "group", memberIndex: 1))
-        #expect(PickyHUDDockRenderPolicy.interactionSlots(
-            persistedProjection: projection,
-            layout: layout,
-            visibleSessionIDs: ["top", "archived", "only"]
-        ).compactMap(\.sessionID) == ["top"])
-    }
-
-    @Test func topLevelExternalPreviewInjectsAGroupedSessionExactlyOnceWithoutChangingNormalProjection() {
-        let groupedSessionID = "grouped"
-        let base = ["top-level"]
-
-        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
-            base: base,
-            draggedSessionID: groupedSessionID,
-            destination: .topLevel(index: 1)
-        ) == ["top-level", "grouped"])
-        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
-            base: ["top-level", groupedSessionID],
-            draggedSessionID: groupedSessionID,
-            destination: .topLevel(index: 1)
-        ) == ["top-level", "grouped"])
-        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
-            base: base,
-            draggedSessionID: groupedSessionID,
-            destination: .group(id: "source", memberIndex: 0)
-        ) == base)
-        #expect(PickyHUDDockRenderPolicy.externalPreviewVisibleSessionIDs(
-            base: base,
-            draggedSessionID: nil,
-            destination: .topLevel(index: 1)
-        ) == base)
-    }
-
-    @Test func embeddedGroupIdentityDoesNotExpandEitherDockAxis() {
-        for preset in PickyHUDDockSizePreset.allCases {
-            let metrics = PickyHUDDockMetrics(preset: preset)
-            for fontScale: CGFloat in [1, 1.3] {
-                let font = PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: fontScale)
-                let height = PickyHUDDockGroupHeaderPresentation.labelHeight(metrics: metrics, fontScale: fontScale)
-                #expect(height >= font.ascender - font.descender + font.leading)
-                for side: PickyHUDDockSide in [.left, .bottom] {
-                    let grouped = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 4, groupCount: 3,
-                        isAddSlotExpanded: false, dockSide: side, metrics: metrics, fontScale: fontScale)
-                    let ungrouped = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 4,
-                        isAddSlotExpanded: false, dockSide: side, metrics: metrics, fontScale: fontScale)
-                    #expect(grouped == ungrouped)
-                    #expect(PickyHUDDockRailLayoutPolicy.crossSize(groupCount: 3, dockSide: side, metrics: metrics, fontScale: fontScale)
-                        == PickyHUDDockRailLayoutPolicy.crossSize(groupCount: 0, dockSide: side, metrics: metrics, fontScale: fontScale))
-                }
-            }
-        }
-    }
-
-    @Test func archiveAndNewPickleShareTheSameFixedUtilityColumn() {
-        let metrics = PickyHUDDockMetrics(preset: .small)
-        for side: PickyHUDDockSide in [.left, .bottom] {
-            let withoutArchive = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 5, groupCount: 3,
-                isAddSlotExpanded: false, dockSide: side, metrics: metrics, hasArchiveAccess: false)
-            let withArchive = PickyHUDDockRailLayoutPolicy.contentLength(sessionCount: 5, groupCount: 3,
-                isAddSlotExpanded: true, dockSide: side, metrics: metrics, hasArchiveAccess: true)
-            #expect(withoutArchive == withArchive)
-        }
-    }
-
-    @Test func emptyGroupsKeepTheirFullTileFootprint() {
+    @Test func collapsedGroupContributesOnlyItsHeaderWhileExpandedAddsMemberRows() {
         let metrics = PickyHUDDockMetrics(preset: .medium)
-        let fullVerticalLength = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: 2,
-            groupCount: 1,
-            emptyGroupCount: 0,
-            isAddSlotExpanded: false,
-            dockSide: .left,
-            metrics: metrics
-        )
-        let emptyVerticalLength = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: 2,
-            groupCount: 1,
-            emptyGroupCount: 1,
-            isAddSlotExpanded: false,
-            dockSide: .left,
-            metrics: metrics
-        )
-        let fullHorizontalLength = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: 2,
-            groupCount: 1,
-            emptyGroupCount: 0,
-            isAddSlotExpanded: false,
-            dockSide: .bottom,
-            metrics: metrics
-        )
-        let emptyHorizontalLength = PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: 2,
-            groupCount: 1,
-            emptyGroupCount: 1,
-            isAddSlotExpanded: false,
-            dockSide: .bottom,
-            metrics: metrics
-        )
-
-        #expect(fullVerticalLength == emptyVerticalLength)
-        #expect(metrics.emptyGroupSlotHeight == metrics.sessionTileHeight)
-        #expect(fullHorizontalLength == emptyHorizontalLength)
-    }
-
-    @Test func railLengthDependsOnProjectedTopLevelSlotsNotGroupMemberCount() {
-        let compactLayout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(id: "alpha", memberSessionIDs: ["a"])),
-            .group(PickyDockGroup(id: "beta", memberSessionIDs: ["b"]))
-        ])
-        let expandedLayout = PickyDockLayout(entries: [
-            .group(PickyDockGroup(id: "alpha", memberSessionIDs: ["a", "c", "d", "e", "f"])),
-            .group(PickyDockGroup(id: "beta", memberSessionIDs: ["b", "g", "h", "i", "j"]))
-        ])
-        let compactProjection = PickyDockProjector.project(
-            layout: compactLayout,
-            visibleSessionIDs: ["a", "b"]
-        )
-        let expandedProjection = PickyDockProjector.project(
-            layout: expandedLayout,
-            visibleSessionIDs: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
-        )
-        let metrics = PickyHUDDockMetrics(preset: .large)
-
-        #expect(compactProjection.items.count == 2)
-        #expect(compactProjection.slots.count == 2)
-        #expect(expandedProjection.items.count == 2)
-        #expect(expandedProjection.slots.count == 2)
-        #expect(PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: compactProjection.slots.count,
-            groupCount: compactProjection.items.count,
-            isAddSlotExpanded: false,
-            dockSide: .left,
-            metrics: metrics,
-            fontScale: 1
-        ) == PickyHUDDockRailLayoutPolicy.contentLength(
-            sessionCount: expandedProjection.slots.count,
-            groupCount: expandedProjection.items.count,
-            isAddSlotExpanded: false,
-            dockSide: .left,
-            metrics: metrics,
-            fontScale: 1
-        ))
-    }
-
-    @Test func largerIdentityTextDoesNotMoveNeighboringTiles() {
-        for preset in PickyHUDDockSizePreset.allCases {
-            let metrics = PickyHUDDockMetrics(preset: preset)
-            #expect(PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: 1.3).pointSize
-                > PickyHUDDockGroupHeaderPresentation.labelFont(fontScale: 1).pointSize)
-            #expect(PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: 1.3)
-                == PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: 1))
-            #expect(PickyHUDDockGroupHeaderPresentation.labelWidth(metrics: metrics, fontScale: 1) < metrics.sessionTileWidth)
+        func length(collapsed: Bool) -> CGFloat {
+            let layout = PickyDockLayout(entries: [
+                .session(id: "loose"),
+                .group(PickyDockGroup(id: "g", memberSessionIDs: ["a", "archived", "b"], isCollapsed: collapsed)),
+            ])
+            let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["loose", "a", "b"])
+            return PickyHUDDockRailLayoutPolicy.listLength(
+                projection: projection, activeSessionIDs: ["loose", "a", "b"],
+                orientation: .vertical, metrics: metrics, fontScale: 1
+            )
         }
+        let row = metrics.rowHeight(fontScale: 1)
+        let header = metrics.groupHeaderHeight(fontScale: 1)
+
+        #expect(length(collapsed: true) == row + metrics.rowSpacing + metrics.groupHeaderTopGap + header)
+        // Only the two active members render; the archived one is retained in the layout.
+        #expect(length(collapsed: false) - length(collapsed: true) == 2 * (row + metrics.rowSpacing))
     }
 
-    @Test func groupReorderUsesFrozenTopEntryCentersWhenPreviewHasReflowed() {
+    @Test func expandedEmptyGroupReservesOneDropPlaceholderRow() {
+        let metrics = PickyHUDDockMetrics(preset: .large)
+        let layout = PickyDockLayout(entries: [.group(PickyDockGroup(id: "g", isCollapsed: false))])
+        let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: [])
+
+        #expect(PickyHUDDockRailLayoutPolicy.listLength(
+            projection: projection, activeSessionIDs: [], orientation: .vertical, metrics: metrics, fontScale: 1
+        ) == metrics.groupHeaderHeight(fontScale: 1) + metrics.rowHeight(fontScale: 1) + metrics.rowSpacing)
+    }
+
+    @Test func eachPresetSetsTheListWidthHorizontalThicknessAndRowShape() {
+        let small = PickyHUDDockMetrics(preset: .small)
+        let medium = PickyHUDDockMetrics(preset: .medium)
+        let large = PickyHUDDockMetrics(preset: .large)
+
+        #expect([small.railWidth, medium.railWidth, large.railWidth] == [112, 168, 200])
+        #expect([small, medium, large].map { $0.horizontalThickness(fontScale: 1) } == [34, 38, 50])
+        #expect(large.showsRowDetailLine && !medium.showsRowDetailLine && !small.showsRowDetailLine)
+        #expect(small.usesCompactRowTitle && !medium.usesCompactRowTitle)
+        // Larger app text grows rows instead of clipping them.
+        #expect(medium.rowHeight(fontScale: 1.3) > medium.rowHeight(fontScale: 1))
+        // The move handle widens with the vertical list, never past 60pt.
+        #expect([small.handleNotchWidth, medium.handleNotchWidth, large.handleNotchWidth] == [34, 50, 60])
+    }
+
+    @Test func horizontalChromeLaysTheTwoUtilitiesSideBySide() {
+        let metrics = PickyHUDDockMetrics(preset: .small)
+        let vertical = PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: .right, metrics: metrics)
+        let horizontal = PickyHUDDockRailLayoutPolicy.fixedChromeLength(dockSide: .bottom, metrics: metrics)
+
+        #expect(horizontal - vertical == metrics.utilityButtonSide + metrics.utilitySpacing)
+    }
+
+    @Test func horizontalHeaderChipCapsLongGroupNames() {
+        let metrics = PickyHUDDockMetrics(preset: .medium)
+        let short = PickyHUDDockGroupHeaderLayout.horizontalChipWidth(
+            name: "PR", count: 3, metrics: metrics, fontScale: 1)
+        let long = PickyHUDDockGroupHeaderLayout.horizontalChipWidth(
+            name: String(repeating: "아주 긴 그룹 이름", count: 6), count: 3, metrics: metrics, fontScale: 1)
+        let longer = PickyHUDDockGroupHeaderLayout.horizontalChipWidth(
+            name: String(repeating: "아주 긴 그룹 이름", count: 12), count: 3, metrics: metrics, fontScale: 1)
+
+        #expect(short < long)
+        #expect(long == longer)
+    }
+
+    @Test func horizontalRailStopsAtItsMaximumLengthOnWideScreens() {
+        #expect(PickyHUDDockLayout.horizontalDockRailLengthBudget(screenAvailableLength: 3000)
+            == PickyHUDDockLayout.horizontalDockRailMaxLength)
+        #expect(PickyHUDDockLayout.horizontalDockRailLengthBudget(screenAvailableLength: 400) == 400)
+    }
+
+    // MARK: Drag
+
+    @Test func groupReorderUsesFrozenTopEntryExtentsWhenPreviewHasReflowed() {
         let layout = PickyDockLayout(entries: [
             .session(id: "a"),
             .group(PickyDockGroup(id: "group", memberSessionIDs: ["archived", "visible"])),
@@ -245,34 +118,36 @@ struct PickyHUDDockRailPolicyTests {
             .group(PickyDockGroup(id: "group", memberSessionIDs: ["archived", "visible"])),
             .session(id: "b")
         ])
-        let frozenCenters: [String: CGFloat] = [
-            "session:a": 40,
-            "group:group": 124,
-            "session:b": 232
+        let frozenExtents: [String: PickyDockAxisExtent] = [
+            "session:a": .init(lower: 27, upper: 53),
+            "group:group": .init(lower: 100, upper: 148),
+            "session:b": .init(lower: 219, upper: 245)
         ]
 
         let destination = PickyHUDDockRenderPolicy.nearestLayoutEntryIndex(
             cursorAxis: 218,
             visibleTopEntryIDs: entryIDs,
-            referenceCenters: frozenCenters,
+            referenceExtents: frozenExtents,
             layout: layout
         )
 
         #expect(destination == 2)
     }
 
-    @Test func adjacentTopLevelEntriesExposeInsertionTargetsAtFrozenMidpoints() {
+    @Test func adjacentTopLevelEntriesExposeInsertionTargetsInTheGapBetweenTheirEdges() {
         let layout = PickyDockLayout(entries: [
             .session(id: "loose"),
             .group(PickyDockGroup(id: "alpha")),
             .group(PickyDockGroup(id: "beta")),
         ])
+        // An expanded group block is tall; the boundary sits at its outer
+        // edge, not at the block's center among its member rows.
         let candidates = PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
             visibleTopEntryIDs: ["session:loose", "group:alpha", "group:beta"],
-            referenceCenters: [
-                "session:loose": 0,
-                "group:alpha": 100,
-                "group:beta": 200,
+            referenceExtents: [
+                "session:loose": .init(lower: 0, upper: 40),
+                "group:alpha": .init(lower: 60, upper: 140),
+                "group:beta": .init(lower: 160, upper: 184),
             ],
             draggedSessionID: "loose",
             layout: layout
@@ -292,7 +167,7 @@ struct PickyHUDDockRailPolicyTests {
 
         #expect(PickyHUDDockRenderPolicy.topLevelInsertionCandidates(
             visibleTopEntryIDs: ["session:alpha", "session:beta"],
-            referenceCenters: ["session:alpha": 0, "session:beta": 100],
+            referenceExtents: ["session:alpha": .init(lower: 0, upper: 26), "session:beta": .init(lower: 27, upper: 53)],
             draggedSessionID: "alpha",
             layout: layout
         ).isEmpty)
@@ -355,12 +230,19 @@ struct PickyHUDDockRailPolicyTests {
         #expect(destination == .group(id: "alpha", memberIndex: 0))
     }
 
-    @Test func openedGroupMemberSelectsItsOwningFolderExceptDuringDrag() {
+    @Test func openedMemberOfACollapsedGroupSelectsItsHeaderExceptDuringDrag() {
         let layout = PickyDockLayout(entries: [
             .session(id: "loose"),
             .group(PickyDockGroup(id: "alpha", memberSessionIDs: ["grouped"])),
             .group(PickyDockGroup(id: "beta", memberSessionIDs: ["other"])),
+            .group(PickyDockGroup(id: "open", memberSessionIDs: ["visible"], isCollapsed: false)),
         ])
+        // An expanded group shows the opened row itself, so its header stays quiet.
+        #expect(PickyHUDDockRenderPolicy.selectedGroupID(
+            openedSessionID: "visible",
+            draggingSessionID: nil,
+            layout: layout
+        ) == nil)
 
         #expect(PickyHUDDockRenderPolicy.selectedGroupID(
             openedSessionID: "grouped",
@@ -479,7 +361,7 @@ struct PickyHUDDockRailPolicyTests {
         ))
     }
 
-    @Test func groupDestinationKeepsSourcePlaceholderUntilDropWhileTopLevelDestinationReflows() {
+    @Test func collapsedGroupDestinationKeepsSourcePlaceholderUntilDropWhileTopLevelDestinationReflows() {
         let layout = PickyDockLayout(entries: [
             .session(id: "loose"),
             .group(PickyDockGroup(id: "group", memberSessionIDs: ["member"])),
@@ -506,22 +388,32 @@ struct PickyHUDDockRailPolicyTests {
         ).items.map(\.stableID) == ["group:group", "session:loose"])
     }
 
-    @Test func sessionDragNeverShrinksRailBelowPersistedSlotCount() {
-        #expect(PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
-            renderedSlotCount: 3,
-            persistedSlotCount: 4,
-            isSessionDragging: true
-        ) == 4)
-        #expect(PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
-            renderedSlotCount: 5,
-            persistedSlotCount: 4,
-            isSessionDragging: true
-        ) == 5)
-        #expect(PickyHUDDockReorderAnimationPolicy.sizingSlotCount(
-            renderedSlotCount: 3,
-            persistedSlotCount: 4,
-            isSessionDragging: false
-        ) == 3)
+    @Test func expandedGroupDestinationReflowsToShowTheInsertionRow() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "group", memberSessionIDs: ["member"], isCollapsed: false)),
+        ])
+
+        let preview = PickyHUDDockRenderPolicy.sessionPreviewLayout(
+            layout: layout,
+            draggedSessionID: "loose",
+            destination: .group(id: "group", memberIndex: 1)
+        )
+
+        #expect(PickyDockProjector.project(layout: preview, visibleSessionIDs: ["loose", "member"])
+            .visibleMemberIDs(inGroup: "group") == ["member", "loose"])
+    }
+
+    @Test func sessionDragNeverShrinksRailBelowPersistedLength() {
+        #expect(PickyHUDDockReorderAnimationPolicy.sizingLength(
+            renderedLength: 300, persistedLength: 400, isSessionDragging: true
+        ) == 400)
+        #expect(PickyHUDDockReorderAnimationPolicy.sizingLength(
+            renderedLength: 500, persistedLength: 400, isSessionDragging: true
+        ) == 500)
+        #expect(PickyHUDDockReorderAnimationPolicy.sizingLength(
+            renderedLength: 300, persistedLength: 400, isSessionDragging: false
+        ) == 300)
     }
 
     @Test func reorderRequiresAFiniteMeasuredSourceCenter() {
@@ -534,28 +426,22 @@ struct PickyHUDDockRailPolicyTests {
         #expect(PickyHUDDockDragGeometry.validSourceCenter(sourceCenter) == sourceCenter)
     }
 
-    @Test func floatingIconKeepsTheCapturedSourceCenterAcrossDockSidesAndFolderChrome() {
+    @Test func floatingRowKeepsTheCapturedSourceCenterAcrossDockSides() {
         let translation = CGSize(width: 17, height: -13)
 
         for preset in PickyHUDDockSizePreset.allCases {
             let metrics = PickyHUDDockMetrics(preset: preset)
             for fontScale: CGFloat in [1, 1.3] {
                 for dockSide in PickyHUDDockSide.allCases {
-                    let railCrossSize = dockSide.orientation == .horizontal
-                        ? PickyHUDDockRailLayoutPolicy.horizontalCrossSize(
-                            groupCount: 1,
-                            metrics: metrics,
-                            fontScale: fontScale
-                        )
-                        : PickyHUDDockRailLayoutPolicy.verticalCrossSize(
-                            groupCount: 1,
-                            metrics: metrics,
-                            fontScale: fontScale
-                        )
+                    let railCrossSize = PickyHUDDockRailLayoutPolicy.crossSize(
+                        dockSide: dockSide,
+                        metrics: metrics,
+                        fontScale: fontScale
+                    )
                     let sourceCenter: CGPoint
                     if dockSide.orientation == .horizontal {
                         sourceCenter = CGPoint(x: 120, y: railCrossSize / 2)
-                        #expect(railCrossSize >= metrics.sessionTileHeight + metrics.horizontalPadding * 2)
+                        #expect(railCrossSize >= metrics.chipHeight(fontScale: fontScale) + metrics.horizontalPadding * 2)
                     } else {
                         sourceCenter = CGPoint(x: railCrossSize / 2, y: 120)
                     }
@@ -603,6 +489,8 @@ struct PickyHUDDockRailPolicyTests {
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .right) == -30)
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .top) == 45)
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .bottom) == -45)
-        #expect(PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics) == metrics.railWidth * 0.5 + 40)
+        #expect(PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics, orientation: .vertical) == metrics.railWidth * 0.5 + 40)
+        #expect(PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics, orientation: .horizontal, fontScale: 1)
+            == metrics.horizontalThickness(fontScale: 1) * 0.5 + 40)
     }
 }

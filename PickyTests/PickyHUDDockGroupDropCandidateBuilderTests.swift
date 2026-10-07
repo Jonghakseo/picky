@@ -8,7 +8,7 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockGroupDropCandidateBuilderTests {
-    @Test func railProjectionBuildsEmptyAndFilledFolderCandidatesSeparately() {
+    @Test func railProjectionBuildsEmptyAndFilledHeaderCandidatesSeparately() {
         let layout = PickyDockLayout(entries: [
             .session(id: "loose"),
             .group(PickyDockGroup(id: "empty")),
@@ -16,8 +16,8 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
         ])
         let slots = PickyDockProjector.project(layout: layout, visibleSessionIDs: ["loose", "member"]).slots
         let frames: [String: CGRect] = [
-            "empty": CGRect(x: 10, y: 70, width: 54, height: 54),
-            "filled": CGRect(x: 10, y: 170, width: 54, height: 54),
+            "empty": CGRect(x: 10, y: 70, width: 196, height: 24),
+            "filled": CGRect(x: 10, y: 170, width: 196, height: 24),
         ]
         let metrics = PickyHUDDockMetrics(preset: .large)
 
@@ -26,7 +26,7 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
             layout: layout,
             activeSessionIDs: ["loose", "member"],
             groupDropFrames: frames,
-            topEntryCenters: ["group:empty": 900],
+            topEntryExtents: ["group:empty": .init(lower: 900, upper: 924)],
             orientation: .vertical,
             metrics: metrics,
             fontScale: 1
@@ -36,21 +36,21 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
             layout: layout,
             activeSessionIDs: ["loose", "member"],
             groupDropFrames: frames,
-            topEntryCenters: ["group:filled": 900],
+            topEntryExtents: ["group:filled": .init(lower: 900, upper: 924)],
             orientation: .vertical,
             metrics: metrics,
             fontScale: 1
         )
 
         #expect(empty.map { $0.groupID } == ["empty"])
-        #expect(empty.first?.center == 97)
-        #expect(empty.first?.halfExtent == 27)
+        #expect(empty.first?.center == 82)
+        #expect(empty.first?.halfExtent == 12)
         #expect(filled.map { $0.groupID } == ["filled"])
-        #expect(filled.first?.center == 197)
-        #expect(filled.first?.halfExtent == 27)
+        #expect(filled.first?.center == 182)
+        #expect(filled.first?.halfExtent == 12)
     }
 
-    @Test func missingOrEmptyMeasuredFrameFallsBackToTheSquareFolderRange() {
+    @Test func missingOrEmptyMeasuredFrameFallsBackToTheHeaderAtTheGroupsLeadingEdge() {
         let layout = PickyDockLayout(entries: [
             .session(id: "loose"),
             .group(PickyDockGroup(id: "filled", memberSessionIDs: ["member"])),
@@ -60,19 +60,20 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
             visibleSessionIDs: ["loose", "member"]
         ).slots
         let metrics = PickyHUDDockMetrics(preset: .large)
-        let topEntryCenter: CGFloat = 100
+        let groupLeadingEdge: CGFloat = 100
+        let headerHalf = metrics.groupHeaderHeight(fontScale: 1) * 0.5
 
         let candidates = PickyHUDDockGroupDropCandidateBuilder.nonEmptyCandidates(
             slots: slots,
             layout: layout,
             activeSessionIDs: ["loose", "member"],
             groupDropFrames: ["filled": .zero],
-            topEntryCenters: ["group:filled": topEntryCenter],
+            topEntryExtents: ["group:filled": .init(lower: groupLeadingEdge, upper: groupLeadingEdge + 200)],
             orientation: .vertical,
             metrics: metrics,
             fontScale: 1
         )
-        let expectedCenter = topEntryCenter
+        let expectedCenter = groupLeadingEdge + headerHalf
         let destination = PickyDockDropResolver.resolveDropContainer(
             draggedSessionID: "loose",
             cursorAxis: expectedCenter,
@@ -80,12 +81,12 @@ struct PickyHUDDockGroupDropCandidateBuilderTests {
             emptyGroupCandidates: [],
             nonEmptyGroupCandidates: candidates,
             layout: layout,
-            slotPitch: metrics.sessionTileHeight + metrics.sessionSpacing
+            slotPitch: PickyHUDDockDragGeometry.slotPitch(orientation: .vertical, metrics: metrics, fontScale: 1)
         )
 
         #expect(candidates.map(\.groupID) == ["filled"])
         #expect(candidates.first?.center == expectedCenter)
-        #expect(candidates.first?.halfExtent == metrics.sessionTileHeight * 0.5)
+        #expect(candidates.first?.halfExtent == headerHalf)
         #expect(destination == .group(id: "filled", memberIndex: 0))
     }
 }

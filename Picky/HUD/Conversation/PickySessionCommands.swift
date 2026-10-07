@@ -108,6 +108,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func createDockGroup(name: String, withMemberIDs memberSessionIDs: [String]) -> String
     func renameDockGroup(id: String, to name: String)
     func setDockGroupColor(id: String, color: PickyDockGroupColor)
+    func setDockGroupCollapsed(id: String, collapsed: Bool)
     func removeDockGroup(id: String, keepMembers: Bool)
     func moveSessionInDock(sessionID: String, to destination: PickyDockContainer)
     func moveDockGroup(id: String, toTopLevelIndex target: Int)

@@ -138,7 +138,7 @@ export function RoomListScreen({
 type RowProps = { now: Date; locale: "ko" | "en"; times: RoomTimeLabels };
 
 /**
- * One thin header for both states: chevron, group dot, name, member count, and
+ * One thin header for both states: chevron, group color swatch, name, member count, and
  * the unread dot when any member is unread. Collapsing only hides the rows.
  */
 function GroupSection({
@@ -171,7 +171,7 @@ function GroupSection({
         <span class="group-chevron" style={collapsed ? undefined : "transform:rotate(90deg)"}>
           <ChevronRightIcon size={12} />
         </span>
-        <span class="group-dot" aria-hidden="true" />
+        <span class="group-swatch" aria-hidden="true" />
         <span class="group-name">{group.name}</span>
         <span class="group-count">{rooms.length}</span>
         {unread && <span class="group-unread" aria-hidden="true" />}

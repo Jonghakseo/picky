@@ -55,7 +55,7 @@ struct PickyDockGroupCreatorView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Circle()
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(suggestedColor.accent)
                 .frame(width: 10, height: 10)
             Text(L10n.t("dock.group.create.title"))

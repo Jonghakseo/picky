@@ -69,12 +69,13 @@ enum PickyHUDDockGroupHeaderLayout {
     /// Width of a horizontal group-header chip. The name is measured with the
     /// rendered font and capped, so long names truncate instead of widening
     /// the rail.
-    /// Leading padding, dot button, gaps, the fixed summary slot, chevron,
+    /// Leading padding, swatch button, gaps, the fixed summary slot, chevron,
     /// and trailing padding of a horizontal header chip.
     static let horizontalLeadingPadding: CGFloat = 5
     static let horizontalTrailingPadding: CGFloat = 7
     static let horizontalSpacing: CGFloat = 4
-    static let dotHitPadding: CGFloat = 4
+    /// Keeps the swatch button's slot at 13pt (S) / 14pt (M, L).
+    static let swatchHitPadding: CGFloat = 2.5
     static let chevronWidth: CGFloat = 8
 
     /// Fixed slot for the collapsed unread dot or the hover `+`, so status
@@ -104,8 +105,8 @@ enum PickyHUDDockGroupHeaderLayout {
         let countFont = PickyHUDTypography.supportingNSFont(fontScale: fontScale)
         let nameWidth = horizontalNameWidth(name: name, metrics: metrics, fontScale: fontScale)
         let countWidth = ceil(("\(count)" as NSString).size(withAttributes: [.font: countFont]).width)
-        let dot = metrics.groupHeaderDotSide + dotHitPadding * 2
-        let width = horizontalLeadingPadding + dot
+        let swatch = metrics.groupHeaderSwatchSide + swatchHitPadding * 2
+        let width = horizontalLeadingPadding + swatch
             + horizontalSpacing + nameWidth
             + horizontalSpacing + countWidth
             + horizontalSpacing + horizontalSummarySlotWidth(metrics: metrics)
@@ -432,7 +433,7 @@ struct PickyHUDDockSessionRow: View {
 // MARK: - Group header
 
 /// Header of a group section. Clicking toggles the inline member list; the
-/// color dot opens the color menu and `+` creates a Pickle in this group.
+/// color swatch opens the color menu and `+` creates a Pickle in this group.
 /// A collapsed header keeps attention glyphs and an unread dot visible.
 struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
     let group: PickyDockGroup
@@ -471,17 +472,17 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
             : metrics.rowHorizontalPadding
     }
 
-    /// The color dot at the leading edge and, while hovered, the `+` that sits
+    /// The color swatch at the leading edge and, while hovered, the `+` that sits
     /// just inside the chevron. The chevron itself stays on the host so it
     /// keeps toggling the group, and so does the band above and below both
     /// buttons.
     private var clickHostHoles: PickyHUDDockClickHostHoles {
-        let dotSide = metrics.groupHeaderDotSide + PickyHUDDockGroupHeaderLayout.dotHitPadding * 2
+        let swatchSlot = metrics.groupHeaderSwatchSide + PickyHUDDockGroupHeaderLayout.swatchHitPadding * 2
         let actionWidth = orientation == .horizontal
             ? PickyHUDDockGroupHeaderLayout.horizontalSummarySlotWidth(metrics: metrics)
             : metrics.rowActionSide
         return PickyHUDDockClickHostHoles(
-            leading: .init(inset: leadingPadding, width: dotSide, height: dotSide),
+            leading: .init(inset: leadingPadding, width: swatchSlot, height: swatchSlot),
             trailing: showsActions
                 ? .init(
                     inset: trailingPadding + PickyHUDDockGroupHeaderLayout.chevronWidth + contentSpacing,
@@ -568,17 +569,20 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
     }
 
     /// A plain button that opens a native color menu. SwiftUI `Menu` labels
-    /// on macOS do not draw arbitrary shapes, so the dot would disappear.
+    /// on macOS do not draw arbitrary shapes, so the swatch would disappear.
     private var colorMenu: some View {
         Button {
             PickyHUDDockGroupColorMenu.present(current: group.color, onSelect: onSetColor)
         } label: {
-            Circle()
+            RoundedRectangle(cornerRadius: metrics.groupHeaderSwatchCornerRadius, style: .continuous)
                 .fill(group.color.accent)
-                .frame(width: metrics.groupHeaderDotSide, height: metrics.groupHeaderDotSide)
-                .padding(PickyHUDDockGroupHeaderLayout.dotHitPadding)
-                .background(Circle().fill(showsActions ? DS.Colors.surface3 : Color.clear))
-                .contentShape(Circle())
+                .frame(width: metrics.groupHeaderSwatchSide, height: metrics.groupHeaderSwatchSide)
+                .padding(PickyHUDDockGroupHeaderLayout.swatchHitPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.compact - 2, style: .continuous)
+                        .fill(showsActions ? DS.Colors.surface3 : Color.clear)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable(false)
@@ -637,7 +641,7 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
     }
 }
 
-/// Native color menu opened from a group header's color dot.
+/// Native color menu opened from a group header's color swatch.
 @MainActor
 enum PickyHUDDockGroupColorMenu {
     private final class Target: NSObject {

@@ -235,7 +235,10 @@ struct PickyHUDDockMetrics: Equatable {
         (26 * max(1, fontScale)).rounded(.up)
     }
 
-    var groupHeaderDotSide: CGFloat { preset == .small ? 5 : 6 }
+    /// Group color swatch. A rounded square, so it never reads as the round
+    /// unread or attention dots that share the header and rows.
+    var groupHeaderSwatchSide: CGFloat { preset == .small ? 8 : 9 }
+    var groupHeaderSwatchCornerRadius: CGFloat { 2.5 }
     /// Expanded members sit slightly inside their header.
     var groupMemberIndent: CGFloat { preset == .small ? 4 : 6 }
     /// Extra gap above a header that follows another entry.

@@ -48,7 +48,7 @@ Hub behavior:
 The sidebar contains these eight destinations:
 
 - **Dashboard**: an update card when a new Picky version is ready, setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
-- **Statistics**: four local tabs. **Rhythm** (the first tab) shows your daily streak and activity calendar, then hour-of-day patterns, work types, and per-Pickle records filtered by period (**Last 7 days** ends today) and project. **Badges** are earned from your whole history. **Pickle Hall of Fame** totals changed files, results, tool runs, and subagents, and lists the all-time leading Pickles, which you can open in the HUD. **AI usage** shows plan limits and the last 30 days of token usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
+- **Statistics**: four local tabs. **Rhythm** (the first tab) shows your daily streak and activity calendar, then hour-of-day patterns, work types, and per-Pickle records filtered by period (**Last 7 days** ends today) and project. **Badges** has 24 badges earned from your whole history, with progress toward challenge milestones. Earned badges stay unlocked even if older history is no longer available. **Pickle Hall of Fame** totals changed files, results, tool runs, and subagents, and lists the all-time leading Pickles, which you can open in the HUD. **AI usage** shows plan limits and the last 30 days of token usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
 
 ### 2.2 Plan limits
 
@@ -259,7 +259,7 @@ Turn **Screen pointing & drawing** off under **Hub → Settings → Accounts and
 
 Pickles are independent Pi sessions shown in the Picky HUD dock. They are useful for long-running work that should continue in the background.
 
-The dock can be vertical or horizontal and can attach to the screen edge. Its handle sits at the top in vertical mode (left in horizontal mode); the compact action controls and collapse notch sit at the opposite end. When no conversation card is open, the transparent space reserved beside the dock passes clicks to the app underneath.
+The dock can be vertical or horizontal and can attach to the screen edge. The vertical dock rests as a narrow icon column and widens to show names and controls when you hover. The horizontal dock keeps square icon cells and reveals one shared title-and-actions row on hover instead of widening every cell. Its handle sits at the top in vertical mode (left in horizontal mode); the compact action controls and collapse notch sit at the opposite end. When no conversation card is open, the transparent space reserved beside the dock passes clicks to the app underneath.
 
 ### 7.1 Dock states
 
@@ -281,7 +281,7 @@ The dock row's glyph color, trailing dot, and completion flash reflect these sta
 
 | Interaction | Result |
 | --- | --- |
-| Hover a Pickle | Shows an archive button at the end of the row. |
+| Hover a Pickle | Reveals its name and archive button. In horizontal mode, the shared preview row shows its title, status, and archive button. |
 | Click a Pickle | Opens or closes its conversation card. |
 | Press and hold a Pickle | Archives it after a ~1.2s hold timer; the row fills from the left while you hold, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or **Hub → Settings → Pickles and workspace → Archived sessions**. |
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
@@ -298,11 +298,11 @@ Dock sizes:
 
 | Size | Vertical dock | Horizontal dock |
 | --- | --- | --- |
-| S | 112pt wide, one-line rows | 39pt thick, 88pt one-line chips |
-| M (default) | 168pt wide, one-line rows | 39pt thick, 118pt one-line chips |
-| L | 200pt wide, two-line rows with status and time | 50pt thick, 150pt two-line chips |
+| S | Expands to 112pt wide, one-line rows | 36pt square cells |
+| M (default) | Expands to 168pt wide, one-line rows | 36pt square cells |
+| L | Expands to 200pt wide, two-line rows with status and time | 47pt square cells |
 
-Every size uses the same title text size; smaller sizes only show less of each title.
+At the default font scale, the vertical dock rests at 36pt wide and the horizontal title preview adds 30pt when revealed. S uses slightly smaller title text; larger sizes leave more room for names.
 
 When the rows do not fit, only the list scrolls; the handle and bottom buttons stay put, and the edge that hides rows fades out. A horizontal dock stops growing at 720pt (or the screen width, whichever is smaller) and scrolls sideways beyond that.
 
@@ -320,7 +320,7 @@ When you start a Pickle this way, Picky creates an empty Pickle for that folder 
 
 ### 7.4 Pickle groups
 
-Group related Pickles under a header in the dock. Each header shows the group's color dot, name, and active Pickle count. Click the header to collapse or expand the group; its members appear right below it (to its right in horizontal mode). Each display remembers its own expanded or collapsed state. Group names, colors, membership, and ordering remain shared across displays. A collapsed header shows a single blue dot when any member is unread or still needs you (waiting for input, blocked, or failed), even after you read it. Running members do not mark the header; expand the group to see each Pickle's status.
+Group related Pickles under a header in the dock. A group uses a colored folder icon (filled when collapsed, outlined when expanded). Its name, active Pickle count, and rounded-square color control appear in the expanded vertical dock or the horizontal preview. Click the header to collapse or expand the group; its members appear right below it (to its right in horizontal mode). Each display remembers its own expanded or collapsed state. Group names, colors, membership, and ordering remain shared across displays. A collapsed header shows a single blue dot when any member is unread or still needs you (waiting for input, blocked, or failed), even after you read it. Running members do not mark the header; expand the group to see each Pickle's status.
 
 Create a group:
 

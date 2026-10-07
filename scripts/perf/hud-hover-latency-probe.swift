@@ -53,12 +53,20 @@ func collectRows(_ element: AXUIElement, depth: Int) {
     }
     for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] { collectRows(child, depth: depth + 1) }
 }
-guard let window = (attribute(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement])?.first else {
-    print("no Accessibility window for pid \(pid)"); exit(2)
+// Picky has one HUD panel per display; use the one with the most visible rows.
+let windows = (attribute(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]) ?? []
+var rows: [(String, CGRect)] = []
+for window in windows {
+    rowFrames = []
+    collectRows(window, depth: 0)
+    let visibleWindow = frame(of: window).insetBy(dx: 0, dy: 40)
+    let onScreen = NSScreen.screens.map { screen -> CGRect in
+        let f = screen.frame
+        return CGRect(x: f.minX, y: NSScreen.screens[0].frame.height - f.maxY, width: f.width, height: f.height)
+    }
+    let visible = rowFrames.filter { row in visibleWindow.contains(row.1) && onScreen.contains { $0.contains(row.1) } }
+    if visible.count > rows.count { rows = Array(visible.prefix(maxRows)) }
 }
-collectRows(window, depth: 0)
-let visibleWindow = frame(of: window).insetBy(dx: 0, dy: 40)
-let rows = Array(rowFrames.filter { visibleWindow.contains($0.1) }.prefix(maxRows))
 guard rows.count >= 2 else { print("found \(rows.count) visible dock rows; open the dock and retry"); exit(2) }
 print("rows:", rows.map { "\($0.0)@\(Int($0.1.minY))" }.joined(separator: ", "))
 

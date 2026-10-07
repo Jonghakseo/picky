@@ -522,8 +522,13 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
                     trailingSummary
                 }
             } else {
-                trailingSummary
-                    .frame(width: PickyHUDDockGroupHeaderLayout.horizontalSummarySlotWidth(metrics: metrics))
+                // Keep a real view in the slot: a frame on an empty view
+                // collapses, so the `+` would widen the chip on hover.
+                ZStack { trailingSummary }
+                    .frame(
+                        width: PickyHUDDockGroupHeaderLayout.horizontalSummarySlotWidth(metrics: metrics),
+                        height: metrics.rowActionSide
+                    )
             }
             chevron
         }

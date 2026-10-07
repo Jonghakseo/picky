@@ -320,7 +320,7 @@ When you start a Pickle this way, Picky creates an empty Pickle for that folder 
 
 ### 7.4 Pickle groups
 
-Group related Pickles under a header in the dock. Each header shows the group's color dot, name, and active Pickle count. Click the header to collapse or expand the group; its members appear right below it (to its right in horizontal mode). The expanded or collapsed state is saved with the dock layout. A collapsed header keeps the glyphs of members that are running or need you, plus a blue dot when any member is unread.
+Group related Pickles under a header in the dock. Each header shows the group's color dot, name, and active Pickle count. Click the header to collapse or expand the group; its members appear right below it (to its right in horizontal mode). The expanded or collapsed state is saved with the dock layout. A collapsed header shows a single blue dot when any member is unread or still needs you (waiting for input, blocked, or failed), even after you read it. Running members do not mark the header; expand the group to see each Pickle's status.
 
 Create a group:
 

@@ -257,6 +257,67 @@ described above.
 *outside* the interaction first. Fan-out from a shared notification source
 does not show up as a slow function of its own.
 
+## Case study: 2026-10 dock hover lag while Picky is inactive
+
+**Symptom:** moving the pointer from one dock row to the next highlighted the
+new row late, sometimes only after the pointer moved again.
+
+**It was not a frame problem.** With Time Profiler and `os_signpost` attached
+to the running Debug app, a row change re-evaluated one or two
+`dock_row_body` bodies in under 1 ms, and the main thread was 15-30% busy
+during the slow windows. The delay happened before SwiftUI saw the hover.
+
+**Evidence (28 row changes each, keyboard idle):**
+
+| Condition | Pixels changed within 600 ms | `dock_row_body` after entry |
+|---|---:|---|
+| Picky frontmost | 28/28, p50 47 ms, max 62 ms | all within 6 ms |
+| Another app frontmost | 14/28 | 12 arrived 300+ ms late, mostly at the next pointer move; 1 never |
+
+A standalone panel with the same window configuration isolated the cause.
+With the process inactive, only a global `NSEvent` monitor whose mask includes
+`.mouseMoved` broke `NSTrackingArea` enter delivery (3/28 on time with an empty
+handler). Plain AppKit rows, SwiftUI rows, explicit `ignoresMouseEvents`
+assignment, local monitors, drag-only global monitors, the ink capture's
+active tap, and a listen-only `CGEventTap` all delivered 28/28 on time. The
+same global monitor in an active app also delivered 28/28.
+
+**Root cause:** `PickyHUDPanel` toggles `ignoresMouseEvents` so the transparent
+reserve beside the dock passes clicks through. It observed pointer movement
+with a global `.mouseMoved` monitor. `91ba8235b` added that monitor for the
+minimized dock only; `f01e14a2e` extended click-through to the expanded dock
+and kept the monitor installed whenever the panel is visible. The global
+monitor also missed movement from the visible chrome into the transparent
+reserve while Picky was inactive, because those events went to Picky's own
+window; the local monitor saw nothing either since the panel does not accept
+mouse-moved events.
+
+**Fix:** `PickyHUDPointerMovementTap` observes the same movement through a
+mouse-only listen-only session tap. In an app bundle without Accessibility or
+Input Monitoring grants it created without a prompt and still received pointer
+events. `checkGlobalPointerMonitorBoundary` in
+`scripts/check-architecture-rules.js` rejects global monitors whose mask
+includes mouse-moved events (`--self-test=global-pointer-monitor`).
+
+**Tools:**
+
+- `scripts/perf/hud-hover-latency-probe.swift` measures the running app from
+  outside: it reads dock row frames through Accessibility, glides the cursor,
+  samples row pixels, and writes per-trial `mach_absolute_time` values that
+  align with an xctrace `time-info` `mabs-epoch`.
+- `scripts/perf/pointer-hover-repro.swift` compares tracking-area delivery for
+  `baseline`, `global-mouse-moved`, and `listen-tap` in an inactive or active
+  accessory app.
+
+Record with `xcrun xctrace record --template 'Time Profiler' --instrument
+os_signpost --all-processes` when the probe's signposts must share the trace.
+System Trace in all-processes mode dropped most signposts in this round.
+
+**Lesson:** pointer-routing changes can pass every unit test that calls
+`updateDockPointer` directly and still break real WindowServer delivery. Check
+hover and click delivery with Picky inactive as well as frontmost, and compare
+the two states before blaming rendering.
+
 ## When the cleanup decision is "keep" vs "remove"
 
 - **Keep** signposts on functions whose perf you want to track over time

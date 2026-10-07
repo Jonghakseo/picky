@@ -36,13 +36,18 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     var ownsEntireFrameForPointer = false {
         didSet { updateDockPointer(NSEvent.mouseLocation) }
     }
-    private var dockPointerMonitors: [Any] = []
+    /// Global movement comes from a listen-only tap, never a global
+    /// `NSEvent` mouse-moved monitor; see `PickyHUDPointerMovementTap`.
+    private lazy var dockPointerTap = PickyHUDPointerMovementTap { [weak self] in
+        self?.updateDockPointer(NSEvent.mouseLocation)
+    }
+    private var dockPointerLocalMonitor: Any?
     private var acceptsMouseMovedEventsBeforeMinimizing = false
     private var hasMinimizedPointerCapture = false
     private var hasExpandedPointerCapture = false
 
     deinit {
-        for monitor in dockPointerMonitors { NSEvent.removeMonitor(monitor) }
+        if let dockPointerLocalMonitor { NSEvent.removeMonitor(dockPointerLocalMonitor) }
     }
 
     func minimizeDockInput() {
@@ -78,19 +83,25 @@ final class PickyHUDPanel: PickySecureSurfacePanel {
     }
 
     private func synchronizeDockPointerMonitoring() {
-        for monitor in dockPointerMonitors { NSEvent.removeMonitor(monitor) }
-        dockPointerMonitors = []
         updateDockPointer(NSEvent.mouseLocation)
+        guard isVisible else {
+            stopDockPointerMonitoring()
+            return
+        }
         guard PickyRuntimeEnvironment.allowsUserEnvironmentEffects else { return }
-        guard isVisible else { return }
+        dockPointerTap.start()
+        guard dockPointerLocalMonitor == nil else { return }
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
-            self?.updateDockPointer(NSEvent.mouseLocation)
-        }) { dockPointerMonitors.append(global) }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+        dockPointerLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
             self?.updateDockPointer(NSEvent.mouseLocation)
             return event
-        }) { dockPointerMonitors.append(local) }
+        })
+    }
+
+    private func stopDockPointerMonitoring() {
+        dockPointerTap.stop()
+        if let dockPointerLocalMonitor { NSEvent.removeMonitor(dockPointerLocalMonitor) }
+        dockPointerLocalMonitor = nil
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {

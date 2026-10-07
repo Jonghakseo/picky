@@ -1335,7 +1335,80 @@ function checkRepeatForeverBoundary() {
   }
 }
 
+// While Picky is not the active app, a global NSEvent monitor that includes
+// mouse-moved events delays or drops NSTrackingArea enter events for every
+// Picky window until the pointer moves again. Dock rows lost or lagged their
+// hover on about half of row changes (docs/perf-profiling.md). Observe global
+// pointer movement with PickyHUDPointerMovementTap (a listen-only CGEventTap).
+function globalMonitorMasks(source) {
+  const stripped = stripSwiftCommentsAndStrings(source);
+  const masks = [];
+  const call = /\baddGlobalMonitorForEvents\s*\(\s*matching\s*:\s*/g;
+  let match;
+  while ((match = call.exec(stripped)) !== null) {
+    let depth = 0;
+    let end = match.index + match[0].length;
+    for (; end < stripped.length; end += 1) {
+      const character = stripped[end];
+      if (character === "(" || character === "[") depth += 1;
+      else if (character === ")" || character === "]") {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (character === "," && depth === 0) break;
+    }
+    masks.push(stripped.slice(match.index + match[0].length, end).trim());
+  }
+  return { stripped, masks };
+}
+
+function includesMouseMovedMask(expression, stripped, seen = new Set()) {
+  if (/\bmouseMoved\b|^\.any\b|\bEventTypeMask\.any\b/.test(expression)) return true;
+  const identifier = expression.match(/^[A-Za-z_][A-Za-z0-9_]*$/)?.[0];
+  if (!identifier || seen.has(identifier)) return false;
+  seen.add(identifier);
+  const declaration = stripped.match(
+    new RegExp(String.raw`\b(?:let|var)\s+${identifier}\b[^=\n]*=\s*([^\n]+)`),
+  );
+  return declaration ? includesMouseMovedMask(declaration[1].trim(), stripped, seen) : false;
+}
+
+function hasGlobalMouseMovedMonitor(source) {
+  const { stripped, masks } = globalMonitorMasks(source);
+  return masks.some((mask) => includesMouseMovedMask(mask, stripped));
+}
+
+function checkGlobalPointerMonitorBoundary() {
+  for (const file of walk("Picky", (candidate) => candidate.endsWith(".swift"))) {
+    if (hasGlobalMouseMovedMonitor(fs.readFileSync(file, "utf8"))) {
+      addError(
+        `${rel(file)}: a global NSEvent monitor for mouse-moved events breaks NSTrackingArea hover while Picky is inactive; ` +
+          "observe pointer movement with PickyHUDPointerMovementTap (listen-only CGEventTap).",
+      );
+    }
+  }
+  const blocked = [
+    "NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { _ in }",
+    "NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged, .mouseMoved], handler: h)",
+    "let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]\nNSEvent.addGlobalMonitorForEvents(matching: mask, handler: { _ in })",
+    "NSEvent.addGlobalMonitorForEvents(matching: .any) { _ in }",
+  ];
+  const allowed = [
+    "NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in }",
+    "let mask: NSEvent.EventTypeMask = [.mouseMoved]\nNSEvent.addLocalMonitorForEvents(matching: mask) { $0 }",
+    "// NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved)",
+    "NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { _ in }",
+  ];
+  if (blocked.some((sample) => !hasGlobalMouseMovedMonitor(sample)) || allowed.some(hasGlobalMouseMovedMonitor)) {
+    addError("Global pointer monitor boundary self-test failed.");
+  }
+}
+
 function main() {
+  if (process.argv.includes("--self-test=global-pointer-monitor")) {
+    checkGlobalPointerMonitorBoundary();
+    finish();
+    return;
+  }
   if (process.argv.includes("--self-test=repeat-forever")) {
     checkRepeatForeverBoundary();
     finish();
@@ -1390,6 +1463,7 @@ function main() {
     checkInstantPopoverBoundary();
     checkAppStorageBoundary();
     checkRepeatForeverBoundary();
+    checkGlobalPointerMonitorBoundary();
     checkFileSizeRatchet();
   }
 

@@ -2,12 +2,13 @@ import AppKit
 import SwiftUI
 
 /// Shared production shell, also used by the offscreen dock gallery.
-struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
+struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @preconcurrency Animatable {
     let dockSide: PickyHUDDockSide
     let metrics: PickyHUDDockMetrics
     let railLength: CGFloat
     let crossSize: CGFloat
     let onMinimize: () -> Void
+    var compactWidth: CGFloat? = nil
     @ViewBuilder var content: () -> Content
     @ViewBuilder var utilities: () -> Utilities
     @ViewBuilder var handle: () -> Handle
@@ -15,11 +16,56 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
 
     private var horizontal: Bool { dockSide.orientation == .horizontal }
 
-    var body: some View {
+    var animatableData: CGFloat {
+        get { compactWidth ?? crossSize }
+        set { if compactWidth != nil { compactWidth = newValue } }
+    }
+
+    @ViewBuilder var body: some View {
+        if let compactWidth, !horizontal {
+            compactChrome(width: compactWidth)
+        } else {
+            classicChrome
+        }
+    }
+
+    private func compactChrome(width: CGFloat) -> some View {
+        let alignment: Alignment = dockSide == .left ? .leading : .trailing
+        let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
+        return VStack(spacing: metrics.chromeSpacing) {
+            content()
+            Rectangle().fill(DS.Colors.borderSubtle)
+                .frame(height: metrics.chromeSeparatorThickness)
+                .padding(.horizontal, DS.Spacing.space2)
+            utilities()
+        }
+        .padding(.top, metrics.handleInset)
+        .padding(.bottom, metrics.collapseInset)
+        .frame(width: crossSize, height: railLength)
+        // The content never reflows during expansion. Only the shell grows,
+        // with the icon column anchored to the display-facing edge.
+        .frame(width: width, alignment: alignment)
+        .clipped()
+        .contentShape(Rectangle())
+        .background(surface)
+        .overlay(alignment: dockSide == .left ? .topLeading : .topTrailing) {
+            handle().frame(width: PickyHUDDockCompactLayout.iconColumnWidth)
+        }
+        .overlay(alignment: dockSide == .left ? .bottomLeading : .bottomTrailing) {
+            PickyHUDDockCollapseNotch(dockSide: dockSide, metrics: metrics, onMinimize: onMinimize)
+                .frame(width: PickyHUDDockCompactLayout.iconColumnWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: dockSide == .left ? .bottomLeading : .bottomTrailing)
+                .clipShape(shape)
+        }
+        .background(PickyHUDVisibleChromeFrameReporter())
+    }
+
+    private var classicChrome: some View {
         let layout = horizontal
             ? AnyLayout(HStackLayout(spacing: metrics.chromeSpacing))
             : AnyLayout(VStackLayout(spacing: metrics.chromeSpacing))
-        layout {
+        return layout {
             content()
             Rectangle().fill(DS.Colors.borderSubtle)
                 .frame(width: horizontal ? metrics.chromeSeparatorThickness : metrics.collapseNotchWidth,
@@ -252,4 +298,37 @@ struct PickyHUDDockNativeMaterial: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+/// The utility label shares the session rows' fixed icon lane. Clipping the
+/// shell hides names without moving either the icon or its popover anchor.
+struct PickyHUDDockCompactUtilityLabel: View {
+    let title: String
+    let symbol: String
+    let metrics: PickyHUDDockMetrics
+    var height: CGFloat = 24
+    @Environment(\.pickyDockCompactLayout) private var layout
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if layout?.iconOnLeadingEdge == true { icon }
+            Text(title)
+                .font(PickyHUDTypography.supporting)
+                .foregroundStyle(DS.Colors.textSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, DS.Spacing.space2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .opacity(layout?.isExpanded == true ? 1 : 0)
+                .accessibilityHidden(true)
+            if layout?.iconOnLeadingEdge != true { icon }
+        }
+        .frame(width: metrics.listWidth, height: height)
+        .contentShape(Rectangle())
+    }
+
+    private var icon: some View {
+        Image(systemName: symbol)
+            .font(.system(size: metrics.plusFontSize, weight: .medium)) // design-token-exception: dock utility glyph.
+            .frame(width: PickyHUDDockCompactLayout.iconColumnWidth, height: height)
+    }
 }

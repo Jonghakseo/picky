@@ -41,7 +41,13 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
                     }
             } else {
                 expandedRail()
-                    .background(PickyHUDVisibleChromeFrameReporter())
+                    .background {
+                        // Vertical rails report their animated visible shell,
+                        // never the reserved (transparent) expanded footprint.
+                        if dockSide.orientation == .horizontal {
+                            PickyHUDVisibleChromeFrameReporter()
+                        }
+                    }
             }
             }
             .zIndex(10)

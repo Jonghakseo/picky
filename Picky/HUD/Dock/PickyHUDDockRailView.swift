@@ -60,6 +60,9 @@ struct PickyHUDDockRailView: View {
     var onChangeDockSizePreset: (PickyHUDDockSizePreset) -> Void = { _ in }
     var archiveAccess: PickyHUDArchivedSessionAccess? = nil
     var onMinimize: () -> Void = {}
+    @StateObject var expansion = PickyHUDDockExpansionController()
+    @State private var isArchivePresented = false
+    @State private var isMenuTracking = false
 
     @State var isAddSlotExpanded = false
     @State var isRecentPickleFolderPickerPresented = false
@@ -184,26 +187,50 @@ struct PickyHUDDockRailView: View {
         let _ = PickyPerf.event("dock_rail_body")
         PickyHUDDockChrome(
             dockSide: dockSide, metrics: metrics, railLength: overflowLayout.railLength,
-            crossSize: railCrossSize, onMinimize: onMinimize
+            crossSize: railCrossSize, onMinimize: onMinimize,
+            compactWidth: orientation == .vertical ? (expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth) : nil
         ) {
             listContent
         } utilities: {
-            // Both orientations lay the utilities side by side; a thin
-            // horizontal rail cannot stack two 24pt buttons.
-            HStack(spacing: metrics.utilitySpacing) {
+            let utilityLayout = orientation == .vertical
+                ? AnyLayout(VStackLayout(spacing: metrics.utilitySpacing))
+                : AnyLayout(HStackLayout(spacing: metrics.utilitySpacing))
+            utilityLayout {
                 if !projection.items.isEmpty { addAgentSlotButton }
                 if let archiveAccess {
                     PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
-                                                  commands: archiveAccess.commands)
+                                                  commands: archiveAccess.commands,
+                                                  compactMetrics: orientation == .vertical ? metrics : nil,
+                                                  onPresentationChanged: { isArchivePresented = $0 })
                 }
             }
         } handle: {
             dockAnchorHandle
         }
-        .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
+        .animation(accessibilityReduceMotion || holdsExpansion ? nil : .easeOut(duration: 0.18), value: expansion.isExpanded)
         .background(PickyHUDDockRailFrameReporter())
-        .overlay { draggedFloatingRowOverlay }
         .overlay(alignment: resizeTabAlignment) { resizeTab }
+        .onHover { hovering in
+            isDockHovered = hovering
+            updateResizeTabGrace(isDockHovered: hovering)
+            onDockHoverChanged(hovering)
+            updateExpansion()
+        }
+        // Reserve the final width once. Hover changes visible ink, not the
+        // panel size or the conversation-card position.
+        .frame(width: orientation == .vertical ? railCrossSize : nil,
+               alignment: dockSide == .left ? .leading : .trailing)
+        .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
+        .overlay { draggedFloatingRowOverlay }
+        .onChange(of: holdsExpansion) { _, _ in updateExpansion() }
+        .onChange(of: dockSide) { _, _ in updateExpansion() }
+        .onAppear { updateExpansion() }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            if isDockHovered { isMenuTracking = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+            isMenuTracking = false
+        }
         .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { centers in
             guard slotCenters != centers else { return }
             slotCenters = centers
@@ -219,11 +246,6 @@ struct PickyHUDDockRailView: View {
         .onChange(of: persistedStructure) { _, structure in
             cancelDragsForPersistedStructureChange(structure)
         }
-        .onHover { hovering in
-            isDockHovered = hovering
-            updateResizeTabGrace(isDockHovered: hovering)
-            onDockHoverChanged(hovering)
-        }
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
             updateDockAddSlotExpansion(pickerIsPresented: isPresented)
             if !isPresented { newPickleAnchorGroupID = nil }
@@ -237,10 +259,26 @@ struct PickyHUDDockRailView: View {
         .onDisappear {
             autoScrollTask?.cancel()
             autoScrollTask = nil
+            expansion.stop()
         }
+        .environment(\.pickyDockCompactLayout, orientation == .vertical
+            ? PickyHUDDockCompactLayout(isExpanded: expansion.isExpanded, iconOnLeadingEdge: dockSide == .left) : nil)
     }
 
     // MARK: - Layout
+
+    private var holdsExpansion: Bool {
+        // A key HUD window is not a dock interaction. Holding on window
+        // activation would keep the rail open after the pointer leaves it.
+        activeSessionID != nil || isCommandShortcutHintVisible
+            || isRecentPickleFolderPickerPresented || isArchivePresented || isMenuTracking
+            || isHandleDragging || draggingSessionID != nil || draggingGroupID != nil
+            || isResizeTabHovered || resizeDragStartPreset != nil
+    }
+
+    private func updateExpansion() {
+        expansion.update(pointerInside: isDockHovered, heldOpen: holdsExpansion)
+    }
 
     private var railCrossSize: CGFloat {
         PickyHUDDockRailLayoutPolicy.crossSize(dockSide: dockSide, metrics: metrics, fontScale: fontScale)
@@ -274,7 +312,7 @@ struct PickyHUDDockRailView: View {
     }
 
     private var listCrossLength: CGFloat {
-        railCrossSize - metrics.horizontalPadding * 2
+        orientation == .vertical ? railCrossSize : railCrossSize - metrics.horizontalPadding * 2
     }
 
     @ViewBuilder
@@ -432,7 +470,7 @@ struct PickyHUDDockRailView: View {
                     header
                     if !group.isCollapsed {
                         groupMembers(group, renderedMemberIDs: renderedMemberIDs)
-                            .padding(.leading, metrics.groupMemberIndent)
+                            .padding(dockSide == .left ? .trailing : .leading, metrics.groupMemberIndent)
                     }
                 }
                 .padding(.top, isFirst ? 0 : metrics.groupHeaderTopGap)
@@ -1076,7 +1114,8 @@ struct PickyHUDDockRailView: View {
         let isDragging = resizeDragStartPreset != nil
         // Hit testing and the chrome frame follow visibility: an invisible tab
         // must not block the window underneath or pull focus to the HUD.
-        let isVisible = isDockHovered || isResizeTabHovered || isResizeTabGraced || isDragging
+        let isVisible = (orientation == .horizontal || expansion.isExpanded)
+            && (isDockHovered || isResizeTabHovered || isResizeTabGraced || isDragging)
         PickyHUDDockResizeTab(
             dockSide: dockSide,
             metrics: metrics,
@@ -1139,7 +1178,7 @@ struct PickyHUDDockRailView: View {
         let isActive = isHandleHovered || isHandleDragging
         let notchWidth = orientation == .horizontal
             ? metrics.horizontalNotchLength(preferred: metrics.horizontalHandleNotchWidth, thickness: railCrossSize)
-            : metrics.handleNotchWidth
+            : PickyHUDDockCompactLayout.iconColumnWidth
         return PickyHUDDockAnchorHandleHost(
             onHoverChanged: { hovering in isHandleHovered = hovering },
             onDragChanged: { delta in
@@ -1157,7 +1196,14 @@ struct PickyHUDDockRailView: View {
             height: orientation == .horizontal ? notchWidth : metrics.handleInset
         )
         .overlay(alignment: orientation == .horizontal ? .leading : .top) {
-            PickyHUDDockHandleNotch(dockSide: dockSide, metrics: metrics, isActive: isActive, edgeLength: railCrossSize)
+            if orientation == .vertical {
+                Capsule().fill(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+                    .frame(width: 14, height: metrics.handleHeight)
+                    .padding(.top, DS.Spacing.space2) // design-token-exception: compact rail grip from the approved A proposal.
+                    .allowsHitTesting(false)
+            } else {
+                PickyHUDDockHandleNotch(dockSide: dockSide, metrics: metrics, isActive: isActive, edgeLength: railCrossSize)
+            }
         }
         .onDisappear {
             isHandleHovered = false

@@ -52,8 +52,10 @@ final class PickyHUDPlacement: ObservableObject {
         let halfHandle = metrics.handleInset / 2
         switch dockSide.orientation {
         case .vertical:
-            return CGPoint(x: railSize.width / 2 - halfButton,
-                           y: halfHandle - halfButton)
+            let iconCenter = dockSide == .left
+                ? PickyHUDDockCompactLayout.iconColumnWidth / 2
+                : railSize.width - PickyHUDDockCompactLayout.iconColumnWidth / 2
+            return CGPoint(x: iconCenter - halfButton, y: halfHandle - halfButton)
         case .horizontal:
             return CGPoint(x: halfHandle - halfButton,
                            y: railSize.height / 2 - halfButton)

@@ -107,16 +107,15 @@ enum PickyHUDDockRailLayoutPolicy {
             : PickyHUDDockLayout.verticalDockRailCrossSize(metrics: metrics)
     }
 
-    /// Handle, collapse notch, separator and the utility row. A horizontal
-    /// rail lays its two utilities side by side, so they take two buttons of
-    /// length instead of one. An empty dock moves its `+` into the list, so
-    /// only the archive utility is left beside it.
+    /// Handle, collapse notch, separator and utilities. Utilities follow the
+    /// rail axis: stacked in a compact vertical rail, side by side horizontally.
+    /// An empty dock moves its `+` into the list, leaving only archive here.
     static func fixedChromeLength(
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
         hasDockAddUtility: Bool
     ) -> CGFloat {
-        let utilities = dockSide.orientation == .horizontal && hasDockAddUtility
+        let utilities = hasDockAddUtility
             ? metrics.utilityButtonSide * 2 + metrics.utilitySpacing
             : metrics.utilityButtonSide
         return metrics.handleInset + metrics.collapseInset + utilities

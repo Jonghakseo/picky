@@ -27,6 +27,8 @@ struct PickyHUDDockArchiveFramePreferenceKey: PreferenceKey {
 struct PickyHUDArchivedDockAccessView: View {
     let archiveMembership: any PickySessionArchiveMembership
     let commands: any PickySessionArchiveCommands
+    var compactMetrics: PickyHUDDockMetrics? = nil
+    var onPresentationChanged: (Bool) -> Void = { _ in }
     @State private var isPresented = false
 
     var body: some View {
@@ -34,12 +36,19 @@ struct PickyHUDArchivedDockAccessView: View {
             PickyPerf.event("archived_pickle_button_action")
             isPresented.toggle()
         } label: {
-            Image(systemName: "archivebox")
-                .font(.system(size: 12, weight: .medium)) // design-token-exception: compact dock utility SF Symbol.
-                .foregroundStyle(DS.Colors.textSecondary)
-                .frame(width: 24, height: 24)
+            if let compactMetrics {
+                PickyHUDDockCompactUtilityLabel(title: L10n.t("hud.archivedList.title"), symbol: "archivebox", metrics: compactMetrics)
+                    .foregroundStyle(DS.Colors.textSecondary)
+            } else {
+                Image(systemName: "archivebox")
+                    .font(.system(size: 12, weight: .medium)) // design-token-exception: compact dock utility SF Symbol.
+                    .foregroundStyle(DS.Colors.textSecondary)
+                    .frame(width: 24, height: 24)
+            }
         }
         .buttonStyle(PickyHUDDockUtilityButtonStyle())
+        .onChange(of: isPresented) { _, presented in onPresentationChanged(presented) }
+        .onDisappear { onPresentationChanged(false) }
         .background(GeometryReader { proxy in
             Color.clear.preference(key: PickyHUDDockArchiveFramePreferenceKey.self,
                 value: proxy.frame(in: .named(PickyHUDVisibleChromeCoordinateSpaceName)))

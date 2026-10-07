@@ -211,18 +211,31 @@ struct PickyHUDDockSessionRow: View {
     @State private var completionFlashTask: Task<Void, Never>?
     @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
     @Environment(\.pickyAppFontScale) private var fontScale
+    @Environment(\.pickyDockCompactLayout) private var environmentCompactLayout
 
     private var isScreenContextTarget: Bool { isScreenContextArmed || isScreenContextSticky }
     private var isSelected: Bool { isOpened || isActive }
     private var showsDetailLine: Bool { metrics.showsRowDetailLine }
     private var showsShortcut: Bool { isCommandShortcutHintVisible && shortcutNumber != nil }
-    private var showsArchiveAction: Bool { isHovered && !showsShortcut && !isDragging }
+
+    /// Compact placement only applies to the vertical list. A horizontal rail
+    /// draws fixed-width chips and has no edge lane to collapse into.
+    private var compactLayout: PickyHUDDockCompactLayout? {
+        orientation == .vertical ? environmentCompactLayout : nil
+    }
+
+    /// The archive affordance lives in the label lane, so a compact dock only
+    /// offers it while the labels are actually on screen. The fixed icon lane
+    /// keeps showing the Pickle's status glyph at every width.
+    private var showsArchiveAction: Bool {
+        isHovered && !showsShortcut && !isDragging && (compactLayout?.showsLabels ?? true)
+    }
 
     var body: some View {
         let _ = onBodyEvaluation()
         let _ = PickyPerf.event("dock_row_body")
         content
-            .padding(.horizontal, metrics.rowHorizontalPadding)
+            .padding(.horizontal, compactLayout == nil ? metrics.rowHorizontalPadding : 0)
             .frame(
                 width: orientation == .horizontal ? metrics.chipWidth : nil,
                 height: orientation == .horizontal
@@ -278,7 +291,7 @@ struct PickyHUDDockSessionRow: View {
                     .focusable(false)
                     .help(L10n.t("group.list.action.archive"))
                     .accessibilityLabel(L10n.t("group.list.action.archive"))
-                    .padding(.trailing, metrics.rowHorizontalPadding - 2)
+                    .padding(.trailing, archiveTrailingInset)
                 }
             }
             .onAppear {
@@ -307,38 +320,90 @@ struct PickyHUDDockSessionRow: View {
     private var clickHostHoles: PickyHUDDockClickHostHoles {
         guard showsArchiveAction else { return .none }
         return PickyHUDDockClickHostHoles(trailing: .init(
-            inset: metrics.rowHorizontalPadding - 2,
+            inset: archiveTrailingInset,
             width: metrics.rowActionSide,
             height: metrics.rowActionSide
         ))
     }
 
+    /// Shared by the archive button's own padding and by the hole the click
+    /// host punches for it, so the declined rect always matches the button.
+    private var archiveTrailingInset: CGFloat {
+        let outer = metrics.rowHorizontalPadding - 2
+        guard let compactLayout else { return outer }
+        return compactLayout.rowTrailingInset(outer: outer)
+    }
+
+    @ViewBuilder
     private var content: some View {
-        HStack(spacing: metrics.rowContentSpacing) {
-            PickyHUDDockRowGlyph(
-                status: session.status,
-                todoState: session.todoState,
-                isScreenContextTarget: isScreenContextTarget,
-                side: metrics.rowGlyphSide
-            )
-            VStack(alignment: .leading, spacing: 0) {
-                Text(PickyHUDDockRowStatusPresentation.title(for: session))
-                    .font(PickyHUDTypography.bodyMedium)
-                    .foregroundStyle(
-                        session.status == .completed && !isSelected && !isUnread
-                            ? DS.Colors.textBody : DS.Colors.textPrimary
-                    )
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if showsDetailLine {
-                    detailLine
-                }
+        Group {
+            if let compactLayout {
+                compactContent(compactLayout)
+            } else {
+                standardContent
             }
+        }
+        .opacity(archiveFeedback.isPressing ? 0.7 : 1)
+    }
+
+    private var standardContent: some View {
+        HStack(spacing: metrics.rowContentSpacing) {
+            glyph
+            titleBlock
             Spacer(minLength: 2)
             trailingAccessory
                 .opacity(showsArchiveAction ? 0 : 1)
         }
-        .opacity(archiveFeedback.isPressing ? 0.7 : 1)
+    }
+
+    /// Same glyph, title, and accessories as the classic row, split across the
+    /// fixed icon lane and the label lane. Unread and attention marks ride on
+    /// the glyph so they stay readable while the labels are clipped away.
+    private func compactContent(_ layout: PickyHUDDockCompactLayout) -> some View {
+        PickyHUDDockCompactLanes(layout: layout) {
+            glyph
+                .overlay(alignment: layout.badgeAlignment) {
+                    compactIconBadge
+                        .offset(
+                            x: layout.badgeOffset(2).width,
+                            y: layout.badgeOffset(2).height
+                        )
+                }
+        } label: {
+            HStack(spacing: metrics.rowContentSpacing) {
+                titleBlock
+                Spacer(minLength: 2)
+                compactLabelAccessory
+                    .opacity(showsArchiveAction ? 0 : 1)
+            }
+            .padding(.leading, layout.labelLeadingPadding(outer: metrics.rowHorizontalPadding))
+            .padding(.trailing, layout.labelTrailingPadding(outer: metrics.rowHorizontalPadding))
+        }
+    }
+
+    private var glyph: some View {
+        PickyHUDDockRowGlyph(
+            status: session.status,
+            todoState: session.todoState,
+            isScreenContextTarget: isScreenContextTarget,
+            side: metrics.rowGlyphSide
+        )
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(PickyHUDDockRowStatusPresentation.title(for: session))
+                .font(PickyHUDTypography.bodyMedium)
+                .foregroundStyle(
+                    session.status == .completed && !isSelected && !isUnread
+                        ? DS.Colors.textBody : DS.Colors.textPrimary
+                )
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if showsDetailLine {
+                detailLine
+            }
+        }
     }
 
     private var detailLine: some View {
@@ -353,6 +418,39 @@ struct PickyHUDDockSessionRow: View {
         }
         .font(PickyHUDTypography.meta)
         .lineLimit(1)
+    }
+
+    /// Unread wins over the status mark, matching the classic row's trailing
+    /// accessory. The command-number hint is not mirrored here: it is a
+    /// label-lane hint and would not fit beside a 15pt glyph.
+    @ViewBuilder
+    private var compactIconBadge: some View {
+        if isUnread {
+            Circle()
+                .fill(DS.Colors.notification)
+                .frame(width: metrics.rowUnreadDotSide, height: metrics.rowUnreadDotSide)
+        } else if PickyHUDDockRowStatusPresentation.needsResponse(session.status) {
+            Circle()
+                .fill(PickyDockPickleStatusVisual.color(session.status))
+                .frame(width: metrics.rowAttentionDotSide, height: metrics.rowAttentionDotSide)
+        }
+    }
+
+    /// Label-lane half of the trailing accessory. Unread and attention marks
+    /// moved to the glyph, so only the sticky pin and the ⌘ number remain.
+    @ViewBuilder
+    private var compactLabelAccessory: some View {
+        HStack(spacing: 4) {
+            if isScreenContextSticky {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9, weight: .semibold)) // design-token-exception: optical pin mark beside the row title.
+                    .foregroundStyle(DS.Colors.accentText)
+            }
+            if showsShortcut, let shortcutNumber {
+                PickyShortcutKeyBadge(label: "\(shortcutNumber)")
+                    .transition(.opacity)
+            }
+        }
     }
 
     @ViewBuilder
@@ -455,8 +553,26 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
 
     @State private var isHovered = false
     @Environment(\.pickyAppFontScale) private var fontScale
+    @Environment(\.pickyDockCompactLayout) private var environmentCompactLayout
 
     private var showsActions: Bool { isHovered || isAddPresented }
+
+    private var compactLayout: PickyHUDDockCompactLayout? {
+        orientation == .vertical ? environmentCompactLayout : nil
+    }
+
+    /// Hover affordances that live in the label lane. A compact header keeps
+    /// its hover tint on the visible lane, but never leaves the `+` or the
+    /// color swatch behind the clip as a click, keyboard, or VoiceOver target.
+    private var showsLabelActions: Bool {
+        showsActions && (compactLayout?.showsLabels ?? true)
+    }
+
+    private var showsColorSwatch: Bool { compactLayout?.showsLabels ?? true }
+
+    /// A compact list has no padding of its own, so the classic 1pt leading
+    /// inset would push the swatch onto the shell border.
+    private var headerOuterPadding: CGFloat { metrics.rowHorizontalPadding }
 
     private var contentSpacing: CGFloat {
         orientation == .horizontal ? PickyHUDDockGroupHeaderLayout.horizontalSpacing : 6
@@ -472,20 +588,21 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
             : metrics.rowHorizontalPadding
     }
 
-    /// The color swatch at the leading edge and, while hovered, the `+` that sits
-    /// just inside the chevron. The chevron itself stays on the host so it
-    /// keeps toggling the group, and so does the band above and below both
-    /// buttons.
+    /// Only color and add controls decline native header clicks. Compact
+    /// headers use the folder for disclosure; classic headers retain a chevron.
     private var clickHostHoles: PickyHUDDockClickHostHoles {
         let swatchSlot = metrics.groupHeaderSwatchSide + PickyHUDDockGroupHeaderLayout.swatchHitPadding * 2
         let actionWidth = orientation == .horizontal
             ? PickyHUDDockGroupHeaderLayout.horizontalSummarySlotWidth(metrics: metrics)
             : metrics.rowActionSide
         return PickyHUDDockClickHostHoles(
-            leading: .init(inset: leadingPadding, width: swatchSlot, height: swatchSlot),
-            trailing: showsActions
+            leading: showsColorSwatch
+                ? .init(inset: leadingControlInset, width: swatchSlot, height: swatchSlot)
+                : nil,
+            trailing: showsLabelActions
                 ? .init(
-                    inset: trailingPadding + PickyHUDDockGroupHeaderLayout.chevronWidth + contentSpacing,
+                    inset: trailingControlInset + (compactLayout == nil
+                        ? PickyHUDDockGroupHeaderLayout.chevronWidth + contentSpacing : 0),
                     width: actionWidth,
                     height: metrics.rowActionSide
                 )
@@ -493,9 +610,94 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
         )
     }
 
+    /// Holes are measured from the header's own bounds, so a compact header has
+    /// to add the fixed icon lane back in on whichever side it occupies.
+    private var leadingControlInset: CGFloat {
+        guard let compactLayout else { return leadingPadding }
+        return compactLayout.rowLeadingInset(outer: headerOuterPadding)
+    }
+
+    private var trailingControlInset: CGFloat {
+        guard let compactLayout else { return trailingPadding }
+        return compactLayout.rowTrailingInset(outer: headerOuterPadding)
+    }
+
     var body: some View {
+        Group {
+            if let compactLayout {
+                PickyHUDDockCompactLanes(layout: compactLayout) {
+                    compactFolderIcon(compactLayout)
+                } label: {
+                    headerContent
+                        .padding(.leading, compactLayout.labelLeadingPadding(outer: headerOuterPadding))
+                        .padding(.trailing, compactLayout.labelTrailingPadding(outer: headerOuterPadding))
+                        .accessibilityHidden(!compactLayout.showsLabels)
+                }
+            } else {
+                headerContent
+                    .padding(.leading, leadingPadding)
+                    .padding(.trailing, trailingPadding)
+            }
+        }
+        .frame(
+            height: orientation == .horizontal
+                ? metrics.chipHeight(fontScale: fontScale)
+                : metrics.groupHeaderHeight(fontScale: fontScale)
+        )
+        .frame(maxWidth: orientation == .vertical ? .infinity : nil)
+        .background {
+            // The native host owns click (toggle) versus drag (group reorder),
+            // except in the holes it leaves for the color menu and the `+`.
+            // The folder lane deliberately keeps no hole, so clicking the
+            // folder toggles the group like the rest of the header.
+            ZStack {
+                headerBackground.allowsHitTesting(false)
+                PickyHUDDockGroupTileClickHost(
+                    onHoverChanged: { isHovered = $0 },
+                    onActivate: onToggleCollapsed,
+                    holes: clickHostHoles,
+                    onReorderBegan: onReorderBegan,
+                    onReorderChanged: onReorderChanged,
+                    onReorderEnded: onReorderEnded
+                )
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: showsActions)
+        .help(group.displayName)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(group.displayName)
+        .accessibilityValue(
+            L10n.t("group.folder.accessibility.value", members.count, unreadCount) + ", "
+                + L10n.t(group.isCollapsed ? "common.collapsed" : "common.expanded")
+        )
+        .accessibilityAddTraits(isSelected ? [.isHeader, .isSelected] : .isHeader)
+        .accessibilityAction(named: Text(L10n.t(group.isCollapsed ? "group.menu.expand" : "group.menu.collapse")), onToggleCollapsed)
+    }
+
+    /// Group identity that survives the collapse: the group color on a folder,
+    /// plus the collapsed unread mark that would otherwise sit in the labels.
+    private func compactFolderIcon(_ layout: PickyHUDDockCompactLayout) -> some View {
+        Image(systemName: group.isCollapsed ? "folder.fill" : "folder")
+            .font(PickyHUDTypography.supporting)
+            .foregroundStyle(group.color.accent)
+            .frame(width: metrics.rowActionSide, height: metrics.rowActionSide)
+            .overlay(alignment: layout.badgeAlignment) {
+                if group.isCollapsed, unreadCount > 0 {
+                    Circle()
+                        .fill(DS.Colors.notification)
+                        .frame(width: metrics.rowUnreadDotSide, height: metrics.rowUnreadDotSide)
+                        .offset(x: layout.badgeOffset(3).width, y: layout.badgeOffset(3).height)
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var headerContent: some View {
         HStack(spacing: contentSpacing) {
-            colorMenu
+            if showsColorSwatch {
+                colorMenu
+            }
             Text(group.displayName)
                 .font(PickyHUDTypography.supportingSemibold)
                 .foregroundStyle(showsActions || isDropTargeted ? DS.Colors.textPrimary : DS.Colors.textSecondary)
@@ -531,41 +733,8 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
                         height: metrics.rowActionSide
                     )
             }
-            chevron
+            if compactLayout == nil { chevron }
         }
-        .padding(.leading, leadingPadding)
-        .padding(.trailing, trailingPadding)
-        .frame(
-            height: orientation == .horizontal
-                ? metrics.chipHeight(fontScale: fontScale)
-                : metrics.groupHeaderHeight(fontScale: fontScale)
-        )
-        .frame(maxWidth: orientation == .vertical ? .infinity : nil)
-        .background {
-            // The native host owns click (toggle) versus drag (group reorder),
-            // except in the holes it leaves for the color menu and the `+`.
-            ZStack {
-                headerBackground.allowsHitTesting(false)
-                PickyHUDDockGroupTileClickHost(
-                    onHoverChanged: { isHovered = $0 },
-                    onActivate: onToggleCollapsed,
-                    holes: clickHostHoles,
-                    onReorderBegan: onReorderBegan,
-                    onReorderChanged: onReorderChanged,
-                    onReorderEnded: onReorderEnded
-                )
-            }
-        }
-        .animation(.easeOut(duration: 0.12), value: showsActions)
-        .help(group.displayName)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(group.displayName)
-        .accessibilityValue(
-            L10n.t("group.folder.accessibility.value", members.count, unreadCount) + ", "
-                + L10n.t(group.isCollapsed ? "common.collapsed" : "common.expanded")
-        )
-        .accessibilityAddTraits(isSelected ? [.isHeader, .isSelected] : .isHeader)
-        .accessibilityAction(named: Text(L10n.t(group.isCollapsed ? "group.menu.expand" : "group.menu.collapse")), onToggleCollapsed)
     }
 
     /// A plain button that opens a native color menu. SwiftUI `Menu` labels
@@ -592,16 +761,18 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
     }
 
     private var hasTrailingSummary: Bool {
-        showsActions || (group.isCollapsed && unreadCount > 0)
+        if compactLayout != nil { return showsLabelActions }
+        return showsActions || (group.isCollapsed && unreadCount > 0)
     }
 
     /// A collapsed header shows one unread dot; per-Pickle status lives in
-    /// the expanded rows.
+    /// the expanded rows. A compact header moves that dot onto the folder in
+    /// the fixed lane, where it stays visible at the resting width.
     @ViewBuilder
     private var trailingSummary: some View {
-        if showsActions {
+        if showsLabelActions {
             addButton()
-        } else if group.isCollapsed, unreadCount > 0 {
+        } else if compactLayout == nil, group.isCollapsed, unreadCount > 0 {
             Circle()
                 .fill(DS.Colors.notification)
                 .frame(width: metrics.rowUnreadDotSide, height: metrics.rowUnreadDotSide)
@@ -706,15 +877,19 @@ struct PickyHUDDockEmptyGroupPlaceholder: View {
     let onCreatePickle: () -> Void
 
     @Environment(\.pickyAppFontScale) private var fontScale
+    @Environment(\.pickyDockCompactLayout) private var environmentCompactLayout
+
+    private var compactLayout: PickyHUDDockCompactLayout? {
+        orientation == .vertical ? environmentCompactLayout : nil
+    }
+
+    private var tint: Color {
+        isDropTargeted ? DS.Colors.accentText : DS.Colors.textTertiary
+    }
 
     var body: some View {
         Button(action: onCreatePickle) {
-            Text(L10n.t("dock.group.empty.dropHint"))
-                .font(PickyHUDTypography.meta)
-                .foregroundStyle(isDropTargeted ? DS.Colors.accentText : DS.Colors.textTertiary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .padding(.horizontal, DS.Spacing.space1)
+            content
                 .frame(
                     width: orientation == .horizontal ? metrics.chipWidth : nil,
                     height: orientation == .horizontal
@@ -738,5 +913,33 @@ struct PickyHUDDockEmptyGroupPlaceholder: View {
         .buttonStyle(.plain)
         .accessibilityLabel(L10n.t("dock.startPickle"))
         .accessibilityHint(L10n.t("dock.startPickle.hint"))
+    }
+
+    /// A compact placeholder keeps a `+` in the resting lane, so an empty group
+    /// still shows where its next Pickle lands while the labels are clipped.
+    @ViewBuilder
+    private var content: some View {
+        if let compactLayout {
+            PickyHUDDockCompactLanes(layout: compactLayout) {
+                Image(systemName: "plus")
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundStyle(tint)
+            } label: {
+                hint
+                    .padding(.leading, compactLayout.labelLeadingPadding(outer: DS.Spacing.space1))
+                    .padding(.trailing, compactLayout.labelTrailingPadding(outer: DS.Spacing.space1))
+                    .accessibilityHidden(!compactLayout.showsLabels)
+            }
+        } else {
+            hint.padding(.horizontal, DS.Spacing.space1)
+        }
+    }
+
+    private var hint: some View {
+        Text(L10n.t("dock.group.empty.dropHint"))
+            .font(PickyHUDTypography.meta)
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
     }
 }

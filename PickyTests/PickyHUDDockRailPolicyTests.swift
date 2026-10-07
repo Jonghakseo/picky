@@ -131,14 +131,17 @@ struct PickyHUDDockRailPolicyTests {
         }
     }
 
-    @Test func horizontalChromeLaysTheTwoUtilitiesSideBySide() {
+    @Test func bothOrientationsReserveTwoUtilitiesAlongTheRailAxis() {
         let metrics = PickyHUDDockMetrics(preset: .small)
         let vertical = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
             dockSide: .right, metrics: metrics, hasDockAddUtility: true)
         let horizontal = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
             dockSide: .bottom, metrics: metrics, hasDockAddUtility: true)
 
-        #expect(horizontal - vertical == metrics.utilityButtonSide + metrics.utilitySpacing)
+        #expect(horizontal == vertical)
+        let empty = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
+            dockSide: .right, metrics: metrics, hasDockAddUtility: false)
+        #expect(vertical - empty == metrics.utilityButtonSide + metrics.utilitySpacing)
     }
 
     @Test func horizontalHeaderChipCapsLongGroupNames() {

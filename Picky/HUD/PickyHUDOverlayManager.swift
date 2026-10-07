@@ -1049,7 +1049,7 @@ final class PickyHUDOverlayManager {
                 panelWidth: startPanelWidth,
                 dockSide: startPos.side,
                 xOffset: startPos.xOffset,
-                dockRailWidth: dockRailCrossSize
+                dockRailWidth: PickyHUDDockCompactLayout.iconColumnWidth
             ) + delta.x
             pos.side = PickyHUDDockLayout.dockSide(
                 forDockRailCenterX: draggedDockCenterX,
@@ -1061,7 +1061,8 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelWidth: panelWidth(for: displayID, dockSide: pos.side),
                 dockSide: pos.side,
-                dockRailWidth: dockRailCrossSize
+                dockRailWidth: PickyHUDDockCompactLayout.iconColumnWidth,
+                keepVisible: PickyHUDDockCompactLayout.iconColumnWidth
             )
         }
 

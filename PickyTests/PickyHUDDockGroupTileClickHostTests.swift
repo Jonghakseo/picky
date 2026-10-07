@@ -40,7 +40,8 @@ struct PickyHUDDockGroupTileClickHostTests {
         onToggle: @escaping () -> Void,
         withContextMenu: Bool = false,
         isAddPresented: Bool = false,
-        orientation: PickyHUDDockOrientation = .vertical
+        orientation: PickyHUDDockOrientation = .vertical,
+        compactLayout: PickyHUDDockCompactLayout? = nil
     ) throws -> (host: PickyHUDDockGroupTileClickNSView, hosting: NSHostingView<AnyView>) {
         let group = PickyDockGroup(id: "group", name: "Research", color: .teal, memberSessionIDs: [])
         let header = PickyHUDDockGroupHeaderRow(
@@ -68,7 +69,7 @@ struct PickyHUDDockGroupTileClickHostTests {
                 onDeleteWithArchive: {}
             ))
             : AnyView(header)
-        let hosting = NSHostingView(rootView: root)
+        let hosting = NSHostingView(rootView: AnyView(root.environment(\.pickyDockCompactLayout, compactLayout)))
         let size = orientation == .horizontal ? hosting.fittingSize : CGSize(width: 196, height: 24)
         hosting.frame = NSRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()
@@ -138,6 +139,31 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(owner(atDistanceFromTrailingEdge: 45) === host)
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func compactFolderKeepsItsToggleHitArea(expanded: Bool, iconsLeading: Bool) throws {
+        var toggles = 0
+        let rendered = try renderedHeaderHost(onToggle: { toggles += 1 }, isAddPresented: true,
+            compactLayout: .init(isExpanded: expanded, iconOnLeadingEdge: iconsLeading))
+        let host = rendered.host
+        let iconPoint = CGPoint(x: iconsLeading ? host.bounds.minX + 18 : host.bounds.maxX - 18,
+                                y: host.bounds.midY)
+        #expect(host.hitTest(host.convert(iconPoint, to: host.superview)) === host)
+        if !expanded {
+            #expect(host.holes == .none)
+        } else {
+            // Without a chevron the add button ends at the label lane edge:
+            // 6pt outer padding on the left dock, 36pt icon lane + 4pt gap on the right.
+            let addX = host.bounds.maxX - (iconsLeading ? 15 : 49)
+            let addPoint = CGPoint(x: addX, y: host.bounds.midY)
+            #expect(host.hitTest(host.convert(addPoint, to: host.superview)) == nil)
+            let bandPoint = CGPoint(x: addX, y: host.bounds.maxY - 1)
+            #expect(host.hitTest(host.convert(bandPoint, to: host.superview)) === host)
+        }
+        host.mouseDown(with: try mouseEvent(.leftMouseDown, at: iconPoint))
+        host.mouseUp(with: try mouseEvent(.leftMouseUp, at: iconPoint))
+        #expect(toggles == 1)
+    }
+
     @Test func headerHostKeepsItsTrailingSlotWhileTheActionsAreHidden() throws {
         let rendered = try renderedHeaderHost(onToggle: {})
         let host = rendered.host
@@ -170,7 +196,14 @@ struct PickyHUDDockGroupTileClickHostTests {
 
     /// Same contract on a Pickle row: only the hovered archive button's own
     /// frame leaves the host, so the rest of the row keeps opening the Pickle.
-    @Test func hoveredRowHostDeclinesOnlyTheArchiveButtonFrame() throws {
+    @Test(arguments: [
+        nil,
+        .init(isExpanded: false, iconOnLeadingEdge: false),
+        .init(isExpanded: true, iconOnLeadingEdge: false),
+        .init(isExpanded: false, iconOnLeadingEdge: true),
+        .init(isExpanded: true, iconOnLeadingEdge: true)
+    ] as [PickyHUDDockCompactLayout?])
+    func hoveredRowHostDeclinesOnlyTheArchiveButtonFrame(compactLayout: PickyHUDDockCompactLayout?) throws {
         let metrics = PickyHUDDockMetrics(preset: .large)
         let agentSession = PickyAgentSession(
             id: "row", title: "Row Pickle", status: .running, cwd: "/tmp/picky",
@@ -191,7 +224,9 @@ struct PickyHUDDockGroupTileClickHostTests {
             isUnread: false,
             metrics: metrics
         )
-        let hosting = NSHostingView(rootView: AnyView(row.environment(\.pickyAppFontScale, 1)))
+        let hosting = NSHostingView(rootView: AnyView(row
+            .environment(\.pickyAppFontScale, 1)
+            .environment(\.pickyDockCompactLayout, compactLayout)))
         hosting.frame = NSRect(x: 0, y: 0, width: metrics.listWidth, height: metrics.rowHeight(fontScale: 1))
         hosting.layoutSubtreeIfNeeded()
         let host = try #require(findSessionIconHost(in: hosting))
@@ -201,11 +236,20 @@ struct PickyHUDDockGroupTileClickHostTests {
         hosting.layoutSubtreeIfNeeded()
 
         let bounds = host.bounds
-        let buttonX = bounds.maxX - (metrics.rowHorizontalPadding - 2) - metrics.rowActionSide / 2
+        let inset: CGFloat = compactLayout?.iconOnLeadingEdge == false ? 40 : metrics.rowHorizontalPadding - 2
+        let buttonX = bounds.maxX - inset - metrics.rowActionSide / 2
         func owner(_ x: CGFloat, _ y: CGFloat) -> NSView? {
             host.hitTest(host.convert(CGPoint(x: x, y: y), to: host.superview))
         }
 
+        if let compactLayout {
+            let iconX = compactLayout.iconOnLeadingEdge ? bounds.minX + 18 : bounds.maxX - 18
+            #expect(owner(iconX, bounds.midY) === host)
+            if !compactLayout.isExpanded {
+                #expect(host.holes == .none)
+                return
+            }
+        }
         #expect(host.holes.trailing != nil)
         #expect(owner(buttonX, bounds.midY) == nil)
         #expect(owner(buttonX, bounds.maxY - 1) === host)

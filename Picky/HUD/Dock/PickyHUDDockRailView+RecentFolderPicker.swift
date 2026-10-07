@@ -100,18 +100,26 @@ extension PickyHUDDockRailView {
                 PickyPerf.event("new_pickle_button_action")
                 showRecentPickleFolderPicker(anchorGroupID: nil)
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: isEmptyDock ? 16 : metrics.plusFontSize, weight: .medium)) // design-token-exception: approved larger empty-dock action and compact utility glyph.
+                if dockSide.orientation == .vertical {
+                    PickyHUDDockCompactUtilityLabel(
+                        title: L10n.t("dock.startPickle"), symbol: "plus", metrics: metrics,
+                        height: isEmptyDock ? metrics.rowHeight(fontScale: fontScale) : metrics.utilityButtonSide
+                    )
                     .foregroundStyle(DS.Colors.accentText)
-                    .frame(
-                        width: isEmptyDock ? emptyDockAddSize.width : metrics.utilityButtonSide,
-                        height: isEmptyDock ? emptyDockAddSize.height : metrics.utilityButtonSide
-                    )
-                    .background(
-                        isEmptyDock ? DS.Colors.accentSubtle : .clear,
-                        in: RoundedRectangle(cornerRadius: metrics.rowCornerRadius)
-                    )
-                    .contentShape(Rectangle())
+                } else {
+                    Image(systemName: "plus")
+                        .font(.system(size: isEmptyDock ? 16 : metrics.plusFontSize, weight: .medium)) // design-token-exception: approved larger empty-dock action and compact utility glyph.
+                        .foregroundStyle(DS.Colors.accentText)
+                        .frame(
+                            width: isEmptyDock ? emptyDockAddSize.width : metrics.utilityButtonSide,
+                            height: isEmptyDock ? emptyDockAddSize.height : metrics.utilityButtonSide
+                        )
+                        .background(
+                            isEmptyDock ? DS.Colors.accentSubtle : .clear,
+                            in: RoundedRectangle(cornerRadius: metrics.rowCornerRadius)
+                        )
+                        .contentShape(Rectangle())
+                }
             }
             .buttonStyle(PickyHUDDockUtilityButtonStyle()),
             anchorGroupID: nil

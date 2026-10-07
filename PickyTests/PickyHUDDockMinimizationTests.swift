@@ -19,7 +19,8 @@ struct PickyHUDDockMinimizationTests {
         #expect(!secondDisplay.isMinimized)
 
         for (placement, size) in [
-            (firstDisplay, CGSize(width: 58, height: 450)),
+            (firstDisplay, CGSize(width: 168, height: 450)),
+            (PickyHUDPlacement(dockSide: .left), CGSize(width: 168, height: 450)),
             (secondDisplay, CGSize(width: 450, height: 58))
         ] {
             let origin = PickyHUDPlacement.minimizedButtonOrigin(
@@ -27,7 +28,7 @@ struct PickyHUDDockMinimizationTests {
             )
             let buttonCenter = CGPoint(x: origin.x + 16, y: origin.y + 16)
             if placement.dockSide.orientation == .vertical {
-                #expect(buttonCenter.x == size.width / 2)
+                #expect(buttonCenter.x == (placement.dockSide == .left ? 18 : size.width - 18))
                 #expect(buttonCenter.y == metrics.handleInset / 2)
             } else {
                 #expect(buttonCenter.x == metrics.handleInset / 2)

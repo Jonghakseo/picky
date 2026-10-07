@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import Testing
 @testable import Picky
@@ -56,6 +57,86 @@ struct PickyHUDDockChromeTests {
                 }
             }
         }
+    }
+
+    @Test func compactRailReservesPresetWidthButOnlyVisibleChromeClaimsDesktopInput() throws {
+        final class Frames { var values: [CGRect] = [] }
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            for side: PickyHUDDockSide in [.left, .right] {
+                for expanded in [false, true] {
+                    let frames = Frames()
+                    let controller = PickyHUDDockExpansionController()
+                    controller.update(pointerInside: false, heldOpen: expanded)
+                    let state: FixtureState = expanded ? .attention : .expandedGroup
+                    let data = fixtureData(state: state)
+                    let view = PickyHUDDockMinimizedPresentation(
+                        isLoading: false, isMinimized: false, dockSide: side, metrics: metrics,
+                        projection: data.projection, activeSessionIDs: Set(data.sessions.map(\.id)),
+                        availableRailLength: Self.fixtureAvailableLength,
+                        activeSessionID: expanded ? "a" : nil, onRestore: {}
+                    ) { fixture(side: side, metrics: metrics, state: state, expansion: controller) }
+                        .padding(20)
+                        .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
+                        .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) { frames.values = $0 }
+                    let size = NSHostingView(rootView: view).fittingSize
+                    #expect(size.width == metrics.listWidth + 40)
+                    #expect(PickyRenderGalleryRasterizer.rasterize(view, logicalSize: size,
+                        scale: 2, appearance: .aqua) != nil)
+                    let shell = try #require(frames.values.count == 1 ? frames.values.first : nil)
+                    #expect(shell.width == (expanded ? metrics.listWidth : 36))
+                    let expectedX: CGFloat = side == .right && !expanded ? 20 + metrics.listWidth - 36 : 20
+                    #expect(shell.minX == expectedX)
+                    let panel = CGRect(origin: .zero, size: size)
+                    let namePoint = CGPoint(x: side == .right ? 21 : metrics.listWidth + 19,
+                                            y: size.height - shell.midY)
+                    #expect(PickyHUDInkPassThroughPolicy.contains(namePoint,
+                        swiftUIFrames: frames.values, panelFrame: panel) == expanded)
+                    let iconPoint = CGPoint(x: side == .right ? metrics.listWidth + 2 : 38,
+                                            y: size.height - shell.midY)
+                    #expect(PickyHUDInkPassThroughPolicy.contains(iconPoint,
+                        swiftUIFrames: frames.values, panelFrame: panel))
+                    controller.stop()
+                }
+            }
+        }
+    }
+
+    @Test func pointerExitCollapsesTheRenderedRailWhileItsControlsRemainActive() async throws {
+        final class Frames { var values: [CGRect] = [] }
+        let frames = Frames()
+        let controller = PickyHUDDockExpansionController()
+        let view = fixture(side: .right, metrics: .medium, state: .expandedGroup, expansion: controller)
+            .environment(\.controlActiveState, .key)
+            .transaction { $0.disablesAnimations = true }
+            .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
+            .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) { frames.values = $0 }
+        let host = NSHostingView(rootView: AnyView(view))
+        host.frame = CGRect(origin: .zero, size: host.fittingSize)
+        host.layoutSubtreeIfNeeded()
+        defer {
+            controller.stop()
+            host.rootView = AnyView(EmptyView())
+        }
+
+        controller.update(pointerInside: true, heldOpen: false)
+        try await withPickyTestTimeout("rendered dock expands after hover") {
+            for await expanded in controller.$isExpanded.values {
+                if expanded { return }
+            }
+        }
+        host.layoutSubtreeIfNeeded()
+        #expect(frames.values.first?.width == 168)
+
+        controller.update(pointerInside: false, heldOpen: false)
+        try await withPickyTestTimeout("rendered dock collapses without resigning focus") {
+            for await expanded in controller.$isExpanded.values {
+                if !expanded { return }
+            }
+        }
+        host.layoutSubtreeIfNeeded()
+        #expect(frames.values.first?.width == 36)
+        #expect(host.frame.width == 168)
     }
 
     @Test func expandingAGroupGrowsTheVerticalListByItsMemberRows() {
@@ -223,17 +304,21 @@ struct PickyHUDDockChromeTests {
             : fixtureVerticalOverflowAvailableLength
     }
 
-    private func fixture(side: PickyHUDDockSide, metrics: PickyHUDDockMetrics, state: FixtureState) -> some View {
+    private func fixture(side: PickyHUDDockSide, metrics: PickyHUDDockMetrics, state: FixtureState,
+                         expansion: PickyHUDDockExpansionController? = nil) -> some View {
+        let expansion = expansion ?? PickyHUDDockExpansionController()
         let data = fixtureData(state: state)
         let archive = EmptyArchive()
         let attention = state == .attention
+        if attention { expansion.update(pointerInside: false, heldOpen: true) }
         return dockRail(sessions: data.sessions,
                         layout: data.layout, projection: data.projection, dockSide: side, metrics: metrics,
                         availableRailLength: Self.availableRailLength(for: state, side: side),
                         openedSessionID: attention ? "a" : nil,
                         unreadSessionIDs: attention ? ["c"] : [],
                         screenContextTargetSessionID: attention ? "d" : nil,
-                        archiveAccess: PickyHUDArchivedSessionAccess(membership: archive, commands: archive))
+                        archiveAccess: PickyHUDArchivedSessionAccess(membership: archive, commands: archive),
+                        expansion: expansion)
             .environment(\.pickyAppFontScale, 1)
     }
 
@@ -264,7 +349,8 @@ struct PickyHUDDockChromeTests {
         openedSessionID: String? = nil,
         unreadSessionIDs: Set<String> = [],
         screenContextTargetSessionID: String? = nil,
-        archiveAccess: PickyHUDArchivedSessionAccess? = nil
+        archiveAccess: PickyHUDArchivedSessionAccess? = nil,
+        expansion: PickyHUDDockExpansionController? = nil
     ) -> some View {
         PickyHUDDockRailView(
             sessions: sessions,
@@ -307,7 +393,8 @@ struct PickyHUDDockChromeTests {
             onDockHandleDragChanged: { _ in },
             onDockHandleDragEnded: {},
             onDockHandleDoubleClick: {},
-            archiveAccess: archiveAccess
+            archiveAccess: archiveAccess,
+            expansion: expansion ?? PickyHUDDockExpansionController()
         )
     }
 

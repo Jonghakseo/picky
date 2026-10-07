@@ -100,8 +100,8 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     private let skillNameField = NSTextField(labelWithString: "")
     private let skillMetaField = NSTextField(labelWithString: "")
     private let timestampAccessory = PickyBubbleTimestampAccessory()
-    private var trackingArea: NSTrackingArea?
-    private var isPointerInside = false
+    private var hoverTracker: PickyHoverTracker!
+    private var isPointerInside: Bool { hoverTracker.isHovered }
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
     private var header: PickyUserBubbleHeader?
@@ -122,6 +122,8 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        hoverTracker = PickyHoverTracker(view: self)
+        hoverTracker.onChange = { [weak self] _ in self?.needsLayout = true }
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
 
@@ -145,25 +147,24 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        trackingArea = area
-        addTrackingArea(area)
+        hoverTracker.viewGeometryDidChange()
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isPointerInside = true
-        needsLayout = true
+        hoverTracker.mouseEntered(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
-        isPointerInside = false
-        needsLayout = true
+        hoverTracker.mouseExited(with: event)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            hoverTracker.setHovered(false)
+        } else {
+            hoverTracker.viewDidMoveToWindow()
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {

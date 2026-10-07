@@ -72,35 +72,47 @@ struct PickyHUDDockGroupTileClickHost: NSViewRepresentable {
 final class PickyHUDDockGroupTileClickNSView: NSView {
     weak var coordinator: PickyHUDDockGroupTileClickHost.Coordinator?
     var holes: PickyHUDDockClickHostHoles = .none
-    private var trackingArea: NSTrackingArea?
+    private var hoverTracker: PickyHoverTracker!
     private var mouseDownPoint: NSPoint?
     private var isReordering = false
 
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        hoverTracker = PickyHoverTracker(view: self)
+        hoverTracker.onChange = { [weak self] in self?.coordinator?.onHoverChanged?($0) }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        trackingArea = area
+        hoverTracker.viewGeometryDidChange()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hoverTracker.mouseEntered(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverTracker.mouseExited(with: event)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            hoverTracker.resetWithoutNotifying()
+        } else {
+            hoverTracker.viewDidMoveToWindow()
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         guard bounds.contains(local), !holes.excludes(local, in: bounds) else { return nil }
         return self
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        coordinator?.onHoverChanged?(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        coordinator?.onHoverChanged?(false)
     }
 
     override func mouseDown(with event: NSEvent) {

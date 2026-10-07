@@ -510,7 +510,11 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
                 .allowsHitTesting(false)
             if orientation == .vertical {
                 Spacer(minLength: 2)
-                trailingSummary
+                // An empty summary still costs a stack gap, which would
+                // truncate a collapsed name earlier than the expanded one.
+                if hasTrailingSummary {
+                    trailingSummary
+                }
             } else {
                 trailingSummary
                     .frame(width: PickyHUDDockGroupHeaderLayout.horizontalSummarySlotWidth(metrics: metrics))
@@ -572,12 +576,20 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
         .accessibilityValue(group.color.localizedName)
     }
 
+    private var attentionMembers: [PickyHUDDockSession] {
+        members.filter { PickyHUDDockRowStatusPresentation.needsAttention($0.status) }
+    }
+
+    private var hasTrailingSummary: Bool {
+        showsActions || (group.isCollapsed && (unreadCount > 0 || !attentionMembers.isEmpty))
+    }
+
     @ViewBuilder
     private var trailingSummary: some View {
         if showsActions {
             addButton()
         } else if group.isCollapsed {
-            let attention = members.filter { PickyHUDDockRowStatusPresentation.needsAttention($0.status) }
+            let attention = attentionMembers
             let limit = orientation == .horizontal ? 1 : metrics.groupHeaderAttentionLimit
             HStack(spacing: 2) {
                 ForEach(attention.prefix(limit), id: \.id) { member in

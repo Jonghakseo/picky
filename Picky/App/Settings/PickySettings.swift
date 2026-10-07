@@ -722,10 +722,10 @@ struct PickySettings: Codable, Equatable {
     /// the dock independently on each screen. Falls back to `PickyHUDDockPosition.defaults()`
     /// when a display has not yet been configured.
     var hudDockPositions: [String: PickyHUDDockPosition]
-    /// Per-display group collapse/expand state keyed by display ID, then group
-    /// ID. Each monitor manages its own collapsed groups independently; a
-    /// missing entry falls back to the layout's stored `isCollapsed` default.
-    var hudDockGroupCollapse: [String: [String: Bool]]
+    /// Whether the list dock's one-time group expansion has run. The folder
+    /// dock persisted every group as collapsed; the list dock shows members
+    /// inline, so groups are expanded once on the first list-dock load.
+    var hudDockGroupsExpandedForListDock: Bool
     /// Legacy default visibility for HUD dock panels. Existing settings files
     /// use this value for every display until a display-specific override exists.
     var hudDockVisible: Bool
@@ -862,7 +862,7 @@ struct PickySettings: Codable, Equatable {
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
         focusPickleShortcut: PickyShortcutSpec = .defaultFocusPickle,
         hudDockPositions: [String: PickyHUDDockPosition] = [:],
-        hudDockGroupCollapse: [String: [String: Bool]] = [:],
+        hudDockGroupsExpandedForListDock: Bool = false,
         hudDockVisible: Bool = true,
         hudDockVisibilityByDisplayID: [String: Bool] = [:],
         hudDockSizePreset: PickyHUDDockSizePreset = .medium,
@@ -935,7 +935,7 @@ struct PickySettings: Codable, Equatable {
         self.quickInputShortcut = quickInputShortcut
         self.focusPickleShortcut = focusPickleShortcut
         self.hudDockPositions = hudDockPositions
-        self.hudDockGroupCollapse = hudDockGroupCollapse
+        self.hudDockGroupsExpandedForListDock = hudDockGroupsExpandedForListDock
         self.hudDockVisible = hudDockVisible
         self.hudDockVisibilityByDisplayID = hudDockVisibilityByDisplayID
         self.hudDockSizePreset = hudDockSizePreset
@@ -1034,7 +1034,7 @@ struct PickySettings: Codable, Equatable {
             quickInputShortcut: .defaultQuickInput,
             focusPickleShortcut: .defaultFocusPickle,
             hudDockPositions: [:],
-            hudDockGroupCollapse: [:],
+            hudDockGroupsExpandedForListDock: false,
             hudDockVisible: true,
             hudDockVisibilityByDisplayID: [:],
             hudDockSizePreset: .medium,
@@ -1159,7 +1159,7 @@ struct PickySettings: Codable, Equatable {
         case quickInputShortcut
         case focusPickleShortcut
         case hudDockPositions
-        case hudDockGroupCollapse
+        case hudDockGroupsExpandedForListDock
         case hudDockVisible
         case hudDockVisibilityByDisplayID
         case hudDockSizePreset
@@ -1236,7 +1236,7 @@ struct PickySettings: Codable, Equatable {
         // behavior so screenshots do not silently disappear after the update.
         attachScreenshotsOnlyWhenInked = try container.decodeIfPresent(Bool.self, forKey: .attachScreenshotsOnlyWhenInked) ?? defaults.attachScreenshotsOnlyWhenInked
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
-        hudDockGroupCollapse = try container.decodeIfPresent([String: [String: Bool]].self, forKey: .hudDockGroupCollapse) ?? defaults.hudDockGroupCollapse
+        hudDockGroupsExpandedForListDock = try container.decodeIfPresent(Bool.self, forKey: .hudDockGroupsExpandedForListDock) ?? false
         hudDockVisible = try container.decodeIfPresent(Bool.self, forKey: .hudDockVisible) ?? defaults.hudDockVisible
         hudDockVisibilityByDisplayID = try container.decodeIfPresent([String: Bool].self, forKey: .hudDockVisibilityByDisplayID) ?? [:]
         hudDockSizePreset = try container.decodeIfPresent(PickyHUDDockSizePreset.self, forKey: .hudDockSizePreset) ?? defaults.hudDockSizePreset

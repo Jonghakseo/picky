@@ -125,8 +125,23 @@ struct PickySettingsDockLayoutStore: PickyDockLayoutStoring {
         .shared(for: settingsStore)
     }
 
+    /// The first list-dock load expands every group once and records that it
+    /// did, so later user collapses persist. The returned layout matches what
+    /// the queued write stores.
     func load() -> PickyDockLayout {
-        settingsStore.load().dockLayout
+        let settings = settingsStore.load()
+        guard !settings.hudDockGroupsExpandedForListDock else { return settings.dockLayout }
+        let expanded = settings.dockLayout.expandingAllGroups()
+        persistence.enqueue(mutation: { current in
+            guard !current.hudDockGroupsExpandedForListDock else { return }
+            current.dockLayout = current.dockLayout.expandingAllGroups()
+            current.hudDockGroupsExpandedForListDock = true
+        }, completion: { result in
+            if case .failure(let error) = result {
+                pickySessionLog("dock group expansion migration failed: \(error)")
+            }
+        })
+        return expanded
     }
 
     func enqueueSave(

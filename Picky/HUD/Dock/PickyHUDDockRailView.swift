@@ -111,6 +111,14 @@ struct PickyHUDDockRailView: View {
     @State private var groupDragReferenceTopEntryIDs: [String] = []
     /// Scroll position of an overflowing list, for the edge fades.
     @State private var listScrollOffset: CGFloat = 0
+    /// Viewport span of an overflowing list in rail coordinates.
+    @State private var listViewportExtent: PickyDockAxisExtent?
+    /// Scroll offset when the current drag began; frozen drop geometry is
+    /// relative to it.
+    @State private var dragStartScrollOffset: CGFloat = 0
+    @State private var autoScrollDirection = 0
+    @State private var autoScrollTick = 0
+    @State private var autoScrollTask: Task<Void, Never>?
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.pickyAppFontScale) var fontScale
@@ -226,6 +234,10 @@ struct PickyHUDDockRailView: View {
         .onChange(of: reorderController.phase) { _, phase in
             handleReorderPhase(phase)
         }
+        .onDisappear {
+            autoScrollTask?.cancel()
+            autoScrollTask = nil
+        }
     }
 
     // MARK: - Layout
@@ -318,11 +330,30 @@ struct PickyHUDDockRailView: View {
             .onPreferenceChange(PickyDockListScrollOffsetPreferenceKey.self) { offset in
                 guard abs(listScrollOffset - offset) > 0.5 else { return }
                 listScrollOffset = offset
+                // The pointer may rest while the list moves under it (autoscroll
+                // or a wheel scroll), so re-resolve the drop at the same cursor.
+                reresolveDragAfterScroll()
             }
             .frame(
                 width: orientation == .horizontal ? viewportLength : listCrossLength,
                 height: orientation == .horizontal ? listCrossLength : viewportLength
             )
+            .background {
+                GeometryReader { geometry in
+                    let frame = geometry.frame(in: .named(PickyHUDDockRailCoordinateSpace))
+                    Color.clear.preference(
+                        key: PickyDockListViewportExtentPreferenceKey.self,
+                        value: orientation == .horizontal
+                            ? PickyDockAxisExtent(lower: frame.minX, upper: frame.maxX)
+                            : PickyDockAxisExtent(lower: frame.minY, upper: frame.maxY)
+                    )
+                }
+            }
+            .onPreferenceChange(PickyDockListViewportExtentPreferenceKey.self) { extent in
+                guard listViewportExtent != extent else { return }
+                listViewportExtent = extent
+            }
+            .onChange(of: autoScrollTick) { _, _ in performAutoScrollStep(using: proxy) }
             .mask(PickyHUDDockScrollFadeMask(orientation: orientation, fades: fades, length: metrics.scrollFadeLength))
             .onAppear { revealActiveSession(using: proxy) }
             .onChange(of: activeSessionID) { _, _ in revealActiveSession(using: proxy) }
@@ -706,6 +737,7 @@ struct PickyHUDDockRailView: View {
         dragReferenceCenters = slotCenters
         dragReferenceTopEntryExtents = topEntryExtents
         dragReferenceGroupDropFrames = groupDropFrames
+        dragStartScrollOffset = listScrollOffset
         return true
     }
 
@@ -717,6 +749,7 @@ struct PickyHUDDockRailView: View {
             > PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics, orientation: orientation, fontScale: fontScale) {
             pendingDropContainer = layout.container(forSessionID: sessionID)
             scheduleSessionPullOutDwell()
+            updateAutoScroll(railCursorAxis: nil)
             return
         }
         cancelSessionPullOutDwell()
@@ -724,7 +757,13 @@ struct PickyHUDDockRailView: View {
             withAnimation(.easeOut(duration: 0.16)) { sessionPullOutArmed = false }
         }
 
-        let cursorAxis = dragStartCenter + PickyHUDDockDragGeometry.axisDelta(translation, orientation: orientation)
+        let railCursorAxis = dragStartCenter + PickyHUDDockDragGeometry.axisDelta(translation, orientation: orientation)
+        updateAutoScroll(railCursorAxis: railCursorAxis)
+        let cursorAxis = PickyHUDDockAutoScrollPolicy.frozenAxis(
+            cursorAxis: railCursorAxis,
+            startOffset: dragStartScrollOffset,
+            currentOffset: listScrollOffset
+        )
         let slotCandidates: [PickyDockDropResolver.SlotCandidate] = dragReferenceSlots.compactMap { slot in
             guard let id = slot.sessionID,
                   let container = slot.container,
@@ -798,6 +837,7 @@ struct PickyHUDDockRailView: View {
     }
 
     private func resetSessionDrag() {
+        updateAutoScroll(railCursorAxis: nil)
         draggingSessionID = nil
         pendingDropContainer = nil
         dragTranslation = .zero
@@ -828,6 +868,7 @@ struct PickyHUDDockRailView: View {
         groupDragReferenceTopEntryIDs = PickyHUDDockRenderPolicy.visibleTopEntryIDs(in: baseProjection.items)
         groupDragTranslation = .zero
         groupDragStartCenter = startCenter
+        dragStartScrollOffset = listScrollOffset
     }
 
     private func handleGroupDragChanged(groupID: String, translation: CGSize) {
@@ -838,6 +879,7 @@ struct PickyHUDDockRailView: View {
                 withAnimation(.easeOut(duration: 0.16)) { groupPullOutArmed = true }
             }
             groupDragTranslation = translation
+            updateAutoScroll(railCursorAxis: nil)
             return
         }
         if groupPullOutArmed {
@@ -845,7 +887,13 @@ struct PickyHUDDockRailView: View {
         }
         groupDragTranslation = translation
 
-        let cursorAxis = groupDragStartCenter + PickyHUDDockDragGeometry.axisDelta(translation, orientation: orientation)
+        let railCursorAxis = groupDragStartCenter + PickyHUDDockDragGeometry.axisDelta(translation, orientation: orientation)
+        updateAutoScroll(railCursorAxis: railCursorAxis)
+        let cursorAxis = PickyHUDDockAutoScrollPolicy.frozenAxis(
+            cursorAxis: railCursorAxis,
+            startOffset: dragStartScrollOffset,
+            currentOffset: listScrollOffset
+        )
         guard let nearestLayoutIndex = PickyHUDDockRenderPolicy.nearestLayoutEntryIndex(
             cursorAxis: cursorAxis,
             visibleTopEntryIDs: groupDragReferenceTopEntryIDs,
@@ -881,12 +929,76 @@ struct PickyHUDDockRailView: View {
     }
 
     private func resetGroupDrag() {
+        updateAutoScroll(railCursorAxis: nil)
         groupPullOutArmed = false
         groupDragTranslation = .zero
         draggingGroupID = nil
         pendingGroupTopLevelIndex = nil
         groupDragReferenceTopEntryExtents = [:]
         groupDragReferenceTopEntryIDs = []
+    }
+
+    // MARK: - Drag autoscroll
+
+    /// Starts, keeps, or stops edge autoscroll for the current drag cursor.
+    /// `nil` stops it (drag ended or the row is pulled out of the dock).
+    private func updateAutoScroll(railCursorAxis: CGFloat?) {
+        var direction = 0
+        if let railCursorAxis, overflowLayout.needsScroll, let viewport = listViewportExtent {
+            direction = PickyHUDDockAutoScrollPolicy.direction(
+                cursorAxis: railCursorAxis,
+                viewport: viewport,
+                offset: listScrollOffset,
+                contentLength: PickyHUDDockRailLayoutPolicy.listLength(
+                    projection: projection,
+                    activeSessionIDs: activeSessionIDSet,
+                    orientation: orientation,
+                    metrics: metrics,
+                    fontScale: fontScale
+                )
+            )
+        }
+        guard direction != autoScrollDirection else { return }
+        autoScrollDirection = direction
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+        guard direction != 0 else { return }
+        autoScrollTask = Task { @MainActor in
+            while !Task.isCancelled {
+                autoScrollTick &+= 1
+                try? await Task.sleep(for: PickyHUDDockAutoScrollPolicy.stepInterval)
+            }
+        }
+    }
+
+    private func performAutoScrollStep(using proxy: ScrollViewProxy) {
+        guard autoScrollDirection != 0, let viewport = listViewportExtent else { return }
+        var rowCenters: [String: CGFloat] = [:]
+        for (id, center) in slotCenters {
+            rowCenters["session:\(id)"] = orientation == .vertical ? center.y : center.x
+        }
+        let headerHalf = orientation == .vertical
+            ? metrics.groupHeaderHeight(fontScale: fontScale) / 2
+            : metrics.chipWidth / 2
+        for (entryID, extent) in topEntryExtents where entryID.hasPrefix("group:") {
+            rowCenters[entryID] = extent.lower + headerHalf
+        }
+        guard let target = PickyHUDDockAutoScrollPolicy.targetRowID(
+            direction: autoScrollDirection,
+            viewport: viewport,
+            rowCenters: rowCenters
+        ) else { return }
+        withAnimation(.easeOut(duration: 0.12)) {
+            proxy.scrollTo(target, anchor: autoScrollDirection > 0 ? .bottom : .top)
+        }
+    }
+
+    private func reresolveDragAfterScroll() {
+        if let draggingSessionID {
+            handleReorderChanged(sessionID: draggingSessionID, translation: dragTranslation)
+        } else if let draggingGroupID {
+            handleGroupDragChanged(groupID: draggingGroupID, translation: groupDragTranslation)
+        }
     }
 
     private func cancelDragsForPersistedStructureChange(_ structure: PickyHUDDockPersistedStructure) {

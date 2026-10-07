@@ -215,6 +215,18 @@ extension PickyDockLayout {
         return nil
     }
 
+    /// Every group expanded, for the list dock's one-time migration away from
+    /// the folder dock, which persisted all groups as collapsed.
+    func expandingAllGroups() -> PickyDockLayout {
+        var next = self
+        for index in next.entries.indices {
+            guard case var .group(group) = next.entries[index] else { continue }
+            group.isCollapsed = false
+            next.entries[index] = .group(group)
+        }
+        return next
+    }
+
     /// Drop any session id no longer present in `universe` from both
     /// top-level entries and every group's member list. Returns `true`
     /// when any change was applied.

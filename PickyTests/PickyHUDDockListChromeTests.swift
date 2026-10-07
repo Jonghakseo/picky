@@ -76,3 +76,33 @@ struct PickyHUDDockListChromeTests {
             == .init(leading: true, trailing: false))
     }
 }
+
+struct PickyHUDDockAutoScrollPolicyTests {
+    private let viewport = PickyDockAxisExtent(lower: 100, upper: 300)
+
+    @Test func scrollsOnlyNearAnEdgeThatStillHidesRows() {
+        // Near the bottom edge with rows below: scroll toward the end.
+        #expect(PickyHUDDockAutoScrollPolicy.direction(cursorAxis: 290, viewport: viewport, offset: 0, contentLength: 600) == 1)
+        // Near the top edge at offset 0: nothing above, stay.
+        #expect(PickyHUDDockAutoScrollPolicy.direction(cursorAxis: 105, viewport: viewport, offset: 0, contentLength: 600) == 0)
+        #expect(PickyHUDDockAutoScrollPolicy.direction(cursorAxis: 105, viewport: viewport, offset: 120, contentLength: 600) == -1)
+        // Already at the end.
+        #expect(PickyHUDDockAutoScrollPolicy.direction(cursorAxis: 290, viewport: viewport, offset: 400, contentLength: 600) == 0)
+        // Middle of the viewport.
+        #expect(PickyHUDDockAutoScrollPolicy.direction(cursorAxis: 200, viewport: viewport, offset: 120, contentLength: 600) == 0)
+    }
+
+    @Test func stepsToTheFirstRowPastTheEdge() {
+        let rows: [String: CGFloat] = ["a": 90, "b": 150, "c": 290, "d": 320, "e": 360]
+        #expect(PickyHUDDockAutoScrollPolicy.targetRowID(direction: 1, viewport: viewport, rowCenters: rows) == "d")
+        #expect(PickyHUDDockAutoScrollPolicy.targetRowID(direction: -1, viewport: viewport, rowCenters: rows) == "a")
+        #expect(PickyHUDDockAutoScrollPolicy.targetRowID(direction: 0, viewport: viewport, rowCenters: rows) == nil)
+    }
+
+    @Test func aScrolledListMapsTheCursorFurtherAlongTheFrozenGeometry() {
+        // After scrolling 80pt down, a pointer resting at 250 in the rail sits
+        // over content that was at 330 when the drag began.
+        #expect(PickyHUDDockAutoScrollPolicy.frozenAxis(cursorAxis: 250, startOffset: 40, currentOffset: 120) == 330)
+        #expect(PickyHUDDockAutoScrollPolicy.frozenAxis(cursorAxis: 250, startOffset: 40, currentOffset: 40) == 250)
+    }
+}

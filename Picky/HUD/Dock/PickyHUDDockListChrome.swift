@@ -98,6 +98,53 @@ struct PickyHUDDockResizeTab: View {
     }
 }
 
+// MARK: - Drag autoscroll
+
+/// Scrolls an overflowing list while a dragged row or group sits near the
+/// viewport edge, and maps the cursor back onto geometry frozen at pickup.
+enum PickyHUDDockAutoScrollPolicy {
+    /// Pointer distance inside the viewport edge that starts scrolling.
+    static let edgeZone: CGFloat = 24
+    /// Delay between one-row scroll steps.
+    static let stepInterval: Duration = .milliseconds(140)
+
+    /// -1 scrolls toward the start, +1 toward the end, 0 stops. Never scrolls
+    /// past either end of the content.
+    static func direction(
+        cursorAxis: CGFloat,
+        viewport: PickyDockAxisExtent,
+        offset: CGFloat,
+        contentLength: CGFloat
+    ) -> Int {
+        let viewportLength = viewport.upper - viewport.lower
+        if cursorAxis < viewport.lower + edgeZone, offset > 0.5 { return -1 }
+        if cursorAxis > viewport.upper - edgeZone, offset < contentLength - viewportLength - 0.5 { return 1 }
+        return 0
+    }
+
+    /// The first row just past the edge being scrolled toward.
+    static func targetRowID(
+        direction: Int,
+        viewport: PickyDockAxisExtent,
+        rowCenters: [String: CGFloat]
+    ) -> String? {
+        if direction > 0 {
+            return rowCenters.filter { $0.value > viewport.upper + 0.5 }.min { $0.value < $1.value }?.key
+        }
+        if direction < 0 {
+            return rowCenters.filter { $0.value < viewport.lower - 0.5 }.max { $0.value < $1.value }?.key
+        }
+        return nil
+    }
+
+    /// Drop geometry is frozen at pickup in rail coordinates. After the list
+    /// scrolls by `currentOffset - startOffset`, the same cursor sits that much
+    /// further along the frozen content.
+    static func frozenAxis(cursorAxis: CGFloat, startOffset: CGFloat, currentOffset: CGFloat) -> CGFloat {
+        cursorAxis + (currentOffset - startOffset)
+    }
+}
+
 // MARK: - Scroll fades
 
 struct PickyHUDDockScrollFades: Equatable {

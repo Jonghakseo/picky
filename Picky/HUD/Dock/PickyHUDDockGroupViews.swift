@@ -96,6 +96,14 @@ struct PickyDockTopEntryExtentPreferenceKey: PreferenceKey {
     }
 }
 
+/// Primary-axis span of an overflowing list's viewport in rail coordinates.
+struct PickyDockListViewportExtentPreferenceKey: PreferenceKey {
+    static let defaultValue: PickyDockAxisExtent? = nil
+    static func reduce(value: inout PickyDockAxisExtent?, nextValue: () -> PickyDockAxisExtent?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
 /// Scroll offset of an overflowing dock list along its primary axis.
 struct PickyDockListScrollOffsetPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0

@@ -198,6 +198,38 @@ struct PickySettingsPersistenceCoordinatorTests {
     }
 
     @MainActor
+    @Test func firstListDockLoadExpandsLegacyCollapsedGroupsExactlyOnce() async throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settingsStore = PickySettingsStore(appSupportRoot: root)
+        var legacy = settingsStore.load()
+        legacy.dockLayout = PickyDockLayout(entries: [
+            .session(id: "loose"),
+            .group(PickyDockGroup(id: "work", memberSessionIDs: ["a", "b"], isCollapsed: true)),
+            .group(PickyDockGroup(id: "misc", memberSessionIDs: ["c"], isCollapsed: true)),
+        ])
+        legacy.hudDockGroupsExpandedForListDock = false
+        try settingsStore.save(legacy)
+        let dockStore = PickySettingsDockLayoutStore(settingsStore: settingsStore)
+
+        // The folder dock saved every group collapsed; the first list-dock load
+        // shows their members and records the migration.
+        let controller = PickySessionDockLayoutController(store: dockStore)
+        #expect(controller.layout.groups.allSatisfy { !$0.isCollapsed })
+        await PickySettingsPersistenceCoordinator.shared(for: settingsStore).flush()
+        let migrated = try settingsStore.loadStrict()
+        #expect(migrated.hudDockGroupsExpandedForListDock)
+        #expect(migrated.dockLayout.groups.allSatisfy { !$0.isCollapsed })
+
+        // A collapse the user makes afterwards survives the next launch.
+        #expect(controller.setGroupCollapsed(id: "work", collapsed: true))
+        await PickySettingsPersistenceCoordinator.shared(for: settingsStore).flush()
+        let relaunched = PickySessionDockLayoutController(store: dockStore)
+        #expect(relaunched.layout.group(withID: "work")?.isCollapsed == true)
+        #expect(relaunched.layout.group(withID: "misc")?.isCollapsed == false)
+    }
+
+    @MainActor
     @Test func settingsViewModelRebasesEditMadeWhileEarlierSaveIsInFlight() async throws {
         let root = try makeRoot()
         defer { try? FileManager.default.removeItem(at: root) }

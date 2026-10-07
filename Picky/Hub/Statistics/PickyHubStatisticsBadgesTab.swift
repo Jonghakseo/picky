@@ -158,6 +158,10 @@ enum PickyHubBadgePresentation {
         case .treasureHunter: L10n.t("hub.stats.badge.treasureHunter.name")
         case .toolMaster: L10n.t("hub.stats.badge.toolMaster.name")
         case .renovator: L10n.t("hub.stats.badge.renovator.name")
+        case .pickleMaster: L10n.t("hub.stats.badge.pickleMaster.name")
+        case .hundredDays: L10n.t("hub.stats.badge.hundredDays.name")
+        case .worldExplorer: L10n.t("hub.stats.badge.worldExplorer.name")
+        case .majorRenovation: L10n.t("hub.stats.badge.majorRenovation.name")
         }
     }
 
@@ -183,6 +187,10 @@ enum PickyHubBadgePresentation {
         case .treasureHunter: L10n.t("hub.stats.badge.treasureHunter.rule")
         case .toolMaster: L10n.t("hub.stats.badge.toolMaster.rule")
         case .renovator: L10n.t("hub.stats.badge.renovator.rule")
+        case .pickleMaster: L10n.t("hub.stats.badge.pickleMaster.rule")
+        case .hundredDays: L10n.t("hub.stats.badge.hundredDays.rule")
+        case .worldExplorer: L10n.t("hub.stats.badge.worldExplorer.rule")
+        case .majorRenovation: L10n.t("hub.stats.badge.majorRenovation.rule")
         }
     }
 

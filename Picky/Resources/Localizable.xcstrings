@@ -1,6 +1,134 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "hub.stats.badge.pickleMaster.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle Master"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 장인"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.pickleMaster.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete 500 Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 500개 완료"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.hundredDays.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Hundred Days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백일의 약속"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.hundredDays.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Pickles on 100 distinct days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서로 다른 100일에 Pickle 시작"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.worldExplorer.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Age of Exploration"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대항해 시대"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.worldExplorer.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Work across 20 projects"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 20곳에서 작업"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.majorRenovation.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Major Renovation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대공사"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.majorRenovation.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete a Pickle with 100 changed files"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 100개를 바꾼 Pickle 완료"
+          }
+        }
+      }
+    },
     "hub.stats.badge.earlyBird.name": {
       "localizations": {
         "en": {

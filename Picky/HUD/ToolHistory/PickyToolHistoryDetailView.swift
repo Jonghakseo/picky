@@ -208,7 +208,7 @@ struct PickyToolHistoryDetailView: View {
             Text(L10n.t(key))
                 .foregroundStyle(selected ? DS.Colors.textPrimary : DS.Colors.accentText)
                 .padding(.horizontal, DS.Spacing.space1)
-                .padding(.vertical, 2)
+                .padding(.vertical, 2) // design-token-exception: hover fill hugging a status-size text action; space1 would add 4pt to the action row.
         }
         .buttonStyle(PickyToolHistoryQuietButtonStyle())
     }

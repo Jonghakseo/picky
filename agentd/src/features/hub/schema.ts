@@ -29,6 +29,13 @@ const PickyHubPickleRecordSchema = z.object({
   delegationCount: z.number().int().nonnegative(),
   reviewCount: z.number().int().nonnegative(),
   category: PickyHubWorkCategorySchema,
+  // Added after the first Hub statistics release; older payloads omit them.
+  changedFileCount: z.number().int().nonnegative().default(0),
+  artifactCount: z.number().int().nonnegative().default(0),
+  toolCallCount: z.number().int().nonnegative().default(0),
+  subagentCount: z.number().int().nonnegative().default(0),
+  activeDurationMs: z.number().int().nonnegative().default(0),
+  totalTokens: z.number().int().nonnegative().default(0),
 });
 const PickyHubUsageSampleSchema = z.object({
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

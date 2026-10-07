@@ -71,9 +71,39 @@ describe("pickle statistics", () => {
     expect(pickleStatisticsRecord(session({ messages: [userText("extension-report", "pi_extension"), nonInstruction, userText("user-kickoff", "user")] })).followUpCount).toBe(0);
   });
 
+  it("counts Pickle results and measures work time without idle gaps between turns", () => {
+    const at = (minutes: number) => new Date(Date.UTC(2026, 8, 1, 0, minutes)).toISOString();
+    const record = pickleStatisticsRecord(session({
+      messages: [
+        { id: "u-1", kind: "user_text", originatedBy: "user", createdAt: at(0), text: "Start" },
+        { id: "a-1", kind: "agent_activity", createdAt: at(10), text: "working" },
+        { id: "a-2", kind: "agent_text", createdAt: at(30), text: "done" },
+        // The user replies two hours later; the wait is not work time.
+        { id: "u-2", kind: "user_text", originatedBy: "user", createdAt: at(150), text: "One more" },
+        { id: "a-3", kind: "agent_text", createdAt: at(165), text: "done again" },
+        { id: "s-1", kind: "system", createdAt: at(400), text: "compacted" },
+      ],
+      tools: [
+        { toolCallId: "t-1", name: "bash", status: "succeeded" },
+        { toolCallId: "t-2", name: "edit", status: "failed" },
+      ],
+      artifacts: [{ id: "r-1", kind: "report", title: "Report", updatedAt: at(30) }],
+      changedFiles: [{ path: "a.swift", status: "modified" }, { path: "b.swift", status: "added" }],
+    }));
+
+    expect(record).toMatchObject({
+      activeDurationMs: 45 * 60_000,
+      toolCallCount: 2,
+      artifactCount: 1,
+      changedFileCount: 2,
+      subagentCount: 3,
+      totalTokens: 0,
+    });
+  });
+
   it("keeps a bridge summary in statistics while withholding unavailable journal counts", () => {
     const record = pickleStatisticsRecord(session({ messageJournalAvailable: false }));
-    expect(record).toMatchObject({ followUpCount: 0, delegationCount: 0, reviewCount: 2, category: "unclassified" });
+    expect(record).toMatchObject({ followUpCount: 0, delegationCount: 0, reviewCount: 2, category: "unclassified", activeDurationMs: 0 });
   });
 
   it("uses stable project labels for blank, home, and normal cwd values", () => {

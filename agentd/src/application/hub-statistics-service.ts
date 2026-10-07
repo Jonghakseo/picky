@@ -10,6 +10,8 @@ import {
   aggregateUsageSamples,
   mergeUsageSamples,
   pickleStatisticsRecord,
+  projectNameForCwd,
+  usageSampleTokens,
   type PickleClassifications,
   type PickleStatisticsRecord,
   type PickleUsageSample,
@@ -56,6 +58,8 @@ interface UsageSource {
   project: string;
   /** Stable tie breaker when more than one Picky record owns one transcript. */
   owner: string;
+  /** Absent for the main agent, whose usage belongs to no Pickle. */
+  sessionId?: string;
 }
 
 export interface ClassificationState {
@@ -206,10 +210,14 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     classifications: PickleClassifications,
     classificationEnabled: boolean,
   ): Promise<HubStatisticsSnapshot> {
+    const usage = await this.loadUsage(sessions);
     const records = sessions
-      .map((session) => pickleStatisticsRecord(session, classifications.entries[session.id], { homeDir: homedir() }))
+      .map((session) => ({
+        ...pickleStatisticsRecord(session, classifications.entries[session.id], { homeDir: homedir() }),
+        totalTokens: usage.tokensBySession.get(session.id) ?? 0,
+      }))
       .sort((lhs, rhs) => rhs.lastActivityAt.localeCompare(lhs.lastActivityAt));
-    const usageSamples = mergeUsageSamples(await this.loadUsageSamples(sessions));
+    const usageSamples = mergeUsageSamples(usage.samples);
     return {
       generatedAt: new Date().toISOString(),
       records,
@@ -263,11 +271,16 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     }
   }
 
-  private async loadUsageSamples(sessions: readonly PickyAgentSession[]): Promise<PickleUsageSample[]> {
+  private async loadUsage(sessions: readonly PickyAgentSession[]): Promise<{
+    samples: PickleUsageSample[];
+    /** Tokens attributed to the Pickle that owns each transcript after message deduplication. */
+    tokensBySession: Map<string, number>;
+  }> {
     const sources: UsageSource[] = sessions.flatMap((session) => session.piSessionFilePath ? [{
       filePath: normalizePiUsageSourcePath(session.piSessionFilePath),
-      project: pickleStatisticsRecord(session, undefined, { homeDir: homedir() }).project,
+      project: projectNameForCwd(session.cwd, homedir()),
       owner: `pickle:${session.id}`,
+      sessionId: session.id,
     }] : []);
     const mainSessionPath = await this.readMainAgentSessionPath();
     if (mainSessionPath) sources.push({ filePath: normalizePiUsageSourcePath(mainSessionPath), project: "Picky", owner: "main" });
@@ -281,16 +294,22 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     try {
       const seenMessageIds = new Set<string>();
       const samples: PickleUsageSample[] = [];
+      const tokensBySession = new Map<string, number>();
       for (const source of ownedSources) {
         const uniqueEntries = (await this.readPiUsage(source.filePath)).filter((entry) => {
           if (seenMessageIds.has(entry.messageId)) return false;
           seenMessageIds.add(entry.messageId);
           return true;
         });
-        samples.push(...aggregateUsageSamples(uniqueEntries, source.project));
+        const sourceSamples = aggregateUsageSamples(uniqueEntries, source.project);
+        samples.push(...sourceSamples);
+        if (source.sessionId) {
+          const tokens = sourceSamples.reduce((sum, sample) => sum + usageSampleTokens(sample), 0);
+          tokensBySession.set(source.sessionId, (tokensBySession.get(source.sessionId) ?? 0) + tokens);
+        }
       }
       await this.pruneMissingPiUsageDerivedRecords();
-      return samples;
+      return { samples, tokensBySession };
     } finally {
       this.releasePiUsageSources(ownedSources);
     }

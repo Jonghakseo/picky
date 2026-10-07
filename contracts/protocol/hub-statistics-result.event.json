@@ -18,7 +18,13 @@
         "followUpCount": 2,
         "delegationCount": 1,
         "reviewCount": 1,
-        "category": "fix"
+        "category": "fix",
+        "changedFileCount": 3,
+        "artifactCount": 1,
+        "toolCallCount": 12,
+        "subagentCount": 2,
+        "activeDurationMs": 540000,
+        "totalTokens": 150
       }
     ],
     "usageSamples": [

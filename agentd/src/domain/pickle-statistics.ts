@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
-import type { PickyAgentSession } from "../protocol.js";
+import type { PickyAgentSession, PickySessionMessage } from "../protocol.js";
 
 export type PickleStatisticsCategory = "fix" | "research" | "create" | "review" | "unclassified";
 
@@ -27,6 +27,16 @@ export interface PickleStatisticsRecord {
   delegationCount: number;
   reviewCount: number;
   category: PickleStatisticsCategory;
+  /** Files the Pickle reported as changed. */
+  changedFileCount: number;
+  /** Reports, links, and files attached as Pickle results. */
+  artifactCount: number;
+  toolCallCount: number;
+  subagentCount: number;
+  /** Sum of each turn's span from instruction to the last agent message. Idle time between turns is excluded. */
+  activeDurationMs: number;
+  /** Input, output, and cache tokens from this Pickle's own Pi transcript. */
+  totalTokens: number;
 }
 
 export interface PickleUsageSample {
@@ -52,6 +62,14 @@ export interface PiUsageEntry {
 }
 
 const REVIEW_AGENT_PATTERN = /review|verif|challeng|audit|critic/i;
+const AGENT_WORK_MESSAGE_KINDS = new Set<PickySessionMessage["kind"]>([
+  "agent_text",
+  "agent_thinking",
+  "agent_question",
+  "agent_error",
+  "agent_activity",
+  "subagent_invocation",
+]);
 
 export function projectNameForCwd(cwd: string | undefined, homeDir?: string): string {
   const trimmed = cwd?.trim();
@@ -88,7 +106,54 @@ export function pickleStatisticsRecord(
     delegationCount,
     reviewCount,
     category: classification?.category ?? "unclassified",
+    ...resultCounts(session),
+    activeDurationMs: activeDurationMs(messages),
+    totalTokens: 0,
   };
+}
+
+function resultCounts(session: PickyAgentSession): Pick<PickleStatisticsRecord, "changedFileCount" | "artifactCount" | "toolCallCount" | "subagentCount"> {
+  return {
+    changedFileCount: session.changedFiles?.length ?? 0,
+    artifactCount: session.artifacts?.length ?? 0,
+    toolCallCount: session.tools?.length ?? 0,
+    subagentCount: session.subagentRuns?.length ?? 0,
+  };
+}
+
+/**
+ * A turn starts at a user or main-agent instruction and ends at the last agent
+ * message before the next instruction. Waiting for the user between turns is
+ * not work, so it never counts.
+ */
+export function activeDurationMs(messages: readonly PickySessionMessage[]): number {
+  let total = 0;
+  let turnStart: number | undefined;
+  let turnEnd: number | undefined;
+  const closeTurn = () => {
+    if (turnStart !== undefined && turnEnd !== undefined && turnEnd > turnStart) total += turnEnd - turnStart;
+  };
+  const ordered = messages
+    .map((message) => ({ message, time: Date.parse(message.createdAt) }))
+    .filter((entry) => Number.isFinite(entry.time))
+    .sort((lhs, rhs) => lhs.time - rhs.time);
+  for (const { message, time } of ordered) {
+    const isInstruction = message.kind === "user_text"
+      && (message.originatedBy === "user" || message.originatedBy === "main_agent");
+    if (isInstruction) {
+      closeTurn();
+      turnStart = time;
+      turnEnd = undefined;
+    } else if (turnStart !== undefined && AGENT_WORK_MESSAGE_KINDS.has(message.kind)) {
+      turnEnd = time;
+    }
+  }
+  closeTurn();
+  return total;
+}
+
+export function usageSampleTokens(sample: Pick<PickleUsageSample, "inputTokens" | "outputTokens" | "cacheTokens">): number {
+  return sample.inputTokens + sample.outputTokens + sample.cacheTokens;
 }
 
 export function aggregateUsageSamples(entries: readonly PiUsageEntry[], project: string | undefined): PickleUsageSample[] {

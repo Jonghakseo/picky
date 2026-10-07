@@ -175,7 +175,6 @@ enum PickyHubStatisticsPresentation {
 
 struct PickyHubUsageLineChart: View {
     let days: [PickyHubUsageDay]
-    let period: PickyHubStatisticsPeriod
     @Environment(\.locale) private var locale
     @Environment(\.pickyAppFontScale) private var fontScale
 

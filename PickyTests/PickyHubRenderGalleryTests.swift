@@ -589,7 +589,7 @@ struct PickyHubRenderGalleryTests {
                         name: "audit-\(surface)-\(Int(width))-\(appearance.rawValue)-\(Int(fontScale * 100)).png",
                         appearance: appearance, logicalSize: CGSize(width: width, height: height), widthClass: "full-page")
                     if page == .statistics {
-                        fixture.navigator.showStatistics(tab: surface == "usage" ? .usage : .work)
+                        fixture.navigator.showStatistics(tab: surface == "usage" ? .usage : .rhythm)
                     } else {
                         fixture.navigator.select(page)
                     }

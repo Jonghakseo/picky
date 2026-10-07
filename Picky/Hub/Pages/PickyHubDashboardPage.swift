@@ -155,7 +155,7 @@ struct PickyHubDashboardPage: View {
                 title: "hub.dashboard.work.filteredTitle",
                 linkTitle: "hub.dashboard.work.showAll"
             ) {
-                navigator.showStatistics(tab: .work)
+                navigator.showStatistics(tab: .rhythm)
             }
             Text(PickyHubDashboardPresentation.workScope(filter: statisticsStore.filter))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
@@ -179,9 +179,9 @@ struct PickyHubDashboardPage: View {
                     PickyHubWorkInsightCards(
                         insights: PickyHubStatisticsAggregator.workInsights(for: records),
                         actions: .init(
-                            topCategory: { navigator.showStatistics(tab: .work, anchor: .workPattern) },
-                            deepestPickle: { navigator.showStatistics(tab: .work, anchor: .pickleRecords) },
-                            focusedProject: { navigator.showStatistics(tab: .work, anchor: .pickleRecords) }
+                            topCategory: { navigator.showStatistics(tab: .rhythm, anchor: .workPattern) },
+                            deepestPickle: { navigator.showStatistics(tab: .rhythm, anchor: .pickleRecords) },
+                            focusedProject: { navigator.showStatistics(tab: .rhythm, anchor: .pickleRecords) }
                         )
                     )
                 }

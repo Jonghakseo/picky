@@ -48,7 +48,7 @@ Hub behavior:
 The sidebar contains these eight destinations:
 
 - **Dashboard**: an update card when a new Picky version is ready, setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
-- **Statistics**: local AI-usage and work summaries, with **AI usage** as the first tab. Filter by period (**Last 7 days** ends today) and project. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
+- **Statistics**: four local tabs. **Rhythm** (the first tab) shows your daily streak and activity calendar, then hour-of-day patterns, work types, and per-Pickle records filtered by period (**Last 7 days** ends today) and project. **Badges** are earned from your whole history. **Pickle Hall of Fame** totals changed files, results, tool runs, and subagents, and lists the all-time leading Pickles, which you can open in the HUD. **AI usage** shows plan limits and the last 30 days of token usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
 
 ### 2.2 Plan limits
 

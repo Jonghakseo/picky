@@ -65,6 +65,45 @@ struct PickyHubPickleRecord: Codable, Identifiable, Equatable {
     /// Reviewer/verifier style subagent passes.
     let reviewCount: Int
     let category: PickyHubWorkCategory
+    /// Files the Pickle reported as changed. Older daemons omit the result
+    /// fields below, which then decode as zero.
+    var changedFileCount: Int = 0
+    /// Reports, links, and files attached as Pickle results.
+    var artifactCount: Int = 0
+    var toolCallCount: Int = 0
+    var subagentCount: Int = 0
+    /// Time from each instruction to the last agent message of that turn.
+    var activeDurationMs: Int = 0
+    var totalTokens: Int = 0
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, project, cwd, createdAt, lastActivityAt, followUpCount, delegationCount, reviewCount, category
+        case changedFileCount, artifactCount, toolCallCount, subagentCount, activeDurationMs, totalTokens
+    }
+}
+
+extension PickyHubPickleRecord {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            title: try container.decode(String.self, forKey: .title),
+            project: try container.decode(String.self, forKey: .project),
+            cwd: try container.decodeIfPresent(String.self, forKey: .cwd),
+            createdAt: try container.decode(Date.self, forKey: .createdAt),
+            lastActivityAt: try container.decode(Date.self, forKey: .lastActivityAt),
+            followUpCount: try container.decode(Int.self, forKey: .followUpCount),
+            delegationCount: try container.decode(Int.self, forKey: .delegationCount),
+            reviewCount: try container.decode(Int.self, forKey: .reviewCount),
+            category: try container.decode(PickyHubWorkCategory.self, forKey: .category),
+            changedFileCount: try container.decodeIfPresent(Int.self, forKey: .changedFileCount) ?? 0,
+            artifactCount: try container.decodeIfPresent(Int.self, forKey: .artifactCount) ?? 0,
+            toolCallCount: try container.decodeIfPresent(Int.self, forKey: .toolCallCount) ?? 0,
+            subagentCount: try container.decodeIfPresent(Int.self, forKey: .subagentCount) ?? 0,
+            activeDurationMs: try container.decodeIfPresent(Int.self, forKey: .activeDurationMs) ?? 0,
+            totalTokens: try container.decodeIfPresent(Int.self, forKey: .totalTokens) ?? 0
+        )
+    }
 }
 
 struct PickyHubUsageDay: Codable, Equatable, Identifiable {
@@ -295,13 +334,29 @@ enum PickyHubStatisticsAggregator {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> PickyHubUsageSummary {
-        let start = filter.period.startDate(now: now, calendar: calendar)
+        usageSummary(
+            in: snapshot,
+            start: filter.period.startDate(now: now, calendar: calendar),
+            project: filter.project,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    /// Usage from `start` (inclusive, `nil` for all time) through `now`.
+    static func usageSummary(
+        in snapshot: PickyHubStatisticsSnapshot,
+        start: Date?,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> PickyHubUsageSummary {
         let startDay = start.map { dayString($0, calendar: calendar) }
         let endDay = dayString(now, calendar: calendar)
         let samples = snapshot.usageSamples.filter { sample in
             if sample.day > endDay { return false }
             if let startDay, sample.day < startDay { return false }
-            if let project = filter.project, sample.project != project { return false }
+            if let project, sample.project != project { return false }
             return true
         }
         var input = 0, output = 0, cache = 0
@@ -336,9 +391,18 @@ enum PickyHubStatisticsAggregator {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> [PickyHubUsageDay] {
+        continuousDays(days, start: period.startDate(now: now, calendar: calendar), now: now, calendar: calendar)
+    }
+
+    static func continuousDays(
+        _ days: [PickyHubUsageDay],
+        start periodStart: Date?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [PickyHubUsageDay] {
         let byDay = Dictionary(days.map { ($0.day, $0.totalTokens) }, uniquingKeysWith: +)
         let end = calendar.startOfDay(for: now)
-        var start = period.startDate(now: now, calendar: calendar)
+        var start = periodStart
         if start == nil {
             guard let first = days.map(\.day).min(), let parsed = date(fromDay: first, calendar: calendar) else { return days }
             start = parsed

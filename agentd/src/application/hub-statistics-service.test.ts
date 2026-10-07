@@ -56,7 +56,8 @@ describe("HubStatisticsService", () => {
     const snapshot = await new HubStatisticsService(root).snapshot();
 
     expect(snapshot.records).toHaveLength(1);
-    expect(snapshot.records[0]).toMatchObject({ id: "pickle-1", title: "Newest", project: "picky" });
+    // The Pickle owns its own transcript; the main agent's usage is attributed to no Pickle.
+    expect(snapshot.records[0]).toMatchObject({ id: "pickle-1", title: "Newest", project: "picky", totalTokens: 39 });
     expect(snapshot.usageSamples).toEqual(expect.arrayContaining([
       expect.objectContaining({ day: "2026-09-02", provider: "anthropic", project: "picky", inputTokens: 10, outputTokens: 20, cacheTokens: 9 }),
       expect.objectContaining({ day: "2026-09-02", provider: "openai", project: "Picky", inputTokens: 1, outputTokens: 2, cacheTokens: 7 }),
@@ -94,6 +95,10 @@ describe("HubStatisticsService", () => {
         expect(snapshot.usageSamples.filter((sample) => sample.project === project)
           .reduce((total, sample) => total + sample.inputTokens, 0)).toBe(expected);
       }
+      // Per-Pickle totals reuse the same ownership, so no message counts twice.
+      const pickleUsage = snapshot.usageSamples.filter((sample) => sample.project === "alpha" || sample.project === "beta")
+        .reduce((total, sample) => total + sample.inputTokens + sample.outputTokens + sample.cacheTokens, 0);
+      expect(snapshot.records.reduce((total, record) => total + record.totalTokens, 0)).toBe(pickleUsage);
     }
   });
 

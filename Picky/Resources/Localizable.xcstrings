@@ -16370,13 +16370,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Review work results and AI usage by period and project."
+            "value": "See your work rhythm, results, and AI usage."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업 결과와 AI 사용량을 기간·프로젝트별로 확인하세요."
+            "value": "작업 리듬과 성과, AI 사용량을 확인하세요."
           }
         }
       }
@@ -18093,22 +18093,6 @@
         }
       }
     },
-    "hub.stats.tab.work": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Work"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작업"
-          }
-        }
-      }
-    },
     "hub.stats.tab.usage": {
       "localizations": {
         "en": {
@@ -18466,13 +18450,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No AI usage is recorded for this period and project. Recorded usage from Picky tasks appears here when available."
+            "value": "No AI usage was recorded in the last 30 days. Recorded usage from Picky tasks appears here when available."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택한 기간과 프로젝트에 기록된 AI 사용량이 없어요. Picky 작업에서 기록된 사용량이 생기면 이곳에 표시돼요."
+            "value": "최근 30일 동안 기록된 AI 사용량이 없어요. Picky 작업에서 기록된 사용량이 생기면 이곳에 표시돼요."
           }
         }
       }
@@ -31103,6 +31087,1174 @@
           "stringUnit": {
             "state": "translated",
             "value": "초기화까지 고르게 쓰면 지금 약 %1$lld%%가 남아 있어야 해요."
+          }
+        }
+      }
+    },
+    "hub.stats.tab.rhythm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rhythm"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 리듬"
+          }
+        }
+      }
+    },
+    "hub.stats.tab.badges": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Badges"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배지"
+          }
+        }
+      }
+    },
+    "hub.stats.tab.hallOfFame": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle Hall of Fame"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 명예의 전당"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.streak.unit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "days in a row"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일 연속"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.streak.active": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've started a Pickle every day."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매일 Pickle을 1개 이상 맡겼어요."
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.streak.idle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a Pickle today to begin a streak."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오늘 Pickle을 맡기면 연속 기록이 시작돼요."
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.streak.longest": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Longest: %lld days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최장 기록 %lld일"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.streak.toRecord": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld to go"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld일 더"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.streak.record": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Best yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최장 기록 경신 중"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.calendar.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily activity"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "날짜별 활동"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.calendar.summary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld Pickles · %2$lld active days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle %1$lld개 · 활동한 날 %2$lld일"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.calendar.dayTooltip": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$lld Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: Pickle %2$lld개"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.calendar.less": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Less"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "적음"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.calendar.more": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "많음"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.pattern.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Patterns"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패턴 분석"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.pattern.scope": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Period and project apply only to the sections below."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래 내용에만 기간과 프로젝트가 적용돼요."
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.hours.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you start Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주로 맡기는 시간"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.hours.axis": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld:00"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld시"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.hours.tooltip": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld:00: %2$lld Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld시: Pickle %2$lld개"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.peak.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peak hours"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "집중 시간대"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.peak.value": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld:00–%2$lld:00"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld~%2$lld시"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.share": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld%% of all"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체의 %lld%%"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.lateNight.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After midnight (0–5)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자정 이후 (0~5시)"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.weekend.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekends"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주말"
+          }
+        }
+      }
+    },
+    "hub.stats.rhythm.pickleCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle %lld개"
+          }
+        }
+      }
+    },
+    "hub.stats.badges.count": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld of %1$lld earned"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld개 중 %2$lld개 획득"
+          }
+        }
+      }
+    },
+    "hub.stats.badges.recent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New badge: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 배지를 받았어요 · %@"
+          }
+        }
+      }
+    },
+    "hub.stats.badges.next.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next goal: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 목표 · %@"
+          }
+        }
+      }
+    },
+    "hub.stats.badges.next.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next goal: %1$@ (%2$@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 목표: %1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "hub.stats.badges.allEarned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've earned every badge."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 배지를 받았어요."
+          }
+        }
+      }
+    },
+    "hub.stats.badges.earned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Earned %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 획득"
+          }
+        }
+      }
+    },
+    "hub.stats.badges.earnedToday": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Earned today"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오늘 획득"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.firstPickle.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첫 Pickle"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.firstPickle.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start your first Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "첫 작업 맡기기"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.weekStreak.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7-Day Streak"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7일 연속"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.weekStreak.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Pickle every day for 7 days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7일 동안 매일 맡기기"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.nightOwl.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Night Owl"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "올빼미"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.nightOwl.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10 Pickles after midnight"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자정 이후 Pickle 10개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.millionTokens.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Million Token Club"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백만 토큰 클럽"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.millionTokens.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1M tokens in total"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누적 100만 토큰"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.busyDay.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Busy Day"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바쁜 하루"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.busyDay.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10 Pickles in one day"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하루에 Pickle 10개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.noFollowUp.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One and Done"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 번에 끝"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.noFollowUp.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "25 Pickles with no follow-ups"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "후속 지시 없는 Pickle 25개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.explorer.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explorer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탐험가"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.explorer.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Work in 5 projects"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 5곳에서 작업"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.monthStreak.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30-Day Streak"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30일 연속"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.monthStreak.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Pickle every day for 30 days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30일 동안 매일 맡기기"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.totals.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What your Pickles produced"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금까지 Pickle이 남긴 것"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.totals.changedFiles": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changed files"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바꾼 파일"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.totals.artifacts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Results"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과물"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.totals.toolCalls": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool runs"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구 실행"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.totals.subagents": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagents"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서브에이전트"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.totals.thisMonth": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ this month"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 달 %@"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.totals.caption": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This month counts Pickles started this month. Results include reports, links, and files."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 달 수치는 이번 달에 시작한 Pickle 기준이에요. 결과물에는 리포트·링크·파일이 포함돼요."
+          }
+        }
+      }
+    },
+    "hub.stats.fame.awards.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All-time records"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "역대 기록"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.award.longestWork": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Longest working Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가장 오래 일한 Pickle"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.award.mostChangedFiles": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Most files changed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일을 가장 많이 바꾼 Pickle"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.award.mostSubagents": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Most subagents"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서브에이전트를 가장 많이 쓴 Pickle"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.award.mostFollowUps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Most follow-ups"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가장 많이 주고받은 Pickle"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.award.mostTokens": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Most tokens"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "토큰을 가장 많이 쓴 Pickle"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.value.files": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld files"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 %lld개"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.value.subagents": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld subagents"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서브에이전트 %lld개"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.value.followUps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld follow-ups"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "후속 지시 %lld회"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.value.tokens": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ tokens"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 토큰"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.value.underMinute": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Under 1 min"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1분 미만"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.value.minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld분"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.value.hoursMinutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld hr %2$lld min"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld시간 %2$lld분"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "열기"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.open.accessibility": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 열기"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.empty.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No records yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 기록이 없어요"
+          }
+        }
+      }
+    },
+    "hub.stats.fame.empty.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Records build up here as Pickles finish their work."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle이 작업을 마치면 여기에 기록이 쌓여요."
+          }
+        }
+      }
+    },
+    "hub.stats.usage.recent.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last 30 days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 30일 사용량"
           }
         }
       }

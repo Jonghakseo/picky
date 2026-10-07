@@ -37,8 +37,10 @@ enum PickyHubSettingsGroup: String, CaseIterable, Identifiable {
 }
 
 enum PickyHubStatisticsTab: String, CaseIterable, Identifiable {
+    case rhythm
+    case badges
+    case hallOfFame
     case usage
-    case work
 
     var id: String { rawValue }
 }
@@ -154,7 +156,7 @@ final class PickyHubNavigator: ObservableObject {
         )
     }
 
-    func showStatistics(tab: PickyHubStatisticsTab = .work, anchor: PickyHubStatisticsAnchor? = nil) {
+    func showStatistics(tab: PickyHubStatisticsTab = .rhythm, anchor: PickyHubStatisticsAnchor? = nil) {
         pendingStatisticsTab = tab
         pendingStatisticsAnchor = anchor
         selectedPage = .statistics
@@ -193,5 +195,5 @@ enum PickyHubStatisticsAnchor: String {
     case pickleRecords
     case planLimits
 
-    var tab: PickyHubStatisticsTab { self == .planLimits ? .usage : .work }
+    var tab: PickyHubStatisticsTab { self == .planLimits ? .usage : .rhythm }
 }

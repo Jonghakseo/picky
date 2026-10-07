@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import Picky
 
@@ -94,6 +94,53 @@ struct PickyToolHistoryPresentationTests {
         #expect(Presentation.title(for: entry("edit")) == "edit")
         #expect(Presentation.title(for: entry("ask_user_question", preview: #"{"title":"Choose layout"}"#)) == "Choose layout")
         #expect(Presentation.title(for: entry("ask_user_question", preview: #"{"questions":[{"prompt":"Which layout?"}]}"#)) == "Which layout?")
+    }
+
+    @Test func rowLabelsKeepToolNamesShortAndMoveDisambiguationToContext() {
+        let mcp = entry("mcp__creatrip__jira_getIssue", preview: #"{"issue_key":"COM-2605"}"#)
+        #expect(Presentation.displayName(for: mcp) == "jira_getIssue")
+        #expect(Presentation.title(for: mcp) == "COM-2605")
+        #expect(Presentation.context(for: mcp) == "creatrip")
+
+        let read = entry("read", preview: #"{"path":"frontend/apps/admin/src/page/Settlements.tsx"}"#)
+        #expect(Presentation.title(for: read) == "Settlements.tsx")
+        #expect(Presentation.context(for: read) == "frontend/apps/admin/src/page")
+        #expect(Presentation.context(for: entry("read", preview: #"{"path":"AGENTS.md"}"#)) == nil)
+        #expect(Presentation.displayName(for: entry("todo_write")) == "todo")
+    }
+
+    @MainActor @Test func codemodeTitleNamesCalledToolsInsteadOfRepeatingItsName() throws {
+        try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
+            let code = "const a = await tools.bash({command: 'ls'}); await tools.read({path}); "
+                + "await tools.bash({command: 'pwd'}); await tools.mcp__creatrip__jira_getIssue({issue_key: 'X'})"
+            let args = try json(["code": code])
+            #expect(Presentation.title(for: entry("codemode", preview: args)) == "Calls bash \u{00B7} read \u{00B7} jira_getIssue")
+            #expect(Presentation.title(for: entry("codemode", preview: try json(["code": "return 1"]))) == "codemode")
+        }
+    }
+
+    @Test func bashExitStatusSeparatesFromMergedOutput() {
+        let output = Presentation.bashOutput("a.ts\nlsof: no process\n\nCommand exited with code 1\n")
+        #expect(output == .init(body: "a.ts\nlsof: no process", exitCode: 1))
+        let plain = "echo Command exited with code 1 later\nok"
+        #expect(Presentation.bashOutput(plain) == .init(body: plain, exitCode: nil))
+    }
+
+    @Test func nameColumnFitsCommonNamesOnOneLineButCapsLongOnes() {
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        func width(_ text: String) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
+        let fitted = Presentation.nameColumnWidth(for: ["bash", "codemode", "jira_getIssue"], fontSize: 12)
+        #expect(fitted >= width("jira_getIssue"))
+        let capped = Presentation.nameColumnWidth(for: ["notion_search_pages_by_title"], fontSize: 12)
+        #expect(capped < width("notion_search_pages_by_title"))
+        #expect(capped >= fitted)
+    }
+
+    @Test func durationTextStaysCompact() {
+        #expect(Presentation.durationText(milliseconds: nil) == nil)
+        #expect(Presentation.durationText(milliseconds: 840) == "0.8s")
+        #expect(Presentation.durationText(milliseconds: 12_400) == "12s")
+        #expect(Presentation.durationText(milliseconds: 125_000) == "2m 05s")
     }
 
     private func entry(_ name: String, status: String = "succeeded", preview: String? = nil) -> PickyToolHistoryEntry {

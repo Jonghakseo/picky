@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Compact history content derived from saved arguments, never their preview.
 enum PickyToolHistoryPresentation {
@@ -19,6 +19,92 @@ enum PickyToolHistoryPresentation {
         case answered, awaiting, cancelled, unavailable
     }
 
+    /// Short label for the row's name column. MCP tools drop the `mcp__<server>__`
+    /// prefix the same way the inline tool row does; the server moves to `context`.
+    static func displayName(for entry: PickyToolHistoryEntry) -> String {
+        switch entry.name.lowercased() {
+        case "ask_user_question": return "ask"
+        case "todo_write", "todowrite": return "todo"
+        default: return mcpParts(entry.name)?.tool ?? entry.name
+        }
+    }
+
+    /// Dimmed secondary text after the title: the parent folder for file tools,
+    /// the server for MCP tools. `nil` when there is nothing that disambiguates.
+    static func context(for entry: PickyToolHistoryEntry) -> String? {
+        switch entry.detail {
+        case let .read(file, _), let .edit(file, _), let .write(file, _):
+            guard let file, !file.isEmpty else { return nil }
+            let parent = (file as NSString).deletingLastPathComponent
+            guard !parent.isEmpty, parent != "." else { return nil }
+            return (parent as NSString).abbreviatingWithTildeInPath
+        default:
+            return mcpParts(entry.name)?.server
+        }
+    }
+
+    /// Compact elapsed time for the row's trailing column, e.g. `0.8s`, `12s`, `2m 05s`.
+    static func durationText(milliseconds: Int?) -> String? {
+        guard let milliseconds, milliseconds >= 0 else { return nil }
+        if milliseconds < 10_000 {
+            return String(format: "%.1fs", Double(milliseconds) / 1000)
+        }
+        let seconds = milliseconds / 1000
+        if seconds < 60 { return "\(seconds)s" }
+        return String(format: "%dm %02ds", seconds / 60, seconds % 60)
+    }
+
+    /// One name column per list: as wide as the longest visible name, capped so a
+    /// long MCP tool name truncates instead of squeezing the title.
+    static func nameColumnWidth(for names: [String], fontSize: CGFloat) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let widest = names.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        let minimum = ("bash" as NSString).size(withAttributes: [.font: font]).width
+        let maximum = (String(repeating: "m", count: 15) as NSString).size(withAttributes: [.font: font]).width
+        return ceil(min(maximum, max(minimum, widest)))
+    }
+
+    struct BashOutput: Equatable {
+        let body: String
+        let exitCode: Int?
+    }
+
+    /// Pi's bash tool appends `Command exited with code N` to the merged
+    /// stdout/stderr. The status line becomes a header; the rest stays the body.
+    static func bashOutput(_ text: String) -> BashOutput {
+        let unchanged = BashOutput(body: text, exitCode: nil)
+        guard let range = text.range(of: "Command exited with code ", options: .backwards),
+              range.lowerBound == text.startIndex || text[text.index(before: range.lowerBound)] == "\n",
+              let code = Int(text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines))
+        else { return unchanged }
+        var body = text[..<range.lowerBound]
+        while let last = body.last, last.isWhitespace { body = body.dropLast() }
+        return BashOutput(body: String(body), exitCode: code)
+    }
+
+    /// Tools a codemode script calls, in first-use order (`tools.read(...)`).
+    /// Reads the script text only; it does not claim how many calls ran.
+    static func codemodeToolNames(argsJSON: String?) -> [String] {
+        guard let argsJSON else { return [] }
+        let code = object(argsJSON).flatMap { string($0, keys: ["code"]) } ?? argsJSON
+        guard let regex = try? NSRegularExpression(pattern: #"\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\("#) else { return [] }
+        var names: [String] = []
+        for match in regex.matches(in: code, range: NSRange(code.startIndex..., in: code)) {
+            guard let range = Range(match.range(at: 1), in: code) else { continue }
+            let raw = String(code[range])
+            let name = mcpParts(raw)?.tool ?? raw
+            if !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
+
+    private static func mcpParts(_ name: String) -> (server: String, tool: String)? {
+        guard name.hasPrefix("mcp__") else { return nil }
+        let parts = name.dropFirst("mcp__".count).components(separatedBy: "__")
+        guard parts.count >= 2, let tool = parts.last, !tool.isEmpty, !parts[0].isEmpty else { return nil }
+        return (parts[0], tool)
+    }
+
     static func title(for entry: PickyToolHistoryEntry) -> String {
         switch entry.detail {
         case let .read(file, _), let .edit(file, _), let .write(file, _):
@@ -37,6 +123,13 @@ enum PickyToolHistoryPresentation {
                    let first = questions.first, let prompt = string(first, keys: ["prompt", "question"]) {
                     return prompt
                 }
+            }
+            if entry.name.lowercased() == "codemode" {
+                let tools = codemodeToolNames(argsJSON: argsJSON)
+                guard !tools.isEmpty else { return entry.name }
+                let shown = tools.prefix(3).joined(separator: " · ")
+                let list = tools.count > 3 ? "\(shown) +\(tools.count - 3)" : shown
+                return L10n.t("hud.toolHistory.codemode.calls", list)
             }
             // Registered tools have a known argument meaning; unknown tools
             // keep their name so a free-form argument is never promoted to a label.

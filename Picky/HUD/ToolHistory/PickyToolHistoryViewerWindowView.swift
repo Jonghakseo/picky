@@ -49,11 +49,17 @@ struct PickyToolHistoryViewerWindowView: View {
                         .foregroundStyle(DS.Colors.textSecondary)
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
-                    LazyVStack(alignment: .leading, spacing: DS.Spacing.space1) {
-                        ForEach(filterResult.entries) { entry in
+                    let entries = filterResult.entries
+                    let nameWidth = PickyToolHistoryPresentation.nameColumnWidth(
+                        for: entries.map(PickyToolHistoryPresentation.displayName(for:)),
+                        fontSize: PickyHUDTypography.Size.supporting
+                    )
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(entries) { entry in
                             PickyToolHistoryEntryView(
                                 entry: entry, workingDirectory: model.workingDirectory,
                                 collapseGeneration: collapseGeneration,
+                                nameColumnWidth: nameWidth,
                                 loadDetail: { model.inlineDetail(toolCallID: entry.id) },
                                 loadArguments: { model.inlineArguments(toolCallID: entry.id) }
                             )

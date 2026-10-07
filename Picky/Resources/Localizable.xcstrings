@@ -8406,6 +8406,54 @@
         }
       }
     },
+    "hud.toolHistory.codemode.calls": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calls %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 호출"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.exitCode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exit code %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료 코드 %lld"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.outputLineCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lines: %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "출력 %lld줄"
+          }
+        }
+      }
+    },
     "hud.toolHistory.todoProgress": {
       "localizations": {
         "en": {

@@ -5,6 +5,8 @@ struct PickyToolHistoryEntryView: View {
     let entry: PickyToolHistoryEntry
     var workingDirectory: String? = nil
     var collapseGeneration = 0
+    /// Shared by every row in a list so titles line up; see `nameColumnWidth(for:fontSize:)`.
+    var nameColumnWidth: CGFloat
     var loadDetail: (() -> PickyToolHistoryDetailModel?)? = nil
     var loadArguments: (() -> PickyToolHistoryDetailModel?)? = nil
     @State private var detail: PickyToolHistoryDetailModel?
@@ -12,6 +14,7 @@ struct PickyToolHistoryEntryView: View {
     @State private var expanded: Bool
 
     init(entry: PickyToolHistoryEntry, workingDirectory: String? = nil, collapseGeneration: Int = 0,
+         nameColumnWidth: CGFloat? = nil,
          loadDetail: (() -> PickyToolHistoryDetailModel?)? = nil,
          loadArguments: (() -> PickyToolHistoryDetailModel?)? = nil,
          initiallyExpanded: Bool = false,
@@ -20,6 +23,10 @@ struct PickyToolHistoryEntryView: View {
         self.entry = entry
         self.workingDirectory = workingDirectory
         self.collapseGeneration = collapseGeneration
+        self.nameColumnWidth = nameColumnWidth ?? PickyToolHistoryPresentation.nameColumnWidth(
+            for: [PickyToolHistoryPresentation.displayName(for: entry)],
+            fontSize: PickyHUDTypography.Size.supporting
+        )
         self.loadDetail = loadDetail
         self.loadArguments = loadArguments
         _expanded = State(initialValue: initiallyExpanded)
@@ -32,24 +39,38 @@ struct PickyToolHistoryEntryView: View {
             Button { expanded.toggle() } label: {
                 HStack(spacing: DS.Spacing.space2) {
                     PickyToolHistoryStatusIcon(status: entry.status)
-                        .frame(width: 16)
-                    Text(shortName)
+                        .frame(width: Self.statusColumnWidth)
+                    Text(PickyToolHistoryPresentation.displayName(for: entry))
                         .font(PickyHUDTypography.supportingMonospaced)
                         .foregroundStyle(DS.Colors.textSecondary)
-                        .frame(width: 52, alignment: .leading)
-                    Text(PickyToolHistoryPresentation.title(for: entry))
-                        .font(PickyHUDTypography.body)
-                        .foregroundStyle(DS.Colors.textPrimary)
                         .lineLimit(1)
-                    Spacer(minLength: DS.Spacing.space1)
+                        .truncationMode(.middle)
+                        .frame(width: nameColumnWidth, alignment: .leading)
+                        .help(entry.name)
+                    HStack(spacing: DS.Spacing.space2) {
+                        Text(PickyToolHistoryPresentation.title(for: entry))
+                            .font(PickyHUDTypography.body)
+                            .foregroundStyle(DS.Colors.textPrimary)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                        if let context = PickyToolHistoryPresentation.context(for: entry) {
+                            Text(context)
+                                .font(PickyHUDTypography.supporting)
+                                .foregroundStyle(DS.Colors.textTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                        }
+                    }
+                    Spacer(minLength: DS.Spacing.space2)
+                    trailingStatus
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(PickyHUDTypography.status)
                         .frame(width: PickyHUDTypography.Size.supporting, height: PickyHUDTypography.Size.supporting)
-                        .foregroundStyle(DS.Colors.textSecondary)
+                        .foregroundStyle(DS.Colors.textTertiary)
                 }
-                .padding(.horizontal, DS.Spacing.space2)
-                .padding(.vertical, DS.Spacing.space2)
-                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                .padding(.horizontal, Self.rowHorizontalPadding)
+                .padding(.vertical, DS.Spacing.space1)
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(expanded ? DS.Colors.surface2 : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.compact))
@@ -69,7 +90,7 @@ struct PickyToolHistoryEntryView: View {
                         PickyToolHistoryTextBlock(text: result.text)
                     }
                 }
-                .padding(.leading, DS.Spacing.space8)
+                .padding(.leading, titleColumnInset)
                 .padding(.trailing, DS.Spacing.space2)
                 .padding(.bottom, DS.Spacing.space2)
                 .task {
@@ -81,11 +102,24 @@ struct PickyToolHistoryEntryView: View {
         .onChange(of: collapseGeneration) { _, _ in expanded = false }
     }
 
-    private var shortName: String {
-        switch entry.name.lowercased() {
-        case "ask_user_question": return "ask"
-        case "todo_write", "todowrite": return "todo"
-        default: return entry.name
+    private static let statusColumnWidth: CGFloat = 16
+    private static let rowHorizontalPadding = DS.Spacing.space2
+
+    /// Expanded content starts under the title, not at an arbitrary indent.
+    private var titleColumnInset: CGFloat {
+        Self.rowHorizontalPadding + Self.statusColumnWidth + DS.Spacing.space2 + nameColumnWidth + DS.Spacing.space2
+    }
+
+    @ViewBuilder private var trailingStatus: some View {
+        if entry.status == .running {
+            Text(L10n.t("hud.conversation.status.running"))
+                .font(PickyHUDTypography.status)
+                .foregroundStyle(DS.Colors.info)
+        } else if let duration = PickyToolHistoryPresentation.durationText(milliseconds: entry.durationMs) {
+            Text(duration)
+                .font(PickyHUDTypography.supportingMonospaced)
+                .foregroundStyle(DS.Colors.textTertiary)
+                .help(L10n.t("hud.toolHistory.duration", Int64(entry.durationMs ?? 0)))
         }
     }
 }
@@ -194,6 +228,8 @@ struct PickyToolHistoryFileLink: View {
 struct PickyToolHistoryTextBlock: View {
     let text: String
     var tint: Color = DS.Colors.textBody
+    /// Optional 2pt leading bar, used to mark a failed command's output without recoloring it.
+    var edge: Color? = nil
 
     private var viewportHeight: CGFloat {
         // Count only enough lines to fill the viewport, not the entire stored result on each redraw.
@@ -207,16 +243,24 @@ struct PickyToolHistoryTextBlock: View {
     }
 
     var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            Text(text.isEmpty ? L10n.t("hud.toolHistory.detail.empty") : text)
-                .font(PickyHUDTypography.supportingMonospaced)
-                .foregroundStyle(tint)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: true, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(DS.Spacing.space2)
+        // A 2-axis ScrollView centers content narrower than the viewport, and an
+        // unbounded frame inside it has no width to align to. Pinning the content
+        // to at least the viewport width keeps the first column at the leading edge.
+        GeometryReader { geometry in
+            ScrollView([.horizontal, .vertical]) {
+                Text(text.isEmpty ? L10n.t("hud.toolHistory.detail.empty") : text)
+                    .font(PickyHUDTypography.supportingMonospaced)
+                    .foregroundStyle(tint)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .padding(DS.Spacing.space2)
+                    .frame(minWidth: geometry.size.width, alignment: .topLeading)
+            }
         }
         .frame(height: viewportHeight)
+        .overlay(alignment: .leading) {
+            if let edge { Rectangle().fill(edge).frame(width: 2) }
+        }
         .background(DS.Colors.surface2.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: DS.CornerRadius.compact))
     }

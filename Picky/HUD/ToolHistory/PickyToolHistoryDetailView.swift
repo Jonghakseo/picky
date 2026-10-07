@@ -10,8 +10,6 @@ struct PickyToolHistoryDetailView: View {
     var workingDirectory: String? = nil
     @State private var presentation: PickyToolHistoryPresentation.Detail?
     @State private var auxiliary: Auxiliary?
-    @State private var hovering = false
-    @FocusState private var menuFocused: Bool
 
     private enum Auxiliary { case arguments, response, attempted, timing }
 
@@ -39,21 +37,17 @@ struct PickyToolHistoryDetailView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: DS.Spacing.space1) {
-            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                primaryContent
-                if model.attachmentsOmitted {
-                    Text(L10n.t("hud.toolHistory.detail.attachmentsOmitted"))
-                        .font(PickyHUDTypography.status)
-                        .foregroundStyle(DS.Colors.textSecondary)
-                }
-                if let auxiliary { auxiliaryContent(auxiliary) }
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            actionBar
+            primaryContent
+            if model.attachmentsOmitted {
+                Text(L10n.t("hud.toolHistory.detail.attachmentsOmitted"))
+                    .font(PickyHUDTypography.status)
+                    .foregroundStyle(DS.Colors.textSecondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            actions
-                .opacity(hovering || menuFocused || auxiliary != nil ? 1 : 0)
+            if let auxiliary { auxiliaryContent(auxiliary) }
         }
-        .onHover { hovering = $0 }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: presentationInput) { _, input in
             presentation = PickyToolHistoryPresentation.detail(
                 for: entry, arguments: input.arguments, structuredResult: input.structuredResult
@@ -80,22 +74,20 @@ struct PickyToolHistoryDetailView: View {
             if let path = storedFilePath {
                 PickyToolHistoryFileLink(path: path, workingDirectory: workingDirectory)
             }
-            resultContent
+            bashCommand
+            resultContent()
         } else if let presentation {
             PickyToolHistoryContentView(presentation: presentation, workingDirectory: workingDirectory)
             if case .ask(_, .unavailable) = presentation {
-                resultContent
+                resultContent()
             } else if model.state != .ready {
-                resultContent
+                resultContent()
             }
         } else {
             if let path = storedFilePath {
                 PickyToolHistoryFileLink(path: path, workingDirectory: workingDirectory)
             }
-            if entry.category == .bash, argumentsModel.state == .ready,
-               let command = PickyToolHistoryRenderer.parseArgs(argumentsModel.text)["command"] as? String {
-                PickyToolHistoryTextBlock(text: "$ " + command, tint: DS.Colors.textSecondary)
-            }
+            bashCommand
             if case let .subagent(_, agents, task) = entry.detail {
                 if !agents.isEmpty {
                     Text(agents.joined(separator: ", "))
@@ -105,7 +97,7 @@ struct PickyToolHistoryDetailView: View {
                     Text(task).font(PickyHUDTypography.body).textSelection(.enabled)
                 }
             }
-            resultContent
+            resultContent()
             // Known mutating tools must not masquerade as a complete structured view
             // while their original input is missing or still loading.
             if needsOriginalArguments && argumentsModel.state != .ready {
@@ -127,13 +119,33 @@ struct PickyToolHistoryDetailView: View {
         return ["path", "file", "file_path", "filePath"].compactMap { args[$0] as? String }.first
     }
 
-    @ViewBuilder private var resultContent: some View {
+    @ViewBuilder private var bashCommand: some View {
+        if entry.category == .bash, argumentsModel.state == .ready,
+           let command = PickyToolHistoryRenderer.parseArgs(argumentsModel.text)["command"] as? String {
+            PickyToolHistoryTextBlock(text: "$ " + command, tint: DS.Colors.textSecondary)
+        }
+    }
+
+    /// Bash output arrives as merged stdout/stderr, so no line can be called an error.
+    /// The exit status moves to the action bar and the output keeps the body color.
+    private var bashOutput: PickyToolHistoryPresentation.BashOutput? {
+        guard entry.category == .bash, model.state == .ready else { return nil }
+        return PickyToolHistoryPresentation.bashOutput(model.text)
+    }
+
+    /// `raw` shows the stored response verbatim, including Pi's exit status line.
+    @ViewBuilder private func resultContent(raw: Bool = false) -> some View {
         switch model.state {
         case .idle, .loading:
             ProgressView(L10n.t("hud.toolHistory.detail.loading"))
                 .controlSize(.small).font(PickyHUDTypography.status)
         case .ready:
-            PickyToolHistoryTextBlock(text: model.text, tint: entry.status == .failed ? DS.Colors.destructiveText : DS.Colors.textBody)
+            if !raw, let bashOutput {
+                PickyToolHistoryTextBlock(text: bashOutput.body,
+                                          edge: entry.status == .failed ? DS.Colors.destructive : nil)
+            } else {
+                PickyToolHistoryTextBlock(text: model.text, tint: entry.status == .failed ? DS.Colors.destructiveText : DS.Colors.textBody)
+            }
         case .pending: status("pending")
         case .unavailable: status("unavailable")
         case .sourceChanged: status("sourceChanged")
@@ -168,16 +180,50 @@ struct PickyToolHistoryDetailView: View {
             .foregroundStyle(DS.Colors.textSecondary)
     }
 
-    private var actions: some View {
-        Menu {
-            Button(L10n.t(storedPreview == nil
-                          ? "hud.toolHistory.detail.copyAll" : "hud.toolHistory.detail.copyPreview")) {
+    private var actionBar: some View {
+        HStack(spacing: DS.Spacing.space3) {
+            if let output = bashOutput {
+                if let code = output.exitCode {
+                    Text(L10n.t("hud.toolHistory.exitCode", Int64(code)))
+                        .foregroundStyle(code == 0 ? DS.Colors.textTertiary : DS.Colors.destructiveText)
+                }
+                Text(L10n.t("hud.toolHistory.outputLineCount", Int64(Self.lineCount(output.body))))
+                    .foregroundStyle(DS.Colors.textTertiary)
+            }
+            Spacer(minLength: DS.Spacing.space2)
+            actionButton(storedPreview == nil ? "hud.toolHistory.detail.copyAll" : "hud.toolHistory.detail.copyPreview") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(storedPreview?.text ?? model.text, forType: .string)
-            }.disabled(model.state != .ready && storedPreview == nil)
-            Divider()
-            Button(L10n.t("hud.toolHistory.rawResponse")) { auxiliary = .response }
-            Button(L10n.t("hud.toolHistory.detail.arguments")) { auxiliary = .arguments }
+            }
+            .disabled(model.state != .ready && storedPreview == nil)
+            actionButton("hud.toolHistory.detail.arguments", selected: auxiliary == .arguments) { toggle(.arguments) }
+            actionButton("hud.toolHistory.rawResponse", selected: auxiliary == .response) { toggle(.response) }
+            moreMenu
+        }
+        .font(PickyHUDTypography.status)
+    }
+
+    private func actionButton(_ key: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(L10n.t(key))
+                .foregroundStyle(selected ? DS.Colors.textPrimary : DS.Colors.accentText)
+                .padding(.horizontal, DS.Spacing.space1)
+                .padding(.vertical, 2)
+        }
+        .buttonStyle(PickyToolHistoryQuietButtonStyle())
+    }
+
+    private func toggle(_ selected: Auxiliary) {
+        auxiliary = auxiliary == selected ? nil : selected
+    }
+
+    private static func lineCount(_ text: String) -> Int {
+        guard !text.isEmpty else { return 0 }
+        return text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
+    }
+
+    private var moreMenu: some View {
+        Menu {
             if entry.status == .failed, presentation != nil {
                 Button(L10n.t("hud.toolHistory.attempted")) { auxiliary = .attempted }
             }
@@ -189,12 +235,11 @@ struct PickyToolHistoryDetailView: View {
             Image(systemName: "ellipsis")
                 .font(PickyHUDTypography.supporting)
                 .foregroundStyle(DS.Colors.textSecondary)
-                .frame(width: 26, height: 26)
+                .frame(width: 22, height: 20)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .focused($menuFocused)
         .help(L10n.t("hud.toolHistory.more"))
         .accessibilityLabel(L10n.t("hud.toolHistory.more"))
     }
@@ -212,7 +257,7 @@ struct PickyToolHistoryDetailView: View {
                 .accessibilityLabel(L10n.t("hud.toolHistory.detail.close"))
             }
             switch selected {
-            case .response: resultContent
+            case .response: resultContent(raw: true)
             case .arguments:
                 if argumentsModel.state == .ready {
                     PickyToolHistoryTextBlock(text: argumentsModel.text)

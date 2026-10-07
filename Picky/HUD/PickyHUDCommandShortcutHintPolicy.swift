@@ -13,6 +13,9 @@ enum PickyHUDCommandShortcutHintEvent {
 }
 
 enum PickyHUDCommandShortcutHintPolicy {
+    /// How long Command must be held before shortcut badges appear.
+    static let revealDelay: Duration = .seconds(1)
+
     static func visibility(
         current: Bool,
         after event: PickyHUDCommandShortcutHintEvent

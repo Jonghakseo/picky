@@ -62,6 +62,7 @@ struct PickyHUDView: View {
     @State private var keyDownMonitor: Any?
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
+    @State private var commandShortcutHintRevealTask: Task<Void, Never>?
     @State private var isOptionModifierPressed = false
     @State private var composerFocusRequestID = 0
     @State private var composerStopRequestID = 0
@@ -221,10 +222,10 @@ struct PickyHUDView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
                 let currentHUDPanelResigned = isCurrentHUDPanel(notification.object)
-                isCommandShortcutHintVisible = PickyHUDCommandShortcutHintPolicy.visibility(
-                    current: isCommandShortcutHintVisible,
+                applyCommandShortcutHint(PickyHUDCommandShortcutHintPolicy.visibility(
+                    current: isCommandShortcutHintRequested,
                     after: .hudPanelDidResignKey(isCurrentHUDPanel: currentHUDPanelResigned)
-                )
+                ))
                 if currentHUDPanelResigned {
                     isOptionModifierPressed = false
                 }
@@ -617,7 +618,7 @@ struct PickyHUDView: View {
         isDockHovered = false
         isHUDHovered = false
         isDockAddSlotExpanded = false
-        isCommandShortcutHintVisible = false
+        hideCommandShortcutHint()
         isOptionModifierPressed = false
         archiveActions.cancelChoice()
         archiveActions.dismissError()
@@ -894,6 +895,9 @@ struct PickyHUDView: View {
 
     private func handleKeyboardShortcut(_ event: NSEvent) -> Bool {
         updateModifierKeyState(modifierFlags: event.modifierFlags)
+        if event.modifierFlags.contains(.command) {
+            cancelPendingCommandShortcutHintReveal()
+        }
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
         if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
         guard !placement.isMinimized else { return false }
@@ -1090,23 +1094,57 @@ struct PickyHUDView: View {
             NSEvent.removeMonitor(modifierFlagsMonitor)
             self.modifierFlagsMonitor = nil
         }
-        isCommandShortcutHintVisible = false
+        hideCommandShortcutHint()
         isOptionModifierPressed = false
     }
 
     private func updateModifierKeyState(modifierFlags: NSEvent.ModifierFlags) {
         let isCurrentPanelKey = isCurrentHUDPanel(NSApp.keyWindow)
-        isCommandShortcutHintVisible = PickyHUDCommandShortcutHintPolicy.visibility(
-            current: isCommandShortcutHintVisible,
+        applyCommandShortcutHint(PickyHUDCommandShortcutHintPolicy.visibility(
+            current: isCommandShortcutHintRequested,
             after: .modifierFlagsChanged(
                 modifierFlags: modifierFlags,
                 isCurrentHUDPanelKey: isCurrentPanelKey
             )
-        )
+        ))
         isOptionModifierPressed = PickyHUDOptionModifierPolicy.isPressed(
             modifierFlags: modifierFlags,
             isCurrentHUDPanelKey: isCurrentPanelKey
         )
+    }
+
+    /// Command is held (hint visible or its reveal still pending).
+    private var isCommandShortcutHintRequested: Bool {
+        isCommandShortcutHintVisible || commandShortcutHintRevealTask != nil
+    }
+
+    /// Shortcut badges appear only after Command is held for
+    /// `PickyHUDCommandShortcutHintPolicy.revealDelay`, so quick ⌘C / ⌘1
+    /// presses never flash every badge in the HUD.
+    private func applyCommandShortcutHint(_ wantsVisible: Bool) {
+        guard wantsVisible else {
+            hideCommandShortcutHint()
+            return
+        }
+        guard !isCommandShortcutHintRequested else { return }
+        commandShortcutHintRevealTask = Task { @MainActor in
+            try? await Task.sleep(for: PickyHUDCommandShortcutHintPolicy.revealDelay)
+            guard !Task.isCancelled else { return }
+            commandShortcutHintRevealTask = nil
+            isCommandShortcutHintVisible = true
+        }
+    }
+
+    /// A Command chord means the user already knows the shortcut; drop the
+    /// pending reveal but keep badges that are already on screen.
+    private func cancelPendingCommandShortcutHintReveal() {
+        commandShortcutHintRevealTask?.cancel()
+        commandShortcutHintRevealTask = nil
+    }
+
+    private func hideCommandShortcutHint() {
+        cancelPendingCommandShortcutHintReveal()
+        isCommandShortcutHintVisible = false
     }
 
     private func cancelPendingClose() {

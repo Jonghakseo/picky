@@ -30,6 +30,9 @@ struct PickyShortcutKeyBadge: View {
                 .monospacedDigit()
         }
         .foregroundColor(DS.Colors.textPrimary)
+        // Never compress the key text: fixed-width hosts (horizontal Dock chips)
+        // must shrink their title instead of clipping `⌘1` to `⌘…`.
+        .fixedSize()
         .padding(.horizontal, 4.5)
         .frame(height: 15)
         // Solid so the key stays legible over tiles, the Dock shell, or a dark wallpaper.

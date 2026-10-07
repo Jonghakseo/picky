@@ -27,9 +27,21 @@ struct PickyHUDDockExpansionState {
     }
 }
 
+enum PickyHUDDockPreviewTarget: Equatable {
+    case session(String)
+    case group(String)
+    case newPickle
+    case archive
+}
+
 @MainActor
 final class PickyHUDDockExpansionController: ObservableObject {
     @Published private(set) var isExpanded = false
+    @Published private(set) var previewTarget: PickyHUDDockPreviewTarget?
+
+    func preview(_ target: PickyHUDDockPreviewTarget) {
+        if previewTarget != target { previewTarget = target }
+    }
     private var state = PickyHUDDockExpansionState()
     private var pending: Task<Void, Never>?
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
@@ -56,6 +68,9 @@ final class PickyHUDDockExpansionController: ObservableObject {
     }
 
     private func publish() {
-        if isExpanded != state.isExpanded { isExpanded = state.isExpanded }
+        if isExpanded != state.isExpanded {
+            isExpanded = state.isExpanded
+            if !isExpanded { previewTarget = nil }
+        }
     }
 }

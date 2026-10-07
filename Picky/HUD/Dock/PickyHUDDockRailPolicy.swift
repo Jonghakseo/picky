@@ -52,7 +52,7 @@ enum PickyHUDDockRailLayoutPolicy {
             }
             return length + CGFloat(max(0, entryCount - 1)) * metrics.rowSpacing
         case .horizontal:
-            let chip = metrics.chipWidth
+            let chip = metrics.horizontalCompactCellSide(fontScale: fontScale)
             guard !projection.items.isEmpty else { return chip }
             var length: CGFloat = 0
             for item in projection.items {
@@ -60,19 +60,14 @@ enum PickyHUDDockRailLayoutPolicy {
                 case .session:
                     length += chip
                 case .group(let group):
-                    length += PickyHUDDockGroupHeaderLayout.horizontalChipWidth(
-                        name: group.displayName,
-                        count: group.memberSessionIDs.filter(activeSessionIDs.contains).count,
-                        metrics: metrics,
-                        fontScale: fontScale
-                    )
+                    length += chip
                     guard !group.isCollapsed else { continue }
                     let members = projection.visibleMemberIDs(inGroup: group.id).count
                     let chips = max(1, members)
-                    length += CGFloat(chips) * chip + CGFloat(chips) * 1
+                    length += CGFloat(chips) * chip
                 }
             }
-            return length + CGFloat(max(0, projection.items.count - 1)) * metrics.chipSpacing
+            return length
         }
     }
 
@@ -93,7 +88,8 @@ enum PickyHUDDockRailLayoutPolicy {
         return list + fixedChromeLength(
             dockSide: dockSide,
             metrics: metrics,
-            hasDockAddUtility: !projection.items.isEmpty
+            hasDockAddUtility: !projection.items.isEmpty,
+            fontScale: fontScale
         )
     }
 
@@ -113,8 +109,14 @@ enum PickyHUDDockRailLayoutPolicy {
     static func fixedChromeLength(
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
-        hasDockAddUtility: Bool
+        hasDockAddUtility: Bool,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
+        if dockSide.orientation == .horizontal {
+            return metrics.horizontalCompactHandleWidth + metrics.horizontalCompactSeparatorWidth
+                + metrics.horizontalCompactCellSide(fontScale: fontScale) * (hasDockAddUtility ? 2 : 1)
+                + metrics.collapseHitDepth
+        }
         let utilities = hasDockAddUtility
             ? metrics.utilityButtonSide * 2 + metrics.utilitySpacing
             : metrics.utilityButtonSide
@@ -322,7 +324,7 @@ enum PickyHUDDockDragGeometry {
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
         switch orientation {
-        case .horizontal: metrics.chipWidth + metrics.chipSpacing
+        case .horizontal: metrics.horizontalCompactCellSide(fontScale: fontScale)
         case .vertical: metrics.rowHeight(fontScale: fontScale) + metrics.rowSpacing
         }
     }
@@ -391,7 +393,7 @@ enum PickyHUDDockDragGeometry {
     ) -> CGFloat {
         let cross = orientation == .vertical
             ? metrics.railWidth
-            : metrics.horizontalThickness(fontScale: fontScale)
+            : metrics.horizontalCompactCellSide(fontScale: fontScale)
         return cross * 0.5 + 40
     }
 }

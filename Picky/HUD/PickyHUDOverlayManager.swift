@@ -171,7 +171,8 @@ final class PickyHUDOverlayManager {
         return min(intrinsicWidth, screenWidth)
     }
 
-    /// Cross-axis thickness of the visible rail.
+    /// Reserved cross-axis footprint. Horizontal rails reserve the name row
+    /// even while it is hidden; pointer input uses the reported visible shell.
     private func dockRailCrossSize(for dockSide: PickyHUDDockSide, displayID: CGDirectDisplayID?) -> CGFloat {
         PickyHUDDockRailLayoutPolicy.crossSize(
             dockSide: dockSide,
@@ -793,7 +794,7 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelHeight: targetHeight,
                 dockSide: pos.side,
-                dockRailHeight: dockRailCrossSize
+                dockRailHeight: dockMetrics.horizontalCompactCellSide(fontScale: fontScaleStore.cgValue)
             )
             originX = PickyHUDDockLayout.horizontalPanelX(
                 visibleFrame: visibleFrame,
@@ -1006,7 +1007,7 @@ final class PickyHUDOverlayManager {
             // Panel height is unknown during the drag, but for snap purposes we
             // only care about the dock CENTER's screen Y. Approximate using the
             // rail thickness — that's what `horizontalPanelY` derives from too.
-            let railThickness = dockRailCrossSize
+            let railThickness = dockMetrics.horizontalCompactCellSide(fontScale: fontScaleStore.cgValue)
             let startDockCenterY: CGFloat = startPos.side == .top
                 ? visibleFrame.maxY - PickyHUDDockLayout.dockEdgeMargin - (railThickness / 2)
                 : visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin + (railThickness / 2)

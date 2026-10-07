@@ -98,6 +98,10 @@ struct PickyHUDDockRailPolicyTests {
         #expect([small.railWidth, medium.railWidth, large.railWidth] == [112, 168, 200])
         #expect([small, medium, large].map { $0.horizontalThickness(fontScale: 1) } == [39, 39, 50])
         #expect(large.showsRowDetailLine && !medium.showsRowDetailLine && !small.showsRowDetailLine)
+        #expect(small.pickleTitleFontSize == 12)
+        #expect(medium.pickleTitleFontSize == 13)
+        #expect(large.pickleTitleFontSize == 13)
+        #expect([small, medium, large].map { $0.horizontalCompactCellSide(fontScale: 1) } == [36, 36, 47])
         // Every preset uses the same 13pt title, so rows only get narrower.
         #expect([small, medium].map { $0.rowHeight(fontScale: 1) } == [27, 28])
         // Rows keep a visible gap so neighboring fills never touch.
@@ -131,14 +135,14 @@ struct PickyHUDDockRailPolicyTests {
         }
     }
 
-    @Test func bothOrientationsReserveTwoUtilitiesAlongTheRailAxis() {
+    @Test func compactHorizontalChromeReservesSquareUtilitiesAndTheFixedHandle() {
         let metrics = PickyHUDDockMetrics(preset: .small)
         let vertical = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
             dockSide: .right, metrics: metrics, hasDockAddUtility: true)
         let horizontal = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
             dockSide: .bottom, metrics: metrics, hasDockAddUtility: true)
 
-        #expect(horizontal == vertical)
+        #expect(horizontal == 115)
         let empty = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
             dockSide: .right, metrics: metrics, hasDockAddUtility: false)
         #expect(vertical - empty == metrics.utilityButtonSide + metrics.utilitySpacing)
@@ -549,6 +553,6 @@ struct PickyHUDDockRailPolicyTests {
         #expect(PickyHUDDockDragGeometry.pullOutDistance(translation, dockSide: .bottom) == -45)
         #expect(PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics, orientation: .vertical) == metrics.railWidth * 0.5 + 40)
         #expect(PickyHUDDockDragGeometry.pullOutThreshold(metrics: metrics, orientation: .horizontal, fontScale: 1)
-            == metrics.horizontalThickness(fontScale: 1) * 0.5 + 40)
+            == metrics.horizontalCompactCellSide(fontScale: 1) * 0.5 + 40)
     }
 }

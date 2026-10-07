@@ -47,7 +47,7 @@ struct PickyHUDDockChromeTests {
                         // renders its `+` at one row's size, so the rail cannot
                         // collapse onto the chrome alone.
                         let oneEntry = side.orientation == .horizontal
-                            ? metrics.chipWidth
+                            ? metrics.horizontalCompactCellSide(fontScale: 1)
                             : metrics.rowHeight(fontScale: 1)
                         let minimumLength = PickyHUDDockRailLayoutPolicy.fixedChromeLength(
                             dockSide: side, metrics: metrics, hasDockAddUtility: false
@@ -137,6 +137,50 @@ struct PickyHUDDockChromeTests {
         host.layoutSubtreeIfNeeded()
         #expect(frames.values.first?.width == 36)
         #expect(host.frame.width == 168)
+    }
+
+    @Test func horizontalPreviewKeepsEveryIconFixedAndOnlyVisibleChromeClaimsInput() throws {
+        final class Frames {
+            var chrome: [CGRect] = []
+            var icons: [String: CGPoint] = [:]
+        }
+        for preset in PickyHUDDockSizePreset.allCases {
+            let metrics = PickyHUDDockMetrics(preset: preset)
+            let cell = metrics.horizontalCompactCellSide(fontScale: 1)
+            let reserved = cell + metrics.horizontalPreviewHeight(fontScale: 1)
+            for side: PickyHUDDockSide in [.top, .bottom] {
+                var restingIcons: [String: CGPoint] = [:]
+                for expanded in [false, true] {
+                    let frames = Frames()
+                    let state: FixtureState = expanded ? .attention : .expandedGroup
+                    let data = fixtureData(state: state)
+                    let view = PickyHUDDockMinimizedPresentation(
+                        isLoading: false, isMinimized: false, dockSide: side, metrics: metrics,
+                        projection: data.projection, activeSessionIDs: Set(data.sessions.map(\.id)),
+                        availableRailLength: Self.fixtureAvailableLength,
+                        activeSessionID: expanded ? "a" : nil, onRestore: {}
+                    ) { fixture(side: side, metrics: metrics, state: state) }
+                        .padding(20)
+                        .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
+                        .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) { frames.chrome = $0 }
+                        .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { frames.icons = $0 }
+                    let size = NSHostingView(rootView: view).fittingSize
+                    #expect(size.height == reserved + 40)
+                    #expect(PickyRenderGalleryRasterizer.rasterize(view, logicalSize: size,
+                        scale: 2, appearance: .aqua) != nil)
+                    let shell = try #require(frames.chrome.count == 1 ? frames.chrome.first : nil)
+                    #expect(shell.height == (expanded ? reserved : cell))
+                    #expect(shell.minY == (side == .bottom && !expanded ? 20 + reserved - cell : 20))
+                    #expect(frames.icons.count == data.sessions.count)
+                    if expanded { #expect(frames.icons == restingIcons) }
+                    else { restingIcons = frames.icons }
+                    let previewPoint = CGPoint(x: shell.midX,
+                        y: size.height - (side == .bottom ? 21 : reserved + 19))
+                    #expect(PickyHUDInkPassThroughPolicy.contains(previewPoint,
+                        swiftUIFrames: frames.chrome, panelFrame: CGRect(origin: .zero, size: size)) == expanded)
+                }
+            }
+        }
     }
 
     @Test func expandingAGroupGrowsTheVerticalListByItsMemberRows() {

@@ -40,14 +40,9 @@ struct PickyHUDDockMinimizedPresentation<ExpandedRail: View>: View {
                             .offset(x: origin.x, y: origin.y)
                     }
             } else {
+                // Each rail reports its animated visible shell, never the
+                // reserved width/height used to keep icons and cards anchored.
                 expandedRail()
-                    .background {
-                        // Vertical rails report their animated visible shell,
-                        // never the reserved (transparent) expanded footprint.
-                        if dockSide.orientation == .horizontal {
-                            PickyHUDVisibleChromeFrameReporter()
-                        }
-                    }
             }
             }
             .zIndex(10)
@@ -102,7 +97,8 @@ enum PickyHUDDockMinimizedGeometry {
         let length = PickyHUDDockOverflowPolicy.layout(
             contentLength: contentLength, availableLength: availableRailLength,
             fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
-                dockSide: dockSide, metrics: metrics, hasDockAddUtility: !projection.items.isEmpty
+                dockSide: dockSide, metrics: metrics, hasDockAddUtility: !projection.items.isEmpty,
+                fontScale: fontScale
             )
         ).railLength
         let cross = PickyHUDDockRailLayoutPolicy.crossSize(dockSide: dockSide, metrics: metrics, fontScale: fontScale)

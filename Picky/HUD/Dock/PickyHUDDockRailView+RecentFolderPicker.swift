@@ -134,7 +134,8 @@ extension PickyHUDDockRailView {
         case .vertical:
             CGSize(width: metrics.listWidth - metrics.horizontalPadding * 2, height: metrics.rowHeight(fontScale: fontScale))
         case .horizontal:
-            CGSize(width: metrics.chipWidth, height: metrics.chipHeight(fontScale: fontScale))
+            CGSize(width: metrics.horizontalCompactCellSide(fontScale: fontScale),
+                   height: metrics.horizontalCompactCellSide(fontScale: fontScale))
         }
     }
 

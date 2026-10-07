@@ -266,6 +266,23 @@ struct PickyHUDDockMetrics: Equatable {
         chipHeight(fontScale: fontScale) + 12
     }
 
+    /// The horizontal A rail keeps square icon cells and reserves a separate
+    /// name row. Font scaling grows both, never the hover target's position.
+    func horizontalCompactCellSide(fontScale: CGFloat) -> CGFloat {
+        max(36, chipHeight(fontScale: fontScale) + 9)
+    }
+
+    func horizontalPreviewHeight(fontScale: CGFloat) -> CGFloat {
+        ceil(30 * max(1, fontScale))
+    }
+
+    var horizontalCompactHandleWidth: CGFloat { 20 }
+    var horizontalCompactSeparatorWidth: CGFloat { 9 }
+
+    var pickleTitleFontSize: CGFloat {
+        PickyHUDTypography.bodyNSFont(fontScale: 1).pointSize - (preset == .small ? 1 : 0)
+    }
+
     var chipSpacing: CGFloat { 3 }
     var horizontalHeaderNameMaxWidth: CGFloat { preset == .small ? 52 : 84 }
     /// Scroll fade length at a clipped list edge.
@@ -379,7 +396,7 @@ enum PickyHUDDockLayout {
         metrics: PickyHUDDockMetrics = .medium,
         fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGFloat {
-        metrics.horizontalThickness(fontScale: fontScale)
+        metrics.horizontalCompactCellSide(fontScale: fontScale) + metrics.horizontalPreviewHeight(fontScale: fontScale)
     }
 
     static func contentSizeReservingAddSlotExpansion(

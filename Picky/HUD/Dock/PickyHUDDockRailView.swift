@@ -185,28 +185,7 @@ struct PickyHUDDockRailView: View {
 
     var body: some View {
         let _ = PickyPerf.event("dock_rail_body")
-        PickyHUDDockChrome(
-            dockSide: dockSide, metrics: metrics, railLength: overflowLayout.railLength,
-            crossSize: railCrossSize, onMinimize: onMinimize,
-            compactWidth: orientation == .vertical ? (expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth) : nil
-        ) {
-            listContent
-        } utilities: {
-            let utilityLayout = orientation == .vertical
-                ? AnyLayout(VStackLayout(spacing: metrics.utilitySpacing))
-                : AnyLayout(HStackLayout(spacing: metrics.utilitySpacing))
-            utilityLayout {
-                if !projection.items.isEmpty { addAgentSlotButton }
-                if let archiveAccess {
-                    PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
-                                                  commands: archiveAccess.commands,
-                                                  compactMetrics: orientation == .vertical ? metrics : nil,
-                                                  onPresentationChanged: { isArchivePresented = $0 })
-                }
-            }
-        } handle: {
-            dockAnchorHandle
-        }
+        dockChrome
         .animation(accessibilityReduceMotion || holdsExpansion ? nil : .easeOut(duration: 0.18), value: expansion.isExpanded)
         .background(PickyHUDDockRailFrameReporter())
         .overlay(alignment: resizeTabAlignment) { resizeTab }
@@ -219,10 +198,12 @@ struct PickyHUDDockRailView: View {
         // Reserve the final width once. Hover changes visible ink, not the
         // panel size or the conversation-card position.
         .frame(width: orientation == .vertical ? railCrossSize : nil,
-               alignment: dockSide == .left ? .leading : .trailing)
+               height: orientation == .horizontal ? railCrossSize : nil,
+               alignment: dockSide == .left ? .leading : dockSide == .right ? .trailing : dockSide == .top ? .top : .bottom)
         .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
         .overlay { draggedFloatingRowOverlay }
         .onChange(of: holdsExpansion) { _, _ in updateExpansion() }
+        .onChange(of: expansion.previewTarget) { _, _ in updateExpansion() }
         .onChange(of: dockSide) { _, _ in updateExpansion() }
         .onAppear { updateExpansion() }
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
@@ -261,8 +242,83 @@ struct PickyHUDDockRailView: View {
             autoScrollTask = nil
             expansion.stop()
         }
+        .environment(\.pickyDockHorizontalLayout, orientation == .horizontal)
         .environment(\.pickyDockCompactLayout, orientation == .vertical
             ? PickyHUDDockCompactLayout(isExpanded: expansion.isExpanded, iconOnLeadingEdge: dockSide == .left) : nil)
+    }
+
+    @ViewBuilder
+    private var dockChrome: some View {
+        if orientation == .horizontal {
+            PickyHUDHorizontalDockChrome(
+                dockSide: dockSide, metrics: metrics, railLength: overflowLayout.railLength,
+                cellSide: horizontalCellSide, previewHeight: metrics.horizontalPreviewHeight(fontScale: fontScale),
+                revealedHeight: expansion.isExpanded ? metrics.horizontalPreviewHeight(fontScale: fontScale) : 0,
+                onMinimize: onMinimize
+            ) {
+                listContent
+            } utilities: {
+                dockUtilities
+            } handle: {
+                dockAnchorHandle
+            } preview: {
+                horizontalPreview
+            }
+        } else {
+            PickyHUDDockChrome(
+                dockSide: dockSide, metrics: metrics, railLength: overflowLayout.railLength,
+                crossSize: railCrossSize, onMinimize: onMinimize,
+                compactWidth: expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth
+            ) {
+                listContent
+            } utilities: {
+                dockUtilities
+            } handle: {
+                dockAnchorHandle
+            }
+        }
+    }
+
+    private var dockUtilities: some View {
+        let utilityLayout = orientation == .vertical
+            ? AnyLayout(VStackLayout(spacing: metrics.utilitySpacing))
+            : AnyLayout(HStackLayout(spacing: 0))
+        return utilityLayout {
+            if !projection.items.isEmpty {
+                addAgentSlotButton
+                    .frame(width: orientation == .horizontal ? horizontalCellSide : nil,
+                           height: orientation == .horizontal ? horizontalCellSide : nil)
+                    .onHover { horizontalHover(.newPickle, inside: $0) }
+            }
+            if let archiveAccess {
+                PickyHUDArchivedDockAccessView(archiveMembership: archiveAccess.membership,
+                    commands: archiveAccess.commands,
+                    compactMetrics: orientation == .vertical ? metrics : nil,
+                    onPresentationChanged: { isArchivePresented = $0 })
+                    .frame(width: orientation == .horizontal ? horizontalCellSide : nil,
+                           height: orientation == .horizontal ? horizontalCellSide : nil)
+                    .onHover { horizontalHover(.archive, inside: $0) }
+            } else if orientation == .horizontal {
+                Color.clear.frame(width: horizontalCellSide, height: horizontalCellSide)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private var horizontalCellSide: CGFloat { metrics.horizontalCompactCellSide(fontScale: fontScale) }
+
+    var resolvedHorizontalPreviewTarget: PickyHUDDockPreviewTarget {
+        if !isDockHovered, let activeSessionID { return .session(activeSessionID) }
+        return expansion.previewTarget ?? activeSessionID.map(PickyHUDDockPreviewTarget.session) ?? .newPickle
+    }
+
+    private func horizontalHover(_ target: PickyHUDDockPreviewTarget, inside: Bool) {
+        guard orientation == .horizontal, inside else { return }
+        // Keep the last target while crossing into its name row. The rail's
+        // outer exit owns collapse, not exits between adjacent icon cells.
+        isDockHovered = true
+        expansion.preview(target)
+        updateExpansion()
     }
 
     // MARK: - Layout
@@ -277,7 +333,8 @@ struct PickyHUDDockRailView: View {
     }
 
     private func updateExpansion() {
-        expansion.update(pointerInside: isDockHovered, heldOpen: holdsExpansion)
+        let hasPreview = orientation == .vertical || expansion.previewTarget != nil || activeSessionID != nil
+        expansion.update(pointerInside: isDockHovered && hasPreview, heldOpen: holdsExpansion && hasPreview)
     }
 
     private var railCrossSize: CGFloat {
@@ -306,19 +363,21 @@ struct PickyHUDDockRailView: View {
             fixedChromeLength: PickyHUDDockRailLayoutPolicy.fixedChromeLength(
                 dockSide: dockSide,
                 metrics: metrics,
-                hasDockAddUtility: !projection.items.isEmpty
+                hasDockAddUtility: !projection.items.isEmpty,
+                fontScale: fontScale
             )
         )
     }
 
     private var listCrossLength: CGFloat {
-        orientation == .vertical ? railCrossSize : railCrossSize - metrics.horizontalPadding * 2
+        orientation == .vertical ? railCrossSize : horizontalCellSide
     }
 
     @ViewBuilder
     private var listContent: some View {
         if projection.items.isEmpty {
             addAgentSlotButton
+                .onHover { horizontalHover(.newPickle, inside: $0) }
         } else if overflowLayout.needsScroll {
             scrollingList
         } else {
@@ -329,7 +388,7 @@ struct PickyHUDDockRailView: View {
     @ViewBuilder
     private var listStack: some View {
         if orientation == .horizontal {
-            HStack(spacing: metrics.chipSpacing) { listEntries }
+            HStack(spacing: 0) { listEntries }
                 .frame(height: listCrossLength)
         } else {
             VStack(alignment: .leading, spacing: metrics.rowSpacing) { listEntries }
@@ -456,7 +515,7 @@ struct PickyHUDDockRailView: View {
         let header = groupHeader(group, members: members)
         let block = Group {
             if orientation == .horizontal {
-                HStack(spacing: 1) {
+                HStack(spacing: 0) {
                     header
                     if !group.isCollapsed { groupMembers(group, renderedMemberIDs: renderedMemberIDs) }
                 }
@@ -525,7 +584,8 @@ struct PickyHUDDockRailView: View {
             onSetColor: { onSetDockGroupColor(group.id, $0) },
             onReorderBegan: { handleGroupDragBegin(groupID: group.id) },
             onReorderChanged: { handleGroupDragChanged(groupID: group.id, translation: $0) },
-            onReorderEnded: { handleGroupDragEnded(groupID: group.id, translation: $0) }
+            onReorderEnded: { handleGroupDragEnded(groupID: group.id, translation: $0) },
+            onHoverChanged: { horizontalHover(.group(group.id), inside: $0) }
         ) {
             newPicklePicker(
                 anchoredTo: PickyHUDDockGroupAddButton(side: metrics.rowActionSide) {
@@ -560,6 +620,7 @@ struct PickyHUDDockRailView: View {
                 isDropTargeted: dropTargetedGroupID == group.id,
                 onCreatePickle: { showRecentPickleFolderPicker(anchorGroupID: group.id) }
             )
+            .onHover { horizontalHover(.group(group.id), inside: $0) }
         } else {
             ForEach(renderedMemberIDs, id: \.self) { id in
                 if let session = session(withID: id),
@@ -593,7 +654,7 @@ struct PickyHUDDockRailView: View {
     private var rowSize: CGSize {
         switch orientation {
         case .vertical: CGSize(width: listCrossLength, height: metrics.rowHeight(fontScale: fontScale))
-        case .horizontal: CGSize(width: metrics.chipWidth, height: metrics.chipHeight(fontScale: fontScale))
+        case .horizontal: CGSize(width: horizontalCellSide, height: horizontalCellSide)
         }
     }
 
@@ -644,7 +705,8 @@ struct PickyHUDDockRailView: View {
                 onDoneFlashConsumed: { onDoneFlashConsumed(session.id) },
                 onReorderHandoff: { anchorScreenPoint in
                     reorderController.begin(sessionID: session.id, anchorScreenPoint: anchorScreenPoint)
-                }
+                },
+                onHoverChanged: { horizontalHover(.session(session.id), inside: $0) }
             )
             .id("session:\(session.id)")
             .publishDockSlotCenter(sessionID: session.id)
@@ -1020,7 +1082,7 @@ struct PickyHUDDockRailView: View {
         }
         let headerHalf = orientation == .vertical
             ? metrics.groupHeaderHeight(fontScale: fontScale) / 2
-            : metrics.chipWidth / 2
+            : horizontalCellSide / 2
         for (entryID, extent) in topEntryExtents where entryID.hasPrefix("group:") {
             rowCenters[entryID] = extent.lower + headerHalf
         }
@@ -1114,7 +1176,7 @@ struct PickyHUDDockRailView: View {
         let isDragging = resizeDragStartPreset != nil
         // Hit testing and the chrome frame follow visibility: an invisible tab
         // must not block the window underneath or pull focus to the HUD.
-        let isVisible = (orientation == .horizontal || expansion.isExpanded)
+        let isVisible = expansion.isExpanded
             && (isDockHovered || isResizeTabHovered || isResizeTabGraced || isDragging)
         PickyHUDDockResizeTab(
             dockSide: dockSide,
@@ -1177,7 +1239,7 @@ struct PickyHUDDockRailView: View {
     private var dockAnchorHandle: some View {
         let isActive = isHandleHovered || isHandleDragging
         let notchWidth = orientation == .horizontal
-            ? metrics.horizontalNotchLength(preferred: metrics.horizontalHandleNotchWidth, thickness: railCrossSize)
+            ? horizontalCellSide
             : PickyHUDDockCompactLayout.iconColumnWidth
         return PickyHUDDockAnchorHandleHost(
             onHoverChanged: { hovering in isHandleHovered = hovering },
@@ -1192,7 +1254,7 @@ struct PickyHUDDockRailView: View {
             onDoubleClick: onDockHandleDoubleClick
         )
         .frame(
-            width: orientation == .horizontal ? metrics.handleInset : notchWidth,
+            width: orientation == .horizontal ? metrics.horizontalCompactHandleWidth : notchWidth,
             height: orientation == .horizontal ? notchWidth : metrics.handleInset
         )
         .overlay(alignment: orientation == .horizontal ? .leading : .top) {
@@ -1202,7 +1264,10 @@ struct PickyHUDDockRailView: View {
                     .padding(.top, DS.Spacing.space2) // design-token-exception: compact rail grip from the approved A proposal.
                     .allowsHitTesting(false)
             } else {
-                PickyHUDDockHandleNotch(dockSide: dockSide, metrics: metrics, isActive: isActive, edgeLength: railCrossSize)
+                Capsule().fill(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+                    .frame(width: metrics.handleHeight, height: 14) // design-token-exception: compact horizontal grip from the approved A proposal.
+                    .frame(width: metrics.horizontalCompactHandleWidth, height: horizontalCellSide)
+                    .allowsHitTesting(false)
             }
         }
         .onDisappear {

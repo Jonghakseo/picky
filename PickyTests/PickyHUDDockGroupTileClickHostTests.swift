@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 import Testing
 @testable import Picky
@@ -326,7 +327,8 @@ struct PickyHUDDockGroupTileClickHostTests {
         #expect(activations == 0)
     }
 
-    @Test func expandedGroupInProductionRailOpensMemberRowsAndTogglesFromTheHeader() throws {
+    @Test(arguments: [PickyHUDDockSide.right, .top, .bottom])
+    func expandedGroupInProductionRailOpensMemberRowsAndTogglesFromTheHeader(side: PickyHUDDockSide) async throws {
         let metrics = PickyHUDDockMetrics(preset: .large)
         let agentSession = PickyAgentSession(
             id: "only",
@@ -348,10 +350,14 @@ struct PickyHUDDockGroupTileClickHostTests {
         let railHeight = PickyHUDDockRailLayoutPolicy.contentLength(
             projection: projection,
             activeSessionIDs: [session.id],
-            dockSide: .right,
+            dockSide: side,
             metrics: metrics,
             fontScale: 1
         )
+        let expansion = PickyHUDDockExpansionController()
+        defer { expansion.stop() }
+        final class Frames { var chrome: [CGRect] = [] }
+        let frames = Frames()
         var openedSessions: [String] = []
         var collapseRequests: [(String, Bool)] = []
         let rail = PickyHUDDockRailView(
@@ -362,7 +368,7 @@ struct PickyHUDDockGroupTileClickHostTests {
             openedSessionID: nil,
             screenContextTargetSessionID: nil,
             screenContextTargetSticky: false,
-            dockSide: .right,
+            dockSide: side,
             isCommandShortcutHintVisible: false,
             pendingDoneFlashSessionIDs: [],
             unreadSessionIDs: [],
@@ -394,13 +400,37 @@ struct PickyHUDDockGroupTileClickHostTests {
             onDoneFlashConsumed: { _ in },
             onDockHandleDragChanged: { _ in },
             onDockHandleDragEnded: {},
-            onDockHandleDoubleClick: {}
+            onDockHandleDoubleClick: {},
+            expansion: expansion
         )
-        let hosting = NSHostingView(rootView: rail.environment(\.pickyAppFontScale, 1))
-        hosting.frame = NSRect(x: 0, y: 0, width: metrics.railWidth, height: railHeight)
+        let root = rail.environment(\.pickyAppFontScale, 1)
+            .transaction { $0.disablesAnimations = true }
+            .coordinateSpace(name: PickyHUDVisibleChromeCoordinateSpaceName)
+            .onPreferenceChange(PickyHUDVisibleChromeFramePreferenceKey.self) { frames.chrome = $0 }
+        let hosting = NSHostingView(rootView: root)
+        hosting.frame = NSRect(origin: .zero, size: hosting.fittingSize)
         hosting.layoutSubtreeIfNeeded()
         let rowHost = try #require(findSessionIconHost(in: hosting))
         let headerHost = try #require(findTileHost(in: hosting))
+
+        if side.orientation == .horizontal {
+            #expect(frames.chrome.first?.height == 47)
+            rowHost.mouseEntered(with: try mouseEvent(.mouseMoved, at: .zero))
+            try await withPickyTestTimeout("horizontal native hover reveals the name row") {
+                for await expanded in expansion.$isExpanded.values {
+                    if expanded { return }
+                }
+            }
+            hosting.layoutSubtreeIfNeeded()
+            #expect(expansion.previewTarget == .session(session.id))
+            #expect(openedSessions.isEmpty)
+            #expect(frames.chrome.first?.height == 77)
+            rowHost.mouseExited(with: try mouseEvent(.mouseMoved, at: .zero))
+            #expect(expansion.previewTarget == .session(session.id))
+            headerHost.mouseEntered(with: try mouseEvent(.mouseMoved, at: .zero))
+            hosting.layoutSubtreeIfNeeded()
+            #expect(expansion.previewTarget == .group(group.id))
+        }
 
         rowHost.mouseDown(with: try mouseEvent(.leftMouseDown, at: .zero))
         rowHost.mouseUp(with: try mouseEvent(.leftMouseUp, at: .zero))

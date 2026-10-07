@@ -46,7 +46,8 @@ final class PickyHUDPlacement: ObservableObject {
     static func minimizedButtonOrigin(
         dockSide: PickyHUDDockSide,
         metrics: PickyHUDDockMetrics,
-        railSize: CGSize
+        railSize: CGSize,
+        fontScale: CGFloat = PickyAppFontScaleStore.staticCGScale
     ) -> CGPoint {
         let halfButton: CGFloat = 16
         let halfHandle = metrics.handleInset / 2
@@ -57,8 +58,10 @@ final class PickyHUDPlacement: ObservableObject {
                 : railSize.width - PickyHUDDockCompactLayout.iconColumnWidth / 2
             return CGPoint(x: iconCenter - halfButton, y: halfHandle - halfButton)
         case .horizontal:
-            return CGPoint(x: halfHandle - halfButton,
-                           y: railSize.height / 2 - halfButton)
+            let halfCell = metrics.horizontalCompactCellSide(fontScale: fontScale) / 2
+            let iconCenter = dockSide == .top ? halfCell : railSize.height - halfCell
+            return CGPoint(x: metrics.horizontalCompactHandleWidth / 2 - halfButton,
+                           y: iconCenter - halfButton)
         }
     }
 

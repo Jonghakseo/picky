@@ -55,7 +55,7 @@ struct PickyDockGroupCreatorView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
+            RoundedRectangle(cornerRadius: 3, style: .continuous) // design-token-exception: a 10pt group swatch must stay square; the 6pt compact radius would read as a status dot.
                 .fill(suggestedColor.accent)
                 .frame(width: 10, height: 10)
             Text(L10n.t("dock.group.create.title"))

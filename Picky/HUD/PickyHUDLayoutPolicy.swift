@@ -238,9 +238,6 @@ struct PickyHUDDockMetrics: Equatable {
     var groupHeaderDotSide: CGFloat { preset == .small ? 5 : 6 }
     /// Expanded members sit slightly inside their header.
     var groupMemberIndent: CGFloat { preset == .small ? 4 : 6 }
-    /// Collapsed headers summarize at most this many attention glyphs.
-    var groupHeaderAttentionLimit: Int { preset == .small ? 1 : 3 }
-    var groupHeaderAttentionGlyphSide: CGFloat { preset == .small ? 10 : 11 }
     /// Extra gap above a header that follows another entry.
     var groupHeaderTopGap: CGFloat { 3 }
 

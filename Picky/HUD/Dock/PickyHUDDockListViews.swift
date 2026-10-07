@@ -34,9 +34,14 @@ enum PickyHUDDockRowStatusPresentation {
         }
     }
 
-    /// States a collapsed group header keeps visible as glyphs.
-    static func needsAttention(_ status: PickySessionStatus) -> Bool {
-        status == .running || needsResponse(status)
+    /// Members a collapsed group header counts as unread: sessions the user
+    /// has not opened since they finished, plus anything still waiting on
+    /// the user (input, blocked, failed) even after it was read.
+    @MainActor
+    static func groupUnreadCount(members: [PickyHUDDockSession], unreadSessionIDs: Set<String>) -> Int {
+        members.reduce(0) { count, member in
+            count + (unreadSessionIDs.contains(member.id) || needsResponse(member.status) ? 1 : 0)
+        }
     }
 
     /// Display title: the session title, then the cwd leaf, then "Pickle".
@@ -72,10 +77,10 @@ enum PickyHUDDockGroupHeaderLayout {
     static let dotHitPadding: CGFloat = 4
     static let chevronWidth: CGFloat = 8
 
-    /// Fixed slot for the collapsed summary (one glyph plus the unread dot) or
-    /// the hover `+`, so status changes never shift a horizontal rail.
+    /// Fixed slot for the collapsed unread dot or the hover `+`, so status
+    /// changes never shift a horizontal rail.
     static func horizontalSummarySlotWidth(metrics: PickyHUDDockMetrics) -> CGFloat {
-        max(metrics.rowActionSide, metrics.groupHeaderAttentionGlyphSide + 2 + metrics.rowUnreadDotSide)
+        max(metrics.rowActionSide, metrics.rowUnreadDotSide)
     }
 
     /// Rendered name width, capped so long names truncate.
@@ -433,6 +438,7 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
     let group: PickyDockGroup
     let orientation: PickyHUDDockOrientation
     let members: [PickyHUDDockSession]
+    /// See `PickyHUDDockRowStatusPresentation.groupUnreadCount`.
     let unreadCount: Int
     let metrics: PickyHUDDockMetrics
     let isSelected: Bool
@@ -576,32 +582,21 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
         .accessibilityValue(group.color.localizedName)
     }
 
-    private var attentionMembers: [PickyHUDDockSession] {
-        members.filter { PickyHUDDockRowStatusPresentation.needsAttention($0.status) }
-    }
-
     private var hasTrailingSummary: Bool {
-        showsActions || (group.isCollapsed && (unreadCount > 0 || !attentionMembers.isEmpty))
+        showsActions || (group.isCollapsed && unreadCount > 0)
     }
 
+    /// A collapsed header shows one unread dot; per-Pickle status lives in
+    /// the expanded rows.
     @ViewBuilder
     private var trailingSummary: some View {
         if showsActions {
             addButton()
-        } else if group.isCollapsed {
-            let attention = attentionMembers
-            let limit = orientation == .horizontal ? 1 : metrics.groupHeaderAttentionLimit
-            HStack(spacing: 2) {
-                ForEach(attention.prefix(limit), id: \.id) { member in
-                    PickyDockMiniPickleGlyph(status: member.status, side: metrics.groupHeaderAttentionGlyphSide)
-                }
-                if unreadCount > 0 {
-                    Circle()
-                        .fill(DS.Colors.notification)
-                        .frame(width: metrics.rowUnreadDotSide, height: metrics.rowUnreadDotSide)
-                }
-            }
-            .allowsHitTesting(false)
+        } else if group.isCollapsed, unreadCount > 0 {
+            Circle()
+                .fill(DS.Colors.notification)
+                .frame(width: metrics.rowUnreadDotSide, height: metrics.rowUnreadDotSide)
+                .allowsHitTesting(false)
         }
     }
 

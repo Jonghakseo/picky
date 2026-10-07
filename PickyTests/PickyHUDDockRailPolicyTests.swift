@@ -9,6 +9,33 @@ import Testing
 @testable import Picky
 
 struct PickyHUDDockRailPolicyTests {
+    /// A collapsed header's single dot counts unread results plus Pickles still
+    /// waiting on the user after they were read; running alone stays quiet.
+    @MainActor @Test func collapsedGroupUnreadCountsReadPicklesThatStillNeedTheUser() {
+        func member(_ id: String, _ status: PickySessionStatus) -> PickyHUDDockSession {
+            PickyHUDDockSession(session: PickySessionCard.fromAgentSession(PickyAgentSession(
+                id: id, title: id, status: status, cwd: "/fixture", createdAt: Date(timeIntervalSince1970: 0),
+                updatedAt: Date(timeIntervalSince1970: 0), lastSummary: nil, logs: [], tools: [], artifacts: [], changedFiles: [])))
+        }
+        let members = [
+            member("running", .running),
+            member("queued", .queued),
+            member("done-read", .completed),
+            member("done-unread", .completed),
+            member("waiting-read", .waiting_for_input),
+            member("waiting-unread", .waiting_for_input),
+            member("blocked", .blocked),
+            member("failed", .failed),
+        ]
+
+        #expect(PickyHUDDockRowStatusPresentation.groupUnreadCount(
+            members: members, unreadSessionIDs: ["done-unread", "waiting-unread"]
+        ) == 5)
+        #expect(PickyHUDDockRowStatusPresentation.groupUnreadCount(
+            members: [member("running", .running), member("done", .completed)], unreadSessionIDs: []
+        ) == 0)
+    }
+
     @Test func groupDeletionOnlyConfirmsForActiveMembers() {
         let archivedOnly = PickyDockGroup(id: "archived-only", memberSessionIDs: ["archived"])
         let mixed = PickyDockGroup(id: "mixed", memberSessionIDs: ["archived", "active"])

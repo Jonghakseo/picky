@@ -470,7 +470,10 @@ struct PickyHUDDockRailView: View {
     }
 
     private func groupHeader(_ group: PickyDockGroup, members: [PickyHUDDockSession]) -> some View {
-        let unreadCount = members.reduce(0) { $0 + (unreadSessionIDs.contains($1.id) ? 1 : 0) }
+        let unreadCount = PickyHUDDockRowStatusPresentation.groupUnreadCount(
+            members: members,
+            unreadSessionIDs: unreadSessionIDs
+        )
         return PickyHUDDockGroupHeaderRow(
             group: group,
             orientation: orientation,

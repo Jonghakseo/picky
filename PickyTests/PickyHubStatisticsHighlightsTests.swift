@@ -110,7 +110,8 @@ struct PickyHubStatisticsHighlightsTests {
         #expect(badge(.noFollowUp).progress == 8)
         // The ten night Pickles all started on one day.
         #expect(badge(.busyDay).earnedAt == date("2026-06-10T02:09:00Z"))
-        #expect(board.earnedCount == 5)
+        #expect(board.earnedCount == 6)
+        #expect(badge(.weekdayCollector).earnedAt == date("2026-07-07T10:00:00Z"))
     }
 
     @Test func announcesOnlyARecentBadgeAndPointsToTheClosestUnearnedGoal() {
@@ -145,6 +146,122 @@ struct PickyHubStatisticsHighlightsTests {
         // One project today, but explorer was earned before and stays earned at its first date.
         #expect(badge(.explorer).earnedAt == recorded)
         #expect(badge(.explorer).progress == PickyHubBadgeKind.explorer.target)
+    }
+
+    @Test func timeBadgesUseLocalHoursAndExcludeFutureStarts() {
+        var local = calendar
+        local.timeZone = TimeZone(secondsFromGMT: 9 * 60 * 60)!
+        let now = date("2026-07-18T05:00:00Z") // Saturday, 14:00 in the local calendar.
+        let starts = ["2026-07-17T19:59:00Z", // 04:59, neither morning nor lunch.
+                      "2026-07-17T20:00:00Z", // 05:00
+                      "2026-07-17T23:59:00Z", // 08:59
+                      "2026-07-18T00:00:00Z", // 09:00, outside the morning range.
+                      "2026-07-18T02:59:00Z", // 11:59
+                      "2026-07-18T03:00:00Z", // 12:00
+                      "2026-07-18T04:59:00Z", // 13:59
+                      "2026-07-18T05:00:00Z", // 14:00, outside the lunch range.
+                      "2026-07-19T03:00:00Z"] // Tomorrow, ignored even though it is a weekend.
+        let records = starts.enumerated().map { record(id: "time-\($0.offset)", created: date($0.element)) }
+        let board = PickyHubBadgePolicy.board(snapshot: snapshot(records, now: now), now: now, calendar: local)
+        #expect(board.badges.first { $0.kind == .earlyBird }?.progress == 2)
+        #expect(board.badges.first { $0.kind == .lunchBreak }?.progress == 2)
+        #expect(board.badges.first { $0.kind == .weekend }?.progress == 8)
+        #expect(board.badges.first { $0.kind == .earlyBird }?.isEarned == false)
+    }
+
+    @Test func timeBadgesEarnOnTheTenthMatchingStart() {
+        let now = date("2026-07-20T12:00:00Z")
+        let mornings = (0..<10).map { record(id: "morning-\($0)", created: date("2026-07-18T05:\(String(format: "%02d", $0)):00Z")) }
+        let lunches = (0..<10).map { record(id: "lunch-\($0)", created: date("2026-07-18T12:\(String(format: "%02d", $0)):00Z")) }
+        let before = PickyHubBadgePolicy.board(snapshot: snapshot(Array(mornings.prefix(9)), now: now), now: now, calendar: calendar)
+        #expect(before.badges.first { $0.kind == .earlyBird }?.progress == 9)
+        #expect(before.badges.first { $0.kind == .weekend }?.isEarned == false)
+        let after = PickyHubBadgePolicy.board(snapshot: snapshot((mornings + lunches).reversed(), now: now), now: now, calendar: calendar)
+        #expect(after.badges.first { $0.kind == .earlyBird }?.earnedAt == mornings.last?.createdAt)
+        #expect(after.badges.first { $0.kind == .lunchBreak }?.earnedAt == lunches.last?.createdAt)
+        #expect(after.badges.first { $0.kind == .weekend }?.earnedAt == mornings.last?.createdAt)
+    }
+
+    @Test func pickleJarCountsAllStartsButRegularSpotCountsOneProject() {
+        let start = date("2026-07-01T10:00:00Z")
+        let now = date("2026-07-20T12:00:00Z")
+        let records = (0..<100).map { record(id: "jar-\($0)", created: start.addingTimeInterval(Double($0) * 60), project: $0.isMultiple(of: 2) ? "a" : "b") }
+        let before = PickyHubBadgePolicy.board(snapshot: snapshot(Array(records.prefix(98)), now: now), now: now, calendar: calendar)
+        #expect(before.badges.first { $0.kind == .hundredPickles }?.progress == 98)
+        #expect(before.badges.first { $0.kind == .hundredPickles }?.isEarned == false)
+        #expect(before.badges.first { $0.kind == .homeGround }?.progress == 49)
+        #expect(before.badges.first { $0.kind == .homeGround }?.isEarned == false)
+        let after = PickyHubBadgePolicy.board(snapshot: snapshot(records.reversed(), now: now), now: now, calendar: calendar)
+        #expect(after.badges.first { $0.kind == .hundredPickles }?.earnedAt == records[99].createdAt)
+        #expect(after.badges.first { $0.kind == .homeGround }?.earnedAt == records[98].createdAt)
+    }
+
+    @Test func collectorsCountDistinctHoursAndWeekdaysNotRepeatedPickles() {
+        let now = date("2026-07-20T12:00:00Z")
+        let hours = (0..<24).map { record(id: "hour-\($0)", created: date("2026-07-13T\(String(format: "%02d", $0)):00:00Z")) }
+        let repeated = (0..<30).map { record(id: "repeat-\($0)", created: date("2026-07-13T10:30:00Z")) }
+        let before = PickyHubBadgePolicy.board(snapshot: snapshot(Array(hours.prefix(23)) + repeated, now: now), now: now, calendar: calendar)
+        #expect(before.badges.first { $0.kind == .aroundTheClock }?.progress == 23)
+        #expect(before.badges.first { $0.kind == .aroundTheClock }?.isEarned == false)
+        #expect(before.badges.first { $0.kind == .weekdayCollector }?.progress == 1)
+        let days = (14...19).map { record(id: "weekday-\($0)", created: date("2026-07-\($0)T10:00:00Z")) }
+        let after = PickyHubBadgePolicy.board(snapshot: snapshot((hours + repeated + days).reversed(), now: now), now: now, calendar: calendar)
+        #expect(after.badges.first { $0.kind == .aroundTheClock }?.earnedAt == hours.last?.createdAt)
+        #expect(after.badges.first { $0.kind == .weekdayCollector }?.earnedAt == days.last?.createdAt)
+    }
+
+    @Test func singlePickleBadgesDoNotSumAcrossPicklesOrBackdateResults() {
+        let start = date("2026-07-01T10:00:00Z")
+        let finished = date("2026-07-02T11:00:00Z")
+        let now = date("2026-07-20T12:00:00Z")
+        func result(_ id: String, followUps: Int, subagents: Int, tools: Int, files: Int, at: Date) -> PickyHubPickleRecord {
+            var record = PickyHubPickleRecord(
+                id: id, title: id, project: "picky", cwd: nil, createdAt: start, lastActivityAt: at,
+                followUpCount: followUps, delegationCount: 0, reviewCount: 0, category: .fix
+            )
+            record.status = "completed"
+            record.subagentCount = subagents
+            record.toolCallCount = tools
+            record.changedFileCount = files
+            return record
+        }
+        let partials = (0..<2).map { result("partial-\($0)", followUps: 9, subagents: 4, tools: 99, files: 19, at: start) }
+        let future = result("future", followUps: 99, subagents: 99, tools: 999, files: 99, at: now.addingTimeInterval(60))
+        let kinds: [PickyHubBadgeKind] = [.conversation, .team, .toolMaster, .renovator]
+        let before = PickyHubBadgePolicy.board(snapshot: snapshot(partials + [future], now: now), now: now, calendar: calendar)
+        for (kind, progress) in zip(kinds, [9, 4, 99, 19]) {
+            #expect(before.badges.first { $0.kind == kind }?.progress == progress)
+            #expect(before.badges.first { $0.kind == kind }?.isEarned == false)
+        }
+        let winner = result("winner", followUps: 10, subagents: 5, tools: 100, files: 20, at: finished)
+        let after = PickyHubBadgePolicy.board(snapshot: snapshot([future, winner] + partials, now: now), now: now, calendar: calendar)
+        for kind in kinds {
+            #expect(after.badges.first { $0.kind == kind }?.earnedAt == finished)
+            #expect(after.badges.first { $0.kind == kind }?.progress == kind.target)
+        }
+    }
+
+    @Test func resultBadgesRequireCompletedPicklesAndCountArtifactPicklesNotArtifacts() {
+        let now = date("2026-07-20T12:00:00Z")
+        let records = (0..<10).map { index -> PickyHubPickleRecord in
+            var record = record(id: "treasure-\(index)", created: date("2026-07-01T10:00:00Z").addingTimeInterval(Double(index) * 60))
+            record.status = "completed"
+            record.artifactCount = 100
+            return record
+        }
+        var running = record(id: "running-result", created: date("2026-07-01T11:00:00Z"))
+        running.status = "running"
+        running.artifactCount = 100
+        running.changedFileCount = 20
+        var failed = running
+        failed.status = "failed"
+        let before = PickyHubBadgePolicy.board(snapshot: snapshot(Array(records.prefix(9)) + [running, failed], now: now), now: now, calendar: calendar)
+        #expect(before.badges.first { $0.kind == .treasureHunter }?.progress == 9)
+        #expect(before.badges.first { $0.kind == .treasureHunter }?.isEarned == false)
+        #expect(before.badges.first { $0.kind == .renovator }?.progress == 0)
+        let after = PickyHubBadgePolicy.board(snapshot: snapshot(records, now: now), now: now, calendar: calendar)
+        #expect(after.badges.first { $0.kind == .treasureHunter }?.earnedAt == records.last?.lastActivityAt)
+        #expect(after.badges.first { $0.kind == .treasureHunter }?.progress == 10)
     }
 
     @Test func hourPatternPeriodMatchesStartTimeNotLastActivity() {
@@ -211,6 +328,10 @@ struct PickyHubStatisticsHighlightsTests {
             createdAt: created, lastActivityAt: created,
             followUpCount: followUps, delegationCount: 0, reviewCount: 0, category: .fix
         )
+    }
+
+    private func snapshot(_ records: [PickyHubPickleRecord], now: Date) -> PickyHubStatisticsSnapshot {
+        PickyHubStatisticsSnapshot(generatedAt: now, records: records, usageSamples: [], pendingClassificationCount: 0)
     }
 
     private func usage(day: String, tokens: Int) -> PickyHubUsageSample {

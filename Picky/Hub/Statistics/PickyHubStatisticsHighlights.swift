@@ -184,6 +184,18 @@ enum PickyHubBadgeKind: String, CaseIterable, Identifiable {
     case noFollowUp
     case explorer
     case monthStreak
+    case earlyBird
+    case lunchBreak
+    case weekend
+    case hundredPickles
+    case homeGround
+    case aroundTheClock
+    case weekdayCollector
+    case conversation
+    case team
+    case treasureHunter
+    case toolMaster
+    case renovator
 
     var id: String { rawValue }
 
@@ -197,6 +209,18 @@ enum PickyHubBadgeKind: String, CaseIterable, Identifiable {
         case .noFollowUp: 25
         case .explorer: 5
         case .monthStreak: 30
+        case .earlyBird: 10
+        case .lunchBreak: 10
+        case .weekend: 10
+        case .hundredPickles: 100
+        case .homeGround: 50
+        case .aroundTheClock: 24
+        case .weekdayCollector: 7
+        case .conversation: 10
+        case .team: 5
+        case .treasureHunter: 10
+        case .toolMaster: 100
+        case .renovator: 20
         }
     }
 
@@ -210,6 +234,18 @@ enum PickyHubBadgeKind: String, CaseIterable, Identifiable {
         case .noFollowUp: "checkmark.seal.fill"
         case .explorer: "map.fill"
         case .monthStreak: "flame"
+        case .earlyBird: "sunrise.fill"
+        case .lunchBreak: "fork.knife"
+        case .weekend: "beach.umbrella.fill"
+        case .hundredPickles: "takeoutbag.and.cup.and.straw.fill"
+        case .homeGround: "house.fill"
+        case .aroundTheClock: "clock.fill"
+        case .weekdayCollector: "calendar"
+        case .conversation: "bubble.left.and.bubble.right.fill"
+        case .team: "person.3.fill"
+        case .treasureHunter: "shippingbox.fill"
+        case .toolMaster: "wrench.and.screwdriver.fill"
+        case .renovator: "hammer.fill"
         }
     }
 }
@@ -255,7 +291,7 @@ enum PickyHubBadgePolicy {
 
         let computed = PickyHubBadgeKind.allCases.map { kind -> PickyHubBadge in
             switch kind {
-            case .firstPickle:
+            case .firstPickle, .hundredPickles:
                 return badge(kind, events: records.map(\.createdAt))
             case .weekStreak, .monthStreak:
                 return PickyHubBadge(
@@ -267,6 +303,47 @@ enum PickyHubBadgePolicy {
                 return badge(kind, events: records.map(\.createdAt).filter {
                     PickyHubHourPattern.lateNightHours.contains(calendar.component(.hour, from: $0))
                 })
+            case .earlyBird:
+                return badge(kind, events: records.map(\.createdAt).filter {
+                    (5..<9).contains(calendar.component(.hour, from: $0))
+                })
+            case .lunchBreak:
+                return badge(kind, events: records.map(\.createdAt).filter {
+                    (12..<14).contains(calendar.component(.hour, from: $0))
+                })
+            case .weekend:
+                return badge(kind, events: records.map(\.createdAt).filter { calendar.isDateInWeekend($0) })
+            case .aroundTheClock, .weekdayCollector:
+                var seen = Set<Int>()
+                let component: Calendar.Component = kind == .aroundTheClock ? .hour : .weekday
+                let firsts = records.compactMap { record -> Date? in
+                    seen.insert(calendar.component(component, from: record.createdAt)).inserted ? record.createdAt : nil
+                }
+                return badge(kind, events: firsts)
+            case .homeGround:
+                return homeGround(records: records)
+            case .conversation, .team, .toolMaster, .renovator:
+                // Result counters are only known at the record's last activity,
+                // not at creation. Do not backdate an achievement to its start.
+                let eligible = records.filter { $0.lastActivityAt <= now && (kind != .renovator || $0.isCompleted) }
+                    .sorted { $0.lastActivityAt < $1.lastActivityAt }
+                let value: (PickyHubPickleRecord) -> Int = { record in
+                    switch kind {
+                    case .conversation: record.followUpCount
+                    case .team: record.subagentCount
+                    case .toolMaster: record.toolCallCount
+                    case .renovator: record.changedFileCount
+                    default: 0
+                    }
+                }
+                return PickyHubBadge(
+                    kind: kind,
+                    earnedAt: eligible.first { value($0) >= kind.target }?.lastActivityAt,
+                    progress: min(kind.target, eligible.map(value).max() ?? 0)
+                )
+            case .treasureHunter:
+                return badge(kind, events: records.filter { $0.isCompleted && $0.artifactCount > 0 }
+                    .map(\.lastActivityAt).filter { $0 <= now }.sorted())
             case .millionTokens:
                 return millionTokens(snapshot: snapshot, now: now, calendar: calendar)
             case .busyDay:
@@ -356,6 +433,17 @@ enum PickyHubBadgePolicy {
             let day = calendar.startOfDay(for: record.createdAt)
             counts[day, default: 0] += 1
             if earnedAt == nil, counts[day] == kind.target { earnedAt = record.createdAt }
+        }
+        return PickyHubBadge(kind: kind, earnedAt: earnedAt, progress: min(kind.target, counts.values.max() ?? 0))
+    }
+
+    private static func homeGround(records: [PickyHubPickleRecord]) -> PickyHubBadge {
+        let kind = PickyHubBadgeKind.homeGround
+        var counts: [String: Int] = [:]
+        var earnedAt: Date?
+        for record in records {
+            counts[record.project, default: 0] += 1
+            if earnedAt == nil, counts[record.project] == kind.target { earnedAt = record.createdAt }
         }
         return PickyHubBadge(kind: kind, earnedAt: earnedAt, progress: min(kind.target, counts.values.max() ?? 0))
     }

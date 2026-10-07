@@ -146,6 +146,18 @@ enum PickyHubBadgePresentation {
         case .noFollowUp: L10n.t("hub.stats.badge.noFollowUp.name")
         case .explorer: L10n.t("hub.stats.badge.explorer.name")
         case .monthStreak: L10n.t("hub.stats.badge.monthStreak.name")
+        case .earlyBird: L10n.t("hub.stats.badge.earlyBird.name")
+        case .lunchBreak: L10n.t("hub.stats.badge.lunchBreak.name")
+        case .weekend: L10n.t("hub.stats.badge.weekend.name")
+        case .hundredPickles: L10n.t("hub.stats.badge.hundredPickles.name")
+        case .homeGround: L10n.t("hub.stats.badge.homeGround.name")
+        case .aroundTheClock: L10n.t("hub.stats.badge.aroundTheClock.name")
+        case .weekdayCollector: L10n.t("hub.stats.badge.weekdayCollector.name")
+        case .conversation: L10n.t("hub.stats.badge.conversation.name")
+        case .team: L10n.t("hub.stats.badge.team.name")
+        case .treasureHunter: L10n.t("hub.stats.badge.treasureHunter.name")
+        case .toolMaster: L10n.t("hub.stats.badge.toolMaster.name")
+        case .renovator: L10n.t("hub.stats.badge.renovator.name")
         }
     }
 
@@ -159,6 +171,18 @@ enum PickyHubBadgePresentation {
         case .noFollowUp: L10n.t("hub.stats.badge.noFollowUp.rule")
         case .explorer: L10n.t("hub.stats.badge.explorer.rule")
         case .monthStreak: L10n.t("hub.stats.badge.monthStreak.rule")
+        case .earlyBird: L10n.t("hub.stats.badge.earlyBird.rule")
+        case .lunchBreak: L10n.t("hub.stats.badge.lunchBreak.rule")
+        case .weekend: L10n.t("hub.stats.badge.weekend.rule")
+        case .hundredPickles: L10n.t("hub.stats.badge.hundredPickles.rule")
+        case .homeGround: L10n.t("hub.stats.badge.homeGround.rule")
+        case .aroundTheClock: L10n.t("hub.stats.badge.aroundTheClock.rule")
+        case .weekdayCollector: L10n.t("hub.stats.badge.weekdayCollector.rule")
+        case .conversation: L10n.t("hub.stats.badge.conversation.rule")
+        case .team: L10n.t("hub.stats.badge.team.rule")
+        case .treasureHunter: L10n.t("hub.stats.badge.treasureHunter.rule")
+        case .toolMaster: L10n.t("hub.stats.badge.toolMaster.rule")
+        case .renovator: L10n.t("hub.stats.badge.renovator.rule")
         }
     }
 

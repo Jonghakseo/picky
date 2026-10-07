@@ -205,7 +205,8 @@ struct PickyHubStatisticsStoreTests {
             records: [PickyHubPickleRecord(
                 id: "first", title: "First", project: "picky", cwd: nil,
                 createdAt: started, lastActivityAt: started,
-                followUpCount: 0, delegationCount: 0, reviewCount: 0, category: .fix
+                followUpCount: 0, delegationCount: 0, reviewCount: 0, category: .fix,
+                subagentCount: 5
             )],
             usageSamples: [],
             pendingClassificationCount: 0
@@ -222,12 +223,16 @@ struct PickyHubStatisticsStoreTests {
 
         let first = try await load(withPickle)
         #expect(first.earnedBadges[.firstPickle] == started)
+        #expect(first.earnedBadges[.team] == started)
 
         // A later snapshot without the record, as after a wiped Statistics folder.
         let relaunched = try await load(.empty)
         #expect(relaunched.earnedBadges[.firstPickle] == started)
+        #expect(relaunched.earnedBadges[.team] == started)
         let board = PickyHubBadgePolicy.board(snapshot: .empty, earned: relaunched.earnedBadges)
         #expect(board.badges.first { $0.kind == .firstPickle }?.earnedAt == started)
+        #expect(board.badges.first { $0.kind == .team }?.earnedAt == started)
+        #expect(board.badges.first { $0.kind == .team }?.progress == 5)
     }
 
     private func waitUntil(timeoutMs: Int, _ condition: @escaping @MainActor () -> Bool) async throws {

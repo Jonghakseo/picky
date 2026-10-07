@@ -1,6 +1,390 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "hub.stats.badge.earlyBird.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Early Bird"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "얼리버드"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.earlyBird.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start 10 Pickles from 5 to before 9 AM"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오전 5:00–8:59 Pickle 10개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.lunchBreak.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lunch Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점심엔 피클"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.lunchBreak.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start 10 Pickles from noon to before 2 PM"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "12:00–13:59 Pickle 10개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.weekend.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekend Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주말의 피클"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.weekend.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start 10 Pickles on weekends"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주말에 Pickle 10개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.hundredPickles.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Jar of Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 한 병"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.hundredPickles.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start 100 Pickles in total"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누적 Pickle 100개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.homeGround.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Usual Spot"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단골 맛집"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.homeGround.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start 50 Pickles in one project"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 프로젝트에서 Pickle 50개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.aroundTheClock.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time Traveler"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시간 여행자"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.aroundTheClock.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a Pickle in each hour of the day"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "24개 시간대마다 Pickle 시작"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.weekdayCollector.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Day Collector"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요일 수집가"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.weekdayCollector.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a Pickle on every day of the week"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "월–일 모든 요일에 Pickle 시작"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.conversation.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back and Forth"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "티키타카"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.conversation.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send 10 follow-ups to one Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 Pickle에 후속 요청 10번"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.team.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Little Expedition"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작은 원정대"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.team.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use 5 subagents in one Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 Pickle에서 하위 에이전트 5개"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.treasureHunter.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Treasure Hunter"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보물 사냥꾼"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.treasureHunter.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete 10 Pickles with artifacts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과물이 있는 Pickle 10개 완료"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.toolMaster.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tools of the Trade"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구는 거들 뿐"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.toolMaster.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make 100 tool calls in one Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 Pickle에서 도구 호출 100번"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.renovator.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renovator"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "리모델링"
+          }
+        }
+      }
+    },
+    "hub.stats.badge.renovator.rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete a Pickle with 20 changed files"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 20개를 바꾼 Pickle 완료"
+          }
+        }
+      }
+    },
     "hud.toolImage.missing": {
       "localizations": {
         "en": {

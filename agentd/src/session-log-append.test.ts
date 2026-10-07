@@ -38,6 +38,8 @@ describe("sessionWithAppendedLog", () => {
     "runtime reattach failed: session unavailable",
     "pi transcript repaired: skipped 1 interrupted tool call(s) (bash) from a previous runtime",
     'pi diagnostic: {"type":"warning","message":"extension unavailable"}',
+    "extension ui: setStatus",
+    "extension ui: setTitle",
   ])("preserves activity time for runtime diagnostics: %s", (line) => {
     const session = makeSession();
     const next = sessionWithAppendedLog(session, line, NOW);

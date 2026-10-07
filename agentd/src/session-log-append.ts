@@ -32,6 +32,9 @@ export function sessionWithAppendedLog(
       || line.startsWith("runtime reattach failed:")
       || line.startsWith("pi transcript repaired:")
       || line.startsWith("pi diagnostic:")
+      // Extensions repaint their status bar or title on every runtime resume,
+      // so these fire for every Pickle when Picky restarts.
+      || /^extension ui: (?:setStatus|setTitle)(?:\s|$)/.test(line)
       ? session.updatedAt
       : now,
   };

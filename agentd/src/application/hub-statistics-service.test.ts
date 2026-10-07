@@ -430,6 +430,37 @@ describe("HubStatisticsService", () => {
     }
   });
 
+  it("backfills changed-file totals from legacy tool history and retains them after deletion", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-hub-changed-files-"));
+    try {
+      const metadataPath = join(root, "sessions", "legacy.json");
+      await mkdir(join(root, "sessions"), { recursive: true });
+      await writeFile(metadataPath, JSON.stringify(session("legacy", 1)));
+      const service = new HubStatisticsService(root);
+      expect((await service.snapshot()).records[0]?.changedFileCount).toBe(0);
+
+      // Older Pickles have file mutation history but no explicit "Changed file:" report.
+      await writeFile(metadataPath, JSON.stringify(session("legacy", 2, {
+        changedFiles: [],
+        tools: [
+          { toolCallId: "write-1", name: "write", status: "succeeded", argsPreview: '{"path":"a.ts","content":"long...' },
+          { toolCallId: "edit-1", name: "edit", status: "succeeded", argsPreview: '{"path":"/work/picky/a.ts","edits":[...' },
+          { toolCallId: "edit-2", name: "edit", status: "succeeded", argsPreview: '{"path":"b.ts"}' },
+          { toolCallId: "edit-3", name: "edit", status: "failed", argsPreview: '{"path":"c.ts"}' },
+        ],
+      })));
+      const snapshot = await new HubStatisticsService(root).snapshot();
+      expect(snapshot.records[0]).toMatchObject({ id: "legacy", changedFileCount: 2 });
+      const history = JSON.parse(await readFile(join(root, "Statistics", "history.json"), "utf8"));
+      expect(history.records.legacy.changedFileCount).toBe(2);
+
+      await unlink(metadataPath);
+      expect((await new HubStatisticsService(root).snapshot()).records[0]?.changedFileCount).toBe(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("clears classifications of retired Pickles on reset while keeping their records", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-hub-statistics-history-reset-"));
     try {

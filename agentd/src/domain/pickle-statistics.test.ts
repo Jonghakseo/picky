@@ -101,6 +101,38 @@ describe("pickle statistics", () => {
     });
   });
 
+  it("counts successful file mutations once alongside explicitly reported files", () => {
+    const record = pickleStatisticsRecord(session({
+      changedFiles: [{ path: "src/app.ts", status: "M" }, { path: "deleted.ts", status: "D" }],
+      tools: [
+        { toolCallId: "edit-1", name: "edit", status: "succeeded", argsPreview: JSON.stringify({ path: "./src/app.ts", edits: [] }) },
+        { toolCallId: "write-1", name: "write", status: "succeeded", argsPreview: JSON.stringify({ path: "/Users/example/picky/src/app.ts", content: "updated" }) },
+        { toolCallId: "write-2", name: "write", status: "succeeded", argsPreview: JSON.stringify({ content: "new", path: "src/new.ts" }) },
+        { toolCallId: "read-1", name: "read", status: "succeeded", argsPreview: '{"path":"read-only.ts"}' },
+        { toolCallId: "edit-2", name: "edit", status: "failed", argsPreview: '{"path":"failed.ts"}' },
+        { toolCallId: "write-3", name: "write", status: "running", argsPreview: '{"path":"pending.ts"}' },
+      ],
+    }));
+
+    expect(record.changedFileCount).toBe(3);
+  });
+
+  it("recovers complete paths from truncated mutation previews without guessing missing paths", () => {
+    const record = pickleStatisticsRecord(session({
+      tools: [
+        { toolCallId: "write-1", name: "write", status: "succeeded", argsPreview: '{"path":"src/quoted \\"name\\".ts","content":"long...' },
+        { toolCallId: "edit-1", name: "edit", status: "succeeded", argsPreview: '{"path":"src/quoted \\"name\\".ts","edits":[...' },
+        { toolCallId: "write-2", name: "write", status: "succeeded", argsPreview: '{"path":"src/incomplete...' },
+        { toolCallId: "write-3", name: "write", status: "succeeded", argsPreview: '{"content":"\\"path\\":\\"fake.ts\\"...' },
+        { toolCallId: "write-4", name: "write", status: "succeeded" },
+        { toolCallId: "edit-2", name: "edit", status: "succeeded", argsPreview: '{"path":42}' },
+        { toolCallId: "write-5", name: "write", status: "succeeded", argsPreview: '{"path":""}' },
+      ],
+    }));
+
+    expect(record.changedFileCount).toBe(1);
+  });
+
   it("keeps a bridge summary in statistics while withholding unavailable journal counts", () => {
     const record = pickleStatisticsRecord(session({ messageJournalAvailable: false }));
     expect(record).toMatchObject({ followUpCount: 0, delegationCount: 0, reviewCount: 2, category: "unclassified", activeDurationMs: 0 });

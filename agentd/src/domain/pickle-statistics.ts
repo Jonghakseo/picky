@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import type { PickyAgentSession, PickySessionMessage } from "../protocol.js";
 
 export type PickleStatisticsCategory = "fix" | "research" | "create" | "review" | "unclassified";
@@ -29,7 +29,7 @@ export interface PickleStatisticsRecord {
   delegationCount: number;
   reviewCount: number;
   category: PickleStatisticsCategory;
-  /** Files the Pickle reported as changed. */
+  /** Unique files reported as changed or recorded by successful write/edit tools. */
   changedFileCount: number;
   /** Reports, links, and files attached as Pickle results. */
   artifactCount: number;
@@ -117,11 +117,41 @@ export function pickleStatisticsRecord(
 
 function resultCounts(session: PickyAgentSession): Pick<PickleStatisticsRecord, "changedFileCount" | "artifactCount" | "toolCallCount" | "subagentCount"> {
   return {
-    changedFileCount: session.changedFiles?.length ?? 0,
+    changedFileCount: changedFileCount(session),
     artifactCount: session.artifacts?.length ?? 0,
     toolCallCount: session.tools?.length ?? 0,
     subagentCount: session.subagentRuns?.length ?? 0,
   };
+}
+
+function changedFileCount(session: PickyAgentSession): number {
+  // Normalize relative/absolute aliases without consulting the current filesystem:
+  // changed or deleted files may no longer exist when history is read.
+  const key = (path: string) => resolve(session.cwd ?? "/", path);
+  const paths = new Set((session.changedFiles ?? []).map((file) => key(file.path)));
+  for (const tool of session.tools ?? []) {
+    if (tool.status !== "succeeded" || (tool.name !== "write" && tool.name !== "edit")) continue;
+    const path = mutationPath(tool.argsPreview);
+    if (path) paths.add(key(path));
+  }
+  return paths.size;
+}
+
+function mutationPath(argsPreview: string | undefined): string | undefined {
+  if (!argsPreview) return undefined;
+  try {
+    const args: unknown = JSON.parse(argsPreview);
+    if (args && typeof args === "object" && "path" in args && typeof args.path === "string") return args.path;
+  } catch {
+    // Tool previews often truncate content/edits after a complete leading path.
+    // Only accept a full JSON string in the first top-level field; never repair
+    // a truncated path or mistake text inside content for an argument.
+    const match = /^\s*\{\s*"path"\s*:\s*("(?:[^"\\]|\\.)*")\s*[,}]/.exec(argsPreview);
+    if (match) {
+      try { return JSON.parse(match[1]!) as string; } catch { /* Invalid JSON escape; no reliable path. */ }
+    }
+  }
+  return undefined;
 }
 
 /**

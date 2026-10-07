@@ -81,7 +81,7 @@ enum PickyHUDDockGroupHeaderLayout {
     /// Rendered name width, capped so long names truncate.
     static func horizontalNameWidth(name: String, metrics: PickyHUDDockMetrics, fontScale: CGFloat) -> CGFloat {
         let nameFont = NSFont.systemFont(
-            ofSize: PickyHUDTypography.metaNSFont(fontScale: fontScale).pointSize,
+            ofSize: PickyHUDTypography.supportingNSFont(fontScale: fontScale).pointSize,
             weight: .semibold
         )
         return min(
@@ -96,7 +96,7 @@ enum PickyHUDDockGroupHeaderLayout {
         metrics: PickyHUDDockMetrics,
         fontScale: CGFloat
     ) -> CGFloat {
-        let countFont = PickyHUDTypography.metaNSFont(fontScale: fontScale)
+        let countFont = PickyHUDTypography.supportingNSFont(fontScale: fontScale)
         let nameWidth = horizontalNameWidth(name: name, metrics: metrics, fontScale: fontScale)
         let countWidth = ceil(("\(count)" as NSString).size(withAttributes: [.font: countFont]).width)
         let dot = metrics.groupHeaderDotSide + dotHitPadding * 2
@@ -317,7 +317,7 @@ struct PickyHUDDockSessionRow: View {
             )
             VStack(alignment: .leading, spacing: 0) {
                 Text(PickyHUDDockRowStatusPresentation.title(for: session))
-                    .font(metrics.usesCompactRowTitle ? PickyHUDTypography.metaMedium : PickyHUDTypography.supportingMedium)
+                    .font(PickyHUDTypography.bodyMedium)
                     .foregroundStyle(
                         session.status == .completed && !isSelected && !isUnread
                             ? DS.Colors.textBody : DS.Colors.textPrimary
@@ -490,7 +490,7 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
         HStack(spacing: contentSpacing) {
             colorMenu
             Text(group.displayName)
-                .font(PickyHUDTypography.metaSemibold)
+                .font(PickyHUDTypography.supportingSemibold)
                 .foregroundStyle(showsActions || isDropTargeted ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -503,7 +503,7 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
                 )
                 .allowsHitTesting(false)
             Text("\(members.count)")
-                .font(PickyHUDTypography.meta)
+                .font(PickyHUDTypography.supporting)
                 .foregroundStyle(DS.Colors.textTertiary)
                 .layoutPriority(1)
                 .fixedSize()

@@ -298,9 +298,11 @@ Dock sizes:
 
 | Size | Vertical dock | Horizontal dock |
 | --- | --- | --- |
-| S | 112pt wide, one-line rows with smaller text | 34pt thick, one-line chips |
-| M (default) | 168pt wide, one-line rows | 38pt thick, one-line chips |
-| L | 200pt wide, two-line rows with status and time | 50pt thick, two-line chips |
+| S | 112pt wide, one-line rows | 39pt thick, 88pt one-line chips |
+| M (default) | 168pt wide, one-line rows | 39pt thick, 118pt one-line chips |
+| L | 200pt wide, two-line rows with status and time | 50pt thick, 150pt two-line chips |
+
+Every size uses the same title text size; smaller sizes only show less of each title.
 
 When the rows do not fit, only the list scrolls; the handle and bottom buttons stay put, and the edge that hides rows fades out. A horizontal dock stops growing at 720pt (or the screen width, whichever is smaller) and scrolls sideways beyond that.
 

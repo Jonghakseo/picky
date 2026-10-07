@@ -69,9 +69,12 @@ struct PickyHUDDockRailPolicyTests {
         let large = PickyHUDDockMetrics(preset: .large)
 
         #expect([small.railWidth, medium.railWidth, large.railWidth] == [112, 168, 200])
-        #expect([small, medium, large].map { $0.horizontalThickness(fontScale: 1) } == [34, 38, 50])
+        #expect([small, medium, large].map { $0.horizontalThickness(fontScale: 1) } == [39, 39, 50])
         #expect(large.showsRowDetailLine && !medium.showsRowDetailLine && !small.showsRowDetailLine)
-        #expect(small.usesCompactRowTitle && !medium.usesCompactRowTitle)
+        // Every preset uses the same 13pt title, so rows only get narrower.
+        #expect([small, medium].map { $0.rowHeight(fontScale: 1) } == [27, 28])
+        // Rows keep a visible gap so neighboring fills never touch.
+        #expect([small, medium, large].allSatisfy { $0.rowSpacing >= 2 })
         // Larger app text grows rows instead of clipping them.
         #expect(medium.rowHeight(fontScale: 1.3) > medium.rowHeight(fontScale: 1))
         // The move handle widens with the vertical list, never past 60pt.

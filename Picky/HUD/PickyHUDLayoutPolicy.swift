@@ -179,36 +179,33 @@ struct PickyHUDDockMetrics: Equatable {
 
     /// Large rows add a second status · time line under the title.
     var showsRowDetailLine: Bool { preset == .large }
-    /// Small rows step the title down one typography level.
-    var usesCompactRowTitle: Bool { preset == .small }
-
     func rowHeight(fontScale: CGFloat) -> CGFloat {
         let base: CGFloat = switch preset {
-        case .small: 23
-        case .medium: 26
-        case .large: 36
+        case .small: 27
+        case .medium: 28
+        case .large: 38
         }
         return (base * max(1, fontScale)).rounded(.up)
     }
 
     var rowGlyphSide: CGFloat {
         switch preset {
-        case .small: 13
-        case .medium: 14
+        case .small, .medium: 15
         case .large: 16
         }
     }
 
     var rowHorizontalPadding: CGFloat { preset == .small ? 5 : 6 }
     var rowContentSpacing: CGFloat { preset == .small ? 5 : 6 }
-    var rowSpacing: CGFloat { 1 }
+    /// A small gap keeps adjacent rows (and their hover/selection fills) apart.
+    var rowSpacing: CGFloat { 3 }
     var rowCornerRadius: CGFloat { DS.CornerRadius.control }
     var rowAttentionDotSide: CGFloat { preset == .small ? 5 : 6 }
     var rowUnreadDotSide: CGFloat { 7 }
     var rowActionSide: CGFloat { 18 }
 
     func groupHeaderHeight(fontScale: CGFloat) -> CGFloat {
-        ((preset == .small ? 22 : 24) * max(1, fontScale)).rounded(.up)
+        (26 * max(1, fontScale)).rounded(.up)
     }
 
     var groupHeaderDotSide: CGFloat { preset == .small ? 5 : 6 }
@@ -231,8 +228,7 @@ struct PickyHUDDockMetrics: Equatable {
 
     func chipHeight(fontScale: CGFloat) -> CGFloat {
         let base: CGFloat = switch preset {
-        case .small: 22
-        case .medium: 26
+        case .small, .medium: 27
         case .large: 38
         }
         return (base * max(1, fontScale)).rounded(.up)

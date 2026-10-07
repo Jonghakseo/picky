@@ -80,6 +80,10 @@ enum PickyHUDTypography {
     static var bodyCompactMonospaced: Font { .system(size: Size.bodyCompact, weight: .regular, design: .monospaced) }
 
     static var supporting: Font { .system(size: Size.supporting, weight: .regular) }
+    /// AppKit counterpart for widths that must match the supporting role.
+    static func supportingNSFont(fontScale: CGFloat) -> NSFont {
+        .systemFont(ofSize: 12 * max(0, fontScale), weight: .regular)
+    }
     static var supportingMedium: Font { .system(size: Size.supporting, weight: .medium) }
     static var supportingSemibold: Font { .system(size: Size.supporting, weight: .semibold) }
     static var supportingMonospaced: Font { .system(size: Size.supporting, weight: .regular, design: .monospaced) }

@@ -40,11 +40,32 @@ describe("sessionWithAppendedLog", () => {
     'pi diagnostic: {"type":"warning","message":"extension unavailable"}',
     "extension ui: setStatus",
     "extension ui: setTitle",
+    "extension ui: setTitle π - Pickle - agentd",
+    "pi resources reloaded",
+    "plugin reload failed: extension unavailable",
+    "plugin reload skipped: this Pi runtime cannot reload resources",
+    "plugin reload is taking too long; continuing with the current plugins",
+    "plugins reload skipped while the session is busy; this runtime applies plugins on its next session",
+    "extension error: [object Object]",
   ])("preserves activity time for runtime diagnostics: %s", (line) => {
     const session = makeSession();
     const next = sessionWithAppendedLog(session, line, NOW);
     expect(next.logs).toEqual([line]);
     expect(next.updatedAt).toBe(session.updatedAt);
+  });
+
+  it.each([
+    "follow-up: /reload",
+    "steer: inspect the reload failure",
+    "extension ui answer: Continue",
+    "extension ui: notify",
+    "extension ui: set_editor_text",
+    "compact completed",
+    "Async task persistence blocked; retryPersistence required: disk full",
+    "queued message is waiting: runtime busy",
+  ])("still advances activity time for user input and work: %s", (line) => {
+    const next = sessionWithAppendedLog(makeSession(), line, NOW);
+    expect(next.updatedAt).toBe(NOW);
   });
 
   it("records the typed last request for user-input journal lines and leaves it untouched otherwise", () => {

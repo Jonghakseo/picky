@@ -6449,7 +6449,7 @@ describe("SessionSupervisor", () => {
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/product-pi-session.jsonl", cwd: "/tmp/product", sessionId: "restored-product-session" }]);
   });
 
-  it("keeps persisted activity time and projection order when opening a completed Pickle", async () => {
+  it("keeps persisted activity time and projection order when opening or reloading a completed Pickle", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-view-"));
     const store = new SessionStore(dir);
     const older = "2026-05-01T00:00:10.000Z";
@@ -6483,6 +6483,25 @@ describe("SessionSupervisor", () => {
       const persisted = await store.loadReadOnly("viewed");
       return JSON.stringify(persisted?.logs.slice(-diagnostics.length)) === JSON.stringify(diagnostics);
     });
+
+    // The plugin reload reaches finished runtimes too. Replay the SDK events,
+    // including extension chrome and a binding error, through the production handler.
+    const reloadLog = "pi resources reloaded";
+    runtime.handle!.requestResourceReload = async () => {
+      runtime.handle!.emit({ type: "extension_ui", request: { method: "setStatus" }, waitsForInput: false });
+      runtime.handle!.emit({ type: "extension_ui", request: { method: "setTitle", title: "Pickle" }, waitsForInput: false });
+      runtime.handle!.emit({ type: "log", line: "extension error: [object Object]" });
+      runtime.handle!.emit({ type: "log", line: reloadLog });
+      runtime.handle!.emit({ type: "resources_reloaded" });
+      return "reloaded";
+    };
+    const reloaded: string[] = [];
+    supervisor.on("resourcesReloaded", (id: string) => reloaded.push(id));
+    expect((await supervisor.reloadPlugins()).pickleReloadedCount).toBe(1);
+    await waitUntil(() => reloaded.includes("viewed"));
+    expect((await store.loadReadOnly("viewed"))?.logs.slice(-4)).toEqual([
+      "extension ui: setStatus", "extension ui: setTitle Pickle", "extension error: [object Object]", reloadLog,
+    ]);
 
     expect(projected.length).toBeGreaterThan(0);
     expect(projected.map((session) => session.updatedAt)).toEqual(projected.map(() => older));

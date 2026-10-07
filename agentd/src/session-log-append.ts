@@ -26,12 +26,16 @@ export function sessionWithAppendedLog(
     artifacts: mergeArtifacts(session.artifacts, linkArtifacts),
     ...(piSessionFilePath ? { piSessionFilePath } : {}),
     ...(userInput && requestText ? { lastRequest: { source: userInput.source, text: requestText } } : {}),
-    // Opening a Pickle resumes its runtime for command/autocomplete discovery. These
-    // diagnostics describe attachment, not new activity, even when the resume fails.
+    // Runtime attachment and plugin maintenance are not session activity, even
+    // when they fail. Keep the diagnostics without changing dock recency.
+    // Explicit user commands and runtime status transitions still advance it.
     updatedAt: piSessionFilePath
       || line.startsWith("runtime reattach failed:")
       || line.startsWith("pi transcript repaired:")
       || line.startsWith("pi diagnostic:")
+      || line === "pi resources reloaded"
+      || /^plugins? reload(?:\s|$)/.test(line)
+      || line.startsWith("extension error:")
       // Extensions repaint their status bar or title on every runtime resume,
       // so these fire for every Pickle when Picky restarts.
       || /^extension ui: (?:setStatus|setTitle)(?:\s|$)/.test(line)

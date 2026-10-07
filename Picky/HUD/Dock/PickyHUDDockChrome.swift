@@ -58,17 +58,22 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View {
 
 /// An inset pocket connected to the outer edge, rather than a separate toolbar strip.
 struct PickyHUDDockNotchShape: Shape {
+    /// Width of each curved shoulder. Short notches use a smaller one so the
+    /// flat floor stays long enough for the grip.
+    var shoulder: CGFloat = PickyHUDDockMetrics.notchShoulder
+
     func path(in rect: CGRect) -> Path {
-        let shoulder: CGFloat = 8
+        let shoulder = min(shoulder, rect.width / 3)
+        let scale = shoulder / 8
         var path = Path()
         path.move(to: .zero)
         path.addCurve(to: CGPoint(x: shoulder, y: rect.height),
-                      control1: CGPoint(x: 5, y: 0),
-                      control2: CGPoint(x: 2, y: rect.height))
+                      control1: CGPoint(x: 5 * scale, y: 0),
+                      control2: CGPoint(x: 2 * scale, y: rect.height))
         path.addLine(to: CGPoint(x: rect.width - shoulder, y: rect.height))
         path.addCurve(to: CGPoint(x: rect.width, y: 0),
-                      control1: CGPoint(x: rect.width - 2, y: rect.height),
-                      control2: CGPoint(x: rect.width - 5, y: 0))
+                      control1: CGPoint(x: rect.width - 2 * scale, y: rect.height),
+                      control2: CGPoint(x: rect.width - 5 * scale, y: 0))
         path.closeSubpath()
         return path
     }
@@ -88,9 +93,12 @@ struct PickyHUDDockHandleNotch: View {
         let notchWidth = horizontal
             ? metrics.horizontalNotchLength(preferred: metrics.horizontalHandleNotchWidth, thickness: edgeLength ?? .infinity)
             : metrics.handleNotchWidth
-        let gripWidth = horizontal ? metrics.horizontalHandleIdleWidth : metrics.handleIdleWidth
+        let shoulder = PickyHUDDockMetrics.notchShoulder(notchLength: notchWidth)
+        let gripWidth = horizontal
+            ? PickyHUDDockMetrics.gripLength(preferred: metrics.horizontalHandleIdleWidth, notchLength: notchWidth)
+            : metrics.handleIdleWidth
         ZStack(alignment: .top) {
-            PickyHUDDockNotchShape().fill(DS.Colors.surface3)
+            PickyHUDDockNotchShape(shoulder: shoulder).fill(DS.Colors.surface3)
             Capsule().fill(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                 .frame(width: gripWidth, height: metrics.handleHeight)
                 .padding(.top, DS.Spacing.space1)
@@ -120,7 +128,8 @@ struct PickyHUDDockCollapseNotch: View {
         Button(action: onMinimize) {
             ZStack(alignment: horizontal ? .trailing : .bottom) {
                 Color.clear
-                PickyHUDDockNotchShape().fill(active ? DS.Colors.surface4 : DS.Colors.surface3)
+                PickyHUDDockNotchShape(shoulder: PickyHUDDockMetrics.notchShoulder(notchLength: notchWidth))
+                    .fill(active ? DS.Colors.surface4 : DS.Colors.surface3)
                     .frame(width: notchWidth, height: metrics.notchDepth)
                     .rotationEffect(.degrees(horizontal ? 90 : 180))
                     .frame(width: horizontal ? metrics.notchDepth : notchWidth,

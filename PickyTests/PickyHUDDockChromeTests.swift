@@ -77,7 +77,9 @@ struct PickyHUDDockChromeTests {
             for side: PickyHUDDockSide in [.right, .bottom] {
                 let horizontal = side.orientation == .horizontal
                 let notchWidth = horizontal ? metrics.horizontalHandleNotchWidth : metrics.handleNotchWidth
-                let gripWidth = horizontal ? metrics.horizontalHandleIdleWidth : metrics.handleIdleWidth
+                let gripWidth = horizontal
+                    ? PickyHUDDockMetrics.gripLength(preferred: metrics.horizontalHandleIdleWidth, notchLength: notchWidth)
+                    : metrics.handleIdleWidth
                 let view = PickyHUDDockHandleNotch(dockSide: side, metrics: metrics).environment(\.colorScheme, .light)
                 let bitmap = try #require(PickyRenderGalleryRasterizer.rasterize(view,
                     logicalSize: horizontal ? CGSize(width: 11, height: notchWidth) : CGSize(width: notchWidth, height: 11),

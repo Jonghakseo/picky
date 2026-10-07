@@ -95,7 +95,11 @@ struct PickyHUDDockRailPolicyTests {
                     #expect(notch <= straight, "\(preset) \(fontScale)")
                     #expect(notch >= metrics.horizontalNotchMinLength, "\(preset) \(fontScale)")
                 }
-                #expect(metrics.horizontalHandleIdleWidth < metrics.horizontalNotchMinLength)
+                // The grip sits on the flat floor between the curved shoulders.
+                let handle = metrics.horizontalNotchLength(preferred: metrics.horizontalHandleNotchWidth, thickness: thickness)
+                let floor = handle - 2 * PickyHUDDockMetrics.notchShoulder(notchLength: handle)
+                let grip = PickyHUDDockMetrics.gripLength(preferred: metrics.horizontalHandleIdleWidth, notchLength: handle)
+                #expect(grip < floor, "\(preset) \(fontScale)")
             }
         }
     }

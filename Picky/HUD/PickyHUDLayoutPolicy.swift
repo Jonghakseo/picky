@@ -167,6 +167,19 @@ struct PickyHUDDockMetrics: Equatable {
         min(outerCornerRadius, max(0, (thickness - horizontalNotchMinLength) / 2))
     }
 
+    /// Curved shoulder width of a full-length notch.
+    static let notchShoulder: CGFloat = 8
+
+    /// Short notches get narrower shoulders so their flat floor stays usable.
+    static func notchShoulder(notchLength: CGFloat) -> CGFloat {
+        notchLength >= 28 ? notchShoulder : max(3, (notchLength * 0.22).rounded())
+    }
+
+    /// The grip stays on the notch's flat floor, clear of both shoulders.
+    static func gripLength(preferred: CGFloat, notchLength: CGFloat) -> CGFloat {
+        min(preferred, max(6, notchLength - 2 * notchShoulder(notchLength: notchLength) - 2))
+    }
+
     /// Notch length that fits the straight part of a horizontal end edge.
     func horizontalNotchLength(preferred: CGFloat, thickness: CGFloat) -> CGFloat {
         min(preferred, max(0, thickness - 2 * horizontalShellCornerRadius(thickness: thickness)))

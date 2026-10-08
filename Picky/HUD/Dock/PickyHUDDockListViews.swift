@@ -339,7 +339,9 @@ struct PickyHUDDockSessionRow: View {
                 if isHovered { updateHover(false) }
             }
             .animation(.easeOut(duration: 0.12), value: isHovered)
-            .help(PickyHUDDockRowStatusPresentation.title(for: session))
+            // The horizontal rail already shows the name in its preview row;
+            // a tooltip there only repeats it. VoiceOver reads the label below.
+            .help(isHorizontalCompact ? "" : PickyHUDDockRowStatusPresentation.title(for: session))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L10n.t("dock.pickle.open.accessibility", PickyHUDDockRowStatusPresentation.title(for: session)))
             .accessibilityValue(accessibilityValue)
@@ -781,7 +783,7 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
             if isHovered { updateHover(false) }
         }
         .animation(.easeOut(duration: 0.12), value: showsActions)
-        .help(group.displayName)
+        .help(isHorizontalCompact ? "" : group.displayName)
         .accessibilityElement(children: isHorizontalCompact ? .ignore : .contain)
         .accessibilityLabel(group.displayName)
         .accessibilityValue(

@@ -1033,13 +1033,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compact long conversations with a rule-based summary instead of a model call. Once installed, conversation compaction in both Picky and Pi terminals uses this method, and earlier content stays searchable with vcc_recall."
+            "value": "Compact long conversations with a rule-based summary instead of a model call. Once installed, conversation compaction in both Picky and Pi terminals uses this method, and earlier content stays searchable with session_recall."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "긴 대화를 압축할 때 모델을 부르지 않고 규칙으로 요약해요. 설치하면 Picky와 Pi 터미널의 대화 압축이 모두 이 방식으로 바뀌고, 압축 전 내용은 vcc_recall로 다시 찾을 수 있어요."
+            "value": "긴 대화를 압축할 때 모델을 부르지 않고 규칙으로 요약해요. 설치하면 Picky와 Pi 터미널의 대화 압축이 모두 이 방식으로 바뀌고, 압축 전 내용은 session_recall로 다시 찾을 수 있어요."
           }
         }
       }
@@ -17771,246 +17771,6 @@
         }
       }
     },
-    "hub.dashboard.work.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "What you did with Picky this week"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이번 주 Picky와 한 일"
-          }
-        }
-      }
-    },
-    "hub.dashboard.work.showAll": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "View all"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "모두 보기"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.topCategory": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Most delegated work"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "가장 많이 맡긴 일"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.deepestPickle": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Most follow-ups and delegations"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "후속 지시·위임이 가장 많은 Pickle"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.focusedProject": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Project with the most Pickles"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pickle이 가장 많은 프로젝트"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.classifying": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No classified work yet"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아직 분류된 작업이 없어요"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.noData": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No record yet"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아직 기록이 없어요"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.classifyingCount": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld unclassified Pickles"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "미분류 Pickle %lld개"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.pickleCount": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld Pickles"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld개 Pickle"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.share": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld%% of this period"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이번 기간 작업의 %lld%%"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.followUpCount": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld follow-ups"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "후속 지시 %lld회"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.delegationCount": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld delegations"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky 위임 %lld회"
-          }
-        }
-      }
-    },
-    "hub.dashboard.insight.weeklyPickleCount": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld Pickles this period"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이번 기간 %lld개 Pickle"
-          }
-        }
-      }
-    },
-    "hub.dashboard.work.empty.thisMonth": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No records for this month yet"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아직 이번 달 기록이 없어요"
-          }
-        }
-      }
-    },
-    "hub.dashboard.work.empty.lastThreeMonths": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No records from the last 3 months yet"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아직 최근 3개월 기록이 없어요"
-          }
-        }
-      }
-    },
     "hub.dashboard.work.empty.all": {
       "localizations": {
         "en": {
@@ -21367,22 +21127,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "작업 분류를 초기화하는 중…"
-          }
-        }
-      }
-    },
-    "hub.dashboard.work.filteredTitle": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Work with Picky"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky와 한 일"
           }
         }
       }
@@ -31712,22 +31456,6 @@
         }
       }
     },
-    "hub.dashboard.work.empty.lastSevenDays": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No records in the last 7 days"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "최근 7일 동안의 기록이 없어요"
-          }
-        }
-      }
-    },
     "usageLimits.pace.ahead": {
       "localizations": {
         "en": {
@@ -33120,6 +32848,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "최신 버전을 사용 중이에요"
+          }
+        }
+      }
+    },
+    "hub.dashboard.habit.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your days with Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky와 함께한 날"
+          }
+        }
+      }
+    },
+    "hub.dashboard.habit.showStatistics": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View statistics"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통계 보기"
           }
         }
       }

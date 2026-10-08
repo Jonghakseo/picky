@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>C안 · 이번 주 기록과 배지</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .layout { grid-template-columns: repeat(3, 1fr); }
+  .card { min-height: 236px; display: flex; flex-direction: column; }
+  .grow { flex: 1; }
+  .pickle-title {
+    margin-top: 10px; font-size: 14px; font-weight: 600; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .hero .pickle-title { color: #fff; }
+  .medal { font-size: 30px; }
+  .badge-art {
+    width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-size: 30px;
+    background: radial-gradient(circle at 30% 30%, #fff6d8, #ffd66b); box-shadow: 0 0 0 4px #fff3c4;
+    margin: 4px 0 10px;
+  }
+  .new { position: absolute; top: 16px; right: 16px; font-size: 11px; font-weight: 700; color: var(--success); background: var(--success-bg); border-radius: 999px; padding: 2px 8px; }
+  .progress { height: 8px; border-radius: 4px; background: var(--bar-track); overflow: hidden; margin: 12px 0 6px; }
+  .progress b { display: block; height: 100%; background: var(--action); border-radius: 4px; }
+  .locked { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; background: var(--bar-track); filter: grayscale(1); opacity: .7; margin: 4px 0 10px; }
+  .footer-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); }
+  .hero .footer-row { color: rgba(255,255,255,.8); }
+
+  .ticker { margin-top: var(--gap); display: flex; gap: 8px; flex-wrap: wrap; }
+  .ticker .pill { font-weight: 500; }
+  .ticker .pill b { color: var(--text-1); }
+</style>
+</head>
+<body>
+<div class="page">
+  <span class="proposal-tag">C안 · 이번 주 기록과 배지 (게임형)</span>
+
+  <div class="section-head">
+    <div><div class="icon">📈</div><h2>Picky와 한 일</h2></div>
+    <a href="#">모두 보기</a>
+  </div>
+  <div class="scope">최근 7일 · 모든 프로젝트</div>
+
+  <div class="grid layout">
+    <div class="card hero link">
+      <div class="medal">🏆</div>
+      <div class="eyebrow" style="margin-top:8px">이번 주 가장 오래 일한 Pickle</div>
+      <div class="pickle-title grow">결제 웹훅 재시도 로직을 큐 기반으로 옮기고 테스트 보강</div>
+      <div class="big" style="font-size:28px">2<span class="unit">시간</span> 14<span class="unit">분</span></div>
+      <div class="footer-row"><span>파일 38개 · 도구 412번</span><span>열기 →</span></div>
+    </div>
+
+    <div class="card link">
+      <span class="new">새 배지</span>
+      <div class="badge-art">🦉</div>
+      <div class="mid" style="font-size:18px">올빼미</div>
+      <div class="desc grow">밤 10시 이후에 Pickle 10개를 맡겼어요. 어제 받았어요.</div>
+      <div class="footer-row"><span>배지 12 / 24개</span><span>모든 배지 →</span></div>
+    </div>
+
+    <div class="card link">
+      <div class="locked">💯</div>
+      <div class="eyebrow">다음 배지까지</div>
+      <div class="mid" style="font-size:18px">Pickle 100개</div>
+      <div class="progress"><b style="width:82%"></b></div>
+      <div class="desc grow">18개만 더 맡기면 받아요.</div>
+      <div class="footer-row"><span>82 / 100</span><span></span></div>
+    </div>
+  </div>
+
+  <div class="ticker">
+    <span class="pill">🔥 연속 사용 <b>5일째</b></span>
+    <span class="pill">📁 가장 많이 바꾼 Pickle <b>파일 38개</b></span>
+    <span class="pill">🤝 서브에이전트 <b>27번</b> 불렀어요</span>
+    <span class="pill">💬 대화가 가장 길었던 Pickle <b>추가 지시 14번</b></span>
+  </div>
+
+  <div class="note">
+    <b>의도</b> 대시보드를 "이번 주 하이라이트 + 다음 목표"로 만듭니다. 기록 카드는 해당 Pickle로 바로 들어가고, 배지 진행도는 다음 사용 동기를 줍니다.<br>
+    <b>데이터</b> 가장 오래 일한 Pickle·최다 파일·최다 추가 지시 = 명예의 전당 탭 계산을 기간 필터로 재사용, 새 배지·다음 배지 = <code>PickyHubBadgeBoard</code>(최근 획득, 다음 배지 진행도), 연속 사용 = 리듬 탭 streak. 새 수집 없음.<br>
+    <b>주의</b> 배지를 모두 받으면 세 번째 카드는 "가장 많이 맡긴 일" 같은 고정 통계로 바꿔야 합니다. 이번 주 새 배지가 없으면 "최근 받은 배지"로 대체합니다. 명예의 전당 탭과 내용이 겹치므로 대시보드는 '이번 주' 범위로만 보여야 차별점이 생깁니다.
+  </div>
+</div>
+</body>
+</html>

@@ -2,8 +2,9 @@
 //  PickyHubStatisticsRhythmTab.swift
 //  Picky
 //
-//  작업 리듬 tab: streak and daily calendar over the whole history, then the
-//  period/project filter and the filtered pattern sections below it.
+//  작업 리듬 tab: streak and daily calendar over the whole history (also shown
+//  on the dashboard), then the period/project filter and the filtered pattern
+//  sections below it.
 //
 
 import SwiftUI
@@ -12,14 +13,11 @@ struct PickyHubStatisticsRhythmTab: View {
     let snapshot: PickyHubStatisticsSnapshot
     let onGoDashboard: () -> Void
     @EnvironmentObject private var statisticsStore: PickyHubStatisticsStore
-    @Environment(\.pickyHubContentWidth) private var contentWidth
-    @Environment(\.pickyAppFontScale) private var fontScale
 
     var body: some View {
         let records = PickyHubStatisticsAggregator.records(in: snapshot, filter: statisticsStore.filter)
-        let dailyCounts = PickyHubRhythmPolicy.dailyCounts(records: snapshot.records)
         VStack(alignment: .leading, spacing: 0) {
-            habit(dailyCounts: dailyCounts)
+            PickyHubActivityHabitView(records: snapshot.records)
             HStack(alignment: .firstTextBaseline, spacing: PickyHubTheme.Spacing.field) {
                 PickyHubSubsectionTitle(title: "hub.stats.rhythm.pattern.title")
                 Spacer(minLength: 0)
@@ -63,9 +61,17 @@ struct PickyHubStatisticsRhythmTab: View {
             }
         }
     }
+}
 
-    @ViewBuilder
-    private func habit(dailyCounts: [Date: Int]) -> some View {
+/// Streak card and daily activity calendar over the whole history. Shared by
+/// the statistics rhythm tab and the dashboard; it ignores the period filter.
+struct PickyHubActivityHabitView: View {
+    let records: [PickyHubPickleRecord]
+    @Environment(\.pickyHubContentWidth) private var contentWidth
+    @Environment(\.pickyAppFontScale) private var fontScale
+
+    var body: some View {
+        let dailyCounts = PickyHubRhythmPolicy.dailyCounts(records: records)
         let streak = PickyHubRhythmPolicy.streaks(
             activeDays: Set(dailyCounts.keys),
             today: Calendar.current.startOfDay(for: Date()),

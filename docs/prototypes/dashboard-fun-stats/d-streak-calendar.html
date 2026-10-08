@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>D안 · 대시보드 연속 기록과 날짜별 활동</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .dim { opacity: .35; pointer-events: none; }
+  .stub { height: 64px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-soft); }
+  .section { margin: 40px 0; }
+  .section .section-head { margin-bottom: 16px; }
+
+  .habit { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: stretch; }
+
+  .streak { display: flex; flex-direction: column; padding: 20px; }
+  .streak .flame { font-size: 30px; line-height: 1; }
+  .streak .num { font-size: 32px; font-weight: 600; letter-spacing: -1px; margin-top: 14px; }
+  .streak .num span { font-size: 16px; font-weight: 600; margin-left: 4px; letter-spacing: 0; }
+  .streak .desc { margin-top: 6px; }
+  .streak .foot { margin-top: auto; padding-top: 18px; }
+  .streak .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); }
+  .streak .row span:last-child { color: var(--text-3); }
+  .streak .bar { height: 6px; border-radius: 3px; background: var(--bar-track); margin-top: 8px; overflow: hidden; }
+  .streak .bar b { display: block; height: 100%; width: 100%; background: #b85a0a; border-radius: 3px; }
+
+  .cal { padding: 20px; }
+  .cal-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .cal-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+  .cal-head span { font-size: 12px; color: var(--text-3); }
+  .months { position: relative; height: 14px; margin: 14px 0 4px 18px; font-size: 10px; color: var(--text-3); }
+  .months span { position: absolute; }
+  .grid-cal { display: grid; grid-template-columns: 14px 1fr; gap: 4px; }
+  .wd { display: grid; grid-template-rows: repeat(7, 1fr); gap: 3px; font-size: 10px; color: var(--text-3); }
+  .wd span { line-height: 13px; height: 13px; }
+  .weeks { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 13px); grid-auto-columns: 13px; gap: 4px; justify-content: end; }
+  .weeks i { width: 13px; height: 13px; border-radius: 3px; background: var(--bar-track); }
+  .weeks i.l1 { background: #c9d8ff; } .weeks i.l2 { background: #a4bfff; }
+  .weeks i.l3 { background: #7aa0ff; } .weeks i.l4 { background: #5284ff; }
+  .weeks i.empty { background: transparent; }
+  .legend { display: flex; justify-content: flex-end; align-items: center; gap: 3px; margin-top: 10px; font-size: 11px; color: var(--text-3); }
+  .legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  .titles { margin-top: 28px; display: grid; gap: 8px; }
+  .titles .opt { display: flex; gap: 12px; align-items: baseline; font-size: 13px; }
+  .titles .opt b { min-width: 150px; }
+  .titles .opt span { color: var(--text-3); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <span class="proposal-tag">D안 · 연속 기록과 날짜별 활동을 대시보드로</span>
+
+  <div class="dim"><div class="stub"></div></div>
+
+  <div class="section">
+    <div class="section-head">
+      <div><div class="icon">🗓️</div><h2>Picky와 함께한 날</h2></div>
+      <a href="#">통계 보기</a>
+    </div>
+
+    <div class="habit">
+      <div class="card streak">
+        <div class="flame">🔥</div>
+        <div class="num">11<span>일 연속</span></div>
+        <div class="desc">매일 Pickle을 1개 이상 맡겼어요.</div>
+        <div class="foot">
+          <div class="row"><span>최장 기록 11일</span><span>최장 기록 경신 중</span></div>
+          <div class="bar"><b></b></div>
+        </div>
+      </div>
+
+      <div class="card cal">
+        <div class="cal-head"><h3>날짜별 활동</h3><span>지금까지 Pickle 289개 · 활동한 날 16일</span></div>
+        <div class="months" id="months"></div>
+        <div class="grid-cal">
+          <div class="wd"><span></span><span>월</span><span></span><span>수</span><span></span><span>금</span><span></span></div>
+          <div class="weeks" id="weeks"></div>
+        </div>
+        <div class="legend">적음 <i style="background:#e6e9f2"></i><i style="background:#c9d8ff"></i><i style="background:#a4bfff"></i><i style="background:#7aa0ff"></i><i style="background:#5284ff"></i> 많음</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dim">
+    <div class="section-head"><div><div class="icon">📘</div><h2>가이드</h2></div></div>
+    <div class="stub" style="margin-top:16px"></div>
+  </div>
+
+  <div class="note">
+    <b>제목 후보</b>
+    <div class="titles">
+      <div class="opt"><b>Picky와 함께한 날 (추천)</b><span>달력과 연속 기록이 모두 '날'을 세는 화면이라 내용과 바로 맞아요.</span></div>
+      <div class="opt"><b>작업 리듬</b><span>통계 탭 이름과 같아서 통계 탭과 이어지지만 대시보드에선 조금 딱딱해요.</span></div>
+      <div class="opt"><b>꾸준히 맡긴 기록</b><span>연속 기록을 앞세울 때. 달력 쪽 의미는 약해요.</span></div>
+    </div>
+    <br>
+    <b>바뀌는 점</b> 기존 세 장의 인사이트 카드(가장 많이 맡긴 일·후속 지시가 가장 많은 Pickle·Pickle이 가장 많은 프로젝트)를 빼고, 통계 › 작업 리듬의 <code>PickyHubStreakCard</code> + <code>PickyHubActivityCalendarCard</code>를 그대로 씁니다. 대시보드 본문 폭이 720pt라 통계 탭과 같은 가로 배치(220pt + 나머지)가 들어갑니다.<br>
+    <b>범위 문구</b> 두 카드는 기간 필터와 상관없이 전체 기록을 보여 주고 카드 안에서 기간을 직접 말하므로, 제목 아래 범위 줄은 뺐습니다. 링크는 "모두 보기"에서 "통계 보기"로 바꿨습니다.<br>
+    <b>빈 상태</b> 기록이 없으면 지금처럼 "첫 Pickle 시작하기" 카드를 보여 줍니다. 오늘 아직 안 맡겼으면 불꽃이 회색이 되고 "오늘 Pickle을 맡기면 연속 기록이 시작돼요" 문구가 나옵니다(기존 문구 그대로).
+  </div>
+</div>
+<script>
+  // 26주, 마지막 2주에 활동이 몰린 스크린샷 패턴 재현
+  const weeks = 25, cells = document.getElementById("weeks");
+  const active = { "16-2":1, "18-1":1, "20-6":1, "21-5":1, "22-2":1, "23-1":2, "23-6":1,
+    "24-1":2, "24-2":3, "24-3":3, "24-4":2, "24-0":4 };
+  const cur = { "23-1":3, "23-2":3, "23-3":3, "23-4":2, "23-5":3, "23-6":1 };
+  for (let w = 0; w < weeks; w++) for (let d = 0; d < 7; d++) {
+    const i = document.createElement("i");
+    const k = `${w}-${d}`;
+    const v = cur[k] ?? active[k];
+    if (w === weeks - 1 && d > 4) i.className = "empty";
+    else if (v) i.className = "l" + v;
+    cells.appendChild(i);
+  }
+  const months = document.getElementById("months");
+  [["5월",0],["6월",5],["7월",9],["8월",13],["9월",18],["10월",22]].forEach(([m, w]) => {
+    const s = document.createElement("span"); s.textContent = m; s.style.left = (w * 17 + 4) + "px"; months.appendChild(s);
+  });
+</script>
+</body>
+</html>

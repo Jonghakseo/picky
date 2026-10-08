@@ -44,7 +44,7 @@ struct PickyHubDashboardPage: View {
                         .padding(.top, PickyHubTheme.Layout.sectionSpacing)
                 }
 
-                workSummary
+                activityHabitSection
                     .padding(.top, PickyHubTheme.Layout.sectionSpacing)
                 guidesSection
                     .padding(.top, PickyHubTheme.Layout.sectionSpacing)
@@ -148,20 +148,15 @@ struct PickyHubDashboardPage: View {
         }
     }
 
-    private var workSummary: some View {
+    private var activityHabitSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             PickyHubSectionHeading(
-                systemImage: "chart.line.uptrend.xyaxis",
-                title: "hub.dashboard.work.filteredTitle",
-                linkTitle: "hub.dashboard.work.showAll"
+                systemImage: "calendar",
+                title: "hub.dashboard.habit.title",
+                linkTitle: "hub.dashboard.habit.showStatistics"
             ) {
-                navigator.showStatistics(tab: .rhythm, anchor: .pickleRecords)
+                navigator.showStatistics(tab: .rhythm)
             }
-            Text(PickyHubDashboardPresentation.workScope(filter: statisticsStore.filter))
-                .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
-                .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                .pickyHubSelectableText()
-                .padding(.bottom, PickyHubTheme.Spacing.field)
             switch statisticsStore.state {
             case .idle, .loading:
                 PickyHubLoadingRow(message: "hub.stats.loading")
@@ -172,18 +167,10 @@ struct PickyHubDashboardPage: View {
                 .padding(PickyHubTheme.Spacing.cardInset)
                 .pickyHubCard()
             case .loaded(let snapshot):
-                let records = PickyHubStatisticsAggregator.records(in: snapshot, filter: statisticsStore.filter)
-                if records.isEmpty {
+                if snapshot.records.isEmpty {
                     dashboardEmptyWorkCard
                 } else {
-                    PickyHubWorkInsightCards(
-                        insights: PickyHubStatisticsAggregator.workInsights(for: records),
-                        actions: .init(
-                            topCategory: { navigator.showStatistics(tab: .rhythm, anchor: .workPattern) },
-                            deepestPickle: { navigator.showStatistics(tab: .rhythm, anchor: .pickleRecords) },
-                            focusedProject: { navigator.showStatistics(tab: .rhythm, anchor: .pickleRecords) }
-                        )
-                    )
+                    PickyHubActivityHabitView(records: snapshot.records)
                 }
             }
         }
@@ -191,7 +178,7 @@ struct PickyHubDashboardPage: View {
 
     private var dashboardEmptyWorkCard: some View {
         VStack(alignment: .leading, spacing: PickyHubTheme.Spacing.related) {
-            Text(PickyHubDashboardPresentation.emptyWorkTitle(period: statisticsStore.filter.period))
+            Text("hub.dashboard.work.empty.all")
                 .pickyFont(size: PickyHubTheme.Typography.greetingTitle, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textPrimary)
                 .pickyHubSelectableText()
@@ -648,26 +635,6 @@ enum PickyHubDashboardPresentation {
             : ["Take a short stretch, then start your next task.", "Look back at recent work and find your next idea.", "Ready to start something new with Picky?"]
         let day = calendar.ordinality(of: .day, in: .year, for: date) ?? 0
         return Greeting(title: title, subtitle: options[day % options.count])
-    }
-
-    static func workScope(filter: PickyHubStatisticsFilter) -> String {
-        let periodKey: String
-        switch filter.period {
-        case .lastSevenDays: periodKey = "hub.stats.period.lastSevenDays"
-        case .thisMonth: periodKey = "hub.stats.period.thisMonth"
-        case .lastThreeMonths: periodKey = "hub.stats.period.lastThreeMonths"
-        case .all: periodKey = "hub.stats.period.all"
-        }
-        return "\(L10n.t(periodKey)) · \(filter.project ?? L10n.t("hub.stats.filter.allProjects"))"
-    }
-
-    static func emptyWorkTitle(period: PickyHubStatisticsPeriod) -> LocalizedStringKey {
-        switch period {
-        case .lastSevenDays: "hub.dashboard.work.empty.lastSevenDays"
-        case .thisMonth: "hub.dashboard.work.empty.thisMonth"
-        case .lastThreeMonths: "hub.dashboard.work.empty.lastThreeMonths"
-        case .all: "hub.dashboard.work.empty.all"
-        }
     }
 
     static func relativeGuideDate(_ date: Date?, locale: Locale, now: Date = Date()) -> String {

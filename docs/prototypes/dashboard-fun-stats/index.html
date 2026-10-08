@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>대시보드 · Picky와 한 일 시안 비교</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { background: #f1f2f6; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--text-2); margin-bottom: 24px; }
+  .frame { background: #fff; border-radius: 14px; overflow: hidden; margin-bottom: 24px; box-shadow: 0 8px 24px rgba(25,27,38,.06); }
+  .frame header { display: flex; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); font-size: 13px; font-weight: 600; }
+  .frame header a { color: var(--action); text-decoration: none; font-weight: 500; }
+  iframe { width: 100%; border: 0; display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>대시보드 "Picky와 한 일" 교체 시안</h1>
+  <div class="lead">세 안 모두 지금 통계 스냅샷에 있는 데이터만 씁니다. 라이트 모드만 그렸습니다.</div>
+
+  <div class="frame"><header><span>D안 · 연속 기록과 날짜별 활동 (선택안)</span><a href="d-streak-calendar.html">따로 열기</a></header>
+    <iframe src="d-streak-calendar.html" height="900"></iframe></div>
+  <div class="frame"><header><span>A안 · 이번 주 회고</span><a href="a-weekly-recap.html">따로 열기</a></header>
+    <iframe src="a-weekly-recap.html" height="720"></iframe></div>
+  <div class="frame"><header><span>B안 · 나의 작업 성향</span><a href="b-work-persona.html">따로 열기</a></header>
+    <iframe src="b-work-persona.html" height="640"></iframe></div>
+  <div class="frame"><header><span>C안 · 이번 주 기록과 배지</span><a href="c-records-badges.html">따로 열기</a></header>
+    <iframe src="c-records-badges.html" height="640"></iframe></div>
+</div>
+</body>
+</html>

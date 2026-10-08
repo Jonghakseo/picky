@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>A안 · 이번 주 회고</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .layout { grid-template-columns: 1.35fr 1fr; }
+  .stack { display: grid; gap: var(--gap); }
+  .spark { display: flex; align-items: flex-end; gap: 6px; height: 56px; margin-top: 18px; }
+  .spark div { flex: 1; background: rgba(255,255,255,.35); border-radius: 4px 4px 2px 2px; }
+  .spark div.today { background: #fff; }
+  .spark-axis { display: flex; gap: 6px; margin-top: 6px; }
+  .spark-axis span { flex: 1; text-align: center; font-size: 11px; color: rgba(255,255,255,.75); }
+  .facts { grid-template-columns: repeat(3, 1fr); margin-top: var(--gap); }
+  .fact { padding: 14px 16px; }
+  .fact .mid { font-size: 18px; }
+  .ring { width: 54px; height: 54px; position: absolute; right: 18px; top: 18px; }
+  .flame-row { display: flex; gap: 5px; margin-top: 10px; }
+  .flame-row i { width: 18px; height: 18px; border-radius: 5px; background: var(--bar-track); }
+  .flame-row i.on { background: var(--action); }
+  .flame-row i.ghost { background: transparent; border: 1.5px dashed #b9c8f5; }
+</style>
+</head>
+<body>
+<div class="page">
+  <span class="proposal-tag">A안 · 이번 주 회고 (Wrapped형)</span>
+
+  <div class="section-head">
+    <div><div class="icon">📈</div><h2>Picky와 한 일</h2></div>
+    <a href="#">모두 보기</a>
+  </div>
+  <div class="scope">최근 7일 · 모든 프로젝트</div>
+
+  <div class="grid layout">
+    <div class="card hero link">
+      <div class="eyebrow">Picky가 대신 일한 시간</div>
+      <div class="big">14<span class="unit">시간</span> 20<span class="unit">분</span></div>
+      <div class="desc">영화 일곱 편을 볼 수 있는 시간이에요. 지난주보다 3시간 늘었어요.</div>
+      <div class="spark">
+        <div style="height:40%"></div><div style="height:62%"></div><div style="height:30%"></div>
+        <div style="height:88%"></div><div style="height:55%"></div><div style="height:12%"></div>
+        <div class="today" style="height:70%"></div>
+      </div>
+      <div class="spark-axis"><span>목</span><span>금</span><span>토</span><span>일</span><span>월</span><span>화</span><span>오늘</span></div>
+    </div>
+
+    <div class="stack">
+      <div class="card link">
+        <div class="eyebrow">한 번에 끝낸 Pickle</div>
+        <div class="mid">61%</div>
+        <div class="desc">219개 중 134개는 추가 지시 없이 끝났어요.</div>
+        <svg class="ring" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r="15" fill="none" stroke="#e6e9f2" stroke-width="5"/>
+          <circle cx="18" cy="18" r="15" fill="none" stroke="#5284ff" stroke-width="5"
+                  stroke-dasharray="57.5 94.2" stroke-linecap="round" transform="rotate(-90 18 18)"/>
+        </svg>
+      </div>
+      <div class="card link">
+        <div class="eyebrow">연속 사용</div>
+        <div class="mid">5일째</div>
+        <div class="desc">최고 기록 7일까지 2일 남았어요.</div>
+        <div class="flame-row"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="ghost"></i><i class="ghost"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid facts">
+    <div class="card fact"><div class="eyebrow">가장 바쁜 시간</div><div class="mid">오후 3시</div><div class="desc">이 시간에 Pickle 38개</div></div>
+    <div class="card fact"><div class="eyebrow">바꾼 파일</div><div class="mid">412개</div><div class="desc">수정·개선이 42%</div></div>
+    <div class="card fact"><div class="eyebrow">도구 실행</div><div class="mid">3,180번</div><div class="desc">하루 평균 454번</div></div>
+  </div>
+
+  <div class="note">
+    <b>의도</b> 숫자를 나열하는 대신 "이번 주에 무슨 일이 있었나"를 한 장에 회고합니다. 가장 큰 숫자는 체감하기 쉬운 비유(영화 n편)와 지난주 대비로 풀어 씁니다.<br>
+    <b>데이터</b> 대신 일한 시간 = <code>activeDurationMs</code> 합계, 한 번에 끝낸 Pickle = <code>followUpCount == 0</code> 비율, 연속 사용·가장 바쁜 시간 = 기존 리듬 탭 계산 재사용, 파일·도구 = <code>changedFileCount</code>·<code>toolCallCount</code> 합계. 새 수집 없음.<br>
+    <b>주의</b> 지난주 대비는 이전 기간 집계를 한 번 더 해야 하고, 비유 문구는 ko/en 모두 어색하지 않은 단위(영화 약 2시간)로 고정해야 합니다.
+  </div>
+</div>
+</body>
+</html>

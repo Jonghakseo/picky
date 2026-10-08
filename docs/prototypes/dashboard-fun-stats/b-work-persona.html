@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>B안 · 나의 작업 성향</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .layout { grid-template-columns: 1fr 1.25fr; }
+  .persona { display: flex; flex-direction: column; justify-content: space-between; min-height: 260px; }
+  .avatar {
+    width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center;
+    background: rgba(255,255,255,.18); font-size: 28px;
+  }
+  .persona .big { font-size: 28px; margin-top: 14px; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+
+  .heat-title { display: flex; justify-content: space-between; align-items: baseline; }
+  .heat { display: grid; grid-template-columns: 22px repeat(24, 1fr); gap: 3px; margin-top: 12px; }
+  .heat .d { font-size: 10px; color: var(--text-3); line-height: 12px; }
+  .heat i { height: 12px; border-radius: 3px; background: var(--bar-track); }
+  .heat i.l1 { background: #d6e2ff; } .heat i.l2 { background: #a9c2ff; }
+  .heat i.l3 { background: #7a9fff; } .heat i.l4 { background: #5284ff; }
+  .heat i.peak { outline: 2px solid #131419; outline-offset: 1px; }
+  .hours { display: grid; grid-template-columns: 22px repeat(4, 1fr); margin-top: 6px; font-size: 10px; color: var(--text-3); }
+
+  .traits { margin-top: 18px; display: grid; gap: 12px; }
+  .trait-head { display: flex; justify-content: space-between; font-size: 12px; }
+  .trait-head span:first-child { font-weight: 600; }
+  .trait-head span:last-child { color: var(--text-3); }
+  .scale { position: relative; height: 6px; border-radius: 3px; background: var(--bar-track); margin-top: 6px; }
+  .scale b { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--action); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--action); }
+  .ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <span class="proposal-tag">B안 · 나의 작업 성향 (페르소나형)</span>
+
+  <div class="section-head">
+    <div><div class="icon">📈</div><h2>Picky와 한 일</h2></div>
+    <a href="#">모두 보기</a>
+  </div>
+  <div class="scope">최근 7일 · 모든 프로젝트</div>
+
+  <div class="grid layout">
+    <div class="card hero persona link">
+      <div>
+        <div class="avatar">🦉</div>
+        <div class="eyebrow" style="margin-top:16px">이번 주 당신은</div>
+        <div class="big">밤에 고치는 사람</div>
+        <div class="desc">Pickle의 31%를 밤 10시 이후에 시작했고, 그중 절반 넘게가 수정·개선이었어요.</div>
+      </div>
+      <div class="pill-row">
+        <span class="pill">밤 작업 31%</span>
+        <span class="pill">수정·개선 42%</span>
+        <span class="pill">🦉 올빼미 배지</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="heat-title">
+        <div class="eyebrow">요일·시간별 Pickle</div>
+        <div class="desc" style="font-size:12px">가장 몰린 때 <b>목요일 밤 11시</b></div>
+      </div>
+      <div class="heat" id="heat"></div>
+      <div class="hours"><span></span><span>0시</span><span>6시</span><span>12시</span><span>18시</span></div>
+
+      <div class="traits">
+        <div>
+          <div class="trait-head"><span>맡기는 방식</span><span>Pickle당 추가 지시 0.6번</span></div>
+          <div class="scale"><b style="left:22%"></b></div>
+          <div class="ends"><span>한 번에 맡김</span><span>대화하며 다듬음</span></div>
+        </div>
+        <div>
+          <div class="trait-head"><span>작업 범위</span><span>프로젝트 4곳</span></div>
+          <div class="scale"><b style="left:38%"></b></div>
+          <div class="ends"><span>한 곳에 집중</span><span>여러 곳을 오감</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>의도</b> 통계를 "나는 어떻게 일하나"라는 한 줄 정체성으로 묶습니다. 숫자보다 이름이 먼저 기억에 남고, 주마다 바뀌면 다시 볼 이유가 생깁니다.<br>
+    <b>데이터</b> 성향 이름 = 피크 시간대(새벽·오전·오후·밤) × 최다 카테고리(수정·조사·생성·검토) 조합 16개, 히트맵 = <code>createdAt</code> 요일×시간, 맡기는 방식 = <code>followUpCount</code> 평균, 작업 범위 = 프로젝트 수. 배지 pill은 기존 배지 보드에서 연결.<br>
+    <b>주의</b> 이름은 평가처럼 들리면 안 됩니다("게으른", "산만한" 금지). 기록이 적은 주(예: 5개 미만)는 성향 대신 "아직 파악 중이에요"로 낮춰야 합니다. 16개 이름의 ko/en 카피 작업이 필요합니다.
+  </div>
+</div>
+<script>
+  // 목업용 고정 패턴: 오후와 밤에 몰리고 목요일 밤이 피크
+  const days = ["월","화","수","목","금","토","일"];
+  const heat = document.getElementById("heat");
+  days.forEach((d, di) => {
+    const label = document.createElement("span"); label.className = "d"; label.textContent = d; heat.appendChild(label);
+    for (let h = 0; h < 24; h++) {
+      const i = document.createElement("i");
+      let v = 0;
+      if (h >= 10 && h <= 17) v = (h + di) % 3 === 0 ? 2 : 1;
+      if (h >= 21 || h <= 1) v = (h + di) % 2 === 0 ? 3 : 2;
+      if (di >= 5) v = Math.max(0, v - 2);
+      if (di === 3 && h === 23) { v = 4; i.className = "peak"; }
+      if (v) i.classList.add("l" + v);
+      heat.appendChild(i);
+    }
+  });
+</script>
+</body>
+</html>

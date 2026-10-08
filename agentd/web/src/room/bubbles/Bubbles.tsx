@@ -21,7 +21,6 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
-  ListBullet,
   OpenReport,
   Photo,
   PhotoMissing,
@@ -203,7 +202,8 @@ export function ScheduledRow({ text, when, onEdit, onCancel, onSendNow }: Schedu
 }
 
 export interface ActivitySummaryProps {
-  total: number;
+  /** "2분 5초" style turn duration; absent when the turn has no leading user message. */
+  duration: string | null;
   counts: Array<{ category: ActivityCategory; count: number }>;
 }
 
@@ -219,16 +219,12 @@ const ACTIVITY_LABEL_KEY = {
 } satisfies Record<ActivityCategory, string>;
 
 /** Collapsed by default; a tap expands the per-category grid, as hovering does on the Mac. */
-export function ActivitySummary({ total, counts }: ActivitySummaryProps): JSX.Element {
+export function ActivitySummary({ duration, counts }: ActivitySummaryProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
     <div class={`activity${expanded ? " activity--expanded" : ""}`}>
       <button class="activity-head" type="button" onClick={() => setExpanded((value) => !value)}>
-        <span class="activity-dot" aria-hidden="true" />
-        <ListBullet />
-        <span class="activity-title">
-          {t(total === 1 ? "hud.activity.summary.toolsUsed.one" : "hud.activity.summary.toolsUsed.many", total)}
-        </span>
+        {duration ? <span class="activity-title">{duration}</span> : null}
         <span class="activity-state">
           <span>{t("hud.activity.summary.completed")}</span>
           <ChevronRight size={10} />

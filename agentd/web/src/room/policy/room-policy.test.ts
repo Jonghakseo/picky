@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { parseDiffResult, diffLineKind, changeCounts } from "./diff";
 import { classifyLink } from "./links";
-import { isTruncated, truncatedMarkdown } from "./message";
+import { setLocale } from "../i18n";
+import { activityDurationText, isTruncated, truncatedMarkdown } from "./message";
 import { delayMilliseconds, tomorrowPreset, TOMORROW_PRESET_HOUR } from "./schedule";
 import { stopAlertActions, stopChoice } from "./stop";
 
@@ -40,6 +42,39 @@ describe("long message fold", () => {
     const short = "짧은 답\n두 줄";
     expect(isTruncated(short)).toBe(false);
     expect(truncatedMarkdown(short)).toBe(short);
+  });
+});
+
+/** The duration strings, read from the Mac catalog so both surfaces share wording. */
+function installDurationStrings(): void {
+  const catalog = JSON.parse(readFileSync(new URL("../../../../../Picky/Resources/Localizable.xcstrings", import.meta.url), "utf8")) as {
+    strings: Record<string, { localizations: Record<string, { stringUnit: { value: string } }> }>;
+  };
+  const tables: Record<string, Record<string, string>> = { ko: {}, en: {} };
+  for (const suffix of ["instant", "seconds", "minutesSeconds", "hoursMinutesSeconds"]) {
+    const key = `hud.activity.summary.duration.${suffix}`;
+    for (const locale of ["ko", "en"]) {
+      const value = catalog.strings[key]?.localizations[locale]?.stringUnit.value;
+      if (value) tables[locale]![key] = value;
+    }
+  }
+  (globalThis as { __STRINGS__?: unknown }).__STRINGS__ = tables;
+}
+
+describe("completed turn duration", () => {
+  it("reads instant up to 5 seconds, then seconds, minutes and hours like the HUD", () => {
+    installDurationStrings();
+    setLocale("ko");
+    expect(activityDurationText(0)).toBe("즉시");
+    expect(activityDurationText(5.9)).toBe("즉시");
+    expect(activityDurationText(6)).toBe("6초");
+    expect(activityDurationText(59)).toBe("59초");
+    expect(activityDurationText(60)).toBe("1분 0초");
+    expect(activityDurationText(125)).toBe("2분 5초");
+    expect(activityDurationText(3725)).toBe("1시간 2분 5초");
+    setLocale("en");
+    expect(activityDurationText(125)).toBe("2m 5s");
+    setLocale("ko");
   });
 });
 

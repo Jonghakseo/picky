@@ -51,7 +51,7 @@ This target writes twenty 2× Korean scenes under `build/render-gallery/conversa
 ./scripts/render-ui-gallery.sh conversation-activity
 ```
 
-This target writes four 2× Korean scenes under `build/render-gallery/conversation-activity/`: collapsed and expanded tool activity summaries in dark and light appearance. `PickyActivitySummaryRenderGalleryTests` renders the production `PickyActivitySummaryView` with deterministic counts and verifies that todo activity stays out of both the compact total and expanded detail grid. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove hover, disclosure animation, or tool-history navigation.
+This target writes four 2× Korean scenes under `build/render-gallery/conversation-activity/`: collapsed and expanded tool activity summaries in dark and light appearance. `PickyActivitySummaryRenderGalleryTests` renders the production `PickyActivitySummaryView` with deterministic counts and a fixed turn duration (collapsed label `2분 5초 완료`); the expanded detail grid leaves out todo activity. Inspect the PNGs directly; the gallery validates file structure and dimensions but does not prove hover, disclosure animation, or tool-history navigation.
 
 ## Messenger UX gallery
 

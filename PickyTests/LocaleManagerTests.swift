@@ -42,14 +42,14 @@ final class LocaleManagerTests: XCTestCase {
         XCTAssertEqual(L10n.t("hud.conversation.status.running"), "Running")
         XCTAssertEqual(L10n.t("hud.presence.thinking"), "Thinking")
         XCTAssertEqual(activityCategoryLabels(), ["Read", "bash", "Edit", "Write", "Subagent", "Other"])
-        XCTAssertEqual(activitySummaryLabel(), "Made 20 tool calls")
+        XCTAssertEqual(PickyActivityDurationFormat.displayText(seconds: 125), "2m 5s")
 
         manager.apply(.korean)
         XCTAssertEqual(L10n.t("hud.conversation.meta.context", "43%"), "컨텍스트: 43%")
         XCTAssertEqual(L10n.t("hud.conversation.status.running"), "실행 중")
         XCTAssertEqual(L10n.t("hud.presence.thinking"), "생각 중")
         XCTAssertEqual(activityCategoryLabels(), ["읽기", "실행", "수정", "쓰기", "서브에이전트", "기타"])
-        XCTAssertEqual(activitySummaryLabel(), "도구 20회 사용")
+        XCTAssertEqual(PickyActivityDurationFormat.displayText(seconds: 125), "2분 5초")
     }
 
     private func activityCategoryLabels() -> [String] {
@@ -62,17 +62,6 @@ final class LocaleManagerTests: XCTestCase {
             todo: 1,
             subagent: 1
         ).visibleToolCallItems.map(\.label)
-    }
-
-    private func activitySummaryLabel() -> String {
-        PickyActivitySummary(
-            edit: 1,
-            bash: 10,
-            read: 6,
-            write: 1,
-            todo: 4,
-            subagent: 2
-        ).completedToolUseDisplayText
     }
 
     /// English remains the source language regardless of the OS locale, so

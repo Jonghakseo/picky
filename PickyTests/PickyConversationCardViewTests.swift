@@ -1984,18 +1984,17 @@ struct PickyConversationCardViewTests {
         #expect(summary.totalToolCalls == 16)
     }
 
-    @Test func activitySummaryUsesCompactCompletedToolCountLabel() {
-        let summary = PickyActivitySummary(
-            edit: 1,
-            bash: 10,
-            read: 6,
-            write: 1,
-            todo: 4,
-            subagent: 2
-        )
-
-        #expect(summary.totalToolCalls == 20)
-        #expect(summary.completedToolUseDisplayText == L10n.t("hud.activity.summary.toolsUsed.many", Int64(20)))
+    @Test func activitySummaryDurationUsesInstantThenSecondsMinutesHours() {
+        LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
+            #expect(PickyActivityDurationFormat.displayText(seconds: 0) == "즉시")
+            #expect(PickyActivityDurationFormat.displayText(seconds: 5) == "즉시")
+            #expect(PickyActivityDurationFormat.displayText(seconds: 6) == "6초")
+            #expect(PickyActivityDurationFormat.displayText(seconds: 59) == "59초")
+            #expect(PickyActivityDurationFormat.displayText(seconds: 60) == "1분 0초")
+            #expect(PickyActivityDurationFormat.displayText(seconds: 125) == "2분 5초")
+            #expect(PickyActivityDurationFormat.displayText(seconds: 3_600) == "1시간 0분 0초")
+            #expect(PickyActivityDurationFormat.displayText(seconds: 3_725) == "1시간 2분 5초")
+        }
     }
 
     @Test func activitySnapshotWithOnlyTodoIsHidden() {

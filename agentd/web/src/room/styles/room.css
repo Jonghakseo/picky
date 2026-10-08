@@ -822,22 +822,6 @@
   min-height: 44px;
 }
 
-.activity-dot {
-  flex: none;
-  /* Circle().frame(width: DS.Spacing.space1, height: DS.Spacing.space1) */
-  width: var(--ds-space-1);
-  height: var(--ds-space-1);
-  border-radius: var(--ds-radius-circle);
-  background: var(--ds-color-success);
-}
-
-.activity-head > svg {
-  flex: none;
-  width: var(--hud-size-status);
-  height: var(--hud-size-status);
-  color: var(--ds-color-text-secondary);
-}
-
 .activity-title {
   font: var(--hud-type-status-semibold);
   color: var(--ds-color-text-primary);

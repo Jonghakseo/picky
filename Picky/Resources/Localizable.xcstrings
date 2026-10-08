@@ -5892,6 +5892,70 @@
         }
       }
     },
+    "hud.activity.summary.duration.hoursMinutesSeconds": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldh %lldm %llds"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld시간 %lld분 %lld초"
+          }
+        }
+      }
+    },
+    "hud.activity.summary.duration.instant": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instant"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "즉시"
+          }
+        }
+      }
+    },
+    "hud.activity.summary.duration.minutesSeconds": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldm %llds"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld분 %lld초"
+          }
+        }
+      }
+    },
+    "hud.activity.summary.duration.seconds": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llds"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld초"
+          }
+        }
+      }
+    },
     "hud.activity.summary.expand": {
       "localizations": {
         "en": {
@@ -5920,38 +5984,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "전체 도구 기록 열기"
-          }
-        }
-      }
-    },
-    "hud.activity.summary.toolsUsed.many": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Made %lld tool calls"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "도구 %lld회 사용"
-          }
-        }
-      }
-    },
-    "hud.activity.summary.toolsUsed.one": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Made %lld tool call"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "도구 %lld회 사용"
           }
         }
       }

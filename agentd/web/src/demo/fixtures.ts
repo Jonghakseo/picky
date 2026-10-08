@@ -398,6 +398,7 @@ const completedSession = session({
   messages: [
     message({ id: "r1", kind: "user_text", text: "0.9.3-beta.2 릴리즈 노트 초안 만들어 줘", createdAt: at(130), originatedBy: "user" }),
     message({ id: "r2", kind: "agent_text", text: "변경 12건을 기능, 수정, 내부 정리로 나눴어요. 보고서는 [release-0.9.3-beta.2.md](build/reports/release-0.9.3-beta.2.md)에 있어요.", createdAt: at(111) }),
+    message({ id: "r3", kind: "agent_activity", createdAt: at(111), activitySnapshot: { read: 9, bash: 4, edit: 0, write: 1, thinking: 0, other: 0, todo: 0, subagent: 0 } }),
   ],
 });
 

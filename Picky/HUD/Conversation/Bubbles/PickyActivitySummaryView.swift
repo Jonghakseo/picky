@@ -9,16 +9,21 @@ import SwiftUI
 
 struct PickyActivitySummaryView: View {
     let summary: PickyActivitySummary
+    /// Seconds from the turn's leading user/command message to this summary.
+    /// Nil when the turn has no leading message; the label then reads only "Completed".
+    var elapsedSeconds: Int? = nil
     var onTap: (() -> Void)? = nil
 
     @State private var isExpanded: Bool
 
     init(
         summary: PickyActivitySummary,
+        elapsedSeconds: Int? = nil,
         onTap: (() -> Void)? = nil,
         initiallyExpanded: Bool = false
     ) {
         self.summary = summary
+        self.elapsedSeconds = elapsedSeconds
         self.onTap = onTap
         _isExpanded = State(initialValue: initiallyExpanded)
     }
@@ -40,18 +45,12 @@ struct PickyActivitySummaryView: View {
             isExpanded.toggle()
         } label: {
             HStack(spacing: DS.Spacing.space2) {
-                Circle()
-                    .fill(DS.Colors.success)
-                    .frame(width: DS.Spacing.space1, height: DS.Spacing.space1)
-                    .accessibilityHidden(true)
-                Image(systemName: "list.bullet")
-                    .font(PickyHUDTypography.status)
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .accessibilityHidden(true)
-                Text(summary.completedToolUseDisplayText)
-                    .font(PickyHUDTypography.statusSemibold)
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .lineLimit(1)
+                if let durationText {
+                    Text(durationText)
+                        .font(PickyHUDTypography.statusSemibold)
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                }
                 HStack(spacing: DS.Spacing.space1) {
                     Text(L10n.t("hud.activity.summary.completed"))
                         .font(PickyHUDTypography.meta)
@@ -68,10 +67,14 @@ struct PickyActivitySummaryView: View {
         }
         .buttonStyle(.plain)
         .help(L10n.t(isExpanded ? "hud.activity.summary.collapse" : "hud.activity.summary.expand"))
-        .accessibilityLabel(summary.completedToolUseDisplayText)
-        .accessibilityValue(L10n.t("hud.activity.summary.completed"))
+        .accessibilityLabel(durationText ?? L10n.t("hud.activity.summary.completed"))
+        .accessibilityValue(durationText == nil ? "" : L10n.t("hud.activity.summary.completed"))
         .accessibilityHint(L10n.t(isExpanded ? "hud.activity.summary.collapse" : "hud.activity.summary.expand"))
         .hoverAffordance()
+    }
+
+    private var durationText: String? {
+        elapsedSeconds.map(PickyActivityDurationFormat.displayText(seconds:))
     }
 
     @ViewBuilder
@@ -128,6 +131,38 @@ struct PickyActivitySummaryView: View {
         return stride(from: 0, to: items.count, by: 3).map { start in
             Array(items[start..<min(start + 3, items.count)])
         }
+    }
+}
+
+/// Completed-turn duration in the activity summary: "Instant" up to 5 seconds,
+/// then "N s", "N m N s", "N h N m N s". The PWA mirrors this in
+/// `agentd/web/src/room/policy/message.ts` (`activityDurationText`).
+enum PickyActivityDurationFormat {
+    static let instantMaxSeconds = 5
+
+    static func displayText(seconds: Int) -> String {
+        let seconds = max(0, seconds)
+        if seconds <= instantMaxSeconds {
+            return L10n.t("hud.activity.summary.duration.instant")
+        }
+        if seconds < 60 {
+            return L10n.t("hud.activity.summary.duration.seconds", Int64(seconds))
+        }
+        if seconds < 3_600 {
+            return L10n.t("hud.activity.summary.duration.minutesSeconds", Int64(seconds / 60), Int64(seconds % 60))
+        }
+        return L10n.t(
+            "hud.activity.summary.duration.hoursMinutesSeconds",
+            Int64(seconds / 3_600),
+            Int64(seconds % 3_600 / 60),
+            Int64(seconds % 60)
+        )
+    }
+
+    /// Seconds between the turn start and the summary's commit time.
+    static func elapsedSeconds(from start: Date?, to end: Date) -> Int? {
+        guard let start else { return nil }
+        return max(0, Int(end.timeIntervalSince(start)))
     }
 }
 
@@ -217,15 +252,6 @@ extension PickyActivitySummary {
     /// Thinking streams separately, while todo updates belong to the dedicated
     /// progress surface rather than tool activity disclosure.
     var totalToolCalls: Int { read + bash + edit + write + subagent + other }
-
-    var completedToolUseDisplayText: String {
-        L10n.t(
-            totalToolCalls == 1
-                ? "hud.activity.summary.toolsUsed.one"
-                : "hud.activity.summary.toolsUsed.many",
-            Int64(totalToolCalls)
-        )
-    }
 
     var visibleToolCallItems: [PickyActivitySummaryDisplayItem] {
         [

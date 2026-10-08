@@ -123,6 +123,7 @@ struct PickyActivitySummaryRenderGalleryTests {
                 todo: 4,
                 subagent: 2
             ),
+            elapsedSeconds: 125,
             onTap: {},
             initiallyExpanded: scene.expanded
         )

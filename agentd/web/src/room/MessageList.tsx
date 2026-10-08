@@ -35,7 +35,7 @@ import { locale, t } from "./i18n";
 import { Markdown } from "./markdown/Markdown";
 import { queueItemText } from "./policy/composer";
 import type { ErrorRecovery } from "./policy/message";
-import { CONTINUE_PROMPT_KEY, bubbleKind, errorRecovery, visibleActivityCounts } from "./policy/message";
+import { CONTINUE_PROMPT_KEY, activityDurationText, bubbleKind, errorRecovery, visibleActivityCounts } from "./policy/message";
 import { derivePresence } from "./policy/presence";
 import { resolveQuestionRequest } from "./policy/question";
 import { absoluteDetail, relativeTitle } from "./policy/schedule";
@@ -69,6 +69,9 @@ function SessionRows({ sessionId, session, actions, send, onEdit, onRestore, now
   const language = locale();
   const messages = session_.messages ?? [];
   let previousDay: number | null = null;
+  // createdAt of the visible user/command message that opened the current turn,
+  // the same boundary PickyTurnGrouper uses for the HUD's turn duration.
+  let turnStartedAt: number | null = null;
   const rows: JSX.Element[] = [];
 
   for (const message of messages) {
@@ -87,6 +90,7 @@ function SessionRows({ sessionId, session, actions, send, onEdit, onRestore, now
       case "hidden":
         break;
       case "userText":
+        turnStartedAt = at;
         rows.push(<UserBubble key={message.id} text={message.text ?? ""} time={time} {...links} />);
         break;
       case "agentText":
@@ -125,8 +129,9 @@ function SessionRows({ sessionId, session, actions, send, onEdit, onRestore, now
       }
       case "activitySummary": {
         const counts = visibleActivityCounts(message.activitySnapshot);
-        const total = counts.reduce((sum, entry) => sum + entry.count, 0);
-        rows.push(<ActivitySummary key={message.id} total={total} counts={counts} />);
+        const duration =
+          turnStartedAt === null || at === null ? null : activityDurationText((at - turnStartedAt) / 1000);
+        rows.push(<ActivitySummary key={message.id} duration={duration} counts={counts} />);
         break;
       }
       case "subagentInvocation": {

@@ -7,6 +7,7 @@
  * `policy/system-message.ts`, which is where the HUD keeps it too.
  */
 import type { PickyAgentSession, PickySessionMessage } from "../../../../src/protocol";
+import { t } from "../i18n";
 import {
   extensionCustomMessagePresentation,
   isBackgroundWorkVisible,
@@ -40,6 +41,26 @@ export function visibleActivityCounts(
   if (!snapshot) return [];
   return ACTIVITY_CATEGORIES.map((category) => ({ category, count: snapshot[category] ?? 0 })).filter(
     (entry) => entry.count > 0,
+  );
+}
+
+/** Up to this many seconds the completed-turn duration reads "Instant". */
+export const ACTIVITY_INSTANT_MAX_SECONDS = 5;
+
+/**
+ * Completed-turn duration shown before "Completed" in the activity summary.
+ * Mirrors `PickyActivityDurationFormat.displayText` in PickyActivitySummaryView.swift.
+ */
+export function activityDurationText(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  if (total <= ACTIVITY_INSTANT_MAX_SECONDS) return t("hud.activity.summary.duration.instant");
+  if (total < 60) return t("hud.activity.summary.duration.seconds", total);
+  if (total < 3600) return t("hud.activity.summary.duration.minutesSeconds", Math.floor(total / 60), total % 60);
+  return t(
+    "hud.activity.summary.duration.hoursMinutesSeconds",
+    Math.floor(total / 3600),
+    Math.floor((total % 3600) / 60),
+    total % 60,
   );
 }
 

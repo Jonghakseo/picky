@@ -571,7 +571,14 @@ struct PickyConversationListView: View {
             // surfaced separately by the active-tool indicator pinned to the
             // current turn's body — see `PickyTurnCardView.expandedBody`.
             if let snapshot = message.activitySnapshot {
-                PickyActivitySummaryView(summary: snapshot, onTap: { openToolHistory(forAgentActivityID: message.id) })
+                PickyActivitySummaryView(
+                    summary: snapshot,
+                    elapsedSeconds: PickyActivityDurationFormat.elapsedSeconds(
+                        from: group.userMessage?.createdAt,
+                        to: message.createdAt
+                    ),
+                    onTap: { openToolHistory(forAgentActivityID: message.id) }
+                )
             }
         case .hiddenActivity:
             EmptyView()

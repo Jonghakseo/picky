@@ -893,7 +893,7 @@ describe("protocol contract fixtures", () => {
     const clearable = [
       "cwd", "piSessionFilePath", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage",
       "currentAssistantRun", "notifyMainOnCompletion", "notifyMacOSOnCompletion", "archived", "archivedAt",
-      "pinned", "lastRequest", "agentCycle", "asyncWorkSummary", "fastMode", "fastModeSupported", "titleOrigin",
+      "pinned", "lastRequest", "agentCycle", "asyncWorkSummary", "fastMode", "fastModeSupported", "runtimeRecovery", "titleOrigin",
     ];
     expect(Object.keys(PickySessionMetaPatchSchema.shape).sort()).toEqual([...required, ...clearable].sort());
     for (const field of required) expect(PickySessionMetaPatchSchema.safeParse({ [field]: null }).success, field).toBe(false);

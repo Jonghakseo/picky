@@ -96,7 +96,7 @@ function fromPreviousRuntime(entry: { runtimeInstanceId: string }, observation: 
 /** A previous runtime can never deliver its tickets; they withhold release but are not current work. */
 function pendingTickets(session: PickyAgentSession, observation: AsyncWorkObservation) {
   const unhandled = (session.completionTickets ?? []).filter((ticket) => !["handled", "suppressed"].includes(ticket.state));
-  const pending = unhandled.filter((ticket) => !fromPreviousRuntime(ticket, observation));
+  const pending = unhandled.filter((ticket) => !fromPreviousRuntime(ticket, observation) && !isAcknowledgedAsyncWork(session, ticket));
   return { pending, lostTickets: pending.length !== unhandled.length };
 }
 
@@ -104,7 +104,7 @@ function rootCounts(session: PickyAgentSession, observation: AsyncWorkObservatio
   const roots = new Map<string, { active: boolean; uncertain: boolean; lost: boolean }>();
   for (const task of session.asyncTasks ?? []) {
     const key = JSON.stringify([task.runtimeInstanceId, task.providerId, task.providerInstanceId, task.rootTaskId]);
-    const root = roots.get(key) ?? { active: false, uncertain: false, lost: fromPreviousRuntime(task, observation) };
+    const root = roots.get(key) ?? { active: false, uncertain: false, lost: fromPreviousRuntime(task, observation) || isAcknowledgedAsyncWork(session, task) };
     root.active ||= asyncExecutionIsActive(task);
     // A durable grant is unknown until the ready provider reports its start.
     // It is pending only while this same live owner can still complete registration.
@@ -180,6 +180,15 @@ export function hasAsyncExecutionObligations(tasks: readonly AsyncTask[]): boole
  */
 export function isPreviousOwnerAsyncTask(task: AsyncTask, currentRuntimeInstanceId: string): boolean {
   return task.runtimeInstanceId !== currentRuntimeInstanceId && (asyncExecutionIsActive(task) || task.presence === "unknown");
+}
+/**
+ * Work of the current runtime that the user explicitly continued past after a failed stop.
+ * Like previous-owner work it stays visible as uncertain and withholds release, but it no
+ * longer fences input or pins the Pickle to blocked: no stop could confirm its cleanup.
+ */
+export function isAcknowledgedAsyncWork(session: PickyAgentSession, entry: { runtimeInstanceId: string; providerId: string; providerInstanceId: string; rootTaskId: string }): boolean {
+  return session.asyncControl?.acknowledgedRoots?.some((root) => root.rootTaskId === entry.rootTaskId && root.runtimeInstanceId === entry.runtimeInstanceId
+    && root.providerId === entry.providerId && root.providerInstanceId === entry.providerInstanceId) === true;
 }
 export function asyncOperationResolved(session: PickyAgentSession, operationId: string): boolean {
   const record = session.asyncControlJournal?.find((entry) => entry.result.operationId === operationId);

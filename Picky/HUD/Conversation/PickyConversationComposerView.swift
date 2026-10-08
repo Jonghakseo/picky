@@ -57,6 +57,7 @@ struct PickyConversationComposerView: View {
     @State private var isRestoringQueue = false
     @StateObject private var scheduled = PickyComposerScheduledModel()
     @State private var localStopError: String?
+    @State private var sendError: String?
     private var sharedStopError: Binding<String?>?
     var stopErrorInShelf = false
     private var stopError: String? { get { sharedStopError?.wrappedValue ?? localStopError }
@@ -172,8 +173,9 @@ struct PickyConversationComposerView: View {
                     .foregroundStyle(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let stopError, !stopErrorInShelf {
-                Label(L10n.t("hud.asyncTasks.stopError", stopError), systemImage: "exclamationmark.triangle")
+            // A refused message stays in the editor; this says why it did not go out.
+            if let notice = sendError ?? (stopErrorInShelf ? nil : stopError.map { L10n.t("hud.asyncTasks.stopError", $0) }) {
+                Label(notice, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1260,21 +1262,18 @@ struct PickyConversationComposerView: View {
         }
         guard !text.isEmpty, let kind else { return }
         let originalDraft = draft
+        sendError = nil
         Task {
             do {
-                switch kind {
-                case .steer:
-                    try await commands.steer(text: text, sessionID: submittedSessionID)
-                case .followUp:
-                    try await commands.followUp(text: text, sessionID: submittedSessionID)
-                }
+                try await commands.composerSender.send(kind: kind, text: text, sessionID: submittedSessionID)
                 clearComposerAfterSubmission(
                     originalDraft: originalDraft,
                     submittedAttachmentIDs: submittedAttachmentIDs,
                     sessionID: submittedSessionID
                 )
             } catch {
-                // Command failures preserve the draft and attachments for retry.
+                // Failures keep the draft and attachments for retry.
+                if session.id == submittedSessionID { sendError = PickyComposerSendFailurePolicy.message(for: error) }
             }
         }
     }

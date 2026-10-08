@@ -11,6 +11,7 @@ import { MainAgentCoordinator } from "./application/main-agent-coordinator.js";
 import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-diagnostics.js";
 import { disposeRuntimeHandle } from "./application/runtime-handle-disposal.js";
 import { RuntimeDisposalGate } from "./application/runtime-disposal-gate.js";
+import { RuntimeTeardownRecovery } from "./application/runtime-teardown-recovery.js";
 import type { ExternalPickleCompletionRequest } from "./application/pickle-completion-coordinator.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { reloadPluginsWithoutInterruption } from "./application/plugin-reload.js";
@@ -86,6 +87,7 @@ export class SessionSupervisor extends EventEmitter {
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private readonly runtimeDisposalGate = new RuntimeDisposalGate();
+  private readonly runtimeTeardownRecovery = new RuntimeTeardownRecovery({ session: (id) => this.sessions.get(id), forkPiSessionFile: snapshotPiSessionFile, sourcePiSessionFile: (id) => this.resolveSourcePiSessionFile(this.mustGet(id)), abandonRuntime: async (id) => { const handle = this.runtimeHandles.get(id); await this.releaseHandleBindings(id); this.clearPendingQueueDeliveries(id); this.runtimeDisposalGate.abandon(id); void handle?.abort().catch(() => undefined); }, fenceRuntime: (id) => this.runtimeDisposalGate.fence(id), resume: async (id) => (await this.tryResumeRuntimeHandle(this.mustGet(id))) !== undefined, continueAsyncWork: async (id) => { await this.asyncControls.input(id, async () => undefined); }, patch: (id, patch) => this.patch(id, patch) });
   private pendingRuntimeAbortControllers = new Map<string, AbortController>();
   private pendingAbortOperations = new Map<string, Promise<PickyAgentSession>>();
   private sessionSeq = new Map<string, number>();
@@ -1067,6 +1069,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
     const renamed = await this.sessionRename.interceptNameSlashCommand(sessionId, text); if (renamed) return renamed; // `/name` is Picky metadata, never Pi input.
+    await this.runtimeTeardownRecovery.admitInput(sessionId);
     // Finish a pending plugin reload before input admission reopens; the reload would close it.
     await this.runtimeHandles.get(sessionId)?.settleResourceReload?.();
     return this.asyncControls.input(sessionId, () => this.performFollowUp(sessionId, text, context, visualDslEnabled));
@@ -1093,12 +1096,8 @@ export class SessionSupervisor extends EventEmitter {
           ? "Runtime session is not attached after daemon restart and automatic Pi session reattach failed; start a new task or open the Pi terminal overlay"
           : "Runtime session is not attached after daemon restart and no Pi session file is available to resume; start a new task"
         : "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or open the Pi terminal overlay";
-      await this.patch(sessionId, {
-        status: "blocked",
-        lastSummary: reason,
-      });
       await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
-      throw new Error(reason);
+      throw await this.runtimeTeardownRecovery.unavailable(sessionId, reason);
     }
     if (await this.terminalManualCompactionCoordinator.execute(sessionId, text, handle)) return this.mustGet(sessionId);
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
@@ -1615,6 +1614,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
     const renamed = await this.sessionRename.interceptNameSlashCommand(sessionId, text); if (renamed) return renamed;
+    await this.runtimeTeardownRecovery.admitInput(sessionId);
     await this.runtimeHandles.get(sessionId)?.settleResourceReload?.();
     // Pi runs a steered slash command inline, so the whole steer call covers the command's lifetime.
     return this.asyncControls.input(sessionId, () => this.userOperations.track(sessionId, isNonSkillSlashCommand(text), () => this.performSteer(sessionId, text, context, visualDslEnabled)));
@@ -1642,7 +1642,7 @@ export class SessionSupervisor extends EventEmitter {
     if (!handle) {
       const reason = "Runtime session is not attached";
       await this.appendLog(sessionId, `steer rejected: ${reason}`);
-      throw new Error(reason);
+      throw await this.runtimeTeardownRecovery.unavailable(sessionId, reason);
     }
     if (await this.terminalManualCompactionCoordinator.execute(sessionId, text, handle)) return this.mustGet(sessionId);
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
@@ -1790,13 +1790,13 @@ export class SessionSupervisor extends EventEmitter {
     this.followUpLifecycleDiagnostics.clearFollowUpStalls(sessionId);
     // Tracked observers remain attached until the fenced runtime actually disposes.
     const tracked = isAsyncTracked(this.mustGet(sessionId));
-    if (tracked && !explicitDeletion) await this.asyncControls.dispose(sessionId, () => this.runtimeDisposalGate.dispose(sessionId, handle, "tracked-runtime"));
+    if (tracked && !explicitDeletion) await this.runtimeTeardownRecovery.guardTeardown(sessionId, () => this.asyncControls.dispose(sessionId, () => this.runtimeDisposalGate.dispose(sessionId, handle, "tracked-runtime")));
     if (explicitDeletion) await this.runtimeDisposalGate.dispose(sessionId, handle, "explicit-archived-delete");
-    this.runtimeHandleUnsubscribes.get(sessionId)?.();
-    this.runtimeHandleUnsubscribes.delete(sessionId);
-    this.runtimeHandles.delete(sessionId);
-    await this.scheduledMessages.untrack(sessionId);
-    if (!tracked && !explicitDeletion) await this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime");
+    await this.releaseHandleBindings(sessionId);
+    if (!tracked && !explicitDeletion) await this.runtimeTeardownRecovery.guardTeardown(sessionId, () => this.runtimeDisposalGate.dispose(sessionId, handle, abort ? "detached-terminal-runtime" : "detached-runtime"));
+  }
+  private async releaseHandleBindings(sessionId: string): Promise<void> {
+    this.runtimeHandleUnsubscribes.get(sessionId)?.(); this.runtimeHandleUnsubscribes.delete(sessionId); this.runtimeHandles.delete(sessionId); await this.scheduledMessages.untrack(sessionId);
   }
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     await this.runtimeDisposalGate.waitOrDispose(sessionId, handle);

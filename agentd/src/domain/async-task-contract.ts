@@ -89,9 +89,14 @@ export const AsyncControlOperationSchema = z.object({
   requestId: id, operationId: id, outcome: AsyncOperationOutcomeSchema,
   controlGeneration: revision, reason: boundedText.optional(),
 }).strict();
+/** A task family the user chose to continue past after a stop could not confirm its cleanup. */
+export const AcknowledgedAsyncRootSchema = z.object({
+  runtimeInstanceId: id, providerId: id, providerInstanceId: id, rootTaskId: id,
+}).strict();
 export const AsyncControlStateSchema = z.object({
   controlGeneration: revision, admissionState: AdmissionStateSchema,
   operations: z.array(AsyncControlOperationSchema), releasePrepared: ReleaseApprovalSchema.optional(),
+  acknowledgedRoots: z.array(AcknowledgedAsyncRootSchema).max(256).optional(),
 }).strict();
 
 const messageBase = AsyncTaskOwnerSchema.extend({

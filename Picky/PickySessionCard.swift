@@ -60,6 +60,7 @@ struct PickySessionCard: Equatable, Identifiable {
     var notifyMacOSOnCompletion: Bool? = nil
     var fastMode: Bool? = nil
     var fastModeSupported: Bool? = nil
+    var runtimeRecovery: PickyRuntimeRecovery? = nil
     var pinned: Bool
     /// Daemon-side archive flag mirrored from `PickyAgentSession.archived`.
     /// Snapshot hydration hoists this into the local `manuallyArchivedSessionIDs`
@@ -261,6 +262,7 @@ extension PickySessionCard {
         self.notifyMacOSOnCompletion = session.notifyMacOSOnCompletion
         self.fastMode = session.fastMode
         self.fastModeSupported = session.fastModeSupported
+        self.runtimeRecovery = session.runtimeRecovery
         self.pinned = session.pinned ?? false
         self.archived = session.archived ?? false
         self.archivedAt = session.archivedAt

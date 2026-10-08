@@ -434,6 +434,16 @@ export const PickySessionLastRequestSchema = z.object({
 });
 export type PickySessionLastRequest = z.infer<typeof PickySessionLastRequestSchema>;
 
+// Automatic recovery after the daemon could not tear down a Pickle's runtime.
+// `restarting`: a fresh runtime is being attached on a forked Pi session file.
+// `restarted`: recovery succeeded and the work in flight did not continue.
+// `failed`: the Pickle cannot continue; duplicating it is the way forward.
+export const PickyRuntimeRecoverySchema = z.object({
+  phase: z.enum(["restarting", "restarted", "failed"]),
+  updatedAt: isoTimestamp,
+});
+export type PickyRuntimeRecovery = z.infer<typeof PickyRuntimeRecoverySchema>;
+
 const PickyRenameTitleSchema = z.string()
   .regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u, "Name cannot contain line breaks or control characters")
   .trim().min(1).refine((title) => [...title].length <= 200, "Name must contain at most 200 Unicode characters");
@@ -520,6 +530,9 @@ export const PickyAgentSessionSchema = z.object({
   // honours it, so clients only offer the toggle where it has an effect.
   fastMode: z.boolean().optional(),
   fastModeSupported: z.boolean().optional(),
+  // Present only while the daemon recovers, or has just recovered or given up
+  // recovering, this Pickle's runtime. Cleared by the next accepted user input.
+  runtimeRecovery: PickyRuntimeRecoverySchema.optional(),
 });
 
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;

@@ -465,6 +465,26 @@ it("reconciles a failed stop with real subsequent cleanup without erasing its or
   expect((await f.store.loadReadOnly("session-1"))?.completionTickets?.[0]?.state).toBe("suppressed");
 });
 
+it("continues past a failed stop on the next user input while the unproven work stays visible", async () => {
+  const f = await fixture({ fail: "cancel" }); await f.addTask();
+  const failed = await f.supervisor.asyncControls.stop("session-1", "failed-stop");
+  expect(failed.outcome).toBe("blocked_cleanup");
+  expect(f.supervisor.get("session-1")?.status).toBe("blocked");
+
+  await f.supervisor.steer("session-1", "Continue without that task");
+
+  const disk = await f.store.loadReadOnly("session-1");
+  expect(disk?.status).not.toBe("blocked");
+  expect(disk?.asyncControl?.admissionState).toBe("open");
+  expect(disk?.asyncControl?.acknowledgedRoots).toEqual([expect.objectContaining({ rootTaskId: "task-1", runtimeInstanceId: f.owner.runtimeInstanceId })]);
+  // Cleanup was never proven: the task stays listed as unsettled and still withholds release.
+  expect(disk?.asyncTasks?.find((task) => task.taskId === "task-1")?.presence).toBe("active");
+  expect(disk?.asyncWorkSummary).toMatchObject({ attentionCount: 0, canReleaseRuntime: false });
+  expect(disk?.asyncControlJournal?.find((entry) => entry.result.operationId === failed.operationId)?.resolvedBy).toBeDefined();
+  // Input stays open afterwards instead of reentering the failed-stop fence.
+  await f.supervisor.steer("session-1", "And one more instruction");
+}, 20_000);
+
 it("routes legacy archive through the same owner choice and settled state", async () => {
   const f = await fixture(); await f.addTask();
   await expect(f.supervisor.setSessionArchived("session-1", true)).rejects.toThrow("Archive choice required");

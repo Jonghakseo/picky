@@ -7614,8 +7614,65 @@ describe("SessionSupervisor", () => {
     await supervisor.syncTerminalSession("terminal-sync-disposal-barrier", "a2");
     await waitUntil(() => failedHandle.disposes === 1);
 
-    await expect(supervisor.followUp("terminal-sync-disposal-barrier", "must not overlap failed teardown")).rejects.toThrow("Runtime session is not attached");
-    expect(runtime.resumeCalls).toHaveLength(2);
+    // The Pickle restarts on its own, on a fork: it never reopens the file the failed runtime holds.
+    await waitUntil(() => supervisor.get("terminal-sync-disposal-barrier")?.runtimeRecovery?.phase === "restarted");
+    expect(runtime.resumeCalls).toHaveLength(3);
+    const forkedFile = runtime.resumeCalls[2]!.sessionFilePath;
+    expect(forkedFile).not.toBe(piSessionFile);
+    expect(await readFile(forkedFile, "utf8")).toContain("new terminal reply");
+    expect(supervisor.get("terminal-sync-disposal-barrier")?.piSessionFilePath).toBe(forkedFile);
+    expect(supervisor.get("terminal-sync-disposal-barrier")?.status).not.toBe("blocked");
+
+    await supervisor.followUp("terminal-sync-disposal-barrier", "after automatic restart");
+    expect(runtime.handle).not.toBe(failedHandle);
+    expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["after automatic restart"]);
+    expect(failedHandle.followUps.map((prompt) => prompt.text)).not.toContain("after automatic restart");
+    expect(supervisor.get("terminal-sync-disposal-barrier")?.runtimeRecovery).toBeUndefined();
+  });
+
+  it("rejects input with a coded reason while restarting and after a restart that could not attach", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-runtime-restart-failure-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "old prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "runtime-restart-failure", title: "Runtime restart failure", status: "completed", cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: [`pi session: ${piSessionFile}`], tools: [], artifacts: [], changedFiles: [], messages: [],
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    await supervisor.followUp("runtime-restart-failure", "before terminal sync");
+    const failedHandle = runtime.handle!;
+    failedHandle.dispose = async () => { failedHandle.disposes += 1; throw new Error("shutdown failed"); };
+    let releaseResume!: () => void;
+    const resumeHeld = new Promise<void>((resolve) => { releaseResume = resolve; });
+    runtime.resume = async (sessionFilePath) => {
+      runtime.resumeCalls.push({ sessionFilePath });
+      await resumeHeld;
+      throw new Error("resume failed");
+    };
+    await appendFile(piSessionFile, [
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "terminal prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "terminal reply" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    await supervisor.syncTerminalSession("runtime-restart-failure", "a1");
+    await waitUntil(() => supervisor.get("runtime-restart-failure")?.runtimeRecovery?.phase === "restarting");
+
+    await expect(supervisor.followUp("runtime-restart-failure", "while restarting")).rejects.toMatchObject({ code: "runtimeRestarting" });
+
+    releaseResume();
+    await waitUntil(() => supervisor.get("runtime-restart-failure")?.runtimeRecovery?.phase === "failed");
+    expect(supervisor.get("runtime-restart-failure")?.status).toBe("blocked");
+    await expect(supervisor.followUp("runtime-restart-failure", "after failed restart")).rejects.toMatchObject({ code: "runtimeUnavailable" });
+    expect(failedHandle.followUps.map((prompt) => prompt.text)).toEqual(["before terminal sync"]);
   });
 
   it("keeps a streaming runtime attached when sync catches up missing live messages", async () => {

@@ -1,5 +1,6 @@
 import { ControlFailure } from "./application/async-control-coordinator.js";
 import { SessionQueueCommandError } from "./domain/session-queue-commands.js";
+import { SessionInputUnavailableError } from "./domain/session-input-errors.js";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { WebSocketServer } from "ws";
@@ -381,7 +382,7 @@ export class AgentdServer {
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
       this.send(ws, {
         type: "error",
-        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError || error instanceof ControlFailure || error instanceof SessionQueueCommandError ? error.code : "bad_message",
+        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError || error instanceof ControlFailure || error instanceof SessionQueueCommandError || error instanceof SessionInputUnavailableError ? error.code : "bad_message",
         message: error instanceof Error ? error.message : String(error),
         commandId,
       });

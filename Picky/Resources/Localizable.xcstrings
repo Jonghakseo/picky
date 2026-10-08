@@ -513,6 +513,57 @@
         }
       }
     },
+    "hud.composer.sendError.generic": {
+      "comment": "Composer: picky-agentd rejected the message. The argument is the daemon's reason.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message not sent: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 보내지 못했어요: %@"
+          }
+        }
+      }
+    },
+    "hud.composer.sendError.restarting": {
+      "comment": "Composer: the message was rejected while the Pickle runtime restarts.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message not sent. This Pickle is restarting. Send it again in a moment."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 보내지 못했어요. 이 피클을 다시 시작하는 중이에요. 잠시 후 다시 보내 주세요."
+          }
+        }
+      }
+    },
+    "hud.composer.sendError.unavailable": {
+      "comment": "Composer: no runtime can be attached to this Pickle; duplicating continues it.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message not sent. This Pickle can't continue. Duplicate it to keep going."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 보내지 못했어요. 이 피클은 더 이어서 실행할 수 없어요. 복제해서 이어가 주세요."
+          }
+        }
+      }
+    },
     "hud.question.answerMore": {
       "localizations": {
         "en": {
@@ -605,6 +656,142 @@
           "stringUnit": {
             "state": "translated",
             "value": "말로 답해도 돼요"
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.duplicate": {
+      "comment": "Banner button that duplicates a Pickle which cannot continue.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duplicate and continue"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복제해서 계속"
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.failed.body": {
+      "comment": "Banner body when the Pickle cannot continue; the button duplicates it.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It couldn't be restarted. Duplicate it to start a new Pickle with the same conversation."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시작하지 못했어요. 복제하면 같은 대화 기록으로 새 피클을 시작해요."
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.failed.bodyNoDuplicate": {
+      "comment": "Banner body when the Pickle cannot continue and has no Pi session file to duplicate.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It couldn't be restarted. Start a new Pickle to keep working."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시작하지 못했어요. 새 피클을 시작해 이어서 작업해 주세요."
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.failed.title": {
+      "comment": "Banner title when no runtime could be attached to the Pickle.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Pickle can't continue"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 피클을 이어서 실행할 수 없어요"
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.restarted.body": {
+      "comment": "Banner body after an automatic restart. Work of the abandoned runtime does not continue in the new one.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Work that was in progress won't continue. You can keep the conversation going."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중이던 작업은 이어지지 않아요. 대화는 그대로 이어갈 수 있어요."
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.restarted.title": {
+      "comment": "Dismissible banner title after an automatic Pickle restart.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle restarted"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 피클을 다시 시작했어요"
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.restarting.body": {
+      "comment": "Banner body while the Pickle runtime restarts.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The previous run didn't shut down, so it's starting fresh."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 실행을 끝내지 못해 새로 시작하고 있어요."
+          }
+        }
+      }
+    },
+    "hud.runtimeRecovery.restarting.title": {
+      "comment": "Banner title while Picky restarts a Pickle runtime that failed to shut down.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restarting this Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 피클을 다시 시작하는 중이에요"
           }
         }
       }

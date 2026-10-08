@@ -52,12 +52,15 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     /// Newest user-authored input the daemon accepted, typed by the daemon so the
     /// app never reconstructs it from log-line prefixes.
     var lastRequest: PickySessionLastRequest? = nil
+    /// Present only while the daemon restarts this Pickle's runtime after a failed
+    /// teardown, or just did or gave up. Cleared by the next accepted input.
+    var runtimeRecovery: PickyRuntimeRecovery? = nil
     enum CodingKeys: String, CodingKey {
         case id, title, titleOrigin, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
         case agentCycle, asyncWorkSummary, asyncTasks, completionTickets, asyncControl
         case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, scheduledMessages, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
         case pendingExtensionUiRequest, notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
-        case fastMode, fastModeSupported
+        case fastMode, fastModeSupported, runtimeRecovery
     }
     init(
         id: String,
@@ -99,7 +102,8 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         fastModeSupported: Bool? = nil,
         archived: Bool? = nil, archivedAt: Date? = nil,
         pinned: Bool? = nil,
-        lastRequest: PickySessionLastRequest? = nil
+        lastRequest: PickySessionLastRequest? = nil,
+        runtimeRecovery: PickyRuntimeRecovery? = nil
     ) {
         self.id = id
         self.title = title
@@ -142,6 +146,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.archivedAt = archivedAt
         self.pinned = pinned
         self.lastRequest = lastRequest
+        self.runtimeRecovery = runtimeRecovery
     }
 
     init(from decoder: Decoder) throws {
@@ -187,6 +192,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned)
         lastRequest = try container.decodeIfPresent(PickySessionLastRequest.self, forKey: .lastRequest)
+        runtimeRecovery = try container.decodeIfPresent(PickyRuntimeRecovery.self, forKey: .runtimeRecovery)
         if let asyncTasks, let completionTickets {
             try PickyAsyncTaskDetail(tasks: asyncTasks, tickets: completionTickets).validate(codingPath: decoder.codingPath)
             guard asyncTasks.allSatisfy({ $0.sessionId == id }) else {

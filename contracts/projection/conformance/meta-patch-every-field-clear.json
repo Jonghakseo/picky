@@ -58,6 +58,7 @@
         "messageJournalAvailable": true,
         "fastMode": true,
         "fastModeSupported": true,
+        "runtimeRecovery": { "phase": "restarted", "updatedAt": "2026-05-01T00:00:00.000Z" },
         "titleOrigin": "user"
       }
     },
@@ -91,6 +92,7 @@
             "messageJournalAvailable": null,
             "fastMode": null,
             "fastModeSupported": null,
+            "runtimeRecovery": null,
             "titleOrigin": null
           }
         }
@@ -130,6 +132,7 @@
           "asyncWorkSummary": null,
           "fastMode": null,
           "fastModeSupported": null,
+          "runtimeRecovery": null,
           "titleOrigin": null
         }
       },

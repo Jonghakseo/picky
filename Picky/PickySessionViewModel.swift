@@ -931,13 +931,21 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = error.localizedDescription
             throw error
         }
+        recordSubmittedInput(sessionID: target, text: trimmed)
+    }
+
+    var composerSender: PickyComposerSender {
+        PickyComposerSender(client: client) { [weak self] in self?.recordSubmittedInput(sessionID: $0, text: $1) }
+    }
+
+    func recordSubmittedInput(sessionID: String, text: String) {
         let now = Date()
-        mutateSession(sessionID: target) { card in
-            card.lastRequestText = trimmed
+        mutateSession(sessionID: sessionID) { card in
+            card.lastRequestText = text
             card.lastRequestAt = now
             card.updatedAt = now
         }
-        select(sessionID: target)
+        select(sessionID: sessionID)
     }
 
     func steer(text: String, sessionID: String? = nil) async throws {
@@ -966,13 +974,7 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = error.localizedDescription
             throw error
         }
-        let now = Date()
-        mutateSession(sessionID: target) { card in
-            card.lastRequestText = trimmed
-            card.lastRequestAt = now
-            card.updatedAt = now
-        }
-        select(sessionID: target)
+        recordSubmittedInput(sessionID: target, text: trimmed)
     }
 
     /// Renames a Pickle through its owning daemon. Earlier builds sent `/name`

@@ -273,6 +273,8 @@ struct PickyConversationCardView: View {
             }
             .padding(.bottom, DS.Spacing.sm)
 
+            PickyRuntimeRecoveryBanner(metaStore: sessionStore.metaStore, commands: viewModel)
+
             // Stable sibling: detail mutations invalidate this narrow owner, not the editor.
             PickyRunningTaskFooterView(
                 store: sessionStore,

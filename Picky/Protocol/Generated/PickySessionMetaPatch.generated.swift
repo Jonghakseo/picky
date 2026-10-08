@@ -30,6 +30,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
     let asyncWorkSummary: FieldUpdate<PickyAsyncWorkSummary>
     let fastMode: FieldUpdate<Bool>
     let fastModeSupported: FieldUpdate<Bool>
+    let runtimeRecovery: FieldUpdate<PickyRuntimeRecovery>
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
@@ -55,6 +56,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         case asyncWorkSummary
         case fastMode
         case fastModeSupported
+        case runtimeRecovery
     }
 
     init(from decoder: Decoder) throws {
@@ -92,6 +94,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         asyncWorkSummary = try FieldUpdate.decode(from: container, forKey: .asyncWorkSummary, allowsClear: true)
         fastMode = try FieldUpdate.decode(from: container, forKey: .fastMode, allowsClear: true)
         fastModeSupported = try FieldUpdate.decode(from: container, forKey: .fastModeSupported, allowsClear: true)
+        runtimeRecovery = try FieldUpdate.decode(from: container, forKey: .runtimeRecovery, allowsClear: true)
     }
 }
 
@@ -128,6 +131,7 @@ extension PickySessionMetaPatch {
         asyncWorkSummary.apply(to: &metadata.asyncWorkSummary)
         fastMode.apply(to: &metadata.fastMode)
         fastModeSupported.apply(to: &metadata.fastModeSupported)
+        runtimeRecovery.apply(to: &metadata.runtimeRecovery)
     }
 }
 

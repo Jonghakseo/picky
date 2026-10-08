@@ -8,6 +8,15 @@ export class RuntimeDisposalGate {
 
   isBlocked(sessionId: string): boolean { return this.failed.has(sessionId); }
 
+  /**
+   * Gives up on a runtime whose teardown failed. Only a successor bound to a different
+   * Pi session file may follow, so the abandoned runtime never shares a file with it.
+   */
+  abandon(sessionId: string): void { if (!this.pending.has(sessionId)) this.failed.delete(sessionId); }
+
+  /** Restores the fence when no successor could be attached after `abandon`. */
+  fence(sessionId: string): void { this.failed.add(sessionId); }
+
   async wait(sessionId: string): Promise<void> {
     const disposal = this.pending.get(sessionId);
     if (disposal) await disposal;

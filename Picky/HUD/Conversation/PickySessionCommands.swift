@@ -55,6 +55,7 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func stopChoice(sessionID: String) -> PickyStopChoice
     func steer(text: String, sessionID: String?) async throws
     func followUp(text: String, sessionID: String?) async throws
+    var composerSender: PickyComposerSender { get }
     /// Persists an explicit display name through the session's owning daemon.
     /// This is metadata, not conversation input: it never enters the queue and
     /// never starts a model turn.

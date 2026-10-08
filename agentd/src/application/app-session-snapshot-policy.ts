@@ -43,6 +43,7 @@ export function minimalSessionForAppSnapshot(session: PickyAgentSessionParsed): 
     pinned: session.pinned,
     fastMode: session.fastMode,
     fastModeSupported: session.fastModeSupported,
+    runtimeRecovery: session.runtimeRecovery,
   });
 }
 

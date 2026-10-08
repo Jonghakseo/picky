@@ -159,6 +159,7 @@ final class PickySessionStore {
             notifyMacOSOnCompletion: metadata.notifyMacOSOnCompletion,
             fastMode: metadata.fastMode,
             fastModeSupported: metadata.fastModeSupported,
+            runtimeRecovery: metadata.runtimeRecovery,
             pinned: metadata.pinned ?? false,
             archived: metadata.archived ?? false,
             archivedAt: metadata.archivedAt
@@ -226,7 +227,8 @@ final class PickySessionStore {
             archived: metadata.archived,
             archivedAt: metadata.archivedAt,
             pinned: metadata.pinned,
-            lastRequest: metadata.lastRequest
+            lastRequest: metadata.lastRequest,
+            runtimeRecovery: metadata.runtimeRecovery
         )
     }
 

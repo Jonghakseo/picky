@@ -79,6 +79,7 @@
             "messageJournalAvailable": false,
             "fastMode": false,
             "fastModeSupported": false,
+            "runtimeRecovery": { "phase": "failed", "updatedAt": "2026-05-01T00:00:00.000Z" },
             "titleOrigin": "user"
           }
         }
@@ -142,6 +143,7 @@
           },
           "fastMode": false,
           "fastModeSupported": false,
+          "runtimeRecovery": { "phase": "failed", "updatedAt": "2026-05-01T00:00:00.000Z" },
           "titleOrigin": "user"
         }
       },

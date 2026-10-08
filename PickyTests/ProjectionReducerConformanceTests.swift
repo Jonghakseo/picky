@@ -309,6 +309,7 @@ private indirect enum ConformanceJSON: Equatable {
             "notifyMacOSOnCompletion": encoded(metadata.notifyMacOSOnCompletion),
             "fastMode": encoded(metadata.fastMode),
             "fastModeSupported": encoded(metadata.fastModeSupported),
+            "runtimeRecovery": encoded(metadata.runtimeRecovery),
             "archived": encoded(metadata.archived),
             "archivedAt": encoded(metadata.archivedAt),
             "pinned": encoded(metadata.pinned),

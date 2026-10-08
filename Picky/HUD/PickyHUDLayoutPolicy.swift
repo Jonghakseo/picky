@@ -241,8 +241,9 @@ struct PickyHUDDockMetrics: Equatable {
     var groupHeaderSwatchCornerRadius: CGFloat { 2.5 }
     /// Expanded members sit slightly inside their header.
     var groupMemberIndent: CGFloat { preset == .small ? 4 : 6 }
-    /// Extra gap above a collapsed header that follows another entry.
-    var groupHeaderTopGap: CGFloat { 3 }
+    /// Extra gap above a collapsed header that follows another entry. Matches
+    /// the expanded card's outer gap so the header stays put when toggled.
+    var groupHeaderTopGap: CGFloat { groupCardOuterGap }
 
     // MARK: Expanded group card
     //

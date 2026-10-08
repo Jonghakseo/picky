@@ -192,8 +192,11 @@ struct PickyHUDDockChromeTests {
             projection: collapsed.projection, activeSessionIDs: active, orientation: .vertical, metrics: metrics, fontScale: 1)
         let expandedLength = PickyHUDDockRailLayoutPolicy.listLength(
             projection: expanded.projection, activeSessionIDs: active, orientation: .vertical, metrics: metrics, fontScale: 1)
-        // Two member rows, each with its spacing.
-        #expect(expandedLength - collapsedLength == 2 * (metrics.rowHeight(fontScale: 1) + metrics.rowSpacing))
+        // Two member rows with their spacing, plus the card that replaces the
+        // collapsed header's top gap: an outer gap on each side and room under
+        // the last member.
+        let card = 2 * metrics.groupCardOuterGap + metrics.groupCardInnerBottom - metrics.groupHeaderTopGap
+        #expect(expandedLength - collapsedLength == 2 * (metrics.rowHeight(fontScale: 1) + metrics.rowSpacing) + card)
     }
 
     @Test func renderedHandleGripWidensWithTheVerticalListAndStaysThinHorizontally() throws {
@@ -326,6 +329,9 @@ struct PickyHUDDockChromeTests {
         /// Expanded group with an opened row, an unread row, and a Pickle armed
         /// for the next Picky input.
         case attention
+        /// Two expanded groups back to back, then a loose Pickle: the group
+        /// cards must keep their gap instead of merging into one tinted run.
+        case adjacentGroups = "adjacent-groups"
     }
 
     private func fixtureData(state: FixtureState) -> (sessions: [PickyHUDDockSession], layout: PickyDockLayout, projection: PickyDockProjection) {
@@ -335,6 +341,13 @@ struct PickyHUDDockChromeTests {
         let group = PickyDockGroup(id: "group", name: "제품 디자인 검토", color: .gray,
                                    memberSessionIDs: state == .emptyGroup ? [] : ["b", "c"],
                                    isCollapsed: state == .collapsedGroup || state == .overflow)
+        if state == .adjacentGroups {
+            let second = PickyDockGroup(id: "second", name: "운영", color: .teal,
+                                        memberSessionIDs: ["a"], isCollapsed: false)
+            let layout = PickyDockLayout(entries: [.group(group), .group(second), .session(id: "d")])
+            let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: sessions.map(\.id))
+            return (sessions, layout, projection)
+        }
         let layout = PickyDockLayout(entries: state == .emptyDock ? [] : [.session(id: "a"), .group(group), .session(id: "d")])
         let visible = state == .emptyDock ? [] : sessions
         let projection = PickyDockProjector.project(layout: layout, visibleSessionIDs: visible.map(\.id))

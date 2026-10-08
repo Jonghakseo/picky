@@ -487,7 +487,7 @@ files = json.loads((output / 'manifest.json').read_text())
 expected = {f'{size}-{appearance}-{orientation}-{state}.png'
             for size in ['s', 'm', 'l'] for appearance in ['light', 'dark']
             for orientation in ['vertical', 'horizontal']
-            for state in ['collapsed-group', 'expanded-group', 'empty-group', 'empty-dock', 'overflow', 'attention']}
+            for state in ['collapsed-group', 'expanded-group', 'empty-group', 'empty-dock', 'overflow', 'attention', 'adjacent-groups']}
 expected |= {'minimized-light.png', 'minimized-dark.png'}
 expected |= {f'backdrop-{appearance}-{backdrop}.png'
              for appearance in ['light', 'dark'] for backdrop in ['white', 'black']}

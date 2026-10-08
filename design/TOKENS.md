@@ -170,7 +170,11 @@ at the app font scale, not the Dock preset scale. Tiles have a neutral surface;
 running tiles use the subtle action fill and keep their status ring. A folder
 shows two 13pt member glyphs in a 20pt row, followed by a 2pt gap and its title.
 That whole block is centered vertically, including empty and single-member
-groups. Group color remains a faint 4% tint. The shell uses the study's native
+groups. Group color remains a faint 4% tint. In the list dock, an expanded group wraps its header and members in
+one card: group color at 10% (18% plus a 1.2pt action outline while a Pickle is
+dragged onto it), `rowCornerRadius + 2` corners, a 2pt gap on each side that has
+a neighbour, and 2pt under the last vertical member. Collapsed groups keep the
+bare header. Values live in `PickyHUDDockMetrics.groupCard*`. The shell uses the study's native
 `hudWindow` material (`withinWindow`, active) under a 94% `surface1` scrim
 (`DS.Colors.dockShellScrim`), so the shell does not take on the wallpaper color
 through the transparent HUD panel. Running tiles layer the action tint over the

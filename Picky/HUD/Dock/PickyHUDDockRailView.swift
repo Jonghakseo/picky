@@ -489,7 +489,7 @@ struct PickyHUDDockRailView: View {
                         .transaction { applySlotShiftAnimation(&$0, to: item) }
                 }
             case .group(let group):
-                groupBlock(group, isFirst: index == 0)
+                groupBlock(group, isFirst: index == 0, isLast: index == items.count - 1)
                     .publishDockTopEntryExtent(entryID: "group:\(group.id)", orientation: orientation)
                     .transaction { applySlotShiftAnimation(&$0, to: item) }
             }
@@ -508,7 +508,7 @@ struct PickyHUDDockRailView: View {
     // MARK: - Group block
 
     @ViewBuilder
-    private func groupBlock(_ group: PickyDockGroup, isFirst: Bool) -> some View {
+    private func groupBlock(_ group: PickyDockGroup, isFirst: Bool, isLast: Bool) -> some View {
         let memberIDs = group.memberSessionIDs.filter(activeSessionIDSet.contains)
         let members = memberIDs.compactMap(session(withID:))
         let renderedMemberIDs = projection.visibleMemberIDs(inGroup: group.id)
@@ -519,11 +519,11 @@ struct PickyHUDDockRailView: View {
                     header
                     if !group.isCollapsed { groupMembers(group, renderedMemberIDs: renderedMemberIDs) }
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: metrics.rowCornerRadius + 1, style: .continuous)
-                        .fill(group.color.accent.opacity(group.isCollapsed ? 0 : 0.08))
-                        .allowsHitTesting(false)
-                )
+                .modifier(PickyHUDDockGroupCard(
+                    group: group, orientation: orientation, metrics: metrics,
+                    isDropTargeted: dropTargetedGroupID == group.id,
+                    isFirst: isFirst, isLast: isLast
+                ))
             } else {
                 VStack(alignment: .leading, spacing: metrics.rowSpacing) {
                     header
@@ -532,7 +532,11 @@ struct PickyHUDDockRailView: View {
                             .padding(dockSide == .left ? .trailing : .leading, metrics.groupMemberIndent)
                     }
                 }
-                .padding(.top, isFirst ? 0 : metrics.groupHeaderTopGap)
+                .modifier(PickyHUDDockGroupCard(
+                    group: group, orientation: orientation, metrics: metrics,
+                    isDropTargeted: dropTargetedGroupID == group.id,
+                    isFirst: isFirst, isLast: isLast
+                ))
             }
         }
         let isDraggingGroup = draggingGroupID == group.id
@@ -578,7 +582,9 @@ struct PickyHUDDockRailView: View {
             unreadCount: unreadCount,
             metrics: metrics,
             isSelected: selectedGroupID == group.id,
-            isDropTargeted: dropTargetedGroupID == group.id,
+            // An expanded group's card owns the drop highlight; a second
+            // outline on the header inside it reads as noise.
+            isDropTargeted: dropTargetedGroupID == group.id && group.isCollapsed,
             isAddPresented: isPickerPresented(anchorGroupID: group.id),
             onToggleCollapsed: { onSetDockGroupCollapsed(group.id, !group.isCollapsed) },
             onSetColor: { onSetDockGroupColor(group.id, $0) },

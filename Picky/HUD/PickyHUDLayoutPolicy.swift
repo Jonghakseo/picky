@@ -241,8 +241,27 @@ struct PickyHUDDockMetrics: Equatable {
     var groupHeaderSwatchCornerRadius: CGFloat { 2.5 }
     /// Expanded members sit slightly inside their header.
     var groupMemberIndent: CGFloat { preset == .small ? 4 : 6 }
-    /// Extra gap above a header that follows another entry.
+    /// Extra gap above a collapsed header that follows another entry.
     var groupHeaderTopGap: CGFloat { 3 }
+
+    // MARK: Expanded group card
+    //
+    // An expanded group wraps its header and members in one tinted card so
+    // members never read as loose Pickles, including in the resting icon lane
+    // and between adjacent open groups. Collapsed groups keep the bare header.
+
+    /// Group color behind an expanded group card.
+    var groupCardTintOpacity: Double { 0.10 }
+    /// Stronger tint while a dragged Pickle targets the card.
+    var groupCardDropTintOpacity: Double { 0.18 }
+    var groupCardCornerRadius: CGFloat { rowCornerRadius + 2 }
+    /// Outside margin on each list-axis side of a card that has a neighbour,
+    /// so adjacent open groups never merge into one tinted run.
+    var groupCardOuterGap: CGFloat { 2 }
+    /// Room under the last member inside a vertical card.
+    var groupCardInnerBottom: CGFloat { 2 }
+    /// Keeps a horizontal card off the shell's top and bottom edges.
+    var groupCardHorizontalCrossInset: CGFloat { 1.5 }
 
     /// Horizontal chips share the row content at a fixed width.
     var chipWidth: CGFloat {

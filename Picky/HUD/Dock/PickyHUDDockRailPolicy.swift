@@ -35,19 +35,25 @@ enum PickyHUDDockRailLayoutPolicy {
             let header = metrics.groupHeaderHeight(fontScale: fontScale)
             var length: CGFloat = 0
             var entryCount = 0
+            let lastIndex = projection.items.count - 1
             for (index, item) in projection.items.enumerated() {
                 switch item {
                 case .session:
                     length += row
                     entryCount += 1
                 case .group(let group):
-                    if index > 0 { length += metrics.groupHeaderTopGap }
                     length += header
                     entryCount += 1
-                    guard !group.isCollapsed else { continue }
+                    guard !group.isCollapsed else {
+                        if index > 0 { length += metrics.groupHeaderTopGap }
+                        continue
+                    }
                     let members = projection.visibleMemberIDs(inGroup: group.id).count
                     let rows = max(1, members) // an empty expanded group shows a drop placeholder
                     length += CGFloat(rows) * row + CGFloat(rows) * metrics.rowSpacing
+                    length += metrics.groupCardInnerBottom
+                    if index > 0 { length += metrics.groupCardOuterGap }
+                    if index < lastIndex { length += metrics.groupCardOuterGap }
                 }
             }
             return length + CGFloat(max(0, entryCount - 1)) * metrics.rowSpacing
@@ -55,7 +61,8 @@ enum PickyHUDDockRailLayoutPolicy {
             let chip = metrics.horizontalCompactCellSide(fontScale: fontScale)
             guard !projection.items.isEmpty else { return chip }
             var length: CGFloat = 0
-            for item in projection.items {
+            let lastIndex = projection.items.count - 1
+            for (index, item) in projection.items.enumerated() {
                 switch item {
                 case .session:
                     length += chip
@@ -65,6 +72,8 @@ enum PickyHUDDockRailLayoutPolicy {
                     let members = projection.visibleMemberIDs(inGroup: group.id).count
                     let chips = max(1, members)
                     length += CGFloat(chips) * chip
+                    if index > 0 { length += metrics.groupCardOuterGap }
+                    if index < lastIndex { length += metrics.groupCardOuterGap }
                 }
             }
             return length

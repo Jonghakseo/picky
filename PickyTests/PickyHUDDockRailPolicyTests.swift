@@ -77,7 +77,10 @@ struct PickyHUDDockRailPolicyTests {
 
         #expect(length(collapsed: true) == row + metrics.rowSpacing + metrics.groupHeaderTopGap + header)
         // Only the two active members render; the archived one is retained in the layout.
-        #expect(length(collapsed: false) - length(collapsed: true) == 2 * (row + metrics.rowSpacing))
+        // The last entry's card trades the header top gap for one outer gap and
+        // room under its last member.
+        let card = metrics.groupCardOuterGap + metrics.groupCardInnerBottom - metrics.groupHeaderTopGap
+        #expect(length(collapsed: false) - length(collapsed: true) == 2 * (row + metrics.rowSpacing) + card)
     }
 
     @Test func expandedEmptyGroupReservesOneDropPlaceholderRow() {
@@ -87,7 +90,8 @@ struct PickyHUDDockRailPolicyTests {
 
         #expect(PickyHUDDockRailLayoutPolicy.listLength(
             projection: projection, activeSessionIDs: [], orientation: .vertical, metrics: metrics, fontScale: 1
-        ) == metrics.groupHeaderHeight(fontScale: 1) + metrics.rowHeight(fontScale: 1) + metrics.rowSpacing)
+        ) == metrics.groupHeaderHeight(fontScale: 1) + metrics.rowHeight(fontScale: 1) + metrics.rowSpacing
+            + metrics.groupCardInnerBottom)
     }
 
     @Test func eachPresetSetsTheListWidthHorizontalThicknessAndRowShape() {

@@ -1,8 +1,8 @@
 # Picky Task 내재화와 실행 라우팅 확정안
 
-- 버전: 1.0
+- 버전: 1.1
 - 확정일: 2026-10-08 (KST)
-- 상태: 제품 정책과 내재화 방향 확정. 구현은 시작하지 않았다.
+- 상태: 1차 구현 완료. 구현 결정과 확정안과 다르게 한 부분은 [13절](#13-1차-구현-기록)에 있다.
 - 범위: 메인 Picky의 요청 분류, Task 실행·제어·결과 전달, 동의에 따른 Pickle 위임.
 - 코드 조사 기준: Picky `a4999ce3b`, Task npm `@ryan_nookpi/pi-extension-task@0.0.1`.
 
@@ -330,6 +330,55 @@ Task 추적·제어가 없는 상태에서 정책부터 바꾸어 출시하지 �
 | 화면 세부 | 메인 Task 표시 위치·상세 구성·음성 질문 처리의 구체 상호작용. 상태·제어·접근성 계약은 유지. |
 | 데이터 모델 | 기존 async 계약을 재사용할 필드, 결정·인계 저장 위치, 이전 payload 호환 방식. |
 | 독립 패키지 종료 | 이관 후 원본 보존 위치와 npm deprecate/unpublish 여부·시점. |
+
+## 13. 1차 구현 기록
+
+1~12절의 확정 내용을 바탕으로 1차 구현을 마쳤다. 이 절은 구현하면서 정한 값과, 확정안과 다르게 구현한 부분을 기록한다. 12절의 미정 항목 중 여기서 잠정값을 정한 것은 제품 결정이 아니다. 바꾸려면 이 절을 먼저 고친다.
+
+### 13.1 코드 위치
+
+| 책임 | 위치 |
+| --- | --- |
+| 이관한 Task 엔진(큐·revision·보고 검증·RPC worker·bridge·스냅샷·모델 tier) | `agentd/src/runtime/task/`, 출처와 라이선스는 `PROVENANCE.md` |
+| 메인 Task·위임 결정의 정본과 실행 | `agentd/src/application/main-task-service.ts` |
+| 결과 전달 시점 | `agentd/src/application/main-task-completion-delivery.ts`, `MainAgentCoordinator` |
+| 메인 도구 `Task`, `pickle_delegation` | `agentd/src/runtime/main-task-tools.ts` |
+| 앱 프로토콜 `mainTasksUpdated`, `controlMainTask`, `resolveMainDelegation` | `agentd/src/features/main-tasks/` |
+| 앱 표시·제어 | `Picky/MainAgent/`, Hub 대화 페이지 |
+| 원격 표시·제어 | `agentd/src/gateway/`, `agentd/src/remote/`, `agentd/web/` |
+| 상시 라우팅 정책 | `agentd/src/domain/picky-runtime-contract.ts`의 `Work routing` 절 |
+
+### 13.2 구현하며 정한 값
+
+| 항목 | 1차 구현 |
+| --- | --- |
+| 저장 | `<App Support>/main-tasks/`에 `tasks.json`(Task 정본), `decisions.json`(위임 결정 정본), `decisions/<id>.json`(질문 시점의 원요청 스냅샷), `<task-id>/`(child 세션·스냅샷)을 둔다. 원본의 부모 세션별 저장소는 쓰지 않는다. |
+| 결과 전달 | 메인 핸들이 있고 사용자 턴, 열린 질문, 컴팩션, PTT 일시정지가 모두 없을 때 하나씩 보낸다. 메인 런타임이 메시지를 받아들이면 전달 완료로 기록하고, 이후 응답이 끊겨도 다시 보내지 않는다. 응답은 원요청의 컨텍스트와 입력 출처를 따른다. 음성 요청이면 결과 요약도 음성으로 나온다. |
+| 결정 실행 주체 | 질문 폼 답변, 앱·폰의 결정 버튼, 사용자 입력으로 시작한 턴에서 모델이 대신 전하는 답만 결정을 실행한다. Task·Pickle 결과 전달로 시작한 턴에서는 모델이 결정을 실행할 수 없다. |
+| 중복 방지 | 결정별로 처리를 직렬화한다. 같은 선택의 재전송은 기존 결과를 돌려주고, 이미 실행된 결정에 다른 선택은 거부한다. 같은 Task에 대한 인계 질문은 하나만 열린다. Pickle 생성 중 종료됐다면 재시작 후 실패로 표시하고 자동으로 다시 만들지 않는다. |
+| 인계 | 동의하면 Task 정지를 확인한 뒤 Pickle을 만들고 원요청, 지시, 작업 폴더, 결과 요약, 변경 파일, 실행한 검증, 남은 일을 넘긴다. 정지를 확인하지 못하면 Pickle을 만들지 않는다. 거절하면 같은 worker 세션을 범위 승인 상태로 이어간다. |
+| 모델 | 메인 모델 기준으로 원본의 tier 평가와 provider별 preset을 쓴다. 사용자 Pi 설정 파일과 프로젝트 `.pi/task.json`은 읽지 않는다. 재시작 직후 메인 모델 정보가 없으면 이전에 고른 모델로 재개한다. 별도 설정 화면은 없다. |
+| 자원 | 동시 실행 4개(원본 기본값을 잠정 사용). Task 전체의 시간·턴·비용 상한은 원본처럼 없다. 원본의 30분 모델 알림은 없애고, 앱이 경과 시간을 보여 준다. |
+| 보존 | Task 기록과 child 세션을 지우지 않는다. 앱에는 진행 중인 Task 전부와 최근에 끝난 30개, 열린 결정 전부와 최근 처리한 10개를 보낸다. |
+| 종료 | daemon이 끝나면 진행 중 Task를 `interrupted`로 기록한 뒤 worker 종료를 최대 5초 기다린다. worker는 stdin이 닫히면 스스로 끝난다. 재시작 후 자동으로 다시 실행하지 않는다. |
+| worker 실행 | agentd에 번들된 Pi CLI와 Node로 실행한다. `PICKY_*` 환경 변수와 내부 `picky` CLI 경로를 빼고 `PICKY_TASK_WORKER=1`을 넣는다. 이 표시가 있으면 `picky` CLI는 피클 생성·조종·앱 제어 명령을 거부한다. 샌드박스가 아니다. `Task`, `subagent`, `pickle_delegation`, `ask_user_question`은 쓸 수 없다. |
+
+### 13.3 확정안과 다르게 구현한 부분
+
+- **async host 연결.** 5절은 기존 `AsyncTaskHostBridge`와 완료 ticket을 메인에도 연결하라고 했다. 1차 구현은 연결하지 않았다. 이 브리지와 모델 fence는 같은 Pi 세션 이벤트 버스에서 도는 익스텐션 provider용 계약인데, Task worker는 agentd가 직접 띄우는 별도 프로세스다. fence를 메인에 붙이면 PTT와 컴팩션을 지나는 메인 모델 요청 승인 방식도 바뀐다. 대신 실행 상태, 정리 확인 여부(`cleanup`), 결과 전달 여부를 Task 저장소 한곳에 두고 앱에는 메인 작업 전용 이벤트로 보낸다. 표시 어휘는 Pickle의 백그라운드 작업과 맞췄다.
+- **worker의 확장 로딩.** 4.1절은 사용자 확장 자동 발견을 Task의 호환 경로로 남기지 않는다고 했다. 지금은 메인 Picky도 같은 agent 디렉터리의 확장(Hub에서 설치한 플러그인 포함)을 그대로 쓴다. worker만 더 좁히면 조사 Task가 웹 검색 같은 도구를 잃는다. 그래서 worker는 메인과 같은 리소스를 쓰고, Picky 전용 격리 런타임이 들어오면 함께 그 구성으로 옮긴다. 별도 사용자 Pi CLI 설치에는 의존하지 않는다.
+- **worker의 MCP.** Picky의 서버별 MCP 범위(`pickyScope`)가 아직 worker에 적용되지 않는다. CLI 내장 MCP를 켜면 범위와 관계없이 모든 서버가 연결되므로 1차 구현에서는 worker에서 MCP를 끈다.
+- **장시간 알림.** 원본의 30분 모델 알림은 메인 대화에 말소리 응답을 끼워 넣으므로 옮기지 않았다.
+
+### 13.4 검증한 것과 남은 것
+
+에이전트 측 검증은 이관한 엔진 테스트, 실제 Pi RPC child를 띄우는 worker 테스트(같은 프로세스 재개, 오래된 보고 거부, 재귀 위임 차단, 사용자 정지 시 백그라운드 작업 종료), 서비스·도구·결과 전달의 행동 테스트, 프로토콜 fixture, 컴파일된 bridge의 실제 로딩으로 했다.
+
+아직 하지 않은 것은 다음과 같다.
+
+- 대표 요청으로 실제 모델의 라우팅을 평가하는 일. 번역·파일 탐색·일회성 스크립트·제품 버그 수정·명시적 위임 사례를 실제 모델로 돌려 경로를 확인해야 한다.
+- 실행 중인 앱에서의 음성·화면 end-to-end 확인과 패키지된 앱의 런타임 smoke.
+- 12절의 자원·모델 설정 화면, 보존 기간, 독립 npm 패키지 정리.
 
 ## 참고 자료
 

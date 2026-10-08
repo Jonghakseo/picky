@@ -34,13 +34,13 @@ describe("neutral prompt builder", () => {
     expect(prompt.imagePaths).toHaveLength(2);
   });
 
-  it("defers persona and Pickle routing rules to the cwd's AGENTS.md", () => {
+  it("defers persona to the cwd's AGENTS.md and work routing to the runtime contract", () => {
     const pair = buildMainAgentBootstrapPair();
-    expect(pair.user).toContain("picky pickle-create");
-    expect(pair.user).toContain("picky pickle-list");
-    // Persona + routing thresholds belong in the user-editable AGENTS.md, not
-    // hard-coded prompt text.
+    // Persona belongs in the user-editable AGENTS.md; work routing lives in the per-turn
+    // runtime contract, so neither is hard-coded here and no delegation default survives.
     expect(pair.user).toContain("AGENTS.md");
+    expect(pair.user).toContain("work routing between direct answers, Tasks, and Pickles");
+    expect(pair.user).not.toContain("delegates non-trivial work");
     expect(pair.user).not.toContain("4 tool calls");
     expect(pair.user).not.toContain("ideally about 300 Korean characters");
     expect(pair.user).not.toContain("Korean-speaking");

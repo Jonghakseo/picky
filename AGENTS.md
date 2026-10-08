@@ -136,6 +136,7 @@ When the user asks about a feature, start here before broad searching:
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
 - Picky CLI / main-agent delegation: `agentd/src/cli.ts`, `agentd/src/application/internal-picky-cli.ts`, `agentd/src/server.ts`
 - Pickle interactive input bridge: `agentd/src/runtime/ask-user-question-tool.ts`, `agentd/src/runtime/extension-ui-bridge.ts`
+- Main-agent Tasks and Pickle delegation decisions (direct answer / Task / Pickle routing, built-in Task engine and RPC workers, app and remote control): `docs/picky-task-routing-plan.md` (section 13 records the implementation), `agentd/src/runtime/task/` (ported engine, see its `PROVENANCE.md`), `agentd/src/application/main-task-service.ts`, `agentd/src/application/main-task-completion-delivery.ts`, `agentd/src/runtime/main-task-tools.ts`, `agentd/src/features/main-tasks/`
 - Pi SDK adapters (tools, extension UI, OAuth, package manager, RPC runner): `agentd/src/runtime/`. Only `runtime/` and `bootstrap.ts` may import `@earendil-works/*`; application code depends on `agentd/src/runtime/types.ts` (guard-enforced)
 - Pi session sync: `agentd/src/application/pi-session-syncer.ts`
 - MCP servers (Pi built-in MCP, per-server `pickyScope`, Hub management): `agentd/src/runtime/picky-mcp.ts`, `agentd/src/runtime/mcp-server-admin.ts`, `Picky/Hub/Plugins/PickyHubMcpServers*.swift`, `Picky/Hub/Plugins/PickyMcpServerClient.swift`

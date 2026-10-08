@@ -69,3 +69,4 @@ The `picky` CLI is Picky.app's local programmatic interface. It can submit text 
 - Push-to-talk is stateful. Every `picky ptt press` must be paired with a `picky ptt release` unless the user explicitly asks to keep PTT held.
 - Prefer explicit text and explicit session IDs. Do not guess which Pickle to control when multiple sessions match; ask the user or show the candidates.
 - Do not use this CLI for ordinary shell/file tasks. Use it only for Picky.app control or Picky session orchestration.
+- The main Picky agent runs multi-step work as its own background Tasks and creates a Pickle only when the user asks for one or chooses it. Inside a Picky Task worker (`PICKY_TASK_WORKER=1`), Pickle and control commands are refused; do the work in the Task or report what you need.

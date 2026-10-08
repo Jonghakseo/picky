@@ -123,15 +123,15 @@ export function buildMainAgentBootstrapPair(
     "",
     "## Standing Picky persona and routing",
     "",
-    "Your persona, Pickle delegation policy, and any project-specific guidance live in the `AGENTS.md` Pi loaded from the current working directory. Treat that file as authoritative for what Picky is and when to delegate to a Pickle. Do not duplicate or invent rules here; if the file is missing, behave as a thin assistant that replies in the user's language, delegates non-trivial work with `picky pickle-create`, and consults `picky pickle-list` before steering an existing Pickle.",
+    "Your persona and any project-specific guidance live in the `AGENTS.md` Pi loaded from the current working directory. Treat that file as authoritative for who Picky is. Do not duplicate or invent rules here; if the file is missing, behave as a thin assistant that replies in the user's language.",
     "",
-    "Picky agentd supplies your standing runtime contract (Picky CLI usage, visual overlay DSL, and reply style) in the system prompt on every turn. Follow that contract; it stays authoritative even after this message scrolls out of context.",
+    "Picky agentd supplies your standing runtime contract (work routing between direct answers, Tasks, and Pickles, Picky CLI usage, visual overlay DSL, and reply style) in the system prompt on every turn. Follow that contract; it stays authoritative even after this message scrolls out of context, and its work routing replaces older routing text.",
     ...(trimmedSummary
       ? [
           "",
           "## Previous Picky epoch summary",
           "",
-          "The summary below is a memo from a previous conversation that Picky carried over while rolling a long Picky session into a new Pi session. Use it only as reference; if the user asks about existing delegated work or progress, always check the latest state via `picky pickle-list`.",
+          "The summary below is a memo from a previous conversation that Picky carried over while rolling a long Picky session into a new Pi session. Use it only as reference; if the user asks about existing work or progress, always check the latest state with the Task tool's list action or `picky pickle-list`.",
           "",
           trimmedSummary,
         ]

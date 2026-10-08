@@ -14,6 +14,8 @@ struct PickyWorkspaceSeederTests {
         ("legacy-default-0e45238b.md", 6154, "d2f0f0e3f7c0630a3280ea8a53f8a8baa15c39759fcf6afc5af788bdd05ec616"),
         ("legacy-default-238fd9b8.md", 6055, "9bf890b3ebbf4f9a2b845bbbd92f22895b05e7d5581e6c2030baf79d900f3a9b"),
         ("legacy-default-526c8e44.md", 6134, "a51cb73cc976670185eb0270eeb495920c00239a2d35c13b3a51a3e1df56933c"),
+        // The strict Pickle-delegation default ("more than 4 tool calls") replaced by Task routing.
+        ("legacy-default-b154e796.md", 6068, "eb764f2457de051cba5804b278b5ebd6b4479d174f1e31c93443905d39fa9ade"),
     ]
 
     @Test func defaultWorkspacePathLivesUnderAppSupport() {
@@ -45,6 +47,12 @@ struct PickyWorkspaceSeederTests {
         #expect(!body.contains("picky pickle-remove"))
         #expect(!body.contains("picky pickle-delete"))
         #expect(body.contains("Never run `picky submit`"))
+        // Work routing lives in agentd's runtime contract; the seed must not restore the old
+        // default of handing any multi-step work to a Pickle.
+        #expect(body.contains("## Work routing"))
+        #expect(body.contains("run multi-step work as background Tasks"))
+        #expect(!body.contains("4 tool calls"))
+        #expect(!body.contains("prefer delegating real work to a Pickle"))
     }
 
     @Test func historicalLegacyFixturesMatchPublishedBytes() throws {

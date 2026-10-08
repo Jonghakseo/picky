@@ -72,6 +72,8 @@ Closing a guide, plugin detail, or settings confirmation returns keyboard focus 
 
 **Recent Conversation** is the Picky main-agent chat. You can review Markdown-rendered prompts and replies, send a direct message from the bottom composer, or start a **New session**. Direct messages capture current desktop context through the same local-first flow as voice and Quick Input.
 
+A collapsible **Tasks** strip above the composer lists Picky's background Tasks and any Pickle-or-Task question still waiting for you (see [5.2](#52-tasks-and-pickle-choices)). Each row shows its state and, while it runs, the elapsed time. **Details** shows the instructions, the result summary, files, the checks that actually ran (**No verification run** when none did), what is blocking it, and the working folder. **Stop** ends a running Task and its background jobs; **Continue** resumes a stopped, failed, blocked, or interrupted Task in the same worker session. A waiting question offers **Hand to Pickle**, **Run as Task**, and **Cancel**; if creating the Pickle fails, **Retry** appears with the error.
+
 Once the daemon reports a session file, Hub also shows **Copy resume command**, which copies `cd <cwd> && pi --session <file>` so you can continue the same session in your own shell.
 
 ### 2.4 Plugins
@@ -222,6 +224,21 @@ Quick Input is suppressed while Push-to-Talk or dictation is active, and also wh
 While the main Picky agent is working, compact activity chips near the cursor show only readable progress: the title of a shell command, memory lookups and saves, web search queries, and **{server} MCP** for any MCP call. Thinking shows as **Thinking…** without its content. Other tools stay behind a single **Working** chip until the reply ends. If the agent calls `ask_user_question`, Picky opens an interactive cursor-side form. Multi-question requests advance one step at a time; radio and checkbox questions can offer an **Other** response, and text questions accept free-form input.
 
 An active main turn also shows a **Stop** pill near the cursor. Click it to abort the current turn, or press Escape twice within the confirmation window. Picky suppresses this shortcut while another visible panel owns Escape for its own close/cancel action. During Korean or other IME composition in the question form, Escape is first passed to the input method so it can cancel the marked text instead of dismissing the form.
+
+### 5.2 Tasks and Pickle choices
+
+Picky decides how to handle each request you send it:
+
+- Translations, short checks, and other quick questions get an answer right away.
+- Multi-step work, such as finding and editing files, researching several sources, or running a one-off script, runs as a **Task** in the background. Picky says it started and keeps talking with you meanwhile.
+- Production code work (a product bug fix, a feature, a refactor, or building a product project) starts with a question: hand it to a **Pickle**, or run it here as a Task. Nothing starts until you answer. If you close the question, it stays pending until you answer it in **Recent Conversation** or cancel it.
+- When you ask for a Pickle directly, such as "hand this to a Pickle", Picky creates one without asking.
+
+A Task belongs to the main conversation. Its result arrives once Picky is not busy with your current request or a question; if you asked by voice, the short summary is spoken. The full report (what was done, files, checks that actually ran, and anything blocking) stays in the Task's details in **Recent Conversation**. Interrupting Picky's reply with Push-to-Talk or **Stop** does not stop Tasks. Stop a Task from its row or ask Picky to stop it; stopping does not undo files the Task already changed.
+
+If a Task finds that the work needs production code changes, it pauses and Picky asks the same Pickle-or-Task question. Choosing Pickle hands the Task's findings and changed files to a new Pickle; choosing Task lets the same Task continue. When Picky quits, running Tasks are marked interrupted. Resume them from their row or ask Picky; they never restart on their own.
+
+Tasks run as separate local Pi processes with the same models, sign-ins, and plugins as Picky. They are not a sandbox, and MCP servers are not available to Tasks yet.
 
 ## 6. Drawing screen highlights
 
@@ -908,7 +925,7 @@ When saved changes require a fresh process (currently the effective `PI_CODING_A
 
 #### Customizing the Picky workspace
 
-The Picky main agent runs in a workspace folder so Pi automatically loads any `AGENTS.md`, `.pi/extensions`, `.pi/skills`, and `.pi/prompts` you drop in there. Picky seeds a default `AGENTS.md` with the always-on persona and Pickle delegation policy on first launch.
+The Picky main agent runs in a workspace folder so Pi automatically loads any `AGENTS.md`, `.pi/extensions`, `.pi/skills`, and `.pi/prompts` you drop in there. Picky seeds a default `AGENTS.md` with the always-on persona on first launch. How Picky chooses between a direct answer, a Task, and a Pickle is built in (see [5.2](#52-tasks-and-pickle-choices)); add rules to `AGENTS.md` only for specific kinds of work, such as "always hand hotfixes for this repo to a Pickle".
 
 Default location:
 
@@ -918,7 +935,7 @@ Default location:
 
 What lives there:
 
-- `AGENTS.md` — Picky's persona and routing rules. Edit freely; Picky never overwrites your changes. Delete the file and relaunch Picky to reseed the default.
+- `AGENTS.md` — Picky's persona and rules for specific kinds of work. Edit freely; Picky never overwrites your changes. Delete the file and relaunch Picky to reseed the default. An unedited default from an earlier release is updated to the current default automatically.
 - `.pi/extensions/`, `.pi/skills/`, `.pi/prompts/` — optional Pi customization that augments Picky exactly the way Pi loads them in any other cwd.
 
 The seeded `AGENTS.md` instructs the main agent to keep itself in sync with how you talk to Picky:
@@ -1127,7 +1144,7 @@ One-off facts ("my OpenAI key lives at `~/.config/foo`") are stored in the built
 **By hand-editing the file** (full control):
 
 1. Open `~/Library/Application Support/Picky/Workspace/AGENTS.md` in any editor.
-2. Edit the persona, Pickle delegation thresholds, or any other instructions.
+2. Edit the persona, rules for specific kinds of work, or any other instructions.
 3. Save. The next Picky main session picks up the changes.
 
 To experiment without touching the default, point **Hub → Settings → Accounts and agents → Main Agent → Picky cwd** at a fresh folder containing its own `AGENTS.md` and switch back when you're done.
@@ -1176,6 +1193,7 @@ Pair inside the Home Screen app, not in Safari: iOS keeps the Home Screen app's 
 - **Background work**: a summary above the Pickle composer expands into command and subagent states, elapsed time, and delivery results. When only background work remains, the composer sends a follow-up instead of guidance to an active response. Stopping an individual background task stays on the Mac.
 - **Stop**: when background tasks are running, you choose between stopping the response only and stopping the background tasks too. Queued messages move back into the phone's composer.
 - **Questions** from Pickles and Picky can be answered in the room.
+- **Picky's Tasks**: the Picky room shows its background Tasks with their state, a short result, and Stop or Continue, plus any Pickle-or-Task question waiting for you. The room list counts running Tasks, and a waiting question marks the room like other questions.
 - **Photos**: attach up to 10 images (20 MB each). They are saved on the Mac and sent as file paths, like files dropped on the HUD composer.
 - **Dictation**: the mic records on the phone; the Mac transcribes it with the speech recognition service and language set in Picky, adds the text to the composer, and does not send it. Recordings stop after 5 minutes and are deleted after transcription. If the Mac's speech recognition is not allowed, use **Dictation permission** → **Ask for permission** on the Mac first; a phone request never opens a permission prompt on the Mac.
 - **Files**: links to files in a conversation, tool images, and artifacts open a read-only preview (text up to its first 1 MB, Markdown, images, PDF; HTML and SVG open with scripts disabled). Only files the conversation refers to can be opened. Picky's main room also shows images read by the main agent; these image rows last until the remote gateway restarts.

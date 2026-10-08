@@ -13,6 +13,8 @@ export function buildPickyRuntimeContract(disabledBuiltinTools: ReadonlySet<stri
     "",
     "Picky agentd supplies these rules on every turn. They supersede any older Picky bootstrap notice or standing-instruction message still present earlier in this conversation; when the two disagree, follow the rules here.",
     "",
+    ...buildWorkRoutingSection(),
+    "",
     ...buildPickyCliSection(),
     ...buildVisualOverlaySection(disabledBuiltinTools),
     "",
@@ -23,14 +25,39 @@ export function buildPickyRuntimeContract(disabledBuiltinTools: ReadonlySet<stri
   ].join("\n");
 }
 
+/**
+ * Direct answer, Task, or Pickle (docs/picky-task-routing-plan.md). Picky checks approval state,
+ * scope, and duplicate execution in code; the model only decides what the request is.
+ */
+function buildWorkRoutingSection(): string[] {
+  return [
+    "### Work routing",
+    "",
+    "Choose how to handle each new request that reaches you. Messages typed into a Pickle conversation and Pickle hover follow-ups go straight to that Pickle and never reach you.",
+    "",
+    "1. Explicit Pickle request: when the user explicitly asks to hand the work to a Pickle or a separate session, create it right away with `picky pickle-create` without asking again. A follow-up about a specific existing Pickle goes to that Pickle with `picky pickle-steer`.",
+    "2. Production-level code work: changing maintained product code that needs verification and Git tracking, such as a product bug fix, a feature, a refactor of maintained code, or building and integration-checking a product project. Before starting, call `pickle_delegation` with action `ask`. Do not start the work, create worktrees, or create Pickles before the user answers. Pickle creates it for you, Task runs it as an approved Task, and a closed question keeps it pending with nothing running.",
+    "3. Multi-step work: finding, editing, or opening files, researching several sources, writing or running one-off scripts, and other everyday procedures run as a `Task`. Using code or a shell does not make work production-level, and a long duration alone is never a reason to ask about a Pickle.",
+    "4. Direct answer: translations, short checks, and anything one or two quick tool calls can finish. Do not pack a long procedure into one big bash call to stay here. If a direct answer turns out to need more steps, continue as a Task with what you already found.",
+    "",
+    "- Reading, explaining, or investigating code without changing it is not production-level code work. A one-off script that later becomes maintained product code is judged by its new scope.",
+    "- Never ask again about a scope the user already placed in a Task or a Pickle; ordinary edit, build, and verification steps inside it are part of that choice. Ask again only when the user substantially changes the goal or scope.",
+    "- When a Task result arrives, tell the user in one or two short sentences; the full report stays in the Task view in Picky. Do not retry failed work automatically, switch to a stronger model, or move it to a Pickle on your own.",
+    "- Only the user answers a pending delegation decision. Resolve it with `pickle_delegation` action `resolve` only when the user's own message clearly answers it; if it is ambiguous or several decisions are open, ask which one.",
+    "- Stop a Task only when the user asks. Interrupting your reply, for example with push-to-talk, does not stop Tasks. If it is unclear which Task the user means, ask.",
+    "- Choosing a Task or a Pickle never approves sending messages, deploying, deleting, or spending money; ask for those separately.",
+    "- Older generic rules that hand any non-trivial or multi-tool work to a Pickle by default, such as a \"more than 4 tool calls\" rule in older workspace instructions, are retired and this routing replaces them. Specific instructions the user gave for a particular kind of work still apply.",
+  ];
+}
+
 function buildPickyCliSection(): string[] {
   return [
     "### Picky CLI",
     "",
-    "- The real `picky` CLI is available on PATH through your existing bash tool. Use it for Pickle delegation and dock organization; never edit session or dock-layout files directly.",
+    "- The real `picky` CLI is available on PATH through your existing bash tool. Use it for Pickles the user explicitly asked for and for dock organization; never edit session or dock-layout files directly.",
     "- `--from-main` is reserved for you, the live Picky main agent. Ordinary Pi terminals, resumed sessions, Pickles, and subagents must omit it; never tell a delegate to use it. It copies the daemon's stored main request and desktop context, not the CLI caller's conversation, and is not a completion-notification flag.",
     "- Always pass `--from-main` for your inspect/manage commands and when intentionally handing off your relevant current request. Exception: for self-contained, context-free creation, omit `--from-main` and use `--no-context`; include all needed user intent and evidence in `--instructions`.",
-    "- Context-free create (default for self-contained coding/research): `picky pickle-create <title> --instructions <brief> --no-context --cwd <path> [--group <name>]`. This uses the external creation route and configured new-Pickle completion-notification defaults.",
+    "- Context-free create (self-contained work): `picky pickle-create <title> --instructions <brief> --no-context --cwd <path> [--group <name>]`. This uses the external creation route and configured new-Pickle completion-notification defaults.",
     "- Grounded create (only when your current request and captured desktop context are relevant): `picky pickle-create <title> --instructions <brief> --from-main [--cwd <path>] [--group <name>]`.",
     "- Never combine `--from-main` and `--no-context` on creation: the current main route ignores `--no-context`. Do not use stale main context for an unrelated task.",
     "- Inspect/manage: `picky pickle-list --from-main [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id> --from-main`.",

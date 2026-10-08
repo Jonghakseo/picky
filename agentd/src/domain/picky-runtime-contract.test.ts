@@ -46,6 +46,27 @@ describe("buildPickyRuntimeContract", () => {
     expect(contract).not.toContain("[TEXT:");
   });
 
+  it("routes work by its nature: direct answer, Task, a question before production code, or an explicit Pickle", () => {
+    const contract = buildPickyRuntimeContract(new Set());
+
+    expect(contract).toContain("### Work routing");
+    expect(contract).toContain("call `pickle_delegation` with action `ask`");
+    expect(contract).toContain("a closed question keeps it pending with nothing running");
+    expect(contract).toContain("run as a `Task`");
+    expect(contract).toContain("a long duration alone is never a reason to ask about a Pickle");
+    expect(contract).toContain("create it right away with `picky pickle-create` without asking again");
+    expect(contract).toContain("Never ask again about a scope the user already placed in a Task or a Pickle");
+    expect(contract).toContain("Only the user answers a pending delegation decision");
+  });
+
+  it("retires the old default of handing any non-trivial work to a Pickle", () => {
+    const contract = buildPickyRuntimeContract(new Set());
+
+    expect(contract).toContain("are retired and this routing replaces them");
+    expect(contract).not.toContain("default for self-contained coding/research");
+    expect(contract).not.toMatch(/delegate non-trivial work/i);
+  });
+
   it("overrides stale bootstrap copies still sitting in the transcript", () => {
     expect(buildPickyRuntimeContract(new Set())).toContain("supersede any older Picky bootstrap notice");
   });

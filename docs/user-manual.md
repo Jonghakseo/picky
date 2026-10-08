@@ -47,7 +47,7 @@ Hub behavior:
 
 The sidebar contains these eight destinations:
 
-- **Dashboard**: an update card when a new Picky version is ready, setup and shell-command status, a local work summary, guide previews, Quick Start shortcuts, recommended plugins, and feedback entry points.
+- **Dashboard**: an update card when a new Picky version is ready, setup and shell-command status, **Your days with Picky** (the same daily streak and activity calendar as Statistics **Rhythm**, with a **View statistics** link), guide previews, Quick Start shortcuts, up to four recommended plugins (plugins you have not installed yet come first), and feedback entry points.
 - **Statistics**: four local tabs. **Rhythm** (the first tab) shows your daily streak and activity calendar, then hour-of-day patterns, work types, and per-Pickle records filtered by period (**Last 7 days** ends today) and project. **Badges** has 24 badges earned from your whole history, with progress toward challenge milestones. Earned badges stay unlocked even if older history is no longer available. **Pickle Hall of Fame** totals changed files, results, tool runs, and subagents, and lists the all-time leading Pickles, which you can open in the HUD. **AI usage** shows plan limits and the last 30 days of token usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
 
 ### 2.2 Plan limits
@@ -230,14 +230,13 @@ During Push-to-Talk or Quick Input, Picky starts an ink-capture mode.
 How to use it:
 
 1. Trigger Push-to-Talk or Quick Input.
-2. Click and drag on the screen to mark an area.
+2. Click a spot to mark it, or click and drag to draw around an area.
 3. Release the input shortcut or submit the text.
-4. The freehand mark is mapped into the captured screenshot and sent as context.
+4. The marks are mapped into the captured screenshot and sent as context.
 
 Details:
 
-- Very short drags are ignored.
-- A drag must cross the threshold before becoming a visible mark.
+- A click without movement becomes a dot-shaped click mark; dragging turns it into a freehand stroke.
 - The app underneath does not receive mouse events while Picky owns ink capture. The Quick Input panel and the HUD card stay click-through during **Quick Input** ink capture so you can still interact with them; Push-to-Talk ink capture blocks every surface, Picky's own panels included.
 - Marks are neutral context; Picky does not infer workflows from them.
 - Any display whose pixels are about to be sent as context shows a subtle blue edge glow and a **This screen is being shared as context** capsule while you record or type, so you always know which screens are captured. Use the capsule's action to exclude that display, or include a display that is currently omitted. Only the visible capsule is interactive; its transparent panel area does not block the app underneath.

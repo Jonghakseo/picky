@@ -20,6 +20,8 @@ export interface CommandContext {
   hubConnected: boolean;
   hubRequest: (deviceId: string, request: HubRequest) => Promise<unknown>;
   ownerFor: (sessionId: string) => DaemonLink | undefined;
+  /** The daemon that owns main-conversation state (Tasks, delegation decisions). */
+  primaryDaemon: () => DaemonLink | undefined;
   resolveUploads: (uploadIds: readonly string[]) => Promise<string[]>;
   waitForSession: (sessionId: string, timeoutMs: number) => Promise<boolean>;
   audit: AuditLog;
@@ -54,6 +56,12 @@ export async function executeCommand(
       const owner = context.ownerFor(plan.sessionId);
       if (!owner) throw new RemoteCommandError("macOffline", "No Picky daemon owns this session right now.");
       await owner.send(plan.command).catch(rethrowAsRemote);
+      return undefined;
+    }
+    case "primaryDaemon": {
+      const primary = context.primaryDaemon();
+      if (!primary) throw new RemoteCommandError("macOffline", "The primary Picky daemon is not connected.");
+      await primary.send(plan.command).catch(rethrowAsRemote);
       return undefined;
     }
     case "hub": {

@@ -3363,3 +3363,194 @@ textarea.composer-editor::placeholder {
   outline: none;
   background: color-mix(in srgb, var(--ds-color-accent-subtle) 55%, transparent);
 }
+
+/* ---------- Picky room: Tasks and delegation decisions ---------- */
+
+.main-tasks {
+  margin: var(--ds-space-2) var(--ds-space-3) 0;
+  font: var(--hud-type-label-semibold);
+  color: var(--ds-color-text-secondary);
+}
+
+.main-tasks-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--ds-space-2);
+  border-radius: var(--ds-radius-compact);
+  text-align: left;
+}
+
+.main-tasks-bar:active {
+  background: var(--ds-color-surface3, var(--ds-color-surface2));
+}
+
+.main-tasks-label {
+  flex: none;
+}
+
+.main-tasks-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-tasks-chevron {
+  display: flex;
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.main-tasks-list {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.main-task-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: 40px;
+  padding: 0 var(--ds-space-2);
+}
+
+.main-task-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
+  min-height: 40px;
+  text-align: left;
+}
+
+.main-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-color-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-task-state {
+  flex: none;
+}
+
+.main-task-chevron {
+  display: flex;
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.main-task-state.is-running {
+  color: var(--ds-color-info);
+}
+
+.main-task-state.is-attention {
+  color: var(--ds-color-warning-text);
+}
+
+.main-task-state.is-done {
+  color: var(--ds-color-text-tertiary);
+}
+
+.main-task-action {
+  flex: none;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0.5px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-compact);
+  background: var(--ds-color-surface1);
+  color: var(--ds-color-text-primary);
+  font: var(--hud-type-label-semibold);
+}
+
+.main-task-action.is-primary {
+  border-color: transparent;
+  background: var(--ds-color-accent);
+  color: var(--ds-color-text-on-accent);
+}
+
+.main-task-action[disabled] {
+  background: var(--ds-color-disabled-background);
+  border-color: transparent;
+  color: var(--ds-color-disabled-text);
+}
+
+.main-task-detail {
+  padding: 0 var(--ds-space-2) var(--ds-space-2) var(--ds-space-2);
+  color: var(--ds-color-text-secondary);
+  font: var(--hud-type-status);
+}
+
+.main-task-line,
+.main-task-caption {
+  margin: 0 0 4px;
+}
+
+.main-task-caption {
+  color: var(--ds-color-text-tertiary);
+}
+
+.main-task-blockers {
+  margin: 0 0 4px;
+  padding-left: 16px;
+}
+
+/* A decision nobody answered yet blocks the work, so it reads as the next
+ * thing to do: neutral surface with an accent edge, like the question bubble. */
+.main-decision {
+  margin-bottom: var(--ds-space-2);
+  padding: var(--ds-space-2);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  border-radius: var(--ds-radius-compact);
+  background: var(--ds-color-surface1);
+}
+
+.main-decision.is-pending {
+  border-color: var(--ds-color-accent);
+}
+
+.main-decision-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-color-text-primary);
+}
+
+.main-decision-icon {
+  flex: none;
+  color: var(--ds-color-accent-text);
+}
+
+.main-decision-icon.is-failed {
+  color: var(--ds-color-destructive-text);
+}
+
+.main-decision-question {
+  min-width: 0;
+}
+
+.main-decision-work {
+  margin: 4px 0 0;
+  color: var(--ds-color-text-secondary);
+  font: var(--hud-type-status);
+}
+
+.main-decision-error {
+  margin: 4px 0 0;
+  color: var(--ds-color-destructive-text);
+  font: var(--hud-type-status);
+}
+
+.main-decision-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: var(--ds-space-2);
+}

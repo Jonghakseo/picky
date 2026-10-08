@@ -114,6 +114,20 @@ const CASES: Record<RemoteCommand["type"], () => void> = {
     expect(plan({ type: "main.answer", requestId: "r1", value: true }))
       .toEqual({ target: "hub", request: { type: "main.answer", requestId: "r1", value: true } });
   },
+  "main.task.control": () => {
+    // Task state lives in the primary daemon; routing it through the app would
+    // add a desktop side effect for a phone tap.
+    expect(plan({ type: "main.task.control", taskId: "t1", action: "stop" }))
+      .toEqual({ target: "primaryDaemon", command: { type: "controlMainTask", taskId: "t1", action: "stop" } });
+    expect(plan({ type: "main.task.control", taskId: "t1", action: "resume" }))
+      .toEqual({ target: "primaryDaemon", command: { type: "controlMainTask", taskId: "t1", action: "resume" } });
+  },
+  "main.delegation.resolve": () => {
+    for (const choice of ["pickle", "task", "cancel"] as const) {
+      expect(plan({ type: "main.delegation.resolve", decisionId: "d1", choice }))
+        .toEqual({ target: "primaryDaemon", command: { type: "resolveMainDelegation", decisionId: "d1", choice } });
+    }
+  },
 };
 
 describe("every remote command is routed", () => {
@@ -145,6 +159,8 @@ describe("the room a command belongs to", () => {
     expect(roomIdForCommand({ type: "main.send", text: "hi" })).toBe("main");
     expect(roomIdForCommand({ type: "main.abort" })).toBe("main");
     expect(roomIdForCommand({ type: "main.answer", requestId: "r1", value: 1 })).toBe("main");
+    expect(roomIdForCommand({ type: "main.task.control", taskId: "t1", action: "stop" })).toBe("main");
+    expect(roomIdForCommand({ type: "main.delegation.resolve", decisionId: "d1", choice: "task" })).toBe("main");
     expect(roomIdForCommand({ type: "pickle.create", cwd: "/work" })).toBeUndefined();
   });
 

@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import { REMOTE_LIMITS } from "../remote/constants.js";
+import type { MainDelegationDecision, MainTask } from "../features/main-tasks/schema.js";
 import { extractFileReferences } from "./file-references.js";
 import { MainConversation } from "./main-conversation.js";
+import type { RemoteMainTasksView } from "./main-tasks.js";
 
 /** What a phone in the Picky room sees: the last `busy` the gateway broadcast. */
-function room(): { main: MainConversation; busy: () => boolean | undefined } {
+function room(): { main: MainConversation; busy: () => boolean | undefined; tasks: () => RemoteMainTasksView | undefined } {
   let busy: boolean | undefined;
+  let tasks: RemoteMainTasksView | undefined;
   const main = new MainConversation({
     onMessage: () => {},
     onActivity: (_activity, next) => {
@@ -15,8 +19,40 @@ function room(): { main: MainConversation; busy: () => boolean | undefined } {
     onStateReplaced: (state) => {
       busy = state.busy;
     },
+    onTasks: (view) => {
+      tasks = view;
+    },
   });
-  return { main, busy: () => busy };
+  return { main, busy: () => busy, tasks: () => tasks };
+}
+
+function task(id: string, overrides: Partial<MainTask> = {}): MainTask {
+  return {
+    id,
+    revision: 1,
+    title: id,
+    status: "running",
+    cwd: "/work",
+    readonly: false,
+    instructions: [`do ${id}`],
+    createdAt: "2026-10-08T10:00:00.000Z",
+    updatedAt: "2026-10-08T10:00:00.000Z",
+    canStop: true,
+    canResume: false,
+    ...overrides,
+  };
+}
+
+function decision(id: string, overrides: Partial<MainDelegationDecision> = {}): MainDelegationDecision {
+  return {
+    id,
+    state: "pending",
+    title: id,
+    instructions: `handle ${id}`,
+    createdAt: "2026-10-08T11:00:00.000Z",
+    updatedAt: "2026-10-08T11:00:00.000Z",
+    ...overrides,
+  };
 }
 
 const reply = { role: "assistant", text: "안농!", createdAt: "2026-10-05T09:30:01.000Z" };
@@ -65,6 +101,85 @@ describe("the Picky room's running state", () => {
     aborted.main.handleEvent({ type: "mainActivityUpdated", activity: { kind: "tool", toolName: "bash", status: "running" } });
     aborted.main.markTurnSettled();
     expect(aborted.busy()).toBe(false);
+  });
+});
+
+describe("the Picky room's Tasks", () => {
+  it("replaces the whole set on every snapshot and counts only Tasks that still occupy a worker", () => {
+    const { main, tasks } = room();
+    main.handleEvent({
+      type: "mainTasksUpdated",
+      tasks: [
+        task("running"),
+        task("waiting", { status: "waiting" }),
+        task("stopping", { status: "stopping", canStop: false }),
+        task("done", { status: "completed", canStop: false }),
+      ],
+      decisions: [],
+    });
+    expect(main.activeTaskCount).toBe(3);
+    expect(tasks()?.tasks.map((item) => item.id)).toEqual(["running", "waiting", "stopping", "done"]);
+    expect(main.state().tasks.map((item) => item.id)).toEqual(["running", "waiting", "stopping", "done"]);
+
+    main.handleEvent({ type: "mainTasksUpdated", tasks: [task("running", { status: "cancelled", canStop: false, canResume: true })], decisions: [] });
+    expect(main.activeTaskCount).toBe(0);
+    expect(main.state().tasks).toHaveLength(1);
+    expect(main.state().tasks[0]?.canResume).toBe(true);
+  });
+
+  it("keeps a pending decision visible and carries the failed Pickle error so the phone can offer a retry", () => {
+    const { main } = room();
+    main.handleEvent({
+      type: "mainTasksUpdated",
+      tasks: [],
+      decisions: [
+        decision("d-failed", { state: "pickle", pickle: { state: "failed", error: "cwd is gone" } }),
+        decision("d-pending", { question: "피클에 맡길까요?" }),
+      ],
+    });
+    expect(main.hasPendingDecision).toBe(true);
+    const [failed, pending] = main.state().decisions;
+    expect(failed?.pickle).toEqual({ state: "failed", error: "cwd is gone" });
+    expect(pending?.question).toBe("피클에 맡길까요?");
+
+    main.handleEvent({ type: "mainTasksUpdated", tasks: [], decisions: [decision("d-pending", { state: "task", taskId: "t1" })] });
+    expect(main.hasPendingDecision).toBe(false);
+  });
+
+  it("bounds what it sends without dropping work the user can still act on", () => {
+    const { main } = room();
+    const finished = Array.from({ length: REMOTE_LIMITS.mainTasks + 20 }, (_, index) =>
+      task(`old-${index}`, { status: "completed", canStop: false, updatedAt: `2026-10-0${1 + (index % 8)}T00:00:00.000Z` }));
+    main.handleEvent({ type: "mainTasksUpdated", tasks: [...finished, task("live")], decisions: [] });
+
+    const sent = main.state().tasks;
+    expect(sent).toHaveLength(REMOTE_LIMITS.mainTasks);
+    expect(sent.some((item) => item.id === "live")).toBe(true);
+    // The count on the room list comes from the full snapshot, not the trimmed list.
+    expect(main.activeTaskCount).toBe(1);
+  });
+
+  it("clips long result text instead of forwarding a whole report", () => {
+    const { main } = room();
+    main.handleEvent({
+      type: "mainTasksUpdated",
+      tasks: [task("t1", {
+        status: "blocked",
+        canStop: false,
+        canResume: true,
+        report: {
+          status: "blocked",
+          summary: "x".repeat(REMOTE_LIMITS.mainTaskTextChars + 500),
+          artifacts: [],
+          verification: [],
+          blockers: Array.from({ length: REMOTE_LIMITS.mainTaskListItems + 5 }, (_, index) => `blocker ${index}`),
+        },
+      })],
+      decisions: [],
+    });
+    const report = main.state().tasks[0]?.report;
+    expect(report?.summary).toHaveLength(REMOTE_LIMITS.mainTaskTextChars);
+    expect(report?.blockers).toHaveLength(REMOTE_LIMITS.mainTaskListItems);
   });
 });
 

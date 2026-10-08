@@ -539,6 +539,66 @@ export const demoMac: RemoteMacState = {
 
 export const demoMain: RemoteMainState = {
   busy: true,
+  tasks: [
+    {
+      id: "task-screenshots",
+      title: "바탕화면 스크린샷 이름 정리",
+      status: "running",
+      cwd: "/Users/you/Desktop",
+      readonly: false,
+      createdAt: at(12),
+      updatedAt: at(3),
+      canStop: true,
+      canResume: false,
+      instructions: "바탕화면 스크린샷 이름을 찍은 날짜로 바꿔 줘",
+    },
+    {
+      id: "task-login-retry",
+      title: "로그인 재시도 버그 확인",
+      status: "blocked",
+      cwd: "/Users/you/src/product",
+      readonly: false,
+      createdAt: at(80),
+      updatedAt: at(46),
+      canStop: false,
+      canResume: true,
+      instructions: "로그인이 두 번 재시도되는 원인을 찾아 줘",
+      report: {
+        status: "blocked",
+        summary: "원인은 인증 클라이언트예요. 고치려면 제품 코드를 바꿔야 해요.",
+        blockers: ["src/auth/client.ts의 제품 코드 수정이 필요해요"],
+      },
+    },
+    {
+      id: "task-pricing",
+      title: "노트 앱 가격 페이지 정리",
+      status: "completed",
+      cwd: "/Users/you",
+      readonly: true,
+      createdAt: at(140),
+      updatedAt: at(120),
+      canStop: false,
+      canResume: false,
+      instructions: "노트 앱 세 개의 가격 페이지를 비교해 줘",
+      report: {
+        status: "success",
+        summary: "세 앱의 요금제와 무료 한도를 표로 정리했어요.",
+        blockers: [],
+      },
+    },
+  ],
+  decisions: [
+    {
+      id: "decision-csv-export",
+      state: "pending",
+      title: "청구 페이지에 CSV 내보내기 추가",
+      question: "이 일은 Pickle에 맡길까요?",
+      instructions: "청구 페이지에서 인보이스를 CSV로 내려받게 만들고 테스트까지 해 줘.",
+      cwd: "/Users/you/src/product",
+      createdAt: at(6),
+      updatedAt: at(6),
+    },
+  ],
   activity: { kind: "tool", toolName: "read", status: "running", argsPreview: "docs/remote-pwa-plan.md" },
   pendingQuestion: {
     id: "q-main",
@@ -568,6 +628,9 @@ export const demoMain: RemoteMainState = {
   ],
 };
 
+/** The statuses the gateway counts as background work on the main room. */
+const ACTIVE_TASK_STATUSES = new Set(["queued", "evaluating", "running", "waiting", "stopping"]);
+
 /** The room list the gateway would build from these projections plus the overlay. */
 export function demoRooms(): RemoteRoom[] {
   const unread = new Set(["s-webhook", "s-release"]);
@@ -583,8 +646,8 @@ export function demoRooms(): RemoteRoom[] {
       pinned: true,
       archived: false,
       groupIds: [],
-      pendingQuestion: demoMain.pendingQuestion !== undefined,
-      backgroundTasks: 0,
+      pendingQuestion: demoMain.pendingQuestion !== undefined || demoMain.decisions.some((decision) => decision.state === "pending"),
+      backgroundTasks: demoMain.tasks.filter((task) => ACTIVE_TASK_STATUSES.has(task.status)).length,
     },
   ];
   for (const held of demoSessions) {

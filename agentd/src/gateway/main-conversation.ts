@@ -7,8 +7,10 @@
  * gateway process, which is all the PWA needs: the list is replaced wholesale
  * whenever the daemon re-sends a snapshot.
  */
+import type { MainDelegationDecision, MainTask } from "../features/main-tasks/schema.js";
 import type { PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage } from "../protocol.js";
 import type { RemoteMainMessage, RemoteMainState } from "../remote/protocol.js";
+import { activeMainTaskCount, hasPendingMainDecision, remoteMainTasksView, type RemoteMainTasksView } from "./main-tasks.js";
 
 export function remoteMainMessages(messages: readonly PickyMainAgentMessage[]): RemoteMainMessage[] {
   return messages.map((message, index) => ({
@@ -36,6 +38,8 @@ export interface MainConversationListener {
   onActivity: (activity: PickyMainActivity | undefined, busy: boolean) => void;
   onQuestion: (request: PickyExtensionUiRequest | undefined) => void;
   onStateReplaced: (state: RemoteMainState) => void;
+  /** Tasks or delegation decisions changed; the room list count changes with them. */
+  onTasks: (view: RemoteMainTasksView) => void;
 }
 
 /** Images kept for the Picky room; older ones drop off like the HUD's 100-message transcript. */
@@ -63,6 +67,9 @@ export class MainConversation {
   private activity?: PickyMainActivity;
   private pendingQuestion?: PickyExtensionUiRequest;
   private turnInFlight = false;
+  private tasks: MainTask[] = [];
+  private decisions: MainDelegationDecision[] = [];
+  private tasksView: RemoteMainTasksView = { tasks: [], decisions: [] };
 
   constructor(private readonly listener: MainConversationListener) {}
 
@@ -72,6 +79,8 @@ export class MainConversation {
       ...(this.activity ? { activity: this.activity } : {}),
       ...(this.pendingQuestion ? { pendingQuestion: this.pendingQuestion } : {}),
       busy: this.busy,
+      tasks: this.tasksView.tasks,
+      decisions: this.tasksView.decisions,
     };
   }
 
@@ -81,6 +90,15 @@ export class MainConversation {
 
   get hasPendingQuestion(): boolean {
     return this.pendingQuestion !== undefined;
+  }
+
+  /** Counted from the full snapshot, not the trimmed view the phone receives. */
+  get activeTaskCount(): number {
+    return activeMainTaskCount(this.tasks);
+  }
+
+  get hasPendingDecision(): boolean {
+    return hasPendingMainDecision(this.decisions);
   }
 
   lastAssistantText(): string | undefined {
@@ -134,6 +152,9 @@ export class MainConversation {
     this.activity = undefined;
     this.pendingQuestion = undefined;
     this.turnInFlight = false;
+    this.tasks = [];
+    this.decisions = [];
+    this.tasksView = { tasks: [], decisions: [] };
     this.listener.onStateReplaced(this.state());
   }
 
@@ -173,6 +194,14 @@ export class MainConversation {
         this.turnInFlight = false;
         this.activity = undefined;
         this.listener.onActivity(undefined, this.busy);
+        return true;
+      case "mainTasksUpdated":
+        // The daemon re-sends the whole set on every change, including right
+        // after the gateway connects, so replacing is the fold.
+        this.tasks = Array.isArray(event.tasks) ? (event.tasks as MainTask[]) : [];
+        this.decisions = Array.isArray(event.decisions) ? (event.decisions as MainDelegationDecision[]) : [];
+        this.tasksView = remoteMainTasksView(this.tasks, this.decisions);
+        this.listener.onTasks(this.tasksView);
         return true;
       case "quickReply":
         if (quickReplyEndsMainTurn(event)) this.markTurnSettled();

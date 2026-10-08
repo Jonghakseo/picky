@@ -102,12 +102,15 @@ The room list is rebuilt (debounced 150 ms) from projections plus `hub.overlay`:
 | `session.markRead`, `session.archive` | hub | same-named `HubRequest` |
 | `pickle.create` | hub, then owner daemon | `pickle.create`; when `text` is set, the gateway waits up to 15 s for the session to appear and sends `followUp` |
 | `main.send`, `main.abort`, `main.answer` | hub | same-named `HubRequest` |
+| `main.task.control`, `main.delegation.resolve` | primary daemon | `controlMainTask { taskId, action }`, `resolveMainDelegation { decisionId, choice }`; the phone never starts a Task, it stops or resumes one or answers a decision the main agent raised |
 
 Text with uploads is built like `PickyConversationComposerView.submissionText`: attachment paths joined by newlines after the trimmed draft, and a leading space when the result starts with `!` (so attachments never become `!` shell arguments). `commandId`s are remembered per device (last 1000); a repeat returns the first result instead of running again. Commands for a room fail with `macOffline` while the hub is disconnected.
 
 ### 2.8 Push
 
 VAPID keys (P-256) are created on first start. Payloads use `aes128gcm` (RFC 8291) and VAPID JWTs (RFC 8292) with Node `crypto`, no dependency. The subject is `hub.config.publicUrl`; without it, push is off. Endpoints must be on `fcm.googleapis.com`, `*.push.apple.com`, `updates.push.services.mozilla.com` or `*.notify.windows.com`. At most 5 subscriptions per device; a 404 or 410 deletes the subscription.
+
+The primary daemon's `mainTasksUpdated` folds into the main room (`agentd/src/gateway/main-tasks.ts`): `backgroundTasks` counts Tasks still holding a worker, a pending delegation decision counts as a pending question, and a bounded view goes to the phone as `main.tasks`.
 
 Triggers (per device; skipped while that device has the room open and visible): a room gains a pending question; a session becomes `completed`; a session becomes `failed` or `blocked`; a main reply arrives within 30 minutes of a `main.send` from that device. One notification per room per 10 seconds. The badge counts rooms with a pending question.
 

@@ -120,7 +120,10 @@ afterEach(async () => {
 
 function roomIds(pool: DaemonPool): string[] {
   const sessions = new Map(pool.sessionIds().map((id) => [id, pool.projection(id)!]));
-  return buildRoomList({ sessions, main: { busy: false, pendingQuestion: false, unread: false } }).rooms.map((room) => room.id);
+  return buildRoomList({
+    sessions,
+    main: { busy: false, pendingQuestion: false, pendingDecision: false, unread: false, backgroundTasks: 0 },
+  }).rooms.map((room) => room.id);
 }
 
 describe("a child daemon joining the topology", () => {

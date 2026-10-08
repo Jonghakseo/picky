@@ -18,4 +18,13 @@ export const REMOTE_LIMITS = {
   scheduleMaxDelayMs: 7 * 24 * 60 * 60 * 1000,
   clientMessageBytes: 1024 * 1024,
   previewTextBytes: 1024 * 1024,
+  /** Main Tasks carried to the phone. Older finished Tasks drop off first. */
+  mainTasks: 40,
+  /** Delegation decisions carried to the phone. Pending ones are never dropped first. */
+  mainDecisions: 20,
+  mainTaskTitleChars: 200,
+  /** Summary, blockers, instructions and errors shown when a Task row is expanded. */
+  mainTaskTextChars: 2_000,
+  /** Rows per list inside one Task (blockers, artifacts). */
+  mainTaskListItems: 10,
 } as const;

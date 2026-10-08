@@ -100,6 +100,10 @@ export class GatewayCore {
         this.broadcast({ type: "main.state", state });
         this.scheduleRoomRebuild();
       },
+      onTasks: (view) => {
+        this.broadcast({ type: "main.tasks", tasks: view.tasks, decisions: view.decisions });
+        this.scheduleRoomRebuild();
+      },
     });
     this.hub = new HubLink(this.hubListener());
     this.daemons = new DaemonPool(this.daemonListener());
@@ -196,10 +200,12 @@ export class GatewayCore {
       main: {
         busy: this.main.busy,
         pendingQuestion: this.main.hasPendingQuestion,
+        pendingDecision: this.main.hasPendingDecision,
         ...(questionPrompt ? { questionPrompt } : {}),
         ...(lastAssistantText ? { lastAssistantText } : {}),
         ...(mainUpdatedAt ? { updatedAt: mainUpdatedAt } : {}),
         unread: this.mainUnread.size > 0,
+        backgroundTasks: this.main.activeTaskCount,
       },
     });
     this.broadcast({ type: "rooms", ...this.roomsResult });
@@ -287,6 +293,7 @@ export class GatewayCore {
       hubConnected: this.hub.connected,
       hubRequest: (deviceId: string, request: HubRequest) => this.hub.request(deviceId, request),
       ownerFor: (sessionId: string) => this.daemons.ownerFor(sessionId),
+      primaryDaemon: () => this.daemons.primary(),
       resolveUploads: (uploadIds: readonly string[]) => this.uploads.resolveAll(uploadIds),
       waitForSession: (sessionId: string, timeoutMs: number) => this.waitForSession(sessionId, timeoutMs),
       audit: this.audit,

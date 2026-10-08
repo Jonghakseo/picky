@@ -8,7 +8,13 @@ import { MAIN_ROOM_ID } from "../remote/constants.js";
 import type { HubOverlay } from "./hub-link.js";
 import { buildRoomList, MAIN_ROOM_TITLE, truncatePreview, type MainRoomInput } from "./rooms.js";
 
-const IDLE_MAIN: MainRoomInput = { busy: false, pendingQuestion: false, unread: false };
+const IDLE_MAIN: MainRoomInput = {
+  busy: false,
+  pendingQuestion: false,
+  pendingDecision: false,
+  unread: false,
+  backgroundTasks: 0,
+};
 
 function session(id: string, overrides: Partial<PickyAgentSession> = {}): PickyAgentSession {
   return {
@@ -212,6 +218,21 @@ describe("the main room", () => {
     const main = build([session("s1", { pinned: true })]).rooms[0];
     expect({ pinned: main.pinned, archived: main.archived, groupIds: main.groupIds, backgroundTasks: main.backgroundTasks })
       .toEqual({ pinned: false, archived: false, groupIds: [], backgroundTasks: 0 });
+  });
+
+  it("counts its running Tasks as background work, the way a Pickle does", () => {
+    const main = build([], { main: { ...IDLE_MAIN, backgroundTasks: 2 } }).rooms[0];
+    expect(main.backgroundTasks).toBe(2);
+    // Tasks run in the background: they do not make the room wait for the user.
+    expect(main.status).toBe("idle");
+    expect(main.pendingQuestion).toBe(false);
+  });
+
+  it("needs the user for an unanswered delegation decision, exactly like a question", () => {
+    const main = build([], { main: { ...IDLE_MAIN, busy: true, pendingDecision: true } }).rooms[0];
+    expect(main.status).toBe("waiting_for_input");
+    // The list badge, the push trigger and the badge count all read this one flag.
+    expect(main.pendingQuestion).toBe(true);
   });
 });
 

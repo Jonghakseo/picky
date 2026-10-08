@@ -27,6 +27,8 @@ import type { PairOutcome, Transport, TransportHandlers } from "../app/transport
 import { cloneDemoSessions, demoFolders, demoGroups, demoMac, demoMain, demoRooms } from "./fixtures";
 
 const EPOCH = "demo-epoch-1";
+/** Same statuses the gateway counts as background work on the main room. */
+const DEMO_ACTIVE_TASK_STATUSES = new Set(["queued", "evaluating", "running", "waiting", "stopping"]);
 const REPLY_DELAY_MS = 1_400;
 
 /** Review knobs; see src/demo/scenario.ts. Defaults are the full happy demo. */
@@ -246,6 +248,53 @@ export class DemoTransport implements Transport {
         this.emit({ type: "main.question", request: undefined });
         this.ok(commandId);
         return;
+      case "main.task.control": {
+        // The daemon decides what a control does; the demo shows the states a
+        // phone has to render: stopping, then stopped, and a resumed Task.
+        const tasks = this.main.tasks.map((task) => (task.id !== command.taskId ? task : command.action === "stop"
+          ? { ...task, status: "stopping" as const, canStop: false, canResume: false, updatedAt: new Date().toISOString() }
+          : { ...task, status: "running" as const, canStop: true, canResume: false, updatedAt: new Date().toISOString() }));
+        this.setMainTasks(tasks, this.main.decisions);
+        if (command.action === "stop") {
+          this.later(() => {
+            this.setMainTasks(
+              this.main.tasks.map((task) => (task.id === command.taskId
+                ? { ...task, status: "cancelled" as const, canStop: false, canResume: true }
+                : task)),
+              this.main.decisions,
+            );
+          }, REPLY_DELAY_MS);
+        }
+        this.ok(commandId);
+        return;
+      }
+      case "main.delegation.resolve": {
+        const decisions = this.main.decisions.map((decision) => (decision.id !== command.decisionId ? decision : {
+          ...decision,
+          state: command.choice === "cancel" ? ("cancelled" as const) : command.choice,
+          updatedAt: new Date().toISOString(),
+          ...(command.choice === "pickle" ? { pickle: { state: "created" as const, sessionId: "s-demo-pickle" } } : {}),
+          ...(command.choice === "task" ? { taskId: `task-${command.decisionId}` } : {}),
+        }));
+        const started = this.main.decisions.find((decision) => decision.id === command.decisionId);
+        const tasks = command.choice === "task" && started
+          ? [{
+              id: `task-${started.id}`,
+              title: started.title,
+              status: "queued" as const,
+              ...(started.cwd ? { cwd: started.cwd } : {}),
+              readonly: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              canStop: true,
+              canResume: false,
+              instructions: started.instructions,
+            }, ...this.main.tasks]
+          : this.main.tasks;
+        this.setMainTasks(tasks, decisions);
+        this.ok(commandId);
+        return;
+      }
       case "session.answer": {
         const session = this.sessions.get(command.sessionId);
         if (session) {
@@ -322,6 +371,16 @@ export class DemoTransport implements Transport {
       default:
         this.ok(commandId);
     }
+  }
+
+  /** Mirrors the gateway: broadcast the new set, then refresh the room's counts. */
+  private setMainTasks(tasks: RemoteMainState["tasks"], decisions: RemoteMainState["decisions"]): void {
+    this.main = { ...this.main, tasks, decisions };
+    this.emit({ type: "main.tasks", tasks, decisions });
+    this.patchRoom(MAIN_ROOM_ID, {
+      backgroundTasks: tasks.filter((task) => DEMO_ACTIVE_TASK_STATUSES.has(task.status)).length,
+      pendingQuestion: this.main.pendingQuestion !== undefined || decisions.some((decision) => decision.state === "pending"),
+    });
   }
 
   private ok(commandId: string): void {

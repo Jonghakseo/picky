@@ -17,10 +17,14 @@ const PREVIEW_MAX_CHARS = 160;
 export interface MainRoomInput {
   busy: boolean;
   pendingQuestion: boolean;
+  /** A "hand this to a Pickle?" decision nobody answered yet. */
+  pendingDecision: boolean;
   questionPrompt?: string;
   lastAssistantText?: string;
   updatedAt?: string;
   unread: boolean;
+  /** Tasks of the main conversation that still occupy a worker. */
+  backgroundTasks: number;
 }
 
 export interface RoomListInput {
@@ -97,7 +101,12 @@ function compareCreation(left: PickyAgentSession, right: PickyAgentSession): num
 }
 
 function mainRoom(main: MainRoomInput): RemoteRoom {
-  const status: RemoteRoomStatus = main.pendingQuestion ? "waiting_for_input" : main.busy ? "running" : "idle";
+  // A pending delegation decision blocks on the user exactly like a question:
+  // nothing runs until it is answered. It reuses `pendingQuestion` rather than
+  // a new status so the list badge, the push trigger and the badge count all
+  // treat it the same way.
+  const needsUser = main.pendingQuestion || main.pendingDecision;
+  const status: RemoteRoomStatus = needsUser ? "waiting_for_input" : main.busy ? "running" : "idle";
   const preview = truncatePreview(main.questionPrompt ?? main.lastAssistantText);
   return {
     id: MAIN_ROOM_ID,
@@ -110,8 +119,8 @@ function mainRoom(main: MainRoomInput): RemoteRoom {
     pinned: false,
     archived: false,
     groupIds: [],
-    pendingQuestion: main.pendingQuestion,
-    backgroundTasks: 0,
+    pendingQuestion: needsUser,
+    backgroundTasks: main.backgroundTasks,
   };
 }
 

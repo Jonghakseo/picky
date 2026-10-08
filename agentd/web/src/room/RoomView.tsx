@@ -17,6 +17,7 @@ import { answerableMethod } from "./policy/question";
 import type { RoomViewProps } from "./contract";
 import { Header } from "./Header";
 import { ArrowDown, QuestionCircle } from "./icons";
+import { MainTasks } from "./MainTasks";
 import { setLocale, t } from "./i18n";
 import type { QueueEdit } from "./MessageList";
 import { MessageList } from "./MessageList";
@@ -201,7 +202,7 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
           </button>
         ) : null}
         {failure ? <div class="composer-note is-error" role="alert">{failure}</div> : null}
-        {isMain ? null : <BackgroundWorkFooter session={vm.session} now={now} />}
+        {isMain ? <MainTasks main={vm.main} send={send} /> : <BackgroundWorkFooter session={vm.session} now={now} />}
         {questionOffscreen && waiting ? (
           <div class="q-pin">
             <QuestionCircle class="q-head-icon" />

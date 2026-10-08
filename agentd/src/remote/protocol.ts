@@ -17,6 +17,7 @@ import {
   type PickySessionProjectionMutation,
   type SessionStatus,
 } from "../protocol.js";
+import type { MainDelegationDecision, MainTaskStatus } from "../features/main-tasks/schema.js";
 
 import { REMOTE_LIMITS } from "./constants.js";
 
@@ -92,12 +93,60 @@ export interface RemoteMainMessage {
   image?: { path: string; mimeType?: string; toolName: string };
 }
 
+/**
+ * One Task of the main agent, trimmed for the phone.
+ *
+ * The daemon's `MainTask` carries the full instruction list and report; the
+ * phone shows what it can act on: the state, the controls that are allowed,
+ * and a short result. Sizes are bounded by `REMOTE_LIMITS` like every other
+ * remote payload.
+ */
+export interface RemoteMainTask {
+  id: string;
+  title: string;
+  status: MainTaskStatus;
+  cwd?: string;
+  /** The Task may only read; shown so a stopped Task's leftovers are easier to judge. */
+  readonly: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** The daemon decides, not the phone: these drive the Stop and Resume buttons. */
+  canStop: boolean;
+  canResume: boolean;
+  /** First instruction line, for the expanded row. */
+  instructions?: string;
+  report?: { status: "success" | "failed" | "blocked"; summary: string; blockers: string[] };
+  error?: string;
+  /** A Pickle took this Task over; its own result stays as it was. */
+  handoffSessionId?: string;
+}
+
+/** A "hand this to a Pickle?" decision. `pending` means nothing runs until the user answers. */
+export interface RemoteMainDelegation {
+  id: string;
+  state: MainDelegationDecision["state"];
+  title: string;
+  /** The question the main agent asked, in the user's language. */
+  question?: string;
+  instructions: string;
+  cwd?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** The Task that runs this scope after the user chose Task. */
+  taskId?: string;
+  pickle?: { state: "creating" | "created" | "failed"; sessionId?: string; error?: string };
+}
+
 export interface RemoteMainState {
   messages: RemoteMainMessage[];
   activity?: PickyMainActivity;
   pendingQuestion?: PickyExtensionUiRequest;
   /** A main turn is in progress (between submit and mainTurnSettled). */
   busy: boolean;
+  /** Background Tasks of the main conversation, newest-relevant first (bounded). */
+  tasks: RemoteMainTask[];
+  /** Pickle delegation decisions, pending ones kept first (bounded). */
+  decisions: RemoteMainDelegation[];
 }
 
 export type RemoteErrorCode =
@@ -159,6 +208,7 @@ export type RemoteServerMessage =
   | { type: "main.message"; message: RemoteMainMessage }
   | { type: "main.activity"; activity?: PickyMainActivity; busy: boolean }
   | { type: "main.question"; request?: PickyExtensionUiRequest }
+  | { type: "main.tasks"; tasks: RemoteMainTask[]; decisions: RemoteMainDelegation[] }
   | { type: "command.result"; commandId: string; ok: true; data?: unknown }
   | { type: "command.result"; commandId: string; ok: false; error: RemoteError }
   | { type: "query.result"; queryId: string; ok: true; data: unknown }
@@ -200,6 +250,11 @@ export const RemoteCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("main.send"), text: TextSchema, uploadIds: UploadIdsSchema }),
   z.object({ type: z.literal("main.abort") }),
   z.object({ type: z.literal("main.answer"), requestId: IdSchema, value: z.unknown() }),
+  // Main Tasks. These go to the primary daemon, which owns Task state; the
+  // phone never starts a Task itself, it only stops, resumes, or answers a
+  // delegation decision the main agent already raised.
+  z.object({ type: z.literal("main.task.control"), taskId: IdSchema, action: z.enum(["stop", "resume"]) }),
+  z.object({ type: z.literal("main.delegation.resolve"), decisionId: IdSchema, choice: z.enum(["pickle", "task", "cancel"]) }),
 ]);
 export type RemoteCommand = z.infer<typeof RemoteCommandSchema>;
 

@@ -8,12 +8,15 @@
  *
  * Pure: the text is already built (uploads resolved) by the caller.
  */
+import { MAIN_ROOM_ID } from "../remote/constants.js";
 import type { HubRequest } from "../remote/hub-protocol.js";
 import type { RemoteCommand } from "../remote/protocol.js";
 import type { DaemonCommand } from "./daemon-link.js";
 
 export type CommandPlan =
   | { target: "daemon"; sessionId: string; command: DaemonCommand }
+  /** Main-conversation state the primary daemon owns and no session id addresses. */
+  | { target: "primaryDaemon"; command: DaemonCommand }
   | { target: "hub"; request: HubRequest }
   /** Two steps: the hub creates the Pickle, then the owning daemon gets the text. */
   | { target: "pickleCreate"; cwd: string; text?: string };
@@ -64,6 +67,11 @@ const PLANNERS: CommandPlanners = {
   "main.send": (command, text) => ({ target: "hub", request: { type: "main.send", text: text ?? command.text } }),
   "main.abort": () => ({ target: "hub", request: { type: "main.abort" } }),
   "main.answer": (command) => ({ target: "hub", request: { type: "main.answer", requestId: command.requestId, value: command.value } }),
+  // Task control and the delegation answer are daemon state, not app state: the
+  // primary daemon owns both, and routing them through the app would add a
+  // desktop side effect the phone must not cause.
+  "main.task.control": (command) => primaryDaemon({ type: "controlMainTask", taskId: command.taskId, action: command.action }),
+  "main.delegation.resolve": (command) => primaryDaemon({ type: "resolveMainDelegation", decisionId: command.decisionId, choice: command.choice }),
 };
 
 export function planCommand({ command, text }: CommandPlanInput): CommandPlan {
@@ -74,7 +82,7 @@ export function planCommand({ command, text }: CommandPlanInput): CommandPlan {
 /** The room a command belongs to, for `macOffline` gating and push suppression. */
 export function roomIdForCommand(command: RemoteCommand): string | undefined {
   if ("sessionId" in command) return command.sessionId;
-  if (command.type === "main.send" || command.type === "main.abort" || command.type === "main.answer") return "main";
+  if (command.type.startsWith("main.")) return MAIN_ROOM_ID;
   return undefined;
 }
 
@@ -85,4 +93,8 @@ export function commandText(command: RemoteCommand): string | undefined {
 
 function daemon(sessionId: string, command: DaemonCommand): CommandPlan {
   return { target: "daemon", sessionId, command };
+}
+
+function primaryDaemon(command: DaemonCommand): CommandPlan {
+  return { target: "primaryDaemon", command };
 }

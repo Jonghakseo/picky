@@ -51,6 +51,9 @@ const MAIN_EVENT_TYPES = new Set([
   "mainExtensionUiRequested",
   "mainExtensionUiCancelled",
   "mainTurnSettled",
+  // Tasks and delegation decisions of the main conversation; the primary sends
+  // the whole set on every change and once right after a client connects.
+  "mainTasksUpdated",
   // A main turn that produced a reply ends with this, not mainTurnSettled.
   "quickReply",
 ]);

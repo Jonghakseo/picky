@@ -51,7 +51,7 @@ const emptyRuntime: RoomRuntime = { loading: true, awaitingSnapshot: false };
 
 const emptyMac: RemoteMacState = { connected: false, dictation: { available: true } };
 
-const emptyMain: RemoteMainState = { messages: [], busy: false };
+const emptyMain: RemoteMainState = { messages: [], busy: false, tasks: [], decisions: [] };
 
 const DRAFT_PREFIX = "picky.draft.";
 
@@ -233,6 +233,9 @@ export class AppStore {
         break;
       case "main.question":
         this.main.value = { ...this.main.value, pendingQuestion: message.request };
+        break;
+      case "main.tasks":
+        this.main.value = { ...this.main.value, tasks: message.tasks, decisions: message.decisions };
         break;
       case "command.result":
         this.commands.resolve(message.commandId, message.ok ? { ok: true, data: message.data } : { ok: false, error: message.error });

@@ -186,6 +186,11 @@ struct PickyHUDDockRailView: View {
     var body: some View {
         let _ = PickyPerf.event("dock_rail_body")
         dockChrome
+        // Conversation changes can move the controls without changing expansion.
+        // Keep this inside the expansion transaction so its no-animation hold
+        // does not suppress the control lane's transition.
+        .animation(accessibilityReduceMotion ? nil : .easeOut(duration: 0.18),
+                   value: activeSessionID != nil || expansion.centersControls)
         .animation(accessibilityReduceMotion || holdsExpansion ? nil : .easeOut(duration: 0.18), value: expansion.isExpanded)
         .background(PickyHUDDockRailFrameReporter())
         .overlay(alignment: resizeTabAlignment) { resizeTab }
@@ -203,6 +208,7 @@ struct PickyHUDDockRailView: View {
         .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
         .overlay { draggedFloatingRowOverlay }
         .onChange(of: holdsExpansion) { _, _ in updateExpansion() }
+        .onChange(of: activeSessionID) { _, _ in updateExpansion() }
         .onChange(of: expansion.previewTarget) { _, _ in updateExpansion() }
         .onChange(of: dockSide) { _, _ in updateExpansion() }
         .onAppear { updateExpansion() }
@@ -269,7 +275,8 @@ struct PickyHUDDockRailView: View {
                 dockSide: dockSide, metrics: metrics, railLength: overflowLayout.railLength,
                 crossSize: railCrossSize, onMinimize: onMinimize,
                 compactWidth: expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth,
-                centersCompactControls: activeSessionID != nil
+                compactControlsWidth: activeSessionID != nil || expansion.centersControls
+                    ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth
             ) {
                 listContent
             } utilities: {
@@ -335,7 +342,8 @@ struct PickyHUDDockRailView: View {
 
     private func updateExpansion() {
         let hasPreview = orientation == .vertical || expansion.previewTarget != nil || activeSessionID != nil
-        expansion.update(pointerInside: isDockHovered && hasPreview, heldOpen: holdsExpansion && hasPreview)
+        expansion.update(pointerInside: isDockHovered && hasPreview, heldOpen: holdsExpansion && hasPreview,
+                         conversationOpen: activeSessionID != nil)
     }
 
     private var railCrossSize: CGFloat {

@@ -9,8 +9,8 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
     let crossSize: CGFloat
     let onMinimize: () -> Void
     var compactWidth: CGFloat? = nil
-    /// Only an open conversation centers the controls; hover keeps them at the screen edge.
-    var centersCompactControls = false
+    /// Animate this lane with the shell so closing a conversation cannot snap controls to the edge.
+    var compactControlsWidth: CGFloat = PickyHUDDockCompactLayout.iconColumnWidth
     @ViewBuilder var content: () -> Content
     @ViewBuilder var utilities: () -> Utilities
     @ViewBuilder var handle: () -> Handle
@@ -18,9 +18,12 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
 
     private var horizontal: Bool { dockSide.orientation == .horizontal }
 
-    var animatableData: CGFloat {
-        get { compactWidth ?? crossSize }
-        set { if compactWidth != nil { compactWidth = newValue } }
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(compactWidth ?? crossSize, compactControlsWidth) }
+        set {
+            if compactWidth != nil { compactWidth = newValue.first }
+            compactControlsWidth = newValue.second
+        }
     }
 
     @ViewBuilder var body: some View {
@@ -50,14 +53,14 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
         .clipped()
         .contentShape(Rectangle())
         .background(surface)
-        .overlay(alignment: centersCompactControls ? .top : (dockSide == .left ? .topLeading : .topTrailing)) {
-            handle().frame(width: PickyHUDDockCompactLayout.iconColumnWidth)
+        .overlay(alignment: dockSide == .left ? .topLeading : .topTrailing) {
+            handle().frame(width: compactControlsWidth)
         }
-        .overlay(alignment: centersCompactControls ? .bottom : (dockSide == .left ? .bottomLeading : .bottomTrailing)) {
+        .overlay(alignment: dockSide == .left ? .bottomLeading : .bottomTrailing) {
             PickyHUDDockCollapseNotch(dockSide: dockSide, metrics: metrics, onMinimize: onMinimize)
-                .frame(width: PickyHUDDockCompactLayout.iconColumnWidth)
+                .frame(width: compactControlsWidth)
                 .frame(maxWidth: .infinity, maxHeight: .infinity,
-                       alignment: centersCompactControls ? .bottom : (dockSide == .left ? .bottomLeading : .bottomTrailing))
+                       alignment: dockSide == .left ? .bottomLeading : .bottomTrailing)
                 .clipShape(shape)
         }
         .background(PickyHUDVisibleChromeFrameReporter())

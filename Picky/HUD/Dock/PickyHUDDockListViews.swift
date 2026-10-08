@@ -988,6 +988,47 @@ struct PickyHUDDockGroupAddButton: View {
     }
 }
 
+/// Always-present `+` at the end of an expanded group in the horizontal rail.
+/// It sits next to the group's cells, so starting a Pickle in the group never
+/// depends on the hover-driven preview row staying on that group.
+struct PickyHUDDockGroupAddSlot: View {
+    let metrics: PickyHUDDockMetrics
+    let isPresented: Bool
+    let onHoverChanged: (Bool) -> Void
+    let action: () -> Void
+
+    @State private var isHovered = false
+    @Environment(\.pickyAppFontScale) private var fontScale
+
+    private var isHighlighted: Bool { isHovered || isPresented }
+
+    var body: some View {
+        let cell = metrics.horizontalCompactCellSide(fontScale: fontScale)
+        let width = metrics.horizontalGroupAddSlotWidth(fontScale: fontScale)
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .semibold)) // design-token-exception: optical glyph inside the narrow group add slot.
+                .foregroundStyle(isHighlighted ? DS.Colors.textPrimary : DS.Colors.textTertiary)
+                .frame(width: width - 4, height: max(metrics.rowActionSide, cell - 14))
+                .background(
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.compact, style: .continuous)
+                        .fill(isHighlighted ? DS.Colors.surface3 : Color.clear)
+                )
+                .frame(width: width, height: cell)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .onHover { hovering in
+            if isHovered != hovering { isHovered = hovering }
+            onHoverChanged(hovering)
+        }
+        .animation(.easeOut(duration: 0.12), value: isHighlighted)
+        .accessibilityLabel(L10n.t("group.list.newPickle.accessibilityLabel"))
+        .accessibilityHint(L10n.t("group.list.newPickle.hint"))
+    }
+}
+
 /// Drop target shown inside an expanded group with no visible members.
 /// Clicking it starts a Pickle in this group.
 struct PickyHUDDockEmptyGroupPlaceholder: View {

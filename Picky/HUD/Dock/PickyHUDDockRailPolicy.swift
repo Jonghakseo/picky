@@ -72,6 +72,8 @@ enum PickyHUDDockRailLayoutPolicy {
                     let members = projection.visibleMemberIDs(inGroup: group.id).count
                     let chips = max(1, members)
                     length += CGFloat(chips) * chip
+                    // An empty group's placeholder already creates a Pickle.
+                    if members > 0 { length += metrics.horizontalGroupAddSlotWidth(fontScale: fontScale) }
                     if index > 0 { length += metrics.groupCardOuterGap }
                     if index < lastIndex { length += metrics.groupCardOuterGap }
                 }

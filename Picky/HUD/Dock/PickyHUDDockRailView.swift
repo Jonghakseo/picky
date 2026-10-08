@@ -518,6 +518,7 @@ struct PickyHUDDockRailView: View {
                 HStack(spacing: 0) {
                     header
                     if !group.isCollapsed { groupMembers(group, renderedMemberIDs: renderedMemberIDs) }
+                    if showsHorizontalGroupAddSlot(group) { groupAddSlot(group) }
                 }
                 .modifier(PickyHUDDockGroupCard(
                     group: group, orientation: orientation, metrics: metrics,
@@ -615,6 +616,27 @@ struct PickyHUDDockRailView: View {
         .accessibilityAction(named: Text(L10n.t("group.list.newPickle.accessibilityLabel"))) {
             showRecentPickleFolderPicker(anchorGroupID: group.id)
         }
+    }
+
+    /// Expanded, non-empty groups end in a `+` slot. Collapsed groups keep the
+    /// preview row's `+`; an empty group's placeholder already creates one.
+    /// Must match `PickyHUDDockRailLayoutPolicy.listLength`.
+    func showsHorizontalGroupAddSlot(_ group: PickyDockGroup) -> Bool {
+        orientation == .horizontal && !group.isCollapsed
+            && !projection.visibleMemberIDs(inGroup: group.id).isEmpty
+    }
+
+    private func groupAddSlot(_ group: PickyDockGroup) -> some View {
+        newPicklePicker(
+            anchoredTo: PickyHUDDockGroupAddSlot(
+                metrics: metrics,
+                isPresented: isPickerPresented(anchorGroupID: group.id),
+                onHoverChanged: { horizontalHover(.groupAdd(group.id), inside: $0) }
+            ) {
+                showRecentPickleFolderPicker(anchorGroupID: group.id)
+            },
+            anchorGroupID: group.id
+        )
     }
 
     @ViewBuilder

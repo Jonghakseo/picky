@@ -24155,6 +24155,22 @@
         }
       }
     },
+    "dock.group.startPickle.preview": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a Pickle in \"%@\""
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"%@\" 그룹에 Pickle 시작"
+          }
+        }
+      }
+    },
     "hud.attachment.removeNamed": {
       "localizations": {
         "en": {

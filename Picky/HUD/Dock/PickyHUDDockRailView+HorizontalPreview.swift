@@ -53,9 +53,22 @@ extension PickyHUDDockRailView {
                     .help(PickyHUDDockGroupContextMenuPresentation.colorTitle)
                     .accessibilityLabel(PickyHUDDockGroupContextMenuPresentation.colorTitle)
                     .accessibilityValue(group.color.localizedName)
-                    newPicklePicker(anchoredTo: PickyHUDDockGroupAddButton(side: metrics.rowActionSide) {
-                        showRecentPickleFolderPicker(anchorGroupID: id)
-                    }, anchorGroupID: id)
+                    // An expanded group owns a `+` slot (and the picker anchor)
+                    // in the rail itself; a second `+` here would compete with it.
+                    if !showsHorizontalGroupAddSlot(group) {
+                        newPicklePicker(anchoredTo: PickyHUDDockGroupAddButton(side: metrics.rowActionSide) {
+                            showRecentPickleFolderPicker(anchorGroupID: id)
+                        }, anchorGroupID: id)
+                    }
+                }
+            case .groupAdd(let id):
+                if let group = layout.group(withID: id) {
+                    Text(L10n.t("dock.group.startPickle.preview", group.displayName))
+                        .font(PickyHUDTypography.supporting)
+                        .foregroundStyle(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
                 }
             case .newPickle:
                 Text(L10n.t("dock.startPickle"))

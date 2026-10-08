@@ -30,6 +30,8 @@ struct PickyHUDDockExpansionState {
 enum PickyHUDDockPreviewTarget: Equatable {
     case session(String)
     case group(String)
+    /// The `+` slot at the end of an expanded group in the horizontal rail.
+    case groupAdd(String)
     case newPickle
     case archive
 }

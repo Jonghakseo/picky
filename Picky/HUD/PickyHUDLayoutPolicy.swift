@@ -291,6 +291,12 @@ struct PickyHUDDockMetrics: Equatable {
         max(36, chipHeight(fontScale: fontScale) + 9)
     }
 
+    /// Narrow `+` slot that ends every expanded, non-empty group in the
+    /// horizontal rail. Always present, so hovering never shifts the rail.
+    func horizontalGroupAddSlotWidth(fontScale: CGFloat) -> CGFloat {
+        (22 * max(1, fontScale)).rounded(.up)
+    }
+
     func horizontalPreviewHeight(fontScale: CGFloat) -> CGFloat {
         ceil(30 * max(1, fontScale))
     }

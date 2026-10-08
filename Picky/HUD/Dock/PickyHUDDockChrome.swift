@@ -9,13 +9,19 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
     let crossSize: CGFloat
     let onMinimize: () -> Void
     var compactWidth: CGFloat? = nil
-    /// Animate this lane with the shell so closing a conversation cannot snap controls to the edge.
+    /// Target width of the lane that holds the handle and collapse notch.
+    /// The rail's width at the screen edge; the full shell width to center them.
     var compactControlsWidth: CGFloat = PickyHUDDockCompactLayout.iconColumnWidth
     @ViewBuilder var content: () -> Content
     @ViewBuilder var utilities: () -> Utilities
     @ViewBuilder var handle: () -> Handle
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Lane width on screen. It follows `compactControlsWidth` in a separate
+    /// transaction so only this width animates. An implicit animation on the
+    /// lanes would also interpolate their position when a HUD open resizes the
+    /// panel, so the collapse notch would fly across the rows to the bottom.
+    @State private var displayedControlsWidth: CGFloat?
 
     /// Same curve and duration as the shell's expansion, so a collapsing
     /// centered lane stays aligned with the shrinking shell.
@@ -38,6 +44,8 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
         }
     }
 
+    private var laneWidth: CGFloat { displayedControlsWidth ?? compactControlsWidth }
+
     private func compactChrome(width: CGFloat) -> some View {
         let alignment: Alignment = dockSide == .left ? .leading : .trailing
         let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
@@ -57,22 +65,24 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
         .clipped()
         .contentShape(Rectangle())
         .background(surface)
-        // Only the control lanes animate their own width. An animation on the
-        // whole rail would also interpolate group and row layout when a HUD opens.
         .overlay(alignment: dockSide == .left ? .topLeading : .topTrailing) {
-            PickyHUDDockControlLane(width: compactControlsWidth) { handle() }
-                .animation(controlLaneAnimation, value: compactControlsWidth)
+            handle().frame(width: laneWidth)
         }
         .overlay(alignment: dockSide == .left ? .bottomLeading : .bottomTrailing) {
-            PickyHUDDockControlLane(width: compactControlsWidth) {
-                PickyHUDDockCollapseNotch(dockSide: dockSide, metrics: metrics, onMinimize: onMinimize)
-            }
-            .animation(controlLaneAnimation, value: compactControlsWidth)
-            .frame(maxWidth: .infinity, maxHeight: .infinity,
-                   alignment: dockSide == .left ? .bottomLeading : .bottomTrailing)
-            .clipShape(shape)
+            PickyHUDDockCollapseNotch(dockSide: dockSide, metrics: metrics, onMinimize: onMinimize)
+                .frame(width: laneWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: dockSide == .left ? .bottomLeading : .bottomTrailing)
+                .clipShape(shape)
         }
         .background(PickyHUDVisibleChromeFrameReporter())
+        // Runs after the HUD-open relayout has committed without animation,
+        // so this transaction carries nothing but the lane width.
+        .onChange(of: compactControlsWidth) { _, target in
+            withAnimation(controlLaneAnimation) { displayedControlsWidth = target }
+        }
+        // The classic branch does not observe the target; start from it again.
+        .onAppear { displayedControlsWidth = nil }
     }
 
     private var classicChrome: some View {
@@ -113,22 +123,6 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
         .clipShape(shape)
         .overlay(shape.strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.12), radius: 8, y: 3) // design-token-exception: approved dual-notch shell elevation, shared across dock presets.
-    }
-}
-
-/// Width of the lane that centers the handle or collapse notch. Animatable on
-/// its own so the move does not need a rail-wide animation transaction.
-private struct PickyHUDDockControlLane<Content: View>: View, @preconcurrency Animatable {
-    var width: CGFloat
-    @ViewBuilder var content: () -> Content
-
-    var animatableData: CGFloat {
-        get { width }
-        set { width = newValue }
-    }
-
-    var body: some View {
-        content().frame(width: width)
     }
 }
 

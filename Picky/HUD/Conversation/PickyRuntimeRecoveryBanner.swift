@@ -61,7 +61,7 @@ struct PickyRuntimeRecoveryBanner: View {
     private func banner(_ presentation: PickyRuntimeRecoveryBannerPresentation, sessionID: String, recovery: PickyRuntimeRecovery?) -> some View {
         HStack(alignment: .top, spacing: 8) {
             icon(presentation.tone)
-                .padding(.top, 1)
+                .padding(.top, 1) // design-token-exception: optical nudge aligning the icon with the title baseline
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -85,7 +85,7 @@ struct PickyRuntimeRecoveryBanner: View {
                     Image(systemName: "xmark")
                         .pickyFont(size: 9, weight: .semibold)
                         .foregroundColor(DS.Colors.textTertiary)
-                        .padding(4)
+                        .padding(DS.Spacing.space1)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -93,8 +93,8 @@ struct PickyRuntimeRecoveryBanner: View {
                 .accessibilityLabel(L10n.t("common.dismiss"))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10) // design-token-exception: matches the conversation bubble inset so banner text aligns with the column
+        .padding(.vertical, DS.Spacing.space2)
         .background(background(presentation.tone))
         .overlay(
             RoundedRectangle(cornerRadius: DS.CornerRadius.medium)

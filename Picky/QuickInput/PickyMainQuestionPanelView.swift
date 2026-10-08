@@ -135,7 +135,7 @@ struct PickyMainQuestionPanelView: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .frame(height: 12)
             .background(PickyWindowDragHandle())
-            .padding(.vertical, -4)
+            .padding(.vertical, -4) // design-token-exception: keeps the 12pt drag hit area while the strip takes only 4pt of layout
             .accessibilityHidden(true)
     }
 

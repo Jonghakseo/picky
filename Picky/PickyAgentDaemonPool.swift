@@ -147,6 +147,11 @@ final class PickyAgentDaemonPool: ObservableObject {
     private let configuration: Configuration
     private var nextChildGeneration = 0
     private var children: [String: Child] = [:]
+    /// Launchers whose child was asked to stop but whose Node process has not
+    /// confirmed exit yet. Dropping the `Child` record is not proof of exit: a
+    /// terminating Pickle daemon keeps writing its session file until the
+    /// process is really gone, so anything that rewrites that file waits here.
+    private var retiringChildren: [String: [PickyAgentDaemonLauncher]] = [:]
     private var spawnTimeoutTasks: [String: Task<Void, Never>] = [:]
 
     @Published private(set) var activeChildSessionIds: Set<String> = []
@@ -304,6 +309,7 @@ final class PickyAgentDaemonPool: ObservableObject {
               child.generation == capture.childGeneration,
               child.launcher.runningProcessGeneration == capture.processGeneration else { return false }
         guard child.launcher.stop(ifProcessGeneration: capture.processGeneration) else { return false }
+        trackRetiringLauncher(sessionId: capture.sessionId, launcher: child.launcher)
         child.resolve(.failure(CancellationError()))
         child.observerTask?.cancel()
         spawnTimeoutTasks[capture.sessionId]?.cancel()
@@ -324,6 +330,7 @@ final class PickyAgentDaemonPool: ObservableObject {
         } else {
             child.launcher.stop()
         }
+        trackRetiringLauncher(sessionId: sessionId, launcher: child.launcher)
         spawnTimeoutTasks[sessionId]?.cancel()
         spawnTimeoutTasks.removeValue(forKey: sessionId)
         children.removeValue(forKey: sessionId)
@@ -334,6 +341,38 @@ final class PickyAgentDaemonPool: ObservableObject {
     /// to know whether a child exists before forwarding a command.
     func endpoint(for sessionId: String) -> PickyChildDaemonEndpoint? {
         children[sessionId]?.endpoint
+    }
+
+    /// True while any Node process for this session is still alive, including a
+    /// child that was told to stop and has not exited yet.
+    func hasLiveChildProcess(sessionId: String) -> Bool {
+        pruneRetiringLaunchers(sessionId: sessionId)
+        if children[sessionId] != nil { return true }
+        return retiringChildren[sessionId] != nil
+    }
+
+    /// Waits up to `timeout` for every launcher of this session to report a real
+    /// process exit. Returns false when one is still alive at the deadline, so
+    /// the caller can refuse to write rather than assume the daemon is gone.
+    func awaitChildProcessExit(sessionId: String, timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(max(timeout, 0))
+        while hasLiveChildProcess(sessionId: sessionId) {
+            if Date() >= deadline { return false }
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        return true
+    }
+
+    private func trackRetiringLauncher(sessionId: String, launcher: PickyAgentDaemonLauncher) {
+        pruneRetiringLaunchers(sessionId: sessionId)
+        guard launcher.hasLiveProcess else { return }
+        retiringChildren[sessionId, default: []].append(launcher)
+    }
+
+    private func pruneRetiringLaunchers(sessionId: String) {
+        guard let retiring = retiringChildren[sessionId] else { return }
+        let stillRunning = retiring.filter { $0.hasLiveProcess }
+        retiringChildren[sessionId] = stillRunning.isEmpty ? nil : stillRunning
     }
 
     /// Terminate every child. Called when the primary daemon shuts down.
@@ -391,6 +430,7 @@ final class PickyAgentDaemonPool: ObservableObject {
         child.resolve(.failure(error))
         child.observerTask?.cancel()
         child.launcher.stop()
+        trackRetiringLauncher(sessionId: sessionId, launcher: child.launcher)
         spawnTimeoutTasks[sessionId]?.cancel()
         spawnTimeoutTasks.removeValue(forKey: sessionId)
         children.removeValue(forKey: sessionId)

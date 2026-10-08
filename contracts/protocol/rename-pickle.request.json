@@ -1,0 +1,13 @@
+{
+  "id": "cmd-rename-pickle",
+  "protocolVersion": "2026-08-25",
+  "type": "renamePickle",
+  "sessionId": "session-001",
+  "title": "Research results",
+  "callerContext": {
+    "bindingId": "binding-001",
+    "sessionId": "session-001",
+    "piSessionId": "pi-session-001",
+    "generation": 1
+  }
+}

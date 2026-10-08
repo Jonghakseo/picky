@@ -2179,7 +2179,7 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: /diff-review");
   });
 
-  it("keeps a running Pickle session running when /name is handled without an agent turn", async () => {
+  it("keeps a running Pickle session running when /name renames its Picky metadata", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -2191,18 +2191,14 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.status).toBe("running");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
 
-    runtime.handle!.steerOutcome = { handledSynchronously: true };
-    runtime.handle!.onSteer = (handle) => {
-      handle.emit({ type: "session_info", name: "새 세션 이름" });
-      handle.emit({ type: "status", status: "completed", summary: "Session renamed to 새 세션 이름", noTurnRan: true, preserveSessionState: true });
-    };
-
+    // The Pickle name is Picky metadata, so `/name` never reaches Pi and never ends the turn.
     const updated = await supervisor.steerPickleSession(pickle.id, "/name 새 세션 이름");
-    await waitUntil(() => supervisor.get(pickle.id)?.title === "새 세션 이름" && supervisor.get(pickle.id)?.status === "running");
 
     expect(updated.status).toBe("running");
+    expect(runtime.handle?.steers).toEqual([]);
     expect(supervisor.get(pickle.id)?.status).toBe("running");
     expect(supervisor.get(pickle.id)?.title).toBe("새 세션 이름");
+    expect(supervisor.get(pickle.id)?.titleOrigin).toBe("user");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
   });
 
@@ -2215,7 +2211,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Initial done", finalAnswer: "done" });
     await waitUntil(() => supervisor.get(session.id)?.status === "completed");
-    await supervisor.steer(session.id, "/name renamed");
+    await supervisor.steer(session.id, "/reload");
     await supervisor.abort(session.id);
     expect(supervisor.get(session.id)?.status).toBe("cancelled");
 
@@ -2403,7 +2399,9 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "assistant_delta", delta: "기존 답변" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await waitUntil(() => supervisor.get(pickle.id)?.status === "completed");
-    await supervisor.steerPickleSession(pickle.id, "/name 새 이름");
+    // A no-turn slash command that still reaches Pi; `/name` is now Picky metadata and never
+    // records a restore, so it cannot cover the stale-restore invariant.
+    await supervisor.steerPickleSession(pickle.id, "/reload");
 
     await runtime.handle!.newSession();
     await waitUntil(() => supervisor.get(pickle.id)?.status === "waiting_for_input" && supervisor.get(pickle.id)?.messages?.length === 0);
@@ -2904,7 +2902,7 @@ describe("SessionSupervisor", () => {
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
   });
 
-  it("does not let a successful /compact restore leak into a later /name", async () => {
+  it("keeps a successful /compact result visible when the Pickle is renamed afterwards", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -2921,10 +2919,6 @@ describe("SessionSupervisor", () => {
         handle.emit({ type: "status", status: "running", summary: "Compacting session…" });
         handle.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true });
       }
-      if (prompt.text.startsWith("/name ")) {
-        handle.emit({ type: "session_info", name: "컴팩션 후 이름" });
-        handle.emit({ type: "status", status: "completed", summary: "Session renamed to 컴팩션 후 이름", noTurnRan: true, preserveSessionState: true });
-      }
     };
 
     await supervisor.followUp(pickle.id, "/compact");
@@ -2933,8 +2927,8 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Session compacted");
     expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
 
+    // `/name` renames Picky metadata in place, so the compaction result stays on screen.
     await supervisor.followUp(pickle.id, "/name 컴팩션 후 이름");
-    await waitUntil(() => supervisor.get(pickle.id)?.title === "컴팩션 후 이름" && supervisor.get(pickle.id)?.status === "completed");
 
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.title).toBe("컴팩션 후 이름");
@@ -2961,7 +2955,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
   });
 
-  it("restores the previous terminal state when /name is sent as a follow-up", async () => {
+  it("keeps the terminal state of a completed Pickle when /name is sent as a follow-up", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -2974,14 +2968,10 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
 
-    runtime.handle!.onFollowUp = (handle) => {
-      handle.emit({ type: "session_info", name: "완료 세션 이름" });
-      handle.emit({ type: "status", status: "completed", summary: "Session renamed to 완료 세션 이름", noTurnRan: true, preserveSessionState: true });
-    };
-
     await supervisor.followUp(pickle.id, "/name 완료 세션 이름");
-    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.title === "완료 세션 이름");
 
+    // The name is Picky metadata: Pi receives no prompt and the finished turn stays as it was.
+    expect(runtime.handle?.followUps).toEqual([]);
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.title).toBe("완료 세션 이름");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");

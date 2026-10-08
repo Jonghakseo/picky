@@ -1,0 +1,16 @@
+{
+  "id": "event-rename-bridge",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-08T00:00:00.000Z",
+  "type": "pickleBridgeRequested",
+  "requestId": "bridge-rename",
+  "operation": "rename",
+  "sessionId": "session-001",
+  "title": "Research results",
+  "callerContext": {
+    "bindingId": "binding-001",
+    "sessionId": "session-001",
+    "piSessionId": "pi-session-001",
+    "generation": 1
+  }
+}

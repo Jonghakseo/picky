@@ -35,6 +35,14 @@ final class PickySessionStore {
         self.sessionID = sessionID
     }
 
+    /// Highest projection revision applied to this session, or nil while its
+    /// metadata has not loaded. Callers that waited on a daemon commit use it
+    /// to tell "the app has caught up" from "the app is still behind".
+    var projectedRevision: Int? {
+        guard case .loaded(let metadata) = metaStore.metadataState else { return nil }
+        return metadata.revision
+    }
+
     /// Imports the current v1 façade card into independently-owned sections.
     /// Empty v1 collections are the only representation available for a P0
     /// omitted section at this boundary, so they explicitly clear the child to
@@ -47,6 +55,7 @@ final class PickySessionStore {
             // the façade must carry them instead of resetting them.
             metadata.revision = previous.revision
             metadata.finalAnswer = previous.finalAnswer
+            metadata.titleOrigin = previous.titleOrigin
             if previous.lastRequest?.text == card.lastRequestText {
                 metadata.lastRequest = previous.lastRequest
             }
@@ -179,6 +188,7 @@ final class PickySessionStore {
         return PickyAgentSession(
             id: metadata.id,
             title: metadata.title,
+            titleOrigin: metadata.titleOrigin,
             status: metadata.status,
             cwd: metadata.cwd,
             piSessionFilePath: metadata.piSessionFilePath,

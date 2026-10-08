@@ -78,7 +78,8 @@
             },
             "messageJournalAvailable": false,
             "fastMode": false,
-            "fastModeSupported": false
+            "fastModeSupported": false,
+            "titleOrigin": "user"
           }
         }
       ]
@@ -140,7 +141,8 @@
             "canReleaseRuntime": true
           },
           "fastMode": false,
-          "fastModeSupported": false
+          "fastModeSupported": false,
+          "titleOrigin": "user"
         }
       },
       "messageJournalAvailable": {

@@ -40,8 +40,13 @@ export async function installInternalPickyCli(options: InternalPickyCliInstallOp
   ].join("\n");
   await writeFile(wrapperPath, script, "utf8");
   await chmod(wrapperPath, 0o755);
-  env.PATH = prependPath(env.PATH, binDir);
+  exposeInternalPickyCli(options.appSupportDir, env);
   return wrapperPath;
+}
+
+/** Children use the primary-owned wrapper without rewriting its shared executable. */
+export function exposeInternalPickyCli(appSupportDir: string, env: NodeJS.ProcessEnv = process.env): void {
+  env.PATH = prependPath(env.PATH, join(appSupportDir, "bin"));
 }
 
 async function resolveCliEntry(moduleUrl: string): Promise<string> {

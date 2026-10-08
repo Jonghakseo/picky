@@ -5,7 +5,7 @@ import { PROTOCOL_VERSION } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
 import { parseParentPid, startParentExitWatcher } from "./parent-watchdog.js";
 import { PARENT_EXIT_FORCE_SHUTDOWN_MS } from "./domain/shutdown-policy.js";
-import { installInternalPickyCli } from "./application/internal-picky-cli.js";
+import { exposeInternalPickyCli, installInternalPickyCli } from "./application/internal-picky-cli.js";
 
 // pi extensions run in-process within agentd. A throw from a passive hook
 // (e.g. an idle-timer screensaver calling `ctx.ui.custom`, or an extension
@@ -18,6 +18,9 @@ import { installInternalPickyCli } from "./application/internal-picky-cli.js";
 installExtensionCrashGuard();
 
 const config = parseAgentdConfig(process.env);
+// Child daemons do not inherit the primary's mutated PATH. Publish its shared
+// CLI location before loading any resumed sessions, without rewriting the wrapper.
+exposeInternalPickyCli(config.appSupportDir);
 logAgentd("startup", {
   mode: config.mode,
   port: config.port,

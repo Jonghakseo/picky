@@ -35,6 +35,7 @@ branchTranscriptFromEntries
 import { writeFilePathFromRawArgs } from "./write-file-path.js";
 import { PiSdkRuntimeSession } from "./pi-sdk-runtime-session.js";
 import { keepPickyImageInputEnabled } from "./picky-image-input-policy.js";
+import { createPickyCliCallerBinding, createPickyCliContextExtension } from "./picky-cli-context.js";
 import { pickyMcpExtensions, type PickyMcpRuntimeTarget } from "./picky-mcp.js";
 import { PickyFastModeSwitch } from "./picky-fast-mode-extension.js";
 
@@ -166,18 +167,16 @@ export class PiSdkRuntime implements AgentRuntime {
     const thinkingLevel = options.thinkingLevel === undefined ? this.thinkingLevel : options.thinkingLevel ?? undefined;
     const cwd = options.cwd ?? process.cwd();
     const sessionId = options.sessionId ?? "picky-pi-session";
+    // Identity for `picky` CLI calls this session makes. Scoped to the handle, never to the
+    // process: one primary daemon hosts the main agent and in-process Pickles side by side.
+    const cliCallerBinding = createPickyCliCallerBinding(sessionId);
     let sessionHandle: PiSdkRuntimeSession | undefined;
     const externalDeliveryEventBus = createEventBus();
     const asyncTasks = options.asyncTaskHost ? new AsyncTaskHostBridge(externalDeliveryEventBus, sessionId, options.asyncTaskHost, (event) => sessionHandle?.emitAsyncTaskEvent(event), 5_000, this.options.asyncAdmissionDrain, this.options.asyncProvidersQualified, requiredAsyncProviders(this.options.asyncProviderPaths)) : undefined;
     const asyncFence = asyncTasks ? new AsyncTaskModelFence(asyncTasks, (event) => sessionHandle?.emitAsyncTaskEvent(event), (data) => externalDeliveryEventBus.emit("pi.async-tasks.v1", data)) : undefined;
     let externalDeliveryPaused = false;
-    externalDeliveryEventBus.on(PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, () => {
-      externalDeliveryEventBus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, { paused: externalDeliveryPaused });
-    });
-    const setExternalDeliveryPaused = (paused: boolean): void => {
-      externalDeliveryPaused = paused;
-      externalDeliveryEventBus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, { paused });
-    };
+    externalDeliveryEventBus.on(PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL, () => { externalDeliveryEventBus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, { paused: externalDeliveryPaused }); });
+    const setExternalDeliveryPaused = (paused: boolean): void => { externalDeliveryPaused = paused; externalDeliveryEventBus.emit(PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL, { paused }); };
     const inputRewriteObserver = new PiInputRewriteObserver((deliveryID, finalText) => {
       sessionHandle?.recordExpectedInputAlias(deliveryID, finalText);
     });
@@ -190,6 +189,11 @@ export class PiSdkRuntime implements AgentRuntime {
     const customTools = this.customTools;
 
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
+      // Pi re-enters this factory for the initial session and for every replacement (/new,
+      // resume, fork, import), so it is the one place that always sees the Pi session a caller
+      // context must name. An extension reload does not come through here, which is exactly why
+      // a reload keeps the identity a running command was already given.
+      cliCallerBinding.bindPiSession(sessionManager.getSessionId());
       const resourceLoaderOptions = this.options.resourceLoaderOptions;
       const { settingsManager, providerOptions, refresh } = await prepareAsyncProviderResources(this.options.asyncProviderPaths, resourceLoaderOptions, runtimeCwd, agentDir);
       const ordinaryBus = this.options.asyncProviderPaths ? ordinaryExtensionBus(externalDeliveryEventBus) : externalDeliveryEventBus;
@@ -197,7 +201,7 @@ export class PiSdkRuntime implements AgentRuntime {
       // The rewrite observer must be the last `input` handler to see every transform. The composed
       // loader runs owned providers after ordinary extensions, so it ends whichever loader runs last.
       const loadsOwnedProviders = refresh !== undefined && settingsManager !== undefined;
-      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), ...mcpFactories, fastMode.extension, ...(loadsOwnedProviders ? [] : [inputRewriteObserver.inlineExtension])];
+      const ordinaryFactories = [...(resourceLoaderOptions?.extensionFactories ?? []), ...mcpFactories, fastMode.extension, createPickyCliContextExtension(cliCallerBinding), ...(loadsOwnedProviders ? [] : [inputRewriteObserver.inlineExtension])];
       const normalOptions = {
         ...resourceLoaderOptions, ...providerOptions,
         eventBus: ordinaryBus,
@@ -281,6 +285,10 @@ export class PiSdkRuntime implements AgentRuntime {
           previousSessionFile: options.sessionFilePath,
         },
       } : {}),
+    }).catch((error: unknown) => {
+      // A session that never came up emits no `session_shutdown`, so retire the caller binding here.
+      cliCallerBinding.dispose();
+      throw error;
     });
 
     const handle = new PiSdkRuntimeSession(

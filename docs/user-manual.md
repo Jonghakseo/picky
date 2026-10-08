@@ -405,7 +405,7 @@ Header actions:
 | Click the archive box | Archive the Pickle straight from the header. Also available as `Cmd + Delete`. |
 | Open ellipsis menu | Shows terminal/session actions. |
 
-Renaming sends an internal `/name <new title>` command to the Pickle. You can also type `/name <new title>` directly in the composer.
+Renaming saves the Pickle's display name without starting work or changing its Pi session file. You can also type `/name <new title>` directly in the composer or use `picky pickle-rename`. All three update the same Picky name.
 
 The header may also show a context-usage percentage/bar. It gives a quick view of how full the Pickle's context window is. The bar becomes more urgent as usage grows, turning amber above roughly 70% and red above roughly 90%. Hover it to see token counts when available.
 
@@ -811,6 +811,9 @@ Ordinary terminals, resumed Pi sessions, Pickles, and subagents must omit `--fro
 ```bash
 picky submit "summarize the current screen"
 picky pickle-create "Research" --instructions "Compare the open tabs" --group "Research"
+picky whoami --json                       # from a Picky-hosted session
+picky pickle-rename --self "Research"     # from the current Pickle
+picky pickle-rename <session-id> "Research"
 picky pickle-list --json
 picky pickle-list --archived --query sentry
 picky pickle-archive <session-id>
@@ -839,6 +842,18 @@ picky settings-set mainAgent.model "claude*sonnet"
 `picky pickle-list --json` is the safe automation format. It returns `{ type: "pickleList", schemaVersion: 1, sessions: [...] }`. Every session contains only `id`, `title`, `status`, `createdAt`, `updatedAt`, normalized `archived`, and compact `artifacts`; `cwd`, `archivedAt`, and `dockGroup` appear when available. Artifacts contain `id`, `kind`, `title`, optional `url`, and `updatedAt`. Dock groups contain `id`, `name`, `color`, and `collapsed`. Session messages, logs, tool previews, final answers, local paths, queue text, changed files, and artifact paths are deliberately excluded.
 
 Existing consumers of `.sessions[].id`, title, status, or artifact links should stay on `--json`. Legacy scripts that require session details omitted above must explicitly migrate to `picky pickle-list --raw-json`. That flag returns the former filtered session snapshot and may expose sensitive session details. It is not an authoritative message journal: the app bridge can return `messages: []` with `messageJournalAvailable: false`. Archive selection, query filtering, limit slicing, and dock-group enrichment are identical in both JSON modes. This change minimizes CLI stdout only; the local app/daemon bridge still supplies the session summary used for filtering.
+
+#### Caller identity and Pickle names
+
+`picky whoami --json` returns `{ schemaVersion: 1, kind, id, name, status, cwd, createdAt, group }`. The kind is `picky` or `pickle`; `group` is `{ id, name }` or `null`. The main agent has no Pickle creation date, so its `createdAt` is `null`. Conversation messages, tool output, and caller-binding values are excluded.
+
+Identity comes from the current Picky-hosted `bash` or `bash_async` execution. An ordinary terminal or subagent cannot claim the parent session with `--from-main`. Missing, inherited, or expired caller context produces an error instead of falling back to the selected Pickle. `/new` and runtime replacement invalidate the old context. `whoami` does not start or resume an agent.
+
+`picky pickle-rename <session-id> "<name>"` works from an ordinary terminal. Inside a Pickle, `picky pickle-rename --self "<name>"` uses the validated caller instead; do not combine `--self` with an ID. The main Picky agent cannot rename itself. Add `--json` for `{ schemaVersion: 1, id, name, revision }` containing the saved result.
+
+Names are trimmed, limited to 200 Unicode code points, and cannot contain line breaks or control characters. Duplicate names are allowed. Renaming preserves work, unanswered questions, queued inputs, and archive state. It changes Picky's display name, not the Pi session file. A user-assigned name takes precedence over Pi auto-naming until `/new` resets the Pickle. The title editor and `/name` in a Pickle conversation use this same metadata-only operation.
+
+An archived or detached Pickle can be renamed without resuming it. If Picky cannot confirm exclusive ownership during a daemon transition, the command fails rather than writing another owner's state. A connection failure after saving leaves the result unconfirmed; check `picky pickle-list --include-archived` before retrying. The CLI does not retry a rename automatically. Picky keeps spawning and deletion blocked while the owner's write remains unconfirmed. If the owner never replies and those actions remain blocked, reopen Picky after checking the saved name.
 
 #### CLI settings control
 

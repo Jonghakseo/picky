@@ -1,0 +1,7 @@
+{
+  "id": "cmd-rename-stored-pickle",
+  "protocolVersion": "2026-08-25",
+  "type": "renameStoredPickle",
+  "sessionId": "session-001",
+  "title": "Research results"
+}

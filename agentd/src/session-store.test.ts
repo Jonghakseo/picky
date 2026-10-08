@@ -373,3 +373,64 @@ describe("SessionStore read-only detail lookup", () => {
     expect(await new SessionStore(root, { scopeSessionId: "other" }).loadReadOnly("child")).toBeUndefined();
   });
 });
+
+describe("SessionStore metadata-only rewrites", () => {
+  it("rewrites the scoped file it read and keeps fields it never parsed", async () => {
+    const root = tmpRoot(); const store = new SessionStore(root);
+    const dir = join(root, "sessions", "child"); mkdirSync(dir, { recursive: true });
+    const path = join(dir, "child.json");
+    writeFileSync(path, JSON.stringify({ ...makeSession({ id: "child", status: "completed" }), futureClientField: { keep: true } }));
+
+    const record = (await store.readStoredSession("child"))!;
+    await store.writeStoredSession(record, { title: "Renamed", revision: 9 });
+
+    const persisted = JSON.parse(readFileSync(path, "utf8"));
+    expect(persisted).toMatchObject({ id: "child", title: "Renamed", revision: 9, status: "completed", futureClientField: { keep: true } });
+    expect(existsSync(join(root, "sessions", "child.json"))).toBe(false);
+  });
+
+  it("refuses a record aimed at a file that is not one of the session's own", async () => {
+    const root = tmpRoot(); const store = new SessionStore(root);
+    await store.save(makeSession({ id: "owned" }));
+    const record = (await store.readStoredSession("owned"))!;
+
+    await expect(store.writeStoredSession({ ...record, path: join(root, "picky.json") }, { title: "Hijacked" }))
+      .rejects.toThrow(/outside its session files/);
+    await expect(store.writeStoredSession({ ...record, path: join(root, "sessions", "other.json") }, { title: "Hijacked" }))
+      .rejects.toThrow(/outside its session files/);
+    expect(existsSync(join(root, "sessions", "other.json"))).toBe(false);
+  });
+
+  it("refuses a patch that would rewrite the stored session id", async () => {
+    const root = tmpRoot(); const store = new SessionStore(root);
+    await store.save(makeSession({ id: "owned", title: "Original" }));
+    const record = (await store.readStoredSession("owned"))!;
+
+    await expect(store.writeStoredSession(record, { id: "stolen", title: "Renamed" })).rejects.toThrow(/change stored session id/);
+    expect(JSON.parse(readFileSync(join(root, "sessions", "owned.json"), "utf8"))).toMatchObject({ id: "owned", title: "Original" });
+  });
+
+  it("does not turn a primary read into ownership of the child file", async () => {
+    const root = tmpRoot(); const store = new SessionStore(root);
+    const child = new SessionStore(root, { scopeSessionId: "child" });
+    await child.save(makeSession({ id: "child", status: "completed", title: "Child" }));
+    await store.readStoredSession("child");
+    await store.loadAll();
+    await child.save(makeSession({ id: "child", status: "completed", title: "Fresh child state", revision: 50 }));
+    await store.save(makeSession({ id: "child", status: "completed", title: "Stale primary state" }));
+    expect(await child.loadReadOnly("child")).toMatchObject({ title: "Fresh child state", revision: 50 });
+  });
+
+  it("blocks full primary saves after offline adoption without preventing the child from writing", async () => {
+    const root = tmpRoot(); const store = new SessionStore(root);
+    const child = new SessionStore(root, { scopeSessionId: "child" });
+    await child.save(makeSession({ id: "child", status: "completed", title: "Child" }));
+    const record = (await store.readStoredSession("child"))!;
+    store.protectAdoptedScopedSession(record);
+    await store.writeStoredSession(record, { title: "Renamed", titleOrigin: "user", revision: 9 });
+    await child.save(makeSession({ id: "child", status: "completed", title: "Fresh child state", revision: 50 }));
+    await expect(store.save(makeSession({ id: "child", title: "Stale primary state" }))).rejects.toThrow("owning child daemon");
+    expect(await child.loadReadOnly("child")).toMatchObject({ title: "Fresh child state", revision: 50 });
+    expect(existsSync(join(root, "sessions", "child.json"))).toBe(false);
+  });
+});

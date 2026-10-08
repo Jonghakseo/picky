@@ -280,7 +280,7 @@ const EXTERNAL_ONLY_PROTOCOL_COMMANDS = new Set([
 const EXTERNAL_ONLY_PROTOCOL_EVENTS = new Set([
   "dockGroupsSnapshot",
   "pickleSessionsSnapshot",
-  "pickleSessionUpdated",
+  "cliIdentity",
   "externalEntryAck",
   "pickySettingsAck",
   "pushToTalkControlAck",

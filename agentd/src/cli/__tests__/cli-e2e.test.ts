@@ -14,6 +14,8 @@ import { MockRuntime } from "../../runtime/mock-runtime.js";
 import { AgentdServer } from "../../server.js";
 import { SessionStore } from "../../session-store.js";
 import { SessionSupervisor } from "../../session-supervisor.js";
+import { createPickyCliCallerBinding, type PickyCliCallerBinding } from "../../runtime/picky-cli-context.js";
+import { applySessionProjectionSnapshot, applySessionProjectionTransaction, emptySessionProjectionState, materializeSessionProjection } from "../../domain/session-projection-reducer.js";
 
 const execFileAsync = promisify(execFile);
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -28,6 +30,7 @@ let port: number;
 let appSupportDir: string;
 let appSockets: WebSocket[];
 let appCommandSequence = 0;
+const callerBindings: PickyCliCallerBinding[] = [];
 
 beforeEach(async () => {
   appSupportDir = await mkdtemp(join(tmpdir(), "picky-cli-e2e-"));
@@ -50,6 +53,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  for (const binding of callerBindings.splice(0)) binding.dispose();
   for (const socket of appSockets) socket.close();
   await Promise.all(appSockets.map(async (socket) => {
     if (socket.readyState !== WebSocket.CLOSED) await once(socket, "close");
@@ -124,6 +128,125 @@ function context(text: string): PickyContextPacket {
 }
 
 describe("picky CLI against a real agentd server", () => {
+  it("reports an unconfirmed result without retrying when the app disconnects after durable rename", async () => {
+    const created = await supervisor.createEmptyPickleSession(context("lost-rename"));
+    let renameRequests = 0;
+    await connectApp(["pickleBridge"], (event, socket) => {
+      if (event.type === "pickleBridgeRequested" && event.operation === "rename") {
+        renameRequests += 1;
+        sendAppCommand(socket, { id: "rename-before-disconnect", type: "renameSession", sessionId: event.sessionId, title: event.title });
+      }
+      if (event.type === "pickleSessionUpdated" && event.commandId === "rename-before-disconnect") socket.close();
+    });
+    const result = await runCli(["pickle-rename", created.id, "Persisted without reply", "--json"]);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("result is unconfirmed");
+    expect(renameRequests).toBe(1);
+    expect((await new SessionStore(appSupportDir).loadReadOnly(created.id))?.title).toBe("Persisted without reply");
+  });
+
+  it.each(["pickle", "picky"])("resolves a live %s caller through the real owner and rejects its expired generation", async (kind) => {
+    const created = kind === "pickle" ? await supervisor.createEmptyPickleSession(context("identity")) : undefined;
+    const binding = createPickyCliCallerBinding(created?.id ?? "picky");
+    callerBindings.push(binding);
+    binding.bindPiSession("pi-identity");
+    const pending = new Map<string, string>();
+    await connectApp(["pickleBridge"], (event, socket) => {
+      if (event.type === "pickleBridgeRequested" && event.operation === "resolveCaller") {
+        const ownerId = `validate-${event.requestId}`;
+        pending.set(ownerId, event.requestId);
+        sendAppCommand(socket, { id: ownerId, type: "validateCliCaller", callerContext: event.callerContext });
+      }
+      if ((event.type === "ack" || event.type === "error") && event.commandId && pending.has(event.commandId)) {
+        sendAppCommand(socket, {
+          type: "completePickleBridgeRequest", requestId: pending.get(event.commandId),
+          ...(event.type === "error" ? { errorMessage: event.message } : {
+            delivered: true, session: created ? supervisor.get(created.id) : undefined,
+            groups: created ? [{ id: "group-research", name: "Research", color: 0, collapsed: false, memberSessionIds: [created.id] }] : [],
+          }),
+        });
+        pending.delete(event.commandId);
+      }
+    });
+    const env = { PICKY_CLI_CONTEXT: JSON.stringify(binding.current()), PI_SESSION_ID: "pi-identity" };
+    const result = await runCli(["whoami", "--json"], env);
+    expect(result, result.stderr).toMatchObject({ code: 0 });
+    if (created) {
+      expect(JSON.parse(result.stdout)).toEqual({ schemaVersion: 1, kind: "pickle", id: created.id, name: created.title, status: created.status, cwd: created.cwd, createdAt: created.createdAt, group: { id: "group-research", name: "Research" } });
+    } else {
+      expect(JSON.parse(result.stdout)).toMatchObject({ schemaVersion: 1, kind: "picky", id: "picky", name: "Picky", status: "idle", createdAt: null, group: null });
+      expect(supervisor.list()).toEqual([]);
+    }
+    binding.invalidate();
+    const stale = await runCli(["whoami", "--json"], env);
+    expect(stale.code).toBe(1);
+    expect(stale.stdout).toBe("");
+    expect(stale.stderr).toContain("replaced");
+  });
+
+  it("renames an empty Pickle through the owner command and durable v2 projection without starting work", async () => {
+    const created = await supervisor.createEmptyPickleSession(context("rename empty"));
+    const before = supervisor.get(created.id)!;
+    const binding = createPickyCliCallerBinding(created.id);
+    callerBindings.push(binding);
+    binding.bindPiSession("pi-rename");
+    let projection = emptySessionProjectionState(created.id);
+    const pending = new Map<string, string>();
+    await connectApp(["pickleBridge", "sessionProjectionV2"], (event, socket) => {
+      if (event.type === "sessionProjectionSnapshot" && event.sessionId === created.id) projection = applySessionProjectionSnapshot(projection, event);
+      if (event.type === "sessionProjectionTransaction" && event.sessionId === created.id) projection = applySessionProjectionTransaction(projection, event) ?? projection;
+      if (event.type === "pickleBridgeRequested" && event.operation === "rename") {
+        const ownerId = `owner-${event.requestId}`;
+        pending.set(ownerId, event.requestId);
+        sendAppCommand(socket, { id: ownerId, type: "renameSession", sessionId: event.sessionId, title: event.title, callerContext: event.callerContext });
+      }
+      if ((event.type === "ack" || event.type === "error") && event.commandId && pending.has(event.commandId)) {
+        sendAppCommand(socket, { type: "completePickleBridgeRequest", requestId: pending.get(event.commandId),
+          ...(event.type === "error" ? { errorMessage: event.message } : { session: materializeSessionProjection(projection), delivered: true }),
+        });
+        pending.delete(event.commandId);
+      }
+    });
+    await waitUntil(() => Boolean(materializeSessionProjection(projection)));
+
+    const result = await runCli(["pickle-rename", "--self", "Saved label", "--json"], { PICKY_CLI_CONTEXT: JSON.stringify(binding.current()), PI_SESSION_ID: "pi-rename" });
+    expect(result, result.stderr).toMatchObject({ code: 0 });
+    const saved = await new SessionStore(appSupportDir).loadReadOnly(created.id);
+    const rendered = materializeSessionProjection(projection)!;
+    expect(saved).toMatchObject({ title: "Saved label", titleOrigin: "user", status: before.status });
+    expect(saved?.archived).toBe(before.archived);
+    expect(rendered).toMatchObject({ title: "Saved label", titleOrigin: "user", status: before.status });
+    expect(rendered.messages).toEqual(before.messages ?? []);
+    expect(JSON.parse(result.stdout)).toEqual({ schemaVersion: 1, id: created.id, name: "Saved label", revision: saved!.revision });
+    expect(rendered.revision).toBe(saved!.revision);
+
+    const repeated = await runCli(["pickle-rename", created.id, "Saved label", "--json"]);
+    expect(repeated.code).toBe(0);
+    expect(JSON.parse(repeated.stdout).revision).toBe(saved!.revision);
+    const expiredEnv = { PICKY_CLI_CONTEXT: JSON.stringify(binding.current()), PI_SESSION_ID: "pi-rename" };
+    binding.invalidate();
+    const staleNoOp = await runCli(["pickle-rename", "--self", "Saved label", "--json"], expiredEnv);
+    expect(staleNoOp.code).toBe(1);
+    expect(staleNoOp.stderr).toContain("replaced");
+    expect((await new SessionStore(appSupportDir).loadReadOnly(created.id))?.revision).toBe(saved!.revision);
+  });
+
+  it("does not let an ordinary CLI socket bypass app ownership for a stored rename", async () => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}?token=cli-e2e-token`);
+    appSockets.push(socket);
+    const errors: Array<Extract<EventEnvelope, { type: "error" }>> = [];
+    socket.on("message", (data) => {
+      const event = JSON.parse(data.toString()) as EventEnvelope;
+      if (event.type === "error") errors.push(event);
+    });
+    await once(socket, "open");
+    sendAppCommand(socket, { type: "renameStoredPickle", sessionId: "not-owned", title: "Do not write" });
+    await waitUntil(() => errors.length > 0);
+    expect(errors[0].message).toContain("app owner connection");
+    expect(await new SessionStore(appSupportDir).loadReadOnly("not-owned")).toBeUndefined();
+  });
+
   it("reports an idle main-turn handoff failure from the real server", async () => {
     // Regression: an incorrectly inherited main-agent identity must surface the
     // server's missing-main-context error instead of silently creating a Pickle.

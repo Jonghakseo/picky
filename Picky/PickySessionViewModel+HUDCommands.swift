@@ -47,6 +47,13 @@ extension PickySessionListViewModel: PickyGitChipActionViewModelDispatch, PickyS
         return storage.sessionSummariesForCLI()
     }
 
+    /// Projection revision the app has applied for a session. The router
+    /// compares a daemon's committed revision against this to decide whether a
+    /// rename it just made has reached the HUD.
+    func projectedSessionRevisionForCLI(sessionID: String) -> Int? {
+        sessionStore(sessionID: sessionID)?.projectedRevision
+    }
+
     /// Stable registry identity for scoped HUD subtrees. Consumers observe this
     /// store's child sections instead of the façade's global card arrays.
     func sessionStore(sessionID: String) -> PickySessionStore? {

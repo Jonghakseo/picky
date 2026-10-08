@@ -61,6 +61,7 @@ describe("RuntimeEventHandler", () => {
     const handler = new RuntimeEventHandler({
       getSession: () => current,
       patchSession: async (_sessionId, patch) => { current = { ...current, ...patch }; },
+      applyAutoTitle: async (_sessionId, name) => { current = { ...current, title: name }; },
       emitToolActivityUpdated: () => {},
       updateTodoState: async () => {},
       appendLog: async () => {},
@@ -585,6 +586,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
   const handler = new RuntimeEventHandler({
     getSession: () => current,
     patchSession,
+    applyAutoTitle: async (sessionId: string, name: string) => { await patchSession(sessionId, { title: name }); },
     emitToolActivityUpdated: () => {},
     emitArtifactUpdated,
     updateTodoState: async () => {},

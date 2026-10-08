@@ -781,6 +781,11 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     /// previously stopped/replaced process cannot mutate the current launch's
     /// state (e.g. mark a freshly started daemon as crashed).
     private var launchGeneration = 0
+    /// Generation of the process that has actually started and not yet reported
+    /// termination. `state` cannot answer this: `stop()` reports `.stopped`
+    /// immediately while Node is still shutting down, and a Pickle daemon keeps
+    /// writing its session file until the process is really gone.
+    private var liveProcessGeneration: Int?
 
     init(
         configuration: PickyAgentDaemonConfiguration,
@@ -816,6 +821,11 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         state == .running ? launchGeneration : nil
     }
 
+    /// True while a launched process has not confirmed exit. Callers that are
+    /// about to rewrite state the daemon owns must wait for this to clear;
+    /// `stop()` returning is not proof that the process is gone.
+    var hasLiveProcess: Bool { liveProcessGeneration != nil }
+
     @discardableResult
     func stop(ifProcessGeneration expected: Int) -> Bool {
         guard runningProcessGeneration == expected else { return false }
@@ -849,6 +859,9 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         pickyDaemonLog("stop requested wait=1")
         prepareForIntentionalStop()
         runner.terminateAndWaitForExit()
+        // The runner only returns once the process is reaped, so exit is
+        // confirmed here even if the termination callback has not run yet.
+        liveProcessGeneration = nil
         updateState(.stopped)
     }
 
@@ -869,7 +882,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             launchGeneration += 1
             let generation = launchGeneration
             runner.terminationHandler = { [weak self] code in
-                Task { @MainActor in self?.processTerminated(exitCode: code, generation: generation) }
+                Task { @MainActor in self?.handleProcessExit(exitCode: code, generation: generation) }
             }
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
             try preflightConfiguration()
@@ -878,6 +891,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
                 stdout: { [weak self] data in self?.appendStdout(data) },
                 stderr: { [weak self] data in self?.appendStderr(data) }
             )
+            liveProcessGeneration = generation
             if let terminalLaunchFailureMessage {
                 updateState(.failedToStart(terminalLaunchFailureMessage))
                 return
@@ -962,6 +976,15 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         case .external, .absent:
             return "Required executable at \(configuration.executableURL.path) is missing or not executable."
         }
+    }
+
+    /// Records the real process exit first, then runs the state machine. The
+    /// liveness bookkeeping must survive the `intentionallyStopped` early
+    /// return below, because a stopped daemon is exactly the case callers ask
+    /// about before writing to its files.
+    private func handleProcessExit(exitCode: Int32, generation: Int) {
+        if liveProcessGeneration == generation { liveProcessGeneration = nil }
+        processTerminated(exitCode: exitCode, generation: generation)
     }
 
     private func processTerminated(exitCode: Int32, generation: Int) {

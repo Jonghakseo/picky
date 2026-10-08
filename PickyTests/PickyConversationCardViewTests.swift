@@ -1285,16 +1285,23 @@ struct PickyConversationCardViewTests {
         #expect(abs(longHost.fittingSize.height - 640) <= 0.5)
     }
 
-    @Test func headerRenameCommandBuilderTrimsAndDedupsAndRejectsEmpty() {
-        // Empty input or whitespace-only input must cancel (no command emitted).
-        #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "", current: "Old") == nil)
-        #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "   \n\t ", current: "Old") == nil)
-        // Same trimmed value must cancel even with surrounding whitespace.
-        #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "  Old  ", current: "Old") == nil)
-        #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "Old", current: "  Old  ") == nil)
-        // Different non-empty input produces the slash command with the trimmed value.
-        #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "  새 이름  ", current: "Old") == "/name 새 이름")
-        #expect(PickyConversationHeaderView.renameCommandText(forNewTitle: "New Title", current: "Old") == "/name New Title")
+    @Test func headerRenameTitleTrimsAndRejectsUnusableNames() {
+        // Empty input or whitespace-only input must cancel (nothing persisted).
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: "") == nil)
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: "   \n\t ") == nil)
+        // A name is persisted as its trimmed display title, not as a `/name`
+        // message.
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: "  새 이름  ") == "새 이름")
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: "New Title") == "New Title")
+        // Confirming the name already shown is still sent: that is what records
+        // the title as user-chosen, and only the owning daemon can decide the
+        // write is unnecessary.
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: "  Old  ") == "Old")
+        // Embedded control characters and over-long names are rejected rather
+        // than silently repaired.
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: "New\nTitle") == nil)
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: String(repeating: "가", count: 201)) == nil)
+        #expect(PickyConversationHeaderView.renameTitle(forNewTitle: String(repeating: "가", count: 200)) != nil)
     }
 
     @Test func failedPhaseRendersLocalizedContinueWithoutTerminalChip() {

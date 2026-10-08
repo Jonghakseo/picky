@@ -294,6 +294,7 @@ private indirect enum ConformanceJSON: Equatable {
             "id": .string(metadata.id),
             "revision": .number(Double(metadata.revision)),
             "title": .string(metadata.title),
+            "titleOrigin": encoded(metadata.titleOrigin),
             "status": encoded(metadata.status),
             "cwd": encoded(metadata.cwd),
             "piSessionFilePath": encoded(metadata.piSessionFilePath),

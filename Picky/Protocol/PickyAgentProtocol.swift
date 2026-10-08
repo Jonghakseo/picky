@@ -126,6 +126,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     /// `addMcpServer`: one `mcpServers` entry as JSON text; agentd validates it with Pi's rules.
     var configJson: String?
     var pickyScope: PickyMcpScope?
+    /// CLI caller identity forwarded to the owning daemon for `validateCliCaller`
+    /// and for a `--self` rename. The app never derives identity from it.
+    var callerContext: PickyCliCallerContext?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -201,7 +204,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         summary: String? = nil,
         classificationEnabled: Bool? = nil,
         configJson: String? = nil,
-        pickyScope: PickyMcpScope? = nil
+        pickyScope: PickyMcpScope? = nil,
+        callerContext: PickyCliCallerContext? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -278,6 +282,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.classificationEnabled = classificationEnabled
         self.configJson = configJson
         self.pickyScope = pickyScope
+        self.callerContext = callerContext
     }
 }
 
@@ -318,6 +323,21 @@ enum PickyCommandType: String, Codable, Equatable {
     case completePickySettingsRequest
     case duplicatePickleSession
     case pinPickleSession
+    /// CLI-originated: `picky whoami` and `picky pickle-rename`. The app never
+    /// sends these — the daemon turns them into a Pickle bridge request — but
+    /// they stay in the shared command table so protocol fixtures and logs
+    /// decode on both ends.
+    case whoami
+    case renamePickle
+    /// Owner-local CLI caller validation. Answered only by the daemon that owns
+    /// the claimed runtime session; a strict ack is the only success signal.
+    case validateCliCaller
+    /// Owner-local rename of a session the receiving daemon owns. Acknowledged
+    /// after the new title is durably committed.
+    case renameSession
+    /// Metadata-only rename performed by the primary daemon for a Pickle whose
+    /// child daemon is confirmed stopped. It must never start a runtime.
+    case renameStoredPickle
     case clearQueue
     /// Removes one queued steer or follow-up by `PickyQueueItem.id`.
     case removeQueuedInput
@@ -477,10 +497,13 @@ enum PickyEvent: Equatable {
     /// the turn ends. Same contract as `sessionReplyWritingUpdated`.
     case sessionAutoRetryUpdated(sessionId: String, retry: PickyAutoRetryStatus?)
     case terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome)
+    /// The owning daemon's committed answer to a rename, correlated by the
+    /// command id and unicast to the sender. `revision` is the committed
+    /// projection revision when the daemon reports one.
+    case pickleSessionUpdated(commandId: String, session: PickyAgentSession, revision: Int?)
     case error(PickyErrorEvent)
     case ack(PickyAckEvent)
     case unknown(type: String)
-
 
     init(type: String, decoder: Decoder) throws {
         if let event = try Self.decodeMainAgentEvent(type: type, decoder: decoder)
@@ -579,6 +602,9 @@ enum PickyEvent: Equatable {
             return .sessionAutoRetryUpdated(sessionId: payload.sessionId, retry: payload.retry)
         case "terminalSessionSyncOutcome":
             return .terminalSessionSyncOutcome(try PickyTerminalSessionSyncOutcome(from: decoder))
+        case "pickleSessionUpdated":
+            let payload = try PickyPickleSessionUpdatedPayload(from: decoder)
+            return .pickleSessionUpdated(commandId: payload.commandId, session: payload.session, revision: payload.revision)
         default: return nil
         }
     }
@@ -632,25 +658,6 @@ enum PickyEvent: Equatable {
     }
 }
 
-private struct PickyMainMessagesSnapshotPayload: Decodable { let messages: [PickyMainAgentMessage] }
-private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMainAgentMessage }
-private struct PickyMainActivityUpdatedPayload: Decodable { let activity: PickyMainActivity? }
-private struct PickyMainExtensionUiRequestedPayload: Decodable { let request: PickyExtensionUiRequest }
-private struct PickyMainExtensionUiCancelledPayload: Decodable { let requestId: String }
-private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
-private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
-private struct PickySessionRuntimeOptionsSnapshotPayload: Decodable {
-    let sessionId: String
-    let requestId: String
-    let models: [PickySessionRuntimeModelOption]
-    let allModels: [PickySessionRuntimeModelOption]?
-    let globalScope: PickyRuntimeModelScope?
-    let projectScope: PickyRuntimeModelScope?
-    let effectiveScope: PickyRuntimeModelScope?
-    let thinkingLevels: [PickyMainAgentThinkingLevel]
-    let currentModel: PickySessionRuntimeModelIdentity?
-}
-
 struct PickyPiOAuthStatusEvent: Decodable, Equatable {
     let requestId: String
     let providerId: PickyPiOAuthLoginProvider
@@ -699,10 +706,8 @@ struct PickyPiAuthenticationReloadedEvent: Decodable, Equatable {
     let reloadedHandleCount: Int
 }
 
-private struct PickyMainTurnSettledPayload: Decodable { let contextId: String }
 /// A daemon session snapshot plus local decode completeness metadata.
 ///
-private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
 
 struct PickyPluginsReloadedEvent: Decodable, Equatable {
     let requestId: String?
@@ -722,13 +727,6 @@ struct PickyHubStatisticsResultEvent: Decodable, Equatable {
     let errorMessage: String?
     let snapshot: PickyHubStatisticsSnapshot?
 }
-
-private struct PickyExtensionUiRequestPayload: Decodable { let request: PickyExtensionUiRequest }
-private struct PickyPointerOverlayRequestedPayload: Decodable { let request: PickyPointerOverlayRequest }
-private struct PickyAnnotationOverlayRequestedPayload: Decodable { let request: PickyAnnotationOverlayRequest }
-private struct PickySlashCommandsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let commands: [PickySlashCommand] }
-private struct PickyRewindTargetsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let targets: [PickyRewindTarget] }
-private struct PickySessionRewoundPayload: Decodable { let sessionId: String; let editorText: String?; let removedIds: [String] }
 
 struct PickyHelloEvent: Decodable, Equatable {
     let serverName: String
@@ -834,8 +832,6 @@ struct PickyExternalEntryAcceptedEvent: Decodable, Equatable {
     let sessionId: String?
     let group: String?
 }
-
-private struct PickyDockGroupsRequestedPayload: Decodable { let requestId: String }
 
 enum PickyPushToTalkControlAction: String, Codable, Equatable {
     case press
@@ -1176,7 +1172,6 @@ struct PickyTodoState: Codable, Equatable {
         tasks.count { $0.status == .completed }
     }
 }
-
 
 struct PickySessionLastRequest: Codable, Equatable {
     enum Source: String, Codable, Equatable {

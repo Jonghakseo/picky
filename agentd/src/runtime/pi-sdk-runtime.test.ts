@@ -2666,11 +2666,11 @@ describe("PiSdkRuntime", () => {
       return names;
     };
 
-    // Pickle runtimes supply nothing and keep the exact factory list they always had.
-    expect(await captureFactoryNames({})).toEqual(["picky-fast-mode", "picky-input-rewrite-observer"]);
+    // Hosted sessions always carry caller binding; the input observer still runs last.
+    expect(await captureFactoryNames({})).toEqual(["picky-fast-mode", "picky-cli-context", "picky-input-rewrite-observer"]);
     expect(await captureFactoryNames({
       resourceLoaderOptions: { extensionFactories: [createPickyRuntimeContractExtension(() => "contract") as never] },
-    })).toEqual(["picky-runtime-contract", "picky-fast-mode", "picky-input-rewrite-observer"]);
+    })).toEqual(["picky-runtime-contract", "picky-fast-mode", "picky-cli-context", "picky-input-rewrite-observer"]);
   });
 
   it("applies fast mode only to requests of the handle that enabled it", async () => {

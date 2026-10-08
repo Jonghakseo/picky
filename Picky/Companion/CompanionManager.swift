@@ -2124,7 +2124,7 @@ final class CompanionManager: ObservableObject {
 
     func applyAgentEvent(_ event: PickyEvent) {
         switch event {
-        case .sessionProjectionSnapshot, .sessionProjectionTransaction, .sessionProjectionBootstrapComplete:
+        case .sessionProjectionSnapshot, .sessionProjectionTransaction, .sessionProjectionBootstrapComplete, .pickleSessionUpdated:
             // Projection frames are folded into session state by the session view
             // model, which then publishes the transitions this manager subscribes to
             // in `bindSessionProjectionTransitions(to:)`. Reacting to the raw frames

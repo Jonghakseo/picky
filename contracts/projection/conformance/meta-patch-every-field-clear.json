@@ -57,7 +57,8 @@
         },
         "messageJournalAvailable": true,
         "fastMode": true,
-        "fastModeSupported": true
+        "fastModeSupported": true,
+        "titleOrigin": "user"
       }
     },
     {
@@ -89,7 +90,8 @@
             "asyncWorkSummary": null,
             "messageJournalAvailable": null,
             "fastMode": null,
-            "fastModeSupported": null
+            "fastModeSupported": null,
+            "titleOrigin": null
           }
         }
       ]
@@ -127,7 +129,8 @@
           "agentCycle": null,
           "asyncWorkSummary": null,
           "fastMode": null,
-          "fastModeSupported": null
+          "fastModeSupported": null,
+          "titleOrigin": null
         }
       },
       "messageJournalAvailable": {

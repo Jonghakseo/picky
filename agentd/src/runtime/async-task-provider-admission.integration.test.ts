@@ -16,6 +16,8 @@ import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession, type Pick
 import { SessionStore } from "../session-store.js";
 import { SessionSupervisor } from "../session-supervisor.js";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
+import { validatePickyCliContext } from "./picky-cli-context.js";
+import { readCliCallerContext } from "../cli/caller-context.js";
 import type { RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 
 function deferred<T>() {
@@ -58,7 +60,7 @@ const AFTER_IDLE = "sleep 0.3; ";
 type ToolInput = { name: string; arguments: ToolCall["arguments"] };
 // A function receives the 1-based model request number and returns that request's tool calls.
 type ToolPlan = ToolInput | ToolInput[] | ((request: number) => ToolInput[]);
-async function fixture(tool: ToolPlan) {
+async function fixture(tool: ToolPlan, includeBuiltinTools = false) {
   expect(VERSION).toBe("1.1.0");
   const extensionRoot = providerPackageRoot();
   const root = await mkdtemp(join(tmpdir(), "picky-w0b-provider-"));
@@ -110,7 +112,7 @@ setTimeout(() => process.exit(70), 15000);
   await writeFile(join(agentDir, "agents/finite.md"), "---\nname: finite\ndescription: Offline fixture\ntools: []\n---\nFinite local process only.\n");
   const runtime = new PiSdkRuntime({ agentDir, modelPattern: "w0b-offline/finite",
     createServices: (options) => { bus = options.resourceLoaderOptions!.eventBus!; return createAgentSessionServices({ ...options, settingsManager: SettingsManager.inMemory({ packages: [], retry: { enabled: false }, compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 100 } }) }); },
-    createSessionFromServices: async (options) => { const result = await createAgentSessionFromServices({ ...options, noTools: "builtin" }); session = result.session; return result; },
+    createSessionFromServices: async (options) => { const result = await createAgentSessionFromServices({ ...options, noTools: includeBuiltinTools ? undefined : "builtin" }); session = result.session; return result; },
     resourceLoaderOptions: { additionalExtensionPaths: ["bash-async", "subagent"].map(name => join(root, "packages", name, "index.ts")), noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [(pi) => {
       api = pi;
       pi.events.on(ASYNC_TASK_CONTRACT, (data) => { frames.push(structuredClone(data) as AsyncTaskHostMessage); });
@@ -169,6 +171,23 @@ setTimeout(() => process.exit(70), 15000);
     drainEvents, emitRuntime: (event: RuntimeEvent) => eventTarget.applyRuntimeEvent("session-sdk", event) };
 }
 
+
+it.each(["bash", "bash_async"])("binds real %s execution to the hosted session and invalidates it on disposal", async (toolName) => {
+  const previousContext = process.env.PICKY_CLI_CONTEXT;
+  const command = 'printf "%s" "$PICKY_CLI_CONTEXT" > caller-context.json; printf "%s" "$PI_SESSION_ID" > caller-pi-id';
+  const f = await fixture({ name: toolName, arguments: toolName === "bash" ? { command } : { action: "start", command, timeout: 5 } }, true);
+  await f.supervisor.followUp("session-sdk", "Write the calling session identity");
+  await vi.waitFor(() => expect(existsSync(join(f.root, "caller-pi-id"))).toBe(true));
+  const rawContext = await readFile(join(f.root, "caller-context.json"), "utf8");
+  const piId = await readFile(join(f.root, "caller-pi-id"), "utf8");
+  const caller = readCliCallerContext({ PICKY_CLI_CONTEXT: rawContext, PI_SESSION_ID: piId });
+  expect(caller.sessionId).toBe("session-sdk");
+  expect(caller.piSessionId).toBe(f.session.sessionManager.getSessionId());
+  expect(() => validatePickyCliContext(caller)).not.toThrow();
+  expect(process.env.PICKY_CLI_CONTEXT).toBe(previousContext);
+  await f.handle.dispose?.();
+  expect(() => validatePickyCliContext(caller)).toThrow();
+});
 
 it("holds actual bash admission until the approval is durable and consumes its real result", async () => {
   const f = await fixture({ name: "bash_async", arguments: { action: "start", command: "printf W0B_REAL_RESULT; printf spawn >> actual-spawns", timeout: 5 } });

@@ -55,6 +55,10 @@ protocol PickySessionCommands: AnyObject, PickyGitChipActionViewModelDispatch {
     func stopChoice(sessionID: String) -> PickyStopChoice
     func steer(text: String, sessionID: String?) async throws
     func followUp(text: String, sessionID: String?) async throws
+    /// Persists an explicit display name through the session's owning daemon.
+    /// This is metadata, not conversation input: it never enters the queue and
+    /// never starts a model turn.
+    func renameSession(sessionID: String, title: String) async throws
     func listSessionRuntimeOptions(sessionID: String) async throws -> PickySessionRuntimeOptions
     func setGlobalModelScope(mode: PickyRuntimeModelScopeMode, patterns: [String]?, expectedRevision: String) async throws
     func pickleRuntimeDefaults() -> (modelPattern: String, thinkingLevel: PickyPickleAgentThinkingLevel)

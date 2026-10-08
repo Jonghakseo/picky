@@ -16,8 +16,51 @@ struct PickyDockGroupPayload: Codable, Equatable {
     let collapsed: Bool
 }
 
+/// Identity a `picky` CLI invocation claims, issued per runtime session by the
+/// owning daemon. The app never interprets it: it only forwards the context to
+/// the owner connection, which revalidates it against its live bindings.
+/// This is misidentification protection, not authentication.
+struct PickyCliCallerContext: Codable, Equatable {
+    /// The always-on main agent is not a Pickle and has no session record, so
+    /// the daemon reports it under this fixed id.
+    static let mainAgentSessionID = "picky"
+
+    let bindingId: String
+    let sessionId: String
+    let piSessionId: String
+    let generation: Int
+}
+
+/// The owning daemon's reply to a rename command: the session as it was
+/// durably committed, correlated by the originating command id.
+///
+/// `revision` is read out of the same payload separately because
+/// `PickyAgentSession` deliberately does not model the projection revision:
+/// the app tracks that per session store, not per decoded summary.
+struct PickyPickleSessionUpdatedPayload: Decodable, Equatable {
+    let commandId: String
+    let session: PickyAgentSession
+    let revision: Int?
+
+    private enum CodingKeys: String, CodingKey { case commandId, session }
+    private struct RevisionProbe: Decodable { let revision: Int? }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        commandId = try container.decode(String.self, forKey: .commandId)
+        session = try container.decode(PickyAgentSession.self, forKey: .session)
+        revision = try container.decode(RevisionProbe.self, forKey: .session).revision
+    }
+}
+
 enum PickyPickleBridgeOperation: String, Decodable, Equatable {
     case listSessions
+    /// `picky whoami`: resolve the calling runtime session to a Pickle the app
+    /// already projects. Read-only; it must never spawn or resume a runtime.
+    case resolveCaller
+    /// `picky pickle-rename`: persist a user-chosen display name through the
+    /// session's owning daemon.
+    case rename
     case steer
     case followUp
     case abort
@@ -53,6 +96,9 @@ struct PickyDockGroupManagementRequest: Equatable {
 struct PickyPickleBridgeRequest: Decodable, Equatable {
     let requestId: String
     let operation: PickyPickleBridgeOperation
+    /// Present for `resolveCaller` and for a `--self` rename. The app forwards
+    /// it unchanged to the owning daemon instead of trusting it locally.
+    let callerContext: PickyCliCallerContext?
     let sessionId: String?
     let text: String?
     let prompt: String?

@@ -647,6 +647,8 @@ private extension PickyEventEnvelope {
             return "type=sessionAutoRetryUpdated id=\(id) session=\(sessionId) attempt=\(retry.map { "\($0.attempt)/\($0.maxAttempts)" } ?? "none") code=\(retry?.errorCode ?? "none")"
         case .terminalSessionSyncOutcome(let outcome):
             return "type=terminalSessionSyncOutcome id=\(id) session=\(outcome.sessionId) baselineFound=\(outcome.baselineFound) imported=\(outcome.importedMessageCount)"
+        case .pickleSessionUpdated(let commandId, let session, let revision):
+            return "type=pickleSessionUpdated id=\(id) command=\(commandId) session=\(session.id) revision=\(revision.map(String.init) ?? "none")"
         case .error(let error):
             return "type=error id=\(id) command=\(error.commandId ?? "none") code=\(error.code)"
         case .ack(let ack):

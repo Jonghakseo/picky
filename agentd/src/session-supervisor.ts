@@ -15,7 +15,8 @@ import type { ExternalPickleCompletionRequest } from "./application/pickle-compl
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { reloadPluginsWithoutInterruption } from "./application/plugin-reload.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
-import { emitTerminalV1Compatibility, finalizeTerminalOperation, commitSessionProjection, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
+import { emitTerminalV1Compatibility, finalizeTerminalOperation, commitSessionProjection, publishSessionProjectionCommit, type SessionCommit, type TerminalDurableCommitDependencies } from "./application/terminal-durable-commit.js";
+import { SessionRenameCoordinator } from "./application/session-rename.js";
 import { SubagentRunUpdater } from "./application/subagent-run-updater.js";
 import { TerminalManualCompactionCoordinator } from "./application/terminal-manual-compaction.js";
 import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForContext, type MainTurnOverlayContext } from "./application/overlay-context-resolver.js";
@@ -80,6 +81,7 @@ export class SessionSupervisor extends EventEmitter {
   private readonly runtimeEventHandler: RuntimeEventHandler;
   private readonly subagentRunUpdater: SubagentRunUpdater;
   private readonly pickleSessionTitleRefresher: PickleSessionTitleRefresher;
+  private readonly sessionRename: SessionRenameCoordinator;
   private readonly pickleSessionIds = new Set<string>();
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
@@ -158,7 +160,8 @@ export class SessionSupervisor extends EventEmitter {
       pickleSessionIds: this.pickleSessionIds,
     });
     this.sessionIdFactory = options.sessionIdFactory ?? (() => `session-${randomUUID()}`);
-    this.pickleSessionTitleRefresher = new PickleSessionTitleRefresher({ isPickleSession: (sessionId) => this.isPickleSession(sessionId), getSession: (sessionId) => this.sessions.get(sessionId), patchSession: (sessionId, patch) => this.patch(sessionId, patch) });
+    this.pickleSessionTitleRefresher = new PickleSessionTitleRefresher({ isPickleSession: (sessionId) => this.isPickleSession(sessionId), getSession: (sessionId) => this.sessions.get(sessionId), applyAutoTitle: (sessionId, name, expectedPiSessionFilePath) => this.sessionRename.applyAutoTitle(sessionId, name, expectedPiSessionFilePath) });
+    this.sessionRename = new SessionRenameCoordinator({ getSession: (id) => this.sessions.get(id), commit: (id, build) => this.commitSession(id, build), commitMetadataOnly: (id, build) => commitSessionProjection({ ...this.sessionCommitDependencies(), runWrite: (sid, work) => this.runSessionWrite(sid, work), aggregate: (_before, proposed) => proposed, afterCommit: async () => {} }, id, build), runSessionWrite: (id, work) => this.runSessionWrite(id, work), setSession: (id, session) => { this.sessions.set(id, session); this.messageBuilder.hydrateSession(id, session.messages); }, store: this.store, hasLocalRuntime: (id) => this.runtimeHandles.has(id) || this.pendingRuntimeHandles.has(id), emitSessionMeta: (session) => this.emit("sessionMeta", session), publishProjectionSnapshot: (session) => publishSessionProjectionCommit(this, undefined, session, [], this.sessionProjectionEpoch) });
     this.artifactMaterializer = new ArtifactMaterializer();
     this.pickleVisualDslCoordinator = new PickleVisualDslCoordinator((event) => {
       if (event.type === "quickReply") {
@@ -205,7 +208,7 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler = new RuntimeEventHandler({
       reconcileAsyncWork: async (id) => { await this.commitSession(id, (session) => session); },
       getSession: (sessionId) => this.mustGet(sessionId),
-      patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
+      patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options), applyAutoTitle: (sessionId, name) => this.sessionRename.applyAutoTitle(sessionId, name),
       emitToolActivityUpdated: (sessionId, tool) => this.emit("toolActivityUpdated", sessionId, tool),
       emitArtifactUpdated: (sessionId, artifact) => this.emit("artifact", sessionId, artifact),
       updateTodoState: (sessionId, todoState) => this.updateTodoState(sessionId, todoState),
@@ -751,8 +754,8 @@ export class SessionSupervisor extends EventEmitter {
    * line and receives a fresh Pi session-header UUID, so the runtime resumes a
    * non-corrupt independent branch even mid-turn.
    *
-   * The new title is `(copy) <source title>`; Pi will rename the underlying session as soon as
-   * the user runs `/name` (existing `refreshPickleSessionTitleFromPi` flow handles the resync).
+   * The new title is `(copy) <source title>` and is not user-assigned, so Pi's own auto-name can
+   * still replace it through the title refresher; an explicit rename pins the name from then on.
    */
 
   async duplicatePickleSession(sourceSessionId: string): Promise<PickyAgentSession> {
@@ -905,6 +908,8 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  renamePickleSession(sessionId: string, title: string, validateCaller?: () => void): Promise<PickyAgentSession> { return this.sessionRename.renameOwnedSession(sessionId, title, validateCaller); }
+  renameStoredPickleSession(sessionId: string, title: string): Promise<PickyAgentSession> { return this.sessionRename.renameStoredSession(sessionId, title); }
   async setNotifyMainOnCompletion(sessionId: string, enabled: boolean): Promise<PickyAgentSession> {
     if (!this.isPickleSession(sessionId)) throw new Error(`Session is not a Pickle: ${sessionId}`);
     await this.patch(sessionId, { notifyMainOnCompletion: enabled });
@@ -1061,6 +1066,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+    const renamed = await this.sessionRename.interceptNameSlashCommand(sessionId, text); if (renamed) return renamed; // `/name` is Picky metadata, never Pi input.
     // Finish a pending plugin reload before input admission reopens; the reload would close it.
     await this.runtimeHandles.get(sessionId)?.settleResourceReload?.();
     return this.asyncControls.input(sessionId, () => this.performFollowUp(sessionId, text, context, visualDslEnabled));
@@ -1608,6 +1614,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket, visualDslEnabled = false): Promise<PickyAgentSession> {
+    const renamed = await this.sessionRename.interceptNameSlashCommand(sessionId, text); if (renamed) return renamed;
     await this.runtimeHandles.get(sessionId)?.settleResourceReload?.();
     // Pi runs a steered slash command inline, so the whole steer call covers the command's lifetime.
     return this.asyncControls.input(sessionId, () => this.userOperations.track(sessionId, isNonSkillSlashCommand(text), () => this.performSteer(sessionId, text, context, visualDslEnabled)));
@@ -1881,13 +1888,8 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     this.messageBuilder.onSessionRemoved(sessionId);
     if (this.isPickleSession(sessionId)) this.mainAgent.clearLocalPickleTracking(sessionId);
-    await this.patch(sessionId, buildRuntimeSessionReplacementPatch({
-      cwd,
-      title: this.isPickleSession(sessionId)
-        ? titleForEmptyPickleSession({ ...(nextContext ?? {}), cwd } as PickyContextPacket)
-        : current.title,
-      sessionFilePath: event.sessionFilePath,
-    }), { emitFullSession: true, forceCollectionReplacements: true });
+    // A new conversation drops the custom name with the rest of the old state; a session that keeps its title keeps its origin.
+    await this.patch(sessionId, buildRuntimeSessionReplacementPatch({ cwd, title: (this.isPickleSession(sessionId) || current.titleOrigin === "user") ? titleForEmptyPickleSession({ ...(nextContext ?? {}), cwd } as PickyContextPacket) : current.title, titleOrigin: undefined, sessionFilePath: event.sessionFilePath }), { emitFullSession: true, forceCollectionReplacements: true });
     logAgentd("runtime session replaced", { sessionId, reason: event.reason, cwd, sessionFilePath: event.sessionFilePath });
   }
 

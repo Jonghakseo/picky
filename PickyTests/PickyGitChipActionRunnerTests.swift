@@ -9,9 +9,9 @@ import Testing
 @MainActor
 struct PickyGitChipActionRunnerTests {
     @Test func resolvePiDestinationFollowsRenameBranchPolicy() {
-        // Mirrors PickyConversationHeaderView.sendRenameCommand: terminal-ish
-        // statuses (completed, blocked) queue as follow-up so the next user
-        // turn picks them up; everything else steers into the current turn.
+        // Terminal-ish statuses (completed, blocked) queue as follow-up so the
+        // next user turn picks them up; everything else steers into the current
+        // turn.
         #expect(PickyGitChipPiDestination.resolve(for: .completed) == .followUp)
         #expect(PickyGitChipPiDestination.resolve(for: .blocked) == .followUp)
         #expect(PickyGitChipPiDestination.resolve(for: .running) == .steer)

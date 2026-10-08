@@ -554,6 +554,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         router.pickleSessionSummariesProvider = { [weak self] in
             self?.hudSessionViewModel.pickleSessionSummariesForCLI() ?? []
         }
+        router.cliSessions.projectedSessionRevisionProvider = { [weak self] sessionID in
+            self?.hudSessionViewModel.projectedSessionRevisionForCLI(sessionID: sessionID)
+        }
         hudSessionViewModel.onSessionProjectionStorageChanged = { [weak router] in
             router?.sessionProjectionStorageDidChange()
         }

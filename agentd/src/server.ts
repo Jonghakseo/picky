@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type Server as HttpServer, type Ser
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { isAuthorized } from "./auth.js";
+import { validatePickyCliContext } from "./runtime/picky-cli-context.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import { deliverPickleCompletion, PickleBridgeRequestCoordinator, type AppPickleBridgeRequest, type AppPickleBridgeResult, type AppPickleHandoffRequest, type AppPickleHandoffResult } from "./application/pickle-completion-bridge.js";
@@ -513,6 +514,49 @@ export class AgentdServer {
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
       createPickleFromMain: (cmd) => this.createPickleFromMainCli(ws, cmd),
+      whoami: async (cmd) => {
+        const result = await this.requestPickleBridgeFromApp({ operation: "resolveCaller", callerContext: cmd.callerContext }, 8_000);
+        const isMain = cmd.callerContext.sessionId === "picky";
+        const session = result.session;
+        if (!isMain && !session) throw new Error("Caller Pickle is no longer available");
+        const groups = result.groups ?? [];
+        const memberships = isMain ? [] : groups.filter((group) => group.memberSessionIds.includes(cmd.callerContext.sessionId));
+        if (memberships.length > 1) throw new Error("Pickle group membership is ambiguous");
+        const group = memberships[0];
+        this.send(ws, { type: "cliIdentity", commandId: cmd.id, identity: {
+          schemaVersion: 1, kind: isMain ? "picky" : "pickle", id: cmd.callerContext.sessionId,
+          name: isMain ? "Picky" : session!.title,
+          status: isMain ? (this.options.supervisor.mainActiveActivity() ? "running" : "idle") : session!.status,
+          cwd: (isMain ? this.options.supervisor.mainAgentSessionInfo().cwd : session!.cwd) ?? null,
+          createdAt: isMain ? null : session!.createdAt,
+          group: group ? { id: group.id, name: group.name } : null,
+        } });
+      },
+      validateCliCaller: (cmd) => {
+        this.requirePickleBridgeClient(ws);
+        validatePickyCliContext(cmd.callerContext);
+      },
+      renamePickle: async (cmd) => {
+        if (cmd.sessionId === "picky") throw new Error("Only Pickle names can be changed");
+        if (cmd.callerContext && cmd.callerContext.sessionId !== cmd.sessionId) throw new Error("Caller does not match the target Pickle");
+        const result = await this.requestPickleBridgeFromApp({ operation: "rename", sessionId: cmd.sessionId, title: cmd.title.trim(), callerContext: cmd.callerContext }, 15_000);
+        if (!result.session) throw new Error("No saved Pickle name returned");
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(result.session) });
+      },
+      renameSession: async (cmd) => {
+        this.requirePickleBridgeClient(ws);
+        const validateCaller = cmd.callerContext ? () => {
+          if (cmd.callerContext!.sessionId !== cmd.sessionId) throw new Error("Caller does not match the target Pickle");
+          validatePickyCliContext(cmd.callerContext!);
+        } : undefined;
+        const session = await this.options.supervisor.renamePickleSession(cmd.sessionId, cmd.title, validateCaller);
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(session) });
+      },
+      renameStoredPickle: async (cmd) => {
+        this.requirePickleBridgeClient(ws);
+        const session = await this.options.supervisor.renameStoredPickleSession(cmd.sessionId, cmd.title);
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(session) });
+      },
       listPickles: async (cmd) => {
         const result = await this.requestPickleBridgeFromApp({ operation: "listSessions" });
         this.send(ws, { type: "pickleSessionsSnapshot", commandId: cmd.id, sessions: (result.sessions ?? []).map(protocolSession) });
@@ -677,6 +721,10 @@ export class AgentdServer {
       return;
     }
     pending.resolve({ sessionId: command.sessionId, title: command.title ?? command.sessionId, cwd: command.cwd });
+  }
+
+  private requirePickleBridgeClient(ws: WebSocket): void {
+    if (!this.appCapabilities.get(ws)?.has("pickleBridge")) throw new Error("This operation requires the Picky app owner connection");
   }
 
   private completePendingPickleBridgeRequest(command: Extract<ReturnType<typeof parseCommand>, { type: "completePickleBridgeRequest" }>): void {
@@ -1112,6 +1160,10 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, key: command.key, toggle: command.toggle ? 1 : 0, displayId: command.displayId, caller: command.caller };
     case "completePickySettingsRequest":
       return { commandId: command.id, type: command.type, requestId: command.requestId, errorCode: command.errorCode, errorChars: command.errorMessage?.length };
+    case "whoami": case "validateCliCaller":
+      return { commandId: command.id, type: command.type, sessionId: command.callerContext.sessionId };
+    case "renamePickle": case "renameSession": case "renameStoredPickle":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, titleChars: command.title.length };
     case "completePickleBridgeRequest":
       return { commandId: command.id, type: command.type, requestId: command.requestId, sessions: command.sessions?.length, sessionId: command.session?.id, delivered: command.delivered === undefined ? undefined : command.delivered ? 1 : 0, errorChars: command.errorMessage?.length };
     case "submitMainFromExternal":
@@ -1340,6 +1392,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, baselineFound: event.baselineFound ? 1 : 0, importedMessageCount: event.importedMessageCount };
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
+    case "cliIdentity":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.identity.kind };
     case "pickySettingsAck": case "ack":
       return { eventId: event.id, type: event.type, commandId: event.commandId };
   }

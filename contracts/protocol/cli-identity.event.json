@@ -1,0 +1,20 @@
+{
+  "id": "event-cli-identity",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-08T00:00:00.000Z",
+  "type": "cliIdentity",
+  "commandId": "cmd-whoami",
+  "identity": {
+    "schemaVersion": 1,
+    "kind": "pickle",
+    "id": "session-001",
+    "name": "Research results",
+    "status": "waiting_for_input",
+    "cwd": "/tmp/workspace",
+    "createdAt": "2026-10-08T00:00:00.000Z",
+    "group": {
+      "id": "group-001",
+      "name": "Research"
+    }
+  }
+}

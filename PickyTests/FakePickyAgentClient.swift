@@ -27,6 +27,9 @@ final class FakePickyAgentClient: PickyAgentClient {
     @MainActor var sendAwaitingErrorResult: PickyErrorEvent?
     @MainActor private(set) var acknowledgementRequirements: [Bool] = []
     @MainActor private(set) var acknowledgementTimeouts: [TimeInterval] = []
+    @MainActor private(set) var renameRequests: [FakePickyRenameRequest] = []
+    @MainActor var renameResult: PickyAgentSession?
+    @MainActor var renameError: Error?
     var beforeSend: ((PickyCommandEnvelope) async -> Void)?
 
     init() {
@@ -63,6 +66,23 @@ final class FakePickyAgentClient: PickyAgentClient {
     }
     func disconnect() { continuation.yield(.disconnected) }
     func emit(_ event: PickyClientEvent) { continuation.yield(event) }
+}
+
+/// The production client is the router, which owns rename routing. Tests that
+/// exercise app-initiated renames record the request here instead.
+extension FakePickyAgentClient: PickyPickleTitleRenaming {
+    @MainActor
+    func renamePickleTitle(sessionId: String, title: String, callerContext: PickyCliCallerContext?) async throws -> PickyAgentSession? {
+        renameRequests.append(FakePickyRenameRequest(sessionId: sessionId, title: title, callerContext: callerContext))
+        if let renameError { throw renameError }
+        return renameResult
+    }
+}
+
+struct FakePickyRenameRequest: Equatable {
+    let sessionId: String
+    let title: String
+    let callerContext: PickyCliCallerContext?
 }
 
 private enum FakePickyAgentClientError: Error {

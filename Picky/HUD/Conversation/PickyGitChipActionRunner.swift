@@ -6,8 +6,8 @@
 //  insertions/deletions chip or the branch label in the Pickle conversation
 //  card. Two modes are supported:
 //
-//   - `.pi`   — mirrors `/name <new>`: routed to `steer` (live session) or
-//               `followUp` (terminal/blocked session) on the chip's Pickle.
+//   - `.pi`   — sends the configured text to the chip's Pickle: `steer` for a
+//               live session, `followUp` for a terminal/blocked one.
 //   - `.shell` — spawned with `/bin/sh -lc <command>` in the Pickle's cwd as a
 //               detached, fire-and-forget process so GUI helpers like `open
 //               -a Cursor .` return immediately and Picky doesn't block on
@@ -21,9 +21,8 @@ import AppKit
 import Foundation
 import UserNotifications
 
-/// Routing decision derived from the Pickle's status. Mirrors the `/name`
-/// rename branch in `PickyConversationHeaderView.sendRenameCommand` so chip
-/// actions interrupt or queue based on the same contract.
+/// Routing decision derived from the Pickle's status: a live session is
+/// interrupted, a terminal one is queued as a follow-up.
 enum PickyGitChipPiDestination: Equatable {
     case steer
     case followUp

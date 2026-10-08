@@ -1,0 +1,7 @@
+{
+  "id": "cmd-rename-session",
+  "protocolVersion": "2026-08-25",
+  "type": "renameSession",
+  "sessionId": "session-001",
+  "title": "Research results"
+}

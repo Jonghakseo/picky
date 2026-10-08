@@ -3,6 +3,9 @@ import Foundation
 struct PickyAgentSession: Codable, Equatable, Identifiable {
     let id: String
     let title: String
+    /// `"user"` once someone renamed the Pickle explicitly. While it is absent the
+    /// title still follows Pi's automatic naming.
+    var titleOrigin: String? = nil
     var status: PickySessionStatus
     var cwd: String?
     var piSessionFilePath: String? = nil
@@ -50,7 +53,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     /// app never reconstructs it from log-line prefixes.
     var lastRequest: PickySessionLastRequest? = nil
     enum CodingKeys: String, CodingKey {
-        case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
+        case id, title, titleOrigin, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, todoState, subagentRuns, artifacts, changedFiles
         case agentCycle, asyncWorkSummary, asyncTasks, completionTickets, asyncControl
         case messages, messageJournalAvailable, queuedSteers, queuedFollowUps, scheduledMessages, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
         case pendingExtensionUiRequest, notifyMainOnCompletion, notifyMacOSOnCompletion, archived, archivedAt, pinned, lastRequest
@@ -59,6 +62,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     init(
         id: String,
         title: String,
+        titleOrigin: String? = nil,
         status: PickySessionStatus,
         cwd: String? = nil,
         piSessionFilePath: String? = nil,
@@ -99,6 +103,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     ) {
         self.id = id
         self.title = title
+        self.titleOrigin = titleOrigin
         self.status = status
         self.cwd = cwd
         self.piSessionFilePath = piSessionFilePath
@@ -143,6 +148,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         title = try container.decode(String.self, forKey: .title)
+        titleOrigin = try container.decodeIfPresent(String.self, forKey: .titleOrigin)
         status = try container.decode(PickySessionStatus.self, forKey: .status)
         cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
         piSessionFilePath = try container.decodeIfPresent(String.self, forKey: .piSessionFilePath)

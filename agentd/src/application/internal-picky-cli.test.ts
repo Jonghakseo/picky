@@ -3,9 +3,23 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { installInternalPickyCli } from "./internal-picky-cli.js";
+import { exposeInternalPickyCli, installInternalPickyCli } from "./internal-picky-cli.js";
 
 describe("internal Picky CLI installer", () => {
+  it("lets a child resolve the existing wrapper without rewriting it or inheriting caller identity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-child-cli-"));
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    const wrapper = join(bin, "picky");
+    await writeFile(wrapper, "primary-owned wrapper");
+    const env = { PATH: `/usr/bin${delimiter}${bin}${delimiter}/bin` };
+    exposeInternalPickyCli(root, env);
+    exposeInternalPickyCli(root, env);
+    expect(env.PATH.split(delimiter)).toEqual([bin, "/usr/bin", "/bin"]);
+    expect(await readFile(wrapper, "utf8")).toBe("primary-owned wrapper");
+    expect(env).not.toHaveProperty("PICKY_CLI_CONTEXT");
+  });
+
   it("installs a caller-tagged compiled CLI wrapper and prepends it to PATH", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-internal-cli-"));
     const appSupportDir = join(root, "Application Support", "Picky's Test");

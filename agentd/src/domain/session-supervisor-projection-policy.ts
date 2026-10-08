@@ -247,10 +247,13 @@ export function buildRuntimeReattachPatch(
 export function buildRuntimeSessionReplacementPatch(input: {
   cwd: string | undefined;
   title: string;
+  /** Carried through explicitly so a reset title also clears its user-assigned origin. */
+  titleOrigin: PickyAgentSession["titleOrigin"];
   sessionFilePath: string | undefined;
 }): Partial<PickyAgentSession> {
   return {
     title: input.title,
+    titleOrigin: input.titleOrigin,
     status: "waiting_for_input",
     cwd: input.cwd,
     lastSummary: "Ready for instructions",

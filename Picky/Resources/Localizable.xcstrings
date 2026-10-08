@@ -25579,6 +25579,86 @@
         }
       }
     },
+    "hud.rename.error.busy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Pickle is busy with another action. Try renaming it again in a moment."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle에서 다른 작업이 진행 중이에요. 잠시 후 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "hud.rename.error.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not rename the Pickle. %1$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 이름을 바꾸지 못했어요. %1$@"
+          }
+        }
+      }
+    },
+    "hud.rename.error.invalidName": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That name can’t be used. Use 1–200 characters without line breaks."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용할 수 없는 이름이에요. 줄바꿈 없이 1~200자로 입력해 주세요."
+          }
+        }
+      }
+    },
+    "hud.rename.error.ownerUnavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Pickle is starting or stopping. Try renaming it again in a moment."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle이 시작 또는 종료 중이에요. 잠시 후 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "hud.rename.error.unconfirmed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky could not confirm the new name was saved. Check its name before retrying. If other actions remain blocked, reopen Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 이름이 저장됐는지 확인하지 못했어요. 다시 시도하기 전에 이름을 확인해 주세요. 다른 작업도 계속 막혀 있으면 Picky를 다시 열어 주세요."
+          }
+        }
+      }
+    },
     "hud.session.sync.reconnecting": {
       "localizations": {
         "en": {

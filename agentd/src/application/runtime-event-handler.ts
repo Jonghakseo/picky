@@ -41,6 +41,8 @@ interface RuntimeEventHandlerDependencies {
   reconcileAsyncWork?(sessionId: string): Promise<void>;
   getSession(sessionId: string): PickyAgentSession;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>, options?: { emitSession?: boolean }): Promise<void>;
+  /** Pi's own session name. Conditional inside the commit, so it never overwrites a user name. */
+  applyAutoTitle(sessionId: string, name: string): Promise<void>;
   emitToolActivityUpdated(sessionId: string, tool: PickyToolActivity): void;
   emitArtifactUpdated?(sessionId: string, artifact: PickyAgentSession["artifacts"][number]): void;
   updateTodoState(sessionId: string, todoState: PickyAgentSession["todoState"]): Promise<void>;
@@ -394,10 +396,11 @@ export class RuntimeEventHandler {
   private async applySessionInfoEvent(sessionId: string, name: string): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const session = this.dependencies.getSession(sessionId);
-    if (session.title === trimmed) return;
-    logAgentd("session info name", { sessionId, previousTitle: session.title, name: trimmed });
-    await this.dependencies.patchSession(sessionId, { title: trimmed });
+    // Picky owns the display name once a person set it. The decision belongs inside the commit:
+    // a rename already queued on the session's write chain must not be undone by a name that
+    // was read before it landed.
+    logAgentd("session info name", { sessionId, name: trimmed });
+    await this.dependencies.applyAutoTitle(sessionId, trimmed);
   }
 
   // eslint-disable-next-line complexity -- Status transitions intentionally stay with their single session-state owner to preserve terminal and compaction invariants.

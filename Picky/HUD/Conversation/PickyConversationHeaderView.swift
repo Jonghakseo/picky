@@ -273,31 +273,27 @@ struct PickyConversationHeaderView: View {
 
     func commitTitleEdit() {
         guard isEditingTitle else { return }
-        let command = Self.renameCommandText(forNewTitle: titleDraft, current: session.title)
+        let title = Self.renameTitle(forNewTitle: titleDraft) ?? titleDraft
         let sessionID = session.id
-        let status = session.status
         isEditingTitle = false
         isTitleFieldFocused = false
         titleSelectionRequestID = nil
         titleDraft = ""
-        guard let command else { return }
-        Task { try? await sendRenameCommand(command, sessionID: sessionID, status: status) }
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Invalid nonempty input also reaches the command boundary, which reports
+        // a localized error instead of silently discarding the edit.
+        // Metadata, not conversation input: renaming never queues a turn, so it
+        // works the same for a running, finished, or archived Pickle.
+        Task { try? await commands.renameSession(sessionID: sessionID, title: title) }
     }
 
-    static func renameCommandText(forNewTitle newTitle: String, current: String) -> String? {
-        let trimmedNew = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedNew.isEmpty else { return nil }
-        if trimmedNew == current.trimmingCharacters(in: .whitespacesAndNewlines) { return nil }
-        return "/name \(trimmedNew)"
-    }
-
-    private func sendRenameCommand(_ text: String, sessionID: String, status: PickySessionStatus) async throws {
-        switch status {
-        case .running, .queued, .waiting_for_input, .cancelled, .failed:
-            try await commands.steer(text: text, sessionID: sessionID)
-        case .completed, .blocked:
-            try await commands.followUp(text: text, sessionID: sessionID)
-        }
+    /// The title to persist, or nil when the edit is empty or not a name Picky
+    /// accepts. Confirming the name already shown is still sent: it is what
+    /// marks the title as user-chosen, after which Pi's automatic naming leaves
+    /// it alone. Only the owning daemon can decide that nothing needs writing.
+    static func renameTitle(forNewTitle newTitle: String) -> String? {
+        guard case .success(let normalized) = PickyPickleRenamePolicy.normalizedTitle(newTitle) else { return nil }
+        return normalized
     }
 
     private var statusLabel: some View {

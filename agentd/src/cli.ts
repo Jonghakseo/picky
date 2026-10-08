@@ -1,11 +1,13 @@
 import { Command, Option } from "commander";
 import { resolve as resolvePath } from "node:path";
 import { workingDirectoryProblem } from "./application/working-directory.js";
-import type { DockGroup, EventEnvelope, PickyAgentSession } from "./protocol.js";
+import { PickyCliIdentitySchema, type DockGroup, type EventEnvelope, type PickyAgentSession } from "./protocol.js";
 import { loadCliConnection, PickyCliDaemonNotRunningError } from "./cli/connection-loader.js";
+import { readCliCallerContext } from "./cli/caller-context.js";
 import { sendCommand, sendCommandAndWaitForReply, PickyCliConnectionError, PickyCliServerError, PickyCliTimeoutError } from "./cli/ws-client.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { isFinalSessionStatus } from "./domain/session-status.js";
+import { normalizePickleRenameTitle } from "./domain/session-rename-policy.js";
 
 const VERSION = "0.1.0";
 
@@ -97,6 +99,8 @@ Examples:
   $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리" --no-context
   $ picky pickle-create --empty
   $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research" --no-context
+  $ picky whoami --json
+  $ picky pickle-rename --self "Research results"
   $ picky pickle-list --json
   $ picky pickle-list --include-archived
   $ picky pickle-list --archived --query "sentry"
@@ -256,6 +260,59 @@ async function createNamedPickle(
   });
   printWaitResult(ack, replyText, options.json, "Created Pickle");
 }
+
+program
+  .command("whoami")
+  .description("Show the current Picky-hosted session and its dock group without starting an agent.")
+  .option("--json", "Print session identity as compact JSON (no conversation content)")
+  .action(async (options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const callerContext = readCliCallerContext();
+      if (isMainAgentCaller && callerContext.sessionId !== "picky") throw new Error("--from-main does not match the current caller");
+      const connection = await loadCliConnection();
+      const event = await sendCommand(connection, { type: "whoami", callerContext }, {
+        timeoutMs: 12_000,
+        matchEvent: (event, id) => event.type === "cliIdentity" && event.commandId === id ? event : null,
+      });
+      const identity = PickyCliIdentitySchema.parse(event.identity);
+      if (options.json) process.stdout.write(`${JSON.stringify(identity)}\n`);
+      else process.stdout.write([
+        `${identity.kind}\t${identity.id}\t${JSON.stringify(identity.name)}`,
+        `status=${identity.status} createdAt=${identity.createdAt ?? "none"}`,
+        `cwd=${JSON.stringify(identity.cwd)} group=${JSON.stringify(identity.group)}`,
+        "",
+      ].join("\n"));
+    });
+  });
+
+program
+  .command("pickle-rename [target] [name]")
+  .description("Change a Pickle display name without restarting work or changing its Pi session file.")
+  .option("--self", "Rename the current Pickle; pass only the new name")
+  .option("--json", "Print the saved name, ID, and revision as JSON")
+  .addHelpText("after", '\nExamples:\n  picky pickle-rename pickle-abc "Research results"\n  picky pickle-rename --self "Research results"\n')
+  .action(async (target: string | undefined, name: string | undefined, options: SharedOptions & { self?: boolean }) => {
+    await runWithErrorHandling(async () => {
+      const { sessionId, title, callerContext } = resolvePickleRenameInput(target, name, options.self === true);
+      const connection = await loadCliConnection();
+      let event: PickleSessionUpdatedEvent;
+      try {
+        event = await sendCommand(connection, { type: "renamePickle", sessionId, title, ...(callerContext ? { callerContext } : {}) }, {
+          matchEvent: matchPickleSessionUpdated, timeoutMs: 20_000,
+        });
+      } catch (error) {
+        if (error instanceof PickyCliTimeoutError || error instanceof PickyCliConnectionError) {
+          error.message += ". The rename result is unconfirmed; check pickle-list --include-archived before retrying.";
+        }
+        throw error;
+      }
+      if (event.session.id !== sessionId || event.session.title !== title || event.session.titleOrigin !== "user") {
+        throw new Error("The daemon did not confirm the requested name. Check pickle-list --include-archived before retrying.");
+      }
+      const result = { schemaVersion: 1, id: sessionId, name: event.session.title, revision: event.session.revision ?? 0 };
+      process.stdout.write(options.json ? `${JSON.stringify(result)}\n` : `Renamed Pickle ${sessionId} to ${JSON.stringify(result.name)}\n`);
+    });
+  });
 
 program
   .command("pickle-list")
@@ -601,6 +658,18 @@ Examples:
       process.stdout.write(`Abort requested for ${sessionId}\n`);
     });
   });
+
+function resolvePickleRenameInput(target: string | undefined, name: string | undefined, self: boolean) {
+  if (!target || (self ? name !== undefined : name === undefined)) {
+    throw new Error('Use pickle-rename <id> "<name>" or pickle-rename --self "<name>". Do not combine --self with an ID.');
+  }
+  const callerContext = self ? readCliCallerContext() : undefined;
+  const sessionId = callerContext?.sessionId ?? target;
+  if (sessionId === "picky") throw new Error("Only Pickle names can be changed");
+  if (callerContext && isMainAgentCaller) throw new Error("--from-main does not match the current Pickle caller");
+  const title = normalizePickleRenameTitle(self ? target : name!);
+  return { sessionId, title, callerContext };
+}
 
 async function sendPickleInput(
   connection: Awaited<ReturnType<typeof loadCliConnection>>,

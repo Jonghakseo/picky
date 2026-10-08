@@ -50,6 +50,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
       patchSession: async (_id, patch) => {
         Object.assign(session, patch);
       },
+      applyAutoTitle: async (_id, name) => { Object.assign(session, { title: name }); },
       emitToolActivityUpdated: () => {},
       updateTodoState: async () => {},
       appendLog: async () => {},

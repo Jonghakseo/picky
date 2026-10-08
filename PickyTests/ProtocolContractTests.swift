@@ -409,6 +409,112 @@ struct ProtocolContractTests {
         #expect(legacy.status == nil)
     }
 
+    @Test func decodesRenameCommandsAndCallerContextFromDaemonFixtures() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let urls = try fixtureURLs(in: "contracts/protocol")
+        func command(_ name: String) throws -> PickyCommandEnvelope {
+            let url = try #require(urls.first { $0.lastPathComponent == name })
+            return try decoder.decode(PickyCommandEnvelope.self, from: Data(contentsOf: url))
+        }
+
+        let validate = try command("validate-cli-caller.request.json")
+        #expect(validate.type == .validateCliCaller)
+        #expect(validate.callerContext == PickyCliCallerContext(
+            bindingId: "binding-001",
+            sessionId: "session-001",
+            piSessionId: "pi-session-001",
+            generation: 1
+        ))
+
+        let renameSession = try command("rename-session.request.json")
+        #expect(renameSession.type == .renameSession)
+        #expect(renameSession.sessionId == "session-001")
+        #expect(renameSession.title == "Research results")
+        // The app-owned live rename carries no identity of its own.
+        #expect(renameSession.callerContext == nil)
+
+        let renameStored = try command("rename-stored-pickle.request.json")
+        #expect(renameStored.type == .renameStoredPickle)
+        #expect(renameStored.sessionId == "session-001")
+        #expect(renameStored.title == "Research results")
+        #expect(renameStored.callerContext == nil)
+
+        // CLI-originated commands reach the app only as bridge requests, but
+        // they share the command table, so they must still decode here.
+        let whoami = try command("whoami.request.json")
+        #expect(whoami.type == .whoami)
+        #expect(whoami.callerContext?.piSessionId == "pi-session-001")
+        let renamePickle = try command("rename-pickle.request.json")
+        #expect(renamePickle.type == .renamePickle)
+        #expect(renamePickle.sessionId == "session-001")
+        #expect(renamePickle.callerContext?.generation == 1)
+
+        // Re-encoding must preserve every field the daemon validates.
+        for envelope in [validate, renameSession, renameStored, whoami, renamePickle] {
+            #expect(try decoder.decode(PickyCommandEnvelope.self, from: JSONEncoder().encode(envelope)) == envelope)
+        }
+    }
+
+    @Test func decodesOwnerCommittedRenameReply() throws {
+        // The owning daemon answers a rename with the session it persisted,
+        // correlated by command id. The app reports that instead of its own
+        // cached title, so both the correlation and the committed revision
+        // have to survive decoding.
+        let json = #"""
+        {"id":"event-rename","protocolVersion":"2026-08-25","timestamp":"2026-10-08T00:00:00.000Z","type":"pickleSessionUpdated","commandId":"cmd-rename-session","session":{"id":"session-001","revision":12,"title":"Research results","titleOrigin":"user","status":"completed","createdAt":"2026-10-08T00:00:00.000Z","updatedAt":"2026-10-08T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+        """#
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
+        guard case .pickleSessionUpdated(let commandId, let session, let revision) = envelope.event else {
+            Issue.record("Expected a committed rename reply")
+            return
+        }
+        #expect(commandId == "cmd-rename-session")
+        #expect(session.title == "Research results")
+        #expect(session.titleOrigin == "user")
+        #expect(revision == 12)
+
+        // An older daemon omits the revision; ordering then falls back to the
+        // committed title alone instead of failing to decode.
+        let withoutRevision = json.replacingOccurrences(of: "\"revision\":12,", with: "")
+        let legacy = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(withoutRevision.utf8))
+        guard case .pickleSessionUpdated(_, _, let legacyRevision) = legacy.event else {
+            Issue.record("Expected a committed rename reply")
+            return
+        }
+        #expect(legacyRevision == nil)
+    }
+
+    @Test func decodesRenameBridgeRequestWithCallerContext() throws {
+        let url = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "pickle-rename-bridge.event.json"
+        })
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyEventEnvelope.self,
+            from: Data(contentsOf: url)
+        )
+        guard case .pickleBridgeRequested(let request) = envelope.event else {
+            Issue.record("Expected a Pickle bridge request")
+            return
+        }
+        #expect(request.operation == .rename)
+        #expect(request.sessionId == "session-001")
+        #expect(request.title == "Research results")
+        #expect(request.callerContext?.bindingId == "binding-001")
+        #expect(request.callerContext?.piSessionId == "pi-session-001")
+    }
+
+    @Test func decodesUserTitleOriginOnSessionWire() throws {
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let json = #"{"id":"session-001","title":"Research results","titleOrigin":"user","status":"running","createdAt":"2026-10-08T00:00:00.000Z","updatedAt":"2026-10-08T00:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
+        let session = try decoder.decode(PickyAgentSession.self, from: Data(json.utf8))
+        #expect(session.titleOrigin == "user")
+        // An older daemon simply omits the field; the title then still follows
+        // Pi's automatic naming.
+        let legacyJSON = #"{"id":"session-002","title":"Auto name","status":"running","createdAt":"2026-10-08T00:00:00.000Z","updatedAt":"2026-10-08T00:00:00.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}"#
+        #expect(try decoder.decode(PickyAgentSession.self, from: Data(legacyJSON.utf8)).titleOrigin == nil)
+        #expect(try decoder.decode(PickyAgentSession.self, from: JSONEncoder.pickyAgentProtocolEncoder().encode(session)) == session)
+    }
+
     @Test func normalizesLegacyCompletionBridgeUsingProjectedSessionMetadata() throws {
         let request = try JSONDecoder.pickyAgentProtocolDecoder().decode(
             PickyPickleBridgeRequest.self,

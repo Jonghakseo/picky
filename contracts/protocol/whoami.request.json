@@ -1,0 +1,11 @@
+{
+  "id": "cmd-whoami",
+  "protocolVersion": "2026-08-25",
+  "type": "whoami",
+  "callerContext": {
+    "bindingId": "binding-001",
+    "sessionId": "session-001",
+    "piSessionId": "pi-session-001",
+    "generation": 1
+  }
+}

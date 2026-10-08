@@ -123,6 +123,27 @@ const projectionTransactionEvent = (id: string, mutations: unknown[]) => ({
 });
 
 describe("protocol contract fixtures", () => {
+  it("requires a bounded caller identity for whoami and preserves it for self rename", () => {
+    const callerContext = { bindingId: "binding-1", sessionId: "pickle-1", piSessionId: "pi-1", generation: 3 };
+    const command = { id: "whoami-1", protocolVersion: PROTOCOL_VERSION, type: "whoami", callerContext };
+    expect(CommandEnvelopeSchema.parse(command)).toMatchObject({ callerContext });
+    expect(CommandEnvelopeSchema.safeParse({ ...command, callerContext: undefined }).success).toBe(false);
+    expect(CommandEnvelopeSchema.safeParse({ ...command, callerContext: { ...callerContext, generation: -1 } }).success).toBe(false);
+    expect(CommandEnvelopeSchema.safeParse({ ...command, callerContext: { ...callerContext, bindingId: "x".repeat(129) } }).success).toBe(false);
+    expect(CommandEnvelopeSchema.parse({ ...command, type: "renamePickle", sessionId: "pickle-1", title: "Name" })).toMatchObject({ callerContext });
+  });
+
+  it("normalizes rename names without accepting control characters or truncating Unicode", () => {
+    for (const type of ["renamePickle", "renameSession", "renameStoredPickle"]) {
+      const command = { id: "rename-1", protocolVersion: PROTOCOL_VERSION, type, sessionId: "pickle-1", title: "  New name  " };
+      expect(CommandEnvelopeSchema.parse(command)).toMatchObject({ title: "New name" });
+      expect(CommandEnvelopeSchema.parse({ ...command, title: "🥒".repeat(200) })).toMatchObject({ title: "🥒".repeat(200) });
+      for (const title of ["", "  ", "name\n", "\tname", "x".repeat(201), "bad\u001bname", "line\u2028name"]) {
+        expect(CommandEnvelopeSchema.safeParse({ ...command, title }).success, `${type}: ${JSON.stringify(title)}`).toBe(false);
+      }
+    }
+  });
+
   it.each(["prepare", "execute"])("decodes %s archive quiescence and legacy absence", (action) => {
     const fixture = JSON.parse(readFileSync(join(contractsRoot, `async-task-archive-${action}-quiescent.command.json`), "utf8"));
     expect(CommandEnvelopeSchema.parse(fixture)).toMatchObject({ command: { requireQuiescence: true } });
@@ -872,7 +893,7 @@ describe("protocol contract fixtures", () => {
     const clearable = [
       "cwd", "piSessionFilePath", "lastSummary", "thinkingPreview", "messageJournalAvailable", "contextUsage",
       "currentAssistantRun", "notifyMainOnCompletion", "notifyMacOSOnCompletion", "archived", "archivedAt",
-      "pinned", "lastRequest", "agentCycle", "asyncWorkSummary", "fastMode", "fastModeSupported",
+      "pinned", "lastRequest", "agentCycle", "asyncWorkSummary", "fastMode", "fastModeSupported", "titleOrigin",
     ];
     expect(Object.keys(PickySessionMetaPatchSchema.shape).sort()).toEqual([...required, ...clearable].sort());
     for (const field of required) expect(PickySessionMetaPatchSchema.safeParse({ [field]: null }).success, field).toBe(false);

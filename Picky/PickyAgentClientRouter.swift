@@ -51,12 +51,12 @@ protocol PickyProjectionOwnerReconnecting: AnyObject {
 /// keeps a single primary connection alive at all times; child connections are created on
 /// demand and torn down when the Pickle ends or the pool releases the child.
 @MainActor
-final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpawning, PickyChildSessionReleasing, PickyProjectionOwnerReconnecting {
-    private let primaryClient: PickyAgentClient
+final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpawning, PickyChildSessionReleasing, PickyProjectionOwnerReconnecting, PickyPickleTitleRenaming, PickyCliSessionHost {
+    let primaryClient: PickyAgentClient
     let pool: PickyAgentDaemonPool
     private let clientFactory: PickyAgentClientFactoryProtocol
     private let handoffPickleSessionIdFactory: () -> String
-    private let permanentDeletionAcknowledgementTimeout: TimeInterval
+    let permanentDeletionAcknowledgementTimeout: TimeInterval
     private let notificationPreferencesProvider: PickyNotificationPreferencesProviding
     /// The router may advertise the v2 socket dialect only when its consumer
     /// is wired to the registry-backed projection storage.
@@ -68,6 +68,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private let capabilityRegistration: PickyCapabilityRegistrationCoordinator
     private var lastProjectionOwnerReconnects: [String: Date] = [:]
     private static let projectionOwnerReconnectDebounce: TimeInterval = 30
+    /// Owns `picky whoami`, Pickle renames, and the rest of the CLI bridge
+    /// contract. The router only lends it transport and ownership facts.
+    let cliSessions = PickyCliSessionCoordinator()
     private var clientEventKeys: [ObjectIdentifier: String] = [:]
     private var primaryConnectStarted = false
     private var knownChildSessionIds = Set<String>()
@@ -83,6 +86,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// The ledger is pure; this router feeds it connection facts and applies
     /// its decisions to transport state.
     private var projectionOwnership = PickyProjectionOwnershipLedger()
+    /// Keeps a child spawn, a delete, and a rename write from overlapping on
+    /// one session id.
+    let sessionOperationGate = PickySessionExclusiveOperationGate()
     private var sessionProjectionWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     /// Commands typed against a freshly spawned Pickle before the child runtime has left
     /// `.queued`. They are drained in order once the child emits its first non-queued
@@ -102,7 +108,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// `sendAwaitingError` if neither arrives, so this never grows
     /// unboundedly.
     let asyncControlTransport = PickyAsyncControlTransport()
-    private lazy var asyncOwnerControl = PickyAsyncOwnerControlCoordinator(router: self, transport: asyncControlTransport)
+    lazy var asyncOwnerControl = PickyAsyncOwnerControlCoordinator(router: self, transport: asyncControlTransport)
     private var pendingErrorHandlers: [String: (PickyErrorEvent?) -> Void] = [:]
     /// Active `events` subscribers, keyed by a per-call UUID. The HUD view
     /// model and `CompanionManager` both subscribe to the same router so
@@ -249,6 +255,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         self.permanentDeletionAcknowledgementTimeout = permanentDeletionAcknowledgementTimeout
         self.notificationPreferencesProvider = notificationPreferencesProvider
         self.supportsSessionProjectionV2 = supportsSessionProjectionV2
+        cliSessions.host = self
         // Drop the cached websocket client (and stop its reconnect loop) the moment the pool
         // notices the underlying child daemon has exited. Without this, the legacy receiveLoop
         // in WebSocketPickyAgentClient would keep reconnecting forever to a dead random port.
@@ -291,7 +298,14 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     var asyncTaskControl: (any PickyAsyncTaskControlling)? { asyncOwnerControl }
 
+    func renamePickleTitle(sessionId: String, title: String, callerContext: PickyCliCallerContext?) async throws -> PickyAgentSession? {
+        try await cliSessions.renamePickleTitle(sessionId: sessionId, title: title, callerContext: callerContext)
+    }
+
     func send(_ command: PickyCommandEnvelope) async throws {
+        // `/name` is Picky metadata, not conversation input: routing it as a
+        // steer would respawn a stopped Pickle's daemon just to set a label.
+        if try await cliSessions.applyTypedRenameIfNeeded(command) { return }
         if (command.type == .followUp || command.type == .steer), let sessionID = command.sessionId,
            asyncOwnerControl.blocksInput(sessionID: sessionID) {
             throw PickyAsyncControlError.pending(requestId: sessionID)
@@ -415,7 +429,16 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         timeout: TimeInterval = 1.0,
         requireAcknowledgement: Bool = false
     ) async throws -> PickyErrorEvent? {
-        if command.type == .deleteSession { return try await asyncOwnerControl.sendDeletion(command, timeout: timeout) }
+        if command.type == .deleteSession {
+            guard let sessionId = command.sessionId else {
+                return try await asyncOwnerControl.sendDeletion(command, timeout: timeout)
+            }
+            // Deleting a session while the primary is rewriting its stored
+            // metadata would race two writers for the same record.
+            return try await sessionOperationGate.run(.delete, sessionID: sessionId) {
+                try await asyncOwnerControl.sendDeletion(command, timeout: timeout)
+            }
+        }
         return try await sendAwaitingError(command, timeout: timeout, requireAcknowledgement: requireAcknowledgement, on: nil)
     }
 
@@ -614,8 +637,15 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// Spawn a child daemon for `sessionId` rooted at `cwd`, then return the per-child client.
     /// Subsequent calls for the same session id return the cached client without re-spawning.
     func spawnChildClient(sessionId: String, cwd: String, primaryUrl: String? = nil) async throws -> PickyAgentClient {
+        if let existing = childClients[sessionId] {
+            knownChildSessionIds.insert(sessionId)
+            return existing
+        }
+        // A spawn must not start while the primary is writing this session's
+        // stored metadata: the new child would hydrate the pre-rename record.
+        try sessionOperationGate.begin(.spawnChild, sessionID: sessionId)
+        defer { sessionOperationGate.end(.spawnChild, sessionID: sessionId) }
         knownChildSessionIds.insert(sessionId)
-        if let existing = childClients[sessionId] { return existing }
         advanceChildGeneration(for: sessionId)
         retiredChildSessionIds.remove(sessionId)
         bootingChildSessionIds.insert(sessionId)
@@ -780,79 +810,37 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         }
     }
 
-    private func handlePickleBridgeRequest(_ request: PickyPickleBridgeRequest, responseClient: PickyAgentClient) async {
-        do {
-            switch request.operation {
-            case .listSessions:
-                let groups = await dockGroupsProvider?() ?? []
-                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessionSummaries(), groups: groups)
-            case .steer, .followUp:
-                guard let sessionId = request.sessionId, let text = request.text else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                let commandType: PickyCommandType = request.operation == .steer ? .steer : .followUp
-                try await send(PickyCommandEnvelope(type: commandType, sessionId: sessionId, text: text))
-                await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId))
-            case .abort:
-                guard let sessionId = request.sessionId else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                try await asyncOwnerControl.bridgeAbort(sessionID: sessionId, tracked: pickleSessionSummary(id: sessionId)?.hasAsyncTracking == true)
-                await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId))
-            case .setArchived:
-                guard let sessionId = request.sessionId, let archived = request.archived else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                try await asyncOwnerControl.bridgeArchive(sessionID: sessionId, archived: archived, mode: request.archiveMode,
-                    tracked: pickleSessionSummary(id: sessionId)?.hasAsyncTracking == true)
-                await completePickleBridge(request, on: responseClient, session: pickleSessionSummary(id: sessionId), delivered: true)
-            case .delete:
-                guard let sessionId = request.sessionId,
-                      let finalizeDeletion = pickleDeletionCleanupHandler else {
-                    throw PickyAgentClientRouterError.invalidBridgeRequest
-                }
-                try await asyncOwnerControl.deleteSession(sessionID: sessionId, timeout: permanentDeletionAcknowledgementTimeout)
-                try await finalizeDeletion(sessionId)
-                releaseChild(sessionId: sessionId)
-                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessionSummaries(), delivered: true)
-            case .manageGroups:
-                guard let action = request.groupAction,
-                      let manager = dockGroupsManager else {
-                    throw PickyAgentClientRouterError.invalidBridgeRequest
-                }
-                let groups = try await manager(PickyDockGroupManagementRequest(
-                    action: action,
-                    groupId: request.groupId,
-                    name: request.name,
-                    sessionIds: request.sessionIds ?? [],
-                    archiveMode: request.archiveMode
-                ))
-                await completePickleBridge(request, on: responseClient, groups: groups)
-            case .notifyMainOfPickleCompletion:
-                // New children provide a durable completion envelope. The app
-                // chooses destination before any primary-agent prompt is sent.
-                let projectedSession = request.sessionId.flatMap { self.pickleSessionSummary(id: $0) }
-                if let envelope = request.completionEnvelope(projectedSession: projectedSession),
-                   let coordinator = completionNotificationCoordinator {
-                    _ = try await coordinator.route(envelope)
-                    await completePickleBridge(request, on: responseClient, delivered: true)
-                    return
-                }
-                // Retain a narrow transport fallback for router clients that
-                // predate the app-owned coordinator. Installed apps always
-                // configure it during launch.
-                guard let sessionId = request.sessionId, let prompt = request.prompt else { throw PickyAgentClientRouterError.invalidBridgeRequest }
-                try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
-                    type: .notifyMainOfPickleCompletion,
-                    sessionId: sessionId,
-                    cwd: request.cwd,
-                    prompt: prompt
-                ), on: primaryClient)
-                await completePickleBridge(request, on: responseClient, delivered: true)
-            }
-        } catch {
-            await completePickleBridge(request, on: responseClient, errorMessage: error.localizedDescription)
-        }
+    /// True when a child daemon owns this session's scope, whether or not that
+    /// child is still running. The primary may only write such a session's
+    /// metadata through the explicit stored-rename command.
+    func isChildOwnedSession(_ sessionId: String) -> Bool {
+        knownChildSessionIds.contains(sessionId)
+            || retiredChildSessionIds.contains(sessionId)
+            || projectionOwnership.ownerKey(for: sessionId) == childEventKey(sessionId)
     }
 
+    /// The live child websocket for a session, or nil when no child daemon is
+    /// currently running it. Never spawns.
+    func liveChildClient(for sessionId: String) -> PickyAgentClient? {
+        guard pool.endpoint(for: sessionId) != nil, !retiredChildSessionIds.contains(sessionId) else { return nil }
+        return childClients[sessionId]
+    }
+
+    /// Fails unless this session currently has no child daemon in any state:
+    /// booting, ready, or terminating.
+    func requireNoChildRuntime(sessionId: String) throws {
+        guard childClients[sessionId] == nil,
+              pool.endpoint(for: sessionId) == nil,
+              !pool.activeChildSessionIds.contains(sessionId),
+              !bootingChildSessionIds.contains(sessionId),
+              !asyncOwnerControl.blocksInput(sessionID: sessionId) else {
+            throw PickyCliSessionError.renameOwnerUnavailable(sessionId: sessionId)
+        }
+    }
     /// Bridge list operations expose session summaries, not message journals.
     /// The registry-backed provider owns the journal, so the bridge projection
     /// deliberately strips it here.
-    private func cachedPickleSessionSummaries() -> [PickyAgentSession] {
+    func cachedPickleSessionSummaries() -> [PickyAgentSession] {
         let sessions = pickleSessionSummariesProvider?() ?? []
         return sessions
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -890,6 +878,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
 
     private func resumeSessionProjectionWaiters() {
         asyncOwnerControl.projectionDidChange()
+        cliSessions.projectionDidChange()
         for sessionId in Array(sessionProjectionWaiters.keys) where pickleSessionSummary(id: sessionId) != nil {
             let waiters = sessionProjectionWaiters.removeValue(forKey: sessionId).map { Array($0.values) } ?? []
             for waiter in waiters { waiter.resume() }
@@ -921,14 +910,14 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         waiter?.resume()
     }
 
-    private func completePickleBridge(
+    func completePickleBridge(
         _ request: PickyPickleBridgeRequest,
         on responseClient: PickyAgentClient,
-        sessions: [PickyAgentSession]? = nil,
-        groups: [PickyDockGroupPayload]? = nil,
-        session: PickyAgentSession? = nil,
-        delivered: Bool? = nil,
-        errorMessage: String? = nil
+        sessions: [PickyAgentSession]?,
+        groups: [PickyDockGroupPayload]?,
+        session: PickyAgentSession?,
+        delivered: Bool?,
+        errorMessage: String?
     ) async {
         do {
             try await sendAfterCapabilityRegistration(PickyCommandEnvelope(
@@ -1010,6 +999,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     if case .ack(let ackEvent) = envelope.event {
                         self.dispatchPendingAckHandler(ackEvent)
                     }
+                    // Correlated owner replies for CLI-owned commands, including
+                    // a rename the owner committed.
+                    self.cliSessions.observe(envelope.event)
                     if key == "primary" {
                         switch envelope.event {
                         case .pickleHandoffRequested(let request):
@@ -1043,7 +1035,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                     }
                     if case .pickleBridgeRequested(let request) = envelope.event {
                         Task { @MainActor [weak self, client] in
-                            await self?.handlePickleBridgeRequest(request, responseClient: client)
+                            await self?.cliSessions.handleBridgeRequest(request, responseClient: client)
                         }
                         continue
                     }

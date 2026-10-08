@@ -1,0 +1,11 @@
+{
+  "id": "cmd-validate-cli-caller",
+  "protocolVersion": "2026-08-25",
+  "type": "validateCliCaller",
+  "callerContext": {
+    "bindingId": "binding-001",
+    "sessionId": "session-001",
+    "piSessionId": "pi-session-001",
+    "generation": 1
+  }
+}

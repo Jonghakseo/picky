@@ -147,6 +147,8 @@ private final class StubLauncherFactoryForRouter: PickyAgentDaemonLauncherMaking
         runner.emitReady(port: 49000 + runner.id)
     }
 
+    func runner(for sessionId: String) -> RouterPoolStubRunner? { runners[sessionId] }
+
     func waitForRunner(sessionId: String, timeoutMs: Int = 2_000) async throws -> RouterPoolStubRunner {
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000)
         while Date() < deadline {
@@ -235,11 +237,13 @@ private func makeProjectedSession(
     title: String = "Pickle",
     status: PickySessionStatus = .running,
     cwd: String = "/tmp/ws",
-    finalAnswer: String? = nil
+    finalAnswer: String? = nil,
+    titleOrigin: String? = nil
 ) -> PickyAgentSession {
     PickyAgentSession(
         id: id,
         title: title,
+        titleOrigin: titleOrigin,
         status: status,
         cwd: cwd,
         createdAt: Date(),
@@ -281,9 +285,14 @@ private func makePickleBridgeRequestEvent(
     groupId: String? = nil,
     name: String? = nil,
     sessionIds: [String]? = nil,
-    archived: Bool? = nil
+    archived: Bool? = nil,
+    callerContext: PickyCliCallerContext? = nil
 ) throws -> PickyEventEnvelope {
     var fields = "\"operation\": \"\(operation)\""
+    if let callerContext {
+        let encoded = try JSONEncoder().encode(callerContext)
+        fields += ", \"callerContext\": \(String(decoding: encoded, as: UTF8.self))"
+    }
     if let sessionId { fields += ", \"sessionId\": \"\(sessionId)\"" }
     if let text { fields += ", \"text\": \"\(text)\"" }
     if let prompt { fields += ", \"prompt\": \"\(prompt)\"" }
@@ -2006,6 +2015,504 @@ struct PickyAgentClientRouterTests {
         #expect(setup.pool.endpoint(for: sessionID) != nil)
     }
 
+    @Test func pickleRenameCommitsThroughLiveChildOwnerAndReportsPersistedTitle() async throws {
+        let sessionID = "pickle-rename-live"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let child = try #require(setup.children.first)
+        let projection = RouterProjectionBox(sessions: [makeProjectedSession(id: sessionID, title: "Old name")], revision: 6)
+        setup.router.pickleSessionSummariesProvider = { projection.sessions }
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in projection.revision }
+        child.onSendInject = { [weak router = setup.router] command in
+            guard command.type == .renameSession else { return }
+            let committed = makeProjectedSession(id: sessionID, title: command.title ?? "")
+            projection.sessions = [committed]
+            projection.revision = 7
+            router?.sessionProjectionStorageDidChange()
+            child.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 7)))
+            child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Research results",
+            callerContext: makeRouterCallerContext(sessionId: sessionID)
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.session?.title == "Research results"
+            }
+        }
+        let rename = try #require(child.sentCommands.last { $0.type == .renameSession })
+        #expect(rename.sessionId == sessionID)
+        #expect(rename.callerContext?.bindingId == "binding-1")
+        // A rename is metadata, so it must never reach the session as input.
+        #expect(!child.sentCommands.contains { $0.type == .steer || $0.type == .followUp })
+        #expect(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.errorMessage == nil)
+    }
+
+    @Test func pickleRenameForStoppedChildWritesStoredMetadataThroughPrimaryWithoutRespawn() async throws {
+        let sessionID = "pickle-rename-offline"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let projection = RouterProjectionBox(sessions: [
+            makeProjectedSession(id: sessionID, title: "Old name", status: .completed),
+        ])
+        setup.router.pickleSessionSummariesProvider = { projection.sessions }
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in projection.revision }
+        setup.router.releaseChild(sessionId: sessionID)
+        setup.reportChildProcessExit(sessionId: sessionID)
+        setup.primary.onSendInject = { [weak router = setup.router, weak primary = setup.primary] command in
+            guard command.type == .renameStoredPickle else { return }
+            let committed = makeProjectedSession(id: sessionID, title: command.title ?? "", status: .completed)
+            projection.sessions = [committed]
+            projection.revision = 4
+            router?.sessionProjectionStorageDidChange()
+            primary?.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 4)))
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Archived plan"
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.session?.title == "Archived plan"
+            }
+        }
+        #expect(setup.primary.sentCommands.contains { $0.type == .renameStoredPickle && $0.sessionId == sessionID })
+        #expect(!setup.primary.sentCommands.contains { $0.type == .renameSession })
+        // Renaming a stopped Pickle must not bring its daemon back.
+        #expect(setup.pool.endpoint(for: sessionID) == nil)
+        #expect(setup.pool.activeChildSessionIds.isEmpty)
+    }
+
+    @Test func offlineRenameRefusesAConcurrentChildSpawnForTheSameSession() async throws {
+        let sessionID = "pickle-rename-gate"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let projection = RouterProjectionBox(sessions: [
+            makeProjectedSession(id: sessionID, title: "Old name", status: .completed),
+        ])
+        setup.router.pickleSessionSummariesProvider = { projection.sessions }
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in projection.revision }
+        setup.router.releaseChild(sessionId: sessionID)
+        setup.reportChildProcessExit(sessionId: sessionID)
+        let spawnProbe = RouterSpawnProbe()
+        setup.primary.onSendSuspend = { [weak router = setup.router, weak primary = setup.primary] command in
+            guard command.type == .renameStoredPickle, let router else { return }
+            // The primary has not answered yet, so the offline rename still
+            // holds this session's gate.
+            do {
+                _ = try await router.spawnChildClient(sessionId: sessionID, cwd: "/tmp/ws")
+                spawnProbe.succeeded = true
+            } catch {
+                spawnProbe.error = error
+            }
+            let committed = makeProjectedSession(id: sessionID, title: command.title ?? "", status: .completed)
+            projection.sessions = [committed]
+            projection.revision = 9
+            router.sessionProjectionStorageDidChange()
+            primary?.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 9)))
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Renamed while stopped"
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.session?.title == "Renamed while stopped"
+            }
+        }
+        #expect(!spawnProbe.succeeded)
+        #expect(spawnProbe.error as? PickyCliSessionError
+            == .sessionOperationBusy(sessionId: sessionID, operation: "offlineRename"))
+        #expect(setup.pool.endpoint(for: sessionID) == nil)
+    }
+
+    @Test func resolveCallerValidatesWithOwningChildAndReturnsItsProjectedPickle() async throws {
+        let sessionID = "pickle-whoami"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let child = try #require(setup.children.first)
+        setup.router.pickleSessionSummariesProvider = { [makeProjectedSession(id: sessionID, title: "Research")] }
+        setup.router.dockGroupsProvider = {
+            [PickyDockGroupPayload(id: "group-1", name: "Research", color: 0, memberSessionIds: [sessionID], collapsed: false)]
+        }
+        child.onSendInject = { command in
+            guard command.type == .validateCliCaller else { return }
+            child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "resolveCaller",
+            callerContext: makeRouterCallerContext(sessionId: sessionID)
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.session?.id == sessionID
+            }
+        }
+        let completion = try #require(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(completion.groups?.first?.id == "group-1")
+        // The CLI treats a reply without `delivered` as "nothing happened".
+        #expect(completion.delivered == true)
+        // Only the owning daemon holds the binding, so validation must not be
+        // answered by the primary on a child-owned session.
+        #expect(child.sentCommands.contains { $0.type == .validateCliCaller && $0.callerContext?.sessionId == sessionID })
+        #expect(!setup.primary.sentCommands.contains { $0.type == .validateCliCaller })
+    }
+
+    @Test func resolveCallerFailsWhenPickleGroupsCannotBeRead() async throws {
+        // `whoami` answers with the caller's group, so an unreadable group
+        // source has to surface as an error instead of a confident "no group".
+        let sessionID = "pickle-whoami-no-groups"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let child = try #require(setup.children.first)
+        setup.router.pickleSessionSummariesProvider = { [makeProjectedSession(id: sessionID, title: "Research")] }
+        setup.router.dockGroupsProvider = nil
+        child.onSendInject = { command in
+            guard command.type == .validateCliCaller else { return }
+            child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "resolveCaller",
+            callerContext: makeRouterCallerContext(sessionId: sessionID)
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage?.isEmpty == false
+            }
+        }
+        let completion = try #require(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(completion.session == nil)
+        #expect(completion.delivered != true)
+    }
+
+    @Test func renameReportsTheOwnerCommitWhenALaterRenameSupersedesItInTheProjection() async throws {
+        // The projection moves straight to a newer name, so the committed text
+        // never shows up there. The reply must still describe what the owner
+        // persisted, and the revision the owner reported is what proves the
+        // write reached the app.
+        let sessionID = "pickle-rename-superseded"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let child = try #require(setup.children.first)
+        let projection = RouterProjectionBox(sessions: [makeProjectedSession(id: sessionID, title: "Old name")], revision: 4)
+        setup.router.pickleSessionSummariesProvider = { projection.sessions }
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in projection.revision }
+        child.onSendInject = { [weak router = setup.router] command in
+            guard command.type == .renameSession else { return }
+            let committed = makeProjectedSession(id: sessionID, title: command.title ?? "", titleOrigin: "user")
+            projection.sessions = [makeProjectedSession(id: sessionID, title: "Even newer name", titleOrigin: "user")]
+            projection.revision = 12
+            router?.sessionProjectionStorageDidChange()
+            child.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 11)))
+            child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        let startedAt = Date()
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Research results"
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains { $0.type == .completePickleBridgeRequest }
+        }
+        let completion = try #require(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(completion.session?.title == "Research results")
+        #expect(completion.errorMessage == nil)
+        // Waiting for text that will never be projected would have cost the
+        // full projection timeout instead.
+        #expect(Date().timeIntervalSince(startedAt) < 2)
+    }
+
+    @Test func resolveCallerFailsWithoutValidatingWhenTheSessionIsNotProjected() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: [])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        setup.router.pickleSessionSummariesProvider = { [] }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "resolveCaller",
+            callerContext: makeRouterCallerContext(sessionId: "ghost-session")
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage?.contains("ghost-session") == true
+            }
+        }
+        #expect(!setup.primary.sentCommands.contains { $0.type == .validateCliCaller })
+        #expect(setup.pool.activeChildSessionIds.isEmpty)
+    }
+
+    @Test func resolveCallerForMainAgentValidatesOnPrimaryAndReturnsNoPickle() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: [])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        setup.router.pickleSessionSummariesProvider = { [] }
+        setup.router.dockGroupsProvider = { [] }
+        setup.primary.onSendInject = { [weak primary = setup.primary] command in
+            guard command.type == .validateCliCaller else { return }
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "resolveCaller",
+            callerContext: makeRouterCallerContext(sessionId: PickyCliCallerContext.mainAgentSessionID)
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains { $0.type == .completePickleBridgeRequest }
+        }
+        let completion = try #require(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(completion.errorMessage == nil)
+        #expect(completion.session == nil)
+        #expect(completion.groups != nil)
+        #expect(setup.primary.sentCommands.contains { $0.type == .validateCliCaller })
+    }
+
+    @Test func pickleRenameRejectsUnusableTitlesBeforeTouchingTheOwner() async throws {
+        let sessionID = "pickle-rename-invalid"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let child = try #require(setup.children.first)
+        setup.router.pickleSessionSummariesProvider = { [makeProjectedSession(id: sessionID, title: "Old name")] }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "   "
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage?.isEmpty == false
+            }
+        }
+        #expect(!child.sentCommands.contains { $0.type == .renameSession })
+    }
+
+    @Test func typedNameCommandRenamesAStoppedPickleWithoutRespawningItsDaemon() async throws {
+        // `/name` used to travel as a steer, which respawned the Pickle's child
+        // daemon just to change a label.
+        let sessionID = "pickle-typed-name"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let projection = RouterProjectionBox(
+            sessions: [makeProjectedSession(id: sessionID, title: "Old name", status: .completed)],
+            revision: 1
+        )
+        setup.router.pickleSessionSummariesProvider = { projection.sessions }
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in projection.revision }
+        setup.router.releaseChild(sessionId: sessionID)
+        setup.reportChildProcessExit(sessionId: sessionID)
+        setup.primary.onSendInject = { [weak router = setup.router, weak primary = setup.primary] command in
+            guard command.type == .renameStoredPickle else { return }
+            let committed = makeProjectedSession(id: sessionID, title: command.title ?? "", status: .completed, titleOrigin: "user")
+            projection.sessions = [committed]
+            projection.revision = 2
+            router?.sessionProjectionStorageDidChange()
+            primary?.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 2)))
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        try await setup.router.send(PickyCommandEnvelope(type: .steer, sessionId: sessionID, text: "/name Renamed by command"))
+
+        let rename = try #require(setup.primary.sentCommands.last { $0.type == .renameStoredPickle })
+        #expect(rename.title == "Renamed by command")
+        #expect(!setup.primary.sentCommands.contains { $0.type == .steer || $0.type == .followUp })
+        #expect(setup.pool.endpoint(for: sessionID) == nil)
+        #expect(setup.pool.activeChildSessionIds.isEmpty)
+
+        // Invalid names are rejected before the input path can respawn the child.
+        for text in ["/name   ", "/name\nForbidden", "/name Name\n", "\n/name\tName\t"] {
+            await #expect(throws: PickyCliSessionError.self) {
+                try await setup.router.send(PickyCommandEnvelope(type: .steer, sessionId: sessionID, text: text))
+            }
+        }
+        #expect(!setup.primary.sentCommands.contains { $0.type == .steer })
+        #expect(setup.pool.endpoint(for: sessionID) == nil)
+    }
+
+    @Test func selfRenameOfAPrimaryHostedPickleCommitsThroughThePrimaryWithItsCallerContext() async throws {
+        // A Pickle that never got its own child daemon (CLI, handoff, pinned)
+        // is hosted by the primary, so `--self` from inside it must still find
+        // an owner.
+        let sessionID = "pickle-rename-primary-self"
+        let setup = try await setUpRouterWithChildren(sessionIds: [])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let projection = RouterProjectionBox(sessions: [makeProjectedSession(id: sessionID, title: "Old name")], revision: 2)
+        setup.router.pickleSessionSummariesProvider = { projection.sessions }
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in projection.revision }
+        setup.primary.onSendInject = { [weak router = setup.router, weak primary = setup.primary] command in
+            guard command.type == .renameSession else { return }
+            let committed = makeProjectedSession(id: sessionID, title: command.title ?? "", titleOrigin: "user")
+            projection.sessions = [committed]
+            projection.revision = 3
+            router?.sessionProjectionStorageDidChange()
+            primary?.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 3)))
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Research results",
+            callerContext: makeRouterCallerContext(sessionId: sessionID)
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.session?.title == "Research results"
+            }
+        }
+        let rename = try #require(setup.primary.sentCommands.last { $0.type == .renameSession })
+        // The owner, not the app, validates the binding, so the context has to
+        // travel with the command.
+        #expect(rename.callerContext == makeRouterCallerContext(sessionId: sessionID))
+        #expect(!setup.primary.sentCommands.contains { $0.type == .renameStoredPickle })
+        #expect(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest }?.errorMessage == nil)
+    }
+
+    @Test func renameToTheNameAlreadyShownStillCommitsThroughTheOwner() async throws {
+        // Confirming the current name is how it becomes user-assigned, and the
+        // owner is the only place that decision is durable. Answering from the
+        // app's cache would also skip the caller check.
+        let sessionID = "pickle-rename-same-name"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let child = try #require(setup.children.first)
+        setup.router.pickleSessionSummariesProvider = { [makeProjectedSession(id: sessionID, title: "Research results")] }
+        // The owner pins the name at revision 2; the app is already there, so
+        // the commit is confirmed without another projection publication.
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in 2 }
+        child.onSendInject = { command in
+            guard command.type == .renameSession else { return }
+            let committed = makeProjectedSession(id: sessionID, title: "Research results", titleOrigin: "user")
+            child.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 2)))
+            child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Research results",
+            callerContext: makeRouterCallerContext(sessionId: sessionID)
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains { $0.type == .completePickleBridgeRequest }
+        }
+        #expect(child.sentCommands.contains { $0.type == .renameSession && $0.title == "Research results" })
+        let completion = try #require(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(completion.errorMessage == nil)
+        // The reply reports what the owner committed, including the origin it
+        // recorded, not the pre-rename projection.
+        #expect(completion.session?.titleOrigin == "user")
+    }
+
+    @Test func offlineRenameIsRefusedUntilTheStoppedChildProcessHasActuallyExited() async throws {
+        let sessionID = "pickle-rename-still-exiting"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID], childExitConfirmationTimeout: 0.2)
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        setup.router.pickleSessionSummariesProvider = {
+            [makeProjectedSession(id: sessionID, title: "Old name", status: .completed)]
+        }
+        // Released, so no endpoint and no client remain, but the daemon process
+        // has not reported exit and can still be writing its session file.
+        setup.router.releaseChild(sessionId: sessionID)
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Written too early"
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage?.isEmpty == false
+            }
+        }
+        #expect(!setup.primary.sentCommands.contains { $0.type == .renameStoredPickle })
+        #expect(setup.pool.hasLiveChildProcess(sessionId: sessionID))
+    }
+
+    @Test func unansweredOfflineRenameKeepsTheSessionLockedUntilTheOwnerFinallyReplies() async throws {
+        let sessionID = "pickle-rename-unanswered"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID], renameAcknowledgementTimeout: 0.2)
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let projection = RouterProjectionBox(sessions: [
+            makeProjectedSession(id: sessionID, title: "Old name", status: .completed),
+        ])
+        setup.router.pickleSessionSummariesProvider = { projection.sessions }
+        setup.router.cliSessions.projectedSessionRevisionProvider = { _ in projection.revision }
+        setup.router.releaseChild(sessionId: sessionID)
+        setup.reportChildProcessExit(sessionId: sessionID)
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Never acknowledged"
+        )))
+
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.errorMessage?.isEmpty == false
+            }
+        }
+        let unanswered = try #require(setup.primary.sentCommands.last { $0.type == .renameStoredPickle })
+        // The primary may still be writing that record, so nothing else may
+        // touch this session yet.
+        let spawnProbe = RouterSpawnProbe()
+        do {
+            _ = try await setup.router.spawnChildClient(sessionId: sessionID, cwd: "/tmp/ws")
+            spawnProbe.succeeded = true
+        } catch {
+            spawnProbe.error = error
+        }
+        #expect(!spawnProbe.succeeded)
+        #expect(spawnProbe.error as? PickyCliSessionError
+            == .sessionOperationBusy(sessionId: sessionID, operation: "offlineRename"))
+
+        // A late reply is still a definitive outcome; it reopens the session.
+        setup.primary.onSendInject = { [weak router = setup.router, weak primary = setup.primary] command in
+            guard command.type == .renameStoredPickle else { return }
+            let committed = makeProjectedSession(id: sessionID, title: command.title ?? "", status: .completed)
+            projection.sessions = [committed]
+            projection.revision = 5
+            router?.sessionProjectionStorageDidChange()
+            primary?.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 5)))
+            primary?.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        }
+        setup.primary.emit(.protocolEvent(makeAckEnvelope(commandId: unanswered.id)))
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "rename",
+            sessionId: sessionID,
+            title: "Renamed after the late reply"
+        )))
+        try await waitUntil {
+            setup.primary.sentCommands.contains {
+                $0.type == .completePickleBridgeRequest && $0.session?.title == "Renamed after the late reply"
+            }
+        }
+    }
+
     @Test func handlesPickleBridgeListAndSteerThroughChildProjectionProvider() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)
@@ -2624,13 +3131,24 @@ private struct RouterBroadcastSetup {
     let pool: PickyAgentDaemonPool
     let primary: StubAgentClient
     let children: [StubAgentClient]
+    let poolFactory: StubLauncherFactoryForRouter
+
+    /// Reports the child's Node process as really exited. Releasing a child
+    /// only asks it to stop, and the router refuses to rewrite stored metadata
+    /// until the process is confirmed gone.
+    @MainActor
+    func reportChildProcessExit(sessionId: String, exitCode: Int32 = 0) {
+        poolFactory.runner(for: sessionId)?.emitTermination(exitCode: exitCode)
+    }
 }
 
 @MainActor
 private func setUpRouterWithChildren(
     sessionIds: [String],
     permanentDeletionAcknowledgementTimeout: TimeInterval? = nil,
-    supportsSessionProjectionV2: Bool = false
+    supportsSessionProjectionV2: Bool = false,
+    renameAcknowledgementTimeout: TimeInterval? = nil,
+    childExitConfirmationTimeout: TimeInterval? = nil
 ) async throws -> RouterBroadcastSetup {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
     let agentd = root.appendingPathComponent("agentd", isDirectory: true)
@@ -2664,6 +3182,8 @@ private func setUpRouterWithChildren(
             supportsSessionProjectionV2: supportsSessionProjectionV2
         )
     }
+    if let renameAcknowledgementTimeout { router.cliSessions.renameAcknowledgementTimeout = renameAcknowledgementTimeout }
+    if let childExitConfirmationTimeout { router.cliSessions.childExitConfirmationTimeout = childExitConfirmationTimeout }
     await router.connect()
 
     var children: [StubAgentClient] = []
@@ -2677,7 +3197,7 @@ private func setUpRouterWithChildren(
         }
         children.append(stub)
     }
-    return RouterBroadcastSetup(router: router, pool: pool, primary: primary, children: children)
+    return RouterBroadcastSetup(router: router, pool: pool, primary: primary, children: children, poolFactory: poolFactory)
 }
 
 private func makeErrorEnvelope(commandId: String, code: String = "bad_message", message: String) -> PickyEventEnvelope {
@@ -2687,6 +3207,51 @@ private func makeErrorEnvelope(commandId: String, code: String = "bad_message", 
         timestamp: Date(),
         event: .error(PickyErrorEvent(code: code, message: message, commandId: commandId))
     )
+}
+
+/// Mutable projection stand-in for rename tests. The router reads its sessions
+/// through `pickleSessionSummariesProvider`, and a rename is only complete once
+/// the new title is observable there.
+@MainActor
+private final class RouterProjectionBox {
+    var sessions: [PickyAgentSession]
+    /// Revision the app has applied, as the router reads it through
+    /// `projectedSessionRevisionProvider`.
+    var revision: Int?
+    init(sessions: [PickyAgentSession], revision: Int? = nil) {
+        self.sessions = sessions
+        self.revision = revision
+    }
+}
+
+@MainActor
+private final class RouterSpawnProbe {
+    var error: Error?
+    var succeeded = false
+}
+
+/// The owner's committed answer to a rename. agentd unicasts this before its
+/// ack, and the router reports that session instead of its own cached copy.
+private func makePickleSessionUpdatedEnvelope(
+    commandId: String,
+    session: PickyAgentSession,
+    revision: Int? = nil
+) -> PickyEventEnvelope {
+    PickyEventEnvelope(
+        id: "event-rename-\(commandId)",
+        protocolVersion: pickyAgentProtocolVersion,
+        timestamp: Date(),
+        event: .pickleSessionUpdated(commandId: commandId, session: session, revision: revision)
+    )
+}
+
+private func makeRouterCallerContext(
+    sessionId: String,
+    bindingId: String = "binding-1",
+    piSessionId: String = "pi-session-1",
+    generation: Int = 1
+) -> PickyCliCallerContext {
+    PickyCliCallerContext(bindingId: bindingId, sessionId: sessionId, piSessionId: piSessionId, generation: generation)
 }
 
 private func makeAckEnvelope(commandId: String) -> PickyEventEnvelope {
@@ -3855,5 +4420,40 @@ extension PickyAgentClientRouterTests {
         #expect(storage.sessionSummariesForCLI().first?.archived == ownerChanged)
         #expect(viewModel.archivedSessions.map(\.id) == (ownerChanged ? ["tracked"] : []))
         #expect(viewModel.sessions.map(\.id) == (ownerChanged ? [] : ["tracked"]))
+    }
+}
+
+extension PickyAgentClientRouterTests {
+    @Test func renameWaitsForActualViewModelProjectionBeforeReportingSuccess() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let pool = PickyAgentDaemonPool(configuration: .init(token: "t", appSupportRoot: FileManager.default.temporaryDirectory))
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory(), supportsSessionProjectionV2: true)
+        let storage = PickyRegistrySessionProjectionStorage()
+        let viewModel = PickySessionListViewModel(client: router, notificationCenter: PickyNoopNotificationCenter(), archiveStore: RouterArchiveStore(), sessionProjectionStorage: storage)
+        router.pickleSessionSummariesProvider = { viewModel.pickleSessionSummariesForCLI() }
+        router.cliSessions.projectedSessionRevisionProvider = { viewModel.projectedSessionRevisionForCLI(sessionID: $0) }
+        viewModel.onSessionProjectionStorageChanged = { router.sessionProjectionStorageDidChange() }
+        defer { viewModel.stop(); router.disconnect() }
+        viewModel.start()
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let before = makeProjectedSession(id: "rename-v2", title: "Before", status: .waiting_for_input)
+        primary.emit(.protocolEvent(makeSessionProjectionSnapshotEvent(before)))
+        try await waitUntil { viewModel.sessions.first?.title == "Before" }
+        let pending = Task { try await viewModel.renameSession(sessionID: before.id, title: "After") }
+        try await waitUntil { primary.sentCommands.contains { $0.type == .renameSession } }
+        let command = try #require(primary.sentCommands.last { $0.type == .renameSession })
+        let committed = makeProjectedSession(id: before.id, title: "After", status: .waiting_for_input, titleOrigin: "user")
+        primary.emit(.protocolEvent(makePickleSessionUpdatedEnvelope(commandId: command.id, session: committed, revision: 2)))
+        primary.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+        #expect(viewModel.sessions.first?.title == "Before")
+        let data = Data(#"{"sessionId":"rename-v2","epoch":"router-epoch","baseRevision":1,"revision":2,"mutations":[{"type":"metaPatch","patch":{"title":"After","titleOrigin":"user"}}]}"#.utf8)
+        let transaction = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionProjectionTransaction.self, from: data)
+        primary.emit(.protocolEvent(asyncControlEnvelope(.sessionProjectionTransaction(transaction))))
+        try await pending.value
+        #expect(viewModel.sessions.first?.title == "After")
+        #expect(viewModel.sessions.first?.status == .waiting_for_input)
+        #expect(viewModel.projectedSessionRevisionForCLI(sessionID: before.id) == 2)
+        #expect(viewModel.pickleSessionSummariesForCLI().first?.titleOrigin == "user")
+        #expect(!primary.sentCommands.contains { $0.type == .followUp || $0.type == .steer })
     }
 }

@@ -34,6 +34,8 @@ function buildPickyCliSection(): string[] {
     "- Grounded create (only when your current request and captured desktop context are relevant): `picky pickle-create <title> --instructions <brief> --from-main [--cwd <path>] [--group <name>]`.",
     "- Never combine `--from-main` and `--no-context` on creation: the current main route ignores `--no-context`. Do not use stale main context for an unrelated task.",
     "- Inspect/manage: `picky pickle-list --from-main [--query <text>] [--limit <n>]` and `picky pickle-archive <session-id> --from-main`.",
+    "- Identity: `picky whoami --json` reports the current hosted session and its group. Identity is runtime-bound; never invent caller context or infer it from a working directory or the selected Pickle.",
+    "- Rename a Pickle: `picky pickle-rename <session-id> <name> [--json]`. Pickles may use `--self <name>` instead of an ID; you cannot rename the main Picky agent. This changes the Picky display name without editing the Pi session file or resuming work. If the result is unconfirmed, inspect the current name before retrying.",
     "- Reuse: `picky pickle-steer <session-id> <delta> --from-main` after identifying the target with `picky pickle-list --from-main`.",
     "- `picky pickle-abort` runs only when the user explicitly asks to stop, cancel, or kill a Pickle.",
     "- Groups: `picky pickle-group-list`, `picky pickle-group-create`, `picky pickle-group-add`, `picky pickle-group-remove-members`, and `picky pickle-group-remove`. Group lists hide archived member IDs by default; add `--include-archived` only when archived Pickles matter. Group removal keeps members active; member archival requires explicit confirmation flags.",

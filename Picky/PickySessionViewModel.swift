@@ -975,6 +975,37 @@ final class PickySessionListViewModel: ObservableObject {
         select(sessionID: target)
     }
 
+    /// Renames a Pickle through its owning daemon. Earlier builds sent `/name`
+    /// as a steer, which queued a model turn just to change a label and could
+    /// not reach an archived or stopped Pickle at all.
+    func renameSession(sessionID: String, title: String) async throws {
+        guard let renamer = client as? PickyPickleTitleRenaming else {
+            lastError = Self.renameFailureMessage(for: PickyAgentClientRouterError.routerUnavailable)
+            throw PickyAgentClientRouterError.routerUnavailable
+        }
+        pickySessionLog("rename session=\(sessionID) titleChars=\(title.count)")
+        do {
+            try await renamer.renamePickleTitle(sessionId: sessionID, title: title, callerContext: nil)
+            lastError = nil
+        } catch {
+            lastError = Self.renameFailureMessage(for: error)
+            throw error
+        }
+    }
+
+    /// The CLI-facing messages stay in English on the wire. What the HUD shows
+    /// has to be localized, so the recoverable cases are mapped here and
+    /// anything else keeps the underlying detail.
+    static func renameFailureMessage(for error: Error) -> String {
+        switch error as? PickyCliSessionError {
+        case .invalidPickleTitle: L10n.t("hud.rename.error.invalidName")
+        case .renameOwnerUnavailable: L10n.t("hud.rename.error.ownerUnavailable")
+        case .renameOutcomeUnconfirmed: L10n.t("hud.rename.error.unconfirmed")
+        case .sessionOperationBusy: L10n.t("hud.rename.error.busy")
+        default: L10n.t("hud.rename.error.failed", error.localizedDescription)
+        }
+    }
+
     /// Continues a request that Pi accepted before a runtime/provider failure.
     /// Sending the original request again could repeat completed tools or other
     /// side effects, so Retry adds only a short localized continuation turn.
@@ -1771,7 +1802,10 @@ final class PickySessionListViewModel: ObservableObject {
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
              .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .hello,
-             .hubStatisticsResult, .usageLimitsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted, .ack, .unknown:
+             .hubStatisticsResult, .usageLimitsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted, .ack, .unknown,
+             // A rename reply is correlated and consumed at the router
+             // boundary; the card itself updates from the projection.
+             .pickleSessionUpdated:
             break
         }
     }

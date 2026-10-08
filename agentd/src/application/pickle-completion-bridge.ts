@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { PickyCliCallerContext } from "../domain/picky-cli-context.js";
 import type { ExternalPickleCompletionRequest } from "./pickle-completion-coordinator.js";
 import type { DockGroup, PickyAgentSession, PickyContextPacket } from "../protocol.js";
 
@@ -17,6 +18,8 @@ export interface AppPickleHandoffResult {
 
 export type AppPickleBridgeRequest =
   | { operation: "listSessions" }
+  | { operation: "resolveCaller"; callerContext: PickyCliCallerContext }
+  | { operation: "rename"; sessionId: string; title: string; callerContext?: PickyCliCallerContext }
   | { operation: "steer" | "followUp"; sessionId: string; text: string }
   | { operation: "abort"; sessionId: string }
   | { operation: "setArchived"; sessionId: string; archived: boolean; archiveMode?: "continue" | "stopThenArchive" }
@@ -64,7 +67,7 @@ export class PickleBridgeRequestCoordinator<App> {
     return await new Promise<AppPickleBridgeResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(new Error(timeoutMessage));
+        reject(new Error(unconfirmedBridgeMessage(request, timeoutMessage)));
       }, timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer, app, request });
       this.deps.send(app, requestId, request);
@@ -89,6 +92,8 @@ export class PickleBridgeRequestCoordinator<App> {
     if (pending.request.operation === "setArchived" && result.session?.archived !== pending.request.archived) {
       pending.reject(new Error("Owner archive state does not match the completed request")); return;
     }
+    const cliError = cliBridgeResultError(pending.request, result);
+    if (cliError) { pending.reject(new Error(cliError)); return; }
     pending.resolve({ sessions: result.sessions, groups: result.groups, session: result.session, delivered: result.delivered });
   }
 
@@ -96,7 +101,7 @@ export class PickleBridgeRequestCoordinator<App> {
     for (const [requestId, pending] of this.pending) {
       if (pending.app !== app) continue;
       clearTimeout(pending.timer);
-      pending.reject(new Error(message));
+      pending.reject(new Error(unconfirmedBridgeMessage(pending.request, message)));
       this.pending.delete(requestId);
     }
   }
@@ -104,10 +109,28 @@ export class PickleBridgeRequestCoordinator<App> {
   rejectAll(message: string): void {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
-      pending.reject(new Error(message));
+      pending.reject(new Error(unconfirmedBridgeMessage(pending.request, message)));
     }
     this.pending.clear();
   }
+}
+
+function unconfirmedBridgeMessage(request: AppPickleBridgeRequest, message: string): string {
+  return request.operation === "rename"
+    ? `${message}. The rename result is unconfirmed; check pickle-list --include-archived before retrying.`
+    : message;
+}
+
+function cliBridgeResultError(request: AppPickleBridgeRequest, result: AppPickleBridgeResult): string | undefined {
+  if (request.operation === "rename"
+    && (result.session?.id !== request.sessionId || result.session.title !== request.title || result.session.titleOrigin !== "user")) {
+    return "Saved Pickle name does not match the requested change";
+  }
+  if (request.operation === "resolveCaller"
+    && (result.delivered !== true || (request.callerContext.sessionId !== "picky" && result.session?.id !== request.callerContext.sessionId) || !result.groups)) {
+    return "Caller identity could not be confirmed";
+  }
+  return undefined;
 }
 
 /** Adapts the wire command to the completion coordinator without making the server own admission rules. */

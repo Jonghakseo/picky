@@ -57,7 +57,8 @@
         },
         "messageJournalAvailable": true,
         "fastMode": true,
-        "fastModeSupported": true
+        "fastModeSupported": true,
+        "titleOrigin": "user"
       }
     }
   ],
@@ -116,7 +117,8 @@
             "canReleaseRuntime": false
           },
           "fastMode": true,
-          "fastModeSupported": true
+          "fastModeSupported": true,
+          "titleOrigin": "user"
         }
       },
       "messageJournalAvailable": {

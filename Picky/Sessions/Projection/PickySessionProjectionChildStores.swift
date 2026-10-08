@@ -24,6 +24,9 @@ struct PickySessionMetadata: Equatable {
     let id: String
     var revision: Int
     var title: String
+    /// `"user"` while the title is an explicit rename that Pi's automatic naming
+    /// must not overwrite.
+    var titleOrigin: String?
     var status: PickySessionStatus
     var cwd: String?
     var piSessionFilePath: String?
@@ -51,6 +54,7 @@ struct PickySessionMetadata: Equatable {
         id = session.id
         self.revision = revision
         title = session.title
+        titleOrigin = session.titleOrigin
         status = session.status
         cwd = session.cwd
         piSessionFilePath = session.piSessionFilePath
@@ -80,6 +84,9 @@ struct PickySessionMetadata: Equatable {
         id = card.id
         self.revision = revision
         title = card.title
+        // `SessionCard` has no origin field. `PickySessionStore.replace(card:)`
+        // carries the previously applied value instead of resetting it.
+        titleOrigin = nil
         status = card.status
         cwd = card.cwd
         piSessionFilePath = card.piSessionFilePath

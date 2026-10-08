@@ -9,6 +9,7 @@ import Foundation
 struct PickySessionMetaPatch: Decodable, Equatable {
     let id: FieldUpdate<String>
     let title: FieldUpdate<String>
+    let titleOrigin: FieldUpdate<String>
     let status: FieldUpdate<PickySessionStatus>
     let cwd: FieldUpdate<String>
     let piSessionFilePath: FieldUpdate<String>
@@ -33,6 +34,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id
         case title
+        case titleOrigin
         case status
         case cwd
         case piSessionFilePath
@@ -69,6 +71,7 @@ struct PickySessionMetaPatch: Decodable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try FieldUpdate.decode(from: container, forKey: .id, allowsClear: false)
         title = try FieldUpdate.decode(from: container, forKey: .title, allowsClear: false)
+        titleOrigin = try FieldUpdate.decode(from: container, forKey: .titleOrigin, allowsClear: true)
         status = try FieldUpdate.decode(from: container, forKey: .status, allowsClear: false)
         cwd = try FieldUpdate.decode(from: container, forKey: .cwd, allowsClear: true)
         piSessionFilePath = try FieldUpdate.decode(from: container, forKey: .piSessionFilePath, allowsClear: true)
@@ -104,6 +107,7 @@ extension PickySessionMetaPatch {
     @MainActor
     func apply(to metadata: inout PickySessionMetadata, custom: some PickySessionMetaPatchCustomApplying) {
         title.apply(to: &metadata.title)
+        titleOrigin.apply(to: &metadata.titleOrigin)
         status.apply(to: &metadata.status)
         cwd.apply(to: &metadata.cwd)
         piSessionFilePath.apply(to: &metadata.piSessionFilePath)

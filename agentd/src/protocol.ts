@@ -432,10 +432,34 @@ export const PickySessionLastRequestSchema = z.object({
 });
 export type PickySessionLastRequest = z.infer<typeof PickySessionLastRequestSchema>;
 
+const PickyRenameTitleSchema = z.string()
+  .regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u, "Name cannot contain line breaks or control characters")
+  .trim().min(1).refine((title) => [...title].length <= 200, "Name must contain at most 200 Unicode characters");
+
+export const PickyCliCallerContextSchema = z.object({
+  bindingId: z.string().min(1).max(128),
+  sessionId: z.string().min(1).max(256),
+  piSessionId: z.string().min(1).max(256),
+  generation: z.number().int().nonnegative(),
+});
+
+export const PickyCliIdentitySchema = z.object({
+  schemaVersion: z.literal(1),
+  kind: z.enum(["picky", "pickle"]),
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  cwd: z.string().nullable(),
+  createdAt: isoTimestamp.nullable(),
+  group: z.object({ id: z.string(), name: z.string() }).nullable(),
+});
+export type PickyCliIdentity = z.infer<typeof PickyCliIdentitySchema>;
+
 export const PickyAgentSessionSchema = z.object({
   id: z.string(),
   revision: z.number().int().nonnegative().default(0),
   title: z.string(),
+  titleOrigin: z.literal("user").optional(),
   status: SessionStatusSchema,
   cwd: z.string().optional(),
   piSessionFilePath: z.string().optional(),
@@ -737,6 +761,11 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   }),
   CommandBaseSchema.extend({ type: z.literal("duplicatePickleSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("pinPickleSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("whoami"), callerContext: PickyCliCallerContextSchema }),
+  CommandBaseSchema.extend({ type: z.literal("validateCliCaller"), callerContext: PickyCliCallerContextSchema }),
+  CommandBaseSchema.extend({ type: z.literal("renamePickle"), sessionId: z.string().min(1), title: PickyRenameTitleSchema, callerContext: PickyCliCallerContextSchema.optional() }),
+  CommandBaseSchema.extend({ type: z.literal("renameSession"), sessionId: z.string().min(1), title: PickyRenameTitleSchema, callerContext: PickyCliCallerContextSchema.optional() }),
+  CommandBaseSchema.extend({ type: z.literal("renameStoredPickle"), sessionId: z.string().min(1), title: PickyRenameTitleSchema }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMainOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMacOSOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), archiveMode: z.enum(["continue", "stopThenArchive"]).optional(), sessionId: z.string(), archived: z.boolean() }),
@@ -991,7 +1020,8 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({
     type: z.literal("pickleBridgeRequested"),
     requestId: z.string().min(1),
-    operation: z.enum(["listSessions", "steer", "followUp", "abort", "setArchived", "delete", "manageGroups", "notifyMainOfPickleCompletion"]),
+    operation: z.enum(["listSessions", "resolveCaller", "rename", "steer", "followUp", "abort", "setArchived", "delete", "manageGroups", "notifyMainOfPickleCompletion"]),
+    callerContext: PickyCliCallerContextSchema.optional(),
     sessionId: z.string().optional(),
     text: z.string().optional(),
     prompt: z.string().optional(),
@@ -1020,6 +1050,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   }),
   // CLI/external replies for Pickle bridge commands. Addressed to the requesting
   // socket only and never part of the app's session projection stream.
+  EventBaseSchema.extend({ type: z.literal("cliIdentity"), commandId: z.string(), identity: PickyCliIdentitySchema }),
   EventBaseSchema.extend({ type: z.literal("pickleSessionsSnapshot"), commandId: z.string().min(1), sessions: z.array(PickyAgentSessionSchema) }),
   EventBaseSchema.extend({ type: z.literal("pickleSessionUpdated"), commandId: z.string().min(1), session: PickyAgentSessionSchema }),
   EventBaseSchema.extend({

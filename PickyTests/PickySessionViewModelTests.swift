@@ -315,6 +315,37 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.isEmpty)
     }
 
+    @Test func renameSessionPersistsThroughTheOwnerInsteadOfSteeringASlashCommand() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        try await viewModel.renameSession(sessionID: "session-1", title: "Research results")
+
+        #expect(client.renameRequests == [
+            FakePickyRenameRequest(sessionId: "session-1", title: "Research results", callerContext: nil),
+        ])
+        // Renaming is metadata: it must not enter the session's input path.
+        #expect(client.sentCommands.isEmpty)
+        #expect(viewModel.lastError == nil)
+    }
+
+    @Test func renameSessionSurfacesOwnerFailureWithoutFallingBackToInput() async throws {
+        struct RenameRejected: LocalizedError {
+            var errorDescription: String? { "Pickle owner is unavailable" }
+        }
+        let client = FakePickyAgentClient()
+        client.renameError = RenameRejected()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        await #expect(throws: RenameRejected.self) {
+            try await viewModel.renameSession(sessionID: "session-1", title: "Research results")
+        }
+        // The HUD message is localized, but it must keep the owner's reason
+        // instead of replacing it with a generic failure.
+        #expect(viewModel.lastError?.contains("Pickle owner is unavailable") == true)
+        #expect(client.sentCommands.isEmpty)
+    }
+
     @Test func createEmptyPickleSessionSendsSystemContextWithSelectedCwd() async throws {
         let client = FakePickyAgentClient()
         let childSpawner = FakeManualPickleChildSpawner()

@@ -129,6 +129,82 @@ async function runCli(args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ st
 }
 
 describe("picky cli", () => {
+  const callerContext = { bindingId: "binding-1", sessionId: "pickle-self", piSessionId: "pi-self", generation: 1 };
+  const callerEnv = { PICKY_CLI_CONTEXT: JSON.stringify(callerContext), PI_SESSION_ID: callerContext.piSessionId };
+
+  it("reports the bound caller and group as allowlisted JSON", async () => {
+    server.onCommand("whoami", (command, send) => {
+      send({ type: "cliIdentity", commandId: (command as { id: string }).id, identity: {
+        schemaVersion: 1, kind: "pickle", id: "pickle-self", name: "My Pickle", status: "running",
+        cwd: "/workspace", createdAt: FIXTURE_CREATED_AT, group: { id: "group-1", name: "Research" },
+        messages: ["SENSITIVE_MESSAGE"],
+      } });
+    });
+    const result = await runCli(["whoami", "--json"], callerEnv);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ schemaVersion: 1, kind: "pickle", id: "pickle-self", name: "My Pickle", status: "running", cwd: "/workspace", createdAt: FIXTURE_CREATED_AT, group: { id: "group-1", name: "Research" } });
+    expect(result.stdout).not.toContain("SENSITIVE_MESSAGE");
+    expect(server.received).toEqual([expect.objectContaining({ type: "whoami", callerContext })]);
+  });
+
+  it("does not let --from-main or inherited Pi identity impersonate a caller", async () => {
+    for (const env of [
+      { PICKY_CLI_CONTEXT: "", PI_SESSION_ID: "" },
+      { ...callerEnv, PI_SESSION_ID: "subagent-session" },
+      { ...callerEnv, PICKY_CLI_CONTEXT: "not-json" },
+    ]) {
+      expect((await runCli(["whoami", "--from-main"], env)).code).toBe(1);
+    }
+    expect((await runCli(["whoami", "--from-main"], callerEnv)).code).toBe(1);
+    expect(server.received).toEqual([]);
+  });
+
+  it("renames a bound Pickle without looking up or steering another session", async () => {
+    server.onCommand("renamePickle", (command, send) => {
+      const cmd = command as { id: string; sessionId: string; title: string };
+      send({ type: "pickleSessionUpdated", commandId: cmd.id, session: sessionFixture({ id: cmd.sessionId, title: cmd.title, titleOrigin: "user", revision: 8, archived: true, logs: ["SENSITIVE_LOG"] }) });
+    });
+    const result = await runCli(["pickle-rename", "--self", "  New name  ", "--json"], callerEnv);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ schemaVersion: 1, id: "pickle-self", name: "New name", revision: 8 });
+    expect(server.received).toEqual([expect.objectContaining({ type: "renamePickle", sessionId: "pickle-self", title: "New name", callerContext })]);
+    expect(result.stdout).not.toContain("SENSITIVE_LOG");
+  });
+
+  it.each(["🥒".repeat(200), "--from-main", "\u200bResearch\u200b"])("allows an explicit target from an ordinary terminal and preserves the literal name %#", async (title) => {
+    server.onCommand("renamePickle", (command, send) => {
+      const cmd = command as { id: string; sessionId: string; title: string };
+      send({ type: "pickleSessionUpdated", commandId: cmd.id, session: sessionFixture({ id: cmd.sessionId, title: cmd.title, titleOrigin: "user" }) });
+    });
+    const result = await runCli(["pickle-rename", "--json", "--", "archived-pickle", title], { PICKY_CLI_CONTEXT: "", PI_SESSION_ID: "" });
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).name).toBe(title);
+    expect(server.received[0]).not.toHaveProperty("callerContext");
+  });
+
+  it("rejects invalid names and ambiguous self targets before sending a command", async () => {
+    for (const args of [
+      ["pickle-rename", "--self", "pickle-other", "Name"],
+      ["pickle-rename", "pickle-other", "   "],
+      ["pickle-rename", "pickle-other", "line\nname"],
+      ["pickle-rename", "pickle-other", "x".repeat(201)],
+      ["pickle-rename", "pickle-other", "\u001b[31mName"],
+      ["pickle-rename", "picky", "Name"],
+    ]) expect((await runCli(args, callerEnv)).code).not.toBe(0);
+    expect(server.received).toEqual([]);
+  });
+
+  it("does not report success when a rename response contains a stale title", async () => {
+    server.onCommand("renamePickle", (command, send) => {
+      send({ type: "pickleSessionUpdated", commandId: (command as { id: string }).id, session: sessionFixture({ id: "pickle-self", title: "Old name" }) });
+    });
+    const result = await runCli(["pickle-rename", "--self", "New name"], callerEnv);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("did not confirm");
+    expect(server.received).toHaveLength(1);
+  });
+
   it("submit forwards text and resolves on externalEntryAck", async () => {
     server.onCommand("submitMainFromExternal", (command, send) => {
       send({

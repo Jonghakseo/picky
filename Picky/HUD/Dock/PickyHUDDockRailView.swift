@@ -193,7 +193,7 @@ struct PickyHUDDockRailView: View {
                    value: activeSessionID != nil || expansion.centersControls)
         .animation(accessibilityReduceMotion || holdsExpansion ? nil : .easeOut(duration: 0.18), value: expansion.isExpanded)
         .background(PickyHUDDockRailFrameReporter())
-        .overlay(alignment: resizeTabAlignment) { resizeTab }
+        .overlay(alignment: PickyHUDDockResizeTabPlacement.alignment(for: dockSide)) { resizeTab }
         .onHover { hovering in
             isDockHovered = hovering
             updateResizeTabGrace(isDockHovered: hovering)
@@ -1158,27 +1158,6 @@ struct PickyHUDDockRailView: View {
 
     // MARK: - Resize tab
 
-    /// The tab lives on the dock's free edge: the side facing the screen
-    /// interior, where the conversation card opens.
-    private var resizeTabAlignment: Alignment {
-        switch dockSide {
-        case .right: .leading
-        case .left: .trailing
-        case .bottom: .top
-        case .top: .bottom
-        }
-    }
-
-    private var resizeTabOffset: CGSize {
-        let depth = metrics.resizeTabDepth - 0.5
-        switch dockSide {
-        case .right: return CGSize(width: -depth, height: 0)
-        case .left: return CGSize(width: depth, height: 0)
-        case .bottom: return CGSize(width: 0, height: -depth)
-        case .top: return CGSize(width: 0, height: depth)
-        }
-    }
-
     /// How long the tab stays reachable after the pointer leaves the rail.
     /// The tab sticks out past the rail, so `isDockHovered` drops a moment
     /// before the pointer lands on it; without the grace, reaching the tab is
@@ -1237,7 +1216,7 @@ struct PickyHUDDockRailView: View {
             if isVisible { PickyHUDVisibleChromeFrameReporter() }
         }
         .allowsHitTesting(isVisible)
-        .offset(resizeTabOffset)
+        .offset(PickyHUDDockResizeTabPlacement.offset(for: dockSide, metrics: metrics))
         .onDisappear { cancelResizeTabGrace() }
         .help(L10n.t("dock.resize.help"))
         .accessibilityElement()

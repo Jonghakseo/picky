@@ -12,7 +12,8 @@ struct PickyHubConversationPage: View {
     var body: some View {
         PickyHubConversationTimeline(
             companionManager: dependencies.companionManager,
-            conversation: dependencies.companionManager.mainConversation
+            conversation: dependencies.companionManager.mainConversation,
+            tasks: dependencies.companionManager.mainTasks
         )
     }
 }
@@ -20,6 +21,8 @@ struct PickyHubConversationPage: View {
 private struct PickyHubConversationTimeline: View {
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject var conversation: PickyMainAgentConversationStore
+    /// Not observed here: only the Tasks section re-renders on a Task update, never the transcript.
+    let tasks: PickyMainTaskStore
     @State private var draft = ""
     @State private var didCopyResumeCommand = false
     @State private var composerFocused = false
@@ -101,6 +104,7 @@ private struct PickyHubConversationTimeline: View {
               }
             }
 
+            PickyHubMainTasksSection(store: tasks)
             composer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

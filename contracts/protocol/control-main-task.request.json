@@ -1,0 +1,7 @@
+{
+  "id": "cmd-control-main-task",
+  "protocolVersion": "2026-08-25",
+  "type": "controlMainTask",
+  "taskId": "task-7f3c2a10-1b2c-4d5e-8f90-123456789abc",
+  "action": "stop"
+}

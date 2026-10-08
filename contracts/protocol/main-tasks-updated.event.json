@@ -1,0 +1,88 @@
+{
+  "id": "event-main-tasks-updated",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-08T12:00:00.000Z",
+  "type": "mainTasksUpdated",
+  "tasks": [
+    {
+      "id": "task-7f3c2a10-1b2c-4d5e-8f90-123456789abc",
+      "revision": 2,
+      "title": "Rename desktop screenshots by date",
+      "status": "running",
+      "cwd": "/Users/me/Desktop",
+      "readonly": false,
+      "instructions": [
+        "Rename every screenshot on the desktop to YYYY-MM-DD-HHMM.png.",
+        "Skip files that already follow the pattern."
+      ],
+      "createdAt": "2026-10-08T11:58:00.000Z",
+      "updatedAt": "2026-10-08T11:59:30.000Z",
+      "revisionStartedAt": "2026-10-08T11:59:31.000Z",
+      "tier": "fast",
+      "canStop": true,
+      "canResume": false
+    },
+    {
+      "id": "task-0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d",
+      "revision": 1,
+      "title": "Fix the login retry bug",
+      "status": "blocked",
+      "cwd": "/Users/me/src/product",
+      "readonly": false,
+      "instructions": ["Find out why login retries twice and fix it."],
+      "createdAt": "2026-10-08T10:00:00.000Z",
+      "updatedAt": "2026-10-08T10:20:00.000Z",
+      "report": {
+        "status": "blocked",
+        "summary": "The retry comes from the auth client. Fixing it changes product code.",
+        "artifacts": ["src/auth/client.ts"],
+        "verification": ["Reproduced the double retry with the unit test suite"],
+        "blockers": ["Needs a production code change in src/auth/client.ts"],
+        "escalation": "production_code"
+      },
+      "handoff": {
+        "decisionId": "delegation-1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+        "pickleSessionId": "pickle-session-42"
+      },
+      "canStop": false,
+      "canResume": true
+    },
+    {
+      "id": "task-9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+      "revision": 1,
+      "title": "Collect pricing pages",
+      "status": "cancelled",
+      "cwd": "/Users/me",
+      "readonly": true,
+      "instructions": ["Compare the pricing pages of three note apps."],
+      "createdAt": "2026-10-08T09:00:00.000Z",
+      "updatedAt": "2026-10-08T09:05:00.000Z",
+      "cleanup": "uncertain",
+      "canStop": false,
+      "canResume": true
+    }
+  ],
+  "decisions": [
+    {
+      "id": "delegation-5d2e8c1a-0f3b-4a6d-9c7e-abcdef012345",
+      "state": "pending",
+      "title": "Add CSV export to the billing page",
+      "instructions": "Implement CSV export for invoices on the billing page, with tests.",
+      "cwd": "/Users/me/src/product",
+      "question": "Should a Pickle handle this?",
+      "createdAt": "2026-10-08T11:00:00.000Z",
+      "updatedAt": "2026-10-08T11:00:00.000Z"
+    },
+    {
+      "id": "delegation-1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+      "state": "pickle",
+      "title": "Fix the login retry bug",
+      "instructions": "Fix the double login retry in src/auth/client.ts and verify it.",
+      "cwd": "/Users/me/src/product",
+      "createdAt": "2026-10-08T10:21:00.000Z",
+      "updatedAt": "2026-10-08T10:21:05.000Z",
+      "fromTaskId": "task-0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d",
+      "pickle": { "state": "created", "sessionId": "pickle-session-42" }
+    }
+  ]
+}

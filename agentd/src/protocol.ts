@@ -9,6 +9,7 @@ import { packageCommandSchemas, packageEventSchemas } from "./features/package/s
 import { piOAuthCommandSchemas, piOAuthEventSchemas } from "./features/pi-oauth/schema.js";
 import { hubCommandSchemas, hubEventSchemas } from "./features/hub/schema.js";
 import { usageLimitsCommandSchemas, usageLimitsEventSchemas } from "./features/usage-limits/schema.js";
+import { mainTasksCommandSchemas, mainTasksEventSchemas } from "./features/main-tasks/schema.js";
 
 // The envelope primitives live in `protocol-base.ts` so feature slices can
 // extend them without importing this module back (see features/slice-contract.ts).
@@ -854,6 +855,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
   ...hubCommandSchemas,
   ...usageLimitsCommandSchemas,
+  ...mainTasksCommandSchemas,
 ]).superRefine((command, context) => {
   if (command.type === "getSessionProjectionSnapshot" && command.id !== command.requestId) {
     context.addIssue({
@@ -1006,6 +1008,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   }),
   ...hubEventSchemas,
   ...usageLimitsEventSchemas,
+  ...mainTasksEventSchemas,
   ...packageEventSchemas,
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),

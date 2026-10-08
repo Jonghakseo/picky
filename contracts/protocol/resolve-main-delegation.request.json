@@ -1,0 +1,7 @@
+{
+  "id": "cmd-resolve-main-delegation",
+  "protocolVersion": "2026-08-25",
+  "type": "resolveMainDelegation",
+  "decisionId": "delegation-5d2e8c1a-0f3b-4a6d-9c7e-abcdef012345",
+  "choice": "task"
+}

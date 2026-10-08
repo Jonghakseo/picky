@@ -3,6 +3,8 @@ import { PickleCompletionCoordinator, type ExternalPickleCompletionRequest } fro
 import type { SessionSupervisorOptions } from "./session-supervisor-options.js";
 import type { MainTurnOverlayContext } from "./overlay-context-resolver.js";
 import { MainVisualNarrationCoordinator } from "./main-visual-narration-coordinator.js";
+import { MainTaskCompletionDelivery } from "./main-task-completion-delivery.js";
+import type { MainTaskCompletion, MainTurnOrigin } from "./main-task-service.js";
 import { mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 import { buildMainAgentBootstrapPair, buildMainAgentPrompt, type BuiltPrompt } from "../prompt-builder.js";
 import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState } from "../protocol.js";
@@ -12,7 +14,7 @@ import { buildAppendedMainMessageState, projectMainAgentSessionInfo, projectMain
 import { normalizeDslWhitespace } from "../domain/session-text-policy.js";
 import { cleanFinalAnswer } from "../domain/session-summary.js";
 import { piSessionFilePathFromLogLine } from "../domain/pi-session-files.js";
-import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, RETIRED_PICKLE_CLI_CAPABILITIES, type QuickReplyMetadata } from "../domain/main-agent-policy.js";
+import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, RETIRED_PICKLE_CLI_CAPABILITIES, type QuickReplyMetadata } from "../domain/main-agent-policy.js";
 import { logAgentd } from "../local-log.js";
 
 export interface MainAgentCoordinatorDependencies {
@@ -118,6 +120,12 @@ export class MainAgentCoordinator {
   private externalPickleReplyContexts = new Set<string>();
   private readonly pickleCompletionCoordinator: PickleCompletionCoordinator;
   private mainStateWriteChain = Promise.resolve();
+  // "internal" while a Task or Pickle result drives the turn: only a user-started turn may answer a
+  // Pickle delegation decision on the user's behalf.
+  private mainTurnOrigin: MainTurnOrigin = "user";
+  private readonly taskCompletions?: MainTaskCompletionDelivery;
+  // The original request's source for a Task result reply, so a voice request is answered aloud.
+  private taskReplyOrigin?: { contextId: string; source?: string };
 
   constructor(private readonly deps: MainAgentCoordinatorDependencies) {
     this.mainVisualNarration = new MainVisualNarrationCoordinator({
@@ -134,6 +142,45 @@ export class MainAgentCoordinator {
       log: (message, data) => logAgentd(message, data),
     });
     this.pickleCompletionCoordinator = this.createPickleCompletionCoordinator(this.deps.options);
+    this.taskCompletions = this.createTaskCompletionDelivery();
+  }
+
+  private createTaskCompletionDelivery(): MainTaskCompletionDelivery | undefined {
+    const tasks = this.deps.options.mainTasks;
+    if (!tasks) return undefined;
+    tasks.attachMainAgent({ currentContext: () => this.mainContext, turnOrigin: () => this.mainTurnOrigin });
+    const delivery = new MainTaskCompletionDelivery({
+      source: tasks,
+      isMainBusy: () => this.mainIsProcessing || this.mainInFlightCompaction || this.mainHandle?.isCompacting === true
+        || this.mainExternalDeliveryPaused || this.mainHandleAwaitingPostAbortInput || this.mainPendingExtensionUiRequest !== undefined,
+      // Never creates the main handle: it must start in the main workspace, and the app prewarms it.
+      prepareMainDelivery: async () => this.mainHandle ? { handle: this.mainHandle, sendAsFollowUp: true } : undefined,
+      beginCompletionTurn: (completion) => this.beginTaskCompletionTurn(completion),
+      abandonCompletionTurn: () => { this.mainIsProcessing = false; },
+      log: (message, fields) => logAgentd(message, fields),
+    });
+    tasks.onCompletionAvailable(() => delivery.schedule());
+    return delivery;
+  }
+
+  private beginTaskCompletionTurn(completion: MainTaskCompletion): void {
+    const contextId = completion.origin?.contextId ?? completion.taskId;
+    this.mainReplyContextId = contextId;
+    this.taskReplyOrigin = { contextId, ...(completion.origin?.source ? { source: completion.origin.source } : {}) };
+    this.mainTurnOverlayContext = undefined;
+    this.mainDraft = "";
+    this.mainAssistantDeltaSeen = false;
+    this.mainVisualNarration.reset();
+    this.mainTerminalProcessed = false;
+    this.mainIsProcessing = true;
+    this.mainTurnOrigin = "internal";
+  }
+
+  /** Reply metadata, with a Task result attributed to the source of the request it answers. */
+  private replyMetadata(contextId: string, didStreamNarration = false) {
+    const metadata = projectMainReplyMetadata(contextId, this.mainContext, this.deps.pickleSessionIds, this.externalPickleReplyContexts, didStreamNarration);
+    if (this.taskReplyOrigin?.contextId !== contextId || metadata.replyKind !== "main") return metadata;
+    return { ...metadata, originSource: quickReplyOriginFromContextSource(this.taskReplyOrigin.source) ?? "system" };
   }
 
   async load(): Promise<void> {
@@ -194,6 +241,8 @@ export class MainAgentCoordinator {
     if (!this.deps.options.mainRuntime.prewarm && !this.deps.options.mainRuntime.resume) return;
     logAgentd("main prewarm requested", { cwd });
     await this.ensurePrewarmedMainHandle(cwd);
+    // Results finished while Picky was closed reach the main agent once it is ready.
+    this.taskCompletions?.schedule();
   }
 
   listMainMessages(): PickyMainAgentMessage[] {
@@ -545,6 +594,8 @@ export class MainAgentCoordinator {
       return;
     }
     const interactionGeneration = this.mainInteractionGeneration;
+    this.mainTurnOrigin = "user";
+    this.taskReplyOrigin = undefined;
     this.mainContext = context;
     this.mainContextGeneration += 1;
     this.beginMainTurn(context.id, { context, generation: this.mainContextGeneration });
@@ -982,7 +1033,7 @@ export class MainAgentCoordinator {
       await this.appendMainMessage("assistant", reply);
       const replyContextId = this.mainReplyContextId;
       if (replyContextId) {
-        this.emitQuickReply(replyContextId, reply, projectMainReplyMetadata(replyContextId, this.mainContext, this.deps.pickleSessionIds, this.externalPickleReplyContexts, didStreamNarration));
+        this.emitQuickReply(replyContextId, reply, this.replyMetadata(replyContextId, didStreamNarration));
       }
       this.mainVisualNarration.reset();
       this.mainAssistantDeltaSeen = false;
@@ -1046,7 +1097,7 @@ export class MainAgentCoordinator {
               this.lastMainQuickReplyAt = now;
               logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
               await this.appendMainMessage("assistant", reply);
-              this.emitQuickReply(this.mainReplyContextId, reply, projectMainReplyMetadata(this.mainReplyContextId, this.mainContext, this.deps.pickleSessionIds, this.externalPickleReplyContexts, didStreamNarration));
+              this.emitQuickReply(this.mainReplyContextId, reply, this.replyMetadata(this.mainReplyContextId, didStreamNarration));
               this.externalPickleReplyContexts.delete(this.mainReplyContextId);
             }
           }
@@ -1054,6 +1105,7 @@ export class MainAgentCoordinator {
           this.deps.emit("mainTurnSettled", this.mainReplyContextId);
         }
         this.pickleCompletionCoordinator.scheduleLocalDrain();
+        this.taskCompletions?.schedule();
         this.mainVisualNarration.reset();
         this.mainAssistantDeltaSeen = false;
         // Drain input buffered during a compaction, then re-arm the idle timer if a threshold is met.
@@ -1064,7 +1116,7 @@ export class MainAgentCoordinator {
   }
 
   private mainNarrationMetadata() {
-    return projectMainReplyMetadata(this.mainReplyContextId, this.mainContext, this.deps.pickleSessionIds, this.externalPickleReplyContexts);
+    return this.replyMetadata(this.mainReplyContextId);
   }
 
   /**
@@ -1081,6 +1133,7 @@ export class MainAgentCoordinator {
   }
 
   private activateLocalPickleCompletionContext(sessionId: string): void {
+    this.mainTurnOrigin = "internal";
     this.mainReplyContextId = sessionId;
     this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";

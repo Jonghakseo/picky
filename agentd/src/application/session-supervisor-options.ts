@@ -2,6 +2,14 @@ import type { LogField } from "../local-log.js";
 import type { AgentRuntime, RuntimeCustomTool } from "../runtime/types.js";
 import type { ScheduledMessageProjectorOptions } from "./scheduled-message-projector.js";
 import type { TaskRouter } from "../task-router.js";
+import type { MainAgentTaskHost } from "./main-task-service.js";
+import type { MainTaskCompletionSource } from "./main-task-completion-delivery.js";
+
+/** The main agent's Task service as the coordinator sees it (primary daemon with a real main runtime only). */
+export interface MainTaskCoordinatorPort extends MainTaskCompletionSource {
+  attachMainAgent(host: MainAgentTaskHost): void;
+  onCompletionAvailable(listener: () => void): () => void;
+}
 
 export interface ReloadPluginsSummary {
   pickyReloaded: boolean;
@@ -18,6 +26,8 @@ export interface SessionSupervisorOptions {
   enableAsyncTasksForSession?: (sessionId: string) => boolean;
   taskRouter?: TaskRouter;
   mainRuntime?: AgentRuntime;
+  /** Background Tasks of the main agent; their results are delivered into the main conversation. */
+  mainTasks?: MainTaskCoordinatorPort;
   // Optional factory used to mint new session ids. Defaults to a random UUID generator. Child
   // daemons (per-Pickle agentd plan §3.2) override this with a single-use factory that returns
   // the env-supplied PICKY_AGENTD_SESSION_ID so the scoped SessionStore accepts the first save.

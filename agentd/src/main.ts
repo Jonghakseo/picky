@@ -92,6 +92,12 @@ async function shutdown(exitCode: number, options: { forceExitAfterMs?: number }
   if (config.mode === "primary") {
     await removeConnectionInfo(config.appSupportDir).catch((error) => logAgentd("connection info remove failed", { error: error instanceof Error ? error.message : String(error) }));
   }
+  // Unfinished Tasks are recorded as interrupted before their workers are asked to exit; the
+  // bound keeps a stuck worker from holding shutdown (its stdin closes with this process anyway).
+  await Promise.race([
+    services.mainTasks?.close().catch((error) => logAgentd("main task shutdown failed", { error: error instanceof Error ? error.message : String(error) })),
+    new Promise((resolve) => setTimeout(resolve, 5_000).unref()),
+  ]);
   await services.server.stop();
   if (forceExitTimer) clearTimeout(forceExitTimer);
   process.exit(exitCode);

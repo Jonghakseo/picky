@@ -108,9 +108,19 @@ for remote_file in dist/gateway/main.js dist/web/index.html dist/web/sw.js dist/
   fi
 done
 
+# Main-agent Tasks (docs/picky-task-routing-plan.md): each worker is the bundled Pi CLI started with
+# the compiled worker bridge. Missing either would only surface when the first Task starts.
+for task_file in dist/runtime/task/worker-bridge.js node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js; do
+  if [[ ! -f "${RUNTIME_DIR}/${task_file}" ]]; then
+    echo "❌ Packaged agentd runtime is missing ${task_file}: ${RUNTIME_DIR}" >&2
+    exit 1
+  fi
+done
+
 node --check "${RUNTIME_DIR}/dist/index.js" >/dev/null
 node --check "${RUNTIME_DIR}/dist/cli.js" >/dev/null
 node --check "${RUNTIME_DIR}/dist/gateway/main.js" >/dev/null
+node --check "${RUNTIME_DIR}/dist/runtime/task/worker-bridge.js" >/dev/null
 
 cat <<EOF
 ✅ picky-agentd runtime is ready.

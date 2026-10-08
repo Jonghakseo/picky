@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { AgentdServer, APP_PICKLE_HANDOFF_UNAVAILABLE, type AppPickleBridgeRequest, type AppPickleBridgeResult } from "./server.js";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import type { LoadExtensionsResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { AgentdServer, APP_PICKLE_HANDOFF_UNAVAILABLE, type AppPickleBridgeRequest, type AppPickleBridgeResult, type AppPickleHandoffRequest, type AppPickleHandoffResult } from "./server.js";
 import { defaultAppSupportRoot } from "./artifact-store.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -24,6 +26,11 @@ import { UsageLimitsService } from "./application/usage-limits-service.js";
 import { PiTextCompleter } from "./runtime/pi-text-completer.js";
 import { HubStatisticsService } from "./application/hub-statistics-service.js";
 import { PickleClassifier } from "./application/pickle-classifier.js";
+import { MainTaskService } from "./application/main-task-service.js";
+import { MAIN_TASK_MAX_CONCURRENCY } from "./domain/main-task-policy.js";
+import { createPickyTaskWorkerFactory, MainTaskEvaluationContext } from "./runtime/task/picky-task-runtime.js";
+import { createMainTaskTool, createPickleDelegationTool } from "./runtime/main-task-tools.js";
+import type { PickyContextPacket } from "./protocol.js";
 
 /** Primary-only, and real provider endpoints only: the mock runtime has no Pi credentials to check. */
 function createUsageLimitsService(config: Pick<AgentdConfig, "mode" | "useMockRuntime">): UsageLimitsService | undefined {
@@ -72,6 +79,8 @@ interface ComposeResult {
   // from minting the same id again and silently overwriting persisted state.
   sessionIdFactory?: () => string;
   pickleClassifier?: PickleClassifier;
+  /** Primary daemon with a real main runtime only. Closed on shutdown so workers stop with the daemon. */
+  mainTasks?: MainTaskService;
 }
 
 export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
@@ -181,12 +190,15 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   const currentDefaultCwd = { value: config.defaultCwd };
   const supervisorRef: { current?: SessionSupervisor } = {};
   const appPickleBridgeRef: { current?: (request: AppPickleBridgeRequest) => Promise<AppPickleBridgeResult> } = {};
+  const appPickleHandoffRef: { current?: (request: AppPickleHandoffRequest) => Promise<AppPickleHandoffResult> } = {};
   const { runtime, hostedAsync } = createPickleRuntime(config, overrides);
 
   // The primary main agent delegates through the real `picky` CLI using its existing bash tool.
   // Child daemons run one Pickle session and never receive that primary-only CLI environment.
+  const mainTaskBundle = createMainTaskBundle(config, overrides, currentDefaultCwd, appPickleHandoffRef);
+  const mainTaskOptions = mainTaskBundle ? { mainTasks: mainTaskBundle.service } : {};
   const primaryMain = config.mode === "primary"
-    ? buildPrimaryMainRuntime(config, supervisorRef, currentDefaultCwd, overrides)
+    ? buildPrimaryMainRuntime(config, supervisorRef, currentDefaultCwd, overrides, mainTaskBundle)
     : undefined;
   const mainRuntime = primaryMain?.runtime;
   const mainCustomToolsBuilder = primaryMain?.toolsBuilder;
@@ -222,6 +234,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     forwardPickleCompletionToPrimary,
     mainCustomToolsBuilder,
     onDisabledBuiltinToolsChanged,
+    ...mainTaskOptions,
   });
   supervisorRef.current = supervisor;
 
@@ -251,8 +264,11 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     hubStatistics,
     pickleClassifier,
     usageLimits: createUsageLimitsService(config),
+    ...mainTaskOptions,
   });
   appPickleBridgeRef.current = (request) => server.requestPickleBridgeFromApp(request);
+  // Creating the Pickle may spawn its daemon; allow longer than a CLI round-trip.
+  appPickleHandoffRef.current = (request) => server.requestPickleHandoffFromApp(request, 20_000);
 
   return {
     config,
@@ -264,6 +280,71 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     currentDefaultCwd,
     sessionIdFactory,
     pickleClassifier,
+    ...mainTaskOptions,
+  };
+}
+
+interface MainTaskBundle {
+  service: MainTaskService;
+  evaluation: MainTaskEvaluationContext;
+}
+
+/**
+ * The main agent's Task service: Picky-owned workers, decisions, and the Pickle handoff route.
+ * Primary daemon with the real main runtime only; the mock runtime has no Pi to run workers with.
+ */
+function createMainTaskBundle(
+  config: AgentdConfig,
+  overrides: ComposeOverrides,
+  currentDefaultCwd: { value: string },
+  appPickleHandoffRef: { current?: (request: AppPickleHandoffRequest) => Promise<AppPickleHandoffResult> },
+): MainTaskBundle | undefined {
+  if (config.mode !== "primary" || config.useMockRuntime || overrides.mainRuntimeFactory) return undefined;
+  const evaluation = new MainTaskEvaluationContext();
+  const service = new MainTaskService({
+    directory: join(config.appSupportDir, "main-tasks"),
+    maxConcurrency: MAIN_TASK_MAX_CONCURRENCY,
+    createWorker: createPickyTaskWorkerFactory({ internalBinDir: join(config.appSupportDir, "bin") }),
+    evaluate: (record, snapshot, signal) => evaluation.evaluate(record, snapshot, signal),
+    createPickle: async (request) => {
+      if (!appPickleHandoffRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
+      const cwd = request.cwd ?? currentDefaultCwd.value;
+      const result = await appPickleHandoffRef.current({
+        context: request.context ?? neutralHandoffContext(cwd),
+        title: request.title,
+        instructions: request.instructions,
+        cwd,
+      });
+      return { sessionId: result.sessionId };
+    },
+    defaultCwd: () => taskDefaultCwd(currentDefaultCwd.value, [config.mainAgentCwd, join(config.appSupportDir, "Workspace")]),
+    log: (message, fields) => logAgentd(message, fields ?? {}),
+  });
+  return { service, evaluation };
+}
+
+/**
+ * Picky's default Pickle folder is often the main agent's own workspace. A Task started there would
+ * load the main persona's AGENTS.md and act as Picky, so it falls back to the user's home instead
+ * (docs/picky-task-routing-plan.md section 8: never the main home for every Task).
+ */
+export function taskDefaultCwd(configured: string, mainAgentFolders: readonly string[]): string {
+  const folder = resolve(configured);
+  return mainAgentFolders.some((candidate) => resolve(candidate) === folder) ? homedir() : configured;
+}
+
+function neutralHandoffContext(cwd: string): PickyContextPacket {
+  return { id: `context-task-${randomUUID()}`, source: "system", capturedAt: new Date().toISOString(), cwd, screenshots: [], inkMarks: [], warnings: [] };
+}
+
+/** A separately installed Task extension must not shadow Picky's built-in `Task` tool. */
+function withoutExtensionTaskTools(base: LoadExtensionsResult): LoadExtensionsResult {
+  return {
+    ...base,
+    extensions: base.extensions.map((extension) => {
+      if (!extension.tools.has("Task")) return extension;
+      return { ...extension, tools: new Map([...extension.tools].filter(([name]) => name !== "Task")) };
+    }),
   };
 }
 
@@ -332,6 +413,7 @@ function buildPrimaryMainRuntime(
   supervisorRef: { current?: SessionSupervisor },
   currentDefaultCwd: { value: string },
   overrides: ComposeOverrides,
+  mainTasks?: MainTaskBundle,
 ): PrimaryMainRuntimeBundle | undefined {
   if (config.useMockRuntime) return undefined;
   if (overrides.mainRuntimeFactory) {
@@ -345,6 +427,7 @@ function buildPrimaryMainRuntime(
   const allBuiltinTools: ToolDefinition[] = [
     createPickyAskUserQuestionTool(),
     createReadPickyUserGuideTool(readPickyUserGuide),
+    ...(mainTasks ? [createMainTaskTool(mainTasks.service, mainTasks.evaluation), createPickleDelegationTool(mainTasks.service)] : []),
   ];
   const toolsBuilder = (disabled: ReadonlySet<string>) => allBuiltinTools.filter((tool) => !disabled.has(tool.name));
 
@@ -365,7 +448,11 @@ function buildPrimaryMainRuntime(
     // resume, and stale session files cannot drop them. Pi appends inline extensions after
     // discovered user extensions, so this runs as a late `before_agent_start` modifier.
     resourceLoaderOptions: {
-      extensionFactories: [createPickyRuntimeContractExtension(() => buildPickyRuntimeContract(disabledMainBuiltinTools))],
+      extensionFactories: [
+        createPickyRuntimeContractExtension(() => buildPickyRuntimeContract(disabledMainBuiltinTools)),
+        ...(mainTasks ? [mainTasks.evaluation.extension()] : []),
+      ],
+      ...(mainTasks ? { extensionsOverride: withoutExtensionTaskTools } : {}),
     },
   });
 

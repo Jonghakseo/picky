@@ -565,6 +565,8 @@ private extension PickyEventEnvelope {
             return "type=mainExtensionUiCancelled id=\(id) request=\(requestId)"
         case .mainAgentModelsSnapshot(let models):
             return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
+        case .mainTasksUpdated(let snapshot):
+            return "type=mainTasksUpdated id=\(id) tasks=\(snapshot.tasks.count) decisions=\(snapshot.decisions.count)"
         case .sessionRuntimeOptionsSnapshot(let sessionId, let requestId, let models, let allModels, let globalScope, let projectScope, let effectiveScope, let thinkingLevels, let currentModel):
             return "type=sessionRuntimeOptionsSnapshot id=\(id) session=\(sessionId) request=\(requestId) models=\(models.count) allModels=\(allModels?.count ?? models.count) global=\(globalScope?.mode.rawValue ?? "unknown") project=\(projectScope?.mode.rawValue ?? "none") effective=\(effectiveScope?.mode.rawValue ?? "unknown") thinkingLevels=\(thinkingLevels.count) currentModel=\(currentModel?.provider ?? "none")/\(currentModel?.modelId ?? "none")"
         case .piOAuthStatus(let status):

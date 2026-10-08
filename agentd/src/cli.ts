@@ -8,6 +8,7 @@ import { sendCommand, sendCommandAndWaitForReply, PickyCliConnectionError, Picky
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { isFinalSessionStatus } from "./domain/session-status.js";
 import { normalizePickleRenameTitle } from "./domain/session-rename-policy.js";
+import { taskWorkerCliRefusal } from "./domain/task-worker-cli-policy.js";
 
 const VERSION = "0.1.0";
 
@@ -1109,6 +1110,8 @@ function registerFromMainOption(command: Command): void {
 registerFromMainOption(program);
 
 program.hook("preAction", (_thisCommand, actionCommand) => {
+  const refusal = taskWorkerCliRefusal(actionCommand.name(), process.env);
+  if (refusal) fail(refusal, 77);
   isMainAgentCaller = Boolean(actionCommand.optsWithGlobals().fromMain);
   callerFields = isMainAgentCaller ? { caller: "mainAgent" } : {};
 });

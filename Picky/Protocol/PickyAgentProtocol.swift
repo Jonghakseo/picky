@@ -92,7 +92,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var disabledBuiltinTools: [String]?
     /// Curated package sources for `inspectPackageConflicts`.
     var sources: [String]?
-    var action: PickyPushToTalkControlAction?
+    var action: PickyCommandAction?
+    /// `controlMainTask` / `resolveMainDelegation` targets. See PickyMainTaskProtocol.swift.
+    var taskId: String?, decisionId: String?, choice: PickyMainDelegationChoice?
     var groupAction: PickyDockGroupManagementAction?
     var pickleAction: PickyPickleCLIAction?
     var groupId: String?
@@ -176,7 +178,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         baselinePiMessageId: String? = nil,
         disabledBuiltinTools: [String]? = nil,
         sources: [String]? = nil,
-        action: PickyPushToTalkControlAction? = nil,
+        action: PickyCommandAction? = nil,
         groupAction: PickyDockGroupManagementAction? = nil,
         pickleAction: PickyPickleCLIAction? = nil,
         groupId: String? = nil,
@@ -405,6 +407,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case signInMcpServer
     case signOutMcpServer
     case getHubStatistics, resetHubStatistics, configureHubStatistics, getUsageLimits
+    case controlMainTask, resolveMainDelegation
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {
@@ -450,6 +453,7 @@ enum PickyEvent: Equatable {
     case mainExtensionUiCancelled(requestId: String)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
+    case mainTasksUpdated(PickyMainTasksSnapshot)
     case sessionRuntimeOptionsSnapshot(sessionId: String, requestId: String, models: [PickySessionRuntimeModelOption], allModels: [PickySessionRuntimeModelOption]?, globalScope: PickyRuntimeModelScope?, projectScope: PickyRuntimeModelScope?, effectiveScope: PickyRuntimeModelScope?, thinkingLevels: [PickyMainAgentThinkingLevel], currentModel: PickySessionRuntimeModelIdentity?)
     case piOAuthStatus(PickyPiOAuthStatusEvent)
     case piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent)
@@ -551,6 +555,7 @@ enum PickyEvent: Equatable {
         case "mainAgentModelsSnapshot":
             let payload = try PickyMainAgentModelsSnapshotPayload(from: decoder)
             return .mainAgentModelsSnapshot(payload.models)
+        case "mainTasksUpdated": return .mainTasksUpdated(try PickyMainTasksSnapshot(from: decoder))
         case "sessionRuntimeOptionsSnapshot":
             let payload = try PickySessionRuntimeOptionsSnapshotPayload(from: decoder)
             return .sessionRuntimeOptionsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, models: payload.models, allModels: payload.allModels, globalScope: payload.globalScope, projectScope: payload.projectScope, effectiveScope: payload.effectiveScope, thinkingLevels: payload.thinkingLevels, currentModel: payload.currentModel)

@@ -64,6 +64,7 @@ final class CompanionManager: ObservableObject {
     /// Live turn presence (activity chips, pending extension-UI question).
     /// Observe it directly from views.
     let mainActivity = PickyMainAgentActivityStore()
+    let mainTasks = PickyMainTaskStore()
     @Published private(set) var isSendingDirectMessage = false
     @Published private(set) var isResettingMainAgentSession = false
     @Published private(set) var directMessageError: String?
@@ -262,6 +263,7 @@ final class CompanionManager: ObservableObject {
         self.mainActivity.onLiveTurnPresenceChanged = { [weak self] in
             self?.updateMainCancelPillPresentation()
         }
+        self.mainTasks.send = { [weak self] command in try await self?.agentClient.sendAwaitingError(command, timeout: 1.0) ?? nil }
         self.inkCaptureCoordinator.onStateChange = { [weak self] state in
             // Capture commands and the CGEvent tap both run on the main run loop.
             MainActor.assumeIsolated {
@@ -2186,6 +2188,7 @@ final class CompanionManager: ObservableObject {
             mainConversation.updateSessionInfo(sessionFilePath: sessionFilePath, cwd: cwd)
         case .mainAgentModelsSnapshot(let models):
             mainConversation.applyModelOptions(models)
+        case .mainTasksUpdated(let snapshot): mainTasks.apply(snapshot)
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
         case .annotationOverlayRequested(let request):

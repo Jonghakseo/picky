@@ -36,6 +36,7 @@ import { piOAuthCommandHandlers } from "./features/pi-oauth/handlers.js";
 import { hubCommandHandlers } from "./features/hub/handlers.js";
 import { HubStatisticsBroker } from "./features/hub/hub-statistics-broker.js";
 import { usageLimitsCommandHandlers, type UsageLimitsPort } from "./features/usage-limits/handlers.js";
+import { mainTasksCommandHandlers, type MainTasksPort } from "./features/main-tasks/handlers.js";
 import type { CommandHandlerMap, EventPayload, ParsedCommand } from "./features/slice-contract.js";
 import type { HubStatisticsServiceLike } from "./application/hub-statistics-service.js";
 import type { PickleClassifier } from "./application/pickle-classifier.js";
@@ -66,6 +67,8 @@ export interface AgentdServerOptions {
   pickleClassifier?: PickleClassifier;
   /** Primary-only subscription limit checks; absent with the mock runtime. */
   usageLimits?: UsageLimitsPort;
+  /** Primary-only main-agent Tasks and Pickle delegation decisions; absent with the mock runtime. */
+  mainTasks?: MainTasksPort;
 }
 export const APP_PICKLE_HANDOFF_UNAVAILABLE = "Picky app handoff unavailable";
 const APP_PICKLE_HANDOFF_TIMEOUT = "Picky app handoff timed out";
@@ -169,6 +172,7 @@ export class AgentdServer {
     this.options.supervisor.on("mainActivity", (activity) => this.broadcast({ type: "mainActivityUpdated", ...(activity ? { activity } : {}) }));
     this.options.supervisor.on("mainExtensionUiRequest", (request) => this.broadcast({ type: "mainExtensionUiRequested", request }));
     this.options.supervisor.on("mainExtensionUiCancelled", (requestId) => this.broadcast({ type: "mainExtensionUiCancelled", requestId }));
+    this.options.mainTasks?.onChange((snapshot) => this.broadcast({ type: "mainTasksUpdated", ...snapshot }));
     this.options.supervisor.on("mainAgentSessionInfo", (info: { sessionFilePath?: string; cwd?: string }) => this.broadcast({
       type: "mainAgentSessionInfoUpdated",
       ...(info.sessionFilePath ? { sessionFilePath: info.sessionFilePath } : {}),
@@ -360,6 +364,7 @@ export class AgentdServer {
     if (activeMainActivity) {
       this.send(ws, { type: "mainActivityUpdated", activity: activeMainActivity });
     }
+    if (this.options.mainTasks) this.send(ws, { type: "mainTasksUpdated", ...this.options.mainTasks.snapshot() });
   }
 
   private async handleMessage(ws: WebSocket, raw: string): Promise<void> {
@@ -677,6 +682,7 @@ export class AgentdServer {
         usageLimits: this.options.usageLimits,
         send: (socket, event) => { this.send(socket, event); },
       }),
+      ...mainTasksCommandHandlers({ mainTasks: this.options.mainTasks }),
     };
 
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
@@ -1265,6 +1271,10 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
     case "getUsageLimits":
       return { commandId: command.id, type: command.type, force: command.force ? 1 : 0 };
+    case "controlMainTask":
+      return { commandId: command.id, type: command.type, taskId: command.taskId, action: command.action };
+    case "resolveMainDelegation":
+      return { commandId: command.id, type: command.type, decisionId: command.decisionId, choice: command.choice };
     case "getHubStatistics":
     case "resetHubStatistics":
     case "configureHubStatistics":
@@ -1332,6 +1342,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, records: event.snapshot?.records.length, samples: event.snapshot?.usageSamples.length, errorChars: event.errorMessage?.length };
     case "usageLimitsResult":
       return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, providers: event.snapshot?.providers.length, errorChars: event.errorMessage?.length ?? undefined };
+    case "mainTasksUpdated":
+      return { eventId: event.id, type: event.type, tasks: event.tasks.length, decisions: event.decisions.length };
     case "mcpServerList": return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, servers: event.servers.length, configErrors: event.configErrors.length };
     case "mcpServerOperationCompleted":
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, name: event.name, ok: event.ok ? 1 : 0, errorCode: event.errorCode };

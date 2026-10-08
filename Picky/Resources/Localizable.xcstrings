@@ -32883,6 +32883,720 @@
           }
         }
       }
+    },
+    "hub.tasks.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tasks"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업"
+          }
+        }
+      },
+      "comment": "Hub conversation: collapsible section listing the main agent's background Tasks."
+    },
+    "hub.tasks.count": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld items"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld개"
+          }
+        }
+      },
+      "comment": "Accessibility value for the Tasks section header. %1$lld is the number of visible rows (Tasks + delegation decisions)."
+    },
+    "hub.tasks.toggle.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows or hides the task list."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 목록을 열거나 닫아요."
+          }
+        }
+      },
+      "comment": "Accessibility hint for the Tasks section header button."
+    },
+    "hub.tasks.status.queued": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기 중"
+          }
+        }
+      },
+      "comment": "Task status: waiting for a free worker slot, not for the user."
+    },
+    "hub.tasks.status.working": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중"
+          }
+        }
+      },
+      "comment": "Task status for evaluating, running, and waiting-on-own-background-job."
+    },
+    "hub.tasks.status.stopping": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지하는 중"
+          }
+        }
+      },
+      "comment": "Task status: a stop was requested and cleanup is still running."
+    },
+    "hub.tasks.status.completed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료"
+          }
+        }
+      },
+      "comment": "Task status: the worker reported a result for the current revision."
+    },
+    "hub.tasks.status.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패"
+          }
+        }
+      },
+      "comment": "Task status: the task ended without a usable result."
+    },
+    "hub.tasks.status.blocked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs input"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 필요"
+          }
+        }
+      },
+      "comment": "Task status: the task needs a decision or an approval before it can go on."
+    },
+    "hub.tasks.status.cancelled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지됨"
+          }
+        }
+      },
+      "comment": "Task status: the user stopped the task."
+    },
+    "hub.tasks.status.interrupted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interrupted"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중단됨"
+          }
+        }
+      },
+      "comment": "Task status: the task stopped because Picky quit."
+    },
+    "hub.tasks.status.unknown": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown state"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태 확인 불가"
+          }
+        }
+      },
+      "comment": "Task status reported by a newer daemon that this app version does not know."
+    },
+    "hub.tasks.note.cleanupUncertain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop was sent, but Picky could not confirm the task process ended."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지를 보냈지만 작업 프로세스가 끝났는지 확인하지 못했어요."
+          }
+        }
+      },
+      "comment": "Shown under a stopped task when the daemon reports cleanup as uncertain."
+    },
+    "hub.tasks.note.interrupted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped when Picky quit. You can continue it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 종료되면서 멈췄어요. 이어서 진행할 수 있어요."
+          }
+        }
+      },
+      "comment": "Shown under a task that stopped because the app quit."
+    },
+    "hub.tasks.note.handoff": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Pickle took this over. The result below is what the task had done so far."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클이 이어받았어요. 아래 결과는 작업이 그때까지 한 내용이에요."
+          }
+        }
+      },
+      "comment": "Shown under a task whose scope moved to a Pickle."
+    },
+    "hub.tasks.note.productionCode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuing needs a change to production code."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이어가려면 제품 코드를 바꿔야 해요."
+          }
+        }
+      },
+      "comment": "Shown under a blocked task whose report escalates to production code work."
+    },
+    "hub.tasks.elapsed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ elapsed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 경과"
+          }
+        }
+      },
+      "comment": "Accessibility label for the elapsed-time clock on a running task. %1$@ is m:ss or h:mm:ss."
+    },
+    "hub.tasks.action.stop": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지"
+          }
+        }
+      },
+      "comment": "Button: stop one running task."
+    },
+    "hub.tasks.action.resume": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이어가기"
+          }
+        }
+      },
+      "comment": "Button: continue a stopped or interrupted task in the same session."
+    },
+    "hub.tasks.detail.show": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Details"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자세히"
+          }
+        }
+      },
+      "comment": "Button that expands one task's instructions, result, and working folder."
+    },
+    "hub.tasks.detail.hide": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide details"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "접기"
+          }
+        }
+      },
+      "comment": "Button that collapses one task's details."
+    },
+    "hub.tasks.detail.instructions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instructions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지시"
+          }
+        }
+      },
+      "comment": "Detail heading. Lists the instructions in order; a later one overrides an earlier one."
+    },
+    "hub.tasks.detail.summary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summary"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과 요약"
+          }
+        }
+      },
+      "comment": "Detail heading for the task report's summary."
+    },
+    "hub.tasks.detail.artifacts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artifacts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과물"
+          }
+        }
+      },
+      "comment": "Detail heading for files the task produced or changed."
+    },
+    "hub.tasks.detail.artifacts.none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No artifacts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과물 없음"
+          }
+        }
+      },
+      "comment": "Shown when the task report lists no artifacts."
+    },
+    "hub.tasks.detail.verification": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verification"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행한 검증"
+          }
+        }
+      },
+      "comment": "Detail heading for the checks the task actually ran."
+    },
+    "hub.tasks.detail.verification.none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No verification run"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행한 검증 없음"
+          }
+        }
+      },
+      "comment": "Shown when the task report lists no verification. It must not read as passed."
+    },
+    "hub.tasks.detail.blockers": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blockers"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "남은 문제"
+          }
+        }
+      },
+      "comment": "Detail heading for what keeps the task from finishing."
+    },
+    "hub.tasks.detail.error": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오류"
+          }
+        }
+      },
+      "comment": "Detail heading for the failure the daemon reported."
+    },
+    "hub.tasks.detail.cwd": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working folder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 폴더"
+          }
+        }
+      },
+      "comment": "Detail heading for the folder the task runs in."
+    },
+    "hub.tasks.detail.readonly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read-only task"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽기 전용 작업"
+          }
+        }
+      },
+      "comment": "Shown in details when the task may not write files."
+    },
+    "hub.tasks.decision.pending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose whether a Pickle should take this on."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클에 맡길지 선택해 주세요."
+          }
+        }
+      },
+      "comment": "Prompt on a pending delegation decision when the agent asked no question of its own."
+    },
+    "hub.tasks.decision.creating": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creating a Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클을 만드는 중이에요"
+          }
+        }
+      },
+      "comment": "Shown while the Pickle for a delegation decision is being created."
+    },
+    "hub.tasks.decision.created": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved to a Pickle."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클로 옮겼어요."
+          }
+        }
+      },
+      "comment": "Shown after a delegation decision created its Pickle."
+    },
+    "hub.tasks.decision.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not create the Pickle."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클을 만들지 못했어요."
+          }
+        }
+      },
+      "comment": "Shown when creating the Pickle for a delegation decision failed."
+    },
+    "hub.tasks.decision.handToPickle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hand to Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클에 맡기기"
+          }
+        }
+      },
+      "comment": "Button: create a Pickle for this work."
+    },
+    "hub.tasks.decision.runAsTask": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run as Task"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업으로 실행"
+          }
+        }
+      },
+      "comment": "Button: run this work as a Task in the current conversation instead of a Pickle."
+    },
+    "hub.tasks.decision.cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      },
+      "comment": "Button: drop the request instead of running it. Nothing has started yet."
+    },
+    "hub.tasks.decision.retry": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      },
+      "comment": "Button: try creating the Pickle again after it failed."
+    },
+    "hub.tasks.error.commandFailed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not send the command. Check that Picky is connected."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령을 보내지 못했어요. Picky 연결 상태를 확인해 주세요."
+          }
+        }
+      },
+      "comment": "Inline error when a stop, continue, or delegation command could not reach the daemon."
+    },
+    "hub.tasks.error.dismiss": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        }
+      },
+      "comment": "Clears the inline task command error."
+    },
+    "hub.tasks.status.handedOff": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Handed to Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클로 넘김"
+          }
+        }
+      },
+      "comment": "Task status: the task stopped before production code work and a Pickle took it over."
     }
   },
   "version": "1.0"

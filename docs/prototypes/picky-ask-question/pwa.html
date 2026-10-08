@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko" class="is-touch">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>폰 PWA · ask_user_question 개선 시안</title>
+  <script src="../picky-remote-pwa/theme.js"></script>
+  <link rel="stylesheet" href="../picky-remote-pwa/tokens.css">
+  <link rel="stylesheet" href="../picky-remote-pwa/base.css">
+  <link rel="stylesheet" href="ask.css">
+  <link rel="stylesheet" href="pwa.css">
+</head>
+<body>
+  <main class="proto-page">
+    <div class="proto-title">폰 PWA · 대화방 (개선안)</div>
+    <p class="proto-note">390pt. 대상: <code>agentd/web/src/room/bubbles/QuestionBubble.tsx</code>, <code>agentd/web/src/room/styles/room.css</code>. Mac과 같은 컴포넌트에 터치 밀도만 적용한다.</p>
+
+    <!-- P1 -->
+    <section class="proto-state">
+      <div class="proto-caption">P1 · 질문 1개, 하나 선택 (행 높이 44pt)</div>
+      <div class="proto-room"><div class="room-list">
+        <div class="aq-bubble">
+          <div class="aq-head">
+            <svg class="aq-head-icon" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 5.4a1.75 1.75 0 1 1 2.4 1.6c-.5.2-.7.5-.7 1v.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.1" r=".75" fill="currentColor"/></svg>
+            <span class="aq-status" data-l10n="hud.question.needed">입력이 필요해요</span>
+          </div>
+          <div class="aq-title">실패한 테스트를 어떻게 처리할까요?</div>
+          <div class="aq-desc">SessionSupervisor 테스트 2개가 타임아웃으로 실패했어요.</div>
+          <div class="aq-opts" role="radiogroup">
+            <button class="aq-opt is-selected" type="button" role="radio" aria-checked="true">
+              <span class="aq-ind is-radio"></span>
+              <span class="aq-opt-text"><span class="aq-opt-label">픽스처를 고치고 다시 돌리기</span><span class="aq-opt-desc">추천 · 원인이 fake timer 누락으로 보여요</span></span>
+              <span></span>
+            </button>
+            <button class="aq-opt" type="button" role="radio" aria-checked="false">
+              <span class="aq-ind is-radio"></span>
+              <span class="aq-opt-text"><span class="aq-opt-label">테스트는 건너뛰고 원인만 보고</span></span>
+              <span></span>
+            </button>
+            <button class="aq-opt" type="button" role="radio" aria-checked="false">
+              <span class="aq-ind is-radio"></span>
+              <span class="aq-opt-text"><span class="aq-opt-label">세션 로그부터 더 조사</span></span>
+              <span></span>
+            </button>
+            <button class="aq-opt is-other" type="button" role="radio" aria-checked="false">
+              <span class="aq-ind is-radio"></span>
+              <span class="aq-opt-text"><span class="aq-opt-label" data-l10n-new="hud.question.otherInput">직접 입력</span></span>
+              <span></span>
+            </button>
+          </div>
+          <div class="aq-foot">
+            <button class="aq-btn is-ghost" type="button" data-l10n-new="hud.question.skip">건너뛰기</button>
+            <button class="aq-btn is-primary" type="button" data-l10n="hud.question.submit">제출</button>
+          </div>
+        </div>
+      </div></div>
+      <ol class="proto-callouts">
+        <li>행 전체가 44pt 터치 영역. 지금처럼 22pt 버튼에 투명 영역을 덧대지 않고 보이는 크기 자체를 키운다.</li>
+        <li>제출은 엄지가 닿는 폭으로 넓히고, 건너뛰기는 글자 버튼으로 낮춘다.</li>
+        <li>숫자 키·↩ 힌트는 폰에서 숨긴다.</li>
+      </ol>
+    </section>
+
+    <!-- P2 -->
+    <section class="proto-state">
+      <div class="proto-caption">P2 · 질문 3개, 2단계 (여러 개 선택, 직접 입력 중)</div>
+      <div class="proto-room"><div class="room-list">
+        <div class="aq-bubble">
+          <div class="aq-head">
+            <svg class="aq-head-icon" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 5.4a1.75 1.75 0 1 1 2.4 1.6c-.5.2-.7.5-.7 1v.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.1" r=".75" fill="currentColor"/></svg>
+            <span class="aq-status" data-l10n="hud.question.needed">입력이 필요해요</span>
+            <span class="aq-step">2 / 3</span>
+          </div>
+          <div class="aq-title">릴리즈 범위를 정해 주세요</div>
+          <div class="aq-progress" aria-hidden="true"><span class="is-done"></span><span class="is-current"></span><span></span></div>
+          <div class="aq-prev-answers">
+            <button class="aq-chip" type="button">버전 <b>0.9.3-beta.2</b></button>
+          </div>
+          <div class="aq-q">
+            <div class="aq-prompt-row">
+              <span class="aq-prompt">릴리즈 노트에 넣을 항목</span>
+              <span class="aq-hint" data-l10n-new="hud.question.hint.multiple">여러 개 고를 수 있어요</span>
+            </div>
+            <div class="aq-opts" role="group">
+              <button class="aq-opt is-selected" type="button" role="checkbox" aria-checked="true">
+                <span class="aq-ind is-check"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.2 4.1 7.3 8 2.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="aq-opt-text"><span class="aq-opt-label">HUD 렉 수정</span></span><span></span>
+              </button>
+              <button class="aq-opt is-selected" type="button" role="checkbox" aria-checked="true">
+                <span class="aq-ind is-check"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.2 4.1 7.3 8 2.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="aq-opt-text"><span class="aq-opt-label">보낼 시점 메뉴</span></span><span></span>
+              </button>
+              <button class="aq-opt" type="button" role="checkbox" aria-checked="false">
+                <span class="aq-ind is-check"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.2 4.1 7.3 8 2.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="aq-opt-text"><span class="aq-opt-label">내부 리팩터링</span><span class="aq-opt-desc">사용자에게 보이는 변화 없음</span></span><span></span>
+              </button>
+              <div class="aq-opt is-other is-selected" role="checkbox" aria-checked="true">
+                <span class="aq-ind is-check"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.2 4.1 7.3 8 2.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="aq-opt-text"><span class="aq-opt-label" data-l10n-new="hud.question.otherInput">직접 입력</span></span><span></span>
+                <span class="aq-other-field">표 렌더링 지원<span class="aq-caret"></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="aq-foot">
+            <button class="aq-btn is-secondary" type="button" data-l10n="hud.question.previous">이전</button>
+            <button class="aq-btn is-primary" type="button" data-l10n="hud.question.next">다음</button>
+          </div>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- P3 -->
+    <section class="proto-state">
+      <div class="proto-caption">P3 · 질문이 화면 위로 밀려났을 때 입력창 위 고정 바</div>
+      <div class="pwa-screen">
+        <div class="pwa-scroll">
+          <div class="pwa-msg is-tool">bash · pnpm run test:ci · 2개 실패</div>
+          <div class="pwa-msg">실패 원인을 보니 fake timer 설정이 빠진 것 같아요. 진행 방식을 골라 주시면 이어서 할게요.</div>
+          <div class="pwa-msg is-tool">질문 버블은 위로 스크롤됨</div>
+        </div>
+        <div class="aq-pin">
+          <svg class="aq-head-icon" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.3 5.4a1.75 1.75 0 1 1 2.4 1.6c-.5.2-.7.5-.7 1v.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.1" r=".75" fill="currentColor"/></svg>
+          <span class="aq-pin-text">
+            <span class="aq-pin-status" data-l10n="hud.question.needed">입력이 필요해요</span>
+            <span class="aq-pin-title">실패한 테스트를 어떻게 처리할까요?</span>
+          </span>
+          <button class="aq-btn is-primary" type="button" data-l10n-new="hud.question.answerAction">답하기</button>
+        </div>
+        <div class="pwa-composer">메시지 입력…</div>
+      </div>
+      <ol class="proto-callouts">
+        <li>폰은 화면이 짧아 질문이 금방 위로 밀린다. 질문 버블이 보이지 않을 때만 입력창 위에 한 줄을 띄운다.</li>
+        <li>"답하기"는 질문 버블로 스크롤하고 첫 선택지에 포커스한다. 바에서 바로 답하지 않게 해서 선택지 UI를 두 벌 만들지 않는다.</li>
+        <li>Mac HUD는 Live Step 이동(<code>focusRequestID</code>)이 같은 역할을 이미 하므로 고정 바를 넣지 않는다.</li>
+      </ol>
+    </section>
+
+    <!-- P4 -->
+    <section class="proto-state">
+      <div class="proto-caption">P4 · 답변 뒤 펼침</div>
+      <div class="proto-room"><div class="room-list">
+        <div class="aq-bubble is-closed">
+          <div class="aq-head">
+            <svg class="aq-head-icon" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4.4 7.2 6.2 9 9.7 5.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="aq-status" data-l10n="hud.question.answered">답변 완료</span>
+            <span class="aq-collapsed-title">· 릴리즈 범위를 정해 주세요</span>
+            <svg class="aq-chevron" viewBox="0 0 9 9" aria-hidden="true"><path d="M1.6 3 L4.5 6 L7.4 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <dl class="aq-answers">
+            <dt>버전</dt><dd>0.9.3-beta.2</dd>
+            <dt>노트</dt><dd>HUD 렉 수정, 보낼 시점 메뉴, 표 렌더링 지원</dd>
+            <dt>공지</dt><dd>알파 테스터에게 먼저 공지하고 금요일에 정식 배포</dd>
+          </dl>
+        </div>
+      </div></div>
+    </section>
+  </main>
+</body>
+</html>

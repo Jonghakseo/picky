@@ -1,0 +1,540 @@
+/* ask_user_question 개선 시안 공용 컴포넌트.
+ * Mac HUD 피클 대화 카드와 폰 PWA 대화방이 같은 컴포넌트를 쓰고,
+ * .is-touch 가 붙은 페이지만 터치 밀도(44pt 행, 전체 폭 버튼)로 바뀐다.
+ * 색·간격·반경·글꼴은 ../picky-remote-pwa/tokens.css 변수만 쓴다.
+ */
+
+.room-list {
+  padding: var(--ds-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+}
+
+/* ---------- bubble ---------- */
+
+.aq-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  width: 100%;
+  max-width: 360px;
+  border-radius: var(--ds-radius-surface) var(--ds-radius-surface) var(--ds-radius-surface) 4px;
+  background: var(--ds-color-surface2);
+  /* 입력 대기는 warning이 아니라 "다음 행동"이므로 Action Blue 테두리 한 줄로만 표시 */
+  border: 1px solid color-mix(in srgb, var(--ds-color-accent) 45%, transparent);
+}
+
+.is-touch .aq-bubble {
+  max-width: 340px;
+}
+
+.aq-bubble.is-closed {
+  gap: 6px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--ds-color-surface2) 55%, transparent);
+  border-color: var(--ds-color-border-subtle);
+}
+
+/* ---------- header ---------- */
+
+.aq-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.aq-head-icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--ds-color-accent-text);
+}
+
+.aq-status {
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-accent-text);
+  white-space: nowrap;
+}
+
+.aq-step {
+  margin-left: auto;
+  font: var(--hud-type-meta-monospaced-medium);
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+}
+
+.is-closed .aq-status {
+  color: var(--ds-color-text-secondary);
+}
+
+.is-closed .aq-head-icon {
+  color: var(--ds-color-success-text);
+}
+
+.is-closed.is-skipped .aq-head-icon {
+  color: var(--ds-color-text-tertiary);
+}
+
+.aq-collapsed-title {
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.aq-chevron {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  margin-left: auto;
+  color: var(--ds-color-text-tertiary);
+}
+
+/* ---------- title / description ---------- */
+
+.aq-title {
+  font: var(--hud-type-body-semibold);
+  color: var(--ds-color-text-primary);
+}
+
+.aq-desc {
+  font: var(--hud-type-supporting);
+  color: var(--ds-color-text-secondary);
+  margin-top: -6px;
+}
+
+/* ---------- step progress ---------- */
+
+.aq-progress {
+  display: flex;
+  gap: 4px;
+}
+
+.aq-progress span {
+  flex: 1;
+  height: 3px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-border-subtle);
+}
+
+.aq-progress span.is-done {
+  background: var(--ds-color-accent);
+}
+
+.aq-progress span.is-current {
+  background: color-mix(in srgb, var(--ds-color-accent) 45%, transparent);
+}
+
+/* 앞 단계에서 고른 답. 누르면 그 단계로 돌아간다. */
+.aq-prev-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.aq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-secondary);
+}
+
+.aq-chip b {
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-text-primary);
+}
+
+/* ---------- question ---------- */
+
+.aq-q {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aq-q + .aq-q {
+  padding-top: 10px;
+  border-top: 0.5px solid var(--ds-color-border-subtle);
+}
+
+.aq-prompt-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.aq-num {
+  font: var(--hud-type-meta-monospaced-semibold);
+  color: var(--ds-color-text-tertiary);
+}
+
+.aq-prompt {
+  font: var(--hud-type-supporting-semibold);
+  color: var(--ds-color-text-primary);
+}
+
+.aq-hint {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.aq-hint.is-required {
+  color: var(--ds-color-destructive-text);
+}
+
+/* ---------- option rows ---------- */
+
+.aq-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aq-opt {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: start;
+  column-gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  border-radius: var(--ds-radius-compact);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  color: var(--ds-color-text-primary);
+}
+
+.is-touch .aq-opt {
+  min-height: 44px;
+  align-items: center;
+  padding: 8px 10px;
+  column-gap: 10px;
+}
+
+.aq-opt.is-hover {
+  background: var(--ds-state-hover);
+}
+
+.aq-opt.is-focus {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ds-color-accent) 55%, transparent);
+}
+
+.aq-opt.is-selected {
+  background: var(--ds-color-accent-subtle);
+  border-color: color-mix(in srgb, var(--ds-color-accent) 70%, transparent);
+}
+
+.aq-opt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.aq-opt-label {
+  font: var(--hud-type-supporting-medium);
+}
+
+.aq-opt-desc {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+}
+
+.aq-opt.is-other .aq-opt-label {
+  color: var(--ds-color-text-secondary);
+}
+
+.aq-opt.is-other.is-selected .aq-opt-label {
+  color: var(--ds-color-text-primary);
+}
+
+/* 단일/복수 선택을 모양으로 구분: 원 = 하나, 네모 = 여러 개 */
+.aq-ind {
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  border: 1.5px solid var(--ds-color-border-strong);
+  background: var(--ds-color-surface1);
+  display: grid;
+  place-items: center;
+}
+
+.is-touch .aq-ind {
+  margin-top: 0;
+}
+
+.aq-ind.is-radio {
+  border-radius: 50%;
+}
+
+.aq-ind.is-check {
+  border-radius: 4px;
+}
+
+.is-selected .aq-ind {
+  border-color: var(--ds-color-accent);
+  background: var(--ds-color-accent);
+}
+
+.is-selected .aq-ind.is-radio::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ds-color-text-on-accent);
+}
+
+.aq-ind svg {
+  display: none;
+  width: 9px;
+  height: 9px;
+  color: var(--ds-color-text-on-accent);
+}
+
+.is-selected .aq-ind.is-check svg {
+  display: block;
+}
+
+/* Mac 전용 숫자 키 힌트. 질문이 포커스됐을 때만 보인다. */
+.aq-key {
+  font: var(--hud-type-minimum-monospaced-medium);
+  color: var(--ds-color-text-tertiary);
+  min-width: 15px;
+  padding: 1px 4px;
+  text-align: center;
+  border-radius: 4px;
+  border: 0.5px solid var(--ds-color-border-subtle);
+  margin-top: 1px;
+}
+
+.is-touch .aq-key {
+  display: none;
+}
+
+/* "직접 입력"을 고르면 같은 행이 입력칸으로 바뀐다(별도 비활성 입력칸 없음). */
+.aq-other-field {
+  grid-column: 2 / 4;
+  margin-top: 6px;
+  display: block;
+  font: var(--hud-type-supporting);
+  color: var(--ds-color-text-primary);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-compact);
+  padding: 4px 6px;
+}
+
+.is-touch .aq-other-field {
+  padding: 8px 10px;
+}
+
+.aq-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  vertical-align: -2px;
+  background: var(--ds-color-accent);
+  margin-left: 1px;
+}
+
+.aq-field {
+  display: block;
+  font: var(--hud-type-supporting);
+  color: var(--ds-color-text-tertiary);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-strong);
+  border-radius: var(--ds-radius-compact);
+  padding: 5px 8px;
+}
+
+.aq-field.is-filled {
+  color: var(--ds-color-text-primary);
+}
+
+.is-touch .aq-field {
+  padding: 10px 12px;
+  min-height: 44px;
+}
+
+/* ---------- inline chips (select, 짧은 선택지) ---------- */
+
+.aq-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.aq-chip-btn {
+  font: var(--hud-type-supporting-medium);
+  padding: 4px 12px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-strong);
+  color: var(--ds-color-text-primary);
+}
+
+.is-touch .aq-chip-btn {
+  min-height: 36px;
+  padding: 6px 14px;
+}
+
+/* ---------- footer ---------- */
+
+.aq-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.aq-foot-hint {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+  margin-right: auto;
+  min-width: 0;
+}
+
+.aq-foot-hint.is-required {
+  color: var(--ds-color-destructive-text);
+}
+
+.aq-foot-hint kbd {
+  font: var(--hud-type-minimum-monospaced-medium);
+  padding: 0 3px;
+  border-radius: 3px;
+  border: 0.5px solid var(--ds-color-border-subtle);
+}
+
+.aq-btn {
+  font: var(--hud-type-supporting-semibold);
+  padding: 4px 12px;
+  border-radius: var(--ds-radius-compact);
+  white-space: nowrap;
+}
+
+.aq-btn.is-primary {
+  background: var(--ds-color-accent);
+  color: var(--ds-color-text-on-accent);
+}
+
+.aq-btn.is-primary[disabled] {
+  background: var(--ds-color-disabled-background);
+  color: var(--ds-color-disabled-text);
+  cursor: default;
+}
+
+.aq-btn.is-ghost {
+  color: var(--ds-color-text-secondary);
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.aq-btn.is-secondary {
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-strong);
+  color: var(--ds-color-text-primary);
+}
+
+.is-touch .aq-foot {
+  flex-wrap: wrap;
+}
+
+.is-touch .aq-foot-hint {
+  flex-basis: 100%;
+  margin-bottom: 2px;
+}
+
+.is-touch .aq-btn {
+  min-height: 44px;
+  flex: 1;
+  font: var(--hud-type-body-semibold);
+}
+
+.is-touch .aq-btn.is-ghost {
+  flex: 0 0 auto;
+  padding: 0 12px;
+}
+
+/* ---------- answered summary ---------- */
+
+.aq-answers {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 3px;
+  padding-left: 19px;
+}
+
+.aq-answers dt {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+}
+
+.aq-answers dd {
+  margin: 0;
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-primary);
+  min-width: 0;
+}
+
+.aq-answers dd.is-skipped {
+  color: var(--ds-color-text-tertiary);
+}
+
+/* ---------- send failure ---------- */
+
+.aq-failed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--hud-type-supporting-medium);
+  color: var(--ds-color-destructive-text);
+}
+
+.aq-link {
+  font: var(--hud-type-supporting-semibold);
+  color: var(--ds-color-accent-text);
+}
+
+.aq-bubble.is-sending .aq-opts,
+.aq-bubble.is-sending .aq-q {
+  opacity: 0.55;
+}
+
+.aq-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--ds-color-text-on-accent) 40%, transparent);
+  border-top-color: var(--ds-color-text-on-accent);
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 4px;
+}
+
+/* ---------- review annotations (제품 UI 아님) ---------- */
+
+.proto-callouts {
+  margin: var(--ds-space-2) var(--ds-space-4) 0;
+  padding: 0 0 0 var(--ds-space-4);
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-secondary);
+}
+
+.proto-callouts li {
+  margin-bottom: 2px;
+}

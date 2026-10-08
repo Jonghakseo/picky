@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ask_user_question 렌더링 개선 시안 · 검수 보드</title>
+  <script src="../picky-remote-pwa/theme.js"></script>
+  <link rel="stylesheet" href="../picky-remote-pwa/tokens.css">
+  <link rel="stylesheet" href="../picky-remote-pwa/board.css">
+  <link rel="stylesheet" href="board.css">
+  <script src="../picky-remote-pwa/board.js" defer></script>
+</head>
+<body>
+  <header class="board-header">
+    <h1>ask_user_question 렌더링 개선 시안</h1>
+    <p>왼쪽부터 현재 구현(HTML 이식본), Mac 피클·메인 Picky 개선안(SwiftUI 렌더), 폰 PWA 개선안(HTML). 세 화면은 한 질문 본문을 쓰고 겉 틀과 밀도만 다르다. Mac 이미지는 <code>build/render-gallery/ask-question-swift/</code>에 있어야 보인다(README의 렌더 명령). 설명과 새 문구는 <a href="README.md">README.md</a>.</p>
+    <table class="board-table">
+      <thead><tr><th>현재 문제</th><th>개선안</th></tr></thead>
+      <tbody>
+        <tr><td>머리줄 <code>⌑ 입력이 필요해요 · askUserQuestion</code>에 내부 method 이름이 보인다</td><td>물음표 아이콘 + "입력이 필요해요" + 단계 <code>2 / 3</code></td></tr>
+        <tr><td>노란 warning 틀. <code>design/COMPONENTS.md</code>의 "입력 필요를 warning과 혼동하지 않게" 규칙 위반</td><td>중립 바탕 + Action Blue 테두리 한 줄, 제출 버튼도 같은 파랑</td></tr>
+        <tr><td>radio와 checkbox가 똑같은 버튼이라 몇 개 골라야 하는지 모른다</td><td>원 / 네모 표시 + "여러 개 고를 수 있어요" 힌트</td></tr>
+        <tr><td>"기타…" 버튼과 늘 보이는 비활성 입력칸이 따로 있다</td><td>"직접 입력" 행을 고르면 그 행 안에 입력칸이 열린다</td></tr>
+        <tr><td>제출·취소 무게가 같고, 제출이 꺼진 이유가 안 보인다</td><td>제출 = 주 버튼, 건너뛰기 = 글자 버튼, 꺼진 이유를 옆에 표시</td></tr>
+        <tr><td>질문 여러 개가 한 버블에 세로로 쌓인다</td><td>2개 이상이면 단계 진행(메인 질문 패널과 같은 규칙), 앞 답은 칩</td></tr>
+        <tr><td>답한 뒤 접히면 무엇을 골랐는지 남지 않는다</td><td>접힌 줄에 답 요약, 펼치면 질문·답 두 열</td></tr>
+        <tr><td>Mac 키보드 조작이 없다</td><td>숫자 키 1–9 선택, ↩ 다음·제출, 메인 패널은 esc 건너뛰기</td></tr>
+        <tr><td>메인 Picky 패널은 커서 옆에 뜨는데 누가 묻는지 안 보인다</td><td>"Picky가 물어봐요" 머리줄, "말로 답해도 돼요" 안내</td></tr>
+        <tr><td>폰에서 질문이 위로 밀리면 기다리는 질문이 있는지 모른다</td><td>질문이 화면 밖일 때만 입력창 위 고정 바 + "답하기"</td></tr>
+      </tbody>
+    </table>
+    <div class="board-toggle" role="group" aria-label="모양">
+      <button type="button" data-theme-choice="light">라이트</button>
+      <button type="button" data-theme-choice="dark">다크</button>
+    </div>
+  </header>
+
+  <div class="board-columns">
+    <section class="board-part" id="before">
+      <h2>현재 <a href="before.html">before.html</a></h2>
+      <iframe data-part="before" title="현재 구현" style="width: 390px; height: 900px"></iframe>
+    </section>
+    <section class="board-part" id="mac">
+      <h2>Mac 피클 · 메인 Picky (SwiftUI 렌더) <a href="../../../build/render-gallery/ask-question-swift/index.html">전체 갤러리</a></h2>
+      <div class="board-refs board-swift">
+        <figure><img alt="피클 · 질문 1개" data-src-template="ask-question-swift/pickle-01-single-{theme}.png"><figcaption>피클 · 질문 1개</figcaption></figure>
+        <figure><img alt="피클 · 2단계" data-src-template="ask-question-swift/pickle-02-step-{theme}.png"><figcaption>피클 · 2단계</figcaption></figure>
+        <figure><img alt="피클 · 필수 비어 있음" data-src-template="ask-question-swift/pickle-03-required-{theme}.png"><figcaption>피클 · 필수 비어 있음</figcaption></figure>
+        <figure><img alt="피클 · 답변 뒤" data-src-template="ask-question-swift/pickle-06-answered-{theme}.png"><figcaption>피클 · 답변 뒤</figcaption></figure>
+        <figure><img alt="메인 Picky · 질문 1개" data-src-template="ask-question-swift/main-01-single-{theme}.png"><figcaption>메인 Picky · 질문 1개</figcaption></figure>
+        <figure><img alt="메인 Picky · 2단계" data-src-template="ask-question-swift/main-02-step-{theme}.png"><figcaption>메인 Picky · 2단계</figcaption></figure>
+      </div>
+    </section>
+    <section class="board-part" id="pwa">
+      <h2>폰 PWA <a href="pwa.html">pwa.html</a></h2>
+      <iframe data-part="pwa" title="폰 개선안" style="width: 390px; height: 2400px"></iframe>
+    </section>
+  </div>
+</body>
+</html>

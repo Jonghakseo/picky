@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>현재 구현 · ask_user_question</title>
+  <script src="../picky-remote-pwa/theme.js"></script>
+  <link rel="stylesheet" href="../picky-remote-pwa/tokens.css">
+  <link rel="stylesheet" href="../picky-remote-pwa/base.css">
+  <link rel="stylesheet" href="../picky-remote-pwa/question.css">
+  <link rel="stylesheet" href="before.css">
+</head>
+<body>
+  <main class="proto-page">
+    <div class="proto-title">현재 구현 (Mac HUD와 PWA 동일)</div>
+    <p class="proto-note">출처: <code>docs/prototypes/picky-remote-pwa/question.html</code>의 이식본. PWA 운영 코드도 같은 클래스를 쓴다.</p>
+    <section class="proto-state">
+      <div class="proto-caption">askUserQuestion · 폼 (radio + checkbox + text)</div>
+      <div class="proto-room">
+        <div class="room-list">
+          <div class="q-bubble">
+            <div class="q-header">
+              <span class="q-status">⌑ <span data-l10n="hud.question.needed">입력이 필요해요</span> · askUserQuestion</span>
+            </div>
+            <div class="q-title">릴리즈 범위를 정해 주세요</div>
+            <div class="q-form">
+              <div class="q-form-question">
+                <div class="q-prompt">어떤 버전으로 올릴까요?</div>
+                <div class="q-form-options">
+                  <button class="q-form-option is-selected" type="button" aria-pressed="true">
+                    <span class="q-form-option-label">0.9.3-beta.2</span>
+                    <span class="q-form-option-desc">베타 채널만 갱신해요</span>
+                  </button>
+                  <button class="q-form-option" type="button" aria-pressed="false">
+                    <span class="q-form-option-label">0.9.3</span>
+                    <span class="q-form-option-desc">정식 채널에 바로 올려요</span>
+                  </button>
+                  <button class="q-form-option" type="button" aria-pressed="false">
+                    <span class="q-form-option-label" data-l10n="hud.question.other">기타…</span>
+                  </button>
+                </div>
+                <span class="q-field q-field-placeholder is-disabled" data-l10n="hud.question.other">기타…</span>
+              </div>
+              <div class="q-form-question">
+                <div class="q-prompt">릴리즈 노트에 넣을 항목을 고르세요.</div>
+                <div class="q-form-options">
+                  <button class="q-form-option is-selected" type="button" aria-pressed="true">
+                    <span class="q-form-option-label">HUD 렉 수정</span>
+                  </button>
+                  <button class="q-form-option is-selected" type="button" aria-pressed="true">
+                    <span class="q-form-option-label">보낼 시점 메뉴</span>
+                  </button>
+                  <button class="q-form-option" type="button" aria-pressed="false">
+                    <span class="q-form-option-label">내부 리팩터링</span>
+                  </button>
+                </div>
+              </div>
+              <div class="q-form-question">
+                <div class="q-prompt">추가로 남길 메모가 있나요?</div>
+                <span class="q-field q-field-value">알파 테스터에게 먼저 공지</span>
+              </div>
+              <div class="q-row">
+                <button class="q-btn" type="button"><span data-l10n="hud.question.submit">제출</span></button>
+                <button class="q-btn" type="button"><span data-l10n="common.cancel">취소</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-state">
+      <div class="proto-caption">답변 완료 · 접힌 상태 (탭하면 펼쳐져요)</div>
+      <div class="proto-room">
+        <div class="room-list">
+          <div class="q-bubble is-closed">
+            <div class="q-header">
+              <button class="q-collapse" type="button" aria-expanded="false">
+                <svg class="q-chevron" data-sf-symbol="chevron.right" viewBox="0 0 9 9" width="9" height="9" aria-hidden="true">
+                  <path d="M3 1.6 L6 4.5 L3 7.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="q-status">⌑ <span data-l10n="hud.question.answered">답변 완료</span> · select</span>
+                <span class="q-collapsed-title">· 어느 브랜치에 올릴까요?</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

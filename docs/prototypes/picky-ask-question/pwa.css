@@ -1,0 +1,85 @@
+/* 폰 PWA 대화방 전용: 화면 밖으로 밀려난 질문을 입력창 위에 고정하는 바. */
+
+.pwa-screen {
+  display: flex;
+  flex-direction: column;
+  height: 340px;
+  background: var(--ds-color-surface1);
+  border-top: 1px solid var(--ds-color-border-subtle);
+  border-bottom: 1px solid var(--ds-color-border-subtle);
+}
+
+.pwa-scroll {
+  flex: 1;
+  overflow: hidden;
+  padding: var(--ds-space-3);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--ds-space-2);
+}
+
+.pwa-msg {
+  max-width: 300px;
+  padding: 8px 12px;
+  border-radius: var(--ds-radius-surface) var(--ds-radius-surface) var(--ds-radius-surface) 4px;
+  background: var(--ds-color-surface2);
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-body);
+}
+
+.pwa-msg.is-tool {
+  background: none;
+  padding: 2px 0;
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-tertiary);
+}
+
+.aq-pin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--ds-space-3) var(--ds-space-2);
+  padding: 8px 8px 8px 12px;
+  min-height: 48px;
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-color-surface2);
+  border: 1px solid color-mix(in srgb, var(--ds-color-accent) 45%, transparent);
+}
+
+.aq-pin-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.aq-pin-status {
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-accent-text);
+}
+
+.aq-pin-title {
+  font: var(--hud-type-supporting-medium);
+  color: var(--ds-color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.is-touch .aq-pin .aq-btn {
+  flex: none;
+  min-height: 36px;
+  padding: 0 16px;
+  font: var(--hud-type-supporting-semibold);
+}
+
+.pwa-composer {
+  margin: 0 var(--ds-space-3) var(--ds-space-3);
+  padding: 10px 14px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-surface2);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  font: var(--hud-type-body);
+  color: var(--ds-color-text-tertiary);
+}

@@ -1,0 +1,55 @@
+/* 검수 보드 레이아웃 전용. 제품 UI 아님. */
+.board-header {
+  max-width: 1320px;
+}
+
+.board-table {
+  border-collapse: collapse;
+  margin: var(--ds-space-3) 0 var(--ds-space-4);
+  font: var(--hud-type-supporting);
+}
+
+.board-table th,
+.board-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 6px 10px;
+  border-bottom: 0.5px solid var(--ds-color-border-subtle);
+}
+
+.board-table th {
+  font: var(--hud-type-supporting-semibold);
+  color: var(--ds-color-text-secondary);
+}
+
+.board-columns {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-6);
+}
+
+.board-columns .board-part {
+  flex: none;
+}
+
+.board-columns iframe {
+  border: 0.5px solid var(--ds-color-border-subtle);
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-color-background);
+}
+
+.board-swift {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+  width: 446px;
+}
+
+.board-swift figure {
+  margin: 0;
+}
+
+.board-swift figcaption {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+}

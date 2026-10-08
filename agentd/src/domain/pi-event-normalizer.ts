@@ -130,6 +130,8 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     return { kind: "sessionInfo", name };
   }
 
+  if (type === "message_end") return toolIntroTextFromMessageEnd(asRecord(piEvent.message), context);
+
   if (type === "turn_end") {
     const message = asRecord(piEvent.message);
     const assistantRun = assistantRunMetadata(message, context);
@@ -138,12 +140,11 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     const stopReasonStatus = terminalStatusFromStopReason(stopReason);
     if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, assistantTextFromMessage(message), assistantRun);
     if (!hasAssistantText(message)) return { kind: "none" };
-    // Intermediate turn: the LLM emitted both an inline text block and tool calls
-    // (or the turn produced text alongside tool results). Surface the text via
-    // `turnTextComplete` so the supervisor can flush it as its own quickReply
-    // before the tool runs, instead of accumulating it into the next turn's
-    // assistant draft and reading both blocks back-to-back through TTS.
-    if (hasAssistantToolCalls(message) || hasToolResults(piEvent.toolResults)) {
+    // turn_end arrives only after this turn's tools finished. Text that introduced those tools was
+    // already flushed at the assistant message_end; flushing it here again would read it twice.
+    if (hasAssistantToolCalls(message)) return { kind: "none" };
+    // Text alongside tool results but without tool calls of its own had no message_end flush.
+    if (hasToolResults(piEvent.toolResults)) {
       const text = assistantTextFromMessage(message);
       if (!text) return { kind: "none" };
       const event: NormalizedPiEvent = { kind: "turnTextComplete", text };
@@ -221,6 +222,25 @@ function completionStatusFromContext(context: PiEventNormalizationContext): Norm
   if (hasPending) return { kind: "status", status: "waiting_for_input", summary: "Waiting for input" };
   if (context.hasQueuedSteering || context.hasQueuedFollowUp) return { kind: "status", status: "running", summary: "Queued input pending" };
   return { kind: "status", status: "completed", summary: "Completed" };
+}
+
+/**
+ * Text the model wrote before calling tools, surfaced the moment its message ends. Pi's turn_end
+ * comes only after those tools finish, which can be minutes for a question the user has to answer;
+ * by then Picky has already spoken the streamed sentence, and a late flush is read aloud again.
+ * Flushing here also keeps this text out of the next step's draft, so the two are not read
+ * back-to-back.
+ */
+function toolIntroTextFromMessageEnd(message: Record<string, unknown>, context: PiEventNormalizationContext): NormalizedPiEvent {
+  if (message.role !== "assistant" || !hasAssistantToolCalls(message)) return { kind: "none" };
+  // An aborted or failed message does not lead into tools; turn_end and agent_end report it.
+  const stopReason = stringValue(message.stopReason);
+  if (stopReason === "error" || terminalStatusFromStopReason(stopReason)) return { kind: "none" };
+  const text = assistantTextFromMessage(message);
+  if (!text) return { kind: "none" };
+  const event: NormalizedPiEvent = { kind: "turnTextComplete", text };
+  const assistantRun = assistantRunMetadata(message, context);
+  return assistantRun && hasAssistantRunMetadata(assistantRun) ? { ...event, assistantRun } : event;
 }
 
 function terminalStatusFromStopReason(stopReason: string | undefined, errorMessage?: string): NormalizedPiEvent | undefined {

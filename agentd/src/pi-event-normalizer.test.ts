@@ -82,21 +82,59 @@ describe("normalizePiEvent", () => {
 
   // When a turn mixes assistant text + tool calls, the text block is the LLM's
   // intro for that step ("잠시 도구 호출하고 이어서 말씀드릴게요."). Picky must speak
-  // it through TTS as soon as the turn ends, separately from the next turn's text,
+  // it through TTS before the tool runs, separately from the next turn's text,
   // so a dedicated `turnTextComplete` kind is emitted rather than dropping the
   // text on the floor as `none`.
-  it("emits turnTextComplete for an intermediate turn that mixed text and tool calls", () => {
+  it("emits turnTextComplete when an assistant message that calls tools ends", () => {
     expect(normalizePiEvent({
-      type: "turn_end",
-      message: { role: "assistant", stopReason: "end_turn", model: "openai-codex/gpt-5.5", content: [{ type: "text", text: "검토 중" }, { type: "toolCall", name: "bash" }] },
-      toolResults: [],
+      type: "message_end",
+      message: { role: "assistant", stopReason: "toolUse", model: "openai-codex/gpt-5.5", content: [{ type: "text", text: "검토 중" }, { type: "toolCall", name: "bash" }] },
     }, { currentThinkingLevel: "high" })).toMatchObject({ kind: "turnTextComplete", text: "검토 중", assistantRun: { model: "openai-codex/gpt-5.5", thinkingLevel: "high" } });
 
+    // The same message reappears in turn_end once its tools finished; flushing it again would
+    // speak it twice.
     expect(normalizePiEvent({
       type: "turn_end",
-      message: { role: "assistant", stopReason: "tool_use", content: [{ type: "text", text: "확인해볼게요." }, { type: "toolCall", name: "read" }] },
+      message: { role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "확인해볼게요." }, { type: "toolCall", name: "read" }] },
       toolResults: [{ role: "toolResult", content: [] }],
-    })).toMatchObject({ kind: "turnTextComplete", text: "확인해볼게요." });
+    })).toEqual({ kind: "none" });
+
+    // A message cut off by an abort or a provider error is not an intro to a tool that will run.
+    for (const stopReason of ["aborted", "error"]) {
+      expect(normalizePiEvent({
+        type: "message_end",
+        message: { role: "assistant", stopReason, content: [{ type: "text", text: "확인해볼게요." }, { type: "toolCall", name: "read" }] },
+      })).toEqual({ kind: "none" });
+    }
+    expect(normalizePiEvent({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "끝" }] } })).toEqual({ kind: "none" });
+  });
+
+  // Regression: the main agent said a sentence, then asked a question. turn_end arrives only after
+  // the question is answered, so a flush there came after the app had finished speaking the streamed
+  // sentence, and the app read it aloud a second time.
+  it("flushes pre-tool text once, before a blocking tool such as a question runs", () => {
+    const message = {
+      role: "assistant",
+      stopReason: "toolUse",
+      content: [
+        { type: "text", text: "할인 계산 오류를 찾았어. 진행 방식을 골라 줘." },
+        { type: "toolCall", id: "call-1", name: "pickle_delegation", arguments: { action: "ask" } },
+      ],
+    };
+    const piEvents = [
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "할인 계산 오류를 찾았어. 진행 방식을 골라 줘." } },
+      { type: "message_end", message },
+      { type: "tool_execution_start", toolCallId: "call-1", toolName: "pickle_delegation", args: { action: "ask" } },
+      { type: "extension_ui_request", id: "ui-1", method: "askUserQuestion", title: "Pickle or Task?" },
+      { type: "tool_execution_end", toolCallId: "call-1", toolName: "pickle_delegation", result: { content: [{ type: "text", text: "chose Task" }] }, isError: false },
+      { type: "turn_end", message, toolResults: [{ role: "toolResult", toolCallId: "call-1", content: [] }] },
+    ];
+    const runtimeEvents = piEvents.map((event) => runtimeEventFromPiEvent(event)).filter((event) => event !== undefined);
+
+    expect(runtimeEvents.map((event) => event.type)).toEqual(["assistant_delta", "turn_text_complete", "tool", "extension_ui", "tool"]);
+    expect(runtimeEvents.filter((event) => event.type === "turn_text_complete")).toEqual([
+      { type: "turn_text_complete", text: "할인 계산 오류를 찾았어. 진행 방식을 골라 줘." },
+    ]);
   });
 
   it("maps turn stop reasons to cancellation but waits for agent_end before final failure", () => {

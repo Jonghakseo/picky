@@ -81,8 +81,11 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
         .onChange(of: compactControlsWidth) { _, target in
             withAnimation(controlLaneAnimation) { displayedControlsWidth = target }
         }
-        // The classic branch does not observe the target; start from it again.
-        .onAppear { displayedControlsWidth = nil }
+        // Seed the lane with the current target. Leaving it empty would make
+        // the first target change render directly, so the first HUD open
+        // after launch or a restore would move the notches without animating.
+        // The classic branch does not observe the target, so reseed on return.
+        .onAppear { displayedControlsWidth = compactControlsWidth }
     }
 
     private var classicChrome: some View {

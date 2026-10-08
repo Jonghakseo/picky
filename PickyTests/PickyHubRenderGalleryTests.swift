@@ -859,10 +859,59 @@ final class PickyHubRenderGalleryFixture {
             fontScaleStore: PickyAppFontScaleStore(settingsStore: settingsStore),
             permissions: permissionMonitor
         )
+        let conversationStart = Date(timeIntervalSince1970: 1_784_000_000)
         companionManager.mainConversation.replaceMessages([
-            PickyMainAgentMessage(role: .user, text: "Summarize this week's work.", createdAt: Date(timeIntervalSince1970: 1_784_000_000)),
-            PickyMainAgentMessage(role: .assistant, text: "You completed two interface reviews and prepared a focused follow-up.", createdAt: Date(timeIntervalSince1970: 1_784_000_060)),
+            PickyMainAgentMessage(role: .user, text: "Summarize this week's work.", createdAt: conversationStart),
+            PickyMainAgentMessage(role: .assistant, text: "You completed two interface reviews and prepared a focused follow-up.", createdAt: conversationStart.addingTimeInterval(60)),
+            PickyMainAgentMessage(role: .user, text: "Find out why the monthly report fails.", createdAt: conversationStart.addingTimeInterval(120)),
+            PickyMainAgentMessage(role: .assistant, text: "Running the report now. I'll tell you what I find.", createdAt: conversationStart.addingTimeInterval(128)),
+            PickyMainAgentMessage(role: .assistant, text: "A code bug applies the 10% discount ten times, so the report stops on a negative total.", createdAt: conversationStart.addingTimeInterval(190)),
         ])
+        // A Task that stopped before product code work, and the Pickle question it led to,
+        // so Recent Conversation shows both blocks where they started.
+        companionManager.mainTasks.apply(PickyMainTasksSnapshot(
+            tasks: [PickyMainTask(
+                id: "task-gallery-report",
+                revision: 1,
+                title: "Check the monthly report",
+                status: .blocked,
+                cwd: "/Users/you/shop",
+                readonly: false,
+                instructions: ["Run scripts/monthly_report.py and find out why it fails."],
+                createdAt: conversationStart.addingTimeInterval(125),
+                updatedAt: conversationStart.addingTimeInterval(189),
+                revisionStartedAt: conversationStart.addingTimeInterval(125),
+                tier: .balanced,
+                report: PickyMainTaskReport(
+                    status: .blocked,
+                    summary: "pricing.py applies the discount percent as a multiplier.",
+                    artifacts: [],
+                    verification: ["python3 scripts/monthly_report.py: ValueError"],
+                    blockers: [],
+                    escalation: .productionCode
+                ),
+                error: nil,
+                cleanup: nil,
+                decisionId: nil,
+                handoff: nil,
+                canStop: false,
+                // The daemon offers no resume while the Task's Pickle question is open.
+                canResume: false
+            )],
+            decisions: [PickyMainDelegationDecision(
+                id: "delegation-gallery-fix",
+                state: .pending,
+                title: "Fix the discount math and rerun the report",
+                instructions: "Fix pricing.py so a percent discount is divided by 100, then rerun the report.",
+                cwd: "/Users/you/shop",
+                question: "Hand the discount fix to a Pickle?",
+                createdAt: conversationStart.addingTimeInterval(190.5),
+                updatedAt: conversationStart.addingTimeInterval(190.5),
+                fromTaskId: "task-gallery-report",
+                taskId: nil,
+                pickle: nil
+            )]
+        ))
         companionManager.mainConversation.updateSessionInfo(sessionFilePath: "/tmp/hub-gallery.jsonl", cwd: "/tmp/hub-gallery")
 
         self.client = client

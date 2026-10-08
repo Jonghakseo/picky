@@ -48,6 +48,7 @@ export function RoomScreen({ store, roomId, wide = false }: { store: AppStore; r
       globalThis.open(url, "_blank", "noopener,noreferrer");
     },
     back: () => goBack({ name: "rooms" }),
+    openRoom: (id) => navigate({ name: "room", roomId: id }),
     loadDraft: () => store.loadDraft(roomId),
     saveDraft: (text) => store.saveDraft(roomId, text),
     feedback: (kind) => {

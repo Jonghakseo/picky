@@ -1,6 +1,6 @@
 /**
- * What actually leaves the gateway when a phone taps a control in the Picky
- * room's Tasks section.
+ * What actually leaves the gateway when a phone taps a Task or delegation
+ * control in the Picky room's conversation.
  *
  * The stakes are the same as for session commands: a mistyped payload must
  * never reach the daemon, a Task control must arrive as the daemon command the

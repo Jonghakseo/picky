@@ -74,6 +74,8 @@ const SHOTS = [
   },
   // The waiting question scrolled out of view: the bar above the composer points back at it.
   { name: "room-question-pinned", url: "/room/main?demo=1", steps: [{ wait: 400 }, { scrollTop: ".room-scroll" }, { wait: 300 }] },
+  // Answer on the pinned bar scrolls to the waiting delegation question in the conversation.
+  { name: "room-main-answer", url: "/room/main?demo=1", steps: [{ wait: 400 }, { scrollTop: ".room-scroll" }, { wait: 500 }, { click: ".q-pin .q-btn" }, { wait: 900 }] },
   {
     name: "room-question-answered",
     url: "/room/s-release?demo=1",

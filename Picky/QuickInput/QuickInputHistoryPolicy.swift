@@ -8,10 +8,11 @@
 
 import CoreGraphics
 
-/// Keeps the Quick Input history card's message selection and size decisions
-/// independent from SwiftUI/AppKit layout. The card starts at the final user
-/// turn, so scrolling down continues that answer and scrolling up reaches
-/// earlier turns in the same scroll view.
+/// Keeps the Quick Input history card's entry selection and size decisions
+/// independent from SwiftUI/AppKit layout. The card shows the main
+/// conversation's timeline (messages plus Task and question blocks) and starts
+/// at the final user turn, so scrolling down continues that answer and
+/// scrolling up reaches earlier turns in the same scroll view.
 enum QuickInputHistoryPolicy {
     /// One user turn + roughly four assistant text lines; kept intentionally
     /// compact so the card reads as a peek, not a chat window.
@@ -24,34 +25,41 @@ enum QuickInputHistoryPolicy {
     static let minimumScrollContentHeight: CGFloat = 44
     static let minimumCardHeight: CGFloat = cardVerticalPadding + minimumScrollContentHeight
 
-    static func shouldShowCard(for messages: [PickyMainAgentMessage]) -> Bool {
-        !messages.isEmpty
+    static func shouldShowCard(for items: [PickyMainConversationTimelineItem]) -> Bool {
+        !items.isEmpty
     }
 
     /// Avoids rendering a clipped history card when the cursor leaves too
     /// little room above the pill. The composer then remains anchored on its
     /// own, rather than being shifted downward by card chrome.
     static func shouldDisplayCard(
-        for messages: [PickyMainAgentMessage],
+        for items: [PickyMainConversationTimelineItem],
         cardHeightLimit: CGFloat
     ) -> Bool {
-        shouldShowCard(for: messages) && cardHeightLimit >= minimumCardHeight
+        shouldShowCard(for: items) && cardHeightLimit >= minimumCardHeight
     }
 
     /// Starts the compact view at the last prompt. A still-pending user prompt
     /// is naturally its own anchor because it is also the last user message.
-    static func anchorMessageID(in messages: [PickyMainAgentMessage]) -> String? {
-        messages.last(where: { $0.role == .user })?.id ?? messages.last?.id
+    /// A question of that turn still waiting on the user (or being carried
+    /// out) starts the view instead, so its buttons show without scrolling in
+    /// the short card; a question left open in an earlier turn does not.
+    static func anchorItemID(in items: [PickyMainConversationTimelineItem]) -> String? {
+        let lastPrompt = items.lastIndex(where: \.isUserMessage)
+        if let question = items[(lastPrompt ?? items.startIndex)...].first(where: \.isOpenDecision) {
+            return question.id
+        }
+        return lastPrompt.map { items[$0].id } ?? items.last?.id
     }
 
-    /// Prior transcript exists above the starting turn and can therefore be
+    /// Prior transcript exists above the starting entry and can therefore be
     /// indicated with the non-interactive top fade.
-    static func hasEarlierMessages(in messages: [PickyMainAgentMessage]) -> Bool {
-        guard let anchorID = anchorMessageID(in: messages),
-              let anchorIndex = messages.firstIndex(where: { $0.id == anchorID }) else {
+    static func hasEarlierItems(in items: [PickyMainConversationTimelineItem]) -> Bool {
+        guard let anchorID = anchorItemID(in: items),
+              let anchorIndex = items.firstIndex(where: { $0.id == anchorID }) else {
             return false
         }
-        return anchorIndex > messages.startIndex
+        return anchorIndex > items.startIndex
     }
 
     /// Caps the card to the space available on the active display while keeping

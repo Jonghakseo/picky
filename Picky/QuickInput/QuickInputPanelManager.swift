@@ -33,6 +33,9 @@ final class QuickInputPanelManager {
     private let panelWidth: CGFloat = QuickInputPanelLayout.panelWidth
 
     private let viewModel = QuickInputPanelViewModel()
+    /// The main agent's Tasks and delegation questions, shown in the history
+    /// card. CompanionManager attaches its store before the panel first opens.
+    private var mainTasks = PickyMainTaskStore()
     private var scrollWheelMonitor: Any?
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
@@ -49,6 +52,11 @@ final class QuickInputPanelManager {
     var onSubmit: (String, QuickInputRecipientProjection) -> Void = { _, _ in }
     var onStartNewSession: @MainActor () async -> String? = { nil }
     var onVisibilityChange: (Bool) -> Void = { _ in }
+    /// Opens the Pickle an answered delegation question created ("Open Pickle").
+    var pickleOpener: PickyPickleOpener? {
+        get { viewModel.pickleOpener }
+        set { viewModel.pickleOpener = newValue }
+    }
 
     /// Logical visibility remains true while an optimistically hidden draft is
     /// in flight so CompanionManager keeps its ink-capture lifecycle intact.
@@ -149,6 +157,12 @@ final class QuickInputPanelManager {
         self.scrollWheelMonitor = nil
     }
 
+    /// Shares CompanionManager's Task store with the history card. The panel
+    /// view is built on first presentation, which reads this store.
+    func attachMainTasks(_ store: PickyMainTaskStore) {
+        mainTasks = store
+    }
+
     /// Pushes the main-agent transcript into the panel. It is intentionally a
     /// snapshot: `CompanionManager` remains the sole owner of message state.
     func updateRecentMessages(_ messages: [PickyMainAgentMessage]) {
@@ -188,7 +202,7 @@ final class QuickInputPanelManager {
     }
 
     private func createPanel() {
-        let quickInputView = QuickInputPanelView(viewModel: viewModel)
+        let quickInputView = QuickInputPanelView(viewModel: viewModel, tasks: mainTasks)
             .environmentObject(appearanceStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
         let rootView = PickyAppFontScaleRoot(store: fontScaleStore) { quickInputView }

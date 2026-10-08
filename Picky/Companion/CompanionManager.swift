@@ -264,6 +264,7 @@ final class CompanionManager: ObservableObject {
             self?.updateMainCancelPillPresentation()
         }
         self.mainTasks.send = { [weak self] command in try await self?.agentClient.sendAwaitingError(command, timeout: 1.0) ?? nil }
+        self.quickInputPanelManager.attachMainTasks(mainTasks)
         self.inkCaptureCoordinator.onStateChange = { [weak self] state in
             // Capture commands and the CGEvent tap both run on the main run loop.
             MainActor.assumeIsolated {

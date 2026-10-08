@@ -3366,49 +3366,22 @@ textarea.composer-editor::placeholder {
 
 /* ---------- Picky room: Tasks and delegation decisions ---------- */
 
-.main-tasks {
-  margin: var(--ds-space-2) var(--ds-space-3) 0;
-  font: var(--hud-type-label-semibold);
+/* ---------- Picky room: Tasks and delegation questions ----------
+ * Drawn inside the conversation where each one started (MainTaskBlocks.tsx),
+ * as wide as a bubble. Picky/Hub/Pages/PickyHubMainTaskBlocks.swift */
+.main-block {
+  box-sizing: border-box;
+  max-width: min(96%, calc(100% - 16px));
+  border: 0.5px solid var(--ds-color-border-subtle);
+  border-radius: var(--ds-radius-extra-large);
+  background: var(--ds-color-surface1);
   color: var(--ds-color-text-secondary);
+  font: var(--hud-type-label-semibold);
 }
 
-.main-tasks-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  width: 100%;
-  min-height: 36px;
-  padding: 0 var(--ds-space-2);
-  border-radius: var(--ds-radius-compact);
-  text-align: left;
-}
-
-.main-tasks-bar:active {
-  background: var(--ds-color-surface3, var(--ds-color-surface2));
-}
-
-.main-tasks-label {
-  flex: none;
-}
-
-.main-tasks-summary {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.main-tasks-chevron {
-  display: flex;
-  flex: none;
-  color: var(--ds-color-text-tertiary);
-}
-
-.main-tasks-list {
-  max-height: 220px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+.main-block:focus-visible {
+  outline: 2px solid var(--ds-color-accent);
+  outline-offset: 2px;
 }
 
 .main-task-head {
@@ -3416,7 +3389,7 @@ textarea.composer-editor::placeholder {
   align-items: center;
   gap: var(--ds-space-2);
   min-height: 40px;
-  padding: 0 var(--ds-space-2);
+  padding: 0 var(--ds-space-2) 0 var(--ds-space-3);
 }
 
 .main-task-name {
@@ -3484,7 +3457,7 @@ textarea.composer-editor::placeholder {
 }
 
 .main-task-detail {
-  padding: 0 var(--ds-space-2) var(--ds-space-2) var(--ds-space-2);
+  padding: 0 var(--ds-space-3) var(--ds-space-2);
   color: var(--ds-color-text-secondary);
   font: var(--hud-type-status);
 }
@@ -3506,11 +3479,7 @@ textarea.composer-editor::placeholder {
 /* A decision nobody answered yet blocks the work, so it reads as the next
  * thing to do: neutral surface with an accent edge, like the question bubble. */
 .main-decision {
-  margin-bottom: var(--ds-space-2);
-  padding: var(--ds-space-2);
-  border: 0.5px solid var(--ds-color-border-subtle);
-  border-radius: var(--ds-radius-compact);
-  background: var(--ds-color-surface1);
+  padding: var(--ds-space-3);
 }
 
 .main-decision.is-pending {
@@ -3553,4 +3522,41 @@ textarea.composer-editor::placeholder {
   display: flex;
   gap: 6px;
   margin-top: var(--ds-space-2);
+}
+
+/* An answered question, kept as one line in the conversation. */
+.main-record {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 var(--ds-space-3);
+  color: var(--ds-color-text-secondary);
+  font: var(--hud-type-status);
+}
+
+.main-record-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-record-dot {
+  flex: none;
+  color: var(--ds-color-text-tertiary);
+}
+
+.main-record-outcome {
+  flex: none;
+}
+
+.main-record-link {
+  flex: none;
+  min-height: 32px;
+  padding: 0 4px;
+  color: var(--ds-color-accent-text);
+  font: var(--hud-type-status);
+  font-weight: 600;
 }

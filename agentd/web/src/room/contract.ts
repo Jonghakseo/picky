@@ -72,6 +72,8 @@ export interface RoomActions {
   openExternal(url: string): void;
   /** Navigates back to the room list. */
   back(): void;
+  /** Opens another room, such as the Pickle a delegation question created. */
+  openRoom(roomId: string): void;
   /** Per-room draft that survives navigation and reloads. */
   loadDraft(): string;
   saveDraft(text: string): void;

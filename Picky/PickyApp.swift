@@ -320,6 +320,21 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             companionManager.onFocusPickleShortcut = { [weak self] mouseLocation in
                 self?.hudOverlayManager.focusUnreadOrRecentSession(mouseLocation: mouseLocation)
             }
+            // "Open Pickle" on an answered delegation question in Quick Input:
+            // the same unarchive-then-present path as the Hub.
+            companionManager.quickInputPanelManager.pickleOpener = PickyPickleOpener(
+                canOpen: { [weak self] id in
+                    guard let sessions = self?.hudSessionViewModel else { return false }
+                    return sessions.sessions.contains { $0.id == id } || sessions.archivedSessions.contains { $0.id == id }
+                },
+                open: { [weak self] id in
+                    guard let self else { return }
+                    if self.hudSessionViewModel.archivedSessions.contains(where: { $0.id == id }) {
+                        self.hudSessionViewModel.unarchive(sessionID: id)
+                    }
+                    self.hudOverlayManager.focusSession(id: id)
+                }
+            )
             // Composer-initiated delayed-action install reuses the plugin
             // manager's reload bookkeeping instead of its own ad-hoc path.
             hudSessionViewModel.onScheduledSendPluginInstalled = { [weak self] in

@@ -94,6 +94,8 @@ final class QuickInputPanelViewModel: ObservableObject {
     var onSubmit: (String, QuickInputRecipientProjection) -> Void = { _, _ in }
     var onStartNewSession: @MainActor () async -> String? = { nil }
     var onClose: () -> Void = {}
+    /// Opens the Pickle an answered question created. Nil where nothing can open one.
+    var pickleOpener: PickyPickleOpener?
     /// Lets the AppKit panel remeasure after the transcript's SwiftUI content
     /// resolves its actual height.
     var onFittingSizeChanged: () -> Void = {}
@@ -105,6 +107,13 @@ final class QuickInputPanelViewModel: ObservableObject {
     }
 
     func close() {
+        onClose()
+    }
+
+    /// The Pickle opens in the HUD, so Quick Input steps out of the way.
+    func openPickle(_ sessionID: String) {
+        guard let pickleOpener else { return }
+        pickleOpener.open(sessionID)
         onClose()
     }
 
@@ -133,6 +142,8 @@ final class QuickInputPanelViewModel: ObservableObject {
 
 struct QuickInputPanelView: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
+    /// Tasks and delegation questions shown among the recent messages.
+    @ObservedObject var tasks: PickyMainTaskStore
     @FocusState private var isFieldFocused: Bool
 
     /// Capsule height — matches the reference pill shape.
@@ -141,13 +152,14 @@ struct QuickInputPanelView: View {
     private let shadowOutset: CGFloat = QuickInputPanelLayout.shadowOutset
 
     var body: some View {
+        let items = PickyMainTaskPresentation.timelineItems(messages: viewModel.recentMessages, snapshot: tasks.snapshot)
         VStack(alignment: .leading, spacing: QuickInputPanelLayout.historyPillSpacing) {
             if viewModel.recipient.showsMainAgentHistory,
                QuickInputHistoryPolicy.shouldDisplayCard(
-                for: viewModel.recentMessages,
+                for: items,
                 cardHeightLimit: viewModel.historyCardHeightLimit
             ) {
-                QuickInputHistorySection(viewModel: viewModel)
+                QuickInputHistorySection(viewModel: viewModel, tasks: tasks, items: items)
             }
 
             HStack(spacing: 6) {
@@ -262,6 +274,8 @@ struct QuickInputPanelView: View {
 
 private struct QuickInputHistorySection: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
+    let tasks: PickyMainTaskStore
+    let items: [PickyMainConversationTimelineItem]
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     private var showsNewSessionAction: Bool {
@@ -313,7 +327,7 @@ private struct QuickInputHistorySection: View {
                 value: showsNewSessionAction
             )
 
-            QuickInputHistoryCard(viewModel: viewModel)
+            QuickInputHistoryCard(viewModel: viewModel, tasks: tasks, items: items)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -349,6 +363,8 @@ private struct QuickInputHistoryActionButtonStyle: ButtonStyle {
 
 private struct QuickInputHistoryCard: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
+    let tasks: PickyMainTaskStore
+    let items: [PickyMainConversationTimelineItem]
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @State private var trailingTurnHeight: CGFloat = 0
     /// Starts true so the initial scroll-to-last-turn presentation immediately
@@ -359,13 +375,12 @@ private struct QuickInputHistoryCard: View {
 
     private let scrollCoordinateSpaceName = "quickInputHistoryScroll"
 
-    private var messages: [PickyMainAgentMessage] { viewModel.recentMessages }
-    private var anchorMessageID: String? { QuickInputHistoryPolicy.anchorMessageID(in: messages) }
-    private var hasEarlierMessages: Bool { QuickInputHistoryPolicy.hasEarlierMessages(in: messages) }
+    private var anchorItemID: String? { QuickInputHistoryPolicy.anchorItemID(in: items) }
+    private var hasEarlierItems: Bool { QuickInputHistoryPolicy.hasEarlierItems(in: items) }
     /// The dissolve mask already vanishes the card's top while lightweight,
     /// so the explicit top fade only applies to the solid presentation.
     private var showsTopFade: Bool {
-        effectiveBackgroundMode == .solid && hasEarlierMessages && hasContentAboveViewport
+        effectiveBackgroundMode == .solid && hasEarlierItems && hasContentAboveViewport
     }
     private var effectiveBackgroundMode: QuickInputHistoryBackgroundMode {
         QuickInputHistoryPolicy.effectiveBackgroundMode(
@@ -408,20 +423,20 @@ private struct QuickInputHistoryCard: View {
     }
 
     private var anchorIndex: Int {
-        guard let anchorMessageID,
-              let index = messages.firstIndex(where: { $0.id == anchorMessageID }) else {
-            return messages.startIndex
+        guard let anchorItemID,
+              let index = items.firstIndex(where: { $0.id == anchorItemID }) else {
+            return items.startIndex
         }
         return index
     }
 
-    private var earlierMessages: [PickyMainAgentMessage] {
-        Array(messages[..<anchorIndex])
+    private var earlierItems: [PickyMainConversationTimelineItem] {
+        Array(items[..<anchorIndex])
     }
 
-    private var currentTurnMessages: [PickyMainAgentMessage] {
-        guard !messages.isEmpty else { return [] }
-        return Array(messages[anchorIndex...])
+    private var currentTurnItems: [PickyMainConversationTimelineItem] {
+        guard !items.isEmpty else { return [] }
+        return Array(items[anchorIndex...])
     }
 
     private var maximumScrollHeight: CGFloat {
@@ -451,13 +466,13 @@ private struct QuickInputHistoryCard: View {
                     // materialized so the initial scroll-to-last-turn target
                     // exists before the proxy resolves it.
                     VStack(alignment: .leading, spacing: 14) {
-                        ForEach(earlierMessages) { message in
-                            PickyMainAgentTranscriptRow(message: message)
+                        ForEach(earlierItems) { item in
+                            entry(item)
                         }
 
                         VStack(alignment: .leading, spacing: 14) {
-                            ForEach(currentTurnMessages) { message in
-                                PickyMainAgentTranscriptRow(message: message)
+                            ForEach(currentTurnItems) { item in
+                                entry(item)
                             }
                         }
                         .background(
@@ -542,9 +557,13 @@ private struct QuickInputHistoryCard: View {
                 hasContentBelowViewport = false
                 scrollToAnchor(proxy)
             }
-            .onChange(of: viewModel.recentMessages.last?.id) { _ in
+            .onChange(of: items.last?.id) { _ in
                 hasContentAboveViewport = true
                 hasContentBelowViewport = false
+                scrollToAnchor(proxy)
+            }
+            // A question that starts waiting, or one that was just answered, moves the start.
+            .onChange(of: anchorItemID) { _ in
                 scrollToAnchor(proxy)
             }
             .onPreferenceChange(QuickInputHistoryScrollOffsetKey.self) { offset in
@@ -561,8 +580,22 @@ private struct QuickInputHistoryCard: View {
         }
     }
 
+    @ViewBuilder
+    private func entry(_ item: PickyMainConversationTimelineItem) -> some View {
+        switch item {
+        case .message(let message):
+            PickyMainAgentTranscriptRow(message: message)
+        case .task(let row):
+            QuickInputMainTaskRow(row: row)
+        case .decision(let row) where row.isRecord:
+            QuickInputMainDelegationRecord(row: row, opener: viewModel.pickleOpener) { viewModel.openPickle($0) }
+        case .decision(let row):
+            QuickInputMainDelegationBlock(row: row, store: tasks)
+        }
+    }
+
     private func updateContentAboveViewport(_ offset: CGFloat) {
-        let nextValue = hasEarlierMessages && offset < -0.5
+        let nextValue = hasEarlierItems && offset < -0.5
         guard hasContentAboveViewport != nextValue else { return }
 
         var transaction = Transaction()
@@ -587,12 +620,12 @@ private struct QuickInputHistoryCard: View {
     }
 
     private func scrollToAnchor(_ proxy: ScrollViewProxy) {
-        guard let anchorMessageID else { return }
+        guard let anchorItemID else { return }
         // Let the revised transcript finish laying out before resolving the
         // anchor. This keeps a freshly appended turn at its prompt rather than
         // at the previous content height.
         DispatchQueue.main.async {
-            proxy.scrollTo(anchorMessageID, anchor: .top)
+            proxy.scrollTo(anchorItemID, anchor: .top)
         }
     }
 }

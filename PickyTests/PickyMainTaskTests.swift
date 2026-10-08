@@ -3,10 +3,12 @@
 //  PickyTests
 //
 //  Contracts for the main-agent Task surface: the wire snapshot the daemon
-//  broadcasts, the two user controls the app sends back, what the Tasks section
-//  decides to show, and how the store applies and reports them.
+//  broadcasts, the two user controls the app sends back, where Tasks and
+//  questions appear in the main conversation, and how the store applies and
+//  reports them.
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Picky
@@ -138,82 +140,168 @@ struct PickyMainTaskPresentationTests {
         #expect(rows.first { $0.id == "b" }?.noteKey == nil)
     }
 
-    @Test func putsActionableTasksFirstAndKeepsOnlyRecentFinishedOnes() {
-        let base = Date(timeIntervalSince1970: 1_000_000)
-        var tasks: [PickyMainTask] = []
-        for index in 0..<12 {
-            tasks.append(makeTask(id: "done-\(index)", status: .completed, updatedAt: base.addingTimeInterval(Double(index))))
-        }
-        tasks.append(makeTask(id: "running", status: .running, updatedAt: base))
-        tasks.append(makeTask(id: "blocked", status: .blocked, updatedAt: base))
-
-        let rows = PickyMainTaskPresentation.rows(for: tasks)
-        #expect(Array(rows.map(\.id).prefix(2)) == ["blocked", "running"])
-        let finished = rows.filter { $0.state.isFinished }
-        // The blocked row and history share one cap; live work is never trimmed.
-        #expect(finished.count == PickyMainTaskPresentation.finishedTaskLimit - 1)
-        // Newest first, so the oldest completions fall off rather than the newest.
-        #expect(finished.first?.id == "done-11")
-        #expect(rows.contains { $0.id == "done-5" })
-        #expect(rows.contains { $0.id == "done-4" } == false)
-    }
-
-    @Test func asksTheUserOnlyWhileTheDecisionIsPending() {
-        let pending = makeDecision(id: "p", state: .pending)
-        let chosenTask = makeDecision(id: "t", state: .task)
-        let cancelled = makeDecision(id: "c", state: .cancelled)
-        let rows = PickyMainTaskPresentation.delegationRows(for: [pending, chosenTask, cancelled], tasks: [])
-        #expect(rows.map(\.id) == ["p"])
-        #expect(rows[0].kind == .pending)
-        #expect(rows[0].showsChoices)
-        #expect(rows[0].showsRetry == false)
-    }
-
-    @Test func showsProgressWhileCreatingAPickleAndARetryWhenItFails() throws {
-        let creating = makeDecision(id: "a", state: .pickle, pickle: .init(state: .creating, sessionId: nil, error: nil))
-        let failed = makeDecision(id: "b", state: .pickle, pickle: .init(state: .failed, sessionId: nil, error: "No worktree"))
-        let rows = PickyMainTaskPresentation.delegationRows(for: [creating, failed], tasks: [])
-        let creatingRow = try #require(rows.first { $0.id == "a" })
-        let failedRow = try #require(rows.first { $0.id == "b" })
-        #expect(creatingRow.isBusy)
-        #expect(creatingRow.showsChoices == false)
-        #expect(failedRow.showsRetry)
-        #expect(failedRow.showsChoices == false)
-        #expect(failedRow.messageKey == "hub.tasks.decision.failed")
-    }
-
-    /// The same handoff must not be stated by both a Task row and a decision row.
-    @Test func dropsACreatedPickleRowWhenATaskAlreadyReportsThatHandoff() {
-        let decision = makeDecision(id: "d", state: .pickle, pickle: .init(state: .created, sessionId: "s-1", error: nil))
+    /// Taken over by a Pickle, the Task is history: its status says where the
+    /// work went, and the longer note waits in the details.
+    @Test func movesTheHandoffNoteIntoTheDetails() {
         let handedOff = makeTask(id: "t", status: .blocked, handoff: .init(decisionId: "d", pickleSessionId: "s-1"))
-        #expect(PickyMainTaskPresentation.delegationRows(for: [decision], tasks: [handedOff]).isEmpty)
-        #expect(PickyMainTaskPresentation.delegationRows(for: [decision], tasks: []).map(\.kind) == [.pickleCreated])
-        let rows = PickyMainTaskPresentation.rows(for: [handedOff])
-        #expect(rows.first?.noteKey == "hub.tasks.note.handoff")
-        // Taken over by a Pickle, the Task is history rather than something to act on.
-        #expect(rows.first?.state == .handedOff)
-        #expect(rows.first?.state.isFinished == true)
+        let row = PickyMainTaskPresentation.rows(for: [handedOff])[0]
+        #expect(row.state == .handedOff)
+        #expect(row.state.isLive == false)
+        #expect(row.noteKey == nil)
+        #expect(row.detailNoteKey == "hub.tasks.note.handoff")
     }
 
-    @Test func capsTasksWaitingOnTheUserTogetherWithHistory() {
-        let base = Date(timeIntervalSince1970: 1_000_000)
-        var tasks: [PickyMainTask] = []
-        for index in 0..<10 {
-            tasks.append(makeTask(id: "interrupted-\(index)", status: .interrupted, updatedAt: base.addingTimeInterval(Double(index))))
+    @Test func asksTheUserOnlyWhileTheDecisionIsPending() throws {
+        let rows = PickyMainTaskPresentation.delegationRows(for: [
+            makeDecision(id: "p", state: .pending),
+            makeDecision(id: "a", state: .pickle, pickle: .init(state: .creating, sessionId: nil, error: nil)),
+            makeDecision(id: "b", state: .pickle, pickle: .init(state: .failed, sessionId: nil, error: "No worktree")),
+        ])
+        let pending = try #require(rows.first { $0.id == "p" })
+        let creating = try #require(rows.first { $0.id == "a" })
+        let failed = try #require(rows.first { $0.id == "b" })
+        #expect(pending.showsChoices && !pending.showsRetry && !pending.isRecord)
+        #expect(creating.isBusy && !creating.showsChoices && !creating.isRecord)
+        #expect(failed.showsRetry && !failed.showsChoices && !failed.isRecord)
+        #expect(failed.messageKey == "hub.tasks.decision.failed")
+    }
+
+    /// An answered question stays in the conversation as a record of what the
+    /// user chose, instead of disappearing.
+    @Test func keepsAnsweredQuestionsAsRecordsOfTheChoice() {
+        let rows = PickyMainTaskPresentation.delegationRows(for: [
+            makeDecision(id: "pickle", state: .pickle, pickle: .init(state: .created, sessionId: "s-1", error: nil)),
+            makeDecision(id: "task", state: .task),
+            makeDecision(id: "cancel", state: .cancelled),
+            makeDecision(id: "newer", state: .unknown),
+        ])
+        #expect(rows.map(\.id) == ["pickle", "task", "cancel"])
+        #expect(rows.filter(\.isRecord).count == 3)
+        #expect(rows[0].outcome == .handedToPickle(sessionID: "s-1"))
+        #expect(rows[0].pickleSessionID == "s-1")
+        #expect(rows[0].messageKey == "hub.tasks.decision.record.pickle")
+        #expect(rows[1].outcome == .keptWithPicky)
+        #expect(rows[1].pickleSessionID == nil)
+        #expect(rows[1].messageKey == "hub.tasks.decision.record.task")
+        #expect(rows[2].messageKey == "hub.tasks.decision.record.cancelled")
+    }
+}
+
+/// Where a Task or question appears in the main conversation. A block belongs
+/// to the turn it started in and follows what Picky said about it.
+@MainActor
+struct PickyMainConversationTimelineTests {
+    private let start = Date(timeIntervalSince1970: 1_784_000_000)
+    private func at(_ seconds: Double) -> Date { start.addingTimeInterval(seconds) }
+
+    /// The common shape: Picky calls `Task` first and announces it afterwards.
+    @Test func putsATaskRightAfterTheReplyThatAnnouncedIt() {
+        let request = PickyMainAgentMessage(role: .user, text: "Sum this month's discounted revenue", createdAt: at(0))
+        let announcement = PickyMainAgentMessage(role: .assistant, text: "Running the report now.", createdAt: at(8))
+        let result = PickyMainAgentMessage(role: .assistant, text: "The total is 231.22.", createdAt: at(300))
+        let task = makeTask(id: "report", status: .completed, createdAt: at(5))
+
+        let items = timeline([request, announcement, result], tasks: [task])
+        #expect(items.map(\.id) == [message(request), message(announcement), "task-report", message(result)])
+    }
+
+    /// Picky's sentence before a tool call is recorded first, so a question
+    /// asked while handling a Task result follows that explanation rather than
+    /// the turn's first reply, and the reply after the answer follows it.
+    @Test func putsAQuestionAfterWhatPickySaidRightBeforeAsking() {
+        let request = PickyMainAgentMessage(role: .user, text: "Fix the monthly report", createdAt: at(0))
+        let announcement = PickyMainAgentMessage(role: .assistant, text: "Checking the script.", createdAt: at(8))
+        let explanation = PickyMainAgentMessage(role: .assistant, text: "The discount is applied ten times.", createdAt: at(40))
+        let afterAnswer = PickyMainAgentMessage(role: .assistant, text: "A Pickle is on it.", createdAt: at(60))
+        let task = makeTask(id: "check", status: .blocked, createdAt: at(5))
+        let question = makeDecision(id: "fix", state: .pickle, createdAt: at(40.1), pickle: .init(state: .created, sessionId: "s-1", error: nil))
+
+        let items = timeline([request, announcement, explanation, afterAnswer], tasks: [task], decisions: [question])
+        #expect(items.map(\.id) == [
+            message(request), message(announcement), "task-check", message(explanation), "decision-fix", message(afterAnswer),
+        ])
+    }
+
+    /// Before Picky replies, the block closes its turn: a later request never
+    /// lands above it.
+    @Test func closesTheTurnWhilePickyHasNotRepliedYet() {
+        let request = PickyMainAgentMessage(role: .user, text: "Rename my screenshots", createdAt: at(0))
+        let next = PickyMainAgentMessage(role: .user, text: "Also empty the trash", createdAt: at(10))
+        let task = makeTask(id: "rename", status: .running, createdAt: at(2))
+
+        #expect(timeline([request], tasks: [task]).map(\.id) == [message(request), "task-rename"])
+        #expect(timeline([request, next], tasks: [task]).map(\.id) == [message(request), "task-rename", message(next)])
+    }
+
+    /// History older than the transcript leaves with its messages, but work
+    /// that still runs and a question still waiting stay, at the top.
+    @Test func keepsOnlyOpenBlocksOlderThanTheTranscript() {
+        let request = PickyMainAgentMessage(role: .user, text: "Hello", createdAt: at(100))
+        let finished = makeTask(id: "old-done", status: .completed, createdAt: at(10))
+        let running = makeTask(id: "old-running", status: .running, createdAt: at(20))
+        let waiting = makeDecision(id: "old-question", state: .pending, createdAt: at(30))
+        let answered = makeDecision(id: "old-answer", state: .task, createdAt: at(40))
+
+        let items = timeline([request], tasks: [finished, running], decisions: [waiting, answered])
+        #expect(items.map(\.id) == ["task-old-running", "decision-old-question", message(request)])
+    }
+
+    /// A new conversation starts empty: earlier results stay out of it.
+    @Test func showsOnlyOpenBlocksInANewConversation() {
+        let finished = makeTask(id: "done", status: .completed, createdAt: at(10))
+        let running = makeTask(id: "running", status: .running, createdAt: at(20))
+        let answered = makeDecision(id: "answered", state: .cancelled, createdAt: at(30))
+
+        #expect(timeline([], tasks: [finished, running], decisions: [answered]).map(\.id) == ["task-running"])
+    }
+
+    private func timeline(
+        _ messages: [PickyMainAgentMessage],
+        tasks: [PickyMainTask] = [],
+        decisions: [PickyMainDelegationDecision] = []
+    ) -> [PickyMainConversationTimelineItem] {
+        PickyMainTaskPresentation.timelineItems(messages: messages, snapshot: PickyMainTasksSnapshot(tasks: tasks, decisions: decisions))
+    }
+
+    private func message(_ message: PickyMainAgentMessage) -> String {
+        PickyMainConversationTimelineItem.message(message).id
+    }
+}
+
+/// The bar above the Hub composer that points back at a question waiting on the user.
+@MainActor
+struct PickyHubWaitingQuestionBarTests {
+    @Test func pointsAtTheNewestQuestionStillWaitingOnTheUser() {
+        let snapshot = PickyMainTasksSnapshot(tasks: [], decisions: [
+            makeDecision(id: "older", state: .pending, createdAt: Date(timeIntervalSince1970: 10)),
+            makeDecision(id: "newer", state: .pending, createdAt: Date(timeIntervalSince1970: 20)),
+            makeDecision(id: "answered", state: .task, createdAt: Date(timeIntervalSince1970: 30)),
+        ])
+        let items = PickyMainTaskPresentation.timelineItems(messages: [], snapshot: snapshot)
+        #expect(PickyHubConversationPolicy.waitingQuestion(in: items)?.id == "decision-newer")
+        #expect(PickyHubConversationPolicy.waitingQuestion(in: []) == nil)
+    }
+
+    @Test func showsOnlyWhileTheQuestionIsOutOfView() {
+        let height: CGFloat = 400
+        let margin = PickyHubConversationPolicy.waitingQuestionBottomMargin
+        func inView(_ frame: CGRect) -> Bool {
+            PickyHubConversationPolicy.isWaitingQuestionInView(frame: frame, viewportHeight: height)
         }
-        tasks.append(makeTask(id: "running", status: .running, updatedAt: base))
-        let rows = PickyMainTaskPresentation.rows(for: tasks)
-        #expect(rows.contains { $0.id == "running" })
-        #expect(rows.filter { $0.state == .interrupted }.count == PickyMainTaskPresentation.finishedTaskLimit)
-        #expect(rows.first?.id == "interrupted-9")
-    }
+        #expect(inView(CGRect(x: 0, y: 100, width: 500, height: 120)))
+        // Scrolled away above, or only peeking over the bottom edge.
+        #expect(inView(CGRect(x: 0, y: -130, width: 500, height: 120)) == false)
+        #expect(inView(CGRect(x: 0, y: height - margin + 4, width: 500, height: 120)) == false)
 
-    @Test func listsPendingDecisionsBeforeInformationalOnes() {
-        let base = Date(timeIntervalSince1970: 1_000_000)
-        let created = makeDecision(id: "created", state: .pickle, updatedAt: base.addingTimeInterval(60), pickle: .init(state: .created, sessionId: nil, error: nil))
-        let pending = makeDecision(id: "pending", state: .pending, updatedAt: base)
-        let rows = PickyMainTaskPresentation.delegationRows(for: [created, pending], tasks: [])
-        #expect(rows.map(\.id) == ["pending", "created"])
+        func shows(_ isInView: Bool?) -> Bool {
+            PickyHubConversationPolicy.showsWaitingQuestionBar(isQuestionInView: isInView, viewportHeight: height)
+        }
+        #expect(shows(true) == false)
+        #expect(shows(false))
+        // Not laid out at all: far out of view.
+        #expect(shows(nil))
+        // Before the viewport has a size nothing is known, so no bar flashes.
+        #expect(PickyHubConversationPolicy.showsWaitingQuestionBar(isQuestionInView: nil, viewportHeight: 0) == false)
     }
 }
 
@@ -244,7 +332,8 @@ struct PickyMainTaskStoreTests {
         #expect(recorder.sent[0].action == .stop)
         #expect(recorder.sent[1].decisionId == "decision-1")
         #expect(recorder.sent[1].choice == .pickle)
-        #expect(store.commandError == nil)
+        #expect(store.commandError(for: "task-1") == nil)
+        #expect(store.commandError(for: "decision-1") == nil)
         #expect(store.pendingCommandIDs.isEmpty)
     }
 
@@ -253,11 +342,13 @@ struct PickyMainTaskStoreTests {
         store.send = { _ in PickyErrorEvent(code: "unknown_task", message: "Unknown task", commandId: nil) }
 
         await store.control(taskID: "task-1", action: .resume)
-        #expect(store.commandError == "Unknown task")
+        #expect(store.commandError(for: "task-1") == "Unknown task")
+        // The failure belongs to that Task's block, not to every block.
+        #expect(store.commandError(for: "task-2") == nil)
         #expect(store.pendingCommandIDs.isEmpty)
 
-        store.clearCommandError()
-        #expect(store.commandError == nil)
+        store.clearCommandError(for: "task-1")
+        #expect(store.commandError(for: "task-1") == nil)
     }
 
     @Test func reportsATransportFailureAsAFailedCommand() async {
@@ -265,7 +356,7 @@ struct PickyMainTaskStoreTests {
         store.send = { _ -> PickyErrorEvent? in throw PickyAgentClientError.disconnected }
 
         await store.control(taskID: "task-1", action: .stop)
-        #expect(store.commandError == L10n.t("hub.tasks.error.commandFailed"))
+        #expect(store.commandError(for: "task-1") == L10n.t("hub.tasks.error.commandFailed"))
     }
 
     /// A Task state change arrives only from the daemon, so a second click
@@ -349,6 +440,7 @@ private enum MainTaskFixtureError: Error {
 private func makeTask(
     id: String,
     status: PickyMainTaskStatus,
+    createdAt: Date = Date(timeIntervalSince1970: 999_000),
     updatedAt: Date = Date(timeIntervalSince1970: 1_000_000),
     revisionStartedAt: Date? = nil,
     cleanup: PickyMainTaskCleanup? = nil,
@@ -364,7 +456,7 @@ private func makeTask(
         cwd: "/Users/me",
         readonly: false,
         instructions: ["Do the thing"],
-        createdAt: Date(timeIntervalSince1970: 999_000),
+        createdAt: createdAt,
         updatedAt: updatedAt,
         revisionStartedAt: revisionStartedAt,
         tier: nil,
@@ -381,6 +473,7 @@ private func makeTask(
 private func makeDecision(
     id: String,
     state: PickyMainDelegationState,
+    createdAt: Date = Date(timeIntervalSince1970: 999_000),
     updatedAt: Date = Date(timeIntervalSince1970: 1_000_000),
     pickle: PickyMainDelegationPickle? = nil
 ) -> PickyMainDelegationDecision {
@@ -391,7 +484,7 @@ private func makeDecision(
         instructions: "Implement the thing",
         cwd: "/Users/me/src",
         question: nil,
-        createdAt: Date(timeIntervalSince1970: 999_000),
+        createdAt: createdAt,
         updatedAt: updatedAt,
         fromTaskId: nil,
         taskId: nil,

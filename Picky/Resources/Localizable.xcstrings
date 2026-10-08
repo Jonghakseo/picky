@@ -21126,6 +21126,23 @@
         }
       }
     },
+    "hub.conversation.waitingQuestion.answer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답하기"
+          }
+        }
+      },
+      "comment": "Button on the bar above the Recent Conversation composer that appears while a question waiting on the user is scrolled out of view. Scrolls to the question; the answer is still given there."
+    },
     "hub.settings.reportFontScale": {
       "localizations": {
         "en": {
@@ -33071,57 +33088,6 @@
         }
       }
     },
-    "hub.tasks.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tasks"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작업"
-          }
-        }
-      },
-      "comment": "Hub conversation: collapsible section listing the main agent's background Tasks."
-    },
-    "hub.tasks.count": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld items"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld개"
-          }
-        }
-      },
-      "comment": "Accessibility value for the Tasks section header. %1$lld is the number of visible rows (Tasks + delegation decisions)."
-    },
-    "hub.tasks.toggle.hint": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Shows or hides the task list."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작업 목록을 열거나 닫아요."
-          }
-        }
-      },
-      "comment": "Accessibility hint for the Tasks section header button."
-    },
     "hub.tasks.status.queued": {
       "localizations": {
         "en": {
@@ -33632,23 +33598,6 @@
       },
       "comment": "Shown while the Pickle for a delegation decision is being created."
     },
-    "hub.tasks.decision.created": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Moved to a Pickle."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pickle로 옮겼어요."
-          }
-        }
-      },
-      "comment": "Shown after a delegation decision created its Pickle."
-    },
     "hub.tasks.decision.failed": {
       "localizations": {
         "en": {
@@ -33734,6 +33683,74 @@
       },
       "comment": "Button: try creating the Pickle again after it failed."
     },
+    "hub.tasks.decision.record.pickle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Handed to a Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle로 맡겼어요"
+          }
+        }
+      },
+      "comment": "One-line record left in the main conversation after the user answered a 'Hand this to a Pickle?' question with Hand to Pickle. Follows the question's scope, separated by a dot."
+    },
+    "hub.tasks.decision.record.task": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not handed off. Picky is on it"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "맡기지 않고 Picky가 진행해요"
+          }
+        }
+      },
+      "comment": "One-line record left in the main conversation after the user answered a 'Hand this to a Pickle?' question with Don't hand off: Picky does the work itself as background work."
+    },
+    "hub.tasks.decision.record.cancelled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request cancelled"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청을 취소했어요"
+          }
+        }
+      },
+      "comment": "One-line record left in the main conversation after the user cancelled the request in a 'Hand this to a Pickle?' question. Nothing runs."
+    },
+    "hub.tasks.decision.openPickle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 열기"
+          }
+        }
+      },
+      "comment": "Link on the record of a question the user handed to a Pickle. Opens that Pickle's card in the HUD dock."
+    },
     "hub.tasks.error.commandFailed": {
       "localizations": {
         "en": {
@@ -33784,6 +33801,23 @@
         }
       },
       "comment": "Task status: the task stopped before production code work and a Pickle took it over."
+    },
+    "hub.tasks.block.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업"
+          }
+        }
+      },
+      "comment": "Spoken first in the VoiceOver label of a Task block in the main conversation, before the Task's title and status. A Task is background work Picky runs for the conversation."
     }
   },
   "version": "1.0"

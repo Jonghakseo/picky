@@ -34,10 +34,6 @@
   "remote.room.work.git.ahead": { "ko": "푸시할 커밋 %lld개", "en": "%lld commits to push" },
   "remote.room.work.git.behind": { "ko": "가져올 커밋 %lld개", "en": "%lld commits to pull" },
 
-  "remote.room.tasks.title": { "ko": "작업", "en": "Tasks" },
-  "remote.room.tasks.summary.running": { "ko": "%lld개 진행 중", "en": "%lld running" },
-  "remote.room.tasks.summary.resumable": { "ko": "이어갈 수 있는 작업 %lld개", "en": "%lld can be resumed" },
-  "remote.room.tasks.summary.finished": { "ko": "끝난 작업 %lld개", "en": "%lld finished" },
   "remote.room.tasks.stop": { "ko": "중지", "en": "Stop" },
   "remote.room.tasks.stop.accessibility": { "ko": "%@ 중지", "en": "Stop %@" },
   "remote.room.tasks.resume": { "ko": "이어가기", "en": "Resume" },

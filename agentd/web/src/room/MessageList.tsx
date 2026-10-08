@@ -23,6 +23,7 @@ import {
 } from "./bubbles/Bubbles";
 import { ErrorBubble } from "./bubbles/ErrorBubble";
 import { QuestionBubble } from "./bubbles/QuestionBubble";
+import { MainBlock } from "./MainTaskBlocks";
 import {
   CompactCompletionRow,
   CompactFailureBubble,
@@ -34,6 +35,7 @@ import { crossesDay, dateDividerTitle, parseTimestamp, timeOfDay } from "./forma
 import { locale, t } from "./i18n";
 import { Markdown } from "./markdown/Markdown";
 import { queueItemText } from "./policy/composer";
+import { mainTimeline } from "./policy/main-tasks";
 import type { ErrorRecovery } from "./policy/message";
 import { CONTINUE_PROMPT_KEY, activityCompletionText, bubbleKind, errorRecovery, visibleActivityCounts } from "./policy/message";
 import { derivePresence } from "./policy/presence";
@@ -258,7 +260,13 @@ function MainRows({ main, send, actions, now }: MessageListProps & { main: Remot
   const language = locale();
   let previousDay: number | null = null;
   const rows: JSX.Element[] = [];
-  for (const message of main.messages) {
+  // Tasks and questions sit in the turn they started in (policy/main-tasks.ts).
+  for (const entry of mainTimeline(main)) {
+    if (entry.kind !== "message") {
+      rows.push(<MainBlock key={entry.key} block={entry} send={send} actions={actions} />);
+      continue;
+    }
+    const message = entry.message;
     const at = parseTimestamp(message.createdAt);
     if (at !== null && crossesDay(previousDay, at)) {
       rows.push(<DateDivider key={`day-${message.id}`} title={dateDividerTitle(at, now, language)} />);

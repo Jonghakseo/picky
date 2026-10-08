@@ -33,3 +33,24 @@ struct PickyHubDependencies {
 
     var permissions: PickyPermissionMonitor { companionManager.permissions }
 }
+
+extension PickyHubDependencies {
+    /// Opens a Pickle from any Hub page. Mirrors Quick Start resume: an archived
+    /// Pickle returns to the dock first so the HUD can present it. Only Pickles
+    /// still on this Mac (open or archived) can be opened.
+    var pickleOpener: PickyPickleOpener {
+        let sessions = sessionListViewModel
+        let launcher = quickStartLauncher
+        return PickyPickleOpener(
+            canOpen: { id in
+                sessions.sessions.contains { $0.id == id } || sessions.archivedSessions.contains { $0.id == id }
+            },
+            open: { id in
+                if sessions.archivedSessions.contains(where: { $0.id == id }) {
+                    sessions.unarchive(sessionID: id)
+                }
+                launcher.openSessionInHUD(sessionID: id)
+            }
+        )
+    }
+}

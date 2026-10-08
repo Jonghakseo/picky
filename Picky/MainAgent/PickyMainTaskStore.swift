@@ -26,8 +26,8 @@ final class PickyMainTaskStore: ObservableObject {
     /// Task and decision ids with a control command in flight, so a row can
     /// show progress and refuse a second click until the daemon answers.
     @Published private(set) var pendingCommandIDs: Set<String> = []
-    /// Last control failure, surfaced inline next to the section.
-    @Published private(set) var commandError: String?
+    /// The last control failure per Task or decision id, shown in that block.
+    @Published private(set) var commandErrors: [String: String] = [:]
 
     /// Set by CompanionManager; nil in previews and unit tests that only check state.
     var send: CommandSender?
@@ -48,19 +48,23 @@ final class PickyMainTaskStore: ObservableObject {
         await perform(id: decisionID, command: .resolveMainDelegation(decisionId: decisionID, choice: choice))
     }
 
-    func clearCommandError() {
-        commandError = nil
+    func commandError(for id: String) -> String? {
+        commandErrors[id]
+    }
+
+    func clearCommandError(for id: String) {
+        commandErrors[id] = nil
     }
 
     private func perform(id: String, command: PickyCommandEnvelope) async {
         guard let send, !pendingCommandIDs.contains(id) else { return }
         pendingCommandIDs.insert(id)
-        commandError = nil
+        commandErrors[id] = nil
         defer { pendingCommandIDs.remove(id) }
         do {
-            if let error = try await send(command) { commandError = error.message }
+            if let error = try await send(command) { commandErrors[id] = error.message }
         } catch {
-            commandError = L10n.t("hub.tasks.error.commandFailed")
+            commandErrors[id] = L10n.t("hub.tasks.error.commandFailed")
         }
     }
 }

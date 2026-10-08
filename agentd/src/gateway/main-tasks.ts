@@ -3,8 +3,8 @@
  *
  * The daemon sends the whole snapshot on every change (`mainTasksUpdated`).
  * This module decides what crosses to a paired device: bounded lists, bounded
- * strings, and no instruction history, because the phone's Tasks section only
- * needs to show state, offer the controls the daemon allows, and read a short
+ * strings, and no instruction history, because the phone's Task blocks only
+ * need to show state, offer the controls the daemon allows, and read a short
  * result. The counts the room list shows are taken from the full snapshot, so
  * trimming never makes work disappear from the home screen.
  */

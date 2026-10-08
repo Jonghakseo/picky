@@ -2,9 +2,12 @@
 //  PickyMainTaskPresentation.swift
 //  Picky
 //
-//  Pure projection from the `mainTasksUpdated` snapshot to what the Tasks
-//  section renders: which rows appear and in which order, one display state per
-//  Task, which controls are offered, and the short status label key.
+//  Pure projection from the `mainTasksUpdated` snapshot to the blocks the main
+//  conversation shows on every surface (Hub Recent Conversation, Quick Input):
+//  which Tasks and delegation questions appear, where they sit among the
+//  messages, one display state per Task, which controls are offered, and the
+//  short label keys. The phone room applies the same placement rule in
+//  `agentd/web/src/room/policy/main-tasks.ts`.
 //
 //  No SwiftUI and no daemon access. The daemon decides what a Task may do
 //  (`canStop` / `canResume`); this file never infers a control from a status.
@@ -68,17 +71,14 @@ enum PickyMainTaskDisplayState: Equatable {
         }
     }
 
-    /// Ordering tier. Rows the user can act on come first, then live work, then
-    /// results. Finished rows are the only ones that get trimmed.
-    var sortTier: Int {
+    /// Still holding a worker. Such a block stays in the conversation even when
+    /// the messages around its start have left the transcript.
+    var isLive: Bool {
         switch self {
-        case .blocked, .interrupted: 0
-        case .queued, .working, .stopping: 1
-        case .completed, .failed, .cancelled, .handedOff, .unknown: 2
+        case .queued, .working, .stopping: true
+        case .completed, .failed, .blocked, .handedOff, .cancelled, .interrupted, .unknown: false
         }
     }
-
-    var isFinished: Bool { sortTier == 2 }
 }
 
 enum PickyMainTaskTone: Equatable {
@@ -92,21 +92,41 @@ struct PickyMainTaskRowModel: Equatable, Identifiable {
     let showsResume: Bool
     /// Anchor for the elapsed clock while the Task is working; nil otherwise.
     let elapsedSince: Date?
-    /// One extra line the status label alone would hide, such as an unconfirmed
-    /// cleanup or a Pickle that took the Task over.
+    /// One extra line under the title that the status label alone would hide,
+    /// such as an unconfirmed cleanup or why the Task stopped.
     let noteKey: String?
+    /// Leads the details: a handed-off Task's status already says where the work
+    /// went, and the answered question is its own line in the conversation.
+    let detailNoteKey: String?
 
     var id: String { task.id }
 }
 
+/// What the user chose for a delegation question.
+enum PickyMainDelegationOutcome: Equatable {
+    case handedToPickle(sessionID: String?)
+    case keptWithPicky
+    case cancelled
+
+    var labelKey: String {
+        switch self {
+        case .handedToPickle: "hub.tasks.decision.record.pickle"
+        case .keptWithPicky: "hub.tasks.decision.record.task"
+        case .cancelled: "hub.tasks.decision.record.cancelled"
+        }
+    }
+}
+
 struct PickyMainDelegationRowModel: Equatable, Identifiable {
-    /// What the row asks for, derived from the decision state and its Pickle.
+    /// What the question still asks for, derived from the decision state and its Pickle.
     enum Kind: Equatable {
         /// Waiting for the user. Nothing runs until they choose.
         case pending
         case creatingPickle
-        case pickleCreated
         case pickleFailed
+        /// Answered. It stays in the conversation as one line, so the
+        /// conversation keeps what was decided.
+        case answered(PickyMainDelegationOutcome)
     }
 
     let decision: PickyMainDelegationDecision
@@ -114,25 +134,80 @@ struct PickyMainDelegationRowModel: Equatable, Identifiable {
 
     var id: String { decision.id }
     var showsChoices: Bool { kind == .pending }
-    /// A failed Pickle creation can be retried, run here as a Task instead, or cancelled.
+    /// A failed Pickle creation can be retried, kept with Picky instead, or cancelled.
     var showsRetry: Bool { kind == .pickleFailed }
     var isBusy: Bool { kind == .creatingPickle }
 
+    var outcome: PickyMainDelegationOutcome? {
+        if case .answered(let outcome) = kind { return outcome }
+        return nil
+    }
+
+    var isRecord: Bool { outcome != nil }
+
+    /// The Pickle an answered question created, for "Open Pickle".
+    var pickleSessionID: String? {
+        if case .handedToPickle(let sessionID) = outcome { return sessionID }
+        return nil
+    }
+
+    /// The state line of an open question, or the outcome of an answered one.
     var messageKey: String {
         switch kind {
         case .pending: "hub.tasks.decision.pending"
         case .creatingPickle: "hub.tasks.decision.creating"
-        case .pickleCreated: "hub.tasks.decision.created"
         case .pickleFailed: "hub.tasks.decision.failed"
+        case .answered(let outcome): outcome.labelKey
         }
     }
 }
 
-enum PickyMainTaskPresentation {
-    /// Finished Tasks are history, not a worklist. Keep the newest few so the
-    /// section cannot grow past the transcript it sits under.
-    static let finishedTaskLimit = 8
+/// One entry of the main conversation: a message, or a block for a Task or a
+/// delegation question.
+enum PickyMainConversationTimelineItem: Equatable, Identifiable {
+    case message(PickyMainAgentMessage)
+    case task(PickyMainTaskRowModel)
+    case decision(PickyMainDelegationRowModel)
 
+    var id: String {
+        switch self {
+        case .message(let message): "message-\(message.id)"
+        case .task(let row): "task-\(row.id)"
+        case .decision(let row): "decision-\(row.id)"
+        }
+    }
+
+    /// When the entry started. A block keeps this place while its state changes.
+    var anchor: Date {
+        switch self {
+        case .message(let message): message.createdAt
+        case .task(let row): row.task.createdAt
+        case .decision(let row): row.decision.createdAt
+        }
+    }
+
+    /// Work still running, or a question still waiting on the user.
+    var isOpen: Bool {
+        switch self {
+        case .message: false
+        case .task(let row): row.state.isLive
+        case .decision(let row): !row.isRecord
+        }
+    }
+
+    var isUserMessage: Bool {
+        if case .message(let message) = self { return message.role == .user }
+        return false
+    }
+
+    /// A delegation question the user can still answer, retry, or watch being carried out.
+    var isOpenDecision: Bool {
+        if case .decision(let row) = self { return !row.isRecord }
+        return false
+    }
+}
+
+enum PickyMainTaskPresentation {
     static func displayState(for status: PickyMainTaskStatus) -> PickyMainTaskDisplayState {
         switch status {
         case .queued: .queued
@@ -147,8 +222,9 @@ enum PickyMainTaskPresentation {
         }
     }
 
+    /// One row model per Task, in the order given.
     static func rows(for tasks: [PickyMainTask]) -> [PickyMainTaskRowModel] {
-        let models = tasks.map { task -> PickyMainTaskRowModel in
+        tasks.map { task in
             let state = displayState(for: task)
             return PickyMainTaskRowModel(
                 task: task,
@@ -156,19 +232,10 @@ enum PickyMainTaskPresentation {
                 showsStop: task.canStop,
                 showsResume: task.canResume,
                 elapsedSince: state == .working ? task.revisionStartedAt : nil,
-                noteKey: noteKey(for: task, state: state)
+                noteKey: noteKey(for: task, state: state),
+                detailNoteKey: task.handoff == nil ? nil : "hub.tasks.note.handoff"
             )
         }
-        let sorted = models.sorted { lhs, rhs in
-            if lhs.state.sortTier != rhs.state.sortTier { return lhs.state.sortTier < rhs.state.sortTier }
-            if lhs.task.updatedAt != rhs.task.updatedAt { return lhs.task.updatedAt > rhs.task.updatedAt }
-            return lhs.task.id < rhs.task.id
-        }
-        // Live work always shows. Rows that wait on the user and finished history
-        // share one cap, so Tasks nobody resumes cannot pile up at the top.
-        let live = sorted.filter { $0.state.sortTier == 1 }
-        let kept = sorted.filter { $0.state.sortTier != 1 }.prefix(finishedTaskLimit)
-        return kept.filter { $0.state.sortTier == 0 } + live + kept.filter { $0.state.sortTier == 2 }
     }
 
     /// A blocked Task that a Pickle took over needs nothing more from the user:
@@ -178,23 +245,69 @@ enum PickyMainTaskPresentation {
         return displayState(for: task.status)
     }
 
-    /// A decision is shown while it still needs the user or still reports its
-    /// own progress. A decision already represented by a Task row's handoff is
-    /// dropped so the same fact is not stated twice.
-    static func delegationRows(
-        for decisions: [PickyMainDelegationDecision],
-        tasks: [PickyMainTask]
-    ) -> [PickyMainDelegationRowModel] {
-        let handedOffDecisionIDs = Set(tasks.compactMap { $0.handoff?.decisionId })
-        let models = decisions.compactMap { decision -> PickyMainDelegationRowModel? in
-            guard let kind = kind(for: decision, handedOffDecisionIDs: handedOffDecisionIDs) else { return nil }
+    /// One row model per decision the app knows, in the order given. Answered
+    /// questions become records instead of disappearing.
+    static func delegationRows(for decisions: [PickyMainDelegationDecision]) -> [PickyMainDelegationRowModel] {
+        decisions.compactMap { decision -> PickyMainDelegationRowModel? in
+            guard let kind = kind(for: decision) else { return nil }
             return PickyMainDelegationRowModel(decision: decision, kind: kind)
         }
-        return models.sorted { lhs, rhs in
-            if lhs.showsChoices != rhs.showsChoices { return lhs.showsChoices }
-            if lhs.decision.updatedAt != rhs.decision.updatedAt { return lhs.decision.updatedAt > rhs.decision.updatedAt }
-            return lhs.decision.id < rhs.decision.id
+    }
+
+    /// The main conversation with each Task and delegation question placed in
+    /// the turn it started in (see `slot(for:in:)`). Messages keep their
+    /// transcript order. A block older than the oldest message the transcript
+    /// still holds leaves with those messages unless it is still open, and an
+    /// empty transcript (a new conversation) shows only open blocks.
+    static func timelineItems(
+        messages: [PickyMainAgentMessage],
+        snapshot: PickyMainTasksSnapshot
+    ) -> [PickyMainConversationTimelineItem] {
+        let windowStart = messages.first?.createdAt
+        let taskBlocks: [PickyMainConversationTimelineItem] = rows(for: snapshot.tasks).map { .task($0) }
+        let decisionBlocks: [PickyMainConversationTimelineItem] = delegationRows(for: snapshot.decisions).map { .decision($0) }
+        let blocks = (taskBlocks + decisionBlocks)
+            .filter { (block: PickyMainConversationTimelineItem) -> Bool in
+                guard let windowStart else { return block.isOpen }
+                return block.anchor >= windowStart || block.isOpen
+            }
+            .sorted { (lhs: PickyMainConversationTimelineItem, rhs: PickyMainConversationTimelineItem) -> Bool in
+                if lhs.anchor != rhs.anchor { return lhs.anchor < rhs.anchor }
+                return lhs.id < rhs.id
+            }
+
+        var blocksBySlot: [Int: [PickyMainConversationTimelineItem]] = [:]
+        for block in blocks {
+            blocksBySlot[slot(for: block.anchor, in: messages), default: []].append(block)
         }
+        var items: [PickyMainConversationTimelineItem] = []
+        items.reserveCapacity(messages.count + blocks.count)
+        for (index, message) in messages.enumerated() {
+            items.append(contentsOf: blocksBySlot[index] ?? [])
+            items.append(.message(message))
+        }
+        items.append(contentsOf: blocksBySlot[messages.count] ?? [])
+        return items
+    }
+
+    /// The index of the message a block that started at `anchor` goes before,
+    /// or `messages.count` for the end.
+    ///
+    /// The block belongs to the turn it started in: the messages after the last
+    /// user message sent at or before it, up to the next user message. Inside
+    /// that turn it follows what Picky said last before it started (a sentence
+    /// Picky writes before calling a tool is recorded first), or else Picky's
+    /// first reply after it, which is the sentence announcing the work. With no
+    /// reply in the turn it closes the turn. A block older than every message
+    /// opens the list.
+    static func slot(for anchor: Date, in messages: [PickyMainAgentMessage]) -> Int {
+        guard let first = messages.first, anchor >= first.createdAt else { return 0 }
+        let turnStart = messages.lastIndex { $0.role == .user && $0.createdAt <= anchor }.map { $0 + 1 } ?? 0
+        let turnEnd = messages[turnStart...].firstIndex { $0.role == .user } ?? messages.count
+        let replies = messages[turnStart..<turnEnd]
+        if let said = replies.lastIndex(where: { $0.createdAt <= anchor }) { return said + 1 }
+        if let announced = replies.firstIndex(where: { $0.createdAt > anchor }) { return announced + 1 }
+        return turnEnd
     }
 
     /// `m:ss` under an hour, `h:mm:ss` above it. Digits only, so it needs no
@@ -211,16 +324,14 @@ enum PickyMainTaskPresentation {
 
     private static func noteKey(for task: PickyMainTask, state: PickyMainTaskDisplayState) -> String? {
         if state == .cancelled, task.cleanup == .uncertain { return "hub.tasks.note.cleanupUncertain" }
-        if task.handoff != nil { return "hub.tasks.note.handoff" }
+        // Taken over by a Pickle: the status says so and the details explain it.
+        if task.handoff != nil { return nil }
         if state == .interrupted { return "hub.tasks.note.interrupted" }
         if task.report?.escalation == .productionCode { return "hub.tasks.note.productionCode" }
         return nil
     }
 
-    private static func kind(
-        for decision: PickyMainDelegationDecision,
-        handedOffDecisionIDs: Set<String>
-    ) -> PickyMainDelegationRowModel.Kind? {
+    private static func kind(for decision: PickyMainDelegationDecision) -> PickyMainDelegationRowModel.Kind? {
         switch decision.state {
         case .pending:
             return .pending
@@ -228,11 +339,14 @@ enum PickyMainTaskPresentation {
             switch decision.pickle?.state {
             case .creating: return .creatingPickle
             case .failed: return .pickleFailed
-            // The Pickle exists: say so once, and only where no Task row already says it.
-            case .created, .unknown, .none: return handedOffDecisionIDs.contains(decision.id) ? nil : .pickleCreated
+            case .created, .unknown, .none: return .answered(.handedToPickle(sessionID: decision.pickle?.sessionId))
             }
-        // The Task row carries the work from here on; a cancelled decision is done.
-        case .task, .cancelled, .unknown:
+        case .task:
+            return .answered(.keptWithPicky)
+        case .cancelled:
+            return .answered(.cancelled)
+        // A state from a newer daemon: nothing trustworthy to say about it.
+        case .unknown:
             return nil
         }
     }

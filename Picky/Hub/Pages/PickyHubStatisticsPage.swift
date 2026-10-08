@@ -132,20 +132,12 @@ struct PickyHubStatisticsPage: View {
         .padding(.top, PickyHubTheme.Spacing.group)
     }
 
-    /// Only Pickles still on this Mac (open or archived) can be opened.
     private func canOpenPickle(_ id: String) -> Bool {
-        let sessions = dependencies.sessionListViewModel
-        return sessions.sessions.contains { $0.id == id } || sessions.archivedSessions.contains { $0.id == id }
+        dependencies.pickleOpener.canOpen(id)
     }
 
-    /// Mirrors Quick Start resume: an archived Pickle returns to the dock first
-    /// so the HUD can present it.
     private func openPickle(_ id: String) {
-        let sessions = dependencies.sessionListViewModel
-        if sessions.archivedSessions.contains(where: { $0.id == id }) {
-            sessions.unarchive(sessionID: id)
-        }
-        dependencies.quickStartLauncher.openSessionInHUD(sessionID: id)
+        dependencies.pickleOpener.open(id)
     }
 
     private func consumeNavigation(proxy: ScrollViewProxy) {

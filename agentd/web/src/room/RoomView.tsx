@@ -13,11 +13,11 @@ import type { RemoteCommand } from "../../../src/remote/protocol";
 import { BackgroundWorkFooter } from "./BackgroundWorkFooter";
 import { Composer } from "./composer/Composer";
 import { draftRestoringQueuedInputs } from "./policy/composer";
+import { mainTimeline, waitingDecision } from "./policy/main-tasks";
 import { answerableMethod } from "./policy/question";
 import type { RoomViewProps } from "./contract";
 import { Header } from "./Header";
 import { ArrowDown, QuestionCircle } from "./icons";
-import { MainTasks } from "./MainTasks";
 import { setLocale, t } from "./i18n";
 import type { QueueEdit } from "./MessageList";
 import { MessageList } from "./MessageList";
@@ -133,14 +133,25 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
 
   // A phone screen is short, so a waiting question scrolls away quickly. The bar
   // above the composer only points back at it; answering still happens in the bubble.
+  // In the Picky room a "hand this to a Pickle?" question waiting in the
+  // conversation gets the same bar when no other question is open.
   const pending = vm.main ? vm.main.pendingQuestion : vm.session?.pendingExtensionUiRequest;
   const waiting = pending && answerableMethod(pending) ? pending : undefined;
-  const questionOffscreen = useOffscreenQuestion(waiting?.id, scroll, signature);
+  const waitingChoice = !waiting && vm.main ? waitingDecision(vm.main) : undefined;
+  const pinnedId = waiting?.id ?? waitingChoice?.id;
+  const pinnedTitle = waiting ? questionTitle(waiting) : (waitingChoice?.question ?? waitingChoice?.title ?? "");
+  const questionOffscreen = useOffscreenQuestion(pinnedId, scroll, signature);
 
   function openQuestion(): void {
-    const bubble = questionElement(scroll.current, waiting?.id);
+    const bubble = questionElement(scroll.current, pinnedId);
     if (!bubble) return;
     bubble.scrollIntoView({ behavior: "smooth", block: "center" });
+    // A delegation card takes the focus itself: focusing its primary button
+    // would let a stray Enter create a Pickle.
+    if (waitingChoice) {
+      bubble.focus({ preventScroll: true });
+      return;
+    }
     const control = bubble.querySelector<HTMLElement>(".q-opt, .q-field, .q-chip-btn, .q-btn.is-primary");
     control?.focus({ preventScroll: true });
   }
@@ -202,13 +213,13 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
           </button>
         ) : null}
         {failure ? <div class="composer-note is-error" role="alert">{failure}</div> : null}
-        {isMain ? <MainTasks main={vm.main} send={send} /> : <BackgroundWorkFooter session={vm.session} now={now} />}
-        {questionOffscreen && waiting ? (
+        {isMain ? null : <BackgroundWorkFooter session={vm.session} now={now} />}
+        {questionOffscreen && pinnedId ? (
           <div class="q-pin">
             <QuestionCircle class="q-head-icon" />
             <span class="q-pin-text">
               <span class="q-pin-status">{t("hud.question.needed")}</span>
-              <span class="q-pin-title">{questionTitle(waiting)}</span>
+              <span class="q-pin-title">{pinnedTitle}</span>
             </span>
             <button class="q-btn is-primary" type="button" onClick={openQuestion}>
               {t("remote.room.question.answer")}
@@ -304,6 +315,13 @@ function isLive(status: string): boolean {
  * and activity stand in.
  */
 function conversationSignature(vm: RoomViewProps["vm"]): string {
-  if (vm.main) return `main:${vm.main.messages.length}:${vm.main.busy}:${vm.main.pendingQuestion?.id ?? ""}`;
+  // A Task or question that starts joins the end of the conversation like a message
+  // does (the list itself is bounded, so its length can stay the same). A question
+  // that starts or stops waiting re-runs the pinned bar's lookup.
+  if (vm.main) {
+    const main = vm.main;
+    const last = mainTimeline(main).at(-1)?.key ?? "";
+    return `main:${main.messages.length}:${main.busy}:${main.pendingQuestion?.id ?? ""}:${last}:${waitingDecision(main)?.id ?? ""}`;
+  }
   return `session:${vm.session?.revision ?? 0}:${(vm.session?.messages ?? []).length}`;
 }

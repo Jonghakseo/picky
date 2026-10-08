@@ -23,6 +23,8 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../.
 const extensionRoot = process.env.PICKY_TEST_EXTENSION_ROOT?.trim();
 const piAiEntry = resolve(repositoryRoot, "agentd/node_modules/@earendil-works/pi-ai/dist/index.js");
 const require = createRequire(import.meta.url);
+/** The Pi SDK version Picky pins; the harness must load exactly this runtime. */
+const pinnedPiVersion: string = require(resolve(repositoryRoot, "agentd/package.json")).dependencies["@earendil-works/pi-coding-agent"];
 const tsxLoader = join(dirname(require.resolve("tsx/package.json")), "dist/loader.mjs");
 const temporaryRoots: string[] = [];
 
@@ -80,7 +82,7 @@ import { snapshotPiSessionFile } from ${JSON.stringify(resolve(repositoryRoot, "
 async function main() {
 const root = process.env.PICKY_EXTENSION_SAFETY_ROOT;
 if (!root) throw new Error("missing isolated root");
-if (VERSION !== "0.84.4") throw new Error("expected Picky Pi 0.84.4, received " + VERSION);
+if (VERSION !== ${JSON.stringify(pinnedPiVersion)}) throw new Error("expected Picky Pi ${pinnedPiVersion}, received " + VERSION);
 const agentDir = join(root, "home", ".pi", "agent");
 const cwd = join(root, "workspace");
 mkdirSync(cwd, { recursive: true });
@@ -211,7 +213,7 @@ const firstHeader = JSON.parse(readFileSync(firstFile, "utf8").split("\n", 1)[0]
 if (typeof firstHeader.id !== "string") throw new Error("missing first session UUID");
 const transcript = readFileSync(firstFile, "utf8");
 if (!transcript.includes("memory-layer-agent") || !transcript.includes("AGENT_SENTINEL")) {
-  throw new Error("remember tool was not persisted to the real Pi transcript");
+  throw new Error("memory_remember tool was not persisted to the real Pi transcript");
 }
 
 const ownerBeforeReload = await waitForOwner(firstHeader.id);
@@ -285,10 +287,20 @@ export default function (pi) {
       const user = [...context.messages].reverse().find((message) => message.role === "user");
       const text = JSON.stringify(user?.content ?? "");
       const marker = text.match(/(MEMORY_SEED|FORK_CHECK|SOURCE_CHECK|CRON_LIVE|CRON_SUCCESSOR)/)?.[1] ?? "UNKNOWN";
-      const remembered = String(context.systemPrompt ?? "").includes("[Memory Layer]");
-      const alreadyCalledRemember = JSON.stringify(context.messages).includes('"name":"remember"');
+      // Pi folds the system prompt into system messages; replay their text, not tool declarations.
+      const systemText = context.messages
+        .filter((message) => message.role === "system")
+        .flatMap((message) => [
+          typeof message.content === "string" ? message.content : message.content.map((part) => part.text ?? "").join(""),
+          ...Object.values(message.sections ?? {}).filter((section) => typeof section === "string"),
+        ])
+        .join("\n");
+      const remembered = systemText.includes("[Memory Layer]");
+      const alreadyCalledRemember = context.messages.some((message) => message.role === "assistant"
+        && Array.isArray(message.content)
+        && message.content.some((part) => part.type === "toolCall" && part.name === "memory_remember"));
       const content = marker === "MEMORY_SEED" && !alreadyCalledRemember
-        ? [{ type: "toolCall", id: "remember-sentinel", name: "remember", arguments: {
+        ? [{ type: "toolCall", id: "remember-sentinel", name: "memory_remember", arguments: {
           scope: "agent", tier: "log", topic: "general", title: "sentinel", content: "AGENT_SENTINEL",
         } }]
         : [{ type: "text", text: marker === "MEMORY_SEED" ? "SEED_DONE"
@@ -312,7 +324,7 @@ describe("extension safety integration", () => {
     await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
   });
 
-  (extensionRoot ? it : it.skip)("loads memory-layer and cron through Pi 0.84.4 without cross-session memory or stale bridge delivery", async () => {
+  (extensionRoot ? it : it.skip)("loads memory-layer and cron through Picky's pinned Pi without cross-session memory or stale bridge delivery", async () => {
     const packagesRoot = join(extensionRoot!, "packages");
     const sourceMemory = join(packagesRoot, "memory-layer");
     const sourceCron = join(packagesRoot, "cron");
@@ -341,7 +353,7 @@ describe("extension safety integration", () => {
       },
     });
     expect(result.stdout).toContain("PICKY_EXTENSION_SAFETY_OK");
-    expect(result.stdout).toContain('"piVersion":"0.84.4"');
+    expect(result.stdout).toContain(`"piVersion":${JSON.stringify(pinnedPiVersion)}`);
   }, 75_000);
 
   it("requires a real checkout when PICKY_TEST_EXTENSION_ROOT is supplied", () => {

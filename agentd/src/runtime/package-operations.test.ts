@@ -57,18 +57,18 @@ describe("default npm command", () => {
 });
 
 describe("PackageOperations Cron lifecycle sequencing", () => {
-  it("rejects held curated installs and updates before mutation and reports unchanged files", async () => {
+  it("rejects curated installs and updates pinned before the safety cutover without touching files", async () => {
     const mutations = packageManager();
     const manager = createDefaultPackageManager({ cwd: "/tmp", agentDir: "/tmp/unused-safety-agent" }, {
       createSettingsManager: () => SettingsManager.inMemory({}),
       createPackageManager: () => mutations,
     });
     const { operations, events, reconcile } = subject({ packageManager: manager });
-    for (const source of [CRON_PACKAGE_SOURCE, `${CRON_PACKAGE_SOURCE}@0.3.0`, "npm:@ryan_nookpi/pi-extension-memory-layer", "npm:@ryan_nookpi/pi-extension-memory-layer@0.4.0"]) {
+    for (const source of [`${CRON_PACKAGE_SOURCE}@0.3.0`, `${CRON_PACKAGE_SOURCE}@0.3.3`, `${CRON_PACKAGE_SOURCE}@^0.4.0`, "npm:@ryan_nookpi/pi-extension-memory-layer@0.4.0", "npm:@ryan_nookpi/pi-extension-memory-layer@0.5.1"]) {
       for (const operation of ["install", "update"] as const) {
         const requestId = `${operation}-${source}`;
         await operations.runOperation({} as WebSocket, requestId, operation, source);
-        expect(events).toContainEqual(expect.objectContaining({ requestId, ok: false, errorCode: "held", errorMessage: expect.stringContaining("temporarily held") }));
+        expect(events).toContainEqual(expect.objectContaining({ requestId, ok: false, errorCode: "held", errorMessage: expect.stringContaining("predate the memory/cron safety cutover") }));
         expect(events.find((event) => event.requestId === requestId && event.type === "packageOperationCompleted")?.packageChanged).not.toBe(true);
       }
     }
@@ -77,19 +77,23 @@ describe("PackageOperations Cron lifecycle sequencing", () => {
     expect(reconcile).not.toHaveBeenCalled();
     await operations.runOperation({} as WebSocket, "unrelated", "install", "npm:@example/plugin");
     expect(mutations.installAndPersist).toHaveBeenCalledWith("npm:@example/plugin");
+    for (const source of ["npm:@ryan_nookpi/pi-extension-memory-layer", "npm:@ryan_nookpi/pi-extension-memory-layer@0.6.0"]) {
+      await operations.runOperation({} as WebSocket, `verified-${source}`, "install", source);
+      expect(mutations.installAndPersist).toHaveBeenCalledWith(source);
+    }
   });
 
-  it("hides held package updates without hiding other packages", async () => {
+  it("offers verified memory/cron updates but hides updates for pre-cutover pinned specs", async () => {
     const manager = createDefaultPackageManager({ cwd: "/tmp", agentDir: "/tmp/unused-safety-agent" }, {
       createSettingsManager: () => SettingsManager.inMemory({}),
       createPackageManager: () => ({
         ...packageManager(),
-        checkForAvailableUpdates: async () => [{ source: CRON_PACKAGE_SOURCE }, { source: "npm:@ryan_nookpi/pi-extension-memory-layer" }, { source: "npm:@example/plugin" }],
+        checkForAvailableUpdates: async () => [{ source: CRON_PACKAGE_SOURCE }, { source: "npm:@ryan_nookpi/pi-extension-memory-layer" }, { source: "npm:@ryan_nookpi/pi-extension-memory-layer@0.4.0" }, { source: "npm:@example/plugin" }],
       }),
     });
     const { operations, events } = subject({ packageManager: manager });
     await operations.runUpdateCheck({} as WebSocket, "safety-check");
-    expect(events).toContainEqual({ type: "packageUpdatesAvailable", commandId: "safety-check", sources: ["npm:@example/plugin"] });
+    expect(events).toContainEqual({ type: "packageUpdatesAvailable", commandId: "safety-check", sources: [CRON_PACKAGE_SOURCE, "npm:@ryan_nookpi/pi-extension-memory-layer", "npm:@example/plugin"] });
   });
 
   it("reports the registry version for unranged npm updates and omits it when unresolvable", async () => {

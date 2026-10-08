@@ -1,13 +1,15 @@
 # Memory and cron safety cutover
 
-Picky holds curated npm installs and updates for `@ryan_nookpi/pi-extension-memory-layer` and `@ryan_nookpi/pi-extension-cron` in `agentd/src/domain/curated-package-safety.ts`. This also hides their update offers. Removal and explicit setup remain available. The hold is intentionally package-wide, including pinned specs: local fixes are not evidence that a published version contains them. It does not change an already-running Picky app or prevent updates from an external Pi CLI.
+The cutover was verified on 2026-10-08 for `@ryan_nookpi/pi-extension-memory-layer` 0.6.0 and `@ryan_nookpi/pi-extension-cron` 0.4.0: the integration test below passed against the npm artifacts, memory/cron data was backed up, and the cron daemon was replaced through `cron update-runtime`. `agentd/src/domain/curated-package-safety.ts` now allows unpinned installs and updates and only holds specs pinned to a release before those versions. Removal and explicit setup remain available. The hold does not prevent updates from an external Pi CLI.
+
+Keep the gate below for any future release that changes memory storage or cron scheduling semantics: raise the minimum versions in that file only after repeating it.
 
 ## Release gate
 
-Before removing the hold:
+Before raising the verified minimum versions:
 
 1. Publish separately versioned, reviewed extensions containing the compatibility and lifecycle fixes. Do not republish memory 0.4.0 or cron 0.3.0. Confirm the npm artifacts contain the tested sources.
-2. Run the Picky Pi 0.84.4 integration test against those artifact contents, not only the extension repository:
+2. Run the integration test against those artifact contents (it loads the Pi SDK version pinned in `agentd/package.json`), not only the extension repository:
 
    ```bash
    PICKY_TEST_EXTENSION_ROOT=/absolute/path/to/extension-checkout \
@@ -18,7 +20,7 @@ Before removing the hold:
 3. Run the extension memory compatibility and cron upgrade tests. Memory tests use historical git objects `27e87d4` and `9f1c2ce`; retain those objects in test checkouts.
 4. Require a coordinated maintenance window. Let active cron work finish and stop old writers before changing package files. Back up `~/.pi/memory`, the selected agentDir `cron` directory (including prompts/history), and relevant Pi JSONL sessions. A custom agentDir uses `<agentDir>/memory` after the patch; copy its intended legacy memories explicitly while writers are stopped. The default agentDir, even when explicitly set, still uses `~/.pi/memory`.
 5. Replace all old extension runtimes, including external Pi terminals and Picky main/children. Picky's plugin reload does not reload main, skips terminal sessions and aborts streaming sessions rather than reloading them. An app restart needs explicit user permission. Do not use main reset as an update mechanism.
-6. Verify daemon runtime identity, one harmless user job, and one session delivery to its original conversation. Only then enable new scoped jobs and remove or narrow the curated hold for the verified release.
+6. Verify daemon runtime identity, one harmless user job, and one session delivery to its original conversation. Only then enable new scoped jobs and raise the curated minimum versions for the verified release.
 
 ## Safety boundaries
 

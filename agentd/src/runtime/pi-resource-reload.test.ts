@@ -5,7 +5,7 @@ import { ResourceReloadScheduler, type ResourceReloadSchedulerDeps } from "./pi-
 // real Pi sessions in plugin-reload.integration.test.ts.
 
 function harness(reload: () => Promise<{ supported: boolean }>) {
-  const state = { busy: false, held: ["held follow-up"], delivered: [] as string[], logs: [] as string[] };
+  const state = { busy: false, held: ["held follow-up"], delivered: [] as string[], logs: [] as string[], fenceReleases: 0 };
   const deps: ResourceReloadSchedulerDeps = {
     sessionId: "s",
     isDisposed: () => false,
@@ -19,6 +19,7 @@ function harness(reload: () => Promise<{ supported: boolean }>) {
     flushHeldPrompts: async () => { state.delivered.push(...state.held.splice(0)); },
     log: (line) => state.logs.push(line),
     emitReloaded: () => {},
+    emitReplacementFenceReleased: () => { state.fenceReleases += 1; },
   };
   const scheduler = new ResourceReloadScheduler(deps, { reloadMs: 50, settleWaitMs: 20 });
   return { scheduler, state };
@@ -62,6 +63,43 @@ describe("ResourceReloadScheduler failures", () => {
     scheduler.schedule();
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(state.delivered).toEqual(["held follow-up"]);
+  });
+});
+
+// The async replacement fence closes model admission; only this signal lets idle sessions reopen it
+// for prompts that bypass Picky input (e.g. scheduled extension deliveries).
+describe("ResourceReloadScheduler replacement fence release", () => {
+  it("releases the fence after a reload that failed without hanging", async () => {
+    const { scheduler, state } = harness(async () => { throw new Error("extension crashed"); });
+
+    await expect(scheduler.request()).resolves.toBe("failed");
+
+    expect(state.fenceReleases).toBe(1);
+  });
+
+  it("keeps the fence while a timed-out reload is still running inside Pi", async () => {
+    const { scheduler, state } = harness(() => new Promise(() => {}));
+
+    await expect(scheduler.request()).resolves.toBe("failed");
+
+    expect(state.fenceReleases).toBe(0);
+  });
+
+  it("does not release between reloads while the next one waits for a busy turn", async () => {
+    let calls = 0;
+    const { scheduler, state } = harness(async () => {
+      calls += 1;
+      if (calls === 1) { state.busy = true; void scheduler.request(); }
+      return { supported: true };
+    });
+
+    await expect(scheduler.request()).resolves.toBe("deferred");
+    expect(state.fenceReleases).toBe(0);
+
+    state.busy = false;
+    scheduler.schedule();
+    await vi.waitFor(() => expect(state.fenceReleases).toBe(1));
+    expect(calls).toBe(2);
   });
 });
 

@@ -293,7 +293,7 @@ export class SessionSupervisor extends EventEmitter {
         }
 
         const resumedHandle = await this.tryResumeRuntimeHandle(session);
-        void this.asyncControls.reopenAfterRestart(session.id); // No-op without an attached owner.
+        void this.asyncControls.reopenIdleAdmission(session.id, "restart"); // No-op without an attached owner.
         if (!resumedHandle) {
           const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
           const current = this.mustGet(session.id);
@@ -308,7 +308,7 @@ export class SessionSupervisor extends EventEmitter {
       } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))
         || shouldResumeIdleAsyncSession(session, releasedOwner, Boolean(piSessionFilePathForSession(session)))) {
         await this.tryResumeRuntimeHandle(session);
-        void this.asyncControls.reopenAfterRestart(session.id);
+        void this.asyncControls.reopenIdleAdmission(session.id, "restart");
       }
     }
     // Run after Pickle sessions are hydrated so the carried summary can reference them.
@@ -1833,6 +1833,8 @@ export class SessionSupervisor extends EventEmitter {
         return;
       }
       if (event.type === "resources_reloaded") { this.emit("resourcesReloaded", sessionId); return; }
+      // Plugin reload closed admission; extension-injected prompts never pass through input().
+      if (event.type === "resource_reload_fence_released") { void this.asyncControls.reopenIdleAdmission(sessionId, "plugin reload"); return; }
       await this.runtimeEventHandler.handle(sessionId, event);
       if (event.type === "status") await this.applyRuntimeStatusSideEffects(sessionId, event);
     });

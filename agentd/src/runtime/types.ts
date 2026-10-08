@@ -193,6 +193,8 @@ export type RuntimeEvent =
   | { type: "session_info"; name: string }
   /** Adapter-only: a requested plugin resource reload finished without a visible turn. */
   | { type: "resources_reloaded" }
+  /** Adapter-only: a plugin reload's async replacement fence ended; idle admission may reopen. */
+  | { type: "resource_reload_fence_released" }
   | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
 
 export interface RuntimeExtensionToolResult {

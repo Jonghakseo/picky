@@ -80,13 +80,14 @@ export class AsyncControlCoordinator {
   }
 
   /**
-   * Startup resume closes admission for every recovered owner. Input that does not
-   * pass through `input()` (for example a Pi extension injecting a user message)
-   * would otherwise be rejected by the model fence until the next Picky input.
-   * Reopen only when the fresh owner is already provably quiescent; the precheck
-   * keeps a failed attempt out of the durable control journal.
+   * Startup resume and plugin reloads close admission without a matching reopen. Input
+   * that does not pass through `input()` (for example a Pi extension injecting a user
+   * message) would otherwise be rejected by the model fence until the next Picky input.
+   * Reopen only when the owner is already provably quiescent and no plugin reload is
+   * pending (that reload would close admission again mid-turn); the precheck keeps a
+   * failed attempt out of the durable control journal.
    */
-  async reopenAfterRestart(sessionId: string, coverageWaitMs = 5_000): Promise<boolean> {
+  async reopenIdleAdmission(sessionId: string, trigger: "restart" | "plugin reload", coverageWaitMs = 5_000): Promise<boolean> {
     try {
       const handle = this.deps.handle(sessionId);
       // Only idle re-entry candidates; a session with a turn in flight reopens through its input.
@@ -95,11 +96,13 @@ export class AsyncControlCoordinator {
       const session = this.deps.read(sessionId);
       if (!isAsyncTracked(session) || session.archived || session.asyncControl?.admissionState !== "closed") return false;
       if (session.asyncControl.releasePrepared || session.asyncControl.operations.some((operation) => operation.outcome === "accepted")) return false;
+      const reloadPending = () => this.deps.handle(sessionId)?.hasPendingResourceReload === true;
+      if (reloadPending()) return false;
       const probe = this.internalCommand(sessionId, "reconcileAsyncControl");
       this.assertPhysicalQuiescence(probe, this.assertOwner(probe));
-      return await this.reopenIfQuiescent(sessionId, false);
+      return await this.reopenIfQuiescent(sessionId, false, reloadPending);
     } catch (error) {
-      logAgentd("async admission stays closed after restart", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      logAgentd("async admission stays closed after idle reopen attempt", { sessionId, trigger, error: error instanceof Error ? error.message : String(error) });
       return false;
     }
   }
@@ -115,7 +118,7 @@ export class AsyncControlCoordinator {
   }
 
   /** Runs the journaled reconcile, then reopens admission only if the owner is still quiescent. */
-  private async reopenIfQuiescent(sessionId: string, lease: boolean): Promise<boolean> {
+  private async reopenIfQuiescent(sessionId: string, lease: boolean, deferReopen?: () => boolean): Promise<boolean> {
     // A user input lease accepts that work lost with a previous runtime stays unknown.
     const recovered = await this.execute(this.internalCommand(sessionId, "reconcileAsyncControl", lease));
     if (recovered.outcome !== "settled") throw new Error(recovered.reason ?? recovered.outcome);
@@ -125,6 +128,7 @@ export class AsyncControlCoordinator {
       if (current.asyncControl?.releasePrepared) throw new Error("Cancel prepared runtime release before input");
       // Startup reopen and a user input can race; whoever loses joins the already open admission.
       if (current.asyncControl?.admissionState !== "open") {
+        if (deferReopen?.()) return;
         const command = this.internalCommand(sessionId, "reconcileAsyncControl", lease);
         const handle = this.assertOwner(command);
         this.assertQuiescent(command, handle);

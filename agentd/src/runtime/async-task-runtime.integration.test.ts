@@ -360,6 +360,21 @@ it.each(["waiting_for_input", "completed"] as const)("reopens admission for an i
   expect((await f.store.loadReadOnly("session-sdk"))?.asyncControl?.admissionState).toBe("open");
 }, 20_000);
 
+it("reopens admission for an idle Pickle after a plugin reload so an extension-injected prompt reaches the model", async () => {
+  const f = await fixture({ readyOnDiscovery: true });
+  await f.drainEvents();
+  // Installing or updating a plugin reloads every idle Pickle; the reload closes async admission.
+  await expect(f.currentHandle().requestResourceReload!()).resolves.toBe("reloaded");
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.asyncControl?.admissionState).toBe("open"), { timeout: 5_000 });
+  await f.supervisor.runtimeControls.setModel("session-sdk", "w3-offline", "finite");
+  const requestsBefore = f.requests.length;
+  // Pi extensions (e.g. scheduled session delivery) inject prompts without any Picky input command.
+  f.currentApi().sendUserMessage("Scheduled delivery after plugin reload");
+  await vi.waitFor(() => expect(JSON.stringify(f.requests.at(-1))).toContain("Scheduled delivery after plugin reload"));
+  expect(f.requests.length).toBe(requestsBefore + 1);
+  await vi.waitFor(async () => expect((await f.store.loadReadOnly("session-sdk"))?.finalAnswer).toBe("Finite reply"));
+}, 20_000);
+
 it("keeps admission closed after restart while async work from the previous owner remains unresolved", async () => {
   const f = await fixture({ readyOnDiscovery: true });
   await f.completion("left-running", { execution: "running", presence: "active" });

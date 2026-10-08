@@ -1256,6 +1256,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
       hasPendingExtensionUi: () => this.pendingExtensionUiRequestIds.size > 0, reload: () => this.reloadPiResourcesQuietly(),
       prepareReplacement: async () => { await this.asyncTasks?.prepareReplacement(); }, waitForReadiness: () => this.waitForAsyncReloadReadiness(),
       hasHeldPrompts: () => this.promptQueue.hasCompactionPrompts, flushHeldPrompts: () => this.flushHeldPromptQueue(false), log: (line) => this.emit({ type: "log", line }), emitReloaded: () => this.emit({ type: "resources_reloaded" }),
+      emitReplacementFenceReleased: () => { if (this.asyncTasks) this.emit({ type: "resource_reload_fence_released" }); },
     });
   }
 

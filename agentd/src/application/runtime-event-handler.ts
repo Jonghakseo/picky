@@ -287,7 +287,7 @@ export class RuntimeEventHandler {
     // has no meaning here and must be ignored before falling through to applyToolEvent.
     if (event.type === "turn_text_complete") return;
     // The supervisor turns this into a resourcesReloaded broadcast before delegating here.
-    if (event.type === "resources_reloaded") return;
+    if (event.type === "resources_reloaded" || event.type === "resource_reload_fence_released") return;
     await this.drainPendingThinkingFlush(sessionId);
     this.setAutoRetry(sessionId, undefined);
     return this.applyToolEvent(sessionId, event);

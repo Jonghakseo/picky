@@ -24,6 +24,12 @@ export interface ResourceReloadSchedulerDeps {
   flushHeldPrompts(): Promise<void>;
   log(line: string): void;
   emitReloaded(): void;
+  /**
+   * The replacement fence that `prepareReplacement` raised is over: the reload finished or failed
+   * without leaving Pi mid-reload, and no further reload is pending. Async hosts use this to
+   * reopen model admission for idle sessions whose next prompt may not come through Picky input.
+   */
+  emitReplacementFenceReleased(): void;
 }
 
 /**
@@ -151,6 +157,7 @@ export class ResourceReloadScheduler {
   private async drainOnce(): Promise<RuntimeResourceReloadOutcome> {
     let outcome: RuntimeResourceReloadOutcome = "unchanged";
     let blocked = false;
+    let lastAttempt: ResourceReloadAttempt | undefined;
     while (this.pending) {
       if (!this.canReloadNow()) {
         outcome = "deferred";
@@ -161,6 +168,7 @@ export class ResourceReloadScheduler {
       }
       const target = this.requestedGeneration;
       const attempt = await this.attempt();
+      lastAttempt = attempt;
       if (attempt === "blocked") { outcome = "deferred"; blocked = true; break; }
       if (attempt === "busy") { outcome = "deferred"; break; }
       // A failed reload is reported and not retried in a loop; the app offers a retry, which
@@ -172,6 +180,10 @@ export class ResourceReloadScheduler {
     // Held follow-ups wait only for the reload, never for unrelated async work. If async work
     // blocks the reload, deliver them now with current resources and retry the reload later.
     if ((!this.pending || blocked) && !this.deps.isBusy()) await this.deliverHeldPrompts();
+    // A timed-out reload is still running inside Pi; its fence stays up until a later input.
+    if ((lastAttempt === "reloaded" || lastAttempt === "failed") && !this.pending && this.stalledReload === undefined && !this.deps.isDisposed()) {
+      this.deps.emitReplacementFenceReleased();
+    }
     return outcome;
   }
 

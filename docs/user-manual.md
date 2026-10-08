@@ -259,7 +259,7 @@ Turn **Screen pointing & drawing** off under **Hub → Settings → Accounts and
 
 Pickles are independent Pi sessions shown in the Picky HUD dock. They are useful for long-running work that should continue in the background.
 
-The dock can be vertical or horizontal and can attach to the screen edge. The vertical dock rests as a narrow icon column and widens to show names and controls when you hover. The horizontal dock keeps square icon cells and reveals one shared title-and-actions row on hover instead of widening every cell. Its handle sits at the top in vertical mode (left in horizontal mode); the compact action controls and collapse notch sit at the opposite end. When no conversation card is open, the transparent space reserved beside the dock passes clicks to the app underneath.
+The dock can be vertical or horizontal and can attach to the screen edge. When pinned, its visible edge sits 4pt inside the screen's usable area (excluding the menu bar and macOS Dock); transparent shadow padding does not add to that gap. The vertical dock rests as a narrow icon column and widens to show names and controls when you hover. The horizontal dock keeps square icon cells and reveals one shared title-and-actions row on hover instead of widening every cell. Its handle sits at the top in vertical mode (left in horizontal mode); the compact action controls and collapse notch sit at the opposite end. When no conversation card is open, the transparent space reserved beside the dock passes clicks to the app underneath.
 
 ### 7.1 Dock states
 

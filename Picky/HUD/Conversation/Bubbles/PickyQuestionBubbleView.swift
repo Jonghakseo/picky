@@ -213,10 +213,10 @@ struct PickyQuestionBubbleView: View {
                     }
                 }
             }
-            .padding(.leading, 18)
+            .padding(.leading, PickyQuestionFormMetrics.collapsedContentIndent)
         } else {
             questionText
-                .padding(.leading, 18)
+                .padding(.leading, PickyQuestionFormMetrics.collapsedContentIndent)
         }
     }
 

@@ -25,6 +25,25 @@ enum PickyQuestionMarkdown {
     }
 }
 
+/// Component metrics for the shared question form. Values below the 4pt
+/// spacing grid are optical adjustments around 14pt indicators and 12pt text.
+enum PickyQuestionFormMetrics {
+    static let indicatorSide: CGFloat = 14
+    /// Corner of the keycap hint and the checkbox indicator.
+    static let smallCornerRadius: CGFloat = 4
+    static let keycapVerticalPadding: CGFloat = 1
+    /// Aligns the indicator with the first line of the option label.
+    static let indicatorTopNudge: CGFloat = 1
+    /// Places an option's accessory under its label: indicator plus row gap.
+    static let optionAccessoryIndent: CGFloat = indicatorSide + DS.Spacing.space2
+    static let optionRowVerticalPadding: CGFloat = 6
+    static let buttonVerticalPadding: CGFloat = 5
+    static let chipHorizontalPadding: CGFloat = 6
+    static let answerChipVerticalPadding: CGFloat = 2
+    /// Aligns collapsed question content with the header title after its icon.
+    static let collapsedContentIndent: CGFloat = 18
+}
+
 struct PickyQuestionKeycap: View {
     let text: String
 
@@ -32,10 +51,10 @@ struct PickyQuestionKeycap: View {
         Text(text)
             .font(PickyHUDTypography.minimumMonospacedMedium)
             .foregroundStyle(DS.Colors.textTertiary)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
+            .padding(.horizontal, DS.Spacing.space1)
+            .padding(.vertical, PickyQuestionFormMetrics.keycapVerticalPadding)
             .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: PickyQuestionFormMetrics.smallCornerRadius, style: .continuous)
                     .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
             )
             .accessibilityHidden(true)
@@ -56,18 +75,18 @@ struct PickyQuestionSelectionIndicator: View {
                     Circle().fill(DS.Colors.textOnAccent).frame(width: 5, height: 5)
                 }
             case .checkbox:
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: PickyQuestionFormMetrics.smallCornerRadius, style: .continuous)
                     .fill(selected ? DS.Colors.accent : DS.Colors.surface1)
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: PickyQuestionFormMetrics.smallCornerRadius, style: .continuous)
                     .strokeBorder(selected ? DS.Colors.accent : DS.Colors.borderStrong, lineWidth: 1.5)
                 if selected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 8, weight: .heavy))
+                        .font(.system(size: 8, weight: .heavy)) // design-token-exception: optical checkmark inside the 14pt checkbox indicator.
                         .foregroundStyle(DS.Colors.textOnAccent)
                 }
             }
         }
-        .frame(width: 14, height: 14)
+        .frame(width: PickyQuestionFormMetrics.indicatorSide, height: PickyQuestionFormMetrics.indicatorSide)
         .accessibilityHidden(true)
     }
 }
@@ -90,7 +109,7 @@ struct PickyQuestionOptionRow<Accessory: View>: View {
             Button(action: action) {
                 HStack(alignment: .top, spacing: 8) {
                     PickyQuestionSelectionIndicator(kind: kind, selected: selected)
-                        .padding(.top, 1)
+                        .padding(.top, PickyQuestionFormMetrics.indicatorTopNudge)
                     VStack(alignment: .leading, spacing: 1) {
                         PickyQuestionMarkdown.text(label)
                             .font(PickyHUDTypography.supportingMedium)
@@ -115,10 +134,10 @@ struct PickyQuestionOptionRow<Accessory: View>: View {
             .accessibilityValue(selected ? L10n.t("common.selected") : L10n.t("common.notSelected"))
             .accessibilityAddTraits(selected ? .isSelected : [])
             accessory()
-                .padding(.leading, 22)
+                .padding(.leading, PickyQuestionFormMetrics.optionAccessoryIndent)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, DS.Spacing.space2)
+        .padding(.vertical, PickyQuestionFormMetrics.optionRowVerticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: DS.CornerRadius.compact, style: .continuous)
@@ -231,8 +250,8 @@ struct PickyQuestionPrimaryButtonStyle: ButtonStyle {
         }
         .font(PickyHUDTypography.supportingSemibold)
         .foregroundStyle(isEnabled ? DS.Colors.textOnAccent : DS.Colors.disabledText)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 5)
+        .padding(.horizontal, DS.Spacing.space3)
+        .padding(.vertical, PickyQuestionFormMetrics.buttonVerticalPadding)
         .background(
             RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
                 .fill(backgroundColor(isPressed: configuration.isPressed))
@@ -253,8 +272,8 @@ struct PickyQuestionSecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(PickyHUDTypography.supportingMedium)
             .foregroundStyle(DS.Colors.textPrimary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            .padding(.horizontal, DS.Spacing.space3)
+            .padding(.vertical, PickyQuestionFormMetrics.buttonVerticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
                     .fill(configuration.isPressed ? DS.Colors.surface3 : DS.Colors.surface1)
@@ -272,8 +291,8 @@ struct PickyQuestionGhostButtonStyle: ButtonStyle {
         configuration.label
             .font(PickyHUDTypography.supportingMedium)
             .foregroundStyle(DS.Colors.textSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
+            .padding(.horizontal, PickyQuestionFormMetrics.chipHorizontalPadding)
+            .padding(.vertical, PickyQuestionFormMetrics.buttonVerticalPadding)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.7 : 1)
             .hoverAffordance()
@@ -327,8 +346,8 @@ struct PickyAskUserQuestionFormBody: View {
                     }
                     .font(PickyHUDTypography.metaMedium)
                     .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, DS.Spacing.space2)
+                    .padding(.vertical, PickyQuestionFormMetrics.answerChipVerticalPadding)
                     .background(RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous).fill(DS.Colors.surface1))
                     .overlay(RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous).strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5))
                     .contentShape(Rectangle())

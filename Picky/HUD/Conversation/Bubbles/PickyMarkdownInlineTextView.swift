@@ -390,6 +390,7 @@ extension PickyMarkdownInlineTextView {
         emphasisColor: NSColor,
         linkColor: NSColor
     ) -> NSMutableAttributedString {
+        let text = PickyMarkdownLineBreakTag.normalizedInline(text)
         let attributed: AttributedString
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         if let parsed = try? AttributedString(markdown: text, options: options) {

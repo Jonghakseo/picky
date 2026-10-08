@@ -4974,6 +4974,32 @@ struct PickySessionViewModelTests {
         #expect(String(renderer.inlineAttributedString(for: "**Done**").characters) == "Done")
     }
 
+    @Test func markdownRenderersTreatHTMLLineBreakTagsAsLineBreaks() throws {
+        let markdown = """
+        | Step | Note |
+        |---|---|
+        | 1 | first<br>second |
+        <br>
+        After `<br>` stays
+        ```
+        <br>
+        ```
+        """
+        let renderer = PickyReportMarkdownRenderer()
+
+        #expect(renderer.blocks(from: markdown) == [
+            .table(headers: ["Step", "Note"], rows: [["1", "first<br>second"]], alignments: [.leading, .leading]),
+            .paragraph("After `<br>` stays"),
+            .codeBlock("<br>"),
+        ])
+        #expect(String(renderer.inlineAttributedString(for: "first<br>second<BR />third").characters)
+            == "first\nsecond\nthird")
+        #expect(String(renderer.inlineAttributedString(for: "Keep `<br>` literal").characters) == "Keep <br> literal")
+        // Conversation paragraphs and bubble table cells use the AppKit inline path.
+        #expect(PickyMarkdownInlineTextView.buildAttributedString(from: [.paragraph("first<br/>second")]).string
+            == "first\nsecond")
+    }
+
     @Test func markdownReportRendererKeepsShorterFenceInsideLongerCodeBlock() throws {
         let markdown = """
         ````console

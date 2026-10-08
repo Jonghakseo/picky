@@ -15,6 +15,71 @@ enum PickyMarkdownTableAlignment: Equatable {
     case leading, center, trailing
 }
 
+/// Agents often write the HTML `<br>` tag for a line break, especially in
+/// table cells. The renderers do not interpret HTML, so the tag is mapped to
+/// Markdown semantics instead of being shown as literal text. Code spans keep
+/// the tag verbatim; fenced code blocks never reach this helper.
+enum PickyMarkdownLineBreakTag {
+    private static let tag = try! NSRegularExpression(pattern: "<br\\s*/?>", options: [.caseInsensitive])
+
+    /// A line made only of `<br>` tags separates blocks like a blank line.
+    static func isStandalone(_ trimmedLine: String) -> Bool {
+        guard !trimmedLine.isEmpty else { return false }
+        let range = NSRange(trimmedLine.startIndex..., in: trimmedLine)
+        let stripped = tag.stringByReplacingMatches(in: trimmedLine, range: range, withTemplate: "")
+        return stripped.count < trimmedLine.count
+            && stripped.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Replaces inline `<br>` tags outside code spans with a newline.
+    static func normalizedInline(_ text: String) -> String {
+        guard text.range(of: "<br", options: .caseInsensitive) != nil else { return text }
+        var output = ""
+        var replaced = false
+        var index = text.startIndex
+        while index < text.endIndex {
+            if text[index] == "`" {
+                let fenceEnd = text[index...].firstIndex { $0 != "`" } ?? text.endIndex
+                let fence = String(text[index..<fenceEnd])
+                if let close = closingFence(fence, in: text, from: fenceEnd) {
+                    output += text[index..<close]
+                    index = close
+                } else {
+                    output += fence
+                    index = fenceEnd
+                }
+                continue
+            }
+            if text[index] == "<",
+               let match = tag.firstMatch(in: text, range: NSRange(index..., in: text)),
+               let range = Range(match.range, in: text), range.lowerBound == index {
+                output += "\n"
+                replaced = true
+                index = range.upperBound
+                continue
+            }
+            output.append(text[index])
+            index = text.index(after: index)
+        }
+        return replaced ? output.trimmingCharacters(in: .newlines) : text
+    }
+
+    /// End of the code span opened by `fence`: the next backtick run of the same length.
+    private static func closingFence(_ fence: String, in text: String, from start: String.Index) -> String.Index? {
+        var index = start
+        while index < text.endIndex {
+            guard text[index] == "`" else {
+                index = text.index(after: index)
+                continue
+            }
+            let runEnd = text[index...].firstIndex { $0 != "`" } ?? text.endIndex
+            if text.distance(from: index, to: runEnd) == fence.count { return runEnd }
+            index = runEnd
+        }
+        return nil
+    }
+}
+
 struct PickyReportMarkdownRenderer {
     private static let slowBlockParseLogThreshold: TimeInterval = 0.05
 
@@ -90,7 +155,7 @@ struct PickyReportMarkdownRenderer {
                 continue
             }
 
-            if line.isEmpty {
+            if line.isEmpty || PickyMarkdownLineBreakTag.isStandalone(line) {
                 flushParagraph()
                 index += 1
                 continue
@@ -147,6 +212,7 @@ struct PickyReportMarkdownRenderer {
     }
 
     private func computeInlineAttributedString(for markdown: String) -> AttributedString {
+        let markdown = PickyMarkdownLineBreakTag.normalizedInline(markdown)
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         if let attributed = try? AttributedString(markdown: markdown, options: options) {
             return attributed

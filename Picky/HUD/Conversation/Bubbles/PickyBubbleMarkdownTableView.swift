@@ -52,7 +52,6 @@ enum PickyMarkdownTableLayoutPolicy {
 
 final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     private enum Metrics {
-        static let cornerRadius: CGFloat = 7
         static let slowTableLayoutLogThreshold: TimeInterval = 0.05
     }
 
@@ -140,7 +139,7 @@ final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
         super.draw(dirtyRect)
         // Cards paint their own backgrounds; only the grid sits on a panel.
         guard !showsCards else { return }
-        let path = NSBezierPath(roundedRect: bounds, xRadius: Metrics.cornerRadius, yRadius: Metrics.cornerRadius)
+        let path = NSBezierPath(rect: bounds.insetBy(dx: 0.4, dy: 0.4))
         NSColor(DS.Colors.surface2).setFill()
         path.fill()
         NSColor(DS.Colors.borderSubtle).setStroke()

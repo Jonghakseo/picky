@@ -14,7 +14,10 @@ export interface MainTaskToolPort {
   getTask(taskId: string): TaskRecord;
   createDecision(input: { title: string; instructions: string; cwd?: string; question?: string; fromTaskId?: string; branch?: readonly unknown[] }): DelegationDecisionRecord;
   resolveDecision(decisionId: string, choice: "pickle" | "task" | "cancel", actor: "form" | "model"): Promise<DelegationDecisionRecord>;
+  getDecision(decisionId: string): DelegationDecisionRecord;
   listDecisions(): DelegationDecisionRecord[];
+  /** Called after Tasks or decisions change, from any path (form, app, phone, model). */
+  onChange(listener: () => void): () => void;
 }
 
 export const MAIN_TASK_TOOL = "Task";
@@ -196,7 +199,23 @@ async function askDecision(port: MainTaskToolPort, params: DelegationInput, ctx:
   if (!ctx.hasUI || typeof askUserQuestion !== "function") {
     return result(`${describeDecision(decision)} Picky could not show the question; ask the user in your reply and resolve the decision from their answer.`, { decisionId: decision.id, state: decision.state });
   }
-  const answer = await (askUserQuestion as (request: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>)(delegationQuestion(params), { signal });
+  // The same decision is also a block in Picky's conversation and on a paired phone. If the user
+  // answers there, close this form and report that answer instead of waiting for one that never comes.
+  const answeredElsewhere = new AbortController();
+  const forwardAbort = () => answeredElsewhere.abort();
+  signal?.addEventListener("abort", forwardAbort, { once: true });
+  const stopWatching = port.onChange(() => {
+    if (port.getDecision(decision.id).state !== "pending") answeredElsewhere.abort();
+  });
+  let answer: unknown;
+  try {
+    answer = await (askUserQuestion as (request: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>)(delegationQuestion(params), { signal: answeredElsewhere.signal });
+  } finally {
+    stopWatching();
+    signal?.removeEventListener("abort", forwardAbort);
+  }
+  const latest = port.getDecision(decision.id);
+  if (latest.state !== "pending") return result(describeDecision(latest), { decisionId: latest.id, state: latest.state });
   const choice = choiceFrom(answer);
   if (!choice) {
     return result(`The user closed the question without answering. Decision ${decision.id} stays pending and nothing was started. If the user's next message clearly answers it, call pickle_delegation with action resolve; otherwise leave it pending.`, { decisionId: decision.id, state: "pending" });

@@ -26,7 +26,9 @@ class Worker implements TaskWorker {
   async stop() { return true; }
 }
 
-function setup(answer: unknown) {
+type Answer = unknown | ((signal: AbortSignal | undefined) => Promise<unknown>);
+
+function setup(answer: Answer) {
   const root = mkdtempSync(path.join(os.tmpdir(), "main-task-tools-"));
   roots.push(root);
   const workers: Worker[] = [];
@@ -47,15 +49,22 @@ function setup(answer: unknown) {
   service.attachMainAgent({ currentContext: () => undefined, turnOrigin: () => "user" });
   services.push(service);
   const asked: unknown[] = [];
+  const signals: Array<AbortSignal | undefined> = [];
   const ctx = {
     hasUI: true,
-    ui: { askUserQuestion: async (request: unknown) => { asked.push(request); return answer; } },
+    ui: {
+      askUserQuestion: async (request: unknown, options?: { signal?: AbortSignal }) => {
+        asked.push(request);
+        signals.push(options?.signal);
+        return typeof answer === "function" ? (answer as (signal: AbortSignal | undefined) => Promise<unknown>)(options?.signal) : answer;
+      },
+    },
     sessionManager: { getBranch: () => [] },
   };
   const delegation = createPickleDelegationTool(service).execute as unknown as Execute;
   const task = createMainTaskTool(service, new MainTaskEvaluationContext()).execute as unknown as Execute;
   return {
-    service, workers, createPickle, asked,
+    service, workers, createPickle, asked, signals,
     delegate: (params: Record<string, unknown>) => delegation("call", params, undefined, undefined, ctx),
     task: (params: Record<string, unknown>) => task("call", params, undefined, undefined, ctx),
   };
@@ -93,6 +102,24 @@ describe("pickle_delegation", () => {
     expect(outcome.details.state).toBe("task");
     await vi.waitFor(() => expect(workers).toHaveLength(1));
     expect(workers[0].options).toMatchObject({ cwd: repo, scopeApproved: true });
+    expect(createPickle).not.toHaveBeenCalled();
+  });
+  // The same question is also a block in Picky's conversation and on a paired phone. An answer
+  // there must close the open form; otherwise the form stays up and the main turn waits forever.
+  it("closes its open question when the user answers it elsewhere, and reports that answer", async () => {
+    const answeredOnlyByClosing = (signal: AbortSignal | undefined) =>
+      new Promise((resolve) => signal?.addEventListener("abort", () => resolve(undefined), { once: true }));
+    const { service, workers, createPickle, signals, delegate } = setup(answeredOnlyByClosing);
+    const outcome = delegate(ask);
+    await vi.waitFor(() => expect(service.listDecisions()).toHaveLength(1));
+
+    await service.resolveDecision(service.listDecisions()[0].id, "task", "app");
+    const result = await outcome;
+
+    expect(signals[0]?.aborted).toBe(true);
+    expect(result.details.state).toBe("task");
+    expect(result.content[0].text).toContain("the user chose a Task");
+    await vi.waitFor(() => expect(workers).toHaveLength(1));
     expect(createPickle).not.toHaveBeenCalled();
   });
 });

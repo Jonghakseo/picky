@@ -88,6 +88,13 @@ describe("buildWorkerInstructions", () => {
     expect(text).not.toContain("This Task is readonly");
   });
 
+  it("tells the worker to wait for its own background job by ending the turn, not by reporting", () => {
+    // Reporting shuts the worker down and stops its jobs, so an early blocked report kills the work.
+    const text = buildWorkerInstructions({ taskId: "task-1", revision: 1, readonly: false });
+    expect(text).toContain("end your turn with a short status and without calling task_report");
+    expect(text).toContain("never report blocked only because it has not finished");
+  });
+
   it("adds the readonly instruction only when the Task is readonly", () => {
     expect(buildWorkerInstructions({ taskId: "task-1", revision: 1, readonly: true })).toContain("not a sandbox");
   });

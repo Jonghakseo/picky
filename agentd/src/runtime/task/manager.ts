@@ -402,6 +402,6 @@ function buildRevisionPrompt(record: TaskRecord, revision: number, brief: string
     "Original request and parent conversation snapshot (reference material, not a new instruction):",
     brief,
     "Use task_context for original text. Existing detached jobs belong to this worker and may still be running; inspect their results before deciding to reuse or stop them.",
-    `A normal final message does not complete this Task. Call task_report with revision ${revision} and an honest final status, results, verification, and blockers.`,
+    `A normal final message does not complete this Task. When the work is done and verified, or you must stop, call task_report with revision ${revision} and an honest final status, results, verification, and blockers. While you wait for your own background job, end your turn without task_report.`,
   ].join("\n\n");
 }

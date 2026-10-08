@@ -186,11 +186,6 @@ struct PickyHUDDockRailView: View {
     var body: some View {
         let _ = PickyPerf.event("dock_rail_body")
         dockChrome
-        // Conversation changes can move the controls without changing expansion.
-        // Keep this inside the expansion transaction so its no-animation hold
-        // does not suppress the control lane's transition.
-        .animation(accessibilityReduceMotion ? nil : .easeOut(duration: 0.18),
-                   value: activeSessionID != nil || expansion.centersControls)
         .animation(accessibilityReduceMotion || holdsExpansion ? nil : .easeOut(duration: 0.18), value: expansion.isExpanded)
         .background(PickyHUDDockRailFrameReporter())
         .overlay(alignment: PickyHUDDockResizeTabPlacement.alignment(for: dockSide)) { resizeTab }

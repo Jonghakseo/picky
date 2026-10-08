@@ -197,6 +197,8 @@ struct PickyHUDDockGroupTileClickHostTests {
 
     /// Same contract on a Pickle row: only the hovered archive button's own
     /// frame leaves the host, so the rest of the row keeps opening the Pickle.
+    /// The button appears only after the pointer rests on the row, so until
+    /// then the host owns that slot too.
     @Test(arguments: [
         nil,
         .init(isExpanded: false, iconOnLeadingEdge: false),
@@ -204,7 +206,7 @@ struct PickyHUDDockGroupTileClickHostTests {
         .init(isExpanded: false, iconOnLeadingEdge: true),
         .init(isExpanded: true, iconOnLeadingEdge: true)
     ] as [PickyHUDDockCompactLayout?])
-    func hoveredRowHostDeclinesOnlyTheArchiveButtonFrame(compactLayout: PickyHUDDockCompactLayout?) throws {
+    func hoveredRowHostDeclinesOnlyTheArchiveButtonFrame(compactLayout: PickyHUDDockCompactLayout?) async throws {
         let metrics = PickyHUDDockMetrics(preset: .large)
         let agentSession = PickyAgentSession(
             id: "row", title: "Row Pickle", status: .running, cwd: "/tmp/picky",
@@ -250,6 +252,15 @@ struct PickyHUDDockGroupTileClickHostTests {
                 #expect(host.holes == .none)
                 return
             }
+        }
+        // A pointer that just arrived meets no button: a click opens the Pickle.
+        #expect(host.holes == .none)
+        #expect(owner(buttonX, bounds.midY) === host)
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while host.holes.trailing == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            hosting.layoutSubtreeIfNeeded()
         }
         #expect(host.holes.trailing != nil)
         #expect(owner(buttonX, bounds.midY) == nil)

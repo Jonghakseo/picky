@@ -363,6 +363,7 @@ extension PickyMarkdownInlineTextView {
         style.tabStops = [NSTextTab(textAlignment: .left, location: leaderIndent)]
         style.defaultTabInterval = leaderIndent
         style.lineHeightMultiple = bubbleLineHeightMultiple
+        style.lineBreakStrategy = bubbleLineBreakStrategy
         leader.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: leader.length))
         return leader
     }
@@ -469,6 +470,7 @@ extension PickyMarkdownInlineTextView {
         style.firstLineHeadIndent = headIndent
         style.headIndent = headIndent
         style.lineHeightMultiple = bubbleLineHeightMultiple
+        style.lineBreakStrategy = bubbleLineBreakStrategy
         attr.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: attr.length))
     }
 
@@ -486,6 +488,11 @@ extension PickyMarkdownInlineTextView {
     /// fixing header spacing alone. Hangul aggravates it because its glyphs
     /// fill more of the em than Latin lowercase at the same size.
     private static let bubbleLineHeightMultiple: CGFloat = 1.19
+
+    /// Break Hangul at spaces, the way Korean is read, instead of between any
+    /// two syllables ("한곳에/서"). `boundingRect` honors this strategy, so the
+    /// measured height still matches what the text view draws.
+    static let bubbleLineBreakStrategy: NSParagraphStyle.LineBreakStrategy = [.standard, .hangulWordPriority]
 
     private static let attributedCache: NSCache<NSString, NSAttributedString> = {
         let cache = NSCache<NSString, NSAttributedString>()

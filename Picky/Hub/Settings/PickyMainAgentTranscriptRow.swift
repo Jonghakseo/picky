@@ -103,7 +103,7 @@ struct PickyMainAgentMarkdownText: View {
                     .foregroundStyle(DS.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        case .table(let headers, let rows):
+        case .table(let headers, let rows, _):
             VStack(alignment: .leading, spacing: 4) {
                 Text(headers.joined(separator: " · "))
                     .pickyFont(size: 10.5, weight: .semibold)

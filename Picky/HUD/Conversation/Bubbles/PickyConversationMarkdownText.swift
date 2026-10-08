@@ -88,7 +88,7 @@ struct PickyConversationMarkdownText: View {
                 inlineBuffer.append(.paragraph(text))
             case .bullet(let text):
                 inlineBuffer.append(.bullet(text))
-            case .table(let headers, let rows):
+            case .table(let headers, let rows, _):
                 flushInline()
                 groups.append(.table(headers: headers, rows: rows))
             case .codeBlock(let text):

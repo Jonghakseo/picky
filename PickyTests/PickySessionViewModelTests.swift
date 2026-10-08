@@ -4977,7 +4977,8 @@ struct PickySessionViewModelTests {
                 rows: [
                     ["1", "동작 동일성", "`admin`과 web 값이 다를 수 있음", "추가 검토"],
                     ["2", "회귀 안전성", "fallback ID 테스트 부족", "`Date.now()` 고정"],
-                ]
+                ],
+                alignments: [.leading, .leading, .leading, .leading]
             ),
             .paragraph("After"),
         ])

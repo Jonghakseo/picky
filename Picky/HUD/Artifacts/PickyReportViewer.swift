@@ -10,6 +10,11 @@ import Combine
 import Foundation
 import SwiftUI
 
+/// Column alignment declared by a GFM table delimiter row (`:--`, `:-:`, `--:`).
+enum PickyMarkdownTableAlignment: Equatable {
+    case leading, center, trailing
+}
+
 struct PickyReportMarkdownRenderer {
     private static let slowBlockParseLogThreshold: TimeInterval = 0.05
 
@@ -17,7 +22,8 @@ struct PickyReportMarkdownRenderer {
         case heading(level: Int, text: String)
         case paragraph(String)
         case bullet(String)
-        case table(headers: [String], rows: [[String]])
+        /// `alignments` has one entry per column.
+        case table(headers: [String], rows: [[String]], alignments: [PickyMarkdownTableAlignment])
         case codeBlock(String)
     }
 
@@ -166,7 +172,13 @@ struct PickyReportMarkdownRenderer {
             nextIndex += 1
         }
 
-        return (.table(headers: normalizedCells(headerCells, count: columnCount), rows: rows), nextIndex)
+        let alignments = (0..<columnCount).map { column in
+            column < separatorCells.count ? Self.tableAlignment(separatorCell: separatorCells[column]) : .leading
+        }
+        return (
+            .table(headers: normalizedCells(headerCells, count: columnCount), rows: rows, alignments: alignments),
+            nextIndex
+        )
     }
 
     private func parsePipeRow(_ line: String) -> [String]? {
@@ -180,12 +192,25 @@ struct PickyReportMarkdownRenderer {
         return cells.count >= 2 ? cells : nil
     }
 
+    /// GFM delimiter cells need at least one `-`, optionally wrapped in
+    /// colons, so `:-:` and `-` are valid. Requiring three dashes used to drop
+    /// aligned tables into plain paragraphs with literal pipes.
     private func isTableSeparator(cells: [String]) -> Bool {
         cells.count >= 2 && cells.allSatisfy { cell in
             let stripped = cell.replacingOccurrences(of: " ", with: "")
-            guard stripped.count >= 3 else { return false }
-            let core = stripped.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
-            return core.count >= 3 && core.allSatisfy { $0 == "-" }
+            var core = Substring(stripped)
+            if core.first == ":" { core.removeFirst() }
+            if core.last == ":" { core.removeLast() }
+            return !core.isEmpty && core.allSatisfy { $0 == "-" }
+        }
+    }
+
+    private static func tableAlignment(separatorCell: String) -> PickyMarkdownTableAlignment {
+        let stripped = separatorCell.replacingOccurrences(of: " ", with: "")
+        switch (stripped.hasPrefix(":"), stripped.hasSuffix(":")) {
+        case (true, true): return .center
+        case (false, true): return .trailing
+        default: return .leading
         }
     }
 
@@ -270,7 +295,7 @@ struct PickyReportBlockPresentation: Identifiable, Equatable {
         case .heading(let level, let text): "heading|\(level)|\(text)"
         case .paragraph(let text): "paragraph|\(text)"
         case .bullet(let text): "bullet|\(text)"
-        case .table(let headers, let rows): "table|\(headers.joined(separator: "|"))|\(rows.map { $0.joined(separator: "|") }.joined(separator: "\\n"))"
+        case .table(let headers, let rows, _): "table|\(headers.joined(separator: "|"))|\(rows.map { $0.joined(separator: "|") }.joined(separator: "\\n"))"
         case .codeBlock(let text): "code|\(text)"
         }
     }
@@ -283,7 +308,7 @@ struct PickyReportBlockPresentation: Identifiable, Equatable {
         switch block {
         case .heading(_, let text), .paragraph(let text), .bullet(let text), .codeBlock(let text):
             return rendered(text)
-        case .table(let headers, let rows):
+        case .table(let headers, let rows, _):
             return ([headers] + rows).flatMap { $0 }.map(rendered).joined(separator: " ")
         }
     }
@@ -531,7 +556,7 @@ struct PickyMarkdownReportView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: scaled(Self.textColumnMaxWidth), alignment: .leading)
-        case .table(let headers, let rows):
+        case .table(let headers, let rows, _):
             tableView(headers: headers, rows: rows)
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {

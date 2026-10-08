@@ -898,47 +898,43 @@
   border: 1px solid transparent;
 }
 
-/* fill warning @ 0.07, stroke warning @ 0.58 (PickyQuestionBubbleView.swift:88-92) */
+/* Waiting question: a neutral surface with an accent border, because input
+ * needed is the next action, not a warning (design/COMPONENTS.md, Question). */
 .q-bubble {
-  background: color-mix(in srgb, var(--ds-color-warning) 7%, transparent);
-  border-color: color-mix(in srgb, var(--ds-color-warning) 58%, transparent);
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  background: var(--ds-color-surface2);
+  border-color: color-mix(in srgb, var(--ds-color-accent) 45%, transparent);
 }
 
-/* Answered or cancelled: surface2 @ 0.55 with the subtle border. */
+/* Answered or skipped: surface2 @ 0.55 with the subtle border. */
 .q-bubble.is-closed {
+  gap: 6px;
+  padding: 7px 10px;
   background: color-mix(in srgb, var(--ds-color-surface2) 55%, transparent);
   border-color: var(--ds-color-border-subtle);
-  /* .padding(.vertical, 6) while collapsed (PickyQuestionBubbleView.swift:77) */
-  padding-top: 6px;
-  padding-bottom: 6px;
 }
 
-.q-header {
-  max-width: 100%;
-}
+/* ---------- header ---------- */
 
-.q-status {
-  font: var(--hud-type-meta-bold);
-  color: var(--ds-color-warning-text);
-  white-space: nowrap;
-}
-
-.is-closed .q-status {
-  color: var(--ds-color-text-tertiary);
-}
-
+.q-header,
 .q-collapse {
   display: flex;
   align-items: center;
-  /* HStack(spacing: 6) (PickyQuestionBubbleView.swift:131) */
   gap: 6px;
+  min-width: 0;
   max-width: 100%;
-  position: relative;
   text-align: left;
 }
 
-/* The collapsed header is the whole tap target; it is already wider than 44pt,
- * so only its height is extended here. */
+/* The collapsed header is the whole tap target. */
+.q-collapse {
+  width: 100%;
+  min-height: 30px;
+  position: relative;
+}
+
 .q-collapse::after {
   content: "";
   position: absolute;
@@ -946,222 +942,499 @@
   height: 44px;
 }
 
-.q-chevron {
-  /* .pickyFont(size: 8.5, weight: .bold) (PickyQuestionBubbleView.swift:134) */
-  width: 9px;
-  height: 9px;
+.q-head-icon {
   flex: none;
+  color: var(--ds-color-accent-text);
+}
+
+.is-closed .q-head-icon {
+  color: var(--ds-color-success-text);
+}
+
+.is-closed.is-skipped .q-head-icon {
   color: var(--ds-color-text-tertiary);
 }
 
+.q-status {
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-accent-text);
+  white-space: nowrap;
+}
+
+.is-closed .q-status {
+  color: var(--ds-color-text-secondary);
+}
+
+.q-step {
+  margin-left: auto;
+  font: var(--hud-type-meta-monospaced-medium);
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+}
+
 .q-collapsed-title {
-  font: var(--hud-type-meta-bold);
+  font: var(--hud-type-meta-medium);
   color: var(--ds-color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
-/* request.title (PickyQuestionBubbleView.swift:47-49) */
+.q-chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--ds-color-text-tertiary);
+}
+
+/* ---------- title and description ---------- */
+
 .q-title {
-  font: var(--hud-type-body-compact-medium);
+  font: var(--hud-type-body-semibold);
   color: var(--ds-color-text-primary);
 }
 
-/* PickyQuestionBubbleCopy.bodyText (PickyQuestionBubbleView.swift:52-54) */
 .q-body {
   font: var(--hud-type-body);
   color: var(--ds-color-text-primary);
 }
 
-/* request.description (PickyQuestionBubbleView.swift:59-61) */
 .q-description {
   font: var(--hud-type-supporting);
   color: var(--ds-color-text-secondary);
 }
 
-.q-controls {
-  max-width: 100%;
+/* ---------- steps ---------- */
+
+.q-progress {
+  display: flex;
+  gap: 4px;
 }
 
-/* HStack(spacing: 6) for the inline control rows. */
-.q-row {
+.q-progress span {
+  flex: 1;
+  height: 3px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-border-subtle);
+}
+
+.q-progress span.is-done {
+  background: var(--ds-color-accent);
+}
+
+.q-progress span.is-current {
+  background: color-mix(in srgb, var(--ds-color-accent) 45%, transparent);
+}
+
+/* Answers already given. Tapping one goes back to that step. */
+.q-prev {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.q-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 2px 10px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  min-width: 0;
+}
+
+.q-chip-label {
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.q-chip-value {
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ---------- one question ---------- */
+
+.q-q {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.q-prompt-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.q-prompt {
+  font: var(--hud-type-supporting-semibold);
+  color: var(--ds-color-text-primary);
+}
+
+.q-hint {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.q-hint.is-required {
+  color: var(--ds-color-destructive-text);
+}
+
+/* ---------- option rows ---------- */
+
+.q-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The visible row is the tap target: 44px, no transparent overlay. */
+.q-opt {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: var(--ds-radius-compact);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-subtle);
+  color: var(--ds-color-text-primary);
 }
 
-/* .opacity(0.48) while the answer is in flight (PickyQuestionBubbleView.swift:64) */
-.q-controls.is-submitting {
-  opacity: 0.48;
+.q-opt.is-selected {
+  background: var(--ds-color-accent-subtle);
+  border-color: color-mix(in srgb, var(--ds-color-accent) 70%, transparent);
 }
 
-/* SwiftUI's default (bordered) Button inside the bubble. */
-.q-btn {
+.q-opt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.q-opt-label {
   font: var(--hud-type-supporting-medium);
+}
+
+.q-opt-desc {
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
+}
+
+.q-opt.is-other .q-opt-label {
+  color: var(--ds-color-text-secondary);
+}
+
+.q-opt.is-other.is-selected .q-opt-label {
+  color: var(--ds-color-text-primary);
+}
+
+/* Shape carries the rule: a circle takes one answer, a square takes any. */
+.q-ind {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1.5px solid var(--ds-color-border-strong);
+  background: var(--ds-color-surface1);
+  display: grid;
+  place-items: center;
+  color: var(--ds-color-text-on-accent);
+}
+
+.q-ind.is-radio {
+  border-radius: 50%;
+}
+
+.q-ind.is-check {
+  border-radius: 5px;
+}
+
+.is-selected .q-ind {
+  border-color: var(--ds-color-accent);
+  background: var(--ds-color-accent);
+}
+
+.is-selected .q-ind.is-radio::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ds-color-text-on-accent);
+}
+
+/* "Type your own": the field opens inside the row that was picked. */
+.q-other {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--ds-radius-compact);
+}
+
+.q-other.is-selected {
+  background: var(--ds-color-accent-subtle);
+  border: 0.5px solid color-mix(in srgb, var(--ds-color-accent) 70%, transparent);
+}
+
+.q-other.is-selected .q-opt {
+  background: none;
+  border-color: transparent;
+}
+
+.q-other-field {
+  margin: 0 10px 10px 38px;
+}
+
+/* ---------- text field ---------- */
+
+.q-field {
+  display: block;
+  flex: none;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 44px;
+  font: var(--hud-type-body);
   color: var(--ds-color-text-primary);
   background: var(--ds-color-surface1);
   border: 0.5px solid var(--ds-color-border-strong);
   border-radius: var(--ds-radius-compact);
-  padding: 3px 10px;
-  position: relative;
+  padding: 8px 10px;
+}
+
+/* ---------- inline chips (short select options) ---------- */
+
+.q-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.q-chip-btn {
+  font: var(--hud-type-supporting-semibold);
+  min-height: 40px;
+  padding: 6px 16px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-strong);
+  color: var(--ds-color-text-primary);
+}
+
+/* ---------- footer ---------- */
+
+.q-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.q-foot-hint {
+  flex-basis: 100%;
+  font: var(--hud-type-meta);
+  color: var(--ds-color-destructive-text);
+  min-width: 0;
+}
+
+/* Primary and secondary take the width a thumb needs; skip stays a text button. */
+.q-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--ds-radius-compact);
+  font: var(--hud-type-body-semibold);
+  color: var(--ds-color-text-primary);
   white-space: nowrap;
 }
 
-/* The HUD control is about 22pt tall; the visual size stays and the hit area
- * grows to the 44pt phone minimum. */
-.q-btn::after,
-.q-option::after,
-.q-stack-cancel::after,
-.q-form-option::after,
+.q-btn.is-primary {
+  background: var(--ds-color-accent);
+  color: var(--ds-color-text-on-accent);
+}
+
+.q-btn.is-primary[disabled] {
+  background: var(--ds-color-disabled-background);
+  color: var(--ds-color-disabled-text);
+}
+
+.q-btn.is-secondary {
+  background: var(--ds-color-surface1);
+  border: 0.5px solid var(--ds-color-border-strong);
+}
+
+.q-btn.is-ghost {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  color: var(--ds-color-text-secondary);
+}
+
+/* ---------- answered summary ---------- */
+
+.q-answers {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 3px;
+  margin: 0;
+  padding-left: 19px;
+}
+
+.q-answers dt {
+  font: var(--hud-type-meta);
+  color: var(--ds-color-text-tertiary);
+}
+
+.q-answers dd {
+  margin: 0;
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A row the daemon recorded without a label is the whole answer. */
+.q-answers dd.is-wide {
+  grid-column: 1 / -1;
+}
+
+.q-closed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 19px;
+}
+
+.q-closed-title {
+  font: var(--hud-type-supporting-medium);
+  color: var(--ds-color-text-primary);
+}
+
+.q-closed-text {
+  font: var(--hud-type-meta-medium);
+  color: var(--ds-color-text-secondary);
+}
+
+/* ---------- sending and failure ---------- */
+
+.q-bubble.is-sending .q-title,
+.q-bubble.is-sending .q-body,
+.q-bubble.is-sending .q-description,
+.q-bubble.is-sending .q-progress,
+.q-bubble.is-sending .q-prev,
+.q-bubble.is-sending .q-q,
+.q-bubble.is-sending .q-opts,
+.q-bubble.is-sending .q-chips,
+.q-bubble.is-sending .q-field {
+  opacity: 0.55;
+}
+
+.q-spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--ds-color-text-on-accent) 40%, transparent);
+  border-top-color: var(--ds-color-text-on-accent);
+  animation: q-spin 0.8s linear infinite;
+}
+
+@keyframes q-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .q-spinner {
+    animation: none;
+  }
+}
+
+.q-failed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--hud-type-supporting-medium);
+}
+
+.q-failed-text {
+  color: var(--ds-color-destructive-text);
+}
+
+.q-link {
+  font: var(--hud-type-supporting-semibold);
+  color: var(--ds-color-accent-text);
+  position: relative;
+  min-height: 30px;
+}
+
+/* ---------- pinned bar: the waiting question scrolled out of view ---------- */
+
+.q-pin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--ds-space-3) var(--ds-space-2);
+  padding: 8px 8px 8px 12px;
+  min-height: 48px;
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-color-surface2);
+  border: 1px solid color-mix(in srgb, var(--ds-color-accent) 45%, transparent);
+}
+
+.q-pin-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.q-pin-status {
+  font: var(--hud-type-meta-semibold);
+  color: var(--ds-color-accent-text);
+}
+
+.q-pin-title {
+  font: var(--hud-type-supporting-medium);
+  color: var(--ds-color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.q-pin .q-btn {
+  flex: 0 0 auto;
+  min-height: 40px;
+  font: var(--hud-type-supporting-semibold);
+}
+
+/* The error bubble's chip keeps the HUD's 22pt look, so its hit area grows
+ * to the 44px phone minimum. */
 .q-link::after,
 .e-chip::after {
   content: "";
   position: absolute;
   inset: calc(50% - 22px) 0 auto 0;
   height: 44px;
-}
-
-/* stacked select option (PickyQuestionBubbleView.swift:287-304) */
-.q-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  /* VStack(spacing: DS.Spacing.xs) */
-  gap: var(--ds-space-1);
-  width: 100%;
-}
-
-.q-option {
-  font: var(--hud-type-supporting-medium);
-  color: var(--ds-color-text-primary);
-  text-align: left;
-  /* .padding(.horizontal, DS.Spacing.sm) / .padding(.vertical, DS.Spacing.xs) */
-  padding: var(--ds-space-1) var(--ds-space-2);
-  background: color-mix(in srgb, var(--ds-color-surface2) 80%, transparent);
-  border: 0.5px solid var(--ds-color-border-subtle);
-  border-radius: var(--ds-radius-compact);
-  position: relative;
-}
-
-.q-stack-cancel {
-  font: var(--hud-type-supporting-medium);
-  color: var(--ds-color-text-secondary);
-  text-align: left;
-  padding: var(--ds-space-1);
-  position: relative;
-}
-
-/* .textFieldStyle(.roundedBorder) */
-.q-field {
-  display: block;
-  /* Never stretch: inside the form column a growing flex item would turn the
-   * one-line field into a tall box. */
-  flex: none;
-  align-self: stretch;
-  min-width: 0;
-  font: var(--hud-type-supporting);
-  color: var(--ds-color-text-primary);
-  background: var(--ds-color-surface1);
-  border: 0.5px solid var(--ds-color-border-strong);
-  border-radius: var(--ds-radius-compact);
-  padding: 4px 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.q-field-placeholder {
-  color: var(--ds-color-text-tertiary);
-}
-
-/* The "기타…" field stays disabled until its radio option is selected
- * (PickyQuestionBubbleView.swift:264). */
-.q-field.is-disabled {
-  background: var(--ds-color-disabled-background);
-  color: var(--ds-color-disabled-text);
-}
-
-.q-input-row .q-field {
-  flex: 1 1 auto;
-}
-
-/* askUserQuestion form (PickyQuestionBubbleView.swift:226-241) */
-.q-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.q-form-question {
-  display: flex;
-  flex-direction: column;
-  /* VStack(alignment:.leading, spacing: 5) + .padding(.vertical, 2) */
-  gap: 5px;
-  padding: 2px 0;
-}
-
-.q-prompt {
-  font: var(--hud-type-supporting-medium);
-  color: var(--ds-color-text-primary);
-}
-
-.q-form-options {
-  display: flex;
-  flex-direction: column;
-  /* VStack(spacing: 4) */
-  gap: 4px;
-}
-
-/* optionButton (PickyQuestionBubbleView.swift:306-330) */
-.q-form-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  /* VStack(spacing: 1) + .padding(.horizontal, 7) / .padding(.vertical, 5) */
-  gap: 1px;
-  padding: 5px 7px;
-  text-align: left;
-  background: color-mix(in srgb, var(--ds-color-surface2) 80%, transparent);
-  border: 0.5px solid var(--ds-color-border-subtle);
-  border-radius: var(--ds-radius-compact);
-  color: var(--ds-color-text-primary);
-  position: relative;
-}
-
-.q-form-option.is-selected {
-  background: var(--ds-color-accent-subtle);
-  border-color: var(--ds-color-accent-text);
-  color: var(--ds-color-accent-text);
-}
-
-.q-form-option-label {
-  font: var(--hud-type-supporting-medium);
-}
-
-.q-form-option-desc {
-  font: var(--hud-type-status);
-  color: var(--ds-color-text-secondary);
-}
-
-/* Inline send failure (PickyQuestionBubbleView.swift:66-73) */
-.q-send-failed {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font: var(--hud-type-supporting-medium);
-}
-
-.q-send-failed-text {
-  color: var(--ds-color-destructive-text);
-}
-
-.q-link {
-  font: var(--hud-type-supporting-medium);
-  color: var(--ds-color-accent-text);
-  position: relative;
 }
 
 /* Error bubble: fill destructiveText @ 0.07, stroke @ 0.58

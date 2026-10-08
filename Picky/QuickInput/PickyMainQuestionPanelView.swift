@@ -14,27 +14,18 @@ final class PickyMainQuestionPanelViewModel: ObservableObject {
     @Published var formState = PickyAskUserQuestionFormState()
     @Published var isSending = false
     @Published var errorMessage: String?
-    @Published private(set) var currentStepIndex = 0
+    @Published var stepper = PickyAskUserQuestionStepper()
 
     var onAnswer: (String, JSONValue) -> Void = { _, _ in }
 
     var questions: [PickyExtensionUiQuestion] { request?.questions ?? [] }
-    var usesSteps: Bool { questions.count > 1 }
-    var isFirstStep: Bool { currentStepIndex == 0 }
-    var isLastStep: Bool { currentStepIndex >= questions.count - 1 }
-    var currentQuestion: (question: PickyExtensionUiQuestion, index: Int)? {
-        guard questions.indices.contains(currentStepIndex) else { return nil }
-        return (questions[currentStepIndex], currentStepIndex)
-    }
-    var isCurrentStepSubmittable: Bool {
-        guard let currentQuestion else { return true }
-        return formState.isRequiredSatisfied(question: currentQuestion.question, index: currentQuestion.index)
-    }
-    var isActionSubmittable: Bool {
-        usesSteps && !isLastStep
-            ? isCurrentStepSubmittable
-            : formState.isSubmittable(questions: questions)
-    }
+    var currentStepIndex: Int { stepper.index }
+    var usesSteps: Bool { PickyAskUserQuestionStepper.usesSteps(questions) }
+    var isFirstStep: Bool { stepper.isFirst }
+    var isLastStep: Bool { stepper.isLast(questions) }
+    var currentQuestion: (question: PickyExtensionUiQuestion, index: Int)? { stepper.current(questions) }
+    var isCurrentStepSubmittable: Bool { stepper.isCurrentSatisfied(formState, questions: questions) }
+    var isActionSubmittable: Bool { stepper.isPrimaryEnabled(formState, questions: questions) }
 
     func configure(request: PickyExtensionUiRequest) {
         guard self.request?.id != request.id else { return }
@@ -43,7 +34,7 @@ final class PickyMainQuestionPanelViewModel: ObservableObject {
         formState.seedDefaults(for: request.questions ?? [])
         isSending = false
         errorMessage = nil
-        currentStepIndex = 0
+        stepper = PickyAskUserQuestionStepper()
     }
 
     func clear() {
@@ -51,17 +42,27 @@ final class PickyMainQuestionPanelViewModel: ObservableObject {
         formState = PickyAskUserQuestionFormState()
         isSending = false
         errorMessage = nil
-        currentStepIndex = 0
+        stepper = PickyAskUserQuestionStepper()
     }
 
     func goNext() {
-        guard usesSteps, !isLastStep, isCurrentStepSubmittable else { return }
-        currentStepIndex += 1
+        stepper.advance(formState, questions: questions)
     }
 
     func goBack() {
-        guard usesSteps, !isFirstStep else { return }
-        currentStepIndex -= 1
+        stepper.back()
+    }
+
+    /// Return key: advance a step, or submit on the last one.
+    func performPrimary() {
+        if usesSteps, !isLastStep { goNext() } else { submit() }
+    }
+
+    /// Number keys 1-9 pick an option of the current question.
+    @discardableResult
+    func applyNumberKey(_ number: Int) -> Bool {
+        guard !isSending, let current = currentQuestion else { return false }
+        return formState.applyNumberKey(number, question: current.question, index: current.index)
     }
 
     func submit() {
@@ -87,20 +88,21 @@ struct PickyMainQuestionPanelView: View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             if let request {
                 dragGrabber
-                header(for: request)
+                header
                 ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                        if viewModel.usesSteps {
-                            stepIndicator
-                        }
-                        if shouldShowDescription,
-                           let description = request.description,
-                           !description.isEmpty {
-                            markdownText(description, color: DS.Colors.textSecondary)
-                                .pickyFont(size: 10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        questionControls
+                    VStack(alignment: .leading, spacing: 10) {
+                        titleBlock(for: request)
+                        PickyAskUserQuestionFormBody(
+                            questions: questions,
+                            form: $viewModel.formState,
+                            stepper: $viewModel.stepper,
+                            showsKeyHints: true,
+                            rowFill: DS.Colors.surface2.opacity(0.8),
+                            hidesSinglePrompt: request.title == nil,
+                            onSubmitText: { viewModel.performPrimary() }
+                        )
+                        .disabled(viewModel.isSending)
+                        .opacity(viewModel.isSending ? 0.55 : 1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -117,7 +119,7 @@ struct PickyMainQuestionPanelView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: DS.CornerRadius.panel, style: .continuous)
-                .stroke(DS.Colors.borderSubtle, lineWidth: 0.8)
+                .stroke(DS.Colors.accent.opacity(0.35), lineWidth: 0.8)
         )
         .padding(PickyMainQuestionPanelLayout.shadowOutset)
         .frame(width: PickyMainQuestionPanelLayout.panelWidth, alignment: .leading)
@@ -135,251 +137,111 @@ struct PickyMainQuestionPanelView: View {
             .accessibilityHidden(true)
     }
 
-    private func header(for request: PickyExtensionUiRequest) -> some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            markdownText(request.title ?? request.prompt ?? "Picky 질문", color: DS.Colors.textPrimary)
-                .pickyFont(size: 12, weight: .medium)
-            if let prompt = request.prompt,
-               !prompt.isEmpty,
-               prompt != request.title {
-                markdownText(prompt, color: DS.Colors.textSecondary)
+    /// Names the asker: the panel appears beside the cursor, away from any conversation.
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "questionmark.circle.fill")
+                .pickyFont(size: 11, weight: .semibold)
+                .foregroundStyle(DS.Colors.accentText)
+                .accessibilityHidden(true)
+            Text(L10n.t("hud.question.mainAsks"))
+                .font(PickyHUDTypography.metaSemibold)
+                .foregroundStyle(DS.Colors.accentText)
+            Spacer(minLength: 4)
+            if viewModel.usesSteps {
+                Text(verbatim: "\(viewModel.currentStepIndex + 1) / \(questions.count)")
+                    .font(PickyHUDTypography.metaMonospacedMedium)
+                    .foregroundStyle(DS.Colors.textTertiary)
+                    .accessibilityLabel(L10n.t("hud.question.step", viewModel.currentStepIndex + 1, questions.count))
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
-    private var stepIndicator: some View {
-        Text("\(viewModel.currentStepIndex + 1) / \(questions.count)")
-            .pickyFont(size: 10, weight: .medium)
-            .foregroundStyle(DS.Colors.textSecondary)
-            .accessibilityLabel(L10n.t("hud.question.step", viewModel.currentStepIndex + 1, questions.count))
-    }
-
-    @ViewBuilder
-    private var questionControls: some View {
-        if questions.isEmpty {
-            Text(L10n.t("hud.question.empty"))
-                .pickyFont(size: 11)
-                .foregroundStyle(DS.Colors.textSecondary)
-        } else if let currentQuestion = viewModel.currentQuestion {
-            formQuestion(currentQuestion.question, index: currentQuestion.index)
+    private func titleBlock(for request: PickyExtensionUiRequest) -> some View {
+        let title = request.title ?? request.prompt ?? (questions.count == 1 ? questions[0].prompt ?? questions[0].label : nil)
+        return VStack(alignment: .leading, spacing: 3) {
+            if let title, !title.isEmpty {
+                PickyQuestionMarkdown.text(title)
+                    .font(PickyHUDTypography.bodySemibold)
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let prompt = request.prompt, !prompt.isEmpty, prompt != title {
+                PickyQuestionMarkdown.text(prompt)
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if shouldShowDescription, let description = request.description, !description.isEmpty {
+                PickyQuestionMarkdown.text(description)
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            if let errorMessage = viewModel.errorMessage {
-                Text(errorMessage)
-                    .pickyFont(size: 10)
-                    .foregroundStyle(DS.Colors.destructiveText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel(L10n.t("hud.question.deliveryFailed", errorMessage))
-            } else if showsRequiredHint {
-                Text(L10n.t("hud.question.required"))
-                    .pickyFont(size: 10)
-                    .foregroundStyle(DS.Colors.warningText)
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            // A new message while the panel is open closes it and is read as the
+            // answer (see CompanionManager), so answering by voice really works.
+            HStack(spacing: 5) {
+                Image(systemName: "mic")
+                    .pickyFont(size: 10, weight: .medium)
+                    .accessibilityHidden(true)
+                Text(L10n.t("hud.question.voiceHint"))
             }
+            .font(PickyHUDTypography.meta)
+            .foregroundStyle(DS.Colors.textTertiary)
 
-            HStack(spacing: DS.Spacing.sm) {
-                Text(L10n.t("hud.question.escape"))
-                    .pickyFont(size: 10)
-                    .foregroundStyle(DS.Colors.textPrimary.opacity(0.35))
-                Spacer(minLength: DS.Spacing.sm)
+            HStack(spacing: 6) {
+                if let errorMessage = viewModel.errorMessage {
+                    Text(L10n.t("hud.question.sendFailed"))
+                        .font(PickyHUDTypography.meta)
+                        .foregroundStyle(DS.Colors.destructiveText)
+                        .lineLimit(1)
+                        .help(errorMessage)
+                        .accessibilityLabel(L10n.t("hud.question.deliveryFailed", errorMessage))
+                } else if showsRequiredHint {
+                    Text(L10n.t("hud.question.required"))
+                        .font(PickyHUDTypography.meta)
+                        .foregroundStyle(DS.Colors.destructiveText)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+
+                if !viewModel.usesSteps || viewModel.isFirstStep {
+                    Button { viewModel.cancel() } label: {
+                        HStack(spacing: 4) {
+                            Text(L10n.t("hud.question.skip"))
+                            PickyQuestionKeycap(text: "esc")
+                        }
+                    }
+                    .buttonStyle(PickyQuestionGhostButtonStyle())
+                    .disabled(viewModel.isSending)
+                }
 
                 if viewModel.usesSteps, !viewModel.isFirstStep {
                     Button(L10n.t("hud.question.previous")) { viewModel.goBack() }
-                        .controlSize(.small)
+                        .buttonStyle(PickyQuestionSecondaryButtonStyle())
                 }
 
                 if viewModel.usesSteps, !viewModel.isLastStep {
                     Button(L10n.t("hud.question.next")) { viewModel.goNext() }
-                        .buttonStyle(PickyMainQuestionSubmitButtonStyle())
+                        .buttonStyle(PickyQuestionPrimaryButtonStyle())
                         .disabled(viewModel.isSending || !viewModel.isActionSubmittable)
                         .accessibilityLabel(L10n.t("hud.question.next.accessibility"))
                 } else {
                     Button(L10n.t("hud.question.submit")) { viewModel.submit() }
-                        .buttonStyle(PickyMainQuestionSubmitButtonStyle())
+                        .buttonStyle(PickyQuestionPrimaryButtonStyle(isBusy: viewModel.isSending))
                         .disabled(viewModel.isSending || !viewModel.isActionSubmittable)
                         .accessibilityLabel(L10n.t("hud.question.submit.accessibility"))
                         .accessibilityValue(viewModel.isSending ? L10n.t("common.sending") : "")
                 }
             }
         }
-    }
-
-    private func formQuestion(_ question: PickyExtensionUiQuestion, index: Int) -> some View {
-        let key = PickyAskUserQuestionFormState.key(for: question, index: index)
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                markdownText(question.prompt ?? question.label ?? key, color: DS.Colors.textPrimary)
-                    .pickyFont(size: 11, weight: .medium)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                if question.required ?? true {
-                    Text("*")
-                        .pickyFont(size: 11, weight: .medium)
-                        .foregroundStyle(DS.Colors.warningText)
-                        .accessibilityHidden(true)
-                }
-            }
-            switch question.type {
-            case .radio:
-                VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                    ForEach(question.options ?? []) { option in
-                        optionButton(
-                            label: option.label,
-                            description: option.description,
-                            selected: viewModel.formState.radioValues[key] == option.value,
-                            selectionKind: .radio
-                        ) {
-                            viewModel.formState.selectRadio(question: question, index: index, value: option.value)
-                        }
-                    }
-                    if question.allowsOther {
-                        optionButton(
-                            label: L10n.t("hud.question.other"),
-                            description: nil,
-                            selected: viewModel.formState.radioValues[key] == PickyAskUserQuestionFormState.otherSentinel,
-                            selectionKind: .radio
-                        ) {
-                            viewModel.formState.selectRadio(question: question, index: index, value: PickyAskUserQuestionFormState.otherSentinel)
-                        }
-                        TextField(L10n.t("hud.question.other"), text: binding(\PickyAskUserQuestionFormState.otherValues, key: key))
-                            .textFieldStyle(.roundedBorder)
-                            .pickyFont(size: 11)
-                            .disabled(viewModel.formState.radioValues[key] != PickyAskUserQuestionFormState.otherSentinel)
-                    }
-                }
-            case .checkbox:
-                VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                    ForEach(question.options ?? []) { option in
-                        optionButton(
-                            label: option.label,
-                            description: option.description,
-                            selected: viewModel.formState.checkboxValues[key]?.contains(option.value) == true,
-                            selectionKind: .checkbox
-                        ) {
-                            viewModel.formState.toggleCheckbox(question: question, index: index, value: option.value)
-                        }
-                    }
-                    if question.allowsOther {
-                        TextField(L10n.t("hud.question.other"), text: binding(\PickyAskUserQuestionFormState.otherValues, key: key))
-                            .textFieldStyle(.roundedBorder)
-                            .pickyFont(size: 11)
-                    }
-                }
-            case .text:
-                TextField(question.placeholder ?? L10n.t("hud.question.responsePlaceholder"), text: binding(\PickyAskUserQuestionFormState.textValues, key: key))
-                    .textFieldStyle(.roundedBorder)
-                    .pickyFont(size: 11)
-            }
-        }
-    }
-
-    private enum SelectionKind { case radio, checkbox }
-
-    private func optionButton(
-        label: String,
-        description: String?,
-        selected: Bool,
-        selectionKind: SelectionKind,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 7) {
-                Image(systemName: selectionSymbol(for: selectionKind, selected: selected))
-                    .pickyFont(size: 12, weight: .medium)
-                    .foregroundStyle(selected ? DS.Colors.accentText : DS.Colors.textTertiary)
-                    .frame(width: 14, height: 14)
-                VStack(alignment: .leading, spacing: 1) {
-                    markdownText(label, color: selected ? DS.Colors.accentText : DS.Colors.textPrimary)
-                        .pickyFont(size: 11, weight: .medium)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let description, !description.isEmpty {
-                        markdownText(description, color: DS.Colors.textSecondary)
-                            .pickyFont(size: 10)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .fill(selected ? DS.Colors.accentSubtle : DS.Colors.surface2.opacity(0.8))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.small, style: .continuous)
-                    .stroke(selected ? DS.Colors.accentText : DS.Colors.borderSubtle, lineWidth: 0.5)
-            )
-        }
-        .buttonStyle(.plain)
-        .hoverAffordance()
-        .accessibilityLabel(PickyBubbleMarkdown.displayString(for: label))
-        .accessibilityValue(selected ? L10n.t("common.selected") : L10n.t("common.notSelected"))
-    }
-
-    private func selectionSymbol(for kind: SelectionKind, selected: Bool) -> String {
-        switch (kind, selected) {
-        case (.radio, true): "largecircle.fill.circle"
-        case (.radio, false): "circle"
-        case (.checkbox, true): "checkmark.square.fill"
-        case (.checkbox, false): "square"
-        }
-    }
-
-    private func binding(
-        _ keyPath: WritableKeyPath<PickyAskUserQuestionFormState, [String: String]>,
-        key: String
-    ) -> Binding<String> {
-        Binding(
-            get: { viewModel.formState[keyPath: keyPath][key] ?? "" },
-            set: { viewModel.formState[keyPath: keyPath][key] = $0 }
-        )
-    }
-
-    private func markdownText(_ source: String, color: Color) -> Text {
-        Text(PickyMainQuestionPanelMarkdown.attributedText(for: source))
-            .foregroundColor(color)
-    }
-}
-
-private enum PickyMainQuestionPanelMarkdown {
-    static func attributedText(for source: String) -> AttributedString {
-        let inlineOnly = source
-            .replacingOccurrences(of: "```", with: "")
-            .replacingOccurrences(of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"(?m)^>\s?"#, with: "", options: .regularExpression)
-        return PickyBubbleMarkdown.attributedText(for: inlineOnly)
-    }
-}
-
-private struct PickyMainQuestionSubmitButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovered = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .pickyFont(size: 11, weight: .medium)
-            .foregroundStyle(isEnabled ? DS.Colors.textOnAccent : DS.Colors.disabledText)
-            .padding(.horizontal, DS.Spacing.md)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                    .fill(backgroundColor(isPressed: configuration.isPressed))
-            )
-            .opacity(isEnabled && configuration.isPressed ? 0.88 : 1)
-            .onHover { isHovered = isEnabled && $0 }
-            .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: isHovered)
-            .animation(reduceMotion ? nil : .easeOut(duration: DS.Animation.fast), value: configuration.isPressed)
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return DS.Colors.disabledBackground }
-        return isPressed || isHovered ? DS.Colors.accentHover : DS.Colors.accent
     }
 }

@@ -31,6 +31,16 @@ enum PickyMainQuestionPanelPolicy {
     static func shouldCancelOnEscape(firstResponderHasMarkedText: Bool) -> Bool {
         !firstResponderHasMarkedText
     }
+
+    /// Bare 1-9 picks an option unless a text field is taking the keystroke.
+    static func optionNumber(characters: String?, modifiers: NSEvent.ModifierFlags, firstResponderIsEditingText: Bool) -> Int? {
+        guard !firstResponderIsEditingText,
+              modifiers.intersection([.command, .control, .option]).isEmpty,
+              let characters, characters.count == 1,
+              let number = Int(characters), (1...9).contains(number)
+        else { return nil }
+        return number
+    }
 }
 
 struct PickyMainQuestionPanelAnswerError: LocalizedError {
@@ -41,6 +51,8 @@ struct PickyMainQuestionPanelAnswerError: LocalizedError {
 
 private final class PickyMainQuestionKeyablePanel: PickySecureSurfacePanel, PickyScreenCaptureExcludedWindow {
     var onEscape: (() -> Void)?
+    var onOptionNumber: ((Int) -> Void)?
+    var onReturn: (() -> Void)?
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -54,6 +66,24 @@ private final class PickyMainQuestionKeyablePanel: PickySecureSurfacePanel, Pick
             onEscape?()
             return
         }
+        if event.type == .keyDown {
+            // A focused text field owns its own digits and Return (its onSubmit advances).
+            let editingText = firstResponder is NSTextView
+            if let number = PickyMainQuestionPanelPolicy.optionNumber(
+                characters: event.charactersIgnoringModifiers,
+                modifiers: event.modifierFlags,
+                firstResponderIsEditingText: editingText
+            ), let onOptionNumber {
+                onOptionNumber(number)
+                return
+            }
+            if !editingText, event.keyCode == 36 || event.keyCode == 76,
+               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+               let onReturn {
+                onReturn()
+                return
+            }
+        }
         super.sendEvent(event)
     }
 }
@@ -63,7 +93,7 @@ enum PickyMainQuestionPanelLayout {
     static let shadowOutset: CGFloat = 10
     static let panelWidth: CGFloat = contentWidth + shadowOutset * 2
     static let estimatedPanelHeight: CGFloat = 220
-    static let maximumScrollableContentHeight: CGFloat = 220
+    static let maximumScrollableContentHeight: CGFloat = 300
     static let cursorOffsetX: CGFloat = 18
     static let cursorOffsetY: CGFloat = 12
     static let maximumScreenHeightFraction: CGFloat = 0.7
@@ -195,6 +225,8 @@ final class PickyMainQuestionPanelManager {
         questionPanel.sharingType = .none
         questionPanel.contentView = hostingView
         questionPanel.onEscape = { [weak viewModel] in viewModel?.cancel() }
+        questionPanel.onOptionNumber = { [weak viewModel] number in viewModel?.applyNumberKey(number) }
+        questionPanel.onReturn = { [weak viewModel] in viewModel?.performPrimary() }
         panelMoveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: questionPanel,

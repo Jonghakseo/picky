@@ -513,6 +513,102 @@
         }
       }
     },
+    "hud.question.answerMore": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ +%2$lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 외 %2$lld개"
+          }
+        }
+      }
+    },
+    "hud.question.hint.multiple": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose any"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여러 개 고를 수 있어요"
+          }
+        }
+      }
+    },
+    "hud.question.hint.required": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Required"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "필수"
+          }
+        }
+      }
+    },
+    "hud.question.mainAsks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky is asking"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 물어봐요"
+          }
+        }
+      }
+    },
+    "hud.question.skip": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "건너뛰기"
+          }
+        }
+      }
+    },
+    "hud.question.voiceHint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can answer by voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말로 답해도 돼요"
+          }
+        }
+      }
+    },
     "hud.toolImage.missing": {
       "localizations": {
         "en": {
@@ -22731,22 +22827,6 @@
         }
       }
     },
-    "hud.question.escape": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "esc Cancel"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "esc 취소"
-          }
-        }
-      }
-    },
     "hud.question.previous": {
       "localizations": {
         "en": {
@@ -24256,13 +24336,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Other…"
+            "value": "Type your own"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기타…"
+            "value": "직접 입력"
           }
         }
       }
@@ -24800,13 +24880,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cancelled"
+            "value": "Skipped"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "취소됨"
+            "value": "건너뜀"
           }
         }
       }

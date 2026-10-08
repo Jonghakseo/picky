@@ -105,6 +105,8 @@ function SessionRows({ sessionId, session, actions, send, onEdit, onRestore, now
             key={message.id}
             request={request}
             active={active}
+            {...(message.answerRows ? { answerRows: message.answerRows } : {})}
+            cancelled={message.cancelledAt !== undefined}
             onAnswer={(value) => send({ type: "session.answer", sessionId, requestId: request.id, value })}
           />,
         );

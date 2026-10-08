@@ -382,6 +382,9 @@ export const PickyMessagePresentationSchema = z.discriminatedUnion("code", [
 ]);
 export type PickyMessagePresentation = z.infer<typeof PickyMessagePresentationSchema>;
 
+export const PickyQuestionAnswerRowSchema = z.object({ label: z.string(), value: z.string() });
+export type PickyQuestionAnswerRow = z.infer<typeof PickyQuestionAnswerRowSchema>;
+
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
   kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "command_receipt", "subagent_invocation", "system"]),
@@ -390,6 +393,8 @@ export const PickySessionMessageSchema = z.object({
   text: z.string().optional(),
   question: PickyExtensionUiRequestSchema.optional(),
   cancelledAt: isoTimestamp.optional(),
+  // What the user answered on an agent_question, for the collapsed bubble summary.
+  answerRows: z.array(PickyQuestionAnswerRowSchema).optional().catch(undefined),
   activitySnapshot: PickyActivitySummarySchema.optional(),
   assistantRun: PickyAssistantRunMetadataSchema.optional(),
   errorContext: z.string().optional(),

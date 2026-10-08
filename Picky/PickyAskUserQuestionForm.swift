@@ -51,10 +51,72 @@ struct PickyAskUserQuestionFormState: Equatable {
         var selected = checkboxValues[key] ?? []
         if selected.contains(value) {
             selected.remove(value)
+            // Unchecking "Type your own" discards its text so it never rides along unseen.
+            if value == Self.otherSentinel { otherValues[key] = nil }
         } else {
             selected.insert(value)
         }
         checkboxValues[key] = selected
+    }
+
+    func isOtherSelected(question: PickyExtensionUiQuestion, index: Int) -> Bool {
+        let key = Self.key(for: question, index: index)
+        switch question.type {
+        case .radio: return radioValues[key] == Self.otherSentinel
+        case .checkbox: return checkboxValues[key]?.contains(Self.otherSentinel) == true
+        case .text: return false
+        }
+    }
+
+    func isOptionSelected(question: PickyExtensionUiQuestion, index: Int, value: String) -> Bool {
+        let key = Self.key(for: question, index: index)
+        switch question.type {
+        case .radio: return radioValues[key] == value
+        case .checkbox: return checkboxValues[key]?.contains(value) == true
+        case .text: return false
+        }
+    }
+
+    /// Number key `number` (1-based) picks the matching option; the slot after the
+    /// last option is "Type your own" when the question allows it.
+    @discardableResult
+    mutating func applyNumberKey(_ number: Int, question: PickyExtensionUiQuestion, index: Int) -> Bool {
+        let options = question.options ?? []
+        let value: String
+        if options.indices.contains(number - 1) {
+            value = options[number - 1].value
+        } else if number == options.count + 1, question.allowsOther {
+            value = Self.otherSentinel
+        } else {
+            return false
+        }
+        switch question.type {
+        case .radio: selectRadio(question: question, index: index, value: value)
+        case .checkbox: toggleCheckbox(question: question, index: index, value: value)
+        case .text: return false
+        }
+        return true
+    }
+
+    /// Short answer for the "previous step" chip: the first chosen label and how many more.
+    func displayAnswer(question: PickyExtensionUiQuestion, index: Int) -> (first: String, more: Int)? {
+        let key = Self.key(for: question, index: index)
+        let labels: [String]
+        switch question.type {
+        case .radio:
+            labels = [Self.label(for: radioAnswer(forKey: key), options: question.options ?? [])]
+        case .checkbox:
+            labels = checkboxAnswer(forKey: key).map { Self.label(for: $0, options: question.options ?? []) }
+        case .text:
+            labels = [(textValues[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)]
+        }
+        let nonEmpty = labels.filter { !$0.isEmpty }
+        guard let first = nonEmpty.first else { return nil }
+        return (first, nonEmpty.count - 1)
+    }
+
+    private static func label(for value: String, options: [PickyExtensionUiQuestionOption]) -> String {
+        options.first(where: { $0.value == value })?.label ?? value
     }
 
     func isSubmittable(questions: [PickyExtensionUiQuestion]) -> Bool {
@@ -173,9 +235,56 @@ struct PickyAskUserQuestionFormState: Equatable {
     }
 
     private func checkboxAnswer(forKey key: String) -> [String] {
-        var selected = Array(checkboxValues[key] ?? []).sorted()
+        let chosen = checkboxValues[key] ?? []
+        var selected = chosen.subtracting([Self.otherSentinel]).sorted()
         let other = (otherValues[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !other.isEmpty { selected.append(other) }
         return selected
+    }
+}
+
+/// Step rule shared by the Pickle question bubble and the main Picky question
+/// panel: two or more questions are answered one at a time.
+struct PickyAskUserQuestionStepper: Equatable {
+    var index = 0
+
+    static func usesSteps(_ questions: [PickyExtensionUiQuestion]) -> Bool { questions.count > 1 }
+
+    var isFirst: Bool { index == 0 }
+    func isLast(_ questions: [PickyExtensionUiQuestion]) -> Bool { index >= questions.count - 1 }
+
+    func current(_ questions: [PickyExtensionUiQuestion]) -> (question: PickyExtensionUiQuestion, index: Int)? {
+        guard questions.indices.contains(index) else { return nil }
+        return (questions[index], index)
+    }
+
+    func isCurrentSatisfied(_ form: PickyAskUserQuestionFormState, questions: [PickyExtensionUiQuestion]) -> Bool {
+        guard let current = current(questions) else { return true }
+        return form.isRequiredSatisfied(question: current.question, index: current.index)
+    }
+
+    /// Whether the primary action ("next" mid-way, otherwise "submit") is enabled.
+    func isPrimaryEnabled(_ form: PickyAskUserQuestionFormState, questions: [PickyExtensionUiQuestion]) -> Bool {
+        Self.usesSteps(questions) && !isLast(questions)
+            ? isCurrentSatisfied(form, questions: questions)
+            : form.isSubmittable(questions: questions)
+    }
+
+    @discardableResult
+    mutating func advance(_ form: PickyAskUserQuestionFormState, questions: [PickyExtensionUiQuestion]) -> Bool {
+        guard Self.usesSteps(questions), !isLast(questions), isCurrentSatisfied(form, questions: questions) else { return false }
+        index += 1
+        return true
+    }
+
+    mutating func back() {
+        guard index > 0 else { return }
+        index -= 1
+    }
+
+    /// Previous-answer chips jump back only; later steps open through "next".
+    mutating func jump(to step: Int) {
+        guard step >= 0, step < index else { return }
+        index = step
     }
 }

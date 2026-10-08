@@ -58,6 +58,27 @@ const SHOTS = [
   { name: "room-tool-image", url: "/room/s-pipeline?demo=1", steps: [{ wait: 300 }] },
   { name: "room-main", url: "/room/main?demo=1", steps: [{ wait: 300 }] },
   { name: "room-confirm", url: "/room/s-deploy?demo=1", steps: [{ wait: 300 }] },
+  // Second step of a three-question form: the answer chip, a checkbox list, and its own-text row.
+  {
+    name: "room-question-step2",
+    url: "/room/s-webhook?demo=1",
+    steps: [
+      { wait: 300 },
+      { click: ".q-opts .q-opt" },
+      { click: ".q-btn.is-primary" },
+      { wait: 200 },
+      { click: ".q-other .q-opt" },
+      { type: [".q-other-field", "PagerDuty 당직"] },
+      { wait: 200 },
+    ],
+  },
+  // The waiting question scrolled out of view: the bar above the composer points back at it.
+  { name: "room-question-pinned", url: "/room/main?demo=1", steps: [{ wait: 400 }, { scrollTop: ".room-scroll" }, { wait: 300 }] },
+  {
+    name: "room-question-answered",
+    url: "/room/s-release?demo=1",
+    steps: [{ wait: 300 }, { click: ".q-collapse" }, { wait: 200 }],
+  },
   { name: "room-select-stacked", url: "/room/s-models?demo=1", steps: [{ wait: 300 }] },
   { name: "room-select-inline", url: "/room/s-flags?demo=1", steps: [{ wait: 300 }] },
   { name: "room-input", url: "/room/s-keys?demo=1", steps: [{ wait: 300 }] },
@@ -196,6 +217,11 @@ class Tab {
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 function stepScript(step) {
+  if (step.scrollTop) {
+    return `(() => { const el = document.querySelector(${JSON.stringify(step.scrollTop)});
+      if (!el) throw new Error("no element for ${step.scrollTop}");
+      el.scrollTop = 0; return true; })()`;
+  }
   if (step.scrollToBottom) {
     return `(() => { const el = document.querySelector(${JSON.stringify(step.scrollToBottom)});
       if (!el) throw new Error("no element for ${step.scrollToBottom}");

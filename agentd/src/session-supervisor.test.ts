@@ -6237,6 +6237,40 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.extensionUiAnswers).toEqual([{ requestId: "ui-form", value: { value: { "commit-confirm": "stop" } } }]);
     expect(updated.pendingExtensionUiRequest).toBeUndefined();
     expect(updated.logs.includes("extension ui answer: Stop and review")).toBe(true);
+    expect(updated.messages?.find((message) => message.id === "ui-form")?.answerRows).toEqual([{ label: "", value: "Stop and review" }]);
+  });
+
+  it("records per-question answer rows on a multi-question form and none on a skipped one", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-answer-rows-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("answer rows"));
+    const questions = [
+      { id: "version", type: "radio", label: "버전", prompt: "어떤 버전?", options: [{ value: "b2", label: "0.9.3-beta.2" }] },
+      { id: "notes", type: "checkbox", prompt: "노트 항목", options: [{ value: "lag", label: "HUD 렉 수정" }] },
+      { id: "memo", type: "text", label: "공지" },
+    ];
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "ui-rows", sessionId: session.id, method: "askUserQuestion", title: "릴리즈", questions, createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await settle();
+    await supervisor.answerExtensionUi(session.id, "ui-rows", { value: { version: "b2", notes: ["lag", "표 렌더링"], memo: "  " } });
+
+    expect(supervisor.get(session.id)!.messages?.find((message) => message.id === "ui-rows")?.answerRows).toEqual([
+      { label: "버전", value: "0.9.3-beta.2" },
+      { label: "노트 항목", value: "HUD 렉 수정, 표 렌더링" },
+    ]);
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "ui-skip", sessionId: session.id, method: "askUserQuestion", title: "다음", questions, createdAt: "2026-05-01T00:00:01.000Z" },
+    });
+    await settle();
+    await supervisor.answerExtensionUi(session.id, "ui-skip", { cancelled: true });
+    expect(supervisor.get(session.id)!.messages?.find((message) => message.id === "ui-skip")?.answerRows).toBeUndefined();
   });
 
   it("emits one full session event after answering an extension UI request", async () => {

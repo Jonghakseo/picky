@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Picky
@@ -173,5 +174,14 @@ struct PickyMainQuestionPanelPolicyTests {
             placeholder: nil,
             defaultValue: nil
         )
+    }
+
+    @Test
+    func bareDigitsPickOptionsUnlessATextFieldOrModifierTakesThem() {
+        #expect(PickyMainQuestionPanelPolicy.optionNumber(characters: "3", modifiers: [], firstResponderIsEditingText: false) == 3)
+        #expect(PickyMainQuestionPanelPolicy.optionNumber(characters: "3", modifiers: [], firstResponderIsEditingText: true) == nil)
+        #expect(PickyMainQuestionPanelPolicy.optionNumber(characters: "3", modifiers: [.command], firstResponderIsEditingText: false) == nil)
+        #expect(PickyMainQuestionPanelPolicy.optionNumber(characters: "0", modifiers: [], firstResponderIsEditingText: false) == nil)
+        #expect(PickyMainQuestionPanelPolicy.optionNumber(characters: "a", modifiers: [], firstResponderIsEditingText: false) == nil)
     }
 }

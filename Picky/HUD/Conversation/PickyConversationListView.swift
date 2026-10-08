@@ -547,6 +547,7 @@ struct PickyConversationListView: View {
                 PickyQuestionBubbleView(
                     request: request,
                     cancelledAt: message.cancelledAt,
+                    answerRows: message.answerRows,
                     isActiveRequest: session.pendingExtensionUiRequest?.id == request.id,
                     commands: viewModel,
                     focusRequestID: focusRequestID,

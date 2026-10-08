@@ -265,4 +265,97 @@ struct PickyAskUserQuestionFormTests {
 
         #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: request, value: answer) == "Scope: Project \u{00B7} Items: Rule, Gotcha \u{00B7} Note: keep this")
     }
+
+    private static let releaseQuestions = [
+        PickyExtensionUiQuestion(
+            id: "version", type: .radio, prompt: "Version?", label: "Version",
+            options: [PickyExtensionUiQuestionOption(value: "beta", label: "0.9.3-beta.2"), PickyExtensionUiQuestionOption(value: "stable", label: "0.9.3")],
+            allowOther: nil, required: true, placeholder: nil, defaultValue: nil
+        ),
+        PickyExtensionUiQuestion(
+            id: "notes", type: .checkbox, prompt: "Notes?", label: nil,
+            options: [PickyExtensionUiQuestionOption(value: "lag", label: "Lag fix"), PickyExtensionUiQuestionOption(value: "menu", label: "Send menu")],
+            allowOther: nil, required: true, placeholder: nil, defaultValue: nil
+        )
+    ]
+
+    @Test func numberKeysPickOptionsAndTheSlotAfterTheLastOneIsTypeYourOwn() {
+        let questions = Self.releaseQuestions
+        var state = PickyAskUserQuestionFormState()
+        state.seedDefaults(for: questions)
+
+        let result1 = state.applyNumberKey(2, question: questions[0], index: 0)
+        #expect(result1)
+        #expect(state.answerObject(for: questions)["version"] == .string("stable"))
+        let result2 = state.applyNumberKey(3, question: questions[0], index: 0)
+        #expect(result2)
+        #expect(state.isOtherSelected(question: questions[0], index: 0))
+        let result3 = state.applyNumberKey(4, question: questions[0], index: 0)
+        #expect(!result3)
+
+        let result4 = state.applyNumberKey(1, question: questions[1], index: 1)
+        #expect(result4)
+        let result5 = state.applyNumberKey(1, question: questions[1], index: 1)
+        #expect(result5)
+        #expect(state.answerObject(for: questions)["notes"] == .array([]))
+    }
+
+    @Test func uncheckingTypeYourOwnDropsItsTextFromTheAnswer() {
+        let questions = Self.releaseQuestions
+        var state = PickyAskUserQuestionFormState()
+        state.seedDefaults(for: questions)
+        state.toggleCheckbox(question: questions[1], index: 1, value: "lag")
+        state.toggleCheckbox(question: questions[1], index: 1, value: PickyAskUserQuestionFormState.otherSentinel)
+        state.otherValues["notes"] = "Table rendering"
+
+        #expect(state.answerObject(for: questions)["notes"] == .array([.string("lag"), .string("Table rendering")]))
+
+        state.toggleCheckbox(question: questions[1], index: 1, value: PickyAskUserQuestionFormState.otherSentinel)
+        #expect(state.answerObject(for: questions)["notes"] == .array([.string("lag")]))
+    }
+
+    @Test func stepperAdvancesOnlyPastSatisfiedQuestionsAndChipsJumpBackOnly() {
+        let questions = Self.releaseQuestions
+        var state = PickyAskUserQuestionFormState()
+        state.seedDefaults(for: questions)
+        var stepper = PickyAskUserQuestionStepper()
+
+        let result6 = stepper.advance(state, questions: questions)
+        #expect(!result6)
+        state.selectRadio(question: questions[0], index: 0, value: "beta")
+        let result7 = stepper.advance(state, questions: questions)
+        #expect(result7)
+        #expect(stepper.isLast(questions))
+        #expect(!stepper.isPrimaryEnabled(state, questions: questions))
+
+        stepper.jump(to: 1)
+        #expect(stepper.index == 1)
+        stepper.jump(to: 0)
+        #expect(stepper.index == 0)
+        #expect(state.displayAnswer(question: questions[0], index: 0)?.first == "0.9.3-beta.2")
+    }
+
+    @Test func previousStepChipCountsTheExtraChoices() {
+        let questions = Self.releaseQuestions
+        var state = PickyAskUserQuestionFormState()
+        state.toggleCheckbox(question: questions[1], index: 1, value: "lag")
+        state.toggleCheckbox(question: questions[1], index: 1, value: "menu")
+
+        let answer = state.displayAnswer(question: questions[1], index: 1)
+        #expect(answer?.first == "Lag fix")
+        #expect(answer?.more == 1)
+        #expect(state.displayAnswer(question: questions[0], index: 0) == nil)
+    }
+
+    @Test func questionMessagesDecodeTheRecordedAnswerRows() throws {
+        let json = """
+        {"id":"q1","kind":"agent_question","createdAt":"2026-05-01T00:00:00.000Z",
+         "answerRows":[{"label":"Version","value":"0.9.3-beta.2"},{"label":"","value":"Lag fix"}]}
+        """
+        let message = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickySessionMessage.self, from: Data(json.utf8))
+        #expect(message.answerRows == [
+            PickyQuestionAnswerRow(label: "Version", value: "0.9.3-beta.2"),
+            PickyQuestionAnswerRow(label: "", value: "Lag fix")
+        ])
+    }
 }

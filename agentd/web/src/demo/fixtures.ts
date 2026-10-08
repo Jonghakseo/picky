@@ -397,6 +397,48 @@ const completedSession = session({
   ],
   messages: [
     message({ id: "r1", kind: "user_text", text: "0.9.3-beta.2 릴리즈 노트 초안 만들어 줘", createdAt: at(130), originatedBy: "user" }),
+    // Answered: the collapsed row shows these answers, and expanding lists them.
+    message({
+      id: "r1b",
+      kind: "agent_question",
+      createdAt: at(128),
+      question: question({
+        id: "q-release-scope",
+        sessionId: "s-release",
+        method: "askUserQuestion",
+        title: "릴리즈 범위를 정해 주세요",
+        questions: [
+          {
+            id: "version",
+            type: "radio",
+            label: "버전",
+            prompt: "어떤 버전으로 낼까요?",
+            options: [
+              { value: "beta", label: "0.9.3-beta.2" },
+              { value: "stable", label: "0.9.3" },
+            ],
+            required: true,
+          },
+          {
+            id: "notes",
+            type: "checkbox",
+            label: "노트",
+            prompt: "릴리즈 노트에 넣을 항목",
+            options: [
+              { value: "hud", label: "HUD 렉 수정" },
+              { value: "timing", label: "보낼 시점 메뉴" },
+              { value: "table", label: "표 렌더링 지원" },
+            ],
+          },
+          { id: "notice", type: "text", label: "공지", prompt: "공지는 어떻게 할까요?" },
+        ],
+      }),
+      answerRows: [
+        { label: "버전", value: "0.9.3-beta.2" },
+        { label: "노트", value: "HUD 렉 수정, 보낼 시점 메뉴, 표 렌더링 지원" },
+        { label: "공지", value: "알파 테스터에게 먼저 공지하고 금요일에 정식 배포" },
+      ],
+    }),
     message({ id: "r2", kind: "agent_text", text: "변경 12건을 기능, 수정, 내부 정리로 나눴어요. 보고서는 [release-0.9.3-beta.2.md](build/reports/release-0.9.3-beta.2.md)에 있어요.", createdAt: at(111) }),
     message({ id: "r3", kind: "agent_activity", createdAt: at(111), activitySnapshot: { read: 9, bash: 4, edit: 0, write: 1, thinking: 0, other: 0, todo: 0, subagent: 0 } }),
   ],
@@ -518,6 +560,10 @@ export const demoMain: RemoteMainState = {
       image: { path: "/Users/you/Pickles/picky/build/render-gallery/read-image/tool-image-landscape.png", mimeType: "image/png", toolName: "read" },
     },
     { id: "mm2c", role: "assistant", text: "실패한 빌드 로그 화면이네요. 종료 코드 1이 마지막 줄에 있어요.", createdAt: at(23) },
+    { id: "mm2f", role: "user", text: "실패한 테스트 이름만 먼저 알려 줘", createdAt: at(23) },
+    { id: "mm2g", role: "assistant", text: "queue-migration.test.ts의 두 케이스예요. 둘 다 스키마 변환에서 멈췄어요.", createdAt: at(23) },
+    { id: "mm2d", role: "user", text: "그 빌드는 내일 다시 보고, 지금은 다른 거 하자", createdAt: at(22) },
+    { id: "mm2e", role: "assistant", text: "알겠어요. 큐 마이그레이션은 내일 아침으로 미뤄 둘게요.", createdAt: at(21) },
     { id: "mm3", role: "user", text: "원격 접속도 켜 줘", createdAt: at(2) },
   ],
 };

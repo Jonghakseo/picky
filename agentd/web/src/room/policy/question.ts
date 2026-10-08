@@ -5,7 +5,7 @@
  * `PickyQuestionBubbleView` (which control each method draws, what each answer
  * sends) and `PickyAskUserQuestionFormState` (the form's answer object).
  */
-import type { PickyExtensionUiRequest } from "../../../../src/protocol";
+import type { PickyExtensionUiRequest, PickyQuestionAnswerRow } from "../../../../src/protocol";
 
 export type QuestionOptionsLayout = "inlineRow" | "stacked";
 
@@ -91,6 +91,21 @@ export function emptyFormState(): FormState {
   return { radio: {}, checkbox: {}, text: {}, other: {} };
 }
 
+/** A question is required unless it says otherwise (`PickyExtensionUiQuestion.required ?? true`). */
+export function isQuestionRequired(question: FormQuestion): boolean {
+  return question.required ?? true;
+}
+
+/** "Type your own" is offered unless the question turns it off; a text question never needs it. */
+export function allowsOther(question: FormQuestion): boolean {
+  return question.type !== "text" && (question.allowOther ?? true);
+}
+
+/** Two or more questions are answered one at a time (`PickyAskUserQuestionStepper.usesSteps`). */
+export function usesSteps(questions: FormQuestion[]): boolean {
+  return questions.length > 1;
+}
+
 /** Seeds the form with each question's `default`, like the Mac's `seedDefaults`. */
 export function seedFormState(questions: FormQuestion[]): FormState {
   const state = emptyFormState();
@@ -112,11 +127,44 @@ export function seedFormState(questions: FormQuestion[]): FormState {
   return state;
 }
 
-/** A radio question answers with its "기타…" text once that option is picked. */
+export function isOptionSelected(state: FormState, question: FormQuestion, key: string, value: string): boolean {
+  return question.type === "radio" ? state.radio[key] === value : (state.checkbox[key] ?? []).includes(value);
+}
+
+/**
+ * Picking an option, as `PickyAskUserQuestionFormState` does it: a radio replaces
+ * the choice, a checkbox toggles it. Unchecking "Type your own" drops its text so
+ * it never rides along unseen.
+ */
+export function selectOption(state: FormState, question: FormQuestion, key: string, value: string): FormState {
+  if (question.type === "radio") return { ...state, radio: { ...state.radio, [key]: value } };
+  const chosen = state.checkbox[key] ?? [];
+  const removing = chosen.includes(value);
+  const next = removing ? chosen.filter((entry) => entry !== value) : [...chosen, value];
+  const other = removing && value === OTHER_SENTINEL ? { ...state.other, [key]: "" } : state.other;
+  return { ...state, checkbox: { ...state.checkbox, [key]: next }, other };
+}
+
+export function isOtherSelected(state: FormState, question: FormQuestion, key: string): boolean {
+  return question.type === "radio"
+    ? state.radio[key] === OTHER_SENTINEL
+    : (state.checkbox[key] ?? []).includes(OTHER_SENTINEL);
+}
+
+/** A radio question answers with its "Type your own" text once that option is picked. */
 export function radioAnswer(state: FormState, key: string): string {
   const selected = state.radio[key] ?? "";
   if (selected !== OTHER_SENTINEL) return selected;
   return (state.other[key] ?? "").trim();
+}
+
+/** A checkbox question answers with its picked values, plus its "Type your own" text at the end. */
+export function checkboxAnswer(state: FormState, key: string): string[] {
+  const chosen = state.checkbox[key] ?? [];
+  const values = chosen.filter((value) => value !== OTHER_SENTINEL);
+  const other = (state.other[key] ?? "").trim();
+  if (chosen.includes(OTHER_SENTINEL) && other.length > 0) values.push(other);
+  return values;
 }
 
 export type FormAnswerValue = string | string[] | null;
@@ -132,7 +180,7 @@ export function formAnswerObject(state: FormState, questions: FormQuestion[]): R
         break;
       }
       case "checkbox":
-        answer[key] = [...(state.checkbox[key] ?? [])];
+        answer[key] = checkboxAnswer(state, key);
         break;
       case "text":
         answer[key] = (state.text[key] ?? "").trim();
@@ -147,18 +195,62 @@ export function formAnswerPayload(state: FormState, questions: FormQuestion[]): 
   return { value: formAnswerObject(state, questions) };
 }
 
+export function isRequiredSatisfied(state: FormState, question: FormQuestion, index: number): boolean {
+  if (!isQuestionRequired(question)) return true;
+  const key = formQuestionKey(question, index);
+  switch (question.type) {
+    case "radio":
+      return radioAnswer(state, key).length > 0;
+    case "checkbox":
+      return checkboxAnswer(state, key).length > 0;
+    case "text":
+      return (state.text[key] ?? "").trim().length > 0;
+  }
+}
+
 /** Every `required` question must carry an answer before submit is allowed. */
 export function isFormComplete(state: FormState, questions: FormQuestion[]): boolean {
-  return questions.every((question, index) => {
-    if (!question.required) return true;
-    const key = formQuestionKey(question, index);
-    switch (question.type) {
-      case "radio":
-        return radioAnswer(state, key).length > 0;
-      case "checkbox":
-        return (state.checkbox[key] ?? []).length > 0;
-      case "text":
-        return (state.text[key] ?? "").trim().length > 0;
-    }
-  });
+  return questions.every((question, index) => isRequiredSatisfied(state, question, index));
+}
+
+/**
+ * Whether the footer's primary action is allowed: mid-way it only needs the
+ * current question, on the last (or only) one it needs the whole form
+ * (`PickyAskUserQuestionStepper.isPrimaryEnabled`).
+ */
+export function isPrimaryEnabled(state: FormState, questions: FormQuestion[], step: number): boolean {
+  const current = questions[step];
+  if (!usesSteps(questions) || step >= questions.length - 1 || !current) return isFormComplete(state, questions);
+  return isRequiredSatisfied(state, current, step);
+}
+
+/** Short answer for a finished step's chip: the first chosen label and how many more. */
+export interface DisplayAnswer {
+  first: string;
+  more: number;
+}
+
+export function displayAnswer(state: FormState, question: FormQuestion, index: number): DisplayAnswer | null {
+  const key = formQuestionKey(question, index);
+  const options = question.options ?? [];
+  const label = (value: string): string => options.find((option) => option.value === value)?.label ?? value;
+  const labels =
+    question.type === "radio"
+      ? [label(radioAnswer(state, key))]
+      : question.type === "checkbox"
+        ? checkboxAnswer(state, key).map(label)
+        : [(state.text[key] ?? "").trim()];
+  const chosen = labels.filter((entry) => entry.length > 0);
+  const first = chosen[0];
+  return first === undefined ? null : { first, more: chosen.length - 1 };
+}
+
+/**
+ * One line of what the user answered, for the collapsed bubble. The rows come
+ * from the daemon (`extensionUiAnswerRows`), so the phone shows the same answer
+ * text the HUD does.
+ */
+export function answerSummary(rows: PickyQuestionAnswerRow[] | undefined): string | null {
+  const values = (rows ?? []).map((row) => row.value.trim()).filter((value) => value.length > 0);
+  return values.length > 0 ? values.join(" · ") : null;
 }

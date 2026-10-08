@@ -308,6 +308,27 @@ export function CheckCircle({ size = 11, class: className }: IconProps): JSX.Ele
   );
 }
 
+/** Waiting question. The HUD marks a pending question with the same symbol. */
+export function QuestionCircle({ size = 13, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("questionmark.circle", size, className)} viewBox="0 0 14 14">
+      <circle cx="7" cy="7" r="5.8" fill="none" stroke="currentColor" stroke-width={1.3} />
+      <path d="M5.3 5.4a1.75 1.75 0 1 1 2.4 1.6c-.5.2-.7.5-.7 1v.3" fill="none" stroke="currentColor" stroke-width={1.3} stroke-linecap="round" />
+      <circle cx="7" cy="10.1" r="0.75" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Skipped question: answered with nothing, not failed. */
+export function MinusCircle({ size = 13, class: className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps("minus.circle", size, className)} viewBox="0 0 14 14">
+      <circle cx="7" cy="7" r="5.8" fill="none" stroke="currentColor" stroke-width={1.3} />
+      <path d="M4.6 7h4.8" fill="none" stroke="currentColor" stroke-width={1.4} stroke-linecap="round" />
+    </svg>
+  );
+}
+
 export function Branch({ size = 11, class: className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps("point.3.connected.trianglepath.dotted", size, className)} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width={1.4}>

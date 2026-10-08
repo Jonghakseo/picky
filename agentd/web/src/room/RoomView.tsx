@@ -5,16 +5,18 @@
  * and hands over a `RoomViewModel` plus `RoomActions`; everything below renders
  * from those two alone, so the gallery can drive the same view from fixtures.
  */
-import type { JSX } from "preact";
+import type { JSX, RefObject } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
+import type { PickyExtensionUiRequest } from "../../../src/protocol";
 import type { RemoteCommand } from "../../../src/remote/protocol";
 import { BackgroundWorkFooter } from "./BackgroundWorkFooter";
 import { Composer } from "./composer/Composer";
 import { draftRestoringQueuedInputs } from "./policy/composer";
+import { answerableMethod } from "./policy/question";
 import type { RoomViewProps } from "./contract";
 import { Header } from "./Header";
-import { ArrowDown } from "./icons";
+import { ArrowDown, QuestionCircle } from "./icons";
 import { setLocale, t } from "./i18n";
 import type { QueueEdit } from "./MessageList";
 import { MessageList } from "./MessageList";
@@ -128,6 +130,20 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
     if (ok && archiving) actions.back();
   }
 
+  // A phone screen is short, so a waiting question scrolls away quickly. The bar
+  // above the composer only points back at it; answering still happens in the bubble.
+  const pending = vm.main ? vm.main.pendingQuestion : vm.session?.pendingExtensionUiRequest;
+  const waiting = pending && answerableMethod(pending) ? pending : undefined;
+  const questionOffscreen = useOffscreenQuestion(waiting?.id, scroll, signature);
+
+  function openQuestion(): void {
+    const bubble = questionElement(scroll.current, waiting?.id);
+    if (!bubble) return;
+    bubble.scrollIntoView({ behavior: "smooth", block: "center" });
+    const control = bubble.querySelector<HTMLElement>(".q-opt, .q-field, .q-chip-btn, .q-btn.is-primary");
+    control?.focus({ preventScroll: true });
+  }
+
   const isMain = vm.room.kind === "main";
   const wide = vm.layout === "wide";
   return (
@@ -186,6 +202,18 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
         ) : null}
         {failure ? <div class="composer-note is-error" role="alert">{failure}</div> : null}
         {isMain ? null : <BackgroundWorkFooter session={vm.session} now={now} />}
+        {questionOffscreen && waiting ? (
+          <div class="q-pin">
+            <QuestionCircle class="q-head-icon" />
+            <span class="q-pin-text">
+              <span class="q-pin-status">{t("hud.question.needed")}</span>
+              <span class="q-pin-title">{questionTitle(waiting)}</span>
+            </span>
+            <button class="q-btn is-primary" type="button" onClick={openQuestion}>
+              {t("remote.room.question.answer")}
+            </button>
+          </div>
+        ) : null}
         <Composer
           sessionId={vm.room.id}
           isMain={isMain}
@@ -208,6 +236,50 @@ export function RoomView({ vm, actions }: RoomViewProps): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+function questionElement(scroll: HTMLDivElement | null, questionId: string | undefined): HTMLElement | null {
+  if (!scroll || !questionId) return null;
+  const bubbles = scroll.querySelectorAll<HTMLElement>("[data-question-id]");
+  for (const bubble of Array.from(bubbles)) {
+    if (bubble.dataset.questionId === questionId) return bubble;
+  }
+  return null;
+}
+
+function questionTitle(request: PickyExtensionUiRequest): string {
+  const first = request.questions?.[0];
+  return request.title ?? request.prompt ?? first?.prompt ?? first?.label ?? "";
+}
+
+/**
+ * Whether the waiting question's bubble is out of the transcript's view. The
+ * signature re-runs the lookup after the transcript redraws, so the bar also
+ * appears for a question that arrives while the user is reading older messages.
+ */
+function useOffscreenQuestion(questionId: string | undefined, scroll: RefObject<HTMLDivElement | null>, signature: string): boolean {
+  const [offscreen, setOffscreen] = useState(false);
+  useEffect(() => {
+    const root = scroll.current;
+    const target = questionElement(root, questionId);
+    if (!root || !target || typeof IntersectionObserver === "undefined") {
+      setOffscreen(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[entries.length - 1];
+        if (entry) setOffscreen(!entry.isIntersecting);
+      },
+      // A question peeking over the bottom edge is not answerable yet, so the
+      // last 64px of the transcript do not count as "in view".
+      { root, threshold: 0, rootMargin: "0px 0px -64px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionId, signature]);
+  return questionId === undefined ? false : offscreen;
 }
 
 /** Wall clock for elapsed times; it only ticks while something is actually live. */

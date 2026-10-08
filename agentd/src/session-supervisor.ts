@@ -22,7 +22,7 @@ import { makeAnnotationOverlayRequestForContext, makePointerOverlayRequestForCon
 import { awaitPendingRuntimeHandle, createPendingRuntimeHandle } from "./application/pending-runtime-handle.js";
 import { readRecentPinnedSourceState, snapshotPiSessionFile } from "./application/pinned-session-source.js";
 import { TerminalSessionCoordinator } from "./application/terminal-session-coordinator.js";
-import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
+import { extensionUiAnswerRows, summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyAnnotationOverlayRequest, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyQueueItem, PickyQueueMode, PickyScheduledMessage, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-overlay-request.js";
@@ -1755,6 +1755,8 @@ export class SessionSupervisor extends EventEmitter {
       : pendingAfterAnswer?.id === requestId ? pendingAfterAnswer : undefined;
     const summary = answered ? summarizeExtensionUiAnswer(answered, value) : undefined;
     if (summary) await this.appendLog(sessionId, `${EXTENSION_ANSWER_PREFIX}${summary}`);
+    const answerRows = answered ? extensionUiAnswerRows(answered, value) : undefined;
+    if (answerRows) await this.messageBuilder.recordExtensionAnswer(sessionId, requestId, answerRows);
     // The extension may open a follow-up dialog immediately after receiving this
     // answer (e.g. /delay-list picks an entry, then asks what to do with it). That
     // dialog patches pendingExtensionUiRequest concurrently, so the clear below

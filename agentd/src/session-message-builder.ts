@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { hasActivity } from "./domain/activity-summary.js";
 import { stripAnsiEscapeSequences } from "./domain/ansi.js";
 import { toolImageMessage } from "./domain/tool-image-message.js";
-import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickySessionMessage, PickySubagentInvocation, PickyToolImage } from "./protocol.js";
+import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyCompactionResult, PickyExtensionUiRequest, PickyMessagePresentation, PickyQuestionAnswerRow, PickySessionMessage, PickySubagentInvocation, PickyToolImage } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -131,6 +131,13 @@ export class SessionMessageBuilder {
       question: request,
       ...(cancelledAt ? { cancelledAt } : {}),
     });
+  }
+
+  async recordExtensionAnswer(sessionId: string, requestId: string, answerRows: PickyQuestionAnswerRow[]): Promise<void> {
+    const state = this.stateFor(sessionId);
+    const entry = state.journal.find((candidate) => candidate.message.id === requestId);
+    if (!entry || state.removedIds.has(requestId) || entry.message.cancelledAt) return;
+    await this.replaceInternal(sessionId, requestId, { ...entry.message, answerRows });
   }
 
   async recordExtensionNotification(sessionId: string, request: PickyExtensionUiRequest): Promise<void> {

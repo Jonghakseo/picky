@@ -176,6 +176,12 @@ struct PickyToolImage: Codable, Equatable {
     var mimeType: String? = nil
 }
 
+/// One "label · answer" line agentd records on an answered question message.
+struct PickyQuestionAnswerRow: Codable, Equatable {
+    let label: String
+    let value: String
+}
+
 struct PickySessionMessage: Codable, Equatable, Identifiable {
     let id: String
     let kind: PickySessionMessageKind
@@ -205,6 +211,8 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     var toolImage: PickyToolImage? = nil
     /// Set only on entries Picky itself authored; see `PickyMessagePresentationCode`.
     var presentation: PickyMessagePresentation? = nil
+    /// What the user answered on an `agentQuestion`, shown in the collapsed bubble.
+    var answerRows: [PickyQuestionAnswerRow]? = nil
 }
 
 extension PickySessionMessage {

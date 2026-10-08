@@ -1,4 +1,4 @@
-import type { PickyExtensionUiRequest } from "../protocol.js";
+import type { PickyExtensionUiRequest, PickyQuestionAnswerRow } from "../protocol.js";
 
 export function mapExtensionUiRequest(rawRequest: Record<string, unknown>): PickyExtensionUiRequest {
   return rawRequest as PickyExtensionUiRequest;
@@ -37,6 +37,44 @@ export function summarizeExtensionUiAnswer(request: PickyExtensionUiRequest, raw
       if (!isPlainObject(inner)) return undefined;
       return summarizeAskUserQuestion(request.questions ?? [], inner);
     }
+    case "notify":
+    case "setStatus":
+    case "setWidget":
+    case "setTitle":
+    case "set_editor_text":
+      return undefined;
+  }
+}
+
+/**
+ * Answer rows the question bubble shows after the user answered: one row per
+ * askUserQuestion question (short label + chosen labels), or a single unlabeled
+ * row for select/input. `undefined` for confirm, cancellations, and empty answers.
+ */
+export function extensionUiAnswerRows(request: PickyExtensionUiRequest, rawValue: unknown): PickyQuestionAnswerRow[] | undefined {
+  if (isCancelled(rawValue)) return undefined;
+  switch (request.method) {
+    case "select":
+    case "input":
+    case "editor": {
+      const text = trimString(unwrapValue(rawValue));
+      return text ? [{ label: "", value: text }] : undefined;
+    }
+    case "askUserQuestion": {
+      const inner = unwrapValue(rawValue);
+      const questions = request.questions ?? [];
+      if (!isPlainObject(inner) || questions.length === 0) return undefined;
+      const rows: PickyQuestionAnswerRow[] = [];
+      questions.forEach((question, index) => {
+        const key = questionKey(question, index);
+        const value = key in inner ? formatQuestionAnswer(inner[key], question.options ?? []) : undefined;
+        if (!value) return;
+        const label = (question.label ?? question.prompt ?? "").trim();
+        rows.push({ label: questions.length === 1 ? "" : label, value });
+      });
+      return rows.length ? rows : undefined;
+    }
+    case "confirm":
     case "notify":
     case "setStatus":
     case "setWidget":

@@ -2,24 +2,27 @@
 //  CompanionPanelFeedbackView.swift
 //  Picky
 //
-//  Feedback form rendered inside the Settings tab. Posts a Slack-formatted
-//  message to the configured Bot Token + channel, optionally attaching a
-//  diagnostics zip the user opted into.
+//  Feedback form rendered inside the Settings tab. Pressing Send stores the
+//  submission in the durable outbox and closes the form; collecting
+//  diagnostics and posting to Slack happen afterwards in
+//  `PickyFeedbackOutboxCenter`, which also owns retries and restart recovery.
 //
 
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private struct PickyFeedbackMediaAttachmentError: Error {
-    let technicalDescription: String
-}
-
 enum PickyFeedbackSendErrorDescription {
     /// Detailed backend failures stay in the diagnostic log; this copy is not
     /// shown to users because Slack codes and transport details are not useful
     /// recovery guidance.
     static func technicalDescription(_ error: Error) -> String {
+        if let uncertain = error as? PickyFeedbackDeliveryUncertainError {
+            return "Publish outcome unknown. \(technicalDescription(uncertain.underlying))"
+        }
+        if let outboxError = error as? PickyFeedbackOutboxError {
+            return outboxError.technicalDescription
+        }
         if let sendError = error as? PickyFeedbackSendError {
             switch sendError {
             case .notConfigured:
@@ -30,6 +33,8 @@ enum PickyFeedbackSendErrorDescription {
                 return "Couldn't send (HTTP \(code) at \(detail))."
             case .slackError(let detail):
                 return "Slack rejected the request: \(detail)"
+            case .malformedResponse(let detail):
+                return "Slack's answer could not be read (\(detail))."
             case .transport(let detail):
                 return "Couldn't send. \(detail)"
             }
@@ -40,18 +45,19 @@ enum PickyFeedbackSendErrorDescription {
                 return "Couldn't package diagnostics: \(detail)"
             }
         }
-        if let mediaError = error as? PickyFeedbackMediaAttachmentError {
-            return "Couldn't prepare attachment: \(mediaError.technicalDescription)"
-        }
         return "Couldn't send. \(error.localizedDescription)"
     }
 
     static func userMessage(_ error: Error) -> String {
+        if let uncertain = error as? PickyFeedbackDeliveryUncertainError {
+            _ = uncertain
+            return L10n.t("feedback.outbox.uncertain.reason")
+        }
+        if error is PickyFeedbackOutboxError {
+            return L10n.t("feedback.outbox.enqueueFailed")
+        }
         if error is PickyDiagnosticsBundleError {
             return L10n.t("feedback.sendFailure.diagnostics")
-        }
-        if error is PickyFeedbackMediaAttachmentError {
-            return L10n.t("feedback.sendFailure.attachment")
         }
         if let sendError = error as? PickyFeedbackSendError {
             switch sendError {
@@ -59,7 +65,7 @@ enum PickyFeedbackSendErrorDescription {
                 return L10n.t("feedback.sendFailure.connection")
             case .httpStatus(_, let detail) where detail == "upload":
                 return L10n.t("feedback.sendFailure.attachment")
-            case .notConfigured, .emptyMessage, .httpStatus, .slackError:
+            case .notConfigured, .emptyMessage, .httpStatus, .slackError, .malformedResponse:
                 return L10n.t("feedback.sendFailure.service")
             }
         }
@@ -70,7 +76,10 @@ enum PickyFeedbackSendErrorDescription {
 struct CompanionPanelFeedbackView: View {
     @Environment(\.pickyHubTypographyEnabled) private var usesHubTypography
     @ObservedObject var viewModel: PickySettingsViewModel
-    var onSendSucceeded: () -> Void = {}
+    @ObservedObject var outbox: PickyFeedbackOutboxCenter = .shared
+    /// Called once the submission is durably stored, not once Slack confirms
+    /// it. The host closes the form here.
+    var onSubmitted: () -> Void = {}
 
     @State private var category: PickyFeedbackCategory = .bug
     @State private var message: String = ""
@@ -79,6 +88,9 @@ struct CompanionPanelFeedbackView: View {
     @State private var attachmentScope: AttachmentScope = .logsOnly
     @State private var sendState = PickyFeedbackSendStateMachine()
     @State private var statusResetTask: Task<Void, Never>?
+    /// Identity of the draft currently on screen. Carrying it into the outbox
+    /// makes a repeated Send land on the same job instead of queueing a copy.
+    @State private var submissionID = UUID()
 
     private let isConfigured = PickyFeedbackConfiguration.isConfigured
 
@@ -160,6 +172,9 @@ struct CompanionPanelFeedbackView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if !outbox.items.isEmpty {
+                PickyFeedbackOutboxSection(outbox: outbox)
+            }
             categoryPicker
             messageEditor
             mediaAttachmentPicker
@@ -358,24 +373,19 @@ struct CompanionPanelFeedbackView: View {
         HStack(spacing: 8) {
             if status == .sent {
                 HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: "clock.arrow.circlepath")
                         .pickyFont(size: 10, weight: .semibold)
-                        .foregroundColor(DS.Colors.successText)
-                    Text("feedback.sent")
+                        .foregroundColor(DS.Colors.textSecondary)
+                    Text("feedback.queued")
                         .pickyFont(size: 11, weight: .medium)
-                        .foregroundColor(DS.Colors.successText)
+                        .foregroundColor(DS.Colors.textSecondary)
                 }
             }
             Spacer()
             if !status.isFailed {
                 Button(action: send) {
                     HStack(spacing: 6) {
-                        if status == .sending {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .scaleEffect(0.7)
-                        }
-                        Text(status == .sending ? "feedback.sending" : "feedback.send")
+                        Text("feedback.send")
                             .pickyFont(size: 11.5, weight: .semibold)
                     }
                     .foregroundColor(DS.Colors.accentText)
@@ -549,31 +559,42 @@ struct CompanionPanelFeedbackView: View {
         ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
     }
 
+    /// Durably stores the submission and hands it to the app-owned outbox.
+    /// Nothing is uploaded here, so the form can close right away; a throw
+    /// means nothing was stored and the draft must stay on screen.
     private func send() {
         guard isSendEnabled, sendState.beginSending() else { return }
         statusResetTask?.cancel()
         statusResetTask = nil
 
-        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let payload = PickyFeedbackPayload(
+        let draft = PickyFeedbackOutboxDraft(
+            submissionID: submissionID,
             category: category,
-            message: trimmed,
+            message: message.trimmingCharacters(in: .whitespacesAndNewlines),
             appVersion: appVersion,
             appBuild: appBuild,
             osVersion: osVersionString,
-            sentAt: Date()
+            requestedAt: Date(),
+            diagnosticsScope: attachmentScope.bundleScope,
+            attachmentSources: selectedMediaAttachments.map(\.url)
         )
-        let scope = attachmentScope.bundleScope
-        let mediaSelection = selectedMediaAttachments
-        let job = FeedbackSendJob(payload: payload, diagnosticsScope: scope, mediaSelection: mediaSelection)
 
-        // The job intentionally continues if the panel closes. Its completion
-        // only updates this transient view state; no feedback draft is persisted.
+        // Copying the attachments can be hundreds of megabytes; the outbox
+        // does that off the main actor and the form stays responsive while
+        // `status == .sending` blocks a second submit. Deliberately not tied
+        // to the view's lifetime: once the user pressed Send, the snapshot has
+        // to finish even if the panel goes away.
         Task { @MainActor in
-            let result = await Task.detached(priority: .utility) {
-                await job.run()
-            }.value
-            completeSend(result)
+            do {
+                try await outbox.enqueue(draft)
+                submissionID = UUID()
+                completeSend(.success(()))
+            } catch {
+                NSLog("Picky feedback enqueue failed: \(PickyFeedbackSendErrorDescription.technicalDescription(error))")
+                completeSend(.failure(PickyFeedbackSendFailure(
+                    message: PickyFeedbackSendErrorDescription.userMessage(error)
+                )))
+            }
         }
     }
 
@@ -584,7 +605,7 @@ struct CompanionPanelFeedbackView: View {
             selectedMediaAttachments = []
             mediaAttachmentNotice = nil
             scheduleSentStatusReset()
-            onSendSucceeded()
+            onSubmitted()
         case .preserve:
             break
         }
@@ -596,106 +617,6 @@ struct CompanionPanelFeedbackView: View {
             try? await Task.sleep(nanoseconds: 2_400_000_000)
             guard !Task.isCancelled else { return }
             sendState.resetSentStatus()
-        }
-    }
-
-    private struct FeedbackSendJob: Sendable {
-        var payload: PickyFeedbackPayload
-        var diagnosticsScope: PickyDiagnosticsBundleScope?
-        var mediaSelection: [SelectedMediaAttachment]
-
-        nonisolated func run() async -> Result<Void, PickyFeedbackSendFailure> {
-            do {
-                var attachments: [PickyFeedbackAttachment] = []
-                if let diagnosticsScope {
-                    attachments.append(try buildAttachment(scope: diagnosticsScope, payload: payload))
-                }
-                attachments.append(contentsOf: try buildMediaAttachments(from: mediaSelection))
-                try await PickyFeedbackSender().send(payload, attachments: attachments)
-                return .success(())
-            } catch {
-                let technicalDescription = PickyFeedbackSendErrorDescription.technicalDescription(error)
-                NSLog("Picky feedback send failed: \(technicalDescription)")
-                return .failure(PickyFeedbackSendFailure(message: PickyFeedbackSendErrorDescription.userMessage(error)))
-            }
-        }
-
-        nonisolated private func buildAttachment(
-            scope: PickyDiagnosticsBundleScope,
-            payload: PickyFeedbackPayload
-        ) throws -> PickyFeedbackAttachment {
-            let metadata = PickyDiagnosticsBundleMetadata(
-                appVersion: payload.appVersion,
-                appBuild: payload.appBuild,
-                osVersion: payload.osVersion,
-                generatedAt: payload.sentAt
-            )
-            let bundle = try PickyDiagnosticsBundleBuilder.build(scope: scope, metadata: metadata)
-            defer {
-                let parent = bundle.zipURL.deletingLastPathComponent()
-                try? FileManager.default.removeItem(at: parent)
-            }
-            let data = try Data(contentsOf: bundle.zipURL)
-            return PickyFeedbackAttachment(filename: bundle.filename, data: data, kind: .diagnostics)
-        }
-
-        nonisolated private func buildMediaAttachments(from selection: [SelectedMediaAttachment]) throws -> [PickyFeedbackAttachment] {
-            do {
-                guard selection.count <= MediaAttachmentPolicy.maxCount else {
-                    throw MediaAttachmentError.tooMany
-                }
-
-                var totalBytes = 0
-                var attachments: [PickyFeedbackAttachment] = []
-                for selected in selection {
-                    let refreshed = try selectedMediaAttachment(from: selected.url)
-                    totalBytes += refreshed.byteCount
-                    guard totalBytes <= MediaAttachmentPolicy.maxTotalBytes else {
-                        throw MediaAttachmentError.totalTooLarge(totalBytes)
-                    }
-                    attachments.append(PickyFeedbackAttachment(
-                        filename: refreshed.filename,
-                        fileURL: refreshed.url,
-                        byteCount: refreshed.byteCount,
-                        kind: .media
-                    ))
-                }
-                return attachments
-            } catch {
-                throw PickyFeedbackMediaAttachmentError(technicalDescription: error.localizedDescription)
-            }
-        }
-
-        nonisolated private func selectedMediaAttachment(from url: URL) throws -> SelectedMediaAttachment {
-            let standardizedURL = url.standardizedFileURL
-            let filename = standardizedURL.lastPathComponent
-            let values = try standardizedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
-            if values.isRegularFile == false {
-                throw MediaAttachmentError.notRegularFile(filename)
-            }
-
-            let type = values.contentType ?? UTType(filenameExtension: standardizedURL.pathExtension)
-            let kind = type.map(mediaAttachmentKind(for:)) ?? .file
-
-            let byteCount = try fileByteCount(for: standardizedURL, resourceValues: values)
-            guard byteCount <= MediaAttachmentPolicy.maxFileBytes else {
-                throw MediaAttachmentError.fileTooLarge(filename, byteCount)
-            }
-
-            return SelectedMediaAttachment(url: standardizedURL, filename: filename, byteCount: byteCount, kind: kind)
-        }
-
-        nonisolated private func mediaAttachmentKind(for type: UTType) -> MediaAttachmentKind {
-            if type.conforms(to: .image) { return .image }
-            if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
-            return .file
-        }
-
-        nonisolated private func fileByteCount(for url: URL, resourceValues: URLResourceValues) throws -> Int {
-            if let fileSize = resourceValues.fileSize { return fileSize }
-            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-            if let size = attributes[.size] as? NSNumber { return size.intValue }
-            return 0
         }
     }
 }

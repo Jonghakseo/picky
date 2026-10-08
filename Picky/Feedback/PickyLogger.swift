@@ -31,6 +31,7 @@ enum PickyLog {
         case markdown = "markdown"
         case annotationScene = "annotation-scene"
         case contextCapture = "context-capture"
+        case feedback = "feedback"
         case latency = "latency"
         case permission = "permission"
     }

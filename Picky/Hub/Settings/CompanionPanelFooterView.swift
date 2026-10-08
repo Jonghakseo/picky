@@ -162,9 +162,16 @@ private struct CompanionPanelDockVisibilityButton: View {
 /// same primary-on-hover treatment) so it reads as part of the
 /// footer's icon row rather than a separate CTA. The actual routing lives in
 /// the parent so this stays a leaf view.
+///
+/// A dot marks feedback that stopped before Slack confirmed it. Since Send
+/// closes the form, this is the only place outside the form where an
+/// unfinished submission stays visible, and it needs no system permission.
 struct CompanionPanelFeedbackGlyphButton: View {
     var onTap: () -> Void
+    @ObservedObject var outbox: PickyFeedbackOutboxCenter = .shared
     @State private var isHovering = false
+
+    private var needsAttention: Bool { outbox.needsAttentionCount > 0 }
 
     var body: some View {
         Button(action: onTap) {
@@ -172,13 +179,27 @@ struct CompanionPanelFeedbackGlyphButton: View {
                 .pickyFont(size: 10.5, weight: .semibold)
                 .foregroundColor(isHovering ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 .frame(width: 18, height: 18)
+                .overlay(alignment: .topTrailing) {
+                    if needsAttention {
+                        Circle()
+                            .fill(DS.Colors.destructiveText)
+                            .frame(width: 5, height: 5)
+                            .offset(x: 1, y: -1)
+                    }
+                }
         }
         .buttonStyle(CompanionPanelIconActionStyle())
-        .help("footer.feedback.accessibilityLabel")
-        .accessibilityLabel(Text("footer.feedback.accessibilityLabel"))
+        .help(helpText)
+        .accessibilityLabel(Text(helpText))
         .onHover { hovering in
             isHovering = hovering
         }
+    }
+
+    private var helpText: String {
+        needsAttention
+            ? L10n.t("footer.feedback.unsent.accessibilityLabel")
+            : L10n.t("footer.feedback.accessibilityLabel")
     }
 }
 

@@ -17,7 +17,7 @@
 
 import Foundation
 
-enum PickyFeedbackCategory: String, CaseIterable, Identifiable, Sendable {
+enum PickyFeedbackCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     case bug
     case idea
     case other
@@ -100,6 +100,34 @@ enum PickyFeedbackSendError: Error, Equatable {
     case transport(String)
     case httpStatus(Int, String)
     case slackError(String)
+    /// A 2xx response that is not a Slack envelope with `ok: true`, and not an
+    /// explicit rejection either. Whether the call took effect is unknown.
+    case malformedResponse(String)
+}
+
+/// Thrown when the request that publishes the message to the channel failed
+/// without a definitive answer. The message may already be in Slack, so the
+/// outbox must not retry it on its own.
+struct PickyFeedbackDeliveryUncertainError: Error, Equatable {
+    var underlying: PickyFeedbackSendError
+
+    /// A publish attempt that was rejected (4xx, or Slack's own `ok: false`)
+    /// definitely did not post; anything else leaves the outcome unknown.
+    static func wrapIfUncertain(_ error: Error) -> Error {
+        guard let sendError = error as? PickyFeedbackSendError else {
+            return PickyFeedbackDeliveryUncertainError(underlying: .transport(error.localizedDescription))
+        }
+        switch sendError {
+        case .transport, .malformedResponse:
+            // An unreadable answer to a publish request says nothing about
+            // whether Slack posted the message.
+            return PickyFeedbackDeliveryUncertainError(underlying: sendError)
+        case .httpStatus(let code, _) where code >= 500:
+            return PickyFeedbackDeliveryUncertainError(underlying: sendError)
+        case .notConfigured, .emptyMessage, .httpStatus, .slackError:
+            return sendError
+        }
+    }
 }
 
 protocol PickyFeedbackTransport {
@@ -134,15 +162,20 @@ struct PickyFeedbackSender {
     var botToken: String
     var channelID: String
     var transport: PickyFeedbackTransport
+    /// Outbox job this send belongs to. Stage timings are logged under it so a
+    /// later report shows which step was slow without exposing any content.
+    var correlationID: String?
 
     init(
         botToken: String = PickyFeedbackConfiguration.botToken,
         channelID: String = PickyFeedbackConfiguration.channelID,
-        transport: PickyFeedbackTransport = PickyURLSessionFeedbackTransport()
+        transport: PickyFeedbackTransport = PickyURLSessionFeedbackTransport(),
+        correlationID: String? = nil
     ) {
         self.botToken = botToken
         self.channelID = channelID
         self.transport = transport
+        self.correlationID = correlationID
     }
 
     func send(_ payload: PickyFeedbackPayload, attachment: PickyFeedbackAttachment? = nil) async throws {
@@ -176,7 +209,11 @@ struct PickyFeedbackSender {
             "text": messageText,
             "mrkdwn": true
         ])
-        _ = try await runSlackJSON(request: request)
+        do {
+            _ = try await runSlackJSON(request: request)
+        } catch {
+            throw PickyFeedbackDeliveryUncertainError.wrapIfUncertain(error)
+        }
     }
 
     private func sendWithAttachments(messageText: String, attachments: [PickyFeedbackAttachment]) async throws {
@@ -204,10 +241,25 @@ struct PickyFeedbackSender {
             }
 
             // 2. POST the bytes to the returned upload URL. Slack returns 200 with a small body.
+            let uploadStartedAt = Date()
             let (_, uploadResponse) = try await transport.upload(data: data, to: uploadURL)
             guard (200..<300).contains(uploadResponse.statusCode) else {
+                PickyFeedbackStageLog.record(
+                    correlationID: correlationID,
+                    stage: "slack.uploadBytes",
+                    startedAt: uploadStartedAt,
+                    byteCount: data.count,
+                    outcome: .failed("http-\(uploadResponse.statusCode)")
+                )
                 throw PickyFeedbackSendError.httpStatus(uploadResponse.statusCode, "upload")
             }
+            PickyFeedbackStageLog.record(
+                correlationID: correlationID,
+                stage: "slack.uploadBytes",
+                startedAt: uploadStartedAt,
+                byteCount: data.count,
+                outcome: .succeeded
+            )
 
             files.append(["id": fileID, "title": attachment.filename])
         }
@@ -219,7 +271,11 @@ struct PickyFeedbackSender {
             "channel_id": channelID,
             "initial_comment": messageText
         ])
-        _ = try await runSlackJSON(request: completeRequest)
+        do {
+            _ = try await runSlackJSON(request: completeRequest)
+        } catch {
+            throw PickyFeedbackDeliveryUncertainError.wrapIfUncertain(error)
+        }
     }
 
     private func slackJSONRequest(path: String) -> URLRequest {
@@ -242,25 +298,56 @@ struct PickyFeedbackSender {
     /// when HTTP status is non-2xx, when JSON parsing fails, or when Slack's
     /// own envelope returns `ok: false`.
     private func runSlackJSON(request: URLRequest) async throws -> [String: Any] {
+        let stage = "slack." + (request.url?.lastPathComponent ?? "request")
+        let startedAt = Date()
+        let requestBytes = request.httpBody?.count ?? 0
+
+        func fail(_ error: PickyFeedbackSendError, _ code: String) -> PickyFeedbackSendError {
+            PickyFeedbackStageLog.record(
+                correlationID: correlationID,
+                stage: stage,
+                startedAt: startedAt,
+                byteCount: requestBytes,
+                outcome: .failed(code)
+            )
+            return error
+        }
+
         let (data, response): (Data, HTTPURLResponse)
         do {
             (data, response) = try await transport.send(request: request)
         } catch let error as PickyFeedbackSendError {
-            throw error
+            throw fail(error, "transport")
         } catch {
-            throw PickyFeedbackSendError.transport(error.localizedDescription)
+            throw fail(.transport(error.localizedDescription), "transport")
         }
 
         guard (200..<300).contains(response.statusCode) else {
-            throw PickyFeedbackSendError.httpStatus(response.statusCode, request.url?.lastPathComponent ?? "?")
+            throw fail(
+                .httpStatus(response.statusCode, request.url?.lastPathComponent ?? "?"),
+                "http-\(response.statusCode)"
+            )
         }
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw PickyFeedbackSendError.slackError("Malformed Slack response")
+            throw fail(.malformedResponse("unparsable body"), "malformed-response")
         }
-        if let ok = object["ok"] as? Bool, !ok {
+        // Only an explicit `ok: false` is a confirmed rejection. A missing or
+        // non-boolean `ok` is an answer we cannot read, which for a publish
+        // request means the outcome is unknown rather than failed.
+        guard let ok = object["ok"] as? Bool else {
+            throw fail(.malformedResponse("missing ok"), "malformed-response")
+        }
+        if !ok {
             let errorCode = object["error"] as? String ?? "unknown_error"
-            throw PickyFeedbackSendError.slackError(errorCode)
+            throw fail(.slackError(errorCode), "slack-rejected")
         }
+        PickyFeedbackStageLog.record(
+            correlationID: correlationID,
+            stage: stage,
+            startedAt: startedAt,
+            byteCount: requestBytes,
+            outcome: .succeeded
+        )
         return object
     }
 

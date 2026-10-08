@@ -25808,13 +25808,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download and install it from the update window."
+            "value": "Updating downloads the newest version, then restarts Picky."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "업데이트 창에서 받고 설치해요."
+            "value": "업데이트하면 최신 버전을 받은 뒤 Picky를 재시작해요."
           }
         }
       }
@@ -25840,13 +25840,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Try again to continue in the update window."
+            "value": "Try again in a moment."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 시도하면 업데이트 창에서 이어서 진행해요."
+            "value": "잠시 뒤 다시 시도해 주세요."
           }
         }
       }
@@ -25895,22 +25895,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "재시작하는 중…"
-          }
-        }
-      }
-    },
-    "hub.dashboard.update.openWindow": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Update"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "업데이트"
           }
         }
       }
@@ -25975,38 +25959,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "재시작하면 진행 중인 응답이 멈춰요. 대화 기록은 그대로 남아요."
-          }
-        }
-      }
-    },
-    "hub.settings.autoDownloadUpdates": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download updates automatically"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "업데이트 자동으로 받기"
-          }
-        }
-      }
-    },
-    "hub.settings.autoDownloadUpdates.detail": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Downloads new versions in the background so you can update from the dashboard in one click. Requires automatic update checks."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "새 버전을 미리 받아 두고, 대시보드에서 버튼 한 번으로 업데이트해요. 자동 업데이트 확인이 켜져 있어야 해요."
           }
         }
       }
@@ -32608,6 +32560,150 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pickle 독 크기"
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트"
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.checking.button": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 중…"
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.checking.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking for the latest version…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 버전을 확인하는 중…"
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.downloading.button": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받는 중…"
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.downloading.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky asks before it restarts."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재시작하기 전에 다시 물어볼게요."
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.downloading.progress": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded %lld%%"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld%% 받았어요"
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.downloading.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting Picky %@ ready"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky %@ 준비하는 중"
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.upToDate.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You're on the newest version for your channel."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 채널에서 가장 최신 버전이에요."
+          }
+        }
+      }
+    },
+    "hub.dashboard.update.upToDate.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky is up to date"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 버전을 사용 중이에요"
           }
         }
       }

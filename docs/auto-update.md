@@ -15,9 +15,9 @@ single appcast that splits stable and beta into channels.
 | Channels          | Single `appcast.xml` with explicit `<sparkle:channel>` tags on every item          |
 | stable on appcast | Items with `<sparkle:channel>stable</sparkle:channel>` only                        |
 | beta on appcast   | Items with `<sparkle:channel>beta</sparkle:channel>` only                          |
-| Auto check        | ON, every 4 hours (`SUEnableAutomaticChecks`, `SUScheduledCheckInterval=14400`)    |
-| Auto download     | ON by default (`SUAutomaticallyUpdate`); Hub setting "Download updates automatically" |
-| UX                | Hub dashboard update card with one-click install and relaunch; Sparkle's standard window for manual checks and fallback |
+| Auto check        | ON, every 4 hours — Picky's own timer calling `checkForUpdateInformation()`        |
+| Auto download     | OFF, always. `automaticallyDownloadsUpdates` is forced to `false` on every launch  |
+| UX                | Hub dashboard update card only; Picky implements `SPUUserDriver` and never shows Sparkle's windows |
 | alpha builds      | `SPUUpdater` is **not** started — trusted sideload testers update manually via the next internal alpha zip/package |
 | Settings entry    | `CompanionPanelStatusView` adds an **Updates** section with a read-only channel    |
 | Menu entry        | `Check for Updates…` in the app menu commands                                      |
@@ -48,29 +48,69 @@ stable updates and beta apps on beta updates.
 `alpha` is **not** a Sparkle channel. Builds with `releaseChannel == "alpha"`
 in `PickyBuildInfo.json` skip starting the updater entirely.
 
+## Checking and installing are separate
+
+Picky used to let Sparkle download updates in the background and install the
+stored archive when the user pressed Update. The stored archive goes stale: a
+user who left the notice sitting for a week installed the build from a week
+ago, not the newest one. Worse, returning `YES` from
+`willInstallUpdateOnQuit` stalls Sparkle's update cycle, so that stale archive
+was also the last thing Picky ever found.
+
+The flow now splits in two:
+
+| Step | What runs | What it may do |
+| --- | --- | --- |
+| Periodic check (4 h) and **Check for updates** | `SPUUpdater.checkForUpdateInformation()` | Read the appcast. Never downloads, never shows a window. |
+| **Update** in the Hub | `SPUUpdater.checkForUpdates()` | Fresh appcast read; the item that check returns is downloaded and installed. |
+
+Because the install path re-reads the feed, a release published after the card
+appeared is the one that gets installed. `PickyUpdaterController` owns the
+timer (`scheduledCheckInterval`, 4 hours, first check 20 s after launch) and
+skips a scheduled check while any session is in progress — Sparkle ignores
+`checkForUpdateInformation()` during an active session. A click that lands
+during a running check is remembered and started from
+`updater(_:didFinishUpdateCycleFor:error:)` instead of being dropped.
+
+`SUEnableAutomaticChecks` stays in `Info.plist` so Sparkle never shows its
+permission prompt, but `automaticallyChecksForUpdates` is set to `false` at
+startup: Sparkle's own scheduler would run a full driver that downloads or
+alerts. `automaticallyDownloadsUpdates` is set to `false` at startup too,
+which also overwrites the `SUAutomaticallyUpdate` value persisted for users of
+earlier Picky versions.
+
 ## Dashboard update card
 
-`PickyUpdaterController` feeds Sparkle callbacks into
-`PickyDashboardUpdateState`, and `PickyHubDashboardUpdateCard` renders it
-under the dashboard greeting. UX draft: `docs/prototypes/picky-update-card/`.
+`PickyUpdateUserDriver` is Picky's `SPUUserDriver`; it maps Sparkle callbacks
+onto `PickyUpdateUserDriverHost` (implemented by `PickyUpdaterController`),
+which feeds `PickyDashboardUpdateState`. `PickyHubDashboardUpdateCard` renders
+that state under the dashboard greeting. Sparkle types stop at the driver, so
+the controller and its tests stay Sparkle-free. UX draft:
+`docs/prototypes/picky-update-card/`.
 
-| Sparkle callback | Card | Primary action |
-| ---------------- | ---- | -------------- |
-| `updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)` (returns YES) | Ready | `immediateInstallationBlock()` installs and relaunches |
-| `standardUserDriverWillHandleShowingUpdate(false, …)` (auto download off) | Available | `checkForUpdates()` opens Sparkle's window |
-| `updater(_:failedToDownloadUpdate:error:)` | Failed | Retry through Sparkle's window |
+| State | Card | Primary action |
+| ---- | ---- | -------------- |
+| Information check found a newer version | Available | **Update**: fresh check, then download |
+| A requested check is running | Checking | busy |
+| `showDownloadInitiated` … `showDownloadDidReceiveData` | Getting ready (with %) | busy |
+| `showReadyToInstallAndRelaunch` | Ready | **Update and Restart** |
+| `showUpdaterError`, `updater(_:failedToDownloadUpdate:error:)` | Failed | Retry |
+| A requested check found nothing | Up to date (clears after 8 s) | — |
 
-- Gentle reminders: scheduled finds show Sparkle's alert only when Sparkle
-  proposes immediate focus; otherwise the card is the reminder.
-- Returning YES from `willInstallUpdateOnQuit` stalls further update cycles,
-  and Sparkle still installs on quit, so ignoring the card is safe.
-- Before relaunching, the card asks for confirmation when any Pickle is
-  `running` or `queued`. On restart agentd reloads saved conversations and
-  reattaches or blocks interrupted Pickles.
-- "Later" stores the version in `PickyDashboardDismissedUpdateVersion`; a
-  newer version shows the card again.
-- `SUAutomaticallyUpdate` is only the initial value. Users who already
-  answered Sparkle's automatic-install prompt keep their saved choice.
+- The relaunch answer is never given on Picky's own: the driver holds Sparkle's
+  reply block and calls `confirmReadyUpdateInstall`, which asks when any Pickle
+  is `running` or `queued`. Cancelling leaves the card on **Update and
+  Restart**; the archive stays on disk and Sparkle still installs it on quit.
+  On restart agentd reloads saved conversations and reattaches or blocks
+  interrupted Pickles.
+- Information-only appcast items (`informationOnlyUpdate`) are never
+  downloaded; the card links to their page instead.
+- An archive Sparkle already holds — downloaded by an older Picky, or an
+  interrupted install — is shown as Available rather than installed silently.
+  Those users install that older build; Picky does not cancel it.
+- "Later" stores the version in `PickyDashboardDismissedUpdateVersion`; a newer
+  version shows the card again, and asking for a check clears it so the result
+  of what the user just asked for is always visible.
 
 ## One-time setup
 
@@ -185,8 +225,9 @@ prerelease state, and numeric marketing version before packaging.
      release.
    - Sends a Slack notification to the release channel with direct links to the
      GitHub Release page, DMG asset, and GitHub Actions run.
-3. When users running stable launch the app, Sparkle fetches `appcast.xml`
-   every 4 hours, finds the newest item tagged `stable`, and prompts the user.
+3. When users running stable launch the app, Picky reads `appcast.xml` every
+   4 hours, finds the newest item tagged `stable`, and shows the Hub card.
+   Nothing is downloaded until the user presses Update.
 4. Beta users do the same and get the newest item tagged `beta`.
 
 ## Why a separate zip enclosure (and not the DMG)?
@@ -212,6 +253,9 @@ Without publishing a real release, run a smoke check by:
    ```
 3. Hosting `/tmp/test-appcast.xml` and a higher-version zip locally, then using
    `Check for Updates…` from the menu.
+4. To verify the stale-version fix, raise the version in the local appcast
+   after the card appears, then press **Update**: the newly published version
+   is the one that downloads.
 
 ## Troubleshooting
 

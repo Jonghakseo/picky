@@ -19,8 +19,7 @@ struct PickyHubDashboardUpdateCard: View {
             actions: .init(
                 // Same path as the Check for Updates buttons, including the
                 // restart confirmation owned by the app delegate.
-                install: updaterController.runUpdateButtonAction,
-                openUpdateWindow: updaterController.openUpdateWindow,
+                update: updaterController.runUpdateButtonAction,
                 openReleaseNotes: updaterController.openReleaseNotes,
                 dismiss: updaterController.dismissDashboardUpdate
             )
@@ -60,8 +59,8 @@ enum PickyHubUpdateInstallConfirmation {
 
 struct PickyHubUpdateNoticeView: View {
     struct Actions {
-        let install: () -> Void
-        let openUpdateWindow: () -> Void
+        /// Runs the card's primary action: check, update, or install.
+        let update: () -> Void
         let openReleaseNotes: () -> Void
         let dismiss: () -> Void
     }
@@ -82,10 +81,13 @@ struct PickyHubUpdateNoticeView: View {
     }
 
     private func content(card: PickyDashboardUpdateState.Card) -> some View {
-        let isError = card == .downloadFailed
-        let tint = isError ? PickyHubTheme.Colors.danger : PickyHubTheme.Colors.action
+        let isError = card == .failed
+        let isUpToDate = card == .upToDate
+        let tint = isError
+            ? PickyHubTheme.Colors.danger
+            : (isUpToDate ? PickyHubTheme.Colors.success : PickyHubTheme.Colors.action)
         return HStack(alignment: .center, spacing: PickyHubTheme.Spacing.field) {
-            Image(systemName: isError ? "exclamationmark.circle" : "arrow.down")
+            Image(systemName: icon(card: card))
                 .pickyFont(size: 15, weight: .semibold)
                 .foregroundColor(PickyHubTheme.Colors.textOnAction)
                 .frame(width: 36, height: 36)
@@ -97,19 +99,21 @@ struct PickyHubUpdateNoticeView: View {
                         .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
                         .foregroundColor(PickyHubTheme.Colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !isError, let version = state.version {
+                    if showsVersionBadge(card: card), let version = state.version {
                         PickyHubBadgePill(text: "\(currentVersion) → \(version)")
                             .accessibilityLabel(L10n.t("hub.dashboard.update.versionBadge", currentVersion, version))
                     }
                 }
-                Text(detailKey(card: card))
-                    .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
-                    .foregroundColor(PickyHubTheme.Colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let detail = detail(card: card) {
+                    Text(detail)
+                        .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
+                        .foregroundColor(PickyHubTheme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: PickyHubTheme.Spacing.related)
-            actionButtons(card: card, hasNotes: state.releaseNotesURL != nil)
+            actionButtons(card: card)
         }
         .padding(.vertical, PickyHubTheme.Spacing.field)
         .padding(.leading, PickyHubTheme.Spacing.cardInset)
@@ -123,42 +127,87 @@ struct PickyHubUpdateNoticeView: View {
     }
 
     @ViewBuilder
-    private func actionButtons(card: PickyDashboardUpdateState.Card, hasNotes: Bool) -> some View {
+    private func actionButtons(card: PickyDashboardUpdateState.Card) -> some View {
         HStack(spacing: PickyHubTheme.Spacing.related) {
-            if card != .installing {
+            if allowsDismiss(card: card) {
                 PickyHubTextLink(title: "hub.dashboard.update.later", action: actions.dismiss)
             }
-            if hasNotes, card == .ready || card == .needsUpdateWindow {
+            if showsReleaseNotesButton(card: card) {
                 PickyHubButton(title: "hub.dashboard.update.releaseNotes", role: .secondary, action: actions.openReleaseNotes)
             }
             switch card {
+            case .available:
+                PickyHubButton(
+                    title: state.isInformationOnly ? "hub.dashboard.update.releaseNotes" : "hub.dashboard.update.action",
+                    action: actions.update
+                )
             case .ready:
-                PickyHubButton(title: "hub.dashboard.update.install", action: actions.install)
+                PickyHubButton(title: "hub.dashboard.update.install", action: actions.update)
+            case .checking:
+                PickyHubButton(title: "hub.dashboard.update.checking.button", isBusy: true, action: {})
+            case .downloading:
+                PickyHubButton(title: "hub.dashboard.update.downloading.button", isBusy: true, action: {})
             case .installing:
                 PickyHubButton(title: "hub.dashboard.update.installing", isBusy: true, action: {})
-            case .needsUpdateWindow:
-                PickyHubButton(title: "hub.dashboard.update.openWindow", action: actions.openUpdateWindow)
-            case .downloadFailed:
-                PickyHubButton(title: "hub.common.retry", role: .secondary, action: actions.openUpdateWindow)
+            case .failed:
+                PickyHubButton(title: "hub.common.retry", role: .secondary, action: actions.update)
+            case .upToDate:
+                EmptyView()
             }
         }
         .fixedSize()
     }
 
-    private func title(card: PickyDashboardUpdateState.Card, version: String?) -> String {
-        let version = version ?? ""
+    private func icon(card: PickyDashboardUpdateState.Card) -> String {
         switch card {
-        case .ready, .installing: return L10n.t("hub.dashboard.update.ready.title", version)
-        case .needsUpdateWindow: return L10n.t("hub.dashboard.update.available.title", version)
-        case .downloadFailed: return L10n.t("hub.dashboard.update.failed.title")
+        case .failed: return "exclamationmark.circle"
+        case .upToDate: return "checkmark"
+        case .checking: return "arrow.triangle.2.circlepath"
+        default: return "arrow.down"
         }
     }
 
-    private func detailKey(card: PickyDashboardUpdateState.Card) -> LocalizedStringKey {
+    private func showsVersionBadge(card: PickyDashboardUpdateState.Card) -> Bool {
         switch card {
-        case .ready, .installing: "hub.dashboard.update.ready.detail"
-        case .needsUpdateWindow: "hub.dashboard.update.available.detail"
-        case .downloadFailed: "hub.dashboard.update.failed.detail"
+        case .available, .downloading, .ready, .installing: return state.version != nil
+        case .checking, .upToDate, .failed: return false
+        }
+    }
+
+    private func allowsDismiss(card: PickyDashboardUpdateState.Card) -> Bool {
+        switch card {
+        case .available, .ready, .failed: return true
+        case .checking, .downloading, .installing, .upToDate: return false
+        }
+    }
+
+    private func showsReleaseNotesButton(card: PickyDashboardUpdateState.Card) -> Bool {
+        guard state.releaseNotesURL != nil, !state.isInformationOnly else { return false }
+        return card == .available || card == .ready
+    }
+
+    private func title(card: PickyDashboardUpdateState.Card, version: String?) -> String {
+        let version = version ?? ""
+        switch card {
+        case .checking: return L10n.t("hub.dashboard.update.checking.title")
+        case .upToDate: return L10n.t("hub.dashboard.update.upToDate.title")
+        case .available: return L10n.t("hub.dashboard.update.available.title", version)
+        case .downloading: return L10n.t("hub.dashboard.update.downloading.title", version)
+        case .ready, .installing: return L10n.t("hub.dashboard.update.ready.title", version)
+        case .failed: return L10n.t("hub.dashboard.update.failed.title")
+        }
+    }
+
+    private func detail(card: PickyDashboardUpdateState.Card) -> String? {
+        switch card {
+        case .checking: return nil
+        case .upToDate: return L10n.t("hub.dashboard.update.upToDate.detail")
+        case .available: return L10n.t("hub.dashboard.update.available.detail")
+        case .downloading(let progress):
+            guard let progress else { return L10n.t("hub.dashboard.update.downloading.detail") }
+            return L10n.t("hub.dashboard.update.downloading.progress", Int((progress * 100).rounded()))
+        case .ready, .installing: return L10n.t("hub.dashboard.update.ready.detail")
+        case .failed: return L10n.t("hub.dashboard.update.failed.detail")
         }
     }
 }

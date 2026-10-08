@@ -796,8 +796,7 @@ Hub Settings is one scrollable page with jump links for seven groups. The catego
 | Appearance | Light or Dark | Also available from the sidebar footer. |
 | Hub font scale | 90%–130% | Changes Hub controls and text. Report and terminal font scales are separate. |
 | Update channel preference | Stable or Beta | Kept for settings-file compatibility. The installed app bundle determines which updates are eligible, so this setting does not move an installed app between release channels. |
-| Check automatically / Check now | Toggle / button | Controls Sparkle update checks where the installed build supports them. |
-| Download updates automatically | Toggle | Downloads new versions in the background for the Dashboard's one-click **Update and Restart**. |
+| Check automatically / Check now | Toggle / button | Checks every 4 hours for a newer version. Checking only reads the version list; nothing is downloaded until you choose **Update**. |
 
 #### Pi accounts (Accounts and agents)
 
@@ -1036,11 +1035,12 @@ The two completion defaults are independent and do not modify existing Pickles. 
 | Control | Values / behavior |
 | --- | --- |
 | Update channel preference | Stable or Beta. This legacy saved preference does not change the installed build's release channel or update eligibility. Install the matching release artifact to move between Stable, Beta, or Alpha. |
-| Check automatically every 4 hours | Toggle that enables Sparkle automatic checks where the installed build supports them. |
-| Download updates automatically | On by default. Downloads a new version in the background so the Dashboard can install it in one click. Requires automatic checks. If you already chose an automatic-install option in Sparkle's update window, that choice is kept. |
+| Check automatically every 4 hours | Toggle that enables the periodic check. The check only reads the available version; it never downloads. |
 | Check Now | Manual update check when available. |
 
-When a downloaded update is ready, the Dashboard shows **Update and Restart** under the greeting. If any Pickle is still responding, Picky asks first; restarting stops those responses, and conversations are kept. If you choose **Later**, the card stays hidden for that version and the update installs the next time you quit Picky. With automatic download off, the card's **Update** button opens Sparkle's update window instead.
+When a newer version exists, the Dashboard shows it under the greeting. **Update** checks again and downloads the newest version available at that moment, so a release published after the notice appeared is the one you get. The download is reported on the card; when it finishes, Picky asks before restarting if any Pickle is still responding. Restarting stops those responses, and conversations are kept. If you choose **Later**, the card stays hidden for that version.
+
+A version Picky downloaded before this behavior changed still installs the next time you quit.
 
 Alpha builds do not expose Sparkle updates; install the next trusted alpha package manually.
 

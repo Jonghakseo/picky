@@ -674,7 +674,8 @@ struct PickyConversationListView: View {
             isPreparingToolCall: session.isPreparingToolCall,
             autoRetry: session.autoRetry,
             startedAt: turnStart,
-            isAgentResponding: !(session.agentCycle?.phase == .idle || session.agentCycle?.phase == .settled)
+            isAgentResponding: !(session.agentCycle?.phase == .idle || session.agentCycle?.phase == .settled),
+            isRuntimeRestarting: session.runtimeRecovery?.phase == .restarting
         )
     }
 

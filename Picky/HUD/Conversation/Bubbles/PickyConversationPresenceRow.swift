@@ -118,8 +118,11 @@ struct PickyConversationPresencePresentation: Equatable {
         isPreparingToolCall: Bool = false,
         autoRetry: PickyAutoRetryStatus? = nil,
         startedAt: Date?,
-        isAgentResponding: Bool = true
+        isAgentResponding: Bool = true,
+        isRuntimeRestarting: Bool = false
     ) -> Self? {
+        // The restart banner owns that moment; no model is thinking until the new runtime takes input.
+        guard !isRuntimeRestarting else { return nil }
         if isWaitingForInput {
             return Self(phase: .waitingForInput, detail: nil, startedAt: nil)
         }

@@ -106,4 +106,11 @@ struct PickyRuntimeRecoveryBannerPresentationTests {
         #expect(!withoutFile.offersDuplicate)
         #expect(withoutFile.detailKey == "hud.runtimeRecovery.failed.bodyNoDuplicate")
     }
+
+    @Test func noPresenceLineWhileTheRuntimeRestarts() {
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: nil, startedAt: nil, isRuntimeRestarting: true) == nil)
+        #expect(PickyConversationPresencePresentation.make(
+            isRunning: true, isWaitingForInput: false, activeTool: nil, startedAt: nil)?.phase == .thinking)
+    }
 }

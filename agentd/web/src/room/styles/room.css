@@ -822,29 +822,24 @@
   min-height: 44px;
 }
 
+/* One phrase, "19분 동안 완료": status font, secondary text
+ * (PickyActivitySummaryView.disclosureButton). */
 .activity-title {
-  font: var(--hud-type-status-semibold);
-  color: var(--ds-color-text-primary);
+  font: var(--hud-type-status);
+  color: var(--ds-color-text-secondary);
   white-space: nowrap;
 }
 
-.activity-state {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-1);
-  font: var(--hud-type-meta);
-  color: var(--ds-color-text-tertiary);
-}
-
-.activity-state svg {
+.activity-head > svg {
+  flex: none;
   width: var(--hud-size-meta);
   height: var(--hud-size-meta);
-  /* chevron.right, rotated 90° once expanded:
-   * PickyActivitySummaryView.swift:57-59 */
+  color: var(--ds-color-text-tertiary);
+  /* chevron.right, rotated 90 degrees once expanded */
   transform: rotate(0deg);
 }
 
-.activity--expanded .activity-state svg {
+.activity--expanded .activity-head > svg {
   transform: rotate(90deg);
 }
 

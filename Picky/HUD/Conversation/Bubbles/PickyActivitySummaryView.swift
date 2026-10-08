@@ -44,22 +44,16 @@ struct PickyActivitySummaryView: View {
         Button {
             isExpanded.toggle()
         } label: {
-            HStack(spacing: DS.Spacing.space2) {
-                if let durationText {
-                    Text(durationText)
-                        .font(PickyHUDTypography.statusSemibold)
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .lineLimit(1)
-                }
-                HStack(spacing: DS.Spacing.space1) {
-                    Text(L10n.t("hud.activity.summary.completed"))
-                        .font(PickyHUDTypography.meta)
-                    Image(systemName: "chevron.right")
-                        .font(PickyHUDTypography.metaSemibold)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .accessibilityHidden(true)
-                }
-                .foregroundColor(DS.Colors.textTertiary)
+            HStack(spacing: DS.Spacing.space1) {
+                Text(completionText)
+                    .font(PickyHUDTypography.status)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(PickyHUDTypography.metaSemibold)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, DS.Spacing.space1)
             .padding(.vertical, DS.Spacing.space1)
@@ -67,14 +61,14 @@ struct PickyActivitySummaryView: View {
         }
         .buttonStyle(.plain)
         .help(L10n.t(isExpanded ? "hud.activity.summary.collapse" : "hud.activity.summary.expand"))
-        .accessibilityLabel(durationText ?? L10n.t("hud.activity.summary.completed"))
-        .accessibilityValue(durationText == nil ? "" : L10n.t("hud.activity.summary.completed"))
+        .accessibilityLabel(completionText)
         .accessibilityHint(L10n.t(isExpanded ? "hud.activity.summary.collapse" : "hud.activity.summary.expand"))
         .hoverAffordance()
     }
 
-    private var durationText: String? {
-        elapsedSeconds.map(PickyActivityDurationFormat.displayText(seconds:))
+    private var completionText: String {
+        guard let elapsedSeconds else { return L10n.t("hud.activity.summary.completed") }
+        return PickyActivityDurationFormat.completionText(seconds: elapsedSeconds)
     }
 
     @ViewBuilder
@@ -134,29 +128,29 @@ struct PickyActivitySummaryView: View {
     }
 }
 
-/// Completed-turn duration in the activity summary: "Instant" up to 5 seconds,
-/// then "N s", "N m N s", "N h N m N s". The PWA mirrors this in
-/// `agentd/web/src/room/policy/message.ts` (`activityDurationText`).
+/// Completed-turn label in the activity summary: "Completed instantly" up to
+/// 5 seconds, otherwise "Completed in <duration>" where the duration lists
+/// hours, minutes and seconds with zero parts left out ("1m", "1h 5s").
+/// The PWA mirrors this in `agentd/web/src/room/policy/message.ts`
+/// (`activityCompletionText`).
 enum PickyActivityDurationFormat {
     static let instantMaxSeconds = 5
 
-    static func displayText(seconds: Int) -> String {
+    static func completionText(seconds: Int) -> String {
         let seconds = max(0, seconds)
         if seconds <= instantMaxSeconds {
-            return L10n.t("hud.activity.summary.duration.instant")
+            return L10n.t("hud.activity.summary.completedInstantly")
         }
-        if seconds < 60 {
-            return L10n.t("hud.activity.summary.duration.seconds", Int64(seconds))
-        }
-        if seconds < 3_600 {
-            return L10n.t("hud.activity.summary.duration.minutesSeconds", Int64(seconds / 60), Int64(seconds % 60))
-        }
-        return L10n.t(
-            "hud.activity.summary.duration.hoursMinutesSeconds",
-            Int64(seconds / 3_600),
-            Int64(seconds % 3_600 / 60),
-            Int64(seconds % 60)
-        )
+        let parts: [(key: String, value: Int)] = [
+            ("hud.activity.summary.duration.hours", seconds / 3_600),
+            ("hud.activity.summary.duration.minutes", seconds % 3_600 / 60),
+            ("hud.activity.summary.duration.seconds", seconds % 60),
+        ]
+        let duration = parts
+            .filter { $0.value > 0 }
+            .map { L10n.t($0.key, Int64($0.value)) }
+            .joined(separator: " ")
+        return L10n.t("hud.activity.summary.completedAfter", duration)
     }
 
     /// Seconds between the turn start and the summary's commit time.

@@ -202,8 +202,8 @@ export function ScheduledRow({ text, when, onEdit, onCancel, onSendNow }: Schedu
 }
 
 export interface ActivitySummaryProps {
-  /** "2분 5초" style turn duration; absent when the turn has no leading user message. */
-  duration: string | null;
+  /** "19분 동안 완료" style label, or plain "완료" when the turn has no leading user message. */
+  label: string;
   counts: Array<{ category: ActivityCategory; count: number }>;
 }
 
@@ -219,16 +219,13 @@ const ACTIVITY_LABEL_KEY = {
 } satisfies Record<ActivityCategory, string>;
 
 /** Collapsed by default; a tap expands the per-category grid, as hovering does on the Mac. */
-export function ActivitySummary({ duration, counts }: ActivitySummaryProps): JSX.Element {
+export function ActivitySummary({ label, counts }: ActivitySummaryProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
     <div class={`activity${expanded ? " activity--expanded" : ""}`}>
       <button class="activity-head" type="button" onClick={() => setExpanded((value) => !value)}>
-        {duration ? <span class="activity-title">{duration}</span> : null}
-        <span class="activity-state">
-          <span>{t("hud.activity.summary.completed")}</span>
-          <ChevronRight size={10} />
-        </span>
+        <span class="activity-title">{label}</span>
+        <ChevronRight size={10} />
       </button>
       {expanded ? (
         <div class="activity-grid">

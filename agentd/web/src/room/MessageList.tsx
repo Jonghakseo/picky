@@ -35,7 +35,7 @@ import { locale, t } from "./i18n";
 import { Markdown } from "./markdown/Markdown";
 import { queueItemText } from "./policy/composer";
 import type { ErrorRecovery } from "./policy/message";
-import { CONTINUE_PROMPT_KEY, activityDurationText, bubbleKind, errorRecovery, visibleActivityCounts } from "./policy/message";
+import { CONTINUE_PROMPT_KEY, activityCompletionText, bubbleKind, errorRecovery, visibleActivityCounts } from "./policy/message";
 import { derivePresence } from "./policy/presence";
 import { resolveQuestionRequest } from "./policy/question";
 import { absoluteDetail, relativeTitle } from "./policy/schedule";
@@ -129,9 +129,11 @@ function SessionRows({ sessionId, session, actions, send, onEdit, onRestore, now
       }
       case "activitySummary": {
         const counts = visibleActivityCounts(message.activitySnapshot);
-        const duration =
-          turnStartedAt === null || at === null ? null : activityDurationText((at - turnStartedAt) / 1000);
-        rows.push(<ActivitySummary key={message.id} duration={duration} counts={counts} />);
+        const label =
+          turnStartedAt === null || at === null
+            ? t("hud.activity.summary.completed")
+            : activityCompletionText((at - turnStartedAt) / 1000);
+        rows.push(<ActivitySummary key={message.id} label={label} counts={counts} />);
         break;
       }
       case "subagentInvocation": {

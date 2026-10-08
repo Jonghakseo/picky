@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseDiffResult, diffLineKind, changeCounts } from "./diff";
 import { classifyLink } from "./links";
 import { setLocale } from "../i18n";
-import { activityDurationText, isTruncated, truncatedMarkdown } from "./message";
+import { activityCompletionText, isTruncated, truncatedMarkdown } from "./message";
 import { delayMilliseconds, tomorrowPreset, TOMORROW_PRESET_HOUR } from "./schedule";
 import { stopAlertActions, stopChoice } from "./stop";
 
@@ -51,8 +51,13 @@ function installDurationStrings(): void {
     strings: Record<string, { localizations: Record<string, { stringUnit: { value: string } }> }>;
   };
   const tables: Record<string, Record<string, string>> = { ko: {}, en: {} };
-  for (const suffix of ["instant", "seconds", "minutesSeconds", "hoursMinutesSeconds"]) {
-    const key = `hud.activity.summary.duration.${suffix}`;
+  for (const key of [
+    "hud.activity.summary.completedAfter",
+    "hud.activity.summary.completedInstantly",
+    "hud.activity.summary.duration.seconds",
+    "hud.activity.summary.duration.minutes",
+    "hud.activity.summary.duration.hours",
+  ]) {
     for (const locale of ["ko", "en"]) {
       const value = catalog.strings[key]?.localizations[locale]?.stringUnit.value;
       if (value) tables[locale]![key] = value;
@@ -62,18 +67,21 @@ function installDurationStrings(): void {
 }
 
 describe("completed turn duration", () => {
-  it("reads instant up to 5 seconds, then seconds, minutes and hours like the HUD", () => {
+  it('reads "instantly" up to 5 seconds, then the duration without zero parts', () => {
     installDurationStrings();
     setLocale("ko");
-    expect(activityDurationText(0)).toBe("즉시");
-    expect(activityDurationText(5.9)).toBe("즉시");
-    expect(activityDurationText(6)).toBe("6초");
-    expect(activityDurationText(59)).toBe("59초");
-    expect(activityDurationText(60)).toBe("1분 0초");
-    expect(activityDurationText(125)).toBe("2분 5초");
-    expect(activityDurationText(3725)).toBe("1시간 2분 5초");
+    expect(activityCompletionText(0)).toBe("즉시 완료");
+    expect(activityCompletionText(5.9)).toBe("즉시 완료");
+    expect(activityCompletionText(6)).toBe("6초 동안 완료");
+    expect(activityCompletionText(59)).toBe("59초 동안 완료");
+    expect(activityCompletionText(60)).toBe("1분 동안 완료");
+    expect(activityCompletionText(125)).toBe("2분 5초 동안 완료");
+    expect(activityCompletionText(1140)).toBe("19분 동안 완료");
+    expect(activityCompletionText(3600)).toBe("1시간 동안 완료");
+    expect(activityCompletionText(3605)).toBe("1시간 5초 동안 완료");
+    expect(activityCompletionText(3725)).toBe("1시간 2분 5초 동안 완료");
     setLocale("en");
-    expect(activityDurationText(125)).toBe("2m 5s");
+    expect(activityCompletionText(125)).toBe("Completed in 2m 5s");
     setLocale("ko");
   });
 });

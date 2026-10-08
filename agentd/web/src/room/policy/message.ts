@@ -44,24 +44,25 @@ export function visibleActivityCounts(
   );
 }
 
-/** Up to this many seconds the completed-turn duration reads "Instant". */
+/** Up to this many seconds the completed turn reads "Completed instantly". */
 export const ACTIVITY_INSTANT_MAX_SECONDS = 5;
 
 /**
- * Completed-turn duration shown before "Completed" in the activity summary.
- * Mirrors `PickyActivityDurationFormat.displayText` in PickyActivitySummaryView.swift.
+ * Completed-turn label in the activity summary: "Completed instantly" up to
+ * 5 seconds, otherwise "Completed in <duration>" with zero parts left out.
+ * Mirrors `PickyActivityDurationFormat.completionText` in PickyActivitySummaryView.swift.
  */
-export function activityDurationText(seconds: number): string {
+export function activityCompletionText(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
-  if (total <= ACTIVITY_INSTANT_MAX_SECONDS) return t("hud.activity.summary.duration.instant");
-  if (total < 60) return t("hud.activity.summary.duration.seconds", total);
-  if (total < 3600) return t("hud.activity.summary.duration.minutesSeconds", Math.floor(total / 60), total % 60);
-  return t(
-    "hud.activity.summary.duration.hoursMinutesSeconds",
-    Math.floor(total / 3600),
-    Math.floor((total % 3600) / 60),
-    total % 60,
-  );
+  if (total <= ACTIVITY_INSTANT_MAX_SECONDS) return t("hud.activity.summary.completedInstantly");
+  const parts: string[] = [];
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  if (hours > 0) parts.push(t("hud.activity.summary.duration.hours", hours));
+  if (minutes > 0) parts.push(t("hud.activity.summary.duration.minutes", minutes));
+  if (rest > 0) parts.push(t("hud.activity.summary.duration.seconds", rest));
+  return t("hud.activity.summary.completedAfter", parts.join(" "));
 }
 
 export function bubbleKind(message: PickySessionMessage): BubbleKind {

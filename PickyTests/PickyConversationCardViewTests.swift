@@ -1984,16 +1984,18 @@ struct PickyConversationCardViewTests {
         #expect(summary.totalToolCalls == 16)
     }
 
-    @Test func activitySummaryDurationUsesInstantThenSecondsMinutesHours() {
+    @Test func activitySummaryDurationOmitsZeroParts() {
         LocaleManager.shared.withTemporaryChoiceForTesting(.korean) {
-            #expect(PickyActivityDurationFormat.displayText(seconds: 0) == "즉시")
-            #expect(PickyActivityDurationFormat.displayText(seconds: 5) == "즉시")
-            #expect(PickyActivityDurationFormat.displayText(seconds: 6) == "6초")
-            #expect(PickyActivityDurationFormat.displayText(seconds: 59) == "59초")
-            #expect(PickyActivityDurationFormat.displayText(seconds: 60) == "1분 0초")
-            #expect(PickyActivityDurationFormat.displayText(seconds: 125) == "2분 5초")
-            #expect(PickyActivityDurationFormat.displayText(seconds: 3_600) == "1시간 0분 0초")
-            #expect(PickyActivityDurationFormat.displayText(seconds: 3_725) == "1시간 2분 5초")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 0) == "즉시 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 5) == "즉시 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 6) == "6초 동안 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 59) == "59초 동안 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 60) == "1분 동안 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 125) == "2분 5초 동안 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 1_140) == "19분 동안 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 3_600) == "1시간 동안 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 3_605) == "1시간 5초 동안 완료")
+            #expect(PickyActivityDurationFormat.completionText(seconds: 3_725) == "1시간 2분 5초 동안 완료")
         }
     }
 

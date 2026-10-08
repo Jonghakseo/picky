@@ -5876,6 +5876,38 @@
         }
       }
     },
+    "hud.activity.summary.completedAfter": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed in %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 동안 완료"
+          }
+        }
+      }
+    },
+    "hud.activity.summary.completedInstantly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed instantly"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "즉시 완료"
+          }
+        }
+      }
+    },
     "hud.activity.summary.details": {
       "localizations": {
         "en": {
@@ -5892,50 +5924,34 @@
         }
       }
     },
-    "hud.activity.summary.duration.hoursMinutesSeconds": {
+    "hud.activity.summary.duration.hours": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lldh %lldm %llds"
+            "value": "%lldh"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld시간 %lld분 %lld초"
+            "value": "%lld시간"
           }
         }
       }
     },
-    "hud.activity.summary.duration.instant": {
+    "hud.activity.summary.duration.minutes": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Instant"
+            "value": "%lldm"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "즉시"
-          }
-        }
-      }
-    },
-    "hud.activity.summary.duration.minutesSeconds": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lldm %llds"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld분 %lld초"
+            "value": "%lld분"
           }
         }
       }

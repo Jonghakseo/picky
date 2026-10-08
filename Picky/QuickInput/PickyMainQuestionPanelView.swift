@@ -125,15 +125,17 @@ struct PickyMainQuestionPanelView: View {
         .frame(width: PickyMainQuestionPanelLayout.panelWidth, alignment: .leading)
     }
 
-    /// Purely a discoverability affordance. The window itself is moved natively via
-    /// `isMovableByWindowBackground`, so any non-control area (including this strip)
-    /// drags the panel; the capsule just signals that.
+    /// The grab strip drags the panel. SwiftUI's hosting view claims mouse-down,
+    /// so `isMovableByWindowBackground` alone never starts a move; an AppKit
+    /// view under the strip hands the event to `performDrag(with:)` instead.
     private var dragGrabber: some View {
         Capsule(style: .continuous)
             .fill(DS.Colors.textPrimary.opacity(0.18))
             .frame(width: 36, height: 4)
             .frame(maxWidth: .infinity, alignment: .center)
-            .contentShape(Rectangle())
+            .frame(height: 12)
+            .background(PickyWindowDragHandle())
+            .padding(.vertical, -4)
             .accessibilityHidden(true)
     }
 
@@ -242,6 +244,32 @@ struct PickyMainQuestionPanelView: View {
                         .accessibilityValue(viewModel.isSending ? L10n.t("common.sending") : "")
                 }
             }
+        }
+    }
+}
+
+/// Moves the hosting window when the user presses and drags on it. Used for
+/// grab strips on borderless panels whose SwiftUI content would otherwise
+/// swallow the mouse-down before window-background dragging can begin.
+private struct PickyWindowDragHandle: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragHandleView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragHandleView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window else {
+                super.mouseDown(with: event)
+                return
+            }
+            window.performDrag(with: event)
+        }
+
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .openHand)
         }
     }
 }

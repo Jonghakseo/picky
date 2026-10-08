@@ -171,13 +171,13 @@ struct PickyScheduledMessagesPresentationTests {
         let withPlugin = PickySendTimingPolicy.options(
             now: now, canSendAfterCurrentReply: true, isPluginInstalled: true, calendar: Self.seoul
         )
-        let tomorrowNine = PickySendTimingPolicy.tomorrowPresetDate(now: now, calendar: Self.seoul)!
+        let tomorrowTen = PickySendTimingPolicy.tomorrowPresetDate(now: now, calendar: Self.seoul)!
 
         #expect(withoutPlugin.map(\.timing) == [
             .afterCurrentReply,
-            .delay(seconds: 5 * 60),
+            .delay(seconds: 15 * 60),
             .delay(seconds: 3600),
-            .at(tomorrowNine),
+            .at(tomorrowTen),
             .custom,
         ])
         #expect(withoutPlugin.map(\.isEnabled) == [true, false, false, false, false])
@@ -199,16 +199,16 @@ struct PickyScheduledMessagesPresentationTests {
         #expect(options.dropFirst().compactMap(\.detail).count == 3)
     }
 
-    /// "Tomorrow" means the next calendar day at 9:00, even right after midnight.
-    @Test func tomorrowPresetIsNineOnTheNextCalendarDay() throws {
+    /// "Tomorrow" means the next calendar day at 10:00, even right after midnight.
+    @Test func tomorrowPresetIsTenOnTheNextCalendarDay() throws {
         let calendar = Self.seoul
         let lateNight = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: 23, minute: 50)))
         let afterMidnight = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 0, minute: 30)))
 
         #expect(PickySendTimingPolicy.tomorrowPresetDate(now: lateNight, calendar: calendar)
-            == calendar.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 9)))
+            == calendar.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 10)))
         #expect(PickySendTimingPolicy.tomorrowPresetDate(now: afterMidnight, calendar: calendar)
-            == calendar.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9)))
+            == calendar.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 10)))
     }
 
     @Test func timedOptionsCarryTheDelayTheDaemonCommandNeeds() {
@@ -216,7 +216,7 @@ struct PickyScheduledMessagesPresentationTests {
         #expect(PickySendTiming.custom.delayMilliseconds(now: now) == nil)
         #expect(PickySendTiming.delay(seconds: 5 * 60).delayMilliseconds(now: now) == 300_000)
         // Absolute times are measured when picked, so a menu left open does not
-        // push "tomorrow 9:00" later.
+        // push "tomorrow 10:00" later.
         let target = now.addingTimeInterval(3600)
         #expect(PickySendTiming.at(target).delayMilliseconds(now: now) == 3_600_000)
         #expect(PickySendTiming.at(target).delayMilliseconds(now: now.addingTimeInterval(600)) == 3_000_000)

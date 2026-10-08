@@ -72,9 +72,9 @@ struct PickySendTimingOption: Equatable, Identifiable {
 }
 
 enum PickySendTimingPolicy {
-    /// Relative presets; "tomorrow at 9:00" and the custom row follow them.
-    static let presetDelays: [Int] = [5 * 60, 60 * 60]
-    static let tomorrowPresetHour = 9
+    /// Relative presets; "tomorrow at 10:00" and the custom row follow them.
+    static let presetDelays: [Int] = [15 * 60, 60 * 60]
+    static let tomorrowPresetHour = 10
 
     /// The chevron is inert while a scheduled message is being edited: picking a
     /// send time there would create a second message instead of saving the edit.
@@ -150,7 +150,7 @@ enum PickySendTimingPolicy {
         return options
     }
 
-    /// Tomorrow at 9:00 in the user's calendar, even shortly after midnight;
+    /// Tomorrow at 10:00 in the user's calendar, even shortly after midnight;
     /// Slack's "tomorrow" preset behaves the same way.
     static func tomorrowPresetDate(now: Date, calendar: Calendar) -> Date? {
         guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) else {

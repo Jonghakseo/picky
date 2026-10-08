@@ -224,6 +224,12 @@ struct PickyMainActivityChipPolicyTests {
         #expect(PickyMainActivityConcisePolicy.models(for: []).isEmpty)
         #expect(concise(.init(kind: .tool, toolCallId: "m", toolName: "recall", status: "running",
                               argsPreview: #"{"query":"메신저 디자인"}"#)).map(\.detail) == ["메신저 디자인"])
+        // memory-layer 0.6+ and vcc-ko 0.2+ renamed their tools; both generations stay memory chips.
+        for (name, label) in [("memory_recall", "overlay.activity.memory.recall"), ("session_recall", "overlay.activity.memory.recall"),
+                              ("memory_remember", "overlay.activity.memory.remember"), ("memory_forget", "overlay.activity.memory.forget")] {
+            #expect(concise(.init(kind: .tool, toolCallId: "m", toolName: name, status: "running",
+                                  argsPreview: #"{"query":"q","title":"t"}"#)).map(\.label) == [L10n.t(label)], "\(name)")
+        }
         let web = concise(.init(kind: .tool, toolCallId: "w", toolName: "web_search", status: "running",
                                 argsPreview: #"{"queries":["SwiftUI TimelineView"]}"#))
         #expect(web.map(\.label) == [L10n.t("overlay.activity.webSearch")])

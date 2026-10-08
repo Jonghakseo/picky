@@ -164,11 +164,11 @@ enum PickyMainActivityConcisePolicy {
             case "bash", "bash_async":
                 guard let title = value("title") else { return nil }
                 return PickyMainActivityChipModel(category: .normal, label: title, detail: nil, isRunning: isRunning)
-            case "recall", "vcc_recall":
+            case "recall", "memory_recall", "vcc_recall", "session_recall":
                 return memoryModel("overlay.activity.memory.recall", detail: value("query"), isRunning: isRunning)
-            case "remember":
+            case "remember", "memory_remember":
                 return memoryModel("overlay.activity.memory.remember", detail: value("title"), isRunning: isRunning)
-            case "forget":
+            case "forget", "memory_forget":
                 return memoryModel("overlay.activity.memory.forget", detail: nil, isRunning: isRunning)
             case "web_search":
                 let query = value("query") ?? firstQuery(activity.argsPreview)

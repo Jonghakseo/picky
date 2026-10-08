@@ -223,6 +223,9 @@ struct PickyToolHistoryEntryTests {
             ("web_search", #"{"queries":["swift regex","swiftui list","xcode"]}"#, "web_search", "swift regex +2"),
             ("fetch_content", #"{"url":"https://example.com/docs"}"#, "fetch_content", "example.com/docs"),
             ("vcc_recall", #"{"query":"redis cache decision"}"#, "vcc_recall", "redis cache decision"),
+            ("session_recall", #"{"query":"redis cache decision"}"#, "session_recall", "redis cache decision"),
+            ("memory_recall", #"{"query":"release policy"}"#, "memory_recall", "release policy"),
+            ("memory_remember", #"{"title":"Release rule","content":"Use beta tags"}"#, "memory_remember", "Release rule"),
             ("subagent", #"{"command":"subagent help"}"#, "subagent", "help"),
             ("mcp__creatrip__jira_getissue", #"{"fields":"summary","issue_key":"COM-123"}"#, "jira_getissue", "COM-123"),
             // Truncated preview: regex recovery still finds the command head.

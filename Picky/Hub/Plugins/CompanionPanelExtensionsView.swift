@@ -114,7 +114,7 @@ struct PickyCuratedPlugin: Identifiable {
         id: "memory-layer",
         titleKey: "extensions.curated.memoryLayer.title",
         descriptionKey: "extensions.curated.memoryLayer.description",
-        commandName: "remember",
+        commandName: "memory_remember",
         source: "npm:@ryan_nookpi/pi-extension-memory-layer"
     )
 
@@ -172,7 +172,7 @@ struct PickyCuratedPlugin: Identifiable {
         id: "vcc-ko",
         titleKey: "extensions.curated.vccKo.title",
         descriptionKey: "extensions.curated.vccKo.description",
-        commandName: "vcc_recall",
+        commandName: "session_recall",
         source: "npm:@ryan_nookpi/pi-extension-vcc-ko",
         checksDuplicates: true
     )

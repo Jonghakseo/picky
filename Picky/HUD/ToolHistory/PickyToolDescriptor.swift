@@ -46,14 +46,14 @@ enum PickyToolDescriptorRegistry {
         case "get_search_content":
             let value = args.string("query") ?? args.string("url").map(stripScheme) ?? args.string("responseId")
             return .init(displayName: name, glyph: .web, summary: value)
-        case "recall":
+        case "recall", "memory_recall":
             return .init(displayName: name, glyph: .memory, summary: args.string("query") ?? args.string("id"))
-        case "vcc_recall":
+        case "vcc_recall", "session_recall":
             let expand = args.stringList("expand").map { $0.joined(separator: ", ") }
             return .init(displayName: name, glyph: .memory, summary: args.string("query") ?? expand ?? args.string("mode"))
-        case "remember":
+        case "remember", "memory_remember":
             return .init(displayName: name, glyph: .memory, summary: args.string("title") ?? args.string("content"))
-        case "forget":
+        case "forget", "memory_forget":
             return .init(displayName: name, glyph: .memory, summary: args.string("id"))
         case "subagent":
             // Structured subagent commands are parsed upstream; this covers

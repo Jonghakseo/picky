@@ -15,15 +15,20 @@ func sanitizedTextForSpeech(_ text: String) -> String {
     guard let parentheticalRegex = try? NSRegularExpression(pattern: parentheticalPattern, options: []) else { return markdownText }
     let range = NSRange(markdownText.startIndex..., in: markdownText)
     let withoutParentheticals = parentheticalRegex.stringByReplacingMatches(in: markdownText, options: [], range: range, withTemplate: "")
+    // Spoken stand-ins follow the reply's own language, not the app UI
+    // language: an English reply read with "링크" sounds broken.
+    let speaksKorean = withoutParentheticals.range(of: "[가-힣]", options: .regularExpression) != nil
+    let linkWord = speaksKorean ? "링크" : "a link"
+    let pathWord = speaksKorean ? "해당 경로" : "that path"
 
     let withoutURLs = withoutParentheticals.replacingOccurrences(
         of: #"(?i)(?:https?://|www\.)[^\s,，。！？!?]+"#,
-        with: "링크",
+        with: linkWord,
         options: .regularExpression
     )
     let withoutPaths = withoutURLs.replacingOccurrences(
         of: #"(?<!\S)(?:~/[^\s,，。！？!?]*|\.{1,2}/[^\s,，。！？!?]*|/[^\s,，。！？!?]+)(?=[\s,，。！？!?]|$)"#,
-        with: "해당 경로",
+        with: pathWord,
         options: .regularExpression
     )
     let collapsed = withoutPaths

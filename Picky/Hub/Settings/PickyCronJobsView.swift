@@ -238,7 +238,7 @@ struct PickyCronJobsView: View {
 
     private func formatted(_ date: Date?) -> String {
         guard let date else { return L10n.t("extensions.cron.jobs.value.none") }
-        return date.formatted(date: .abbreviated, time: .shortened)
+        return date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(LocaleManager.nonisolatedEffectiveLocale))
     }
 
     private func exitResult(_ exitCode: Int?) -> String {

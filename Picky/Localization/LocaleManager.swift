@@ -17,6 +17,37 @@
 
 import Combine
 import Foundation
+import Observation
+
+/// Observation hook that makes every `L10n.t(_:)` call reactive. SwiftUI
+/// records Observation reads made anywhere inside a view body, so a body that
+/// resolves a string through `L10n.t` re-renders when the language changes,
+/// even when nothing else about the view changed. Without this, only
+/// `Text("key")` lookups followed a runtime language switch and child views
+/// kept showing strings resolved in the previous language.
+final class PickyLocalizationRevision: Observable, @unchecked Sendable {
+    nonisolated static let shared = PickyLocalizationRevision()
+
+    private let registrar = ObservationRegistrar()
+    private let lock = NSLock()
+    nonisolated(unsafe) private var storage = 0
+
+    nonisolated init() {}
+
+    nonisolated var value: Int {
+        registrar.access(self, keyPath: \.value)
+        lock.lock(); defer { lock.unlock() }
+        return storage
+    }
+
+    nonisolated func bump() {
+        registrar.withMutation(of: self, keyPath: \.value) {
+            lock.lock()
+            storage &+= 1
+            lock.unlock()
+        }
+    }
+}
 
 @MainActor
 final class LocaleManager: ObservableObject {
@@ -38,6 +69,7 @@ final class LocaleManager: ObservableObject {
 
     /// Snapshot of the current strings bundle for nonisolated reads.
     nonisolated static var nonisolatedStringsBundle: Bundle {
+        _ = PickyLocalizationRevision.shared.value
         snapshotLock.lock(); defer { snapshotLock.unlock() }
         return _snapshotBundle
     }
@@ -46,6 +78,7 @@ final class LocaleManager: ObservableObject {
     /// when formatting strings with arguments (`String(format:locale:_)`)
     /// from background contexts.
     nonisolated static var nonisolatedEffectiveLocale: Locale {
+        _ = PickyLocalizationRevision.shared.value
         snapshotLock.lock(); defer { snapshotLock.unlock() }
         return _snapshotLocale
     }
@@ -124,9 +157,13 @@ final class LocaleManager: ObservableObject {
 
     private static func updateSnapshot(bundle: Bundle, locale: Locale) {
         snapshotLock.lock()
+        let changed = _snapshotBundle !== bundle || _snapshotLocale.identifier != locale.identifier
         _snapshotBundle = bundle
         _snapshotLocale = locale
         snapshotLock.unlock()
+        if changed {
+            PickyLocalizationRevision.shared.bump()
+        }
     }
 
     /// Look up an .lproj bundle for the resolved identifier. Falls back to

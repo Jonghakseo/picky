@@ -116,8 +116,6 @@ struct PickySessionArtifactsView: View {
 }
 
 private struct PickySessionArtifactRow: View {
-    private static let relativeDateFormatter = RelativeDateTimeFormatter()
-
     let presentation: PickySessionArtifactRowPresentation
 
     var body: some View {
@@ -185,6 +183,8 @@ private struct PickySessionArtifactRow: View {
     }
 
     private var relativeTime: String {
-        Self.relativeDateFormatter.localizedString(for: presentation.artifact.updatedAt, relativeTo: Date())
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = LocaleManager.nonisolatedEffectiveLocale
+        return formatter.localizedString(for: presentation.artifact.updatedAt, relativeTo: Date())
     }
 }

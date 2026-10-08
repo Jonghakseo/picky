@@ -3185,6 +3185,11 @@ struct PickyCompanionManagerTests {
         #expect(sanitizedTextForSpeech(withURL) == "결과는 링크에 있어요.")
     }
 
+    @Test func speechSanitizerUsesEnglishStandInsForEnglishReplies() {
+        let english = "The report is at https://example.com/report/123 and the log is in ~/Library/Logs/picky.log now."
+        #expect(sanitizedTextForSpeech(english) == "The report is at a link and the log is in that path now.")
+    }
+
     @Test func speechSanitizerReadsMarkdownTextWithoutInlineSyntax() {
         let markdown = "**회원 상세모달**에서 [설명 문서](https://example.com/guide)와 ![구조도](diagram.png)를 확인합니다."
         #expect(sanitizedTextForSpeech(markdown) == "회원 상세모달에서 설명 문서와 구조도를 확인합니다.")

@@ -71,6 +71,12 @@ final class PickyStatusItemController: NSObject, NSMenuDelegate {
         createStatusItem()
     }
 
+    /// Re-resolves strings set once at creation. The context menu is rebuilt
+    /// on every open, so only the button's accessibility label needs this.
+    func refreshLocalizedLabels() {
+        statusItem?.button?.setAccessibilityLabel(L10n.t("hub.window.title"))
+    }
+
     // MARK: - Status item
 
     private var statusItemDisplayID: CGDirectDisplayID? {

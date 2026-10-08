@@ -25,6 +25,8 @@ enum L10n {
     /// and background closures (e.g. scenario builders called off-actor) can
     /// invoke this freely.
     static func t(_ key: String, _ args: CVarArg...) -> String {
+        // Reading the snapshot registers an Observation dependency, so view
+        // bodies that call this re-render after a runtime language switch.
         let bundle = LocaleManager.nonisolatedStringsBundle
         let locale = LocaleManager.nonisolatedEffectiveLocale
         let format = NSLocalizedString(key, tableName: nil, bundle: bundle, value: key, comment: "")

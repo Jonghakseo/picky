@@ -276,7 +276,7 @@ struct CompanionPanelSettingsView: View {
         case .index:
             return nil
         case .general:
-            return String(localized: settings.appLanguage.displayKey)
+            return L10n.t(settings.appLanguage.displayKey)
         case .oauth:
             return oauthLoginController.indexSummary
         case .shortcuts:
@@ -802,7 +802,7 @@ struct CompanionPanelSettingsView: View {
                         title: L10n.t("settings.general.language.label"),
                         selection: $viewModel.settings.appLanguage,
                         options: PickyLanguage.allCases.map {
-                            .init(value: $0, title: String(localized: $0.displayKey))
+                            .init(value: $0, title: L10n.t($0.displayKey))
                         }
                     )
                     .fixedSize(horizontal: !presentation.showsNavigationChrome, vertical: false)

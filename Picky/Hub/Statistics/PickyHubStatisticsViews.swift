@@ -18,7 +18,7 @@ enum PickyHubStatisticsPresentation {
         return indices
     }
 
-    static func relativeActivity(_ date: Date, now: Date = Date(), locale: Locale = .current) -> String {
+    static func relativeActivity(_ date: Date, now: Date = Date(), locale: Locale = LocaleManager.nonisolatedEffectiveLocale) -> String {
         let calendar = Calendar.current
         let time = timeFormatter(locale: locale).string(from: date)
         if calendar.isDate(date, inSameDayAs: now) { return L10n.t("hub.stats.activity.today", time) }
@@ -29,7 +29,7 @@ enum PickyHubStatisticsPresentation {
         return L10n.t("hub.stats.activity.date", dateString)
     }
 
-    static func updatedDescription(_ date: Date, now: Date = Date(), locale: Locale = .current) -> String {
+    static func updatedDescription(_ date: Date, now: Date = Date(), locale: Locale = LocaleManager.nonisolatedEffectiveLocale) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = locale
         formatter.unitsStyle = .full

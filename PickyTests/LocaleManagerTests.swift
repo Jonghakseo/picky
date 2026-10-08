@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import Observation
 import XCTest
 @testable import Picky
 
@@ -23,6 +24,46 @@ final class LocaleManagerTests: XCTestCase {
         // Bundle identity is reference-equal because Bundle(path:) caches.
         XCTAssertTrue(manager.stringsBundle === LocaleManager.nonisolatedStringsBundle)
         XCTAssertEqual(UserDefaults.standard.array(forKey: "AppleLanguages") as? [String], previousAppleLanguages)
+    }
+
+    /// A view body that resolved copy through `L10n.t` must be invalidated
+    /// when the language changes; otherwise child views keep showing the
+    /// previous language after a runtime switch in Settings.
+    func testLanguageSwitchInvalidatesL10nObservers() {
+        let manager = LocaleManager.shared
+        let previousChoice = manager.choice
+        defer { manager.apply(previousChoice) }
+        manager.apply(.korean)
+
+        var invalidated = false
+        let resolved = withObservationTracking {
+            L10n.t("settings.oauth.status.stored")
+        } onChange: {
+            invalidated = true
+        }
+        XCTAssertEqual(resolved, "Pi에 로그인 정보 저장됨")
+
+        manager.apply(.english)
+        XCTAssertTrue(invalidated)
+        XCTAssertEqual(L10n.t("settings.oauth.status.stored"), "Credentials saved in Pi")
+    }
+
+    /// Relative times follow the app language, not the system locale, and a
+    /// shared formatter must not keep the language it was created with.
+    func testDockRelativeTimeFollowsAppLanguage() {
+        let manager = LocaleManager.shared
+        let previousChoice = manager.choice
+        defer { manager.apply(previousChoice) }
+        let now = Date()
+        let fiveMinutesAgo = now.addingTimeInterval(-300)
+
+        manager.apply(.korean)
+        XCTAssertTrue(PickyHUDDockRelativeTimePresentation.text(for: fiveMinutesAgo, relativeTo: now).contains("분"))
+
+        manager.apply(.english)
+        let english = PickyHUDDockRelativeTimePresentation.text(for: fiveMinutesAgo, relativeTo: now)
+        XCTAssertNil(english.range(of: "[\u{AC00}-\u{D7A3}]", options: .regularExpression), english)
+        XCTAssertTrue(english.contains("min"), english)
     }
 
     /// `.system` resolves the OS preference into one of Picky's supported codes

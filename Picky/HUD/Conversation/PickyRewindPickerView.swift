@@ -187,6 +187,7 @@ struct PickyRewindPickerView: View {
 
     private static func relativeTimestamp(for date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
+        formatter.locale = LocaleManager.nonisolatedEffectiveLocale
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
     }

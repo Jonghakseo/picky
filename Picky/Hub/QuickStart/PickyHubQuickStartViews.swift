@@ -106,7 +106,7 @@ struct PickyHubQuickStartResumeCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .pickyHubSelectableText()
             }
-            Text(L10n.t("hub.quickStart.resume.lastStarted", record.startedAt.formatted(date: .abbreviated, time: .shortened)))
+            Text(L10n.t("hub.quickStart.resume.lastStarted", record.startedAt.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(LocaleManager.nonisolatedEffectiveLocale))))
                 .pickyFont(size: PickyHubTheme.Typography.caption, weight: .regular)
                 .foregroundColor(PickyHubTheme.Colors.textTertiary)
                 .pickyHubSelectableText()

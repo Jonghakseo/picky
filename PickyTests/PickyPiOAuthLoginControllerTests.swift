@@ -165,7 +165,9 @@ struct PickyPiOAuthLoginControllerTests {
             source: "stored",
             label: nil
         )))))
-        await waitUntil { controller.status(for: .openAICodex) == .configured(source: "stored") }
+        // Pi's raw `stored` source is not user copy; the row falls back to
+        // the localized "saved in Pi" label.
+        await waitUntil { controller.status(for: .openAICodex) == .configured(source: nil) }
 
         #expect(controller.deviceCodes[.openAICodex] == nil)
         #expect(openedURLs.isEmpty)

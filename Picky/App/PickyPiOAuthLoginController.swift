@@ -236,7 +236,10 @@ final class PickyPiOAuthLoginController: ObservableObject {
 
     private static func loginStatus(from authStatus: PickyPiOAuthLoginAuthStatus) -> PickyPiOAuthLoginStatus {
         if authStatus.configured {
-            return .configured(source: authStatus.label ?? authStatus.source)
+            // Pi reports saved credentials as the raw enum `stored`; leave it
+            // nil so the row shows the localized "saved in Pi" copy instead.
+            let source = authStatus.source == "stored" ? nil : authStatus.source
+            return .configured(source: authStatus.label ?? source)
         }
         return .notConfigured
     }

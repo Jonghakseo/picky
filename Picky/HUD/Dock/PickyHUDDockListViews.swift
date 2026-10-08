@@ -62,6 +62,9 @@ enum PickyHUDDockRelativeTimePresentation {
         guard abs(date.timeIntervalSince(now)) >= 60 else {
             return L10n.t("hud.groupList.time.justNow")
         }
+        // Shared formatter: re-apply the app language on every call so a
+        // runtime language switch is honored.
+        formatter.locale = LocaleManager.nonisolatedEffectiveLocale
         return formatter.localizedString(for: date, relativeTo: now)
     }
 }

@@ -205,7 +205,7 @@ struct PickyHubCronCalendarView: View {
     private var periodTitle: some View {
         Group {
             if showsMonth { Text(anchor, format: .dateTime.year().month(.wide)) }
-            else { Text(interval.start.formatted(.dateTime.month().day()) + " – " + interval.end.addingTimeInterval(-1).formatted(.dateTime.month().day())) }
+            else { Text(interval.start.formatted(.dateTime.month().day().locale(LocaleManager.nonisolatedEffectiveLocale)) + " – " + interval.end.addingTimeInterval(-1).formatted(.dateTime.month().day().locale(LocaleManager.nonisolatedEffectiveLocale))) }
         }
         .pickyFont(size: PickyHubTheme.Typography.body, weight: .semibold)
         .fixedSize()
@@ -290,7 +290,7 @@ struct PickyHubCronCalendarView: View {
                     VStack(alignment: .leading, spacing: DS.Spacing.space1) {
                         Button { openDay(day) } label: {
                             Text(day, format: .dateTime.day()).frame(minWidth: 32, minHeight: 32)
-                        }.buttonStyle(.borderless).accessibilityLabel(day.formatted(date: .complete, time: .omitted))
+                        }.buttonStyle(.borderless).accessibilityLabel(day.formatted(Date.FormatStyle(date: .complete, time: .omitted).locale(LocaleManager.nonisolatedEffectiveLocale)))
                         ForEach(Array(groups.prefix(2)), id: \.id) { group in eventButton(group) }
                         if groups.count > 2 { moreButton(day, count: groups.count - 2) }
                         Spacer(minLength: 0)
@@ -326,7 +326,7 @@ struct PickyHubCronCalendarView: View {
         }
         .buttonStyle(PickyCronCalendarEventButtonStyle(isProjected: event.kind == .projected))
         .help(event.job.name + " · " + PickyCronCalendarPresentation.status(event))
-        .accessibilityLabel(event.job.name + ", " + event.date.formatted(date: .complete, time: .shortened) + ", " + PickyCronCalendarPresentation.status(event))
+        .accessibilityLabel(event.job.name + ", " + event.date.formatted(Date.FormatStyle(date: .complete, time: .shortened).locale(LocaleManager.nonisolatedEffectiveLocale)) + ", " + PickyCronCalendarPresentation.status(event))
     }
     private func eventColor(_ event: PickyCronCalendarOccurrence) -> Color {
         guard event.kind == .actual, let code = event.execution?.exitCode else { return PickyHubTheme.Colors.textSecondary }

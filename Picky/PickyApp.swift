@@ -46,6 +46,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var notificationPreferencesStore = PickyNotificationPreferencesStore(settingsStore: settingsStore)
     private var settingsSaveObserver: NSObjectProtocol?
+    private var localeChangeObserver: NSObjectProtocol?
     /// Single bounded snapshot used to distinguish the prior crash/force-quit
     /// from a clean app termination after the next launch.
     private lazy var lifecycleDiagnosticsStore = PickyLifecycleDiagnosticsStore(
@@ -253,6 +254,18 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyRuntimeEnvironment.userDefaults.register(defaults: ["NSInitialToolTipDelay": 0])
         UNUserNotificationCenter.current().delegate = self
         PickyAppMenuInstaller.install(updaterController: updaterController)
+        // AppKit chrome resolves its titles once; rebuild it after a runtime
+        // language switch so it matches the SwiftUI surfaces.
+        localeChangeObserver = NotificationCenter.default.addObserver(
+            forName: LocaleManager.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            PickyAppMenuInstaller.install(updaterController: self.updaterController)
+            self.statusItemController?.refreshLocalizedLabels()
+            self.usageStatusItemsController?.update()
+        }
         // Touch the lazy property so Sparkle starts checking on launch when
         // the build channel allows it. Updater stays inert on alpha builds.
         _ = updaterController
@@ -614,6 +627,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         if let observer = settingsSaveObserver {
             NotificationCenter.default.removeObserver(observer)
             settingsSaveObserver = nil
+        }
+        if let observer = localeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            localeChangeObserver = nil
         }
         // Drafts are persisted on a debounce; keep the last keystrokes on quit.
         hudSessionViewModel.composerDraftController.flushPendingDrafts()

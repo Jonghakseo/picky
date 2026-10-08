@@ -19,11 +19,14 @@ struct PickyMainAgentTranscriptRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(message.role == .user ? "You" : "Picky")
+                Text(message.role == .user ? L10n.t("hub.conversation.you") : "Picky")
                     .pickyFont(size: 10.5, weight: .semibold)
                     .foregroundColor(message.role == .user ? DS.Colors.accentText : DS.Colors.textSecondary)
                 Spacer(minLength: 8)
-                Text(message.createdAt, formatter: Self.timeFormatter)
+                Text(message.createdAt.formatted(
+                    Date.FormatStyle(date: .omitted, time: .shortened)
+                        .locale(LocaleManager.nonisolatedEffectiveLocale)
+                ))
                     .font(PickyHUDTypography.minimumMedium)
                     .foregroundColor(DS.Colors.textTertiary)
             }
@@ -46,12 +49,6 @@ struct PickyMainAgentTranscriptRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter
-    }()
 }
 
 /// Compact markdown renderer for a main-agent transcript. Reuses

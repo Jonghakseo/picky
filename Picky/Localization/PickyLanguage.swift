@@ -36,7 +36,7 @@ enum PickyLanguage: String, Codable, CaseIterable, Identifiable {
 
     /// Localized display label for the picker. The strings themselves live in
     /// the catalog so they get translated alongside everything else.
-    var displayKey: String.LocalizationValue {
+    var displayKey: String {
         switch self {
         case .system: return "settings.language.system"
         case .english: return "settings.language.en"

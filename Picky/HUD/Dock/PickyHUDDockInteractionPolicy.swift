@@ -11,6 +11,9 @@ import Foundation
 enum PickyHUDDockHoverDisclosurePolicy {
     static let closeGrace: TimeInterval = 0.4
     static let closeGraceNanoseconds: UInt64 = 400_000_000
+    /// How long the pointer must rest on a dock row before its archive button
+    /// appears. Archiving has other paths, so the button waits for intent.
+    static let archiveRevealDelay: Duration = .seconds(1)
 }
 
 /// Timing and geometry constants for the dock's hold-to-archive interaction.

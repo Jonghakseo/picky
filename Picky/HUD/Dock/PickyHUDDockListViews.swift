@@ -214,6 +214,7 @@ struct PickyHUDDockSessionRow: View {
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
     @StateObject private var archiveFeedback = PickyHUDArchiveHoldFeedback()
+    @StateObject private var archiveReveal = PickyHUDArchiveHoverReveal()
     @Environment(\.pickyAppFontScale) private var fontScale
     @Environment(\.pickyDockCompactLayout) private var environmentCompactLayout
     @Environment(\.pickyDockHorizontalLayout) private var environmentHorizontalLayout
@@ -246,7 +247,7 @@ struct PickyHUDDockSessionRow: View {
     /// archive action in its shared preview, and holding the cell still
     /// archives natively.
     private var showsArchiveAction: Bool {
-        isHovered && !showsShortcut && !isDragging && !isHorizontalCompact
+        isHovered && archiveReveal.isRevealed && !showsShortcut && !isDragging && !isHorizontalCompact
             && (compactLayout?.showsLabels ?? true)
     }
 
@@ -333,12 +334,14 @@ struct PickyHUDDockSessionRow: View {
                 completionFlashTask?.cancel()
                 completionFlashTask = nil
                 archiveFeedback.cancel()
+                archiveReveal.cancel()
                 // The native host is gone, so it can no longer report the
                 // exit. Without this the rail would keep this Pickle's name in
                 // its shared preview after the row disappears.
                 if isHovered { updateHover(false) }
             }
             .animation(.easeOut(duration: 0.12), value: isHovered)
+            .animation(.easeOut(duration: 0.12), value: archiveReveal.isRevealed)
             // The horizontal rail already shows the name in its preview row;
             // a tooltip there only repeats it. VoiceOver reads the label below.
             .help(isHorizontalCompact ? "" : PickyHUDDockRowStatusPresentation.title(for: session))
@@ -371,6 +374,7 @@ struct PickyHUDDockSessionRow: View {
 
     private func updateHover(_ hovering: Bool) {
         if isHovered != hovering { isHovered = hovering }
+        archiveReveal.setHovering(hovering)
         onHoverChanged(hovering)
     }
 

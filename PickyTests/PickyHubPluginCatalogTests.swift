@@ -39,17 +39,47 @@ struct PickyHubPluginCatalogTests {
         #expect(catalog.filtered.map(\.id) == ["diff-review", "ask-user-question"])
     }
 
-    @Test func recommendedItemsFollowDeclaredCatalogOrder() {
-        let catalog = makeCatalog(
+    @Test func recommendedShowsAtMostFourPreferringNotInstalled() {
+        let installedSources: Set<String> = [
+            PickyCuratedPlugin.askUserQuestion.source,
+            PickyCuratedPlugin.memoryLayer.source
+        ]
+        let curated = PickyCuratedPluginsViewModel(
             plugins: [
-                PickyCuratedPlugin.autoName,
-                PickyCuratedPlugin.generativeUI,
+                PickyCuratedPlugin.subagent,
+                PickyCuratedPlugin.diffReview,
+                PickyCuratedPlugin.memoryLayer,
+                PickyCuratedPlugin.webAccess,
                 PickyCuratedPlugin.askUserQuestion,
-                PickyCuratedPlugin.diffReview
-            ]
+                PickyCuratedPlugin.autoName,
+                PickyCuratedPlugin.chromeCDP
+            ],
+            statusForSource: { installedSources.contains($0) ? .installed(isPinned: false) : .notInstalled }
+        )
+        let catalog = PickyHubPluginCatalogViewModel(
+            curated: curated,
+            pluginReloadController: PickyPluginReloadController(client: HubPluginFanoutClient())
         )
 
-        #expect(catalog.recommended.map(\.id) == PickyHubPluginCatalogViewModel.recommendedIDs)
+        // Not-installed pool items in declared order; diff-review is outside the pool.
+        #expect(catalog.recommended.map(\.id) == ["auto-name", "web-access", "chrome-cdp", "subagent"])
+    }
+
+    @Test func recommendedFillsWithInstalledWhenFewAreLeft() {
+        let curated = PickyCuratedPluginsViewModel(
+            plugins: [
+                PickyCuratedPlugin.askUserQuestion,
+                PickyCuratedPlugin.autoName,
+                PickyCuratedPlugin.memoryLayer
+            ],
+            statusForSource: { $0 == PickyCuratedPlugin.autoName.source ? .notInstalled : .installed(isPinned: false) }
+        )
+        let catalog = PickyHubPluginCatalogViewModel(
+            curated: curated,
+            pluginReloadController: PickyPluginReloadController(client: HubPluginFanoutClient())
+        )
+
+        #expect(catalog.recommended.map(\.id) == ["auto-name", "ask-user-question", "memory-layer"])
     }
 
     @Test func installPublishesLocalizedSuccessFeedback() async throws {

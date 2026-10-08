@@ -201,8 +201,11 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
         let title: String
         let retry: () -> Void
     }
-    /// Dashboard shows these four in mockup order.
-    static let recommendedIDs = ["diff-review", "ask-user-question", "generative-ui", "auto-name"]
+    /// Dashboard recommendation pool, in priority order.
+    static let recommendedIDs = [
+        "ask-user-question", "auto-name", "memory-layer", "web-access", "chrome-cdp",
+        "excalidraw", "bash-async", "vcc-ko", "clipboard", "subagent",
+    ]
 
     init(curated: PickyCuratedPluginsViewModel, pluginReloadController: PickyPluginReloadController,
          bundled: PickyExtensionsSectionViewModel? = nil) {
@@ -272,9 +275,20 @@ final class PickyHubPluginCatalogViewModel: ObservableObject {
         }
     }
 
+    /// Dashboard shows at most this many recommendations at once.
+    static let recommendedLimit = 4
+
+    /// Not-installed pool items first, then installed ones as filler, capped at
+    /// `recommendedLimit`. A row the user just acted on (busy, or showing a
+    /// success or error) stays in the first group so it does not vanish mid-action.
     var recommended: [PickyHubPluginItem] {
         let all = items
-        return Self.recommendedIDs.compactMap { id in all.first { $0.id == id } }
+        let pool = Self.recommendedIDs.compactMap { id in all.first { $0.id == id } }
+        let isActive: (PickyHubPluginItem) -> Bool = {
+            !$0.isInstalled || $0.isBusy || $0.successMessage != nil || $0.errorMessage != nil
+        }
+        let ordered = pool.filter(isActive) + pool.filter { !isActive($0) }
+        return Array(ordered.prefix(Self.recommendedLimit))
     }
 
     var filtered: [PickyHubPluginItem] {

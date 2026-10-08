@@ -467,6 +467,8 @@ A control stays disabled while its change is in flight, and a failed change show
 
 When a runtime request fails, its error bubble shows **Retry**. Retry keeps the existing Pickle transcript and resumes it with a short continuation, so it does not re-send the original request or intentionally repeat completed work. If Pi rejected the original request before it was delivered, Retry safely sends that original request again instead. For manual diagnosis, the card menu's **Copy resume command** reopens the same session in your own terminal.
 
+If a Pickle's previous run does not shut down, Picky restarts the Pickle on its own on a copy of its Pi session file. A banner above the composer shows **Restarting this Pickle**, then **Pickle restarted**; work that was in progress does not continue, but you can keep the conversation going. If the restart fails, the banner reads **This Pickle can't continue** and offers **Duplicate and continue**, which starts a new Pickle with the same conversation. A message you send while the Pickle is restarting or has no runtime stays in the composer, with the reason it did not go out. A background task whose stop could not be confirmed stays listed as status unknown, but no longer blocks new messages.
+
 Keyboard behavior inside the composer:
 
 | Key | Action |

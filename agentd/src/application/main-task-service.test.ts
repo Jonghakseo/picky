@@ -219,6 +219,16 @@ describe("Task to Pickle handoff", () => {
     expect(service.listDecisions()).toHaveLength(1);
   });
 
+  it("offers the question's answers instead of a resume while the user decides", async () => {
+    const { service, task } = await escalatedTask();
+    const taskView = () => service.snapshot().tasks.find((entry) => entry.id === task.id);
+    expect(taskView()).toMatchObject({ status: "blocked", canResume: true });
+    const decision = service.createDecision({ title: "Fix login retry", instructions: "Fix the double retry", fromTaskId: task.id });
+    expect(taskView()).toMatchObject({ status: "blocked", canResume: false });
+    await service.resolveDecision(decision.id, "cancel", "app");
+    expect(taskView()).toMatchObject({ status: "blocked", canResume: true });
+  });
+
   it("hands the Task's findings to a new Pickle and closes the Task's own path", async () => {
     const { service, createPickle, task } = await escalatedTask();
     service.markCompletionDelivered({ taskId: task.id, revision: 1 });

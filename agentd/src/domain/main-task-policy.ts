@@ -111,8 +111,14 @@ export function projectMainTasksSnapshot(tasks: readonly TaskRecord[], decisions
   const sortedDecisions = [...decisions].sort(newestFirst);
   const open = sortedDecisions.filter((decision) => isOpenDecision(decision));
   const resolved = sortedDecisions.filter((decision) => !open.includes(decision)).slice(0, MAX_RESOLVED_DECISIONS);
+  // While the user is asked whether a Task's work goes to a Pickle, the question's answers are the
+  // way forward. A plain resume would rerun the worker without that choice and stop at the same place.
+  const askingTaskIds = new Set(open.flatMap((decision) => (decision.fromTaskId ? [decision.fromTaskId] : [])));
   return {
-    tasks: [...live, ...finished].map(projectMainTask),
+    tasks: [...live, ...finished].map((task) => {
+      const projected = projectMainTask(task);
+      return askingTaskIds.has(task.id) ? { ...projected, canResume: false } : projected;
+    }),
     decisions: [...open, ...resolved].map(projectDelegationDecision),
   };
 }

@@ -121,7 +121,7 @@ The controls at the bottom of the sidebar are always available:
 
 - **Check for updates**: runs the same check as **Settings → General → Check now**. Hidden in builds without automatic updates (Alpha), and dimmed while a check is in progress.
 - **Dock**: with one connected display, toggles that display's HUD dock. With multiple displays, opens a picker with a visibility checkbox for every connected display. Each choice persists independently; opening a Pickle from a notification restores the required dock.
-- **Send feedback (bug glyph)**: opens a feedback dialog from any Hub page. It supports Bug, Idea, or Other; text; up to 5 attachments (100 MB each, 250 MB total); and optional masked diagnostics. If feedback is unavailable in the build/environment, sending is disabled.
+- **Send feedback (bug glyph)**: opens a feedback dialog from any Hub page. It supports Bug, Idea, or Other; text; up to 5 attachments (100 MB each, 250 MB total); and optional masked diagnostics. **Send** saves the feedback and copies of its attachments on this Mac, then closes the dialog; Picky collects diagnostics and sends it in the background, and resumes queued feedback after a restart. Feedback that fails, or whose delivery Slack did not confirm, stays listed at the top of the dialog with **Retry** or **Send again** and **Discard**, and a dot appears on the bug glyph. **Send again** may post the same feedback twice. If feedback is unavailable in the build/environment, sending is disabled.
 - **Quit**: asks for confirmation before terminating Picky. When saved settings require a fresh process, this becomes **Restart**.
 - **Light/Dark icons**: select and persist Hub's appearance.
 
@@ -326,6 +326,7 @@ Create a group:
 
 - Click the `+` slot → **New Group…**, give it a name, and optionally pick initial Pickles and an accent color.
 - A new group opens expanded. An expanded group with no Pickles shows a **Drop a Pickle here** placeholder; drag Pickles onto it, or click it to start a Pickle in that group.
+- In the horizontal dock, an expanded group with Pickles ends in a narrow `+` slot inside its card. Click it to start a Pickle in that group from a recent folder.
 
 Manage membership:
 
@@ -478,8 +479,8 @@ The chevron on the right of the send button opens **Send when**:
 | Option | Delivery |
 | --- | --- |
 | After this reply (`Option + Return`) | Queued as a follow-up for when the current reply ends. |
-| In 5 min / In 1 h | That long after you pick it. |
-| Tomorrow at 9:00 AM | The next calendar day at 9:00, even shortly after midnight. |
+| In 15 min / In 1 h | That long after you pick it. |
+| Tomorrow at 10:00 AM | The next calendar day at 10:00, even shortly after midnight. |
 | Custom time | Opens a date and time picker in the same menu. |
 
 In **Custom time**, the date menu lists the next two weeks; **Other date…** opens a month calendar for dates up to a year ahead. Type the time (for example `15:30`, `1530`, `3pm`, or `오후 3시`) or pick it from 15-minute steps. A time typed without AM/PM means the next time it occurs on the chosen day. **Schedule** stays disabled for an unreadable or past time.

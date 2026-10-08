@@ -317,6 +317,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             companionManager.bindSessionProjectionTransitions(to: hudSessionViewModel.sessionProjectionTransitions)
             hudOverlayManager.usageLimitsStore = usageLimitsStore
             hudOverlayManager.start()
+            // Feedback the user submitted before the last quit is still on
+            // disk. Pick up anything safe to resume; submissions whose Slack
+            // outcome was never confirmed stay put and wait for the user.
+            PickyFeedbackOutboxCenter.shared.resumePendingJobs()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require
             // admin auth (typical fresh /usr/local/bin) is left for the user

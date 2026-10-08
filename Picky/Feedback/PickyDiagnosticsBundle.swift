@@ -10,7 +10,7 @@
 
 import Foundation
 
-enum PickyDiagnosticsBundleScope: Sendable {
+enum PickyDiagnosticsBundleScope: String, Codable, Sendable {
     case logsOnly
     case full
 
@@ -29,7 +29,7 @@ enum PickyDiagnosticsBundleScope: Sendable {
     }
 }
 
-struct PickyDiagnosticsBundle {
+struct PickyDiagnosticsBundle: Sendable {
     let zipURL: URL
     let filename: String
 }
@@ -309,7 +309,9 @@ enum PickyDiagnosticsBundleBuilder {
         oslogProvider: (() -> String)? = nil,
         portOccupancyProvider: ([Int]) -> String = { PickyPortOccupancyCollector.collect(ports: $0) },
         ipsReportsRoot: URL? = nil,
-        diagnosticsNow: Date = Date()
+        diagnosticsNow: Date = Date(),
+        oslogAnchor: Date? = nil,
+        correlationID: String? = nil
     ) throws -> PickyDiagnosticsBundle {
         let timestamp = filenameTimestamp(from: metadata.generatedAt)
         let bundleName = "picky-diagnostics-\(scope.fileSlug)-\(timestamp)"
@@ -323,6 +325,10 @@ enum PickyDiagnosticsBundleBuilder {
             throw PickyDiagnosticsBundleError.stagingFailed(error.localizedDescription)
         }
 
+        // Each substep is timed under the same job id. A "stuck on sending"
+        // report then says which one was slow instead of leaving the whole
+        // bundle as one opaque number.
+        let stagingStartedAt = Date()
         try stageAlwaysOnFiles(
             stagingRoot: stagingRoot,
             metadata: metadata,
@@ -334,7 +340,9 @@ enum PickyDiagnosticsBundleBuilder {
             oslogProvider: oslogProvider,
             portOccupancyProvider: portOccupancyProvider,
             ipsReportsRoot: ipsReportsRoot ?? PickyIPSCollector.defaultReportsRoot(fileManager: fileManager),
-            diagnosticsNow: diagnosticsNow
+            diagnosticsNow: diagnosticsNow,
+            oslogAnchor: oslogAnchor ?? diagnosticsNow,
+            correlationID: correlationID
         )
 
         if scope == .full {
@@ -344,9 +352,34 @@ enum PickyDiagnosticsBundleBuilder {
                 fileManager: fileManager
             )
         }
+        PickyFeedbackStageLog.record(
+            correlationID: correlationID,
+            stage: "diagnostics.stage",
+            startedAt: stagingStartedAt,
+            byteCount: directoryByteCount(at: stagingRoot, fileManager: fileManager),
+            outcome: .succeeded
+        )
 
         let zipURL = workRoot.appendingPathComponent("\(bundleName).zip")
-        try zipDirectory(at: stagingRoot, to: zipURL)
+        let zipStartedAt = Date()
+        do {
+            try zipDirectory(at: stagingRoot, to: zipURL)
+        } catch {
+            PickyFeedbackStageLog.record(
+                correlationID: correlationID,
+                stage: "diagnostics.zip",
+                startedAt: zipStartedAt,
+                outcome: .failed("zip")
+            )
+            throw error
+        }
+        PickyFeedbackStageLog.record(
+            correlationID: correlationID,
+            stage: "diagnostics.zip",
+            startedAt: zipStartedAt,
+            byteCount: (try? zipURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0,
+            outcome: .succeeded
+        )
         return PickyDiagnosticsBundle(zipURL: zipURL, filename: zipURL.lastPathComponent)
     }
 
@@ -361,7 +394,9 @@ enum PickyDiagnosticsBundleBuilder {
         oslogProvider: (() -> String)?,
         portOccupancyProvider: ([Int]) -> String,
         ipsReportsRoot: URL,
-        diagnosticsNow: Date
+        diagnosticsNow: Date,
+        oslogAnchor: Date,
+        correlationID: String? = nil
     ) throws {
         let logsDir = appSupportRoot.appendingPathComponent("Logs", isDirectory: true)
         // Always stage the agentd stderr tail — even if the source file is
@@ -375,12 +410,21 @@ enum PickyDiagnosticsBundleBuilder {
             maxBytes: maxLogBytes,
             fileManager: fileManager
         )
+        // `lsof` is an external process with its own timeout, so it gets its
+        // own breadcrumb rather than hiding inside the staging total.
+        let portProbeStartedAt = Date()
         stagePortOccupancyDiagnostics(
             from: stderrLogURL,
             to: stagingRoot.appendingPathComponent("agentd.port-occupants.txt"),
             maxBytes: maxLogBytes,
             fileManager: fileManager,
             portOccupancyProvider: portOccupancyProvider
+        )
+        PickyFeedbackStageLog.record(
+            correlationID: correlationID,
+            stage: "diagnostics.ports",
+            startedAt: portProbeStartedAt,
+            outcome: .succeeded
         )
         // Stage the daemon's last-known status snapshots. The legacy
         // `agentd.status.json` remains for compatibility, while role-specific
@@ -428,8 +472,20 @@ enum PickyDiagnosticsBundleBuilder {
         let retainedProcessIDs = PickyLifecycleDiagnosticsStore
             .recentProcessIDs(from: logsDir)
             .union([ProcessInfo.processInfo.processIdentifier])
+        // Anchored at the moment the user pressed Send, not at delivery time,
+        // so a job that waits in the outbox still reports the window around
+        // the problem the user was looking at.
+        let oslogStartedAt = Date()
         let collectedOSLog = oslogProvider?() ?? PickyOSLogCollector.collectRecentProcesses(
-            retainedProcessIDs: retainedProcessIDs
+            retainedProcessIDs: retainedProcessIDs,
+            now: oslogAnchor
+        )
+        PickyFeedbackStageLog.record(
+            correlationID: correlationID,
+            stage: "diagnostics.oslog",
+            startedAt: oslogStartedAt,
+            byteCount: collectedOSLog.lengthOfBytes(using: .utf8),
+            outcome: PickyOSLogCollector.collectionOutcome(for: collectedOSLog)
         )
         let oslogText = PickyDiagnosticTextRedactor.truncateUTF8(
             PickyDiagnosticTextRedactor.redact(collectedOSLog),
@@ -452,10 +508,18 @@ enum PickyDiagnosticsBundleBuilder {
         )
         try? lifecycleText.write(to: lifecyclePath, atomically: true, encoding: .utf8)
 
+        let ipsStartedAt = Date()
         let ips = PickyIPSCollector.collect(
             reportsRoot: ipsReportsRoot,
             now: diagnosticsNow,
             fileManager: fileManager
+        )
+        PickyFeedbackStageLog.record(
+            correlationID: correlationID,
+            stage: "diagnostics.crashReports",
+            startedAt: ipsStartedAt,
+            byteCount: ips.manifestText.lengthOfBytes(using: .utf8),
+            outcome: .succeeded
         )
         let ipsManifest = PickyDiagnosticTextRedactor.truncateUTF8(
             PickyDiagnosticTextRedactor.redact(ips.manifestText),
@@ -905,6 +969,21 @@ truncated=\(truncated)
         if let captured {
             throw PickyDiagnosticsBundleError.zipFailed(captured.localizedDescription)
         }
+    }
+
+    /// Total size of the staged files, for the stage breadcrumb. Names and
+    /// contents stay out of it; only the number is logged.
+    private static func directoryByteCount(at directoryURL: URL, fileManager: FileManager) -> Int {
+        guard let enumerator = fileManager.enumerator(
+            at: directoryURL,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        var total = 0
+        for case let url as URL in enumerator {
+            total += (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        }
+        return total
     }
 
     private static func filenameTimestamp(from date: Date) -> String {

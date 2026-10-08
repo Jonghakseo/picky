@@ -211,11 +211,109 @@ struct PickyFeedbackSenderTests {
     @Test func non200StatusMapsToHTTPError() async {
         let transport = StubTransport()
         transport.responses = [
-            .success(transport.makeJSON(["ok": true], status: 502))
+            .success(transport.makeJSON(["ok": true], status: 404))
         ]
         let sender = makeSender(transport: transport)
-        await #expect(throws: PickyFeedbackSendError.httpStatus(502, "chat.postMessage")) {
+        await #expect(throws: PickyFeedbackSendError.httpStatus(404, "chat.postMessage")) {
             try await sender.send(self.makePayload(), attachment: nil)
         }
+    }
+
+    // MARK: - Delivery certainty
+    //
+    // The outbox retries on its own, so the sender has to say whether a failed
+    // attempt could still have reached the channel.
+
+    @Test func unansweredPublishRequestIsReportedAsUncertain() async {
+        let transport = StubTransport()
+        transport.responses = [.failure(URLError(.timedOut))]
+        let sender = makeSender(transport: transport)
+
+        await #expect(throws: PickyFeedbackDeliveryUncertainError.self) {
+            try await sender.send(self.makePayload(), attachment: nil)
+        }
+    }
+
+    @Test func serverErrorOnPublishIsReportedAsUncertain() async {
+        let transport = StubTransport()
+        transport.responses = [.success(transport.makeJSON(["ok": true], status: 503))]
+        let sender = makeSender(transport: transport)
+
+        await #expect(throws: PickyFeedbackDeliveryUncertainError(underlying: .httpStatus(503, "chat.postMessage"))) {
+            try await sender.send(self.makePayload(), attachment: nil)
+        }
+    }
+
+    @Test func rejectedPublishRequestIsNotUncertain() async {
+        let transport = StubTransport()
+        transport.responses = [.success(transport.makeJSON(["ok": false, "error": "invalid_auth"]))]
+        let sender = makeSender(transport: transport)
+
+        await #expect(throws: PickyFeedbackSendError.slackError("invalid_auth")) {
+            try await sender.send(self.makePayload(), attachment: nil)
+        }
+    }
+
+    /// A 2xx body that is not a readable Slack envelope says nothing about
+    /// whether the message was posted. Treating it as a plain failure would
+    /// let the outbox retry and post the same feedback twice.
+    @Test func unreadablePublishResponseIsReportedAsUncertain() async {
+        let transport = StubTransport()
+        transport.responses = [.success((Data("<html>proxy</html>".utf8), transport.makeJSON([:]).1))]
+        let sender = makeSender(transport: transport)
+
+        await #expect(throws: PickyFeedbackDeliveryUncertainError.self) {
+            try await sender.send(self.makePayload(), attachment: nil)
+        }
+    }
+
+    /// A JSON body without a positive `ok` is not a confirmed success either.
+    @Test func publishResponseWithoutOkIsReportedAsUncertain() async {
+        let transport = StubTransport()
+        transport.responses = [.success(transport.makeJSON(["warning": "superfluous_charset"]))]
+        let sender = makeSender(transport: transport)
+
+        await #expect(throws: PickyFeedbackDeliveryUncertainError.self) {
+            try await sender.send(self.makePayload(), attachment: nil)
+        }
+    }
+
+    /// Same rule on the attachment path, where the publish step is
+    /// `files.completeUploadExternal`.
+    @Test func unreadableCompleteUploadResponseIsReportedAsUncertain() async {
+        let transport = StubTransport()
+        transport.responses = [
+            .success(transport.makeJSON([
+                "ok": true,
+                "upload_url": "https://files.slack.com/upload/1",
+                "file_id": "F1"
+            ])),
+            .success((Data("not json".utf8), transport.makeJSON([:]).1))
+        ]
+        let sender = makeSender(transport: transport)
+        let attachment = PickyFeedbackAttachment(filename: "diag.zip", data: Data("zip".utf8), kind: .diagnostics)
+
+        await #expect(throws: PickyFeedbackDeliveryUncertainError.self) {
+            try await sender.send(self.makePayload(), attachments: [attachment])
+        }
+        #expect(transport.sentCalls.map { $0.request.url?.lastPathComponent } == [
+            "files.getUploadURLExternal",
+            "files.completeUploadExternal"
+        ])
+    }
+
+    /// Failing before the publish step cannot have posted anything, so a retry
+    /// is safe and must not be marked uncertain.
+    @Test func failureBeforePublishIsNotUncertain() async {
+        let transport = StubTransport()
+        transport.responses = [.failure(URLError(.notConnectedToInternet))]
+        let sender = makeSender(transport: transport)
+        let attachment = PickyFeedbackAttachment(filename: "diag.zip", data: Data("zip".utf8), kind: .diagnostics)
+
+        await #expect(throws: PickyFeedbackSendError.self) {
+            try await sender.send(self.makePayload(), attachments: [attachment])
+        }
+        #expect(transport.sentCalls.count == 1)
+        #expect(transport.sentCalls[0].request.url?.lastPathComponent == "files.getUploadURLExternal")
     }
 }

@@ -134,7 +134,7 @@ struct PickyHubFeedbackDialog: View {
             )
             CompanionPanelFeedbackView(
                 viewModel: viewModel,
-                onSendSucceeded: { modalHost.dismiss(ifPresenting: presentationID) }
+                onSubmitted: { modalHost.dismiss(ifPresenting: presentationID) }
             )
         }
         .padding(PickyHubTheme.Spacing.cardInset)

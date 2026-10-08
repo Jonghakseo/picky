@@ -1884,8 +1884,8 @@ struct PickySessionViewModelTests {
         let targetHeight: CGFloat = 220
 
         #expect(PickyHUDDockLayout.horizontalPanelX(visibleFrame: visibleFrame, panelWidth: panelWidth) == visibleFrame.midX - (panelWidth / 2))
-        #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .top) == visibleFrame.maxY - targetHeight - PickyHUDDockLayout.dockEdgeMargin)
-        #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .bottom) == visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin)
+        #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .top) == visibleFrame.maxY - targetHeight - PickyHUDDockLayout.dockPanelTopInset)
+        #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .bottom) == visibleFrame.minY + PickyHUDDockLayout.dockPanelBottomInset)
 
         // Clamp without a dock-rail length: the dock CENTER is allowed to
         // reach `visibleFrame.maxX - screenMargin`, so the (transparent)
@@ -1951,8 +1951,41 @@ struct PickySessionViewModelTests {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
         let panelWidth: CGFloat = 540
 
-        #expect(PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left) == visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin)
-        #expect(PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right) == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin)
+        #expect(PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left) == visibleFrame.minX + PickyHUDDockLayout.dockPanelSideInset)
+        #expect(PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right) == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockPanelSideInset)
+    }
+
+    @Test func hudDockVisibleCapsuleSitsDockEdgeMarginFromEveryPinnedEdge() throws {
+        // The transparent shadow bleed may hang off-screen; the visible capsule
+        // (panel edge + shadow inset) must sit exactly `dockEdgeMargin` from the
+        // edge it is pinned to, including the bottom where the bleed is larger.
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
+        let panelWidth: CGFloat = 540
+        let targetHeight: CGFloat = 220
+        let margin = PickyHUDDockLayout.dockEdgeMargin
+        let side = PickyHUDExpansion.dockShadowHorizontalPadding
+        let top = PickyHUDExpansion.dockShadowTopPadding
+        let bottom = PickyHUDExpansion.dockShadowBottomPadding
+
+        let rightX = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right)
+        #expect(visibleFrame.maxX - (rightX + panelWidth - side) == margin)
+        let leftX = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left)
+        #expect((leftX + side) - visibleFrame.minX == margin)
+
+        let topY = PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .top)
+        #expect(visibleFrame.maxY - (topY + targetHeight - top) == margin)
+        let bottomY = PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .bottom)
+        #expect((bottomY + bottom) - visibleFrame.minY == margin)
+
+        // A vertical dock stretched to the bottom stops at the same visible gap.
+        let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
+        let cap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
+            visibleFrame: visibleFrame, topPaddingFromContentTop: topPadding, anchorPercent: 22
+        )
+        let cappedY = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
+            visibleFrame: visibleFrame, targetHeight: cap, topPaddingFromContentTop: topPadding, anchorPercent: 22
+        )
+        #expect((cappedY + bottom) - visibleFrame.minY == margin)
     }
 
     @Test func hudDockPanelXOffsetShiftsPanelHorizontally() throws {
@@ -1961,15 +1994,15 @@ struct PickySessionViewModelTests {
 
         // Right-docked: negative offset shifts left (inward), positive shifts right (outward).
         let rightInward = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right, xOffset: -100)
-        #expect(rightInward == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin - 100)
+        #expect(rightInward == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockPanelSideInset - 100)
         let rightOutward = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right, xOffset: 100)
-        #expect(rightOutward == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin + 100)
+        #expect(rightOutward == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockPanelSideInset + 100)
 
         // Left-docked: positive offset shifts right (inward), negative shifts left (outward).
         let leftInward = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left, xOffset: 100)
-        #expect(leftInward == visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin + 100)
+        #expect(leftInward == visibleFrame.minX + PickyHUDDockLayout.dockPanelSideInset + 100)
         let leftOutward = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left, xOffset: -100)
-        #expect(leftOutward == visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin - 100)
+        #expect(leftOutward == visibleFrame.minX + PickyHUDDockLayout.dockPanelSideInset - 100)
     }
 
     @Test func hudDockPanelXOffsetClampedToScreenEdgesAndOverhang() throws {
@@ -1994,7 +2027,7 @@ struct PickySessionViewModelTests {
             panelWidth: panelWidth,
             dockSide: .right
         )
-        let naturalRightX = visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin
+        let naturalRightX = visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockPanelSideInset
         let minRightX = visibleFrame.minX + margin
         #expect(rightInwardClamped == -(naturalRightX - minRightX))
 
@@ -2014,7 +2047,7 @@ struct PickySessionViewModelTests {
             panelWidth: panelWidth,
             dockSide: .left
         )
-        let naturalLeftX = visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin
+        let naturalLeftX = visibleFrame.minX + PickyHUDDockLayout.dockPanelSideInset
         let maxLeftX = visibleFrame.maxX - margin - panelWidth
         #expect(leftInwardClamped == maxLeftX - naturalLeftX)
     }
@@ -2201,8 +2234,8 @@ struct PickySessionViewModelTests {
 
     @Test func dockTopAnchoredMaxPanelHeightCapsAtVisibleFrameFloor() throws {
         // The cap must be exactly the height that places panel.origin.y at
-        // visibleFrame.minY + screenMargin so the conversation card cannot push
-        // through the bottom of the visible frame.
+        // the dock-anchored bottom floor so the visible card stops
+        // `dockEdgeMargin` above the bottom of the visible frame.
         let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 876)
         let topPadding: CGFloat = 32
         let cap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
@@ -2216,7 +2249,7 @@ struct PickySessionViewModelTests {
             topPaddingFromContentTop: topPadding,
             anchorPercent: 22.0
         )
-        #expect(originAtCap == visibleFrame.minY + PickyHUDDockLayout.screenMargin)
+        #expect(originAtCap == PickyHUDDockLayout.dockAnchoredPanelBottomFloor(visibleFrame: visibleFrame))
     }
 
     @Test func dockTopAnchoredPointAlignedPanelKeepsDockTopStableAcrossHeights() throws {
@@ -2268,7 +2301,7 @@ struct PickySessionViewModelTests {
             topPaddingFromContentTop: topPadding,
             anchorPercent: anchor
         )
-        let bottomFloor = (visibleFrame.minY + PickyHUDDockLayout.screenMargin).rounded(.up)
+        let bottomFloor = PickyHUDDockLayout.dockAnchoredPanelBottomFloor(visibleFrame: visibleFrame).rounded(.up)
         let originAtCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
             visibleFrame: visibleFrame,
             targetHeight: pointAlignedCap,

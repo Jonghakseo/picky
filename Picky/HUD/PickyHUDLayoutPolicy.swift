@@ -362,12 +362,23 @@ enum PickyHUDDockLayout {
     static var railWidth: CGFloat { PickyHUDDockMetrics.medium.railWidth }
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8
-    /// Distance kept between the dock capsule and the screen edge.
-    /// Tighter than `screenMargin` so the dock visually anchors to the bezel.
+    /// Visible gap between the dock capsule (and card) and the screen edge it is
+    /// pinned to. Tighter than `screenMargin` so the dock visually anchors to the bezel.
     static let dockEdgeMargin: CGFloat = 4
-    /// Backward-compatible name for callers/tests that describe the default right edge.
-    static let dockRightEdgeMargin: CGFloat = dockEdgeMargin
-    static let dockLeftEdgeMargin: CGFloat = dockEdgeMargin
+    /// Panel-edge offsets that land the visible chrome `dockEdgeMargin` from the
+    /// pinned screen edge. They are negative: the transparent shadow bleed around
+    /// the capsule hangs past the visible frame instead of pushing the capsule
+    /// inward, and pointer input there already passes through
+    /// (`PickyHUDInkPassThroughPolicy` only claims `visibleChromeFrames`).
+    static var dockPanelSideInset: CGFloat {
+        dockEdgeMargin - PickyHUDExpansion.dockShadowHorizontalPadding
+    }
+    static var dockPanelTopInset: CGFloat {
+        dockEdgeMargin - PickyHUDExpansion.dockShadowTopPadding
+    }
+    static var dockPanelBottomInset: CGFloat {
+        dockEdgeMargin - PickyHUDExpansion.dockShadowBottomPadding
+    }
     static let closeDelay = PickyHUDDockHoverDisclosurePolicy.closeGrace
     static let closeDelayNanoseconds = PickyHUDDockHoverDisclosurePolicy.closeGraceNanoseconds
     static let defaultGitSectionExpanded = true
@@ -594,14 +605,14 @@ enum PickyHUDDockLayout {
         let raw: CGFloat
         switch dockSide {
         case .right:
-            raw = visibleFrame.maxX - panelWidth - dockRightEdgeMargin + xOffset
+            raw = visibleFrame.maxX - panelWidth - dockPanelSideInset + xOffset
         case .left:
-            raw = visibleFrame.minX + dockLeftEdgeMargin + xOffset
+            raw = visibleFrame.minX + dockPanelSideInset + xOffset
         case .top, .bottom:
             // Vertical-only helper; horizontal callers use `horizontalPanelX`.
             // Fall back to the `.right` placement so accidental misuse stays on
             // screen instead of producing NaN.
-            raw = visibleFrame.maxX - panelWidth - dockRightEdgeMargin + xOffset
+            raw = visibleFrame.maxX - panelWidth - dockPanelSideInset + xOffset
         }
         return raw.rounded(.toNearestOrEven)
     }
@@ -751,11 +762,11 @@ enum PickyHUDDockLayout {
         case .top:
             // +yOffset = drag up (panel.y increases, dock peeks past the top edge).
             // -yOffset = drag down (dock slides into the screen toward center).
-            return (visibleFrame.maxY - targetHeight - dockEdgeMargin + yOffset).rounded(.toNearestOrEven)
+            return (visibleFrame.maxY - targetHeight - dockPanelTopInset + yOffset).rounded(.toNearestOrEven)
         case .bottom:
             // +yOffset = drag up (dock slides toward center).
             // -yOffset = drag down past the bottom edge for overhang.
-            return (visibleFrame.minY + dockEdgeMargin + yOffset).rounded(.toNearestOrEven)
+            return (visibleFrame.minY + dockPanelBottomInset + yOffset).rounded(.toNearestOrEven)
         case .left, .right:
             return dockTopAnchoredPointAlignedPanelY(
                 visibleFrame: visibleFrame,
@@ -782,14 +793,14 @@ enum PickyHUDDockLayout {
         switch dockSide {
         case .top:
             let minY = visibleFrame.minY + screenMargin
-            let naturalY = visibleFrame.maxY - panelHeight - dockEdgeMargin
+            let naturalY = visibleFrame.maxY - panelHeight - dockPanelTopInset
             // Drag down (negative yOffset) limited by visible bottom; drag up
             // (positive yOffset) limited by overhang past top edge.
             let maxShiftDown = naturalY - minY
             return max(-maxShiftDown, min(overhangLimit, yOffset))
         case .bottom:
             let maxY = visibleFrame.maxY - screenMargin - panelHeight
-            let naturalY = visibleFrame.minY + dockEdgeMargin
+            let naturalY = visibleFrame.minY + dockPanelBottomInset
             let maxShiftUp = maxY - naturalY
             return min(maxShiftUp, max(-overhangLimit, yOffset))
         case .left, .right:
@@ -839,18 +850,25 @@ enum PickyHUDDockLayout {
         switch dockSide {
         case .right, .top, .bottom:
             let minX = visibleFrame.minX + screenMargin
-            let naturalX = visibleFrame.maxX - panelWidth - dockRightEdgeMargin
+            let naturalX = visibleFrame.maxX - panelWidth - dockPanelSideInset
             let maxShiftLeft = naturalX - minX
             return max(-maxShiftLeft, min(overhangLimit, xOffset))
         case .left:
             let maxX = visibleFrame.maxX - screenMargin - panelWidth
-            let naturalX = visibleFrame.minX + dockLeftEdgeMargin
+            let naturalX = visibleFrame.minX + dockPanelSideInset
             let maxShiftRight = maxX - naturalX
             return min(maxShiftRight, max(-overhangLimit, xOffset))
         }
     }
 
     // MARK: - Dock-top anchored placement
+
+    /// Lowest NSPanel origin Y for a vertical dock. The visible dock and card
+    /// bottoms stop `dockEdgeMargin` above the visible frame; only the transparent
+    /// bottom shadow bleed may hang below it.
+    static func dockAnchoredPanelBottomFloor(visibleFrame: CGRect) -> CGFloat {
+        visibleFrame.minY + dockPanelBottomInset
+    }
 
     /// Largest anchor percent that still keeps `keepVisible` (one dock handle slot)
     /// of the rail above the screen's bottom edge. Screen-aware so taller displays
@@ -887,8 +905,7 @@ enum PickyHUDDockLayout {
     ) -> CGFloat {
         let dockTopY = dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchorPercent)
         let originY = dockTopY - targetHeight + topPaddingFromContentTop
-        let minimumY = visibleFrame.minY + screenMargin
-        return max(originY, minimumY)
+        return max(originY, dockAnchoredPanelBottomFloor(visibleFrame: visibleFrame))
     }
 
     /// Point-aligned NSPanel top Y for dock-top anchoring. AppKit normalizes window
@@ -920,12 +937,12 @@ enum PickyHUDDockLayout {
             topPaddingFromContentTop: topPaddingFromContentTop,
             anchorPercent: anchorPercent
         )
-        let minimumY = (visibleFrame.minY + screenMargin).rounded(.up)
+        let minimumY = dockAnchoredPanelBottomFloor(visibleFrame: visibleFrame).rounded(.up)
         return max(panelTopY - targetHeight, minimumY)
     }
 
     /// Largest panel height that still lets `dockTopAnchoredPanelY` keep the dock at
-    /// `dockTopScreenY` without falling through `visibleFrame.minY + screenMargin`.
+    /// `dockTopScreenY` without falling through `dockAnchoredPanelBottomFloor`.
     /// The conversation list inside the card has its own ScrollView so anything
     /// requesting more height scrolls in place rather than overflowing the screen.
     static func dockTopAnchoredMaxPanelHeight(
@@ -934,7 +951,7 @@ enum PickyHUDDockLayout {
         anchorPercent: Double
     ) -> CGFloat {
         let dockTopY = dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchorPercent)
-        let bottomFloor = visibleFrame.minY + screenMargin
+        let bottomFloor = dockAnchoredPanelBottomFloor(visibleFrame: visibleFrame)
         return max(0, dockTopY - bottomFloor + topPaddingFromContentTop)
     }
 
@@ -951,7 +968,7 @@ enum PickyHUDDockLayout {
             topPaddingFromContentTop: topPaddingFromContentTop,
             anchorPercent: anchorPercent
         )
-        let bottomFloor = (visibleFrame.minY + screenMargin).rounded(.up)
+        let bottomFloor = dockAnchoredPanelBottomFloor(visibleFrame: visibleFrame).rounded(.up)
         return max(0, panelTopY - bottomFloor)
     }
 }

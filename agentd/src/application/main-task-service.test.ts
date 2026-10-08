@@ -91,7 +91,7 @@ describe("main Tasks", () => {
     expect(service.nextCompletion()).toBeUndefined();
   });
 
-  it("uses Picky's default folder instead of the main workspace when none is given", async () => {
+  it("starts in the injected default folder when the request names none", async () => {
     const { service, workers } = fixture();
     service.createTask({ instruction: "Summarize the three newest PDFs in Downloads" });
     await launched(workers, 1);

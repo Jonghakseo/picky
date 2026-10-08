@@ -20,6 +20,9 @@ export interface MainTaskToolPort {
 export const MAIN_TASK_TOOL = "Task";
 export const PICKLE_DELEGATION_TOOL = "pickle_delegation";
 
+/** A Task announced before the call would otherwise be announced twice, and Picky speaks both. */
+const ANNOUNCE = "If you have not told the user yet, say in one short sentence that it is running; if you already did, end your reply without repeating it.";
+
 type ToolText = { content: Array<{ type: "text"; text: string }>; details: Record<string, unknown> };
 const result = (text: string, details: Record<string, unknown> = {}): ToolText => ({ content: [{ type: "text", text }], details });
 const failure = (error: unknown): ToolText & { isError: true } => ({ ...result(error instanceof Error ? error.message : String(error), { error: true }), isError: true });
@@ -45,7 +48,7 @@ const TaskParams = Type.Object({
   title: Type.Optional(Type.String({ description: "Short label the user sees for a new Task, in the user's language." })),
   task: Type.Optional(Type.String({ description: "The instruction for create, or the added instruction for revise/resume. Include the goal, constraints, known paths or URLs, and the expected result." })),
   taskId: Type.Optional(Type.String()),
-  cwd: Type.Optional(Type.String({ description: "Absolute working folder for a new Task. Omit to use Picky's default working folder." })),
+  cwd: Type.Optional(Type.String({ description: "Absolute folder the work is about, such as a repository root or the folder that holds the files. Omit to start in the user's home folder." })),
   readonly: Type.Optional(Type.Boolean({ description: "Investigate without changing files. An instruction to the worker, not a sandbox." })),
 });
 
@@ -78,7 +81,7 @@ export function createMainTaskTool(port: MainTaskToolPort, evaluation: MainTaskE
         if (action === "create") {
           if (!params.task?.trim()) throw new Error("task is required to create a Task");
           const record = port.createTask({ title: params.title, instruction: params.task, cwd: params.cwd, readonly: params.readonly, branch: branchOf(ctx) });
-          return result(`${describeTask(record)}\nAccepted. The result will arrive automatically; tell the user it is running and do not poll.`, { taskId: record.id });
+          return result(`${describeTask(record)}\nAccepted. The result will arrive automatically as a later message; do not poll. ${ANNOUNCE}`, { taskId: record.id });
         }
         if (!params.taskId) throw new Error("taskId is required");
         if (action === "detail") {
@@ -92,11 +95,11 @@ export function createMainTaskTool(port: MainTaskToolPort, evaluation: MainTaskE
         }
         if (action === "resume") {
           const record = await port.resumeTask(params.taskId, params.task);
-          return result(`${describeTask(record)}\nResumed in the same worker session. The result will arrive automatically.`, { taskId: record.id });
+          return result(`${describeTask(record)}\nResumed in the same worker session. The result will arrive automatically as a later message. ${ANNOUNCE}`, { taskId: record.id });
         }
         if (!params.task?.trim()) throw new Error("task is required to revise a Task");
         const record = await port.reviseTask(params.taskId, params.task);
-        return result(`${describeTask(record)}\nRevision accepted. The result will arrive automatically.`, { taskId: record.id });
+        return result(`${describeTask(record)}\nRevision accepted. The result will arrive automatically as a later message. ${ANNOUNCE}`, { taskId: record.id });
       } catch (error) {
         return failure(error);
       }

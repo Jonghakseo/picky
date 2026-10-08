@@ -26,7 +26,7 @@ vi.mock("./runtime/pi-sdk-runtime.js", () => ({
   },
 }));
 
-import { composeAgentdServices, createSingleUseSessionIdFactory, parseAgentdConfig, primeSessionIdFactoryForResume, taskDefaultCwd, type AgentdConfig } from "./bootstrap.js";
+import { composeAgentdServices, createSingleUseSessionIdFactory, parseAgentdConfig, primeSessionIdFactoryForResume, type AgentdConfig } from "./bootstrap.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { PickyContextPacket } from "./protocol.js";
 import type { AgentRuntime, RuntimeCreateOptions } from "./runtime/types.js";
@@ -132,15 +132,6 @@ describe("parseAgentdConfig", () => {
   it("falls back to global Pickle defaults when Pickle thinking is absent or invalid", () => {
     expect(parseAgentdConfig(envFor()).pickleThinkingLevel).toBeUndefined();
     expect(parseAgentdConfig(envFor({ PICKY_PICKLE_THINKING_LEVEL: "invalid" })).pickleThinkingLevel).toBeUndefined();
-  });
-});
-
-describe("taskDefaultCwd", () => {
-  it("never starts a Task in the main agent's own workspace, so the worker does not load Picky's persona", () => {
-    const workspace = "/Users/me/Library/Application Support/Picky/Workspace";
-    expect(taskDefaultCwd(workspace, ["/elsewhere", workspace])).not.toBe(workspace);
-    expect(taskDefaultCwd(`${workspace}/`, [workspace])).not.toBe(`${workspace}/`);
-    expect(taskDefaultCwd("/Users/me/Documents", [workspace])).toBe("/Users/me/Documents");
   });
 });
 

@@ -238,7 +238,7 @@ A Task belongs to the main conversation. Its result arrives once Picky is not bu
 
 If a Task finds that the work needs production code changes, it pauses and Picky asks the same Pickle-or-Task question. Choosing Pickle hands the Task's findings and changed files to a new Pickle; choosing Task lets the same Task continue. When Picky quits, running Tasks are marked interrupted. Resume them from their row or ask Picky; they never restart on their own.
 
-Tasks run as separate local Pi processes with the same models, sign-ins, and plugins as Picky. They are not a sandbox, and MCP servers are not available to Tasks yet.
+Tasks run as separate local Pi processes with the same models, sign-ins, and plugins as Picky. A Task starts in the folder your request is about, or in your home folder when there is none. Tasks are not a sandbox, and MCP servers are not available to them yet.
 
 ## 6. Drawing screen highlights
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { LoadExtensionsResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { AgentdServer, APP_PICKLE_HANDOFF_UNAVAILABLE, type AppPickleBridgeRequest, type AppPickleBridgeResult, type AppPickleHandoffRequest, type AppPickleHandoffResult } from "./server.js";
 import { defaultAppSupportRoot } from "./artifact-store.js";
@@ -317,20 +317,12 @@ function createMainTaskBundle(
       });
       return { sessionId: result.sessionId };
     },
-    defaultCwd: () => taskDefaultCwd(currentDefaultCwd.value, [config.mainAgentCwd, join(config.appSupportDir, "Workspace")]),
+    // The configured Pickle folder is often a product repository; an everyday Task must not load
+    // its project rules. The main agent's workspace would load Picky's own persona instead.
+    defaultCwd: () => homedir(),
     log: (message, fields) => logAgentd(message, fields ?? {}),
   });
   return { service, evaluation };
-}
-
-/**
- * Picky's default Pickle folder is often the main agent's own workspace. A Task started there would
- * load the main persona's AGENTS.md and act as Picky, so it falls back to the user's home instead
- * (docs/picky-task-routing-plan.md section 8: never the main home for every Task).
- */
-export function taskDefaultCwd(configured: string, mainAgentFolders: readonly string[]): string {
-  const folder = resolve(configured);
-  return mainAgentFolders.some((candidate) => resolve(candidate) === folder) ? homedir() : configured;
 }
 
 function neutralHandoffContext(cwd: string): PickyContextPacket {

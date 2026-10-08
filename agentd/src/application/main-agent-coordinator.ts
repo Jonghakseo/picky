@@ -59,6 +59,9 @@ export class MainAgentCoordinator {
   private mainFastMode = false;
   private mainDraft = "";
   private mainAssistantDeltaSeen = false;
+  // The current assistant message's text was already spoken when its tool call began, so the
+  // message_end flush must not repeat it (see the tool_call_preparing handler).
+  private mainStepTextFlushed = false;
   private mainFirstAssistantDeltaLogged = false;
   private mainPromptDeliveredAt?: number;
   private mainVisualNarrationTurnToken = "main-turn-0";
@@ -170,6 +173,7 @@ export class MainAgentCoordinator {
     this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
+    this.mainStepTextFlushed = false;
     this.mainVisualNarration.reset();
     this.mainTerminalProcessed = false;
     this.mainIsProcessing = true;
@@ -493,6 +497,7 @@ export class MainAgentCoordinator {
     this.clearMainActivity();
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
+    this.mainStepTextFlushed = false;
     this.mainVisualNarration.reset();
     this.mainContext = undefined;
     this.mainTurnOverlayContext = undefined;
@@ -766,6 +771,7 @@ export class MainAgentCoordinator {
     this.activeMainRuntimeInputId = `main-turn-${this.mainTurnId}`;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
+    this.mainStepTextFlushed = false;
     this.mainFirstAssistantDeltaLogged = false;
     this.mainTerminalProcessed = false;
   }
@@ -995,48 +1001,33 @@ export class MainAgentCoordinator {
       this.mainDraft += this.mainVisualNarration.consume(event.delta);
       return;
     }
+    if (event.type === "tool_call_preparing") {
+      // The model finished this step's text and began a tool call. Speak the text now: the
+      // tool's arguments can stream for seconds and the tool itself (a question) can wait for
+      // minutes. The app forgets a streamed sentence once it finished speaking it, so a reply
+      // that lands after that is read aloud a second time. Later argument deltas find an empty
+      // draft and do nothing.
+      if (!this.mainDraft.trim()) return;
+      this.mainStepTextFlushed = true;
+      await this.flushMainStepText(undefined);
+      return;
+    }
     if (event.type === "turn_text_complete") {
-      // A turn ended with both assistant text and tool calls. Flush the text-so-far
-      // as its own quickReply so TTS speaks it before the tool runs, then clear the
-      // draft so the next turn's deltas accumulate cleanly. We deliberately do NOT
-      // flip `mainIsProcessing` / `mainTerminalProcessed` here — the agent run is
-      // not yet done, and the eventual agent_end terminal status still has to flow
-      // through the regular terminal handler below.
+      // A message with tool calls ended. Its text is flushed as its own quickReply so TTS speaks
+      // it before the tool runs; providers that stream tool calls already flushed it above. We
+      // deliberately do NOT flip `mainIsProcessing` / `mainTerminalProcessed` here: the agent
+      // run is not done, and its terminal status still flows through the handler below.
       if (event.inputId && this.interruptedMainInputIds.has(event.inputId)) {
         logAgentd("main interrupted turn text suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, pending: this.interruptedMainInputIds.size });
         return;
       }
-      this.mainVisualNarration.finishAssistantDsl();
-      let draftSnapshot = this.mainDraft;
-      this.mainDraft = "";
-      // Prefer the streamed draft so any deltas that the normalizer trimmed
-      // out of the final assistant message are preserved, but parse the event
-      // payload when a runtime delivers the whole turn without deltas.
-      if (!draftSnapshot && !this.mainAssistantDeltaSeen) {
-        draftSnapshot = this.mainVisualNarration.consume(event.text);
-        this.mainVisualNarration.finishAssistantDsl();
-      }
-      // Flush any buffered sentence and compute the streamed-narration flag AFTER
-      // the no-delta fallback consume, so a whole-turn `turn_text_complete` that
-      // emitted chunks via the fallback is not also re-spoken by the final reply.
-      this.mainVisualNarration.flushNarrationSentences();
-      const didStreamNarration = this.mainVisualNarration.didStreamNarration;
-      const reply = cleanFinalAnswer(this.mainVisualNarration.hasAnnotationDslTag ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot);
-      if (!reply) {
-        logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: event.text.length });
-        this.deps.emit("mainTurnSettled", this.mainReplyContextId);
-        this.mainVisualNarration.reset();
-        this.mainAssistantDeltaSeen = false;
+      if (this.mainStepTextFlushed) {
+        this.mainStepTextFlushed = false;
+        // Only text written after the tool call started is left, and only from deltas.
+        if (this.mainDraft.trim()) await this.flushMainStepText(undefined);
         return;
       }
-      logAgentd("main turn text flush", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, textChars: reply.length });
-      await this.appendMainMessage("assistant", reply);
-      const replyContextId = this.mainReplyContextId;
-      if (replyContextId) {
-        this.emitQuickReply(replyContextId, reply, this.replyMetadata(replyContextId, didStreamNarration));
-      }
-      this.mainVisualNarration.reset();
-      this.mainAssistantDeltaSeen = false;
+      await this.flushMainStepText(event.text);
       return;
     }
     if (event.type === "status") {
@@ -1108,11 +1099,47 @@ export class MainAgentCoordinator {
         this.taskCompletions?.schedule();
         this.mainVisualNarration.reset();
         this.mainAssistantDeltaSeen = false;
+        this.mainStepTextFlushed = false;
         // Drain input buffered during a compaction, then re-arm the idle timer if a threshold is met.
         this.drainMainPendingInput();
         this.scheduleMainIdleCompaction();
       }
     }
+  }
+
+  /** Emits one step's text as its own quickReply and clears the draft for the next step. */
+  private async flushMainStepText(fallbackText: string | undefined): Promise<void> {
+    this.mainVisualNarration.finishAssistantDsl();
+    let draftSnapshot = this.mainDraft;
+    this.mainDraft = "";
+    // Prefer the streamed draft so any deltas that the normalizer trimmed out of the final
+    // assistant message are preserved, but parse the event payload when a runtime delivers the
+    // whole turn without deltas.
+    if (fallbackText !== undefined && !draftSnapshot && !this.mainAssistantDeltaSeen) {
+      draftSnapshot = this.mainVisualNarration.consume(fallbackText);
+      this.mainVisualNarration.finishAssistantDsl();
+    }
+    // Flush any buffered sentence and compute the streamed-narration flag AFTER the no-delta
+    // fallback consume, so a whole-turn text that emitted chunks via the fallback is not also
+    // re-spoken by the final reply.
+    this.mainVisualNarration.flushNarrationSentences();
+    const didStreamNarration = this.mainVisualNarration.didStreamNarration;
+    const reply = cleanFinalAnswer(this.mainVisualNarration.hasAnnotationDslTag ? normalizeDslWhitespace(draftSnapshot) : draftSnapshot);
+    if (!reply) {
+      logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: fallbackText?.length ?? 0 });
+      this.deps.emit("mainTurnSettled", this.mainReplyContextId);
+      this.mainVisualNarration.reset();
+      this.mainAssistantDeltaSeen = false;
+      return;
+    }
+    logAgentd("main turn text flush", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, textChars: reply.length });
+    await this.appendMainMessage("assistant", reply);
+    const replyContextId = this.mainReplyContextId;
+    if (replyContextId) {
+      this.emitQuickReply(replyContextId, reply, this.replyMetadata(replyContextId, didStreamNarration));
+    }
+    this.mainVisualNarration.reset();
+    this.mainAssistantDeltaSeen = false;
   }
 
   private mainNarrationMetadata() {
@@ -1138,6 +1165,7 @@ export class MainAgentCoordinator {
     this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
+    this.mainStepTextFlushed = false;
     this.mainVisualNarration.reset();
   }
 

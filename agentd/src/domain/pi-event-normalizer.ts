@@ -225,11 +225,12 @@ function completionStatusFromContext(context: PiEventNormalizationContext): Norm
 }
 
 /**
- * Text the model wrote before calling tools, surfaced the moment its message ends. Pi's turn_end
- * comes only after those tools finish, which can be minutes for a question the user has to answer;
- * by then Picky has already spoken the streamed sentence, and a late flush is read aloud again.
- * Flushing here also keeps this text out of the next step's draft, so the two are not read
- * back-to-back.
+ * Text the model wrote before calling tools, surfaced when its message ends. Pi's turn_end comes
+ * only after those tools finish, which can be minutes for a question the user has to answer; by
+ * then Picky has already spoken the streamed sentence, and a late flush is read aloud again. The
+ * main coordinator flushes earlier still, when the tool call starts streaming, and ignores this one
+ * then; it remains the flush for providers that do not stream tool calls. Flushing before the tool
+ * also keeps this text out of the next step's draft, so the two are not read back-to-back.
  */
 function toolIntroTextFromMessageEnd(message: Record<string, unknown>, context: PiEventNormalizationContext): NormalizedPiEvent {
   if (message.role !== "assistant" || !hasAssistantToolCalls(message)) return { kind: "none" };

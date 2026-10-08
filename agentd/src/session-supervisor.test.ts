@@ -4995,6 +4995,39 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  // Regression: the app forgets a streamed sentence once it finished speaking it, so a
+  // quickReply that arrives later is read aloud again. Tool arguments can stream for
+  // seconds after a short sentence, so the intro must flush the moment the tool call
+  // starts, not when the message ends, and must not flush a second time then.
+  it("speaks a tool's intro text once, as soon as the tool call starts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ text: string; didStreamNarration?: boolean }> = [];
+    supervisor.on("quickReply", (_contextId, text, metadata: { didStreamNarration?: boolean } = {}) => replies.push({ text, ...(metadata.didStreamNarration ? { didStreamNarration: true } : {}) }));
+
+    await supervisor.route(context("할인 매출 뽑아줘"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "할인 계산 오류를 찾았어. 진행 방식을 골라 줘." });
+    mainRuntime.handle?.emit({ type: "tool_call_preparing" });
+    await waitUntil(() => replies.length === 1);
+    expect(replies).toEqual([{ text: "할인 계산 오류를 찾았어. 진행 방식을 골라 줘.", didStreamNarration: true }]);
+
+    // More argument deltas, then the message ends: nothing is spoken again. The exact reply
+    // list below fails if either event flushed the intro a second time.
+    mainRuntime.handle?.emit({ type: "tool_call_preparing" });
+    mainRuntime.handle?.emit({ type: "turn_text_complete", text: "할인 계산 오류를 찾았어. 진행 방식을 골라 줘." });
+
+    // After the tool, the next step's answer is its own reply.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "Task로 이어서 고칠게." });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => replies.length === 2);
+    expect(replies.map((reply) => reply.text)).toEqual(["할인 계산 오류를 찾았어. 진행 방식을 골라 줘.", "Task로 이어서 고칠게."]);
+    expect(supervisor.listMainMessages().filter((message) => message.role === "assistant").map((message) => message.text))
+      .toEqual(["할인 계산 오류를 찾았어. 진행 방식을 골라 줘.", "Task로 이어서 고칠게."]);
+  });
+
   // A turn_text_complete without any buffered text (e.g. a noisy normalizer fallback
   // or a runtime that emits it on a DSL-only turn) must not emit a blank quickReply,
   // but must still settle the app-side waiting state.

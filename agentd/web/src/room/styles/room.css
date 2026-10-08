@@ -911,9 +911,10 @@
   gap: 8px;
   /* .padding(.horizontal, 10) / .padding(.vertical, 9) (PickyQuestionBubbleView.swift:76-77) */
   padding: 9px 10px;
-  /* maxBubbleWidth(fraction: 0.88, oppositeSideReserve: 36) over a 390pt room:
-   * (390 - 24) * 0.88 = 322 -> quantized down to the 8pt grid = 320. */
-  max-width: 320px;
+  /* maxBubbleWidth(fraction: 0.88, oppositeSideReserve: 36), capped by
+   * narrativeMaxWidth 720 (PickyConversationBubbleLayout.swift:23, 58-69).
+   * Relative to the column so a wide desktop browser is not stuck at phone width. */
+  max-width: min(88%, calc(100% - 36px), 720px);
   border-radius: var(--ds-radius-surface) var(--ds-radius-surface) var(--ds-radius-surface) 4px;
   border: 1px solid transparent;
 }

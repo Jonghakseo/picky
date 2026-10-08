@@ -156,6 +156,19 @@ export function buildTaskCompletionPrompt(record: TaskRecord): string {
   ].join("\n");
 }
 
+/**
+ * The one-time notice about Tasks that a quit stopped. The main agent was told at creation that a
+ * result arrives on its own, so it has to hear that none will; it offers to continue rather than
+ * restarting anything, because a resumed revision may repeat writes.
+ */
+export function buildTaskInterruptionPrompt(records: readonly TaskRecord[]): string {
+  return [
+    "[Picky Task interrupted] Picky quit while these Tasks were running. They stopped, were not restarted, and no result will arrive for them:",
+    ...records.map((record) => `- "${clip(record.title, 200)}" (${record.id}, revision ${record.revision}, ${record.cwd})`),
+    "Tell the user in their language, in one short sentence, which work stopped, and offer to continue it. Resume a Task with Task action resume only after the user asks; do not start or redo anything now.",
+  ].join("\n");
+}
+
 /** What the main agent does next for a result that is not a plain success. */
 function completionGuidance(record: TaskRecord): string[] {
   const report = record.report;

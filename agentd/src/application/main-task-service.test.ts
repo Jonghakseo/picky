@@ -87,7 +87,7 @@ describe("main Tasks", () => {
     expect(completion).toMatchObject({ taskId: task.id, revision: 1, origin: { contextId: "context-voice-1" } });
     expect(completion?.prompt).toContain("Renamed 12 files");
     expect(completion?.prompt).toContain("Listed the folder");
-    service.markCompletionDelivered(task.id, 1);
+    service.markCompletionDelivered({ taskId: task.id, revision: 1 });
     expect(service.nextCompletion()).toBeUndefined();
   });
 
@@ -221,7 +221,7 @@ describe("Task to Pickle handoff", () => {
 
   it("hands the Task's findings to a new Pickle and closes the Task's own path", async () => {
     const { service, createPickle, task } = await escalatedTask();
-    service.markCompletionDelivered(task.id, 1);
+    service.markCompletionDelivered({ taskId: task.id, revision: 1 });
     const decision = service.createDecision({ title: "Fix login retry", instructions: "Fix the double retry", fromTaskId: task.id });
     const resolved = await service.resolveDecision(decision.id, "pickle", "form");
     expect(resolved.pickle).toEqual({ state: "created", sessionId: "pickle-1" });

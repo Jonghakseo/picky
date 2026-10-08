@@ -6,6 +6,7 @@ import type { PickyContextPacket } from "../protocol.js";
 import {
   buildPickleHandoffInstructions,
   buildTaskCompletionPrompt,
+  buildTaskInterruptionPrompt,
   delegationChoiceOutcome,
   deriveTaskTitle,
   isActiveTaskStatus,
@@ -36,6 +37,8 @@ export interface MainTaskCompletion {
   prompt: string;
   cwd: string;
   origin?: TaskOrigin;
+  /** The notice about Tasks a quit stopped, rather than one Task's result. */
+  interruption?: true;
 }
 
 export interface MainTaskServiceDependencies {
@@ -226,23 +229,50 @@ export class MainTaskService {
     return next;
   }
 
-  /** The oldest finished Task revision whose result the main agent has not received yet. */
+  /**
+   * The oldest finished Task revision whose result the main agent has not received yet, then one
+   * notice covering every Task a quit stopped that the main agent has not heard about.
+   */
   nextCompletion(): MainTaskCompletion | undefined {
-    const pending = this.manager.list()
+    const records = this.manager.list();
+    const pending = records
       .filter((record) => record.report && !record.completionDelivered && !record.handoff?.pickleSessionId)
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))[0];
-    if (!pending) return undefined;
+    if (pending) {
+      return {
+        taskId: pending.id,
+        revision: pending.revision,
+        prompt: buildTaskCompletionPrompt(pending),
+        cwd: pending.cwd,
+        ...(pending.origin ? { origin: pending.origin } : {}),
+      };
+    }
+    // During shutdown the notice would reach a main agent that is going away; the next start sends it.
+    if (this.closed) return undefined;
+    const interrupted = records
+      .filter((record) => record.status === "interrupted" && !record.interruptionNotified)
+      .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+    const latest = interrupted.at(-1);
+    if (!latest) return undefined;
     return {
-      taskId: pending.id,
-      revision: pending.revision,
-      prompt: buildTaskCompletionPrompt(pending),
-      cwd: pending.cwd,
-      ...(pending.origin ? { origin: pending.origin } : {}),
+      taskId: latest.id,
+      revision: latest.revision,
+      prompt: buildTaskInterruptionPrompt(interrupted),
+      cwd: latest.cwd,
+      ...(latest.origin ? { origin: latest.origin } : {}),
+      interruption: true,
     };
   }
 
-  markCompletionDelivered(taskId: string, revision: number): void {
-    if (this.manager.has(taskId)) this.manager.markDelivered(taskId, revision);
+  /** Records that the main agent received a result or notice, so it is never delivered again. */
+  markCompletionDelivered(completion: Pick<MainTaskCompletion, "taskId" | "revision" | "interruption">): void {
+    // Tasks become interrupted only when a process starts or ends, so the set this acknowledges is
+    // the one the notice listed (minus any the user resumed meanwhile, which are no longer pending).
+    if (completion.interruption) {
+      this.manager.takeInterruptions();
+      return;
+    }
+    if (this.manager.has(completion.taskId)) this.manager.markDelivered(completion.taskId, completion.revision);
   }
 
   async close(): Promise<void> {

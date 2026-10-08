@@ -236,7 +236,7 @@ Picky decides how to handle each request you send it:
 
 A Task belongs to the main conversation. Its result arrives once Picky is not busy with your current request or a question; if you asked by voice, the short summary is spoken. The full report (what was done, files, checks that actually ran, and anything blocking) stays in the Task's details in **Recent Conversation**. Interrupting Picky's reply with Push-to-Talk or **Stop** does not stop Tasks. Stop a Task from its row or ask Picky to stop it; stopping does not undo files the Task already changed.
 
-If a Task finds that the work needs production code changes, it pauses and Picky asks the same question. **Hand to Pickle** passes the Task's findings and changed files to a new Pickle; **Don't hand off** lets the same Task continue. When Picky quits, running Tasks are marked interrupted. Resume them from their row or ask Picky; they never restart on their own.
+If a Task finds that the work needs production code changes, it pauses and Picky asks the same question. **Hand to Pickle** passes the Task's findings and changed files to a new Pickle; **Don't hand off** lets the same Task continue. When Picky quits, running Tasks are marked interrupted. The next time Picky starts, it tells you once which work stopped and offers to continue it. Resume them from their row or ask Picky; they never restart on their own.
 
 Tasks run as separate local Pi processes with the same models, sign-ins, and plugins as Picky. A Task starts in the folder your request is about, or in your home folder when there is none. Tasks are not a sandbox, and MCP servers are not available to them yet.
 

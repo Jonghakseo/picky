@@ -62,9 +62,9 @@ const context = (id: string, transcript: string, source: PickyContextPacket["sou
   id, source, capturedAt: new Date().toISOString(), transcript, screenshots: [], inkMarks: [], warnings: [],
 });
 
-function setup() {
-  const root = mkdtempSync(path.join(os.tmpdir(), "main-task-delivery-"));
-  roots.push(root);
+/** Passing the folder of an earlier setup starts Picky again on the same saved Tasks. */
+function setup(root = mkdtempSync(path.join(os.tmpdir(), "main-task-delivery-"))) {
+  if (!roots.includes(root)) roots.push(root);
   const workers: Worker[] = [];
   const service = new MainTaskService({
     directory: path.join(root, "main-tasks"),
@@ -90,10 +90,11 @@ function setup() {
   cleanups.push(() => service.close());
   const replies: Array<{ contextId: string; text: string; originSource?: string }> = [];
   supervisor.on("quickReply", (contextId: string, text: string, metadata: { originSource?: string } = {}) => replies.push({ contextId, text, originSource: metadata.originSource }));
-  return { service, supervisor, mainRuntime, workers, replies, host: () => host! };
+  return { root, service, supervisor, mainRuntime, workers, replies, host: () => host! };
 }
 
 const resultFollowUps = (handle: MainHandle | undefined) => (handle?.followUps ?? []).filter((prompt) => prompt.text.startsWith("[Picky Task result]"));
+const interruptionFollowUps = (handle: MainHandle | undefined) => (handle?.followUps ?? []).filter((prompt) => prompt.text.startsWith("[Picky Task interrupted]"));
 
 describe("main Task result delivery", () => {
   it("waits for the user's turn to finish, then delivers the result once and answers the original request", async () => {
@@ -171,5 +172,35 @@ describe("main Task result delivery", () => {
     await supervisor.prewarmMainAgent("/tmp");
     await vi.waitFor(() => expect(resultFollowUps(mainRuntime.handle)).toHaveLength(1));
     expect(service.getTask(task.id).completionDelivered).toBe(true);
+  });
+
+  it("tells the main agent once which Tasks a quit stopped, and restarts none of them", async () => {
+    const before = setup();
+    const task = before.service.createTask({ title: "Export invoices", instruction: "Export this month's invoices to CSV" });
+    await vi.waitFor(() => expect(before.workers).toHaveLength(1));
+    await before.service.close();
+
+    // Without this notice the main agent would still expect the result it was promised.
+    const after = setup(before.root);
+    await after.supervisor.prewarmMainAgent("/tmp");
+    const handle = after.mainRuntime.handle!;
+    await vi.waitFor(() => expect(interruptionFollowUps(handle)).toHaveLength(1));
+    expect(interruptionFollowUps(handle)[0].text).toContain(`"Export invoices" (${task.id}`);
+    expect(interruptionFollowUps(handle)[0].text).toContain("no result will arrive");
+    expect(after.workers).toHaveLength(0);
+    expect(after.service.getTask(task.id).status).toBe("interrupted");
+
+    handle.emit({ type: "status", status: "running", summary: "Running" });
+    handle.emit({ type: "assistant_delta", delta: "Exporting invoices stopped when Picky quit. Continue it?" });
+    handle.emit({ type: "status", status: "completed", summary: "Completed" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(interruptionFollowUps(handle)).toHaveLength(1);
+    await after.service.close();
+
+    const nextStart = setup(before.root);
+    await nextStart.supervisor.prewarmMainAgent("/tmp");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(interruptionFollowUps(nextStart.mainRuntime.handle)).toHaveLength(0);
+    expect(nextStart.service.getTask(task.id).status).toBe("interrupted");
   });
 });

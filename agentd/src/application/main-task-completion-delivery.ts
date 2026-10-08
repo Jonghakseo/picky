@@ -4,7 +4,7 @@ import type { MainTaskCompletion } from "./main-task-service.js";
 
 export interface MainTaskCompletionSource {
   nextCompletion(): MainTaskCompletion | undefined;
-  markCompletionDelivered(taskId: string, revision: number): void;
+  markCompletionDelivered(completion: MainTaskCompletion): void;
 }
 
 export interface MainTaskCompletionDeliveryDeps {
@@ -59,8 +59,8 @@ export class MainTaskCompletionDelivery {
         this.deps.abandonCompletionTurn();
         throw error;
       }
-      this.deps.source.markCompletionDelivered(completion.taskId, completion.revision);
-      this.deps.log("main task completion delivered", { taskId: completion.taskId, revision: completion.revision });
+      this.deps.source.markCompletionDelivered(completion);
+      this.deps.log("main task completion delivered", { taskId: completion.taskId, revision: completion.revision, interruption: completion.interruption });
     } finally {
       this.inFlight = false;
     }

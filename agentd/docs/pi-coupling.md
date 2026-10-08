@@ -590,6 +590,26 @@ system messages는 `0.86`~`0.99.0`에서 이미 들어왔다. 세션 파일 버�
   transitive 버전을 고정하므로 영향이 없다. lockfile 변화는 Pi 계열 패키지와
   `@anthropic-ai/sdk` 0.124.0 → 0.129.0이다.
 
+### 1.0.4 -> 1.1.0
+
+공식 근거: [Pi CHANGELOG](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md).
+`pi-ai`, `pi-coding-agent`, `pi-tui`만 함께 올린다. 세션 파일 버전과 제거·이름 변경된 공개 API는 없다.
+
+- `agent_settled`에 `aborted`, `tool_execution_end`와 tool render context에 `durationMs`가 추가됐다.
+  둘 다 추가 필드라 `pi-event-normalizer.ts`, `async-task-model-fence.ts`,
+  `pi-sdk-runtime-session.ts`는 그대로 둔다. Picky가 취소된 run을 구분하거나 도구 실행 시간을
+  보여 주려면 이 필드를 쓸 수 있지만 이번 bump 범위에서는 적용하지 않는다.
+- `--tools`의 `+name`/`-name`, OSC 7501 program status, `outputPad`, Claude Haiku 5.5,
+  GPT-6 Luna·llama.cpp classifier는 CLI·TUI·모델 카탈로그 기능이라 따로 대응하지 않는다.
+- MCP OAuth sign-in 취소·타임아웃과 종료 시 refresh 대기 제거(#10565)는 upstream에서 상속한다.
+  `picky-mcp.ts`가 dist에서 읽는 `extensions/mcp/config.js`, `core/mcp-servers.js`,
+  `extensions/mcp/cli.js`, `core/auth-storage.js` 경로는 그대로다.
+- `createLocalShellOperations`는 1.1.0에서도 cwd 검사 뒤 abort를 다시 확인하지 않는다.
+  기존 패치를 `patches/pi-coding-agent@1.1.0.patch`로 옮긴다.
+- async task 특성 테스트의 SDK 버전 가드를 `1.1.0`으로 바꾼다. 기대 동작은 그대로다.
+- lockfile 변화는 Pi 계열 패키지(`chord`, `pi-agent-core`, `pi-codemode`, `pi-mcp`,
+  `pi-telemetry` 포함)뿐이다.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

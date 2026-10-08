@@ -52,10 +52,10 @@
   "remote.room.tasks.status.blocked": { "ko": "확인 필요", "en": "Needs input" },
   "remote.room.tasks.status.cancelled": { "ko": "중지했어요", "en": "Stopped" },
   "remote.room.tasks.status.interrupted": { "ko": "끊겼어요", "en": "Interrupted" },
-  "remote.room.delegation.title": { "ko": "Pickle에 맡길까요?", "en": "Hand this to a Pickle?" },
-  "remote.room.delegation.pickle": { "ko": "Pickle에 맡기기", "en": "Hand to Pickle" },
-  "remote.room.delegation.task": { "ko": "여기서 진행", "en": "Run as Task" },
-  "remote.room.delegation.cancel": { "ko": "하지 않기", "en": "Cancel" },
+  "remote.room.delegation.title": { "ko": "Pickle로 맡길까요?", "en": "Hand this to a Pickle?" },
+  "remote.room.delegation.pickle": { "ko": "Pickle로 맡기기", "en": "Hand to Pickle" },
+  "remote.room.delegation.task": { "ko": "맡기지 않기", "en": "Don't hand off" },
+  "remote.room.delegation.cancel": { "ko": "요청 취소", "en": "Cancel request" },
   "remote.room.delegation.pickleFailed": { "ko": "Pickle을 만들지 못했어요", "en": "Couldn't create the Pickle" },
   "remote.room.delegation.retry": { "ko": "다시 맡기기", "en": "Try again" }
 }

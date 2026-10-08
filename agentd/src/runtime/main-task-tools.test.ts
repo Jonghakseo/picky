@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { MainTaskService } from "../application/main-task-service.js";
-import { createMainTaskTool, createPickleDelegationTool } from "./main-task-tools.js";
+import { createMainTaskTool, createPickleDelegationTool, delegationChoiceLabels } from "./main-task-tools.js";
 import { MainTaskEvaluationContext } from "./task/picky-task-runtime.js";
 import type { TaskWorker, WorkerEvents, WorkerInput, WorkerOptions } from "./task/types.js";
 
@@ -72,14 +72,15 @@ function setup(answer: Answer) {
 
 const repo = mkdtempSync(path.join(os.tmpdir(), "main-task-tools-repo-"));
 afterAll(() => rmSync(repo, { recursive: true, force: true }));
-const ask = { action: "ask", title: "CSV export", instructions: "Add CSV export to billing", cwd: repo, question: "피클에 맡길까요?", pickleLabel: "피클에 맡기기", taskLabel: "여기서 작업으로 진행" };
+const ask = { action: "ask", title: "CSV 내보내기", instructions: "Add CSV export to billing", cwd: repo, question: "이 수정은 Pickle로 맡길까요?" };
 
 describe("pickle_delegation", () => {
-  it("asks in the user's language and starts nothing when the form is closed", async () => {
+  it("offers only Hand to Pickle or Don't hand off, and starts nothing when the form is closed", async () => {
     const { service, workers, createPickle, asked, delegate } = setup(undefined);
     const outcome = await delegate(ask);
+    // "Task" is an internal term: the choices are fixed product copy, whatever the model writes.
     expect(asked[0]).toMatchObject({
-      questions: [{ id: "choice", type: "radio", prompt: "피클에 맡길까요?", allowOther: false, options: [{ value: "pickle", label: "피클에 맡기기" }, { value: "task", label: "여기서 작업으로 진행" }] }],
+      questions: [{ id: "choice", type: "radio", prompt: "이 수정은 Pickle로 맡길까요?", allowOther: false, options: [{ value: "pickle", label: "Pickle로 맡기기" }, { value: "task", label: "맡기지 않기" }] }],
     });
     expect(outcome.details.state).toBe("pending");
     expect(outcome.content[0].text).toContain("stays pending");
@@ -121,6 +122,13 @@ describe("pickle_delegation", () => {
     expect(result.content[0].text).toContain("the user chose a Task");
     await vi.waitFor(() => expect(workers).toHaveLength(1));
     expect(createPickle).not.toHaveBeenCalled();
+  });
+});
+
+describe("delegationChoiceLabels", () => {
+  it("uses English choices when the question is not Korean", () => {
+    expect(delegationChoiceLabels({ title: "CSV export", question: "Hand this fix to a Pickle?" })).toEqual({ question: "Hand this to a Pickle?", pickle: "Hand to Pickle", task: "Don't hand off" });
+    expect(delegationChoiceLabels({ title: "CSV 내보내기" }).task).toBe("맡기지 않기");
   });
 });
 

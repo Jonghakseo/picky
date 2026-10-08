@@ -117,9 +117,7 @@ const DelegationParams = Type.Object({
   title: Type.Optional(Type.String({ description: "Short label of the work, in the user's language." })),
   instructions: Type.Optional(Type.String({ description: "Self-contained brief for whoever does the work: goal, constraints, key paths or URLs, expected result." })),
   cwd: Type.Optional(Type.String({ description: "Absolute working folder of the work, such as the repository root." })),
-  question: Type.Optional(Type.String({ description: "The question shown to the user, in the user's language." })),
-  pickleLabel: Type.Optional(Type.String({ description: "Label of the hand-to-Pickle choice, in the user's language." })),
-  taskLabel: Type.Optional(Type.String({ description: "Label of the keep-it-as-a-Task choice, in the user's language." })),
+  question: Type.Optional(Type.String({ description: "A yes/no question in the user's language asking whether to hand the work to a Pickle, for example \"이 수정은 Pickle로 맡길까요?\". Never mention Task: users do not know that term. Picky shows the answer choices itself." })),
   fromTaskId: Type.Optional(Type.String({ description: "The Task whose work grew into production code work, for a handoff." })),
   decisionId: Type.Optional(Type.String()),
   choice: Type.Optional(Type.Union([Type.Literal("pickle"), Type.Literal("task")])),
@@ -156,6 +154,7 @@ export function createPickleDelegationTool(port: MainTaskToolPort): ToolDefiniti
     promptGuidelines: [
       "Call action ask before production-level code work: product bug fixes, features, refactors of maintained code, or builds and integration checks of a product. One-off scripts and everyday work are not production code work.",
       "Do not ask again for a scope the user already placed in a Task or a Pickle.",
+      "Users do not know the term Task. The form offers only Hand to Pickle or Don't hand off; Don't hand off means you continue the work here as a Task.",
       "If the user explicitly asks for a Pickle, create it with the picky CLI instead of asking.",
     ],
     parameters: DelegationParams,
@@ -224,17 +223,30 @@ async function askDecision(port: MainTaskToolPort, params: DelegationInput, ctx:
   return result(describeDecision(resolved), { decisionId: resolved.id, state: resolved.state });
 }
 
+/**
+ * The answer choices are fixed product copy, not model wording: "Task" is an internal term users do
+ * not know, so the choices are handing the work to a Pickle or not. Picky's UI is Korean or English;
+ * Hangul in the question or title selects Korean.
+ */
+export function delegationChoiceLabels(params: Pick<DelegationInput, "title" | "question">): { question: string; pickle: string; task: string } {
+  const korean = /[\u3131-\u318e\uac00-\ud7a3]/.test(`${params.question ?? ""}${params.title ?? ""}`);
+  return korean
+    ? { question: "Pickle로 맡길까요?", pickle: "Pickle로 맡기기", task: "맡기지 않기" }
+    : { question: "Hand this to a Pickle?", pickle: "Hand to Pickle", task: "Don't hand off" };
+}
+
 function delegationQuestion(params: DelegationInput): Record<string, unknown> {
+  const labels = delegationChoiceLabels(params);
   return {
     title: params.title,
     ...(params.question ? {} : { description: params.instructions }),
     questions: [{
       id: "choice",
       type: "radio",
-      prompt: params.question ?? params.title,
+      prompt: params.question?.trim() || labels.question,
       options: [
-        { value: "pickle", label: params.pickleLabel?.trim() || "Hand it to a Pickle" },
-        { value: "task", label: params.taskLabel?.trim() || "Run it here as a Task" },
+        { value: "pickle", label: labels.pickle },
+        { value: "task", label: labels.task },
       ],
       allowOther: false,
       required: true,

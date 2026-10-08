@@ -33320,7 +33320,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클이 이어받았어요. 아래 결과는 작업이 그때까지 한 내용이에요."
+            "value": "Pickle이 이어받았어요. 아래 결과는 작업이 그때까지 한 내용이에요."
           }
         }
       },
@@ -33603,13 +33603,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose whether a Pickle should take this on."
+            "value": "Choose whether to hand this to a Pickle."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클에 맡길지 선택해 주세요."
+            "value": "Pickle로 맡길지 골라 주세요."
           }
         }
       },
@@ -33626,7 +33626,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클을 만드는 중이에요"
+            "value": "Pickle을 만드는 중이에요"
           }
         }
       },
@@ -33643,7 +33643,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클로 옮겼어요."
+            "value": "Pickle로 옮겼어요."
           }
         }
       },
@@ -33660,7 +33660,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클을 만들지 못했어요."
+            "value": "Pickle을 만들지 못했어요."
           }
         }
       },
@@ -33677,7 +33677,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클에 맡기기"
+            "value": "Pickle로 맡기기"
           }
         }
       },
@@ -33688,34 +33688,34 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run as Task"
+            "value": "Don't hand off"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업으로 실행"
+            "value": "맡기지 않기"
           }
         }
       },
-      "comment": "Button: run this work as a Task in the current conversation instead of a Pickle."
+      "comment": "Delegation choice: keep the work with Picky instead of a Pickle; Picky continues it as background work in this conversation."
     },
     "hub.tasks.decision.cancel": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cancel"
+            "value": "Cancel request"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "취소"
+            "value": "요청 취소"
           }
         }
       },
-      "comment": "Button: drop the request instead of running it. Nothing has started yet."
+      "comment": "Delegation choice on a pending card: drop the request entirely, nothing runs."
     },
     "hub.tasks.decision.retry": {
       "localizations": {
@@ -33779,7 +33779,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클로 넘김"
+            "value": "Pickle로 넘김"
           }
         }
       },

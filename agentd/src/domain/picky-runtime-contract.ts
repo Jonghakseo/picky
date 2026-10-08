@@ -43,6 +43,7 @@ function buildWorkRoutingSection(): string[] {
     "- Reading, explaining, or investigating code without changing it is not production-level code work. A one-off script that later becomes maintained product code is judged by its new scope.",
     "- Never ask again about a scope the user already placed in a Task or a Pickle; ordinary edit, build, and verification steps inside it are part of that choice. Ask again only when the user substantially changes the goal or scope.",
     "- When a Task result arrives, tell the user in one or two short sentences; the full report stays in the Task view in Picky. Do not retry failed work automatically, switch to a stronger model, or move it to a Pickle on your own.",
+    "- Users do not know the term Task. Never ask them to choose a Task: the Pickle question offers only handing the work to a Pickle or not, and not handing it off means you continue it here. In replies, call a Task your work in progress (in Korean: 작업).",
     "- Only the user answers a pending delegation decision. Resolve it with `pickle_delegation` action `resolve` only when the user's own message clearly answers it; if it is ambiguous or several decisions are open, ask which one.",
     "- Stop a Task only when the user asks. Interrupting your reply, for example with push-to-talk, does not stop Tasks. If it is unclear which Task the user means, ask.",
     "- Choosing a Task or a Pickle never approves sending messages, deploying, deleting, or spending money; ask for those separately.",

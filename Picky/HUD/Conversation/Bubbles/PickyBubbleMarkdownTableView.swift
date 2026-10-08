@@ -117,7 +117,7 @@ final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
 
     override func layout() {
         super.layout()
-        switch tableLayout(forWidth: bounds.width) {
+        switch layoutFittingFrame() {
         case .grid(let columnWidths, let rowHeights, let size):
             showsCards = false
             scrollView.isHidden = false
@@ -149,6 +149,33 @@ final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
 
     private var columnCount: Int { headers.count }
 
+    /// The bubble measures the table at its full content width but frames it
+    /// at the narrower width the table reported. A grid measured above the
+    /// card threshold can report a width below it, where `tableLayout` would
+    /// pick taller cards that spill over the text under the table. The frame
+    /// height was reserved for the measured form, so keep the grid when only
+    /// the grid fits it.
+    private func layoutFittingFrame() -> TableLayout {
+        let layout = tableLayout(forWidth: bounds.width)
+        guard case .cards = layout, layout.size.height > bounds.height + 0.5 else { return layout }
+        let grid = gridLayout(forWidth: bounds.width)
+        return grid.size.height <= bounds.height + 0.5 ? grid : layout
+    }
+
+    private func gridLayout(forWidth available: CGFloat) -> TableLayout {
+        let columnWidths = PickyMarkdownTableLayoutPolicy.columnWidths(
+            minimum: minimumColumnWidths,
+            maximum: maximumColumnWidths,
+            available: available
+        )
+        let rowHeights = gridView.measureRowHeights(columnWidths: columnWidths)
+        return .grid(
+            columnWidths: columnWidths,
+            rowHeights: rowHeights,
+            size: NSSize(width: columnWidths.reduce(0, +), height: rowHeights.reduce(0, +))
+        )
+    }
+
     private func tableLayout(forWidth available: CGFloat) -> TableLayout {
         let key = available.rounded()
         if let cached = layoutCache[key] { return cached }
@@ -162,17 +189,7 @@ final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
         ) {
             layout = .cards(cardListView.layout(forWidth: available))
         } else {
-            let columnWidths = PickyMarkdownTableLayoutPolicy.columnWidths(
-                minimum: minimumColumnWidths,
-                maximum: maximumColumnWidths,
-                available: available
-            )
-            let rowHeights = gridView.measureRowHeights(columnWidths: columnWidths)
-            layout = .grid(
-                columnWidths: columnWidths,
-                rowHeights: rowHeights,
-                size: NSSize(width: columnWidths.reduce(0, +), height: rowHeights.reduce(0, +))
-            )
+            layout = gridLayout(forWidth: available)
         }
         let elapsed = Date().timeIntervalSince(startedAt)
         if elapsed >= Metrics.slowTableLayoutLogThreshold {

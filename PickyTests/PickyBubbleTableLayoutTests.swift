@@ -74,6 +74,37 @@ struct PickyBubbleTableLayoutTests {
         }
     }
 
+    /// The bubble measures a table at its full content width, then gives the
+    /// block only the width it reported. Laid out at that narrower width, the
+    /// table must keep the form, and therefore the height, it was measured
+    /// with; otherwise taller cards spill over the text below.
+    @Test func tableKeepsItsMeasuredFormWhenGivenItsReportedWidth() {
+        let tables: [(headers: [String], rows: [[String]])] = [
+            (["전송", "클릭", "첫 업로드", "직전 사용자 입력"], [
+                ["개선 제안 2", "13:30:38", "13:31:56", "13:31:55 개선 제안 3 클릭"],
+                ["개선 제안 3", "13:31:55", "13:32:28", "13:32:28 오류 신고 클릭"],
+                ["오류 신고", "13:32:28", "13:32:31", "클릭 직후라 3초 만에 완료"]
+            ]),
+            (["Name", "A", "B", "C"], [["card", "1", "2", "3"], ["deck", "4", "5", "6"]])
+        ]
+        for table in tables {
+            for width in stride(from: CGFloat(300), through: 700, by: 1) {
+                let view = PickyTableMarkdownBlockView(headers: table.headers, rows: table.rows)
+                let measured = view.measuredSize(forWidth: width)
+                view.frame = NSRect(x: 0, y: 0, width: ceil(measured.width), height: ceil(measured.height))
+                view.layoutSubtreeIfNeeded()
+                view.layout()
+                for field in visibleTextFields(in: view) {
+                    let frame = field.convert(field.bounds, to: view)
+                    #expect(
+                        frame.maxY <= view.bounds.height + 0.5,
+                        "\(table.headers[0]) at \(width) laid out at \(view.bounds.width): \(field.stringValue) at y=\(frame.maxY) > \(view.bounds.height)"
+                    )
+                }
+            }
+        }
+    }
+
     @Test func alignedDelimiterRowsParseAsTablesWithTheirAlignment() {
         let blocks = PickyReportMarkdownRenderer().blocks(from: """
         | # | Name | Cost |
@@ -137,6 +168,14 @@ struct PickyBubbleTableLayoutTests {
         surface.frame = NSRect(origin: .zero, size: surface.measuredSize(forRootWidth: width))
         surface.layoutSubtreeIfNeeded()
         return surface
+    }
+
+    private func firstView<T: NSView>(of type: T.Type, in root: NSView) -> T? {
+        if let match = root as? T { return match }
+        for subview in root.subviews {
+            if let match = firstView(of: type, in: subview) { return match }
+        }
+        return nil
     }
 
     private func visibleTextFields(in root: NSView) -> [NSTextField] {

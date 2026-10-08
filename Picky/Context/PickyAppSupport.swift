@@ -178,6 +178,20 @@ struct PickyAppSupportScreenshotStore: PickyScreenshotStoring {
         let points = mark.points.map { point in
             CGPoint(x: point.x, y: imageHeight - point.y)
         }
+        if mark.kind == PickyInkMarkKind.click, let center = points.first {
+            let diameter = CGFloat(mark.strokeWidth * PickyInkMarkKind.clickDiameterScale)
+            NSColor(calibratedRed: 0.20, green: 0.50, blue: 1.0, alpha: CGFloat(mark.opacity)).setFill()
+            NSBezierPath(ovalIn: CGRect(
+                x: center.x - diameter / 2,
+                y: center.y - diameter / 2,
+                width: diameter,
+                height: diameter
+            )).fill()
+            // Offset the badge to the dot's upper-right so it doesn't hide the
+            // clicked spot itself.
+            drawIndexBadge(index, near: CGPoint(x: center.x + diameter / 2, y: center.y + diameter / 2))
+            return
+        }
         guard points.count >= 2 else { return }
 
         let path = smoothedPath(points: points)

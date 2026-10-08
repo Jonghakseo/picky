@@ -125,6 +125,16 @@ describe("neutral prompt builder", () => {
           strokeWidth: 12.5,
           opacity: 0.34,
         },
+        {
+          id: "ink-1-stroke-2",
+          source: "voice",
+          kind: "click",
+          screenId: "screen1",
+          points: [{ x: 100, y: 120 }],
+          bounds: { x: 84, y: 104, width: 32, height: 32 },
+          strokeWidth: 12.5,
+          opacity: 0.34,
+        },
       ],
     });
 
@@ -132,7 +142,8 @@ describe("neutral prompt builder", () => {
 
     expect(prompt.text).toContain("## User-marked screen regions");
     expect(prompt.text).toContain("semi-transparent Picky highlighter strokes");
-    expect(prompt.text).toContain("- mark1 on screen1");
+    expect(prompt.text).toContain("- mark1 on screen1\n");
+    expect(prompt.text).toContain("- mark2 on screen1 (click)");
     expect(prompt.text).not.toContain("strokeWidth");
     expect(prompt.text).not.toContain("points=");
   });

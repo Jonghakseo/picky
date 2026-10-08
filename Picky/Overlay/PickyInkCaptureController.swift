@@ -3,8 +3,8 @@
 //  Picky
 //
 //  Captures suppressed, Picky-owned ink while a voice or text input mode is
-//  active. The underlying app never receives mouse input during capture; only
-//  left click + drag beyond the threshold becomes context ink.
+//  active. The underlying app never receives mouse input during capture; every
+//  left click becomes a click mark, and dragging extends it into a stroke.
 //
 
 import AppKit
@@ -38,7 +38,6 @@ final class PickyInkCaptureController {
         var lastAcceptedPoint: CGPoint?
     }
 
-    private let thresholdDistance: CGFloat
     private let minimumPointDistance: CGFloat
     private let strokeWidth: CGFloat
     private let strokeOpacity: Double
@@ -71,12 +70,10 @@ final class PickyInkCaptureController {
 
 
     init(
-        thresholdDistance: CGFloat = 28,
         minimumPointDistance: CGFloat = 3,
         strokeWidth: CGFloat = 8,
         strokeOpacity: Double = 0.34
     ) {
-        self.thresholdDistance = thresholdDistance
         self.minimumPointDistance = minimumPointDistance
         self.strokeWidth = strokeWidth
         self.strokeOpacity = strokeOpacity
@@ -96,7 +93,7 @@ final class PickyInkCaptureController {
         if isActive {
             _ = finish(warpSystemCursor: false)
         }
-        let seededStrokes = (priorCapture?.strokes ?? []).filter { $0.points.count >= 2 }
+        let seededStrokes = (priorCapture?.strokes ?? []).filter { !$0.points.isEmpty }
         session = Session(
             id: "ink-\(UUID().uuidString)",
             source: source,
@@ -340,10 +337,12 @@ final class PickyInkCaptureController {
         guard var current = session else { return }
         current.virtualCursor = point
         current.activeStrokeOrigin = point
-        current.activeStrokePoints = []
-        current.lastAcceptedPoint = nil
-        current.didCrossThreshold = false
-        current.thresholdFeedbackPoint = nil
+        // A mouse-down is already a mark: a click stays a single-point mark,
+        // and dragging extends it into a freehand stroke.
+        current.activeStrokePoints = [point]
+        current.lastAcceptedPoint = point
+        current.didCrossThreshold = true
+        current.thresholdFeedbackPoint = point
         // Don't let the trail bleed into the real stroke about to be drawn.
         cursorTrailPoints.removeAll(keepingCapacity: true)
         session = current
@@ -353,23 +352,7 @@ final class PickyInkCaptureController {
     private func updatePotentialStroke(to point: CGPoint) {
         guard var current = session else { return }
         current.virtualCursor = point
-        guard let origin = current.activeStrokeOrigin else {
-            session = current
-            publishState()
-            return
-        }
-
-        if current.activeStrokePoints.isEmpty {
-            let distanceFromOrigin = hypot(point.x - origin.x, point.y - origin.y)
-            guard distanceFromOrigin >= thresholdDistance else {
-                session = current
-                publishState()
-                return
-            }
-            current.didCrossThreshold = true
-            current.thresholdFeedbackPoint = point
-            current.activeStrokePoints = [origin, point]
-            current.lastAcceptedPoint = point
+        guard current.activeStrokeOrigin != nil else {
             session = current
             publishState()
             return
@@ -392,18 +375,12 @@ final class PickyInkCaptureController {
     private func finishPotentialStroke(at point: CGPoint) {
         guard var current = session else { return }
         current.virtualCursor = point
-        if let origin = current.activeStrokeOrigin, current.activeStrokePoints.isEmpty {
-            let distanceFromOrigin = hypot(point.x - origin.x, point.y - origin.y)
-            if distanceFromOrigin >= thresholdDistance {
-                current.activeStrokePoints = [origin, point]
-            }
-        } else if current.activeStrokePoints.count >= 2,
-                  let lastAcceptedPoint = current.lastAcceptedPoint,
-                  hypot(point.x - lastAcceptedPoint.x, point.y - lastAcceptedPoint.y) >= minimumPointDistance {
+        if let lastAcceptedPoint = current.lastAcceptedPoint,
+           hypot(point.x - lastAcceptedPoint.x, point.y - lastAcceptedPoint.y) >= minimumPointDistance {
             current.activeStrokePoints.append(point)
         }
 
-        if current.activeStrokePoints.count >= 2 {
+        if !current.activeStrokePoints.isEmpty {
             current.completedStrokes.append(current.activeStrokePoints)
         }
         current.activeStrokeOrigin = nil
@@ -475,8 +452,8 @@ final class PickyInkCaptureController {
     }
 
     private func capturedStrokePointLists(for session: Session) -> [[CGPoint]] {
-        var pointLists = session.completedStrokes.filter { $0.count >= 2 }
-        if session.activeStrokePoints.count >= 2 {
+        var pointLists = session.completedStrokes.filter { !$0.isEmpty }
+        if !session.activeStrokePoints.isEmpty {
             pointLists.append(session.activeStrokePoints)
         }
         return pointLists

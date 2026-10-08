@@ -25,15 +25,7 @@ struct PickyInkOverlayView: View {
             cursorTrailLayer
 
             ForEach(strokesOnThisScreen) { stroke in
-                SmoothInkStrokeShape(points: localPoints(for: stroke.points))
-                    .stroke(
-                        DS.Colors.overlayCursorBlue.opacity(stroke.opacity),
-                        style: StrokeStyle(
-                            lineWidth: stroke.strokeWidth,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
+                strokeView(for: stroke)
                     .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.18), radius: 4, x: 0, y: 0)
                     .blendMode(.normal)
                     .allowsHitTesting(false)
@@ -55,6 +47,28 @@ struct PickyInkOverlayView: View {
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func strokeView(for stroke: PickyInkOverlayStroke) -> some View {
+        let points = localPoints(for: stroke.points)
+        if stroke.points.count == 1, let center = points.first {
+            let diameter = stroke.strokeWidth * PickyInkMarkKind.clickDiameterScale
+            Circle()
+                .fill(DS.Colors.overlayCursorBlue.opacity(stroke.opacity))
+                .frame(width: diameter, height: diameter)
+                .position(center)
+        } else {
+            SmoothInkStrokeShape(points: points)
+                .stroke(
+                    DS.Colors.overlayCursorBlue.opacity(stroke.opacity),
+                    style: StrokeStyle(
+                        lineWidth: stroke.strokeWidth,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+        }
     }
 
     /// Fading ink trail painted behind the system cursor while ink mode is

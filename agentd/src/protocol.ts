@@ -39,7 +39,8 @@ const InkMarkSchema = z.object({
   source: z.enum(["voice", "text"]),
   kind: z.string().default("freehand-highlight"),
   screenId: z.string().optional(),
-  points: z.array(PointSchema).min(2),
+  // A single point is a click mark; two or more form a freehand stroke.
+  points: z.array(PointSchema).min(1),
   bounds: BoundsSchema,
   strokeWidth: z.number().positive(),
   opacity: z.number().min(0).max(1),

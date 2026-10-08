@@ -22,7 +22,7 @@ struct PickyInkCapture: Equatable {
     let endedAt: Date
     let strokes: [PickyInkCaptureStroke]
 
-    var hasVisibleInk: Bool { strokes.contains { $0.points.count >= 2 } }
+    var hasVisibleInk: Bool { strokes.contains { !$0.points.isEmpty } }
 }
 
 struct PickyInkCaptureStroke: Equatable, Identifiable {
@@ -34,6 +34,18 @@ struct PickyInkCaptureStroke: Equatable, Identifiable {
     let strokeWidth: Double
     /// Visual opacity used both for the live overlay and annotated screenshots.
     let opacity: Double
+
+    /// A single-point stroke is a click mark rendered as a dot.
+    var isClick: Bool { points.count == 1 }
+}
+
+enum PickyInkMarkKind {
+    static let freehandHighlight = "freehand-highlight"
+    static let click = "click"
+
+    /// Click dots are drawn wider than the highlighter line so a single click
+    /// stays visible on the overlay and in annotated screenshots.
+    static let clickDiameterScale = 2.5
 }
 
 struct PickyInkOverlayState: Equatable {
@@ -92,7 +104,7 @@ struct PickyInkMarkContext: Codable, Equatable, Identifiable {
     init(
         id: String,
         source: PickyInkCaptureSource,
-        kind: String = "freehand-highlight",
+        kind: String = PickyInkMarkKind.freehandHighlight,
         screenId: String?,
         points: [PickyCGPoint],
         bounds: PickyCGRect,
@@ -132,8 +144,31 @@ enum PickyInkMarkMapper {
         guard displayFrame.width > 0, displayFrame.height > 0,
               screenshotSize.width > 0, screenshotSize.height > 0 else { return [] }
 
-        let clippedPointLists = clippedPointLists(for: stroke.points, to: displayFrame)
         let averageScale = ((screenshotSize.width / displayFrame.width) + (screenshotSize.height / displayFrame.height)) / 2
+        let strokeWidth = max(1, stroke.strokeWidth * Double(averageScale))
+        if let clickPoint = stroke.points.first, stroke.isClick {
+            let globalPoint = CGPoint(x: clickPoint.x, y: clickPoint.y)
+            guard displayFrame.insetBy(dx: -1, dy: -1).contains(globalPoint) else { return [] }
+            let pixel = screenshotPixel(for: globalPoint, displayFrame: displayFrame, screenshotSize: screenshotSize)
+            let diameter = strokeWidth * PickyInkMarkKind.clickDiameterScale
+            return [PickyInkMarkContext(
+                id: stroke.id,
+                source: stroke.source,
+                kind: PickyInkMarkKind.click,
+                screenId: screenId,
+                points: [PickyCGPoint(pixel)],
+                bounds: PickyCGRect(CGRect(
+                    x: pixel.x - diameter / 2,
+                    y: pixel.y - diameter / 2,
+                    width: diameter,
+                    height: diameter
+                )),
+                strokeWidth: strokeWidth,
+                opacity: stroke.opacity
+            )]
+        }
+
+        let clippedPointLists = clippedPointLists(for: stroke.points, to: displayFrame)
         return clippedPointLists.enumerated().map { index, points in
             let screenshotPoints = points.map {
                 screenshotPixel(for: $0, displayFrame: displayFrame, screenshotSize: screenshotSize)
@@ -144,7 +179,7 @@ enum PickyInkMarkMapper {
                 screenId: screenId,
                 points: screenshotPoints.map(PickyCGPoint.init),
                 bounds: PickyCGRect(boundingRect(for: screenshotPoints)),
-                strokeWidth: max(1, stroke.strokeWidth * Double(averageScale)),
+                strokeWidth: strokeWidth,
                 opacity: stroke.opacity
             )
         }

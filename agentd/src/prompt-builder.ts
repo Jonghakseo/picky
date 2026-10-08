@@ -204,10 +204,11 @@ function screenshotContextLine(screenshot: PickyContextPacket["screenshots"][num
 function appendInkMarks(lines: string[], inkMarks: PickyContextPacket["inkMarks"]): void {
   if (inkMarks.length === 0) return;
   lines.push("", "## User-marked screen regions");
-  lines.push("The user drew these semi-transparent Picky highlighter strokes during input. The attached screenshot files are annotated with matching blue strokes and number badges.");
+  lines.push("The user drew these semi-transparent Picky highlighter strokes or clicked spots during input. The attached screenshot files are annotated with matching blue strokes, click dots, and number badges.");
   for (const [index, mark] of inkMarks.entries()) {
     const screen = mark.screenId ? ` on ${mark.screenId}` : "";
-    lines.push(`- mark${index + 1}${screen}`);
+    const kind = mark.kind === "click" ? " (click)" : "";
+    lines.push(`- mark${index + 1}${screen}${kind}`);
   }
 }
 

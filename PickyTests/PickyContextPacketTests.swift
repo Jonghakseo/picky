@@ -320,6 +320,52 @@ struct PickyContextPacketTests {
         #expect(packet.inkMarks.first?.opacity == 0.34)
     }
 
+    @Test func assemblesSinglePointInkAsClickMark() async throws {
+        let screenshotsRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-ink-context-\(UUID().uuidString)", isDirectory: true)
+        let capture = CompanionScreenCapture(
+            imageData: Data("jpeg".utf8),
+            label: "focused screen",
+            isCursorScreen: true,
+            displayWidthInPoints: 100,
+            displayHeightInPoints: 100,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            screenshotWidthInPixels: 200,
+            screenshotHeightInPixels: 200,
+            cursor: nil
+        )
+        let inkCapture = PickyInkCapture(
+            id: "ink-click",
+            source: .text,
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            strokes: [
+                PickyInkCaptureStroke(
+                    id: "ink-click-stroke-1",
+                    source: .text,
+                    points: [PickyCGPoint(x: 10, y: 10)],
+                    strokeWidth: 8,
+                    opacity: 0.34
+                )
+            ]
+        )
+        #expect(inkCapture.hasVisibleInk)
+        let assembler = PickyContextPacketAssembler(
+            appProvider: FakeAppProvider(),
+            screenProvider: StaticPickyScreenContextProvider(captures: [capture], inkCapture: inkCapture),
+            screenshotStore: PickyAppSupportScreenshotStore(screenshotsRoot: screenshotsRoot),
+            defaultCwd: nil,
+            idGenerator: { "context-ink-click-001" }
+        )
+
+        let packet = try await assembler.assemble(source: "text", transcript: "이거 눌러봐")
+
+        #expect(packet.inkMarks.count == 1)
+        #expect(packet.inkMarks.first?.kind == "click")
+        #expect(packet.inkMarks.first?.points == [PickyCGPoint(x: 20, y: 180)])
+        #expect(packet.inkMarks.first?.bounds == PickyCGRect(x: 0, y: 160, width: 40, height: 40))
+        #expect(packet.inkMarks.first?.strokeWidth == 16)
+    }
+
     @Test func clipsInkStrokeAcrossDisplayBoundaries() async throws {
         let screenshotsRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-ink-context-\(UUID().uuidString)", isDirectory: true)
         let captures = [

@@ -2,7 +2,7 @@ import { shouldIgnoreAsyncCycleTerminal } from "../domain/async-work-aggregate.j
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "../artifact-store.js";
 import { mergeArtifacts } from "../domain/artifacts.js";
 import { fileArtifactFromWrite } from "./file-artifacts.js";
-import { mergeChangedFiles } from "../domain/changed-files.js";
+import { mergeChangedFiles, mergeToolFileMutation } from "../domain/changed-files.js";
 import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 import { isTerminalStatus } from "../domain/session-status.js";
 import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summary.js";
@@ -786,7 +786,13 @@ export class RuntimeEventHandler {
         ...(event.imageMimeType ? { mimeType: event.imageMimeType } : {}),
       });
     }
-    if (event.name !== "write" || event.status !== "succeeded") return;
+    if (event.status !== "succeeded" || !event.filePath) return;
+    if (event.name === "write" || event.name === "edit") {
+      const current = this.dependencies.getSession(sessionId);
+      const changedFiles = mergeToolFileMutation(current.changedFiles, { filePath: event.filePath, fileExistedBefore: event.fileExistedBefore }, current.cwd);
+      if (changedFiles !== current.changedFiles) await this.dependencies.patchSession(sessionId, { changedFiles });
+    }
+    if (event.name !== "write") return;
     const currentArtifacts = this.dependencies.getSession(sessionId).artifacts;
     const existingUpdatedAt = currentArtifacts.find((existing) => existing.kind === "file" && existing.path === event.filePath)?.updatedAt;
     const artifact = fileArtifactFromWrite({

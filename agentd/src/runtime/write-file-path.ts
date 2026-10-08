@@ -22,15 +22,17 @@ export interface WriteFileMetadata {
   fileExistedBefore: boolean;
 }
 
+const FILE_MUTATION_TOOL_NAMES = new Set(["write", "edit"]);
+
 /**
- * Remembers, per `write` tool call, which file it targets and whether that file existed when the
- * call started, so the finished call can report a created or modified file.
+ * Remembers, per `write`/`edit` tool call, which file it targets and whether that file existed
+ * when the call started, so the finished call can report a created or modified file.
  */
 export class WriteFileMetadataTracker {
   private readonly byToolCallId = new Map<string, WriteFileMetadata>();
 
   forToolEvent(event: Record<string, unknown>, runtimeEvent: Extract<RuntimeEvent, { type: "tool" }>, cwd: string): WriteFileMetadata | undefined {
-    if (runtimeEvent.name !== "write") return undefined;
+    if (!FILE_MUTATION_TOOL_NAMES.has(runtimeEvent.name)) return undefined;
     if (runtimeEvent.status === "running") {
       const existing = this.byToolCallId.get(runtimeEvent.toolCallId);
       if (event.type !== "tool_execution_start") return existing;

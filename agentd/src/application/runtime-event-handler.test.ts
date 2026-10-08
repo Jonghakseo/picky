@@ -332,6 +332,29 @@ describe("RuntimeEventHandler", () => {
     }
   });
 
+  it("lists files changed by successful write and edit calls without explicit Changed file lines", async () => {
+    const harness = inputHarness({ cwd: "/workspace" });
+    const tool = (toolCallId: string, name: string, status: "succeeded" | "failed", filePath: string, fileExistedBefore: boolean) =>
+      harness.handler.handle("pickle-1", { type: "tool", toolCallId, name, status, filePath, fileExistedBefore });
+
+    await tool("create", "write", "succeeded", "/workspace/src/new.ts", false);
+    await tool("edit-created", "edit", "succeeded", "/workspace/src/new.ts", true);
+    await tool("edit-existing", "edit", "succeeded", "/workspace/src/app.ts", true);
+    await tool("edit-failed", "edit", "failed", "/workspace/src/broken.ts", true);
+    await tool("edit-outside", "edit", "succeeded", "/etc/hosts", true);
+    await harness.handler.handle("pickle-1", {
+      type: "status",
+      status: "completed",
+      finalAnswer: "Done.\nChanged file: M src/app.ts - wire the new module",
+    });
+
+    expect(harness.current().changedFiles).toEqual([
+      { path: "src/new.ts", status: "A" },
+      { path: "src/app.ts", status: "M", summary: "wire the new module" },
+      { path: "/etc/hosts", status: "M" },
+    ]);
+  });
+
   it("leaves legacy write success events without structured paths artifact-free", async () => {
     const harness = inputHarness();
 

@@ -1253,6 +1253,18 @@ describe("PiSdkRuntime", () => {
       toolName: "write",
       result: "written",
     });
+    fakeSession.emit("event", {
+      type: "tool_execution_start",
+      toolCallId: "edit-existing",
+      toolName: "edit",
+      args: { path: "package.json", edits: [] },
+    });
+    fakeSession.emit("event", {
+      type: "tool_execution_end",
+      toolCallId: "edit-existing",
+      toolName: "edit",
+      result: "edited",
+    });
 
     expect(writeFilePathFromRawArgs("invalid", process.cwd())).toBeUndefined();
     expect(writeFilePathFromRawArgs({ path: "~/Desktop/요약 파일.md" }, process.cwd())).toBe(join(homedir(), "Desktop/요약 파일.md"));
@@ -1265,6 +1277,8 @@ describe("PiSdkRuntime", () => {
       expect.objectContaining({ toolCallId: "write-existing", status: "running", filePath: writeFilePathFromRawArgs({ path: "package.json" }, process.cwd()), fileExistedBefore: true }),
       expect.objectContaining({ toolCallId: "write-existing", status: "succeeded", filePath: writeFilePathFromRawArgs({ path: "package.json" }, process.cwd()), fileExistedBefore: true }),
     ]);
+    const editEvents = events.filter((event): event is Extract<RuntimeEvent, { type: "tool" }> => event.type === "tool" && event.name === "edit");
+    expect(editEvents.at(-1)).toEqual(expect.objectContaining({ toolCallId: "edit-existing", status: "succeeded", filePath: writeFilePathFromRawArgs({ path: "package.json" }, process.cwd()), fileExistedBefore: true }));
   });
 
   it("executes user bash directly through the Pi session and preserves context inclusion flag", async () => {

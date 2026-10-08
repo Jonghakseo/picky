@@ -6255,7 +6255,7 @@ describe("SessionSupervisor", () => {
       waitsForInput: true,
       request: { id: "ui-rows", sessionId: session.id, method: "askUserQuestion", title: "릴리즈", questions, createdAt: "2026-05-01T00:00:00.000Z" },
     });
-    await settle();
+    await waitUntil(() => supervisor.get(session.id)?.pendingExtensionUiRequest?.id === "ui-rows");
     await supervisor.answerExtensionUi(session.id, "ui-rows", { value: { version: "b2", notes: ["lag", "표 렌더링"], memo: "  " } });
 
     expect(supervisor.get(session.id)!.messages?.find((message) => message.id === "ui-rows")?.answerRows).toEqual([
@@ -6268,7 +6268,7 @@ describe("SessionSupervisor", () => {
       waitsForInput: true,
       request: { id: "ui-skip", sessionId: session.id, method: "askUserQuestion", title: "다음", questions, createdAt: "2026-05-01T00:00:01.000Z" },
     });
-    await settle();
+    await waitUntil(() => supervisor.get(session.id)?.pendingExtensionUiRequest?.id === "ui-skip");
     await supervisor.answerExtensionUi(session.id, "ui-skip", { cancelled: true });
     expect(supervisor.get(session.id)!.messages?.find((message) => message.id === "ui-skip")?.answerRows).toBeUndefined();
   });

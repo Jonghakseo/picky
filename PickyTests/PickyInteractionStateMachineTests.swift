@@ -41,10 +41,10 @@ struct PickyInteractionStateMachineTests {
     // Any event that overwrites a `.speaking` output with a non-`.speaking` output must
     // (a) emit `.stopSpeech(.superseded)` so the in-flight TTS is actually stopped and
     // (b) remove the `.speakingResponse` overlay reason so subsequent overlay-visibility
-    // math is correct. Speakable quick replies are the exception: they queue behind the
-    // current utterance instead of overwriting it.
+    // math is correct. Two kinds of reply never overwrite it: speakable quick replies queue
+    // behind the current utterance, and a silent reply for another request leaves it playing.
 
-    @Test func speakingPreemptedByTextQuickReplyEmitsStopSpeechAndDropsSpeakingOverlay() {
+    @Test func speakingKeepsPlayingWhenSilentReplyForAnotherRequestArrives() {
         let initial = speakingState(
             contextID: voiceContextID,
             speechID: speechA,
@@ -53,8 +53,8 @@ struct PickyInteractionStateMachineTests {
         )
 
         // A `.main` quickReply with a system origin and no cursor-presentation owner
-        // routes to `.showingTextReply` — exactly the path that left voiceState
-        // stuck at `.responding` in production.
+        // is not spoken. Overwriting the speech with it used to cut the reply being
+        // heard mid-sentence and drop its queued sentences.
         let transition = reduce(
             initial,
             .quickReply(
@@ -68,20 +68,10 @@ struct PickyInteractionStateMachineTests {
             id: timerB
         )
 
-        expectShowingTextReply(
-            transition.state.output,
-            contextID: "main-context",
-            text: "typed reply",
-            timerID: timerB
-        )
-        #expect(transition.state.lastDisplayMessage?.source == .textReply)
-        #expect(!isSpeakingResponseOverlayActive(transition.state))
-        // The stopSpeech carries the OLD speechID so the late .speechFailed
-        // dispatch hits the now-stale .speaking branch in the reducer guard.
-        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
-        #expect(transition.effects.contains(.scheduleMinimumDisplay(
-            timerID: timerB, speechID: nil, inputID: nil, delay: PickyInteractionReducer.minimumDisplayDuration
-        )))
+        #expect(transition.state.output == initial.output)
+        #expect(isSpeakingResponseOverlayActive(transition.state))
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
+        #expect(transition.effects.isEmpty)
     }
 
     @Test func speakingPreemptedByPickleCompletionDuringVoiceInputEmitsStopSpeechAndShowsSuppressedReply() {
@@ -442,9 +432,9 @@ struct PickyInteractionStateMachineTests {
         #expect(transition.journalRecords.last?.kind == .staleEvent)
     }
 
-    @Test func speechFinishedAfterPreemptionToShowingTextReplyIsStale() {
-        // Set up by *running* the preemption through the reducer to mirror
-        // the real timeline — speaking → preempted → stale completion arrives.
+    @Test func speechFinishedAfterSilentReplyForAnotherRequestEndsTheSpeech() {
+        // Run the silent reply through the reducer to mirror the real timeline:
+        // speaking → another request's silent reply → the utterance completes.
         var state = speakingState(contextID: voiceContextID, speechID: speechA, timerID: nil)
         state = reduce(
             state,
@@ -454,13 +444,10 @@ struct PickyInteractionStateMachineTests {
 
         let transition = reduce(state, .speechFinished(speechID: speechA), id: envelopeB)
 
-        // Output must remain at the showingTextReply set by the preemption.
-        guard case .showingTextReply = transition.state.output else {
-            Issue.record("Expected output still showingTextReply, got \(transition.state.output)")
-            return
-        }
-        #expect(transition.effects.isEmpty)
-        #expect(transition.journalRecords.last?.kind == .staleEvent)
+        // The speech was never orphaned, so its completion still ends it cleanly.
+        #expect(transition.state.output == .idle)
+        #expect(!isSpeakingResponseOverlayActive(transition.state))
+        #expect(transition.journalRecords.last?.kind != .staleEvent)
     }
 
     @Test func speechFinishedAfterPreemptionToWaitingForAgentIsStale() {
@@ -669,41 +656,40 @@ struct PickyInteractionStateMachineTests {
         #expect(!isSpeakingResponseOverlayActive(cleanFinish.state))
     }
 
-    @Test func pickleCompletionThenTextReplyPreemptionThenMinDisplayTimerEndsAtIdleWithoutSpeakingOverlay() {
+    @Test func pickleCompletionThenSilentReplyThenMinDisplayTimerEndsAtIdleWithoutSpeakingOverlay() {
         var state = reduce(
             PickyInteractionState(),
             .quickReply(contextID: pickleSessionID, text: "first", originSource: .system, replyKind: .pickleCompletion, sessionID: pickleSessionID, inputID: nil),
             id: envelopeA
         ).state
-        guard case .speaking(_, let speechID, _, _, _, _) = state.output else {
-            Issue.record("Expected speaking after pickleCompletion")
+        guard case .speaking(_, let speechID, _, let pickleTimer, _, _) = state.output, let pickleTimer else {
+            Issue.record("Expected speaking with a minimum-display timer after pickleCompletion")
             return
         }
 
-        // A different reply kind arrives that routes to `.showingTextReply`.
-        let preempt = reduce(
+        // A silent `.main` reply for another request arrives mid-utterance.
+        let silent = reduce(
             state,
             .quickReply(contextID: "main-context", text: "typed reply", originSource: .system, replyKind: .main, sessionID: nil, inputID: nil),
             id: envelopeB,
             offset: 0.05
         )
-        state = preempt.state
-        #expect(containsStopSpeech(reason: .superseded, speechID: speechID, in: preempt.effects))
-        #expect(!isSpeakingResponseOverlayActive(state))
+        state = silent.state
+        #expect(!containsStopSpeech(reason: .superseded, in: silent.effects))
+        #expect(isSpeakingResponseOverlayActive(state))
 
-        // Late `.speechFinished` from the preempted utterance is stale.
-        let staleFinish = reduce(state, .speechFinished(speechID: speechID), id: envelopeC, offset: 0.1)
-        #expect(staleFinish.state == state)
-        #expect(staleFinish.journalRecords.last?.kind == .staleEvent)
-
-        // Eventually the text-reply min-display timer fires → idle.
-        guard case .showingTextReply(_, _, let textTimer, _) = state.output, let textTimer else {
-            Issue.record("Expected text reply with timer set")
+        // The Pickle completion finishes before its minimum display ends...
+        state = reduce(state, .speechFinished(speechID: speechID), id: envelopeC, offset: 0.1).state
+        guard case .speaking(_, _, _, _, _, let finishPending) = state.output else {
+            Issue.record("Expected speaking with finishPending, got \(state.output)")
             return
         }
+        #expect(finishPending)
+
+        // ...and its own timer then ends at idle without the speaking overlay.
         let finalize = reduce(
             state,
-            .minimumDisplayTimerFired(timerID: textTimer, speechID: nil, inputID: nil),
+            .minimumDisplayTimerFired(timerID: pickleTimer, speechID: speechID, inputID: nil),
             id: UUID(),
             offset: PickyInteractionReducer.minimumDisplayDuration + 0.1
         )

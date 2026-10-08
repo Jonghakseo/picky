@@ -893,9 +893,10 @@ const QuickReplyKindSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
   const normalized = value.trim().toLowerCase();
   if (["picklecompletion", "pickle-completion", "pickle_completion"].includes(normalized)) return "pickleCompletion";
+  if (["taskcompletion", "task-completion", "task_completion"].includes(normalized)) return "taskCompletion";
   if (["handoffack", "handoff-ack", "handoff_ack"].includes(normalized)) return "handoffAck";
   return value;
-}, z.enum(["main", "pickleCompletion", "router", "handoffAck", "error", "unknown"]));
+}, z.enum(["main", "pickleCompletion", "taskCompletion", "router", "handoffAck", "error", "unknown"]));
 
 // Projection v2 frames are emitted only to sockets locked to the v2 dialect.
 export const PickySessionProjectionTransactionEventSchema = EventBaseSchema.extend({

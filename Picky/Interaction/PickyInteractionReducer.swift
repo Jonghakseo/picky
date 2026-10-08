@@ -489,9 +489,9 @@ struct PickyInteractionReducing {
         let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
         let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
         let hasActiveVoiceInput = state.hasActiveVoiceInput
-        let shouldSpeakReply = owner.isVoiceOwned || owner.usesCursorResponsePresentation || replyKind == .pickleCompletion
-        if hasActiveVoiceInput, replyKind == .pickleCompletion {
-            suppressPickleCompletionReply(contextID: contextID, text: text, timerID: timerID, deadline: deadline, inputID: inputID)
+        let shouldSpeakReply = presentsReplyAtCursor(owner: owner, replyKind: replyKind)
+        if hasActiveVoiceInput, replyKind?.announcesCompletion(for: owner) == true {
+            suppressCompletionReplyDuringVoiceInput(contextID: contextID, text: text, timerID: timerID, deadline: deadline, inputID: inputID)
         } else if shouldSpeakReply, !hasActiveVoiceInput {
             enqueueOrSpeakQuickReply(contextID: contextID, text: text, replyKind: replyKind, owner: owner, timerID: timerID, inputID: inputID)
         } else {
@@ -517,21 +517,26 @@ struct PickyInteractionReducing {
         let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
         let resolvedReplyKind = replyKind ?? .main
         guard !state.hasActiveVoiceInput,
-              owner.isVoiceOwned || owner.usesCursorResponsePresentation || resolvedReplyKind == .pickleCompletion else {
+              presentsReplyAtCursor(owner: owner, replyKind: resolvedReplyKind) else {
             record(.accepted, "Narration chunk did not require presentation")
             return
         }
 
         state.annotationNarrationWeight += PickyNarrationPaceModel.weightedUnits(forNarration: trimmed)
         if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
-        appendStreamedResponse(
-            contextID: contextID,
-            text: trimmed,
-            source: displaySource(replyKind: resolvedReplyKind, owner: owner)
-        )
+        // The bubble stays on the reply being heard. A reply queued behind it shows its text
+        // when its own first sentence starts (`startSpeakingReply`).
+        let waitsBehindOtherSpeech = isSpeakingOtherContext(contextID)
+        if !waitsBehindOtherSpeech {
+            appendStreamedResponse(
+                contextID: contextID,
+                text: trimmed,
+                source: displaySource(replyKind: resolvedReplyKind, owner: owner)
+            )
+        }
         if shouldSpeakFinalReply { state.finalNarrationSpeechContextIDs.insert(contextID) }
         guard shouldSpeak else {
-            clearActiveVisualNarration()
+            if !waitsBehindOtherSpeech { clearActiveVisualNarration() }
             record(.accepted, "Narration chunk displayed without incremental speech")
             return
         }
@@ -612,7 +617,7 @@ struct PickyInteractionReducing {
         let owner = state.contextOwnership[identity.contextId] ?? ownerFromMetadata(originSource)
         let resolvedReplyKind = replyKind ?? .main
         guard !state.hasActiveVoiceInput,
-              owner.isVoiceOwned || owner.usesCursorResponsePresentation || resolvedReplyKind == .pickleCompletion else {
+              presentsReplyAtCursor(owner: owner, replyKind: resolvedReplyKind) else {
             record(.accepted, "Visual narration sentence did not require presentation")
             return
         }
@@ -858,6 +863,19 @@ struct PickyInteractionReducing {
             record(.stateChanged, "Final quick reply settled silent streamed narration")
             return
         }
+        if isSpeakingOtherContext(contextID) {
+            // Its sentences wait in the speech queue; the bubble switches when the first one plays.
+            // Carry the whole reply with that first sentence so the takeover shows everything,
+            // including parts the narrator never spoke (tables, links, skipped lines).
+            if let index = state.queuedSpeechReplies.firstIndex(where: {
+                $0.contextID == contextID && $0.visualNarrationMarker == nil
+            }) {
+                state.queuedSpeechReplies[index].takeoverText = text
+            }
+            markAnnotationTurnSettled()
+            record(.accepted, "Final quick reply waits behind another reply's speech")
+            return
+        }
         let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
         let source = displaySource(replyKind: replyKind, owner: owner)
         state.streamedResponseContextID = contextID
@@ -868,7 +886,7 @@ struct PickyInteractionReducing {
         record(.accepted, "Final quick reply retained streamed narration queue")
     }
 
-    private mutating func suppressPickleCompletionReply(
+    private mutating func suppressCompletionReplyDuringVoiceInput(
         contextID: String,
         text: String,
         timerID: UUID,
@@ -886,7 +904,7 @@ struct PickyInteractionReducing {
         )
         effects.append(.scheduleMinimumDisplay(timerID: timerID, speechID: nil, inputID: inputID, delay: minimumDisplayDuration))
         state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: .suppressed, updatedAt: envelope.occurredAt)
-        record(.stateChanged, "Suppressed Pickle completion quick reply while voice input is active")
+        record(.stateChanged, "Suppressed completion quick reply while voice input is active")
     }
 
     private mutating func enqueueOrSpeakQuickReply(
@@ -930,6 +948,12 @@ struct PickyInteractionReducing {
         inputID: UUID?
     ) {
         if state.contextOwnership[contextID] == .remote { record(.accepted, "Remote reply stays on the phone, not on this Mac"); return }
+        if isSpeakingOtherContext(contextID) {
+            // A silent reply to another request must not cut the reply being heard or drop the
+            // sentences queued after it. The text is already in the conversation history.
+            record(.accepted, "Silent reply for another request left the current speech playing")
+            return
+        }
         state.queuedSpeechReplies.removeAll()
         state = state.removingOverlayReason(.waitingForVoiceResponse)
         preemptSpeakingOutputIfNeeded()
@@ -1227,6 +1251,13 @@ struct PickyInteractionReducing {
     }
 
     private mutating func startSpeakingReply(_ reply: PickyQueuedSpeechReply, occurredAt: Date) {
+        // A visual segment outranks everything else in the bubble, so the previous reply's segment
+        // would stay on screen (or blank it, when the segment is visual-only) while this one speaks.
+        if let activeVisual = state.activeVisualNarrationIdentity,
+           activeVisual.contextId != reply.contextID {
+            clearActiveVisualNarration()
+        }
+        moveStreamedResponseToSpeakingReply(reply)
         let deadline = occurredAt.addingTimeInterval(minimumDisplayDuration)
         state = state.removingOverlayReason(.waitingForVoiceResponse)
         state = state.addingOverlayReason(.speakingResponse)
@@ -1307,6 +1338,48 @@ struct PickyInteractionReducing {
     ) -> PickyDisplaySource {
         if replyKind == .pickleCompletion { return .pickleCompletion }
         return owner.usesCursorResponsePresentation ? .textReply : .voiceReply
+    }
+
+    private func presentsReplyAtCursor(owner: PickyContextOwner, replyKind: PickyQuickReplyKind?) -> Bool {
+        owner.isVoiceOwned || owner.usesCursorResponsePresentation || replyKind?.announcesCompletion(for: owner) == true
+    }
+
+    /// True while the reply being heard belongs to a different request. Text for `contextID` then
+    /// waits for its own speech instead of replacing what the bubble shows.
+    private func isSpeakingOtherContext(_ contextID: String) -> Bool {
+        guard case .speaking(let speakingContextID, _, _, _, _, _) = state.output else { return false }
+        return speakingContextID != contextID
+    }
+
+    /// When speech moves on to another reply, the bubble moves with it: the previous reply's
+    /// streamed text leaves, and a streamed reply that waited in the queue shows every sentence it
+    /// has received so far. Visual narration sentences show through their own segment instead.
+    private mutating func moveStreamedResponseToSpeakingReply(_ reply: PickyQueuedSpeechReply) {
+        guard state.streamedResponseContextID != reply.contextID else { return }
+        // The reply being cut into may still have sentences queued behind this one. Carry the text
+        // its bubble showed to the next of them, so that when it resumes it comes back whole
+        // instead of shrinking to the sentences it has left.
+        if let leavingContextID = state.streamedResponseContextID,
+           let leavingText = state.streamedResponseText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !leavingText.isEmpty,
+           let index = state.queuedSpeechReplies.firstIndex(where: {
+               $0.contextID == leavingContextID && $0.visualNarrationMarker == nil
+           }) {
+            state.queuedSpeechReplies[index].takeoverText = leavingText
+        }
+        state.streamedResponseContextID = nil
+        state.streamedResponseText = nil
+        guard reply.visualNarrationMarker == nil,
+              state.streamedNarrationContextIDs.contains(reply.contextID) else { return }
+        let received = [reply] + state.queuedSpeechReplies.filter {
+            $0.contextID == reply.contextID && $0.visualNarrationMarker == nil
+        }
+        let takeoverText = received.compactMap(\.takeoverText).first
+        appendStreamedResponse(
+            contextID: reply.contextID,
+            text: takeoverText ?? received.map(\.text).joined(separator: " "),
+            source: reply.displaySource
+        )
     }
 
     private func ownerFromMetadata(_ origin: PickyQuickReplyOriginSource?) -> PickyContextOwner {

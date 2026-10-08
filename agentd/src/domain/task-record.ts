@@ -57,6 +57,8 @@ export interface TaskOrigin {
   contextId?: string;
   source?: string;
   text?: string;
+  /** Sent from a paired phone. Saved with the Task because the app forgets it when it restarts. */
+  remote?: true;
 }
 export interface TaskHandoff {
   decisionId: string;

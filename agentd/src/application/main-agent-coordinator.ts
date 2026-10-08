@@ -10,7 +10,7 @@ import { buildMainAgentBootstrapPair, buildMainAgentPrompt, type BuiltPrompt } f
 import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest, PickyMainActivity, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState } from "../protocol.js";
 import type { SessionStore } from "../session-store.js";
 import type { RuntimeEvent, RuntimeSessionHandle, ThinkingLevel } from "../runtime/types.js";
-import { buildAppendedMainMessageState, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions } from "../domain/session-supervisor-projection-policy.js";
+import { buildAppendedMainMessageState, projectMainAgentSessionInfo, projectMainReplyMetadata, projectMainRolloverPickleSessions, type MainReplyMetadata } from "../domain/session-supervisor-projection-policy.js";
 import { normalizeDslWhitespace } from "../domain/session-text-policy.js";
 import { cleanFinalAnswer } from "../domain/session-summary.js";
 import { piSessionFilePathFromLogLine } from "../domain/pi-session-files.js";
@@ -128,7 +128,8 @@ export class MainAgentCoordinator {
   private mainTurnOrigin: MainTurnOrigin = "user";
   private readonly taskCompletions?: MainTaskCompletionDelivery;
   // The original request's source for a Task result reply, so a voice request is answered aloud.
-  private taskReplyOrigin?: { contextId: string; source?: string };
+  // `announce` marks a result the Mac presents at the cursor whatever surface the request came from.
+  private taskReplyOrigin?: { contextId: string; source?: string; announce: boolean };
 
   constructor(private readonly deps: MainAgentCoordinatorDependencies) {
     this.mainVisualNarration = new MainVisualNarrationCoordinator({
@@ -169,7 +170,11 @@ export class MainAgentCoordinator {
   private beginTaskCompletionTurn(completion: MainTaskCompletion): void {
     const contextId = completion.origin?.contextId ?? completion.taskId;
     this.mainReplyContextId = contextId;
-    this.taskReplyOrigin = { contextId, ...(completion.origin?.source ? { source: completion.origin.source } : {}) };
+    // A result is news the user waited for, so the Mac speaks it even when the request was typed in
+    // the Hub. The startup notice about Tasks a quit stopped stays with the request's source, and a
+    // phone request's result never plays on the Mac.
+    const announce = completion.interruption !== true && completion.origin?.remote !== true;
+    this.taskReplyOrigin = { contextId, announce, ...(completion.origin?.source ? { source: completion.origin.source } : {}) };
     this.mainTurnOverlayContext = undefined;
     this.mainDraft = "";
     this.mainAssistantDeltaSeen = false;
@@ -180,11 +185,19 @@ export class MainAgentCoordinator {
     this.mainTurnOrigin = "internal";
   }
 
-  /** Reply metadata, with a Task result attributed to the source of the request it answers. */
-  private replyMetadata(contextId: string, didStreamNarration = false) {
+  /**
+   * Reply metadata, with a Task result attributed to the source of the request it answers. A result
+   * the Mac should announce is tagged `taskCompletion`, so the app queues it behind any reply still
+   * playing instead of treating it as a silent answer to a Hub message.
+   */
+  private replyMetadata(contextId: string, didStreamNarration = false): MainReplyMetadata & { didStreamNarration?: true } {
     const metadata = projectMainReplyMetadata(contextId, this.mainContext, this.deps.pickleSessionIds, this.externalPickleReplyContexts, didStreamNarration);
     if (this.taskReplyOrigin?.contextId !== contextId || metadata.replyKind !== "main") return metadata;
-    return { ...metadata, originSource: quickReplyOriginFromContextSource(this.taskReplyOrigin.source) ?? "system" };
+    return {
+      ...metadata,
+      ...(this.taskReplyOrigin.announce ? { replyKind: "taskCompletion" as const } : {}),
+      originSource: quickReplyOriginFromContextSource(this.taskReplyOrigin.source) ?? "system",
+    };
   }
 
   async load(): Promise<void> {
@@ -1087,9 +1100,13 @@ export class MainAgentCoordinator {
               this.lastMainQuickReplyContextId = this.mainReplyContextId;
               this.lastMainQuickReplyAt = now;
               logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
+              // Read before the await: this turn is no longer processing, so a Task result may
+              // start the next turn while the message is saved and repoint the reply context.
+              const replyContextId = this.mainReplyContextId;
+              const metadata = this.replyMetadata(replyContextId, didStreamNarration);
               await this.appendMainMessage("assistant", reply);
-              this.emitQuickReply(this.mainReplyContextId, reply, this.replyMetadata(this.mainReplyContextId, didStreamNarration));
-              this.externalPickleReplyContexts.delete(this.mainReplyContextId);
+              this.emitQuickReply(replyContextId, reply, metadata);
+              this.externalPickleReplyContexts.delete(replyContextId);
             }
           }
         } else {
@@ -1133,10 +1150,12 @@ export class MainAgentCoordinator {
       return;
     }
     logAgentd("main turn text flush", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, textChars: reply.length });
-    await this.appendMainMessage("assistant", reply);
+    // Read before the await, so the reply keeps the context of the turn that wrote it.
     const replyContextId = this.mainReplyContextId;
-    if (replyContextId) {
-      this.emitQuickReply(replyContextId, reply, this.replyMetadata(replyContextId, didStreamNarration));
+    const metadata = replyContextId ? this.replyMetadata(replyContextId, didStreamNarration) : undefined;
+    await this.appendMainMessage("assistant", reply);
+    if (replyContextId && metadata) {
+      this.emitQuickReply(replyContextId, reply, metadata);
     }
     this.mainVisualNarration.reset();
     this.mainAssistantDeltaSeen = false;

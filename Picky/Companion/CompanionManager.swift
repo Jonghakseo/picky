@@ -56,7 +56,9 @@ final class CompanionManager: ObservableObject {
     @Published var latestAgentSessionSummary: String?
     @Published private(set) var isProgressiveResponseVisible = false
     @Published private(set) var hasActiveVisualNarration = false
-    @Published private(set) var activeVisualNarrationSegmentID: String?
+    /// Which reply or visual narration segment `latestAgentSessionSummary` belongs to. The cursor
+    /// bubble keys its layout cache on it.
+    @Published private(set) var responseBubbleContentIdentity: String?
     @Published private(set) var hasActivePointVisualNarration = false
     /// Main-agent transcript, Pi session location, and model options. Observe
     /// it directly from views.
@@ -1667,12 +1669,11 @@ final class CompanionManager: ObservableObject {
         agentAnnotations = projection.agentAnnotations
         showsAgentAnnotationDismissControl = projection.showsAgentAnnotationDismissControl
         hasActiveVisualNarration = projection.state.activeVisualNarrationIdentity != nil
-        activeVisualNarrationSegmentID = projection.state.activeVisualNarrationIdentity?.segmentId
         hasActivePointVisualNarration = projection.hasActivePointVisualNarration
         isProgressiveResponseVisible = projection.latestDisplayText != nil
             && (hasActiveVisualNarration || projection.state.streamedResponseText != nil)
-        if isProgressiveResponseVisible, let latestDisplayText = projection.latestDisplayText {
-            latestAgentSessionSummary = latestDisplayText
+        if isProgressiveResponseVisible {
+            showProjectedResponse(projection)
             if voicePromptBubbleState != .hidden {
                 // Route the hide through the machine so the single-writer
                 // presentation cannot resurrect the bubble on the next pass.
@@ -1698,15 +1699,11 @@ final class CompanionManager: ObservableObject {
         switch projection.state.output {
         case .showingTextReply:
             clearPendingAgentResponseTiming()
-            if let latestDisplayText = projection.latestDisplayText {
-                latestAgentSessionSummary = latestDisplayText
-            }
+            showProjectedResponse(projection)
         case .speaking(_, let speechID, _, _, _, _):
             clearPendingAgentResponseTiming()
             interactionSpeechID = speechID
-            if let latestDisplayText = projection.latestDisplayText {
-                latestAgentSessionSummary = latestDisplayText
-            }
+            showProjectedResponse(projection)
             currentVoicePromptPreview = nil
             if voicePromptBubbleState != .hidden {
                 reduceVoiceInteraction(.promptBubbleAutoHide)
@@ -1732,6 +1729,15 @@ final class CompanionManager: ObservableObject {
             scheduleTransientHideIfNeeded()
         }
         applyCursorVoicePresentation()
+    }
+
+    /// Puts the projected reply text in the cursor bubble. Its content identity changes with the
+    /// reply the text belongs to, so the bubble's no-shrink stabilization, meant for rewordings of
+    /// one reply, never keeps a longer previous reply on screen after speech moves to the next.
+    private func showProjectedResponse(_ projection: PickyInteractionProjection) {
+        guard let latestDisplayText = projection.latestDisplayText else { return }
+        responseBubbleContentIdentity = projection.latestDisplayIdentity
+        latestAgentSessionSummary = latestDisplayText
     }
 
     private func clearPendingAgentResponseTiming() {
@@ -1781,7 +1787,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func quickReplyWouldUseTTS(owner: PickyContextOwner?, replyKind: PickyQuickReplyKind) -> Bool {
-        (owner?.isVoiceOwned == true) || (owner?.usesCursorResponsePresentation == true) || replyKind == .pickleCompletion
+        (owner?.isVoiceOwned == true) || (owner?.usesCursorResponsePresentation == true) || replyKind.announcesCompletion(for: owner)
     }
 
     private func shouldSuppressDuplicateQuickReplyTTS(_ reply: PickyQuickReplyEvent, replyKind: PickyQuickReplyKind) -> Bool {

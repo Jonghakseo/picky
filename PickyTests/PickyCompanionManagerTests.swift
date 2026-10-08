@@ -2087,6 +2087,134 @@ struct PickyCompanionManagerTests {
         #expect(!publishedSummaries.contains(secondSentence))
     }
 
+    @Test func taskResultArrivingMidSpeechPlaysAfterTheAnswerAndThenTakesOverTheBubble() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.supportsIncrementalPlayback = true
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        defer { manager.stop() }
+        let heardFirst = "지금 재생 중인 답변의 첫 문장은 여러 줄로 감길 만큼 충분히 길게 이어집니다."
+        let heardSecond = "둘째 문장도 길게 이어져서 말풍선이 결과 문장보다 확실히 더 많은 줄을 차지합니다."
+        let heardReply = "\(heardFirst) \(heardSecond)"
+        let result = "커넥터 조사를 마쳤어요."
+        // Within one reply the bubble never shrinks, so a shorter result proves it is a new reply.
+        try #require(
+            PickyCursorResponseBubbleLayout(sourceText: result).lineCount
+                < PickyCursorResponseBubbleLayout(sourceText: heardReply).lineCount
+        )
+        // The same cache the cursor bubble keeps, fed the values the manager publishes.
+        let bubble = PickyCursorResponseBubbleLayoutCache()
+        func bubbleText() -> String? {
+            guard let text = manager.latestAgentSessionSummary else { return nil }
+            bubble.update(for: text, contentIdentity: manager.responseBubbleContentIdentity)
+            return bubble.layout(for: text, contentIdentity: manager.responseBubbleContentIdentity)?.sourceText
+        }
+
+        for sentence in [heardFirst, heardSecond] {
+            manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+                contextId: "heard-request",
+                text: sentence,
+                originSource: .voice,
+                replyKind: .main,
+                sessionId: nil
+            )))
+        }
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "heard-request",
+            text: heardReply,
+            originSource: .voice,
+            replyKind: .main,
+            didStreamNarration: true
+        )))
+        // The final reply is applied while the first sentence plays; wait for both so the bubble is
+        // read at a settled point instead of whichever of the two landed first.
+        try await waitUntil {
+            speechProvider.spokenUtterances == [heardFirst]
+                && manager.latestAgentSessionSummary == heardReply
+        }
+        #expect(bubbleText() == heardReply)
+        let stopCountWhileHeard = speechProvider.stopCount
+
+        // The result of a Task requested from the Hub arrives during the first sentence.
+        manager.applyAgentEvent(.mainNarrationChunk(PickyMainNarrationChunkEvent(
+            contextId: "task-origin",
+            text: result,
+            originSource: .text,
+            replyKind: .taskCompletion,
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "task-origin",
+            text: result,
+            originSource: .text,
+            replyKind: .taskCompletion,
+            didStreamNarration: true
+        )))
+        try await settle()
+        #expect(speechProvider.spokenUtterances == [heardFirst])
+        #expect(bubbleText() == heardReply)
+
+        speechProvider.finishSpeaking()
+        try await waitUntil { speechProvider.spokenUtterances == [heardFirst, heardSecond] }
+        #expect(bubbleText() == heardReply)
+
+        speechProvider.finishSpeaking()
+        try await waitUntil { speechProvider.spokenUtterances == [heardFirst, heardSecond, result] }
+        #expect(bubbleText() == result)
+        #expect(speechProvider.stopCount == stopCountWhileHeard)
+    }
+
+    @Test func secondCompletionReplyForTheSameSessionShrinksTheBubbleToItsOwnText() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        defer { manager.stop() }
+        let firstCompletion = "피클 작업을 마쳤어요. 변경 사이즈가 충분히 커서 말풍선이 여러 줄을 사용하게 됩니다."
+        let secondCompletion = "피클 방 보냈어요."
+        // Two completions of one Pickle share a context, so only a per-reply identity lets the
+        // bubble shrink to the second one instead of keeping the first, longer layout.
+        try #require(
+            PickyCursorResponseBubbleLayout(sourceText: secondCompletion).lineCount
+                < PickyCursorResponseBubbleLayout(sourceText: firstCompletion).lineCount
+        )
+        let bubble = PickyCursorResponseBubbleLayoutCache()
+        func bubbleText() -> String? {
+            guard let text = manager.latestAgentSessionSummary else { return nil }
+            bubble.update(for: text, contentIdentity: manager.responseBubbleContentIdentity)
+            return bubble.layout(for: text, contentIdentity: manager.responseBubbleContentIdentity)?.sourceText
+        }
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "session-pickle",
+            text: firstCompletion,
+            originSource: .system,
+            replyKind: .pickleCompletion,
+            sessionId: "session-pickle"
+        )))
+        try await waitUntil { speechProvider.spokenUtterances == [firstCompletion] }
+        #expect(bubbleText() == firstCompletion)
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "session-pickle",
+            text: secondCompletion,
+            originSource: .system,
+            replyKind: .pickleCompletion,
+            sessionId: "session-pickle"
+        )))
+        try await sleepPast(PickyInteractionReducer.minimumDisplayDuration)
+        speechProvider.finishSpeaking()
+        try await waitUntil { speechProvider.spokenUtterances == [firstCompletion, secondCompletion] }
+        try await settle()
+
+        #expect(bubbleText() == secondCompletion)
+    }
+
     @Test func incrementalNarrationSkipsStandaloneParentheticalURLChunk() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         speechProvider.supportsIncrementalPlayback = true
@@ -2271,7 +2399,7 @@ struct PickyCompanionManagerTests {
         try await waitUntil {
             speechProvider.spokenUtterances == ["A 설명."]
                 && manager.latestAgentSessionSummary == "A 설명."
-                && manager.activeVisualNarrationSegmentID == first.segmentId
+                && manager.responseBubbleContentIdentity == "segment:\(first.segmentId)"
         }
 
         manager.applyAgentEvent(.mainVisualNarrationSegmentSentence(
@@ -2286,13 +2414,13 @@ struct PickyCompanionManagerTests {
         ))
         try await settle()
         #expect(manager.latestAgentSessionSummary == "A 설명.")
-        #expect(manager.activeVisualNarrationSegmentID == first.segmentId)
+        #expect(manager.responseBubbleContentIdentity == "segment:\(first.segmentId)")
 
         speechProvider.finishSpeaking()
         try await waitUntil {
             speechProvider.spokenUtterances == ["A 설명.", "B 설명."]
                 && manager.latestAgentSessionSummary == "B 설명."
-                && manager.activeVisualNarrationSegmentID == second.segmentId
+                && manager.responseBubbleContentIdentity == "segment:\(second.segmentId)"
         }
     }
 
@@ -2461,7 +2589,7 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .idle }
     }
 
-    @Test func pickleCompletionPreemptedByMainTextReplyClearsVoiceStateViaSafetyNet() async throws {
+    @Test func silentReplyDuringPickleCompletionSpeechLetsItFinishThenReturnsToIdle() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
@@ -2478,18 +2606,26 @@ struct PickyCompanionManagerTests {
             sessionId: "session-pickle"
         )))
         try await waitUntil { manager.voiceState == .responding }
+        let stopCountWhilePickleSpeaks = speechProvider.stopCount
 
-        // Before TTS finishes, a system-originated `.main` reply arrives that
-        // routes to `.showingTextReply`. Without the safety net + reducer
-        // preemption fix, the cursor bubble would stay stuck on the Pickle reply
-        // until the user manually triggers another voice interaction.
+        // Before TTS finishes, a system-originated `.main` reply for another request
+        // arrives. It is not spoken, so it must not cut the Pickle completion short,
+        // and the cursor must still return to idle once that completion ends.
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
             contextId: "context-typed",
             text: "추가 안내",
             originSource: .system,
             replyKind: .main
         )))
+        try await settle()
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.stopCount == stopCountWhilePickleSpeaks)
+        #expect(manager.latestAgentSessionSummary == "피클 답변")
+
+        try await sleepPast(PickyInteractionReducer.minimumDisplayDuration)
+        speechProvider.finishSpeaking()
         try await waitUntil { manager.voiceState == .idle }
+        #expect(speechProvider.spokenUtterances == ["피클 답변"])
     }
 
     @Test func quickInputWithScreenContextTargetSendsFollowUpWithContextAndClearsTargetByDefault() async throws {

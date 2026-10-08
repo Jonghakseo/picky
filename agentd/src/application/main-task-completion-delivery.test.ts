@@ -88,9 +88,12 @@ function setup(root = mkdtempSync(path.join(os.tmpdir(), "main-task-delivery-"))
   const mainRuntime = new MainRuntime();
   const supervisor = new SessionSupervisor(mainRuntime, new SessionStore(path.join(root, "store")), { mainRuntime, mainTasks: service });
   cleanups.push(() => service.close());
-  const replies: Array<{ contextId: string; text: string; originSource?: string }> = [];
-  supervisor.on("quickReply", (contextId: string, text: string, metadata: { originSource?: string } = {}) => replies.push({ contextId, text, originSource: metadata.originSource }));
-  return { root, service, supervisor, mainRuntime, workers, replies, host: () => host! };
+  const replies: Array<{ contextId: string; text: string; originSource?: string; replyKind?: string }> = [];
+  supervisor.on("quickReply", (contextId: string, text: string, metadata: { originSource?: string; replyKind?: string } = {}) => replies.push({ contextId, text, originSource: metadata.originSource, replyKind: metadata.replyKind }));
+  // The sentences the Mac speaks while the reply streams; they decide whether it is spoken at all.
+  const narration: Array<{ contextId: string; replyKind?: string }> = [];
+  supervisor.on("mainNarrationChunk", (chunk: { contextId: string; replyKind?: string }) => narration.push({ contextId: chunk.contextId, replyKind: chunk.replyKind }));
+  return { root, service, supervisor, mainRuntime, workers, replies, narration, host: () => host! };
 }
 
 const resultFollowUps = (handle: MainHandle | undefined) => (handle?.followUps ?? []).filter((prompt) => prompt.text.startsWith("[Picky Task result]"));
@@ -98,7 +101,7 @@ const interruptionFollowUps = (handle: MainHandle | undefined) => (handle?.follo
 
 describe("main Task result delivery", () => {
   it("waits for the user's turn to finish, then delivers the result once and answers the original request", async () => {
-    const { service, supervisor, mainRuntime, workers, replies, host } = setup();
+    const { service, supervisor, mainRuntime, workers, replies, narration, host } = setup();
     const request = context("context-voice", "Rename my screenshots");
     await supervisor.route(request);
     const handle = mainRuntime.handle!;
@@ -123,7 +126,16 @@ describe("main Task result delivery", () => {
     handle.emit({ type: "assistant_delta", delta: "Your screenshots are renamed." });
     handle.emit({ type: "status", status: "completed", summary: "Completed" });
     await vi.waitFor(() => expect(replies.some((reply) => reply.text === "Your screenshots are renamed.")).toBe(true));
-    expect(replies.find((reply) => reply.text === "Your screenshots are renamed.")).toMatchObject({ contextId: "context-voice", originSource: "voice" });
+    expect(replies.find((reply) => reply.text === "It is 3 PM.")).toMatchObject({ contextId: "context-other", replyKind: "main" });
+    // Tagged as a Task result, so the Mac announces it after any reply still playing.
+    expect(replies.find((reply) => reply.text === "Your screenshots are renamed.")).toMatchObject({
+      contextId: "context-voice",
+      originSource: "voice",
+      replyKind: "taskCompletion",
+    });
+    const resultNarration = narration.filter((chunk) => chunk.contextId === "context-voice");
+    expect(resultNarration.length).toBeGreaterThan(0);
+    expect(resultNarration.every((chunk) => chunk.replyKind === "taskCompletion")).toBe(true);
 
     // Nothing is delivered twice, and the next user input is a user turn again.
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -131,6 +143,27 @@ describe("main Task result delivery", () => {
     expect(service.getTask(task.id).completionDelivered).toBe(true);
     await supervisor.route(context("context-next", "Thanks", "text"));
     expect(host().turnOrigin()).toBe("user");
+  });
+
+  it("leaves a phone request's result untagged so the Mac never speaks it", async () => {
+    const { service, supervisor, mainRuntime, workers, replies } = setup();
+    await supervisor.route({ ...context("context-phone", "Summarize my unread mail", "text"), warnings: ["remote=true"] });
+    const handle = mainRuntime.handle!;
+    handle.emit({ type: "status", status: "running", summary: "Running" });
+    const task = service.createTask({ title: "Inbox", instruction: "Summarize unread mail" });
+    // Saved with the Task, because the app forgets which requests came from the phone when it restarts.
+    expect(service.getTask(task.id).origin).toMatchObject({ contextId: "context-phone", remote: true });
+    await vi.waitFor(() => expect(workers).toHaveLength(1));
+    handle.emit({ type: "assistant_delta", delta: "I'll look through it." });
+    handle.emit({ type: "status", status: "completed", summary: "Completed" });
+
+    workers[0].report("Five unread threads");
+    await vi.waitFor(() => expect(resultFollowUps(handle)).toHaveLength(1));
+    handle.emit({ type: "status", status: "running", summary: "Running" });
+    handle.emit({ type: "assistant_delta", delta: "You have five unread threads." });
+    handle.emit({ type: "status", status: "completed", summary: "Completed" });
+    await vi.waitFor(() => expect(replies.some((reply) => reply.text === "You have five unread threads.")).toBe(true));
+    expect(replies.find((reply) => reply.text === "You have five unread threads.")).toMatchObject({ contextId: "context-phone", replyKind: "main" });
   });
 
   it("holds the result while the main agent waits for an answer to its question", async () => {
@@ -199,6 +232,12 @@ describe("main Task result delivery", () => {
     handle.emit({ type: "status", status: "running", summary: "Running" });
     handle.emit({ type: "assistant_delta", delta: "Exporting invoices stopped when Picky quit. Continue it?" });
     handle.emit({ type: "status", status: "completed", summary: "Completed" });
+    // The notice arrives as Picky starts, so it follows the request's source instead of speaking up.
+    await vi.waitFor(() => expect(after.replies.some((reply) => reply.text.startsWith("Exporting invoices stopped"))).toBe(true));
+    expect(after.replies.find((reply) => reply.text.startsWith("Exporting invoices stopped"))).toMatchObject({
+      contextId: "context-export",
+      replyKind: "main",
+    });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(interruptionFollowUps(handle)).toHaveLength(1);
     await after.service.close();

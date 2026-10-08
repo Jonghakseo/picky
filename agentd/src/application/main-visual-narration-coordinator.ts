@@ -12,7 +12,7 @@ type MainVisualNarrationSegment = {
 
 export type MainNarrationMetadata = {
   originSource?: "voice" | "text" | "voiceFollowUp" | "textFollowUp" | "system" | "cli" | "unknown";
-  replyKind: "pickleCompletion" | "main";
+  replyKind: "pickleCompletion" | "taskCompletion" | "main";
   sessionId?: string;
 };
 

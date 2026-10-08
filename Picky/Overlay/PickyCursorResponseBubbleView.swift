@@ -113,7 +113,7 @@ final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
     /// fewer visual lines than the layout already on screen is a transient regression: a
     /// TTS/narration state race briefly hands back a shorter text variant (streamed vs
     /// spoken/narration text differ in whitespace, so a plain prefix check misses it). A new
-    /// visual narration segment has a different identity and bypasses this stabilization.
+    /// reply or visual narration segment has a different identity and bypasses this stabilization.
     private func stabilized(
         _ candidate: PickyCursorResponseBubbleLayout,
         against current: PickyCursorResponseBubbleLayout

@@ -136,6 +136,283 @@ struct PickyInteractionReducerTests {
         #expect(final.state.lastDisplayMessage?.text == "첫 문장. 둘째 문장.")
     }
 
+    /// A Quick Input answer speaking its first sentence with the second one queued.
+    private func speakingQuickInputAnswer() -> PickyInteractionState {
+        var state = PickyInteractionState()
+        state.contextOwnership["heard"] = .quickInputText(inputID: inputB)
+        for sentence in ["지금 답변 첫 문장.", "지금 답변 둘째 문장."] {
+            state = reduce(
+                state,
+                .narrationChunk(contextID: "heard", text: sentence, originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+                id: UUID()
+            ).state
+        }
+        return reduce(
+            state,
+            .streamedQuickReplyFinal(contextID: "heard", text: "지금 답변 첫 문장. 지금 답변 둘째 문장.", originSource: .text, replyKind: .main, sessionID: nil, inputID: nil),
+            id: UUID()
+        ).state
+    }
+
+    @Test func silentReplyToAnotherRequestLeavesTheAnswerBeingHeardPlaying() {
+        var state = speakingQuickInputAnswer()
+        let heardOutput = state.output
+        // A request typed in the Hub is answered in the conversation only, never aloud.
+        state.contextOwnership["hub-request"] = .text(inputID: inputA)
+
+        let chunk = reduce(
+            state,
+            .narrationChunk(contextID: "hub-request", text: "허브 답변.", originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID()
+        )
+        let final = reduce(
+            chunk.state,
+            .streamedQuickReplyFinal(contextID: "hub-request", text: "허브 답변.", originSource: .text, replyKind: .main, sessionID: nil, inputID: nil),
+            id: UUID()
+        )
+
+        // No stop, and the queued second sentence still plays next.
+        #expect(chunk.effects.isEmpty)
+        #expect(final.effects.isEmpty)
+        #expect(final.state.output == heardOutput)
+        #expect(final.state.queuedSpeechReplies.map(\.text) == ["지금 답변 둘째 문장."])
+        #expect(PickyInteractionProjection(state: final.state).latestDisplayText == "지금 답변 첫 문장. 지금 답변 둘째 문장.")
+    }
+
+    @Test func taskResultWaitsForTheWholeReplyBeingSpokenWithFinalReplySpeech() {
+        let heardSpeech = UUID(uuidString: "40000000-0000-0000-0000-00000000000A")!
+        let resultSpeech = UUID(uuidString: "40000000-0000-0000-0000-00000000000B")!
+        var state = PickyInteractionState()
+        state.contextOwnership["heard"] = .quickInputText(inputID: inputB)
+        state.contextOwnership["task-origin"] = .text(inputID: inputA)
+        // Without incremental playback, sentences show silently and the whole reply is spoken at the end.
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "heard", text: "지금 답변.", originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: false, shouldSpeakFinalReply: true),
+            id: UUID()
+        ).state
+        state = reduce(
+            state,
+            .streamedQuickReplyFinal(contextID: "heard", text: "지금 답변.", originSource: .text, replyKind: .main, sessionID: nil, inputID: nil),
+            id: UUID(),
+            correlation: .init(contextID: "heard", speechID: heardSpeech, source: .agent)
+        ).state
+
+        let resultChunk = reduce(
+            state,
+            .narrationChunk(contextID: "task-origin", text: "조사를 마쳤어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, shouldSpeak: false, shouldSpeakFinalReply: true),
+            id: UUID()
+        )
+        let resultFinal = reduce(
+            resultChunk.state,
+            .streamedQuickReplyFinal(contextID: "task-origin", text: "조사를 마쳤어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, inputID: nil),
+            id: UUID(),
+            correlation: .init(contextID: "task-origin", speechID: resultSpeech, source: .agent)
+        )
+        #expect(PickyInteractionProjection(state: resultChunk.state).latestDisplayText == "지금 답변.")
+        #expect(!resultFinal.effects.contains(.stopSpeech(reason: .superseded, speechID: heardSpeech)))
+        #expect(resultFinal.state.queuedSpeechReplies.map(\.text) == ["조사를 마쳤어요."])
+        #expect(PickyInteractionProjection(state: resultFinal.state).latestDisplayText == "지금 답변.")
+
+        let next = reduce(
+            resultFinal.state,
+            .speechFinished(speechID: heardSpeech),
+            id: UUID(),
+            offset: PickyInteractionReducer.minimumDisplayDuration + 0.1
+        )
+        #expect(next.effects.contains(.speak(speechID: resultSpeech, text: "조사를 마쳤어요.", contextID: "task-origin")))
+        #expect(PickyInteractionProjection(state: next.state).latestDisplayText == "조사를 마쳤어요.")
+        #expect(PickyInteractionProjection(state: next.state).latestDisplayIdentity == "speech:\(resultSpeech)")
+    }
+
+    @Test func taskResultRequestedFromThePhoneStaysOffTheMac() {
+        var state = PickyInteractionState()
+        state.contextOwnership["phone-request"] = .remote
+
+        let chunk = reduce(
+            state,
+            .narrationChunk(contextID: "phone-request", text: "메일 요약을 마쳤어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID()
+        )
+        let final = reduce(
+            chunk.state,
+            .streamedQuickReplyFinal(contextID: "phone-request", text: "메일 요약을 마쳤어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, inputID: nil),
+            id: UUID()
+        )
+
+        #expect(chunk.effects.isEmpty)
+        #expect(final.effects.isEmpty)
+        #expect(final.state.output == .idle)
+        #expect(PickyInteractionProjection(state: final.state).latestDisplayText == nil)
+    }
+
+    @Test func queuedReplyTakesOverTheBubbleWithItsFinalTextNotOnlyTheNarratedSentences() {
+        let heardSpeech = UUID(uuidString: "50000000-0000-0000-0000-00000000000A")!
+        let resultSpeech = UUID(uuidString: "50000000-0000-0000-0000-00000000000B")!
+        var state = PickyInteractionState()
+        state.contextOwnership["heard"] = .quickInputText(inputID: inputB)
+        state.contextOwnership["task-origin"] = .text(inputID: inputA)
+
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "heard", text: "지금 답변.", originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID(),
+            correlation: .init(contextID: "heard", speechID: heardSpeech, source: .agent)
+        ).state
+
+        // The Task result streams behind it. Its table is never narrated, so it exists only in the
+        // final text.
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "task-origin", text: "조사를 마쳤어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID(),
+            correlation: .init(contextID: "task-origin", speechID: resultSpeech, source: .agent)
+        ).state
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "task-origin", text: "원인은 타임아웃이었어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID(),
+            correlation: .init(contextID: "task-origin", speechID: UUID(), source: .agent)
+        ).state
+        let resultReply = "조사를 마쳤어요. 원인은 타임아웃이었어요.\n\n| 단계 | 소요 |\n| --- | --- |\n| 재시도 | 3회 |"
+        state = reduce(
+            state,
+            .streamedQuickReplyFinal(contextID: "task-origin", text: resultReply, originSource: .text, replyKind: .taskCompletion, sessionID: nil, inputID: nil),
+            id: UUID()
+        ).state
+        #expect(PickyInteractionProjection(state: state).latestDisplayText == "지금 답변.")
+
+        let takeover = reduce(
+            state,
+            .speechFinished(speechID: heardSpeech),
+            id: UUID(),
+            offset: PickyInteractionReducer.minimumDisplayDuration + 0.1
+        )
+
+        #expect(takeover.effects.contains(.speak(speechID: resultSpeech, text: "조사를 마쳤어요.", contextID: "task-origin")))
+        #expect(PickyInteractionProjection(state: takeover.state).latestDisplayText == resultReply)
+        #expect(PickyInteractionProjection(state: takeover.state).latestDisplayIdentity == "reply:task-origin")
+    }
+
+    @Test func streamedReplyAnotherReplyCutIntoComesBackWholeWhenItResumes() {
+        let heard = queuedTakeoverFixture()
+        var state = heard.state
+
+        // The whole answer arrives while its first sentence is still being heard.
+        state = reduce(
+            state,
+            .streamedQuickReplyFinal(contextID: "heard", text: heard.finalReply, originSource: .text, replyKind: .main, sessionID: nil, inputID: nil),
+            id: UUID()
+        ).state
+        #expect(PickyInteractionProjection(state: state).latestDisplayText == heard.finalReply)
+
+        let duringPickle = advanceThroughQueuedPickleReply(from: state, fixture: heard)
+        #expect(PickyInteractionProjection(state: duringPickle).latestDisplayText == heard.pickleReply)
+
+        let resumed = reduce(
+            duringPickle,
+            .speechFinished(speechID: heard.pickleSpeech),
+            id: UUID(),
+            offset: 3 * PickyInteractionReducer.minimumDisplayDuration + 0.3
+        )
+
+        #expect(resumed.effects.contains(.speak(speechID: heard.thirdSpeech, text: heard.thirdSentence, contextID: "heard")))
+        #expect(PickyInteractionProjection(state: resumed.state).latestDisplayText == heard.finalReply)
+        #expect(PickyInteractionProjection(state: resumed.state).latestDisplayIdentity == "reply:heard")
+    }
+
+    @Test func streamedReplyThatFinishedWhileAnotherReplySpokeComesBackWhole() {
+        let heard = queuedTakeoverFixture()
+
+        let duringPickle = advanceThroughQueuedPickleReply(from: heard.state, fixture: heard)
+        #expect(PickyInteractionProjection(state: duringPickle).latestDisplayText == heard.pickleReply)
+
+        // The whole answer only arrives while the other reply is being heard.
+        let waited = reduce(
+            duringPickle,
+            .streamedQuickReplyFinal(contextID: "heard", text: heard.finalReply, originSource: .text, replyKind: .main, sessionID: nil, inputID: nil),
+            id: UUID(),
+            offset: 3 * PickyInteractionReducer.minimumDisplayDuration + 0.25
+        ).state
+        #expect(PickyInteractionProjection(state: waited).latestDisplayText == heard.pickleReply)
+
+        let resumed = reduce(
+            waited,
+            .speechFinished(speechID: heard.pickleSpeech),
+            id: UUID(),
+            offset: 3 * PickyInteractionReducer.minimumDisplayDuration + 0.3
+        )
+
+        #expect(PickyInteractionProjection(state: resumed.state).latestDisplayText == heard.finalReply)
+        #expect(PickyInteractionProjection(state: resumed.state).latestDisplayIdentity == "reply:heard")
+    }
+
+    @Test func replyOfAnotherRequestClearsThePreviousRequestsVisualNarration() {
+        let plainSpeech = UUID(uuidString: "60000000-0000-0000-0000-00000000000A")!
+        let visualSpeech = UUID(uuidString: "60000000-0000-0000-0000-00000000000B")!
+        let resultSpeech = UUID(uuidString: "60000000-0000-0000-0000-00000000000C")!
+        let identity = visualIdentity(segmentID: "segment-heard", ordinal: 0)
+        let target = PickyPointerTarget(id: "pointer-heard", screenLocation: .zero, displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), duration: 0.5)
+        var state = PickyInteractionState()
+        state.contextOwnership[identity.contextId] = .voice(inputID: inputA)
+        state.contextOwnership["task-origin"] = .text(inputID: inputB)
+
+        // The answer being heard starts with a plain sentence; its visual sentence waits behind it.
+        state = reduce(
+            state,
+            .narrationChunk(contextID: identity.contextId, text: "먼저 설명할게요.", originSource: .voice, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID(),
+            correlation: .init(contextID: identity.contextId, speechID: plainSpeech, source: .agent)
+        ).state
+        state = reduce(state, .visualNarrationSegmentPrepared(identity: identity, visual: .point(target)), id: UUID()).state
+        state = reduce(
+            state,
+            .visualNarrationSegmentSentence(identity: identity, index: 0, text: "여기를 보세요.", originSource: .voice, replyKind: .main, sessionID: nil, playbackMode: .incremental),
+            id: UUID(),
+            correlation: .init(contextID: identity.contextId, speechID: visualSpeech, source: .agent)
+        ).state
+
+        // The Task result queues while no segment is active yet, so no narration barrier covers it.
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "task-origin", text: "조사를 마쳤어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID(),
+            correlation: .init(contextID: "task-origin", speechID: resultSpeech, source: .agent)
+        ).state
+        state = reduce(
+            state,
+            .streamedQuickReplyFinal(contextID: "task-origin", text: "조사를 마쳤어요.", originSource: .text, replyKind: .taskCompletion, sessionID: nil, inputID: nil),
+            id: UUID()
+        ).state
+
+        // The visual sentence now plays and puts its segment on screen.
+        state = reduce(
+            state,
+            .speechFinished(speechID: plainSpeech),
+            id: UUID(),
+            offset: PickyInteractionReducer.minimumDisplayDuration + 0.1
+        ).state
+        state = reduce(
+            state,
+            .speechStarted(text: "여기를 보세요.", speechID: visualSpeech, sourceContextID: identity.contextId),
+            id: UUID(),
+            offset: PickyInteractionReducer.minimumDisplayDuration + 0.2
+        ).state
+        #expect(state.activeVisualNarrationIdentity == identity)
+        #expect(PickyInteractionProjection(state: state).latestDisplayText == "여기를 보세요.")
+
+        let takeover = reduce(
+            state,
+            .speechFinished(speechID: visualSpeech),
+            id: UUID(),
+            offset: 2 * PickyInteractionReducer.minimumDisplayDuration + 0.3
+        )
+
+        #expect(takeover.state.activeVisualNarrationIdentity == nil)
+        #expect(PickyInteractionProjection(state: takeover.state).latestDisplayText == "조사를 마쳤어요.")
+        #expect(PickyInteractionProjection(state: takeover.state).latestDisplayIdentity == "reply:task-origin")
+    }
+
     @Test func ordinaryNarrationProjectsCompletedSentencesWithoutIncrementalTTS() {
         var state = PickyInteractionState()
         state.contextOwnership["stream-context"] = .quickInputText(inputID: inputA)
@@ -1498,6 +1775,84 @@ struct PickyInteractionReducerTests {
             fatalError("Expected annotation pointer animation")
         }
         return target
+    }
+
+    /// An answer whose sentences are narrated one by one, with a Pickle session's own spoken reply
+    /// queued between its second and third sentence: queue `[sentence 2, Pickle reply, sentence 3]`.
+    private struct QueuedTakeoverFixture {
+        let state: PickyInteractionState
+        let firstSpeech: UUID
+        let secondSpeech: UUID
+        let pickleSpeech: UUID
+        let thirdSpeech: UUID
+        let thirdSentence: String
+        let pickleReply: String
+        let finalReply: String
+    }
+
+    private func queuedTakeoverFixture() -> QueuedTakeoverFixture {
+        let firstSpeech = UUID(uuidString: "70000000-0000-0000-0000-00000000000A")!
+        let secondSpeech = UUID(uuidString: "70000000-0000-0000-0000-00000000000B")!
+        let pickleSpeech = UUID(uuidString: "70000000-0000-0000-0000-00000000000C")!
+        let thirdSpeech = UUID(uuidString: "70000000-0000-0000-0000-00000000000D")!
+        let thirdSentence = "마지막으로 정리할게요."
+        let pickleReply = "피클 작업을 마쳤어요."
+        var state = PickyInteractionState()
+        state.contextOwnership["heard"] = .quickInputText(inputID: inputA)
+
+        for (text, speechID) in [("먼저 설명할게요.", firstSpeech), ("원인은 타임아웃이었어요.", secondSpeech)] {
+            state = reduce(
+                state,
+                .narrationChunk(contextID: "heard", text: text, originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+                id: UUID(),
+                correlation: .init(contextID: "heard", speechID: speechID, source: .agent)
+            ).state
+        }
+        // A Pickle session finishes meanwhile, so its spoken reply queues behind what is heard now.
+        state = reduce(
+            state,
+            .quickReply(contextID: "pickle-session", text: pickleReply, originSource: .system, replyKind: .pickleCompletion, sessionID: nil, inputID: nil),
+            id: UUID(),
+            correlation: .init(contextID: "pickle-session", speechID: pickleSpeech, source: .agent)
+        ).state
+        // The answer keeps streaming, so its last sentence lands after the Pickle reply.
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "heard", text: thirdSentence, originSource: .text, replyKind: .main, sessionID: nil, shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: UUID(),
+            correlation: .init(contextID: "heard", speechID: thirdSpeech, source: .agent)
+        ).state
+
+        return QueuedTakeoverFixture(
+            state: state,
+            firstSpeech: firstSpeech,
+            secondSpeech: secondSpeech,
+            pickleSpeech: pickleSpeech,
+            thirdSpeech: thirdSpeech,
+            thirdSentence: thirdSentence,
+            pickleReply: pickleReply,
+            finalReply: "먼저 설명할게요. 원인은 타임아웃이었어요. 마지막으로 정리할게요.\n\n| 단계 | 소요 |\n| --- | --- |\n| 재시도 | 3회 |"
+        )
+    }
+
+    /// Plays the answer's queued second sentence, then the Pickle reply. Speech ends on the Pickle
+    /// reply with the answer's last sentence still queued behind it.
+    private func advanceThroughQueuedPickleReply(
+        from state: PickyInteractionState,
+        fixture: QueuedTakeoverFixture
+    ) -> PickyInteractionState {
+        let second = reduce(
+            state,
+            .speechFinished(speechID: fixture.firstSpeech),
+            id: UUID(),
+            offset: PickyInteractionReducer.minimumDisplayDuration + 0.1
+        ).state
+        return reduce(
+            second,
+            .speechFinished(speechID: fixture.secondSpeech),
+            id: UUID(),
+            offset: 2 * PickyInteractionReducer.minimumDisplayDuration + 0.2
+        ).state
     }
 
     private func reduce(

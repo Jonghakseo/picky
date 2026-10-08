@@ -99,6 +99,8 @@ enum PickyQuickReplyOriginSource: String, Codable, Equatable {
 enum PickyQuickReplyKind: String, Codable, Equatable {
     case main
     case pickleCompletion
+    /// The main agent reporting a finished Task's result to the request it answers.
+    case taskCompletion
     case router
     case handoffAck
     case error
@@ -119,10 +121,21 @@ enum PickyQuickReplyKind: String, Codable, Equatable {
         switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "main": .main
         case "picklecompletion", "pickle-completion", "pickle_completion": .pickleCompletion
+        case "taskcompletion", "task-completion", "task_completion": .taskCompletion
         case "router": .router
         case "handoffack", "handoff-ack", "handoff_ack": .handoffAck
         case "error": .error
         default: .unknown
+        }
+    }
+
+    /// Completion news shown at the cursor and spoken whatever surface the request was typed in.
+    /// A Task result still stays on the phone that asked for it.
+    func announcesCompletion(for owner: PickyContextOwner?) -> Bool {
+        switch self {
+        case .pickleCompletion: true
+        case .taskCompletion: owner != .remote
+        case .main, .router, .handoffAck, .error, .unknown: false
         }
     }
 }

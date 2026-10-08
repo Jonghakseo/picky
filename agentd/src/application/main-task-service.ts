@@ -443,6 +443,9 @@ function requireWorkingFolder(cwd: string): string {
   return cwd;
 }
 
+/** The marker the Mac app puts on a context a paired phone submitted (`PickyRemoteMainAgentAdapter`). */
+const REMOTE_CONTEXT_WARNING = "remote=true";
+
 function originFromContext(context: PickyContextPacket | undefined): TaskOrigin | undefined {
   if (!context) return undefined;
   const text = context.transcript?.trim();
@@ -450,6 +453,8 @@ function originFromContext(context: PickyContextPacket | undefined): TaskOrigin 
     contextId: context.id,
     ...(context.source ? { source: context.source } : {}),
     ...(text ? { text } : {}),
+    // Optional chaining: a context built outside the schema parse may lack the defaulted array.
+    ...(context.warnings?.includes(REMOTE_CONTEXT_WARNING) ? { remote: true as const } : {}),
   };
 }
 

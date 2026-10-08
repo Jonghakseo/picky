@@ -316,7 +316,7 @@ export function projectMainRolloverPickleSessions(
 
 export type MainReplyMetadata = {
   originSource: ReturnType<typeof quickReplyOriginFromContextSource> | "system";
-  replyKind: "pickleCompletion" | "main";
+  replyKind: "pickleCompletion" | "taskCompletion" | "main";
   sessionId?: string;
 };
 

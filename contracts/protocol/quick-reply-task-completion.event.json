@@ -1,0 +1,11 @@
+{
+  "id": "event-quick-reply-task-completion-001",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-08T17:21:23.177Z",
+  "type": "quickReply",
+  "contextId": "context-task-origin-001",
+  "text": "커넥터 후보 조사를 마쳤어요.",
+  "originSource": "text",
+  "replyKind": "taskCompletion",
+  "didStreamNarration": true
+}

@@ -705,7 +705,7 @@ struct BlueCursorView: View {
                !responseText.isEmpty,
                let responseBubbleLayout = responseBubbleLayoutCache.layout(
                    for: responseText,
-                   contentIdentity: companionManager.activeVisualNarrationSegmentID
+                   contentIdentity: companionManager.responseBubbleContentIdentity
                ) {
                 PickyCursorBubblePlacementLayout(
                     cursorPosition: compactCursorChromePlacementIsPreferred ? systemCursorPosition : cursorPosition,
@@ -906,7 +906,7 @@ struct BlueCursorView: View {
         .onChange(of: companionManager.isProgressiveResponseVisible) { _, _ in
             syncResponseBubbleLayout()
         }
-        .onChange(of: companionManager.activeVisualNarrationSegmentID) { _, _ in
+        .onChange(of: companionManager.responseBubbleContentIdentity) { _, _ in
             syncResponseBubbleLayout()
         }
         .onChange(of: overlayBubblePreferencesStore.preferences.showPickyResponseBubble) { _, _ in
@@ -966,7 +966,7 @@ struct BlueCursorView: View {
         }
         responseBubbleLayoutCache.update(
             for: responseText,
-            contentIdentity: companionManager.activeVisualNarrationSegmentID
+            contentIdentity: companionManager.responseBubbleContentIdentity
         )
     }
 

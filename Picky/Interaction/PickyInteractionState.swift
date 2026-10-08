@@ -243,6 +243,12 @@ struct PickyQueuedSpeechReply: Equatable, Codable {
     let inputID: UUID?
     let displaySource: PickyDisplaySource
     let visualNarrationMarker: PickyVisualNarrationSpeechMarker?
+    /// What the bubble must show when this sentence takes the bubble over, instead of rebuilding
+    /// it from the narrated sentences alone. It holds the final reply text when the final arrived
+    /// while another reply was being heard (so parts the narrator never spoke, like a table, are
+    /// not lost), or the text the bubble showed when another reply cut into this one (so a reply
+    /// that is resumed comes back whole). It lives with the queue: clearing the queue drops it too.
+    var takeoverText: String?
 
     init(
         contextID: String,
@@ -251,7 +257,8 @@ struct PickyQueuedSpeechReply: Equatable, Codable {
         speechID: UUID,
         inputID: UUID?,
         displaySource: PickyDisplaySource,
-        visualNarrationMarker: PickyVisualNarrationSpeechMarker? = nil
+        visualNarrationMarker: PickyVisualNarrationSpeechMarker? = nil,
+        takeoverText: String? = nil
     ) {
         self.contextID = contextID
         self.text = text
@@ -260,10 +267,11 @@ struct PickyQueuedSpeechReply: Equatable, Codable {
         self.inputID = inputID
         self.displaySource = displaySource
         self.visualNarrationMarker = visualNarrationMarker
+        self.takeoverText = takeoverText
     }
 
     private enum CodingKeys: String, CodingKey {
-        case contextID, text, timerID, speechID, inputID, displaySource, visualNarrationMarker
+        case contextID, text, timerID, speechID, inputID, displaySource, visualNarrationMarker, takeoverText
     }
 
     init(from decoder: Decoder) throws {
@@ -275,6 +283,7 @@ struct PickyQueuedSpeechReply: Equatable, Codable {
         inputID = try container.decodeIfPresent(UUID.self, forKey: .inputID)
         displaySource = try container.decode(PickyDisplaySource.self, forKey: .displaySource)
         visualNarrationMarker = try container.decodeIfPresent(PickyVisualNarrationSpeechMarker.self, forKey: .visualNarrationMarker)
+        takeoverText = try container.decodeIfPresent(String.self, forKey: .takeoverText)
     }
 }
 

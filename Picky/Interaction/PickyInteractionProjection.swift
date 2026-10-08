@@ -4,6 +4,10 @@ import Foundation
 struct PickyInteractionProjection: Equatable {
     let state: PickyInteractionState
     let latestDisplayText: String?
+    /// Identity of what `latestDisplayText` currently is, computed in the same pass that chose the
+    /// text. The cursor bubble keys its no-shrink layout cache on it, so it must change whenever the
+    /// bubble shows a different reply or visual segment and stay stable while one reply grows.
+    let latestDisplayIdentity: String?
     let overlayVisible: Bool
     let pointerTarget: PickyPointerTarget?
     let agentAnnotations: [PickyAgentAnnotation]
@@ -15,7 +19,9 @@ struct PickyInteractionProjection: Equatable {
 
     init(state: PickyInteractionState) {
         self.state = state
-        self.latestDisplayText = Self.displayText(from: state)
+        let display = Self.display(from: state)
+        self.latestDisplayText = display.text
+        self.latestDisplayIdentity = display.text == nil ? nil : display.identity
         self.overlayVisible = Self.overlayVisible(from: state.overlay)
         self.pointerTarget = state.pointer.target
         self.agentAnnotations = state.annotationScenePhase.presentsAnnotations
@@ -40,7 +46,9 @@ struct PickyInteractionProjection: Equatable {
         }
     }
 
-    private static func displayText(from state: PickyInteractionState) -> String? {
+    private static func display(
+        from state: PickyInteractionState
+    ) -> (text: String?, identity: String?) {
         if let identity = state.activeVisualNarrationIdentity,
            let segment = state.visualNarrationSegments[identity.segmentId],
            segment.identity == identity {
@@ -49,25 +57,32 @@ struct PickyInteractionProjection: Equatable {
                 .prefix(state.activeVisualNarrationSentenceCount)
                 .map(\.text)
             let text = sentences.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            return text.isEmpty ? nil : text
+            return (text.isEmpty ? nil : text, "segment:\(identity.segmentId)")
         }
         if let streamed = state.streamedResponseText?.trimmingCharacters(in: .whitespacesAndNewlines),
            !streamed.isEmpty {
-            return streamed
+            // One streamed reply keeps this identity while its sentences accumulate and while its
+            // final text replaces them, which is exactly the append-only window the cache stabilizes.
+            return (streamed, state.streamedResponseContextID.map { "reply:\($0)" })
         }
         if case .speaking(_, let speechID, _, _, _, _) = state.output,
            state.visualNarrationSpeechMarkers[speechID] != nil {
-            return nil
+            return (nil, nil)
         }
         return switch state.output {
         case .idle, .waitingForAgent:
-            state.lastDisplayMessage?.text
-        case .showingTextReply(_, let text, _, _):
-            text
-        case .speaking(_, _, let text, _, _, _):
-            text
-        case .suppressedReply(_, let text, _, _, _):
-            text
+            (
+                state.lastDisplayMessage?.text,
+                state.lastDisplayMessage.map { "reply:\($0.contextID ?? $0.id)" }
+            )
+        case .showingTextReply(let contextID, let text, let timerID, _):
+            (text, timerID.map { "reply:\(contextID)#\($0)" } ?? "reply:\(contextID)")
+        case .speaking(_, let speechID, let text, _, _, _):
+            // Not streamed, so each utterance is its own reply: two completions of one session must
+            // not share an identity, or the second, shorter one cannot shrink the bubble.
+            (text, "speech:\(speechID)")
+        case .suppressedReply(let contextID, let text, _, _, _):
+            (text, "reply:\(contextID)")
         }
     }
 

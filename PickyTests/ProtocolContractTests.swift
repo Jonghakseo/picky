@@ -149,6 +149,20 @@ struct ProtocolContractTests {
         #expect(legacy.presentation == nil)
     }
 
+    @Test func decodesTaskResultReplyKindFromTheDaemon() throws {
+        let fixture = try #require(try fixtureURLs(in: "contracts/protocol").first {
+            $0.lastPathComponent == "quick-reply-task-completion.event.json"
+        })
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(contentsOf: fixture))
+        guard case .quickReply(let reply) = envelope.event else {
+            Issue.record("Expected a quickReply event")
+            return
+        }
+        // An unknown kind would decode as `.unknown` and the result would stay silent.
+        #expect(reply.replyKind == .taskCompletion)
+        #expect(reply.didStreamNarration == true)
+    }
+
     @Test func decodesEveryProtocolFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixtures = try fixtureURLs(in: "contracts/protocol")

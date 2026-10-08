@@ -268,7 +268,8 @@ struct PickyHUDDockRailView: View {
             PickyHUDDockChrome(
                 dockSide: dockSide, metrics: metrics, railLength: overflowLayout.railLength,
                 crossSize: railCrossSize, onMinimize: onMinimize,
-                compactWidth: expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth
+                compactWidth: expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth,
+                centersCompactControls: activeSessionID != nil
             ) {
                 listContent
             } utilities: {

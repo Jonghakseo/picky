@@ -418,7 +418,8 @@ struct PickyHUDDockSessionRow: View {
                 compactLabelAccessory
                     .opacity(showsArchiveAction ? 0 : 1)
             }
-            .padding(.leading, layout.labelLeadingPadding(outer: metrics.rowHorizontalPadding))
+            // design-token-exception: approved 2pt inset for compact row titles.
+            .padding(.leading, layout.labelLeadingPadding(outer: metrics.rowHorizontalPadding) + 2)
             .padding(.trailing, layout.labelTrailingPadding(outer: metrics.rowHorizontalPadding))
         }
     }
@@ -867,10 +868,6 @@ struct PickyHUDDockGroupHeaderRow<AddButton: View>: View {
                 .fill(group.color.accent)
                 .frame(width: metrics.groupHeaderSwatchSide, height: metrics.groupHeaderSwatchSide)
                 .padding(PickyHUDDockGroupHeaderLayout.swatchHitPadding)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.compact - 2, style: .continuous)
-                        .fill(showsActions ? DS.Colors.surface3 : Color.clear)
-                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

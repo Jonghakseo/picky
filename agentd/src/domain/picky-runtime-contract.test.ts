@@ -58,6 +58,7 @@ describe("buildPickyRuntimeContract", () => {
     expect(contract).toContain("Never ask again about a scope the user already placed in a Task or a Pickle");
     expect(contract).toContain("Only the user answers a pending delegation decision");
     expect(contract).toContain("Never ask them to choose a Task");
+    expect(contract).toContain("Never say Task IDs, revision numbers, or folder paths");
   });
 
   it("retires the old default of handing any non-trivial work to a Pickle", () => {

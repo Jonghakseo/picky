@@ -176,6 +176,7 @@ describe("main Task result delivery", () => {
 
   it("tells the main agent once which Tasks a quit stopped, and restarts none of them", async () => {
     const before = setup();
+    await before.supervisor.route(context("context-export", "Send me this month's invoices as a spreadsheet", "text"));
     const task = before.service.createTask({ title: "Export invoices", instruction: "Export this month's invoices to CSV" });
     await vi.waitFor(() => expect(before.workers).toHaveLength(1));
     await before.service.close();
@@ -185,8 +186,13 @@ describe("main Task result delivery", () => {
     await after.supervisor.prewarmMainAgent("/tmp");
     const handle = after.mainRuntime.handle!;
     await vi.waitFor(() => expect(interruptionFollowUps(handle)).toHaveLength(1));
-    expect(interruptionFollowUps(handle)[0].text).toContain(`"Export invoices" (${task.id}`);
-    expect(interruptionFollowUps(handle)[0].text).toContain("no result will arrive");
+    const notice = interruptionFollowUps(handle)[0].text;
+    expect(notice).toContain("no result will arrive");
+    // The user's own request, so Picky can say which work stopped in words they recognize;
+    // the ID is there for the resume call only.
+    expect(notice).toContain(`"Export invoices". The user asked: "Send me this month's invoices as a spreadsheet".`);
+    expect(notice).toContain(`taskId ${task.id}, for Task action resume only`);
+    expect(notice).not.toMatch(/revision \d/);
     expect(after.workers).toHaveLength(0);
     expect(after.service.getTask(task.id).status).toBe("interrupted");
 

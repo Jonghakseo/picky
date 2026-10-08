@@ -165,14 +165,22 @@ export function buildTaskCompletionPrompt(record: TaskRecord): string {
 /**
  * The one-time notice about Tasks that a quit stopped. The main agent was told at creation that a
  * result arrives on its own, so it has to hear that none will; it offers to continue rather than
- * restarting anything, because a resumed revision may repeat writes.
+ * restarting anything, because a resumed revision may repeat writes. Given only titles and IDs,
+ * the model listed near-identical Tasks by the codes that told them apart ("ticks2, ticks3"),
+ * so each line carries the user's request and the IDs are marked as tool input.
  */
 export function buildTaskInterruptionPrompt(records: readonly TaskRecord[]): string {
   return [
     "[Picky Task interrupted] Picky quit while these Tasks were running. They stopped, were not restarted, and no result will arrive for them:",
-    ...records.map((record) => `- "${clip(record.title, 200)}" (${record.id}, revision ${record.revision}, ${record.cwd})`),
-    "Tell the user in their language, in one short sentence, which work stopped, and offer to continue it. Resume a Task with Task action resume only after the user asks; do not start or redo anything now.",
+    ...records.map(interruptedTaskLine),
+    "Tell the user in their language, in one or two short sentences, that this work stopped when Picky quit, and offer to continue it. The user hears this after a restart, without the conversation in front of them: describe each piece of work by what it was for, the way they asked for it. If several stopped, say how many and group similar ones; do not list titles or names that differ only by a number or code. Never say Task IDs, revision numbers, or folder paths. Resume a Task with Task action resume and its taskId only after the user asks; do not start or redo anything now.",
   ].join("\n");
+}
+
+/** The title the conversation shows and the user's own request, so the work can be named in their words. */
+function interruptedTaskLine(record: TaskRecord): string {
+  const request = record.origin?.text ? ` The user asked: "${clip(record.origin.text, 300)}".` : "";
+  return `- "${clip(record.title, 200)}".${request} (taskId ${record.id}, for Task action resume only)`;
 }
 
 /** What the main agent does next for a result that is not a plain success. */

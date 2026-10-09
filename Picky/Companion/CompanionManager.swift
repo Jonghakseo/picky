@@ -2344,25 +2344,7 @@ final class CompanionManager: ObservableObject {
     /// take the first match here.
     private func autoDispatchPickyDeepLinkIfPresent(in message: PickyMainAgentMessage) {
         guard message.role == .assistant else { return }
-        guard let url = Self.firstPickyDeepLinkURL(in: message.text) else { return }
+        guard let url = PickyDeepLink.firstMarkdownLinkURL(in: message.text) else { return }
         PickyDeepLinkDispatcher.shared.handle(url)
-    }
-
-    /// Markdown link pattern: `[label](picky://...)`. We deliberately match
-    /// only the markdown form — a bare `picky://` URL elsewhere in prose
-    /// should not trigger navigation, because the LLM is taught to wrap the
-    /// intent in a bracketed label and bare URLs would otherwise fire from
-    /// quoted manual excerpts.
-    private static let pickyDeepLinkMarkdownPattern: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"\[[^\]]+\]\((picky://[^\s)]+)\)"#, options: [])
-    }()
-
-    private static func firstPickyDeepLinkURL(in text: String) -> URL? {
-        guard let regex = pickyDeepLinkMarkdownPattern else { return nil }
-        let range = NSRange(text.startIndex..., in: text)
-        guard let match = regex.firstMatch(in: text, options: [], range: range),
-              match.numberOfRanges >= 2,
-              let urlRange = Range(match.range(at: 1), in: text) else { return nil }
-        return URL(string: String(text[urlRange]))
     }
 }

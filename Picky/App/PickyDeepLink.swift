@@ -70,6 +70,25 @@ struct PickyDeepLink: Equatable {
             return nil
         }
     }
+
+    /// Markdown link pattern: `[label](picky://...)`. We deliberately match
+    /// only the markdown form: a bare `picky://` URL elsewhere in prose
+    /// should not trigger navigation, because the LLM is taught to wrap the
+    /// intent in a bracketed label and bare URLs would otherwise fire from
+    /// quoted manual excerpts.
+    private static let markdownLinkPattern: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"\[[^\]]+\]\((picky://[^\s)]+)\)"#, options: [])
+    }()
+
+    /// The first `[label](picky://...)` link in `text`, if any.
+    static func firstMarkdownLinkURL(in text: String) -> URL? {
+        guard let regex = markdownLinkPattern else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges >= 2,
+              let urlRange = Range(match.range(at: 1), in: text) else { return nil }
+        return URL(string: String(text[urlRange]))
+    }
 }
 
 extension CompanionPanelSettingsRoute {

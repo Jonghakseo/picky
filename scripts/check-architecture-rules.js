@@ -657,6 +657,7 @@ function checkInteractionReducerMutationBoundary() {
   const allowedFiles = new Set([
     "Picky/Interaction/PickyInteractionReducer.swift",
     "Picky/Interaction/PickyInteractionAnnotationReducer.swift",
+    "Picky/Interaction/PickyInteractionVisualNarrationReducer.swift",
   ]);
   for (const file of walk("Picky", (candidate) => candidate.endsWith(".swift"))) {
     const relative = rel(file);

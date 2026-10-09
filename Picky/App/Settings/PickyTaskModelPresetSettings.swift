@@ -49,10 +49,10 @@ struct PickyTaskModelPresetSetting: Codable, Equatable {
     }
 }
 
-/// A one-pick set of models for all three levels. Reasoning stays automatic, so each level
-/// keeps its own low/medium/high default. Model ids match the daemon's `PRESET_CATALOG`
-/// (`agentd/src/runtime/task/routing/config.ts`): `anthropic` is the Claude subscription
-/// login and `openai-codex` the ChatGPT subscription login.
+/// A one-pick set of models and reasoning levels for all three levels. Fast runs the small
+/// model on high reasoning; balanced and powerful share the strong model at medium and high.
+/// Every model id exists in Pi's catalog for its provider and accepts these levels:
+/// `anthropic` is the Claude subscription login and `openai-codex` the ChatGPT one.
 enum PickyTaskModelPresetBundle: Hashable, CaseIterable {
     case automatic
     case claudeSubscription
@@ -67,9 +67,9 @@ enum PickyTaskModelPresetBundle: Hashable, CaseIterable {
         case .automatic:
             return .automatic
         case .claudeSubscription:
-            return Self.models("anthropic", fast: "claude-haiku-5-5", balanced: "claude-sonnet-5-5", powerful: "claude-opus-5-5")
+            return Self.models("anthropic", fast: "claude-haiku-5-5", balanced: "claude-opus-5-5", powerful: "claude-opus-5-5")
         case .openAISubscription:
-            return Self.models("openai-codex", fast: "gpt-6-luna", balanced: "gpt-6-sol", powerful: "gpt-6-astra")
+            return Self.models("openai-codex", fast: "gpt-6-luna", balanced: "gpt-6-sol", powerful: "gpt-6-sol")
         case .custom:
             return nil
         }
@@ -77,9 +77,9 @@ enum PickyTaskModelPresetBundle: Hashable, CaseIterable {
 
     private static func models(_ provider: String, fast: String, balanced: String, powerful: String) -> PickyTaskModelPresetSettings {
         PickyTaskModelPresetSettings(
-            fast: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(fast)"),
-            balanced: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(balanced)"),
-            powerful: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(powerful)")
+            fast: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(fast)", thinkingLevel: .high),
+            balanced: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(balanced)", thinkingLevel: .medium),
+            powerful: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(powerful)", thinkingLevel: .high)
         )
     }
 }

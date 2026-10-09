@@ -131,8 +131,8 @@ struct PickyMainTaskProtocolTests {
         #expect(fixture.taskModelPresets?.balanced == PickyMainTaskModelPreset())
     }
 
-    /// A subscription preset fills every level with that login's models and keeps
-    /// reasoning automatic; changing any level afterwards reads as a custom setup.
+    /// A subscription preset fills every level with that login's model and reasoning
+    /// level; changing any level afterwards reads as a custom setup.
     @Test func subscriptionPresetsFillEveryLevelAndCustomEditsLeaveThem() {
         var settings = PickyTaskModelPresetSettings.automatic
         #expect(settings.bundle == .automatic)
@@ -140,14 +140,18 @@ struct PickyMainTaskProtocolTests {
         settings.apply(.claudeSubscription)
         #expect(settings.bundle == .claudeSubscription)
         #expect(settings.wirePresets == PickyMainTaskModelPresets(
-            fast: PickyMainTaskModelPreset(model: .init(provider: "anthropic", id: "claude-haiku-5-5")),
-            balanced: PickyMainTaskModelPreset(model: .init(provider: "anthropic", id: "claude-sonnet-5-5")),
-            powerful: PickyMainTaskModelPreset(model: .init(provider: "anthropic", id: "claude-opus-5-5"))
+            fast: PickyMainTaskModelPreset(model: .init(provider: "anthropic", id: "claude-haiku-5-5"), thinking: .high),
+            balanced: PickyMainTaskModelPreset(model: .init(provider: "anthropic", id: "claude-opus-5-5"), thinking: .medium),
+            powerful: PickyMainTaskModelPreset(model: .init(provider: "anthropic", id: "claude-opus-5-5"), thinking: .high)
         ))
 
         settings.apply(.openAISubscription)
         #expect(settings.bundle == .openAISubscription)
-        #expect(settings.wirePresets.powerful == PickyMainTaskModelPreset(model: .init(provider: "openai-codex", id: "gpt-6-astra")))
+        #expect(settings.wirePresets == PickyMainTaskModelPresets(
+            fast: PickyMainTaskModelPreset(model: .init(provider: "openai-codex", id: "gpt-6-luna"), thinking: .high),
+            balanced: PickyMainTaskModelPreset(model: .init(provider: "openai-codex", id: "gpt-6-sol"), thinking: .medium),
+            powerful: PickyMainTaskModelPreset(model: .init(provider: "openai-codex", id: "gpt-6-sol"), thinking: .high)
+        ))
 
         settings.powerful.thinkingLevel = .xhigh
         #expect(settings.bundle == .custom)

@@ -36,8 +36,8 @@ struct QuickInputMainTaskRow: View {
                 .foregroundColor(QuickInputMainTaskPalette.color(for: row.state.tone))
                 .fixedSize()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 10) // design-token-exception: same 10pt inset as the question card so Task rows and cards line up
+        .padding(.vertical, 7) // design-token-exception: keeps the one-line status row compact in the short history peek
         .background(
             RoundedRectangle(cornerRadius: DS.CornerRadius.control, style: .continuous)
                 .fill(DS.Colors.surface2.opacity(0.8))
@@ -97,7 +97,7 @@ struct QuickInputMainDelegationBlock: View {
         }
         // Full card width even without a button row (while the Pickle is being made).
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .padding(10) // design-token-exception: same 10pt inset as the Task rows above
         .background(
             RoundedRectangle(cornerRadius: DS.CornerRadius.surface, style: .continuous)
                 .fill(DS.Colors.accentSubtle)
@@ -175,7 +175,7 @@ struct QuickInputMainDelegationRecord: View {
                     .foregroundColor(DS.Colors.accentText)
             }
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 2) // design-token-exception: optical nudge keeping the record line inside the rounded row edges
         .help(row.decision.title)
     }
 

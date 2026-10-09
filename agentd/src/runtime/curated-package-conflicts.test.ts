@@ -7,6 +7,7 @@ import { PackageOperations, type PackageManager } from "./package-operations.js"
 
 const WEB_ACCESS = "npm:@ryan_nookpi/pi-extension-web-access";
 const EXCALIDRAW = "npm:@ryan_nookpi/pi-skill-excalidraw";
+const VCC_KO = "npm:@ryan_nookpi/pi-extension-vcc-ko";
 
 let root: string;
 let agentDir: string;
@@ -95,6 +96,23 @@ describe("curated package duplicate protection", () => {
         { source: EXCALIDRAW, kind: "skill", name: "excalidraw", ownerPath: skillFile, removal: { kind: "trash", path: join(skillFile, "..") } },
       ],
     });
+  });
+
+  it("treats both the current and the pre-0.2.0 vcc-ko recall tool names as duplicates", async () => {
+    const current = await writeLocalExtension("recall", `pi.registerTool({ name: "session_recall", execute() {} });`);
+    const legacy = await writeLocalExtension("pi-vcc", `pi.registerTool({ name: "vcc_recall", execute() {} });`);
+    const { operations, events, manager } = subject();
+    await operations.runOperation({} as WebSocket, "install-vcc", "install", VCC_KO);
+
+    expect(manager.installAndPersist).not.toHaveBeenCalled();
+    expect(events.find((event) => event.requestId === "install-vcc")).toMatchObject({ ok: false, errorCode: "duplicate" });
+    await operations.runConflictInspection({} as WebSocket, "inspect", [VCC_KO]);
+    const conflicts = (events.at(-1) as { conflicts: Array<{ name: string; ownerPath: string }> }).conflicts;
+    expect(conflicts.map(({ name, ownerPath }) => ({ name, ownerPath }))).toEqual(expect.arrayContaining([
+      { name: "session_recall", ownerPath: current },
+      { name: "vcc_recall", ownerPath: legacy },
+    ]));
+    expect(conflicts).toHaveLength(2);
   });
 
   it("ignores unrelated extensions and does not treat the installed package as its own conflict", async () => {

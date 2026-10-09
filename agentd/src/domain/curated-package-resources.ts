@@ -12,7 +12,9 @@ export interface CuratedPackageResources {
 
 const resourcesByPackage: Readonly<Record<string, CuratedPackageResources>> = {
   "@ryan_nookpi/pi-extension-web-access": { tools: ["web_search", "fetch_content", "get_search_content"], skills: [] },
-  "@ryan_nookpi/pi-extension-vcc-ko": { tools: ["vcc_recall"], skills: [] },
+  // 0.2.0 renamed `vcc_recall` to `session_recall`. A copy that still registers the old name
+  // (vcc-ko 0.1.0 or upstream pi-vcc) also replaces compaction, so both names count as duplicates.
+  "@ryan_nookpi/pi-extension-vcc-ko": { tools: ["session_recall", "vcc_recall"], skills: [] },
   "@ryan_nookpi/pi-extension-bash-async": { tools: ["bash_async"], skills: [] },
   "@ryan_nookpi/pi-skill-skill-creator": { tools: [], skills: ["skill-creator"] },
   "@ryan_nookpi/pi-skill-excalidraw": { tools: [], skills: ["excalidraw"] },

@@ -49,6 +49,41 @@ struct PickyTaskModelPresetSetting: Codable, Equatable {
     }
 }
 
+/// A one-pick set of models for all three levels. Reasoning stays automatic, so each level
+/// keeps its own low/medium/high default. Model ids match the daemon's `PRESET_CATALOG`
+/// (`agentd/src/runtime/task/routing/config.ts`): `anthropic` is the Claude subscription
+/// login and `openai-codex` the ChatGPT subscription login.
+enum PickyTaskModelPresetBundle: Hashable, CaseIterable {
+    case automatic
+    case claudeSubscription
+    case openAISubscription
+    /// The choices match no bundle. Shown only as the current state, never applied.
+    case custom
+
+    static let selectable: [PickyTaskModelPresetBundle] = [.automatic, .claudeSubscription, .openAISubscription]
+
+    var settings: PickyTaskModelPresetSettings? {
+        switch self {
+        case .automatic:
+            return .automatic
+        case .claudeSubscription:
+            return Self.models("anthropic", fast: "claude-haiku-5-5", balanced: "claude-sonnet-5-5", powerful: "claude-opus-5-5")
+        case .openAISubscription:
+            return Self.models("openai-codex", fast: "gpt-6-luna", balanced: "gpt-6-sol", powerful: "gpt-6-astra")
+        case .custom:
+            return nil
+        }
+    }
+
+    private static func models(_ provider: String, fast: String, balanced: String, powerful: String) -> PickyTaskModelPresetSettings {
+        PickyTaskModelPresetSettings(
+            fast: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(fast)"),
+            balanced: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(balanced)"),
+            powerful: PickyTaskModelPresetSetting(modelPattern: "\(provider)/\(powerful)")
+        )
+    }
+}
+
 struct PickyTaskModelPresetSettings: Codable, Equatable {
     var fast = PickyTaskModelPresetSetting()
     var balanced = PickyTaskModelPresetSetting()
@@ -101,6 +136,18 @@ struct PickyTaskModelPresetSettings: Codable, Equatable {
             copy[tier].modelPattern = self[tier].modelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return copy
+    }
+
+    /// Which bundle the current choices match; `.custom` once any level differs from every bundle.
+    var bundle: PickyTaskModelPresetBundle {
+        let current = normalized
+        return PickyTaskModelPresetBundle.selectable.first { $0.settings == current } ?? .custom
+    }
+
+    /// Replaces every level with the bundle's choices. `.custom` keeps the current choices.
+    mutating func apply(_ bundle: PickyTaskModelPresetBundle) {
+        guard let settings = bundle.settings else { return }
+        self = settings
     }
 
     /// The whole set replaces the daemon's, so a level set back to automatic clears its old choice.

@@ -153,6 +153,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                 ]
             ) {
                 VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                    taskModelBundlePicker
                     ForEach(PickyTaskModelPresetSettings.tiers, id: \.self) { tier in
                         taskModelRow(tier)
                     }
@@ -298,6 +299,34 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                     .onChange(of: mainAgentFastMode) { _, _ in save() }
             }
             standaloneNote(isFastModeUnavailable ? "settings.field.mainAgentFastMode.unsupported" : "settings.field.mainAgentFastMode.note")
+        }
+    }
+
+    /// Fills all three levels at once. Shows "Custom" while the levels match no bundle.
+    private var taskModelBundlePicker: some View {
+        let current = taskModelPresets.bundle
+        let bundles = PickyTaskModelPresetBundle.selectable + (current == .custom ? [.custom] : [])
+        return VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            fieldLabel("settings.taskModels.bundle")
+            PickyNativeMenuPicker(
+                title: L10n.t("settings.taskModels.bundle"),
+                selection: Binding(
+                    get: { taskModelPresets.bundle },
+                    set: { taskModelPresets.apply($0) }
+                ),
+                options: bundles.map { .init(value: $0, title: Self.bundleTitle($0)) }
+            )
+            .frame(maxWidth: menuMaximumWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private static func bundleTitle(_ bundle: PickyTaskModelPresetBundle) -> String {
+        switch bundle {
+        case .automatic: L10n.t("settings.taskModels.option.automatic")
+        case .claudeSubscription: L10n.t("settings.taskModels.bundle.claudeSubscription")
+        case .openAISubscription: L10n.t("settings.taskModels.bundle.openAISubscription")
+        case .custom: L10n.t("settings.taskModels.bundle.custom")
         }
     }
 

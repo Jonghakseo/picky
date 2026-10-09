@@ -33938,6 +33938,74 @@
         }
       }
     },
+    "settings.taskModels.bundle": {
+      "comment": "Label and accessible title of the menu that sets all three Task levels' models at once.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preset"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프리셋"
+          }
+        }
+      }
+    },
+    "settings.taskModels.bundle.claudeSubscription": {
+      "comment": "Task models preset: Claude models through the Claude subscription login (Haiku, Sonnet, Opus).",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude subscription"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 구독"
+          }
+        }
+      }
+    },
+    "settings.taskModels.bundle.openAISubscription": {
+      "comment": "Task models preset: OpenAI models through the ChatGPT subscription login (openai-codex).",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI subscription"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI 구독"
+          }
+        }
+      }
+    },
+    "settings.taskModels.bundle.custom": {
+      "comment": "Task models preset menu value shown when the levels were set individually and match no preset.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "직접 설정"
+          }
+        }
+      }
+    },
     "settings.taskModels.summary": {
       "comment": "Summary of the Task models settings group.",
       "localizations": {

@@ -34,6 +34,10 @@ struct PickyHubMainTaskBlock: View {
                     .foregroundColor(PickyHubTheme.Colors.textPrimary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                if let tierLabelKey = row.tierLabelKey {
+                    PickyHubBadgePill(text: L10n.t(tierLabelKey))
+                        .help(PickyMainTaskPresentation.modelText(for: row.task.selection) ?? "")
+                }
                 Spacer(minLength: PickyHubTheme.Spacing.related)
                 if let start = row.elapsedSince {
                     PickyHubMainTaskElapsedLabel(start: start)
@@ -92,9 +96,15 @@ struct PickyHubMainTaskBlock: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .pickyHubCard(radius: PickyHubTheme.Radius.cardCompact)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("\(L10n.t("hub.tasks.block.label")), \(row.task.title), \(L10n.t(row.state.labelKey))"))
+        .accessibilityLabel(Text(accessibilityLabel))
         .frame(maxWidth: PickyHubConversationEntryLayout.maxWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var accessibilityLabel: String {
+        [L10n.t("hub.tasks.block.label"), row.task.title, row.tierLabelKey.map { L10n.t($0) }, L10n.t(row.state.labelKey)]
+            .compactMap { $0 }
+            .joined(separator: ", ")
     }
 
     private var detailsLink: some View {
@@ -151,6 +161,9 @@ private struct PickyHubMainTaskDetails: View {
             }
             if let error = task.error, !error.isEmpty {
                 field(titleKey: "hub.tasks.detail.error", lines: [error])
+            }
+            if let model = PickyMainTaskPresentation.modelText(for: task.selection) {
+                field(titleKey: "hub.tasks.detail.model", lines: [model])
             }
             field(titleKey: "hub.tasks.detail.cwd", lines: [task.cwd], monospaced: true)
             if task.readonly {

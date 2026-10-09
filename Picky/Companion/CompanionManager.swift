@@ -741,6 +741,8 @@ final class CompanionManager: ObservableObject {
                 mainConversation.failLoadingModelOptions()
                 print("⚠️ Failed to list Picky models: \(error.localizedDescription)")
             }
+            // What the Task levels run on automatic, for the same settings screen.
+            try? await agentClient.send(PickyCommandEnvelope(type: .getMainTaskModelPresets))
         }
     }
 
@@ -811,6 +813,13 @@ final class CompanionManager: ObservableObject {
                 print("🎛️ Picky model applied — \(settings.mainAgentModelPattern.isEmpty ? "Pi default" : settings.mainAgentModelPattern)")
             } catch {
                 print("⚠️ Failed to apply Picky model: \(error.localizedDescription)")
+            }
+            do {
+                try await agentClient.send(.setMainTaskModelPresets(settings.taskModelPresets.normalized.wirePresets))
+                // A changed main model also changes what automatic means for each level.
+                try await agentClient.send(PickyCommandEnvelope(type: .getMainTaskModelPresets))
+            } catch {
+                print("⚠️ Failed to apply Task models: \(error.localizedDescription)")
             }
             do {
                 let disabledNames = settings.disabledBuiltinTools.map(\.rawValue).sorted()
@@ -2196,6 +2205,7 @@ final class CompanionManager: ObservableObject {
         case .mainAgentModelsSnapshot(let models):
             mainConversation.applyModelOptions(models)
         case .mainTasksUpdated(let snapshot): mainTasks.apply(snapshot)
+        case .mainTaskModelPresets(let automatic): mainConversation.applyAutomaticTaskModels(automatic)
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
         case .annotationOverlayRequested(let request):

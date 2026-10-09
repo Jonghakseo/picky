@@ -42,6 +42,18 @@ enum PickyMainTaskTier: String, Codable, Equatable {
     }
 }
 
+/// The model and thinking level a Task revision runs with. Thinking stays a raw
+/// string so a level a newer daemon adds cannot drop the snapshot.
+struct PickyMainTaskModelSelection: Codable, Equatable {
+    let provider: String
+    let model: String
+    let thinking: String
+
+    var thinkingLevel: PickyMainAgentThinkingLevel? { PickyMainAgentThinkingLevel(rawValue: thinking) }
+    /// `provider/model`, the same form the model menus list.
+    var pattern: String { "\(provider)/\(model)" }
+}
+
 /// Set on `cancelled`. `uncertain` means Picky could not confirm the worker
 /// process exited, which the UI has to say plainly rather than imply a clean stop.
 enum PickyMainTaskCleanup: String, Codable, Equatable {
@@ -102,6 +114,8 @@ struct PickyMainTask: Codable, Equatable, Identifiable {
     /// When the current revision started running. The elapsed clock counts from here.
     let revisionStartedAt: Date?
     let tier: PickyMainTaskTier?
+    /// Chosen with the tier when the revision starts. Absent from older daemons.
+    var selection: PickyMainTaskModelSelection? = nil
     let report: PickyMainTaskReport?
     let error: String?
     let cleanup: PickyMainTaskCleanup?
@@ -164,6 +178,49 @@ struct PickyMainTasksSnapshot: Codable, Equatable {
     static let empty = PickyMainTasksSnapshot(tasks: [], decisions: [])
 }
 
+// MARK: - Task models
+
+/// A user's choice for one level in Settings. Nil fields follow the automatic
+/// preset; the encoder leaves them out, which the daemon reads as automatic.
+struct PickyMainTaskModelPreset: Codable, Equatable {
+    struct Model: Codable, Equatable {
+        let provider: String
+        let id: String
+    }
+
+    var model: Model?
+    var thinking: PickyMainAgentThinkingLevel?
+}
+
+/// Payload of `setMainTaskModelPresets`: every level the user customized.
+struct PickyMainTaskModelPresets: Codable, Equatable {
+    var fast: PickyMainTaskModelPreset?
+    var balanced: PickyMainTaskModelPreset?
+    var powerful: PickyMainTaskModelPreset?
+}
+
+/// What each level runs on automatic for the current main model, from
+/// `mainTaskModelPresets`. The daemon sends none before the main agent starts.
+struct PickyMainTaskAutomaticModels: Codable, Equatable {
+    let fast: PickyMainTaskModelSelection
+    let balanced: PickyMainTaskModelSelection
+    let powerful: PickyMainTaskModelSelection
+
+    subscript(tier: PickyMainTaskTier) -> PickyMainTaskModelSelection? {
+        switch tier {
+        case .fast: fast
+        case .balanced: balanced
+        case .powerful: powerful
+        case .unknown: nil
+        }
+    }
+}
+
+/// Decoding shape of the `mainTaskModelPresets` event.
+struct PickyMainTaskModelPresetsPayload: Decodable {
+    let automatic: PickyMainTaskAutomaticModels?
+}
+
 // MARK: - Commands
 
 /// User control for one Task. Raw values are the `controlMainTask` wire values.
@@ -200,6 +257,13 @@ extension PickyCommandEnvelope {
         var command = PickyCommandEnvelope(type: .resolveMainDelegation)
         command.decisionId = decisionId
         command.choice = choice
+        return command
+    }
+
+    /// Replaces the daemon's per-level choices with the saved settings.
+    static func setMainTaskModelPresets(_ presets: PickyMainTaskModelPresets) -> PickyCommandEnvelope {
+        var command = PickyCommandEnvelope(type: .setMainTaskModelPresets)
+        command.taskModelPresets = presets
         return command
     }
 }

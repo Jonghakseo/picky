@@ -33818,6 +33818,295 @@
         }
       },
       "comment": "Spoken first in the VoiceOver label of a Task block in the main conversation, before the Task's title and status. A Task is background work Picky runs for the conversation."
+    },
+    "hub.tasks.tier.fast": {
+      "comment": "Task level shown on a Task block and in Settings. The lightest level: simple, well-defined work on a fast, cheaper model.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빠름"
+          }
+        }
+      }
+    },
+    "hub.tasks.tier.balanced": {
+      "comment": "Task level shown on a Task block and in Settings. The middle level, where most work lands.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balanced"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "균형"
+          }
+        }
+      }
+    },
+    "hub.tasks.tier.powerful": {
+      "comment": "Task level shown on a Task block and in Settings. The strongest level: hard or broad work on the most capable model.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Powerful"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "강력"
+          }
+        }
+      }
+    },
+    "hub.tasks.detail.model": {
+      "comment": "Title of the field in a Task's details that names the model it ran on.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델"
+          }
+        }
+      }
+    },
+    "hub.tasks.detail.modelValue": {
+      "comment": "Model a Task ran on. %1$@ is provider/model, for example openai-codex/gpt-6-sol. %2$@ is the reasoning level name, for example Medium.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ reasoning"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · 추론 %2$@"
+          }
+        }
+      }
+    },
+    "quickInput.task.tierPrefix": {
+      "comment": "Task level before its status in the Quick Input history, as in 'Balanced · 1:10 Running'. %@ is the level name.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ·"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ·"
+          }
+        }
+      }
+    },
+    "settings.taskModels.title": {
+      "comment": "Settings group (Picky page) for the models Picky's multi-step Tasks run on.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task models"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 모델"
+          }
+        }
+      }
+    },
+    "settings.taskModels.summary": {
+      "comment": "Summary of the Task models settings group.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each time Picky takes on multi-step work, it rates it Fast, Balanced, or Powerful and runs it on that level's model."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky는 여러 단계 작업을 맡을 때마다 빠름, 균형, 강력 중 한 단계로 정하고 그 단계의 모델로 실행해요."
+          }
+        }
+      }
+    },
+    "settings.taskModels.tier.fast.note": {
+      "comment": "What kind of work the Fast level gets, next to its name in Settings.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Simple, well-defined work"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "간단하고 범위가 분명한 일"
+          }
+        }
+      }
+    },
+    "settings.taskModels.tier.balanced.note": {
+      "comment": "What kind of work the Balanced level gets, next to its name in Settings.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Most work"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대부분의 일"
+          }
+        }
+      }
+    },
+    "settings.taskModels.tier.powerful.note": {
+      "comment": "What kind of work the Powerful level gets, next to its name in Settings.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hard or broad work"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "어렵거나 범위가 넓은 일"
+          }
+        }
+      }
+    },
+    "settings.taskModels.model": {
+      "comment": "Accessible title of a Task level's model menu in Settings.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델"
+          }
+        }
+      }
+    },
+    "settings.taskModels.option.automatic": {
+      "comment": "Model or reasoning menu option for a Task level that follows the default. Shown before Picky knows what the default is.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동"
+          }
+        }
+      }
+    },
+    "settings.taskModels.option.automaticValue": {
+      "comment": "Model or reasoning menu option for a Task level that follows the default. %@ is what the default is now: a provider/model such as openai-codex/gpt-6-luna, or a reasoning level such as Low.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic (%@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 (%@)"
+          }
+        }
+      }
+    },
+    "settings.taskModels.details.level": {
+      "comment": "Details of the Task models settings group: how a Task's level is chosen.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When a Task starts, a lightweight model reads its instructions and picks the level. That model can't be changed."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업을 시작할 때마다 가벼운 모델이 지시를 읽고 단계를 정해요. 이 모델은 바꿀 수 없어요."
+          }
+        }
+      }
+    },
+    "settings.taskModels.details.automatic": {
+      "comment": "Details of the Task models settings group: what Automatic means.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic matches the account of Picky's own model. If you choose only a model, its reasoning stays at the level's automatic value."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동은 Picky가 쓰는 모델의 계정에 맞춘 기본값이에요. 모델만 고르면 추론 수준은 그 단계의 자동값을 따라요."
+          }
+        }
+      }
+    },
+    "settings.taskModels.details.apply": {
+      "comment": "Details of the Task models settings group: when a change applies and what happens without sign-in.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to Tasks that start next; running Tasks keep their model. If you're signed out of a chosen model, Tasks at that level don't start and Picky tells you why."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바꾼 모델은 다음에 시작하는 작업부터 쓰고, 실행 중인 작업은 원래 모델로 계속해요. 고른 모델의 로그인이 풀려 있으면 그 단계의 작업은 시작하지 않고 이유를 알려 줘요."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

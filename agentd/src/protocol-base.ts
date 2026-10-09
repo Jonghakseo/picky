@@ -12,6 +12,10 @@ export const PROTOCOL_VERSION = "2026-08-25";
 
 export const isoTimestamp = z.string().datetime({ offset: true });
 
+/** Pi thinking levels. Shared here so feature slices can use it without importing `protocol.ts`. */
+export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
+
 export const CommandBaseSchema = z.object({
   id: z.string(),
   protocolVersion: z.literal(PROTOCOL_VERSION),

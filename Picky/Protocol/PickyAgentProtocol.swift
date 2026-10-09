@@ -95,6 +95,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var action: PickyCommandAction?
     /// `controlMainTask` / `resolveMainDelegation` targets. See PickyMainTaskProtocol.swift.
     var taskId: String?, decisionId: String?, choice: PickyMainDelegationChoice?
+    /// `setMainTaskModelPresets` payload.
+    var taskModelPresets: PickyMainTaskModelPresets?
     var groupAction: PickyDockGroupManagementAction?
     var pickleAction: PickyPickleCLIAction?
     var groupId: String?
@@ -408,6 +410,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case signOutMcpServer
     case getHubStatistics, resetHubStatistics, configureHubStatistics, getUsageLimits
     case controlMainTask, resolveMainDelegation
+    case setMainTaskModelPresets, getMainTaskModelPresets
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {
@@ -454,6 +457,8 @@ enum PickyEvent: Equatable {
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
     case mainTasksUpdated(PickyMainTasksSnapshot)
+    /// Answer to `getMainTaskModelPresets`. `automatic` is nil until the main agent starts.
+    case mainTaskModelPresets(automatic: PickyMainTaskAutomaticModels?)
     case sessionRuntimeOptionsSnapshot(sessionId: String, requestId: String, models: [PickySessionRuntimeModelOption], allModels: [PickySessionRuntimeModelOption]?, globalScope: PickyRuntimeModelScope?, projectScope: PickyRuntimeModelScope?, effectiveScope: PickyRuntimeModelScope?, thinkingLevels: [PickyMainAgentThinkingLevel], currentModel: PickySessionRuntimeModelIdentity?)
     case piOAuthStatus(PickyPiOAuthStatusEvent)
     case piOAuthUrlRequested(PickyPiOAuthUrlRequestEvent)
@@ -556,6 +561,8 @@ enum PickyEvent: Equatable {
             let payload = try PickyMainAgentModelsSnapshotPayload(from: decoder)
             return .mainAgentModelsSnapshot(payload.models)
         case "mainTasksUpdated": return .mainTasksUpdated(try PickyMainTasksSnapshot(from: decoder))
+        case "mainTaskModelPresets":
+            return .mainTaskModelPresets(automatic: try PickyMainTaskModelPresetsPayload(from: decoder).automatic)
         case "sessionRuntimeOptionsSnapshot":
             let payload = try PickySessionRuntimeOptionsSnapshotPayload(from: decoder)
             return .sessionRuntimeOptionsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, models: payload.models, allModels: payload.allModels, globalScope: payload.globalScope, projectScope: payload.projectScope, effectiveScope: payload.effectiveScope, thinkingLevels: payload.thinkingLevels, currentModel: payload.currentModel)

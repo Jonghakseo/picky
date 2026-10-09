@@ -28,6 +28,13 @@ struct QuickInputMainTaskRow: View {
                 .truncationMode(.tail)
                 .help(row.task.title)
             Spacer(minLength: 6)
+            if let tierLabelKey = row.tierLabelKey {
+                // Level first, then where the work stands: "Balanced · 1:10 Running".
+                Text(L10n.t("quickInput.task.tierPrefix", L10n.t(tierLabelKey)))
+                    .font(PickyHUDTypography.statusMedium)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .fixedSize()
+            }
             if let start = row.elapsedSince {
                 QuickInputMainTaskElapsedLabel(start: start)
             }
@@ -43,7 +50,9 @@ struct QuickInputMainTaskRow: View {
                 .fill(DS.Colors.surface2.opacity(0.8))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(L10n.t("hub.tasks.block.label")), \(row.task.title), \(L10n.t(row.state.labelKey))"))
+        .accessibilityLabel(Text([L10n.t("hub.tasks.block.label"), row.task.title, row.tierLabelKey.map { L10n.t($0) }, L10n.t(row.state.labelKey)]
+            .compactMap { $0 }
+            .joined(separator: ", ")))
     }
 }
 

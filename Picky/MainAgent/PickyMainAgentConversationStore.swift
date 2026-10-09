@@ -20,6 +20,9 @@ final class PickyMainAgentConversationStore: ObservableObject {
     @Published private(set) var sessionInfo = PickyMainAgentSessionInfo()
     @Published private(set) var modelOptions: [PickyMainAgentModelOption] = []
     @Published private(set) var isLoadingModelOptions = false
+    /// What each Task level runs on automatic, for the settings screen. Nil
+    /// until the daemon has a main model to derive it from.
+    @Published private(set) var automaticTaskModels: PickyMainTaskAutomaticModels?
 
     func replaceMessages(_ snapshot: [PickyMainAgentMessage]) {
         messages = Array(snapshot.suffix(Self.messageRetention))
@@ -48,5 +51,12 @@ final class PickyMainAgentConversationStore: ObservableObject {
 
     func failLoadingModelOptions() {
         isLoadingModelOptions = false
+    }
+
+    /// A daemon without a main model yet answers with nil; keep the last known
+    /// value rather than flashing back to an unlabeled Automatic.
+    func applyAutomaticTaskModels(_ models: PickyMainTaskAutomaticModels?) {
+        guard let models else { return }
+        automaticTaskModels = models
     }
 }

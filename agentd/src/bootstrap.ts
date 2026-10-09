@@ -264,7 +264,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     hubStatistics,
     pickleClassifier,
     usageLimits: createUsageLimitsService(config),
-    ...mainTaskOptions,
+    ...mainTaskServerOptions(mainTaskBundle),
   });
   appPickleBridgeRef.current = (request) => server.requestPickleBridgeFromApp(request);
   // Creating the Pickle may spawn its daemon; allow longer than a CLI round-trip.
@@ -287,6 +287,11 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
 interface MainTaskBundle {
   service: MainTaskService;
   evaluation: MainTaskEvaluationContext;
+}
+
+/** What the wire needs from the Task bundle: the service, and the per-level model settings. */
+function mainTaskServerOptions(bundle: MainTaskBundle | undefined): { mainTasks?: MainTaskService; mainTaskModels?: MainTaskEvaluationContext } {
+  return bundle ? { mainTasks: bundle.service, mainTaskModels: bundle.evaluation } : {};
 }
 
 /**

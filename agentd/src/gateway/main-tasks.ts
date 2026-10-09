@@ -59,6 +59,7 @@ function remoteMainTask(task: MainTask): RemoteMainTask {
     updatedAt: task.updatedAt,
     canStop: task.canStop,
     canResume: task.canResume,
+    ...(task.tier ? { tier: task.tier } : {}),
     ...(instructions ? { instructions: clamp(instructions, REMOTE_LIMITS.mainTaskTextChars) } : {}),
     ...(task.report
       ? {

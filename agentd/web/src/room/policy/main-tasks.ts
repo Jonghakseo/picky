@@ -33,6 +33,13 @@ export const TASK_STATUS_KEY: Record<RemoteMainTask["status"], string> = {
   interrupted: "remote.room.tasks.status.interrupted",
 };
 
+/** The level names the Mac uses on Task blocks and in Settings (shared catalog). */
+export const TASK_TIER_KEY: Record<NonNullable<RemoteMainTask["tier"]>, string> = {
+  fast: "hub.tasks.tier.fast",
+  balanced: "hub.tasks.tier.balanced",
+  powerful: "hub.tasks.tier.powerful",
+};
+
 const ACTIVE: ReadonlySet<RemoteMainTask["status"]> = new Set(["queued", "evaluating", "running", "waiting", "stopping"]);
 const ATTENTION: ReadonlySet<RemoteMainTask["status"]> = new Set(["failed", "blocked", "interrupted"]);
 

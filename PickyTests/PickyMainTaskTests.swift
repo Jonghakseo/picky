@@ -27,6 +27,9 @@ struct PickyMainTaskProtocolTests {
         #expect(running.instructions.count == 2)
         #expect(running.revisionStartedAt != nil)
         #expect(running.tier == .fast)
+        #expect(running.selection == PickyMainTaskModelSelection(provider: "openai-codex", model: "gpt-6-luna", thinking: "low"))
+        // A Task whose model is not chosen yet still decodes.
+        #expect(event.tasks.dropFirst().allSatisfy { $0.selection == nil })
 
         let blocked = try #require(event.tasks.first { $0.status == .blocked })
         let report = try #require(blocked.report)
@@ -80,6 +83,66 @@ struct PickyMainTaskProtocolTests {
         #expect(resolve.decisionId == "delegation-5d2e8c1a-0f3b-4a6d-9c7e-abcdef012345")
         #expect(resolve.choice == .task)
         #expect(try decoder.decode(PickyCommandEnvelope.self, from: JSONEncoder().encode(resolve)) == resolve)
+    }
+
+    /// The settings screen labels Automatic with what the daemon says it is now.
+    @Test func decodesWhatEachLevelRunsOnAutomatic() throws {
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(
+            PickyEventEnvelope.self,
+            from: fixtureData("main-task-model-presets.event.json")
+        )
+        guard case .mainTaskModelPresets(let automatic) = envelope.event else {
+            Issue.record("Expected mainTaskModelPresets, decoded \(envelope.event)")
+            return
+        }
+        #expect(automatic?[.fast] == PickyMainTaskModelSelection(provider: "openai-codex", model: "gpt-6-luna", thinking: "low"))
+        #expect(automatic?[.powerful]?.thinkingLevel == .high)
+        #expect(automatic?[.unknown] == nil)
+
+        let noMainModelYet = Data(#"{"id":"e","protocolVersion":"2026-08-25","timestamp":"2026-10-09T05:00:00.000Z","type":"mainTaskModelPresets","commandId":"c"}"#.utf8)
+        guard case .mainTaskModelPresets(let none) = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: noMainModelYet).event else {
+            Issue.record("Expected mainTaskModelPresets")
+            return
+        }
+        #expect(none == nil)
+    }
+
+    /// Saved settings become the command the daemon validates. A level left on
+    /// automatic is omitted, so the daemon drops any earlier choice for it.
+    @Test func sendsOnlyTheLevelsTheUserCustomized() throws {
+        let settings = PickyTaskModelPresetSettings(
+            fast: PickyTaskModelPresetSetting(modelPattern: " anthropic/claude-haiku-5-5 "),
+            powerful: PickyTaskModelPresetSetting(modelPattern: "openrouter/anthropic/claude-opus-5-5", thinkingLevel: .xhigh)
+        ).normalized
+        let command = PickyCommandEnvelope.setMainTaskModelPresets(settings.wirePresets)
+        let object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(command)) as? [String: Any])
+        #expect(object["type"] as? String == "setMainTaskModelPresets")
+        let presets = try #require(object["taskModelPresets"] as? [String: Any])
+        #expect(Set(presets.keys) == ["fast", "powerful"])
+        #expect((presets["fast"] as? [String: Any])?["model"] as? [String: String] == ["provider": "anthropic", "id": "claude-haiku-5-5"])
+        #expect((presets["fast"] as? [String: Any])?["thinking"] == nil)
+        // Provider ids have no slash; the rest of the pattern is the model id.
+        #expect((presets["powerful"] as? [String: Any])?["model"] as? [String: String] == ["provider": "openrouter", "id": "anthropic/claude-opus-5-5"])
+        #expect((presets["powerful"] as? [String: Any])?["thinking"] as? String == "xhigh")
+
+        let fixture = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: fixtureData("set-main-task-model-presets.request.json"))
+        #expect(fixture.type == .setMainTaskModelPresets)
+        #expect(fixture.taskModelPresets?.powerful?.thinking == .xhigh)
+        #expect(fixture.taskModelPresets?.balanced == PickyMainTaskModelPreset())
+    }
+
+    /// Settings from a version without Task models, or with a reasoning level
+    /// this version does not know, still load instead of resetting everything.
+    @Test func loadsOlderAndNewerTaskModelSettings() throws {
+        let legacy = try JSONDecoder().decode(PickySettings.self, from: Data("{}".utf8))
+        #expect(legacy.taskModelPresets == .automatic)
+        #expect(legacy.taskModelPresets.wirePresets == PickyMainTaskModelPresets())
+
+        let newer = Data(#"{"taskModelPresets":{"fast":{"modelPattern":"anthropic/claude-haiku-5-5","thinkingLevel":"ultra"},"balanced":{}}}"#.utf8)
+        let decoded = try JSONDecoder().decode(PickySettings.self, from: newer)
+        #expect(decoded.taskModelPresets.fast == PickyTaskModelPresetSetting(modelPattern: "anthropic/claude-haiku-5-5"))
+        #expect(decoded.taskModelPresets.balanced == PickyTaskModelPresetSetting())
+        #expect(decoded.taskModelPresets.powerful == PickyTaskModelPresetSetting())
     }
 
     /// The app's own builders have to produce the exact keys the fixtures carry.
@@ -142,6 +205,20 @@ struct PickyMainTaskPresentationTests {
 
     /// Taken over by a Pickle, the Task is history: its status says where the
     /// work went, and the longer note waits in the details.
+    /// Every Task surface and Settings name the levels the same way.
+    @Test func namesTheLevelAndTheModelATaskRunsOn() {
+        #expect(PickyMainTaskPresentation.tierLabelKey(.fast) == "hub.tasks.tier.fast")
+        #expect(PickyMainTaskPresentation.tierLabelKey(.balanced) == "hub.tasks.tier.balanced")
+        #expect(PickyMainTaskPresentation.tierLabelKey(.powerful) == "hub.tasks.tier.powerful")
+        // Not chosen yet, or a level a newer daemon added: show nothing rather than a guess.
+        #expect(PickyMainTaskPresentation.tierLabelKey(nil) == nil)
+        #expect(PickyMainTaskPresentation.tierLabelKey(.unknown) == nil)
+        #expect(PickyMainTaskPresentation.modelText(for: nil) == nil)
+        let text = PickyMainTaskPresentation.modelText(for: PickyMainTaskModelSelection(provider: "openai-codex", model: "gpt-6-sol", thinking: "medium"))
+        #expect(text?.contains("openai-codex/gpt-6-sol") == true)
+        #expect(text?.contains(PickyMainAgentThinkingLevel.medium.displayName) == true)
+    }
+
     @Test func movesTheHandoffNoteIntoTheDetails() {
         let handedOff = makeTask(id: "t", status: .blocked, handoff: .init(decisionId: "d", pickleSessionId: "s-1"))
         let row = PickyMainTaskPresentation.rows(for: [handedOff])[0]

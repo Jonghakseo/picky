@@ -37,7 +37,7 @@ import { piOAuthCommandHandlers } from "./features/pi-oauth/handlers.js";
 import { hubCommandHandlers } from "./features/hub/handlers.js";
 import { HubStatisticsBroker } from "./features/hub/hub-statistics-broker.js";
 import { usageLimitsCommandHandlers, type UsageLimitsPort } from "./features/usage-limits/handlers.js";
-import { mainTasksCommandHandlers, type MainTasksPort } from "./features/main-tasks/handlers.js";
+import { mainTasksCommandHandlers, type MainTaskModelsPort, type MainTasksPort } from "./features/main-tasks/handlers.js";
 import type { CommandHandlerMap, EventPayload, ParsedCommand } from "./features/slice-contract.js";
 import type { HubStatisticsServiceLike } from "./application/hub-statistics-service.js";
 import type { PickleClassifier } from "./application/pickle-classifier.js";
@@ -70,6 +70,8 @@ export interface AgentdServerOptions {
   usageLimits?: UsageLimitsPort;
   /** Primary-only main-agent Tasks and Pickle delegation decisions; absent with the mock runtime. */
   mainTasks?: MainTasksPort;
+  /** Primary daemon with Tasks only: the per-tier model settings and what automatic means. */
+  mainTaskModels?: MainTaskModelsPort;
 }
 export const APP_PICKLE_HANDOFF_UNAVAILABLE = "Picky app handoff unavailable";
 const APP_PICKLE_HANDOFF_TIMEOUT = "Picky app handoff timed out";
@@ -683,7 +685,12 @@ export class AgentdServer {
         usageLimits: this.options.usageLimits,
         send: (socket, event) => { this.send(socket, event); },
       }),
-      ...mainTasksCommandHandlers({ mainTasks: this.options.mainTasks }),
+      ...mainTasksCommandHandlers({
+        socket: ws,
+        mainTasks: this.options.mainTasks,
+        mainTaskModels: this.options.mainTaskModels,
+        send: (socket, event) => { this.send(socket, event); },
+      }),
     };
 
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
@@ -1276,6 +1283,10 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, taskId: command.taskId, action: command.action };
     case "resolveMainDelegation":
       return { commandId: command.id, type: command.type, decisionId: command.decisionId, choice: command.choice };
+    case "setMainTaskModelPresets":
+      return { commandId: command.id, type: command.type, tiers: Object.keys(command.taskModelPresets).length };
+    case "getMainTaskModelPresets":
+      return { commandId: command.id, type: command.type };
     case "getHubStatistics":
     case "resetHubStatistics":
     case "configureHubStatistics":
@@ -1345,6 +1356,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, providers: event.snapshot?.providers.length, errorChars: event.errorMessage?.length ?? undefined };
     case "mainTasksUpdated":
       return { eventId: event.id, type: event.type, tasks: event.tasks.length, decisions: event.decisions.length };
+    case "mainTaskModelPresets":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, automatic: event.automatic ? 1 : 0 };
     case "mcpServerList": return { eventId: event.id, type: event.type, commandId: event.commandId, ok: event.ok ? 1 : 0, servers: event.servers.length, configErrors: event.configErrors.length };
     case "mcpServerOperationCompleted":
       return { eventId: event.id, type: event.type, requestId: event.requestId, operation: event.operation, name: event.name, ok: event.ok ? 1 : 0, errorCode: event.errorCode };

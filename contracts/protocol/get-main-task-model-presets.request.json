@@ -1,0 +1,5 @@
+{
+  "id": "cmd-get-main-task-model-presets",
+  "protocolVersion": "2026-08-25",
+  "type": "getMainTaskModelPresets"
+}

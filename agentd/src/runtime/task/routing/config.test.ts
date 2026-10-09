@@ -26,3 +26,23 @@ describe("Task routing defaults", () => {
     expect(isKnownPresetProvider("openai-codex")).toBe(true);
   });
 });
+
+describe("Task models the user chose in settings", () => {
+  const main = { provider: "openai-codex", id: "gpt-6-sol" };
+
+  it("replaces only what the user chose for each level and keeps the rest automatic", () => {
+    const presets = buildTaskConfig(main, {
+      fast: { model: { provider: "anthropic", id: "claude-haiku-5-5" } },
+      powerful: { thinking: "xhigh" },
+    }).presets;
+    // A model without a thinking choice keeps the level's automatic thinking.
+    expect(presets.fast).toEqual({ provider: "anthropic", model: "claude-haiku-5-5", thinking: "low" });
+    expect(presets.balanced).toEqual({ provider: "openai-codex", model: "gpt-6-sol", thinking: "medium" });
+    expect(presets.powerful).toEqual({ provider: "openai-codex", model: "gpt-6-astra", thinking: "xhigh" });
+  });
+
+  it("keeps the evaluator that picks the level automatic", () => {
+    const config = buildTaskConfig(main, { fast: { model: { provider: "anthropic", id: "claude-haiku-5-5" }, thinking: "off" } });
+    expect(config.evaluator).toEqual({ provider: "openai-codex", model: "gpt-6-luna", thinking: "low" });
+  });
+});

@@ -702,6 +702,8 @@ struct PickySettings: Codable, Equatable {
     /// model/thinking level inside the running Pickle afterward.
     var pickleAgentModelPattern: String
     var pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel
+    /// Models for Picky's Tasks, one per level. Automatic follows the main model's provider.
+    var taskModelPresets: PickyTaskModelPresetSettings
     var screenContextScope: PickyScreenContextScope
     var armedPickleDispatchMode: PickyArmedPickleDispatchMode
     var screenshotQuality: PickyScreenshotQuality
@@ -857,6 +859,7 @@ struct PickySettings: Codable, Equatable {
         mainAgentFastMode: Bool = false,
         pickleAgentModelPattern: String = "",
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
+        taskModelPresets: PickyTaskModelPresetSettings = .automatic,
         screenContextScope: PickyScreenContextScope = .focusedScreen,
         armedPickleDispatchMode: PickyArmedPickleDispatchMode = .followUp,
         screenshotQuality: PickyScreenshotQuality = .onePointFive,
@@ -932,6 +935,7 @@ struct PickySettings: Codable, Equatable {
         self.mainAgentFastMode = mainAgentFastMode
         self.pickleAgentModelPattern = pickleAgentModelPattern
         self.pickleAgentThinkingLevel = pickleAgentThinkingLevel
+        self.taskModelPresets = taskModelPresets
         self.screenContextScope = screenContextScope
         self.armedPickleDispatchMode = armedPickleDispatchMode
         self.screenshotQuality = screenshotQuality
@@ -1105,6 +1109,7 @@ struct PickySettings: Codable, Equatable {
         if copy.edgeTTSVoice.isEmpty { copy.edgeTTSVoice = "ko-KR-SunHiNeural" }
         copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.pickleAgentModelPattern = pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.taskModelPresets = taskModelPresets.normalized
         copy.hudCardSizes = hudCardSizes.mapValues { $0.clamped() }
         copy.pinnedPickleCwds = Self.normalizedPinnedPickleCwds(pinnedPickleCwds)
         copy.recentPickleCwds = Self.normalizedRecentPickleCwds(recentPickleCwds, excluding: copy.pinnedPickleCwds)
@@ -1158,6 +1163,7 @@ struct PickySettings: Codable, Equatable {
         case mainAgentFastMode
         case pickleAgentModelPattern
         case pickleAgentThinkingLevel
+        case taskModelPresets
         case screenContextScope
         case armedPickleDispatchMode
         case screenshotQuality
@@ -1238,6 +1244,7 @@ struct PickySettings: Codable, Equatable {
         mainAgentFastMode = try container.decodeIfPresent(Bool.self, forKey: .mainAgentFastMode) ?? defaults.mainAgentFastMode
         pickleAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .pickleAgentModelPattern) ?? defaults.pickleAgentModelPattern
         pickleAgentThinkingLevel = try container.decodeIfPresent(PickyPickleAgentThinkingLevel.self, forKey: .pickleAgentThinkingLevel) ?? defaults.pickleAgentThinkingLevel
+        taskModelPresets = try container.decodeIfPresent(PickyTaskModelPresetSettings.self, forKey: .taskModelPresets) ?? defaults.taskModelPresets
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope
         armedPickleDispatchMode = try container.decodeIfPresent(PickyArmedPickleDispatchMode.self, forKey: .armedPickleDispatchMode) ?? defaults.armedPickleDispatchMode
         screenshotQuality = try container.decodeIfPresent(PickyScreenshotQuality.self, forKey: .screenshotQuality) ?? defaults.screenshotQuality

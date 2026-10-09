@@ -181,6 +181,12 @@ describe("the Picky room's Tasks", () => {
     expect(report?.summary).toHaveLength(REMOTE_LIMITS.mainTaskTextChars);
     expect(report?.blockers).toHaveLength(REMOTE_LIMITS.mainTaskListItems);
   });
+
+  it("tells the phone how demanding each Task was judged, once it is known", () => {
+    const { main } = room();
+    main.handleEvent({ type: "mainTasksUpdated", tasks: [task("judged", { tier: "powerful" }), task("judging", { status: "evaluating" })], decisions: [] });
+    expect(main.state().tasks.map((entry) => entry.tier)).toEqual(["powerful", undefined]);
+  });
 });
 
 describe("images the main agent read", () => {

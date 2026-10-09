@@ -3415,6 +3415,16 @@ textarea.composer-editor::placeholder {
   flex: none;
 }
 
+/* The Task's level (Fast, Balanced, Powerful): quieter than its state. */
+.main-task-tier {
+  flex: none;
+  padding: 0 6px;
+  border: 0.5px solid var(--ds-color-border-subtle);
+  border-radius: var(--ds-radius-compact);
+  color: var(--ds-color-text-tertiary);
+  font: var(--hud-type-status);
+}
+
 .main-task-chevron {
   display: flex;
   flex: none;

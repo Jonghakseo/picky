@@ -3,7 +3,9 @@
  *
  * Picky owns this configuration. The original extension also read a `task` key from Pi's global
  * `settings.json` and the nearest project `.pi/task.json`; those user-file sources are deliberately
- * not ported. Defaults derive from the main agent's current model (see `PRESET_CATALOG`).
+ * not ported. Defaults derive from the main agent's current model (see `PRESET_CATALOG`); the user
+ * can replace a tier's model, its thinking level, or both in Picky's settings
+ * (`TaskPresetOverrides`). The evaluator that picks the tier is not user-configurable.
  */
 
 import type { ModelSelection, TaskConfig, TaskTier, ThinkingLevel } from "../types.js";
@@ -116,8 +118,37 @@ export function defaultEvaluatorFallbacks(): Record<string, ModelSelection> {
   return fallbacks;
 }
 
+/** The user's choice for one tier. An absent field keeps the automatic preset's value. */
+export interface TaskPresetOverride {
+  model?: { provider: string; id: string };
+  thinking?: ThinkingLevel;
+}
+
+export type TaskPresetOverrides = Partial<Record<TaskTier, TaskPresetOverride>>;
+
+/**
+ * The automatic presets with the user's choices applied. A model chosen without a thinking level
+ * keeps the tier's automatic thinking level, so a cheaper model still thinks less on fast work.
+ */
+export function applyPresetOverrides(
+  presets: Readonly<Record<TaskTier, ModelSelection>>,
+  overrides: TaskPresetOverrides = {},
+): Record<TaskTier, ModelSelection> {
+  const applied = {} as Record<TaskTier, ModelSelection>;
+  for (const tier of TASK_TIERS) {
+    const base = presets[tier];
+    const override = overrides[tier];
+    applied[tier] = {
+      provider: override?.model?.provider ?? base.provider,
+      model: override?.model?.id ?? base.model,
+      thinking: override?.thinking ?? base.thinking,
+    };
+  }
+  return applied;
+}
+
 /** The effective routing for one evaluation, derived from the main agent's current model. */
-export function buildTaskConfig(parentModel: ParentModel): TaskConfig {
+export function buildTaskConfig(parentModel: ParentModel, overrides: TaskPresetOverrides = {}): TaskConfig {
   const defaults = resolveDefaultPresets(parentModel);
   const evaluatorFallbacks = defaultEvaluatorFallbacks();
   if (!Object.hasOwn(evaluatorFallbacks, defaults.provider)) evaluatorFallbacks[defaults.provider] = { ...defaults.evaluator };
@@ -125,6 +156,6 @@ export function buildTaskConfig(parentModel: ParentModel): TaskConfig {
     preferClassifier: false,
     evaluator: defaults.evaluator,
     evaluatorFallbacks,
-    presets: defaults.presets,
+    presets: applyPresetOverrides(defaults.presets, overrides),
   };
 }

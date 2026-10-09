@@ -632,6 +632,7 @@ struct CompanionPanelSettingsView: View {
             presentation: presentation,
             modelOptions: mainConversation.modelOptions,
             isLoadingModelOptions: mainConversation.isLoadingModelOptions,
+            automaticTaskModels: mainConversation.automaticTaskModels,
             mainAgentCwdDraft: $mainAgentCwdDraft,
             piBinaryPathDraft: $piBinaryPathDraft,
             piCodingAgentDirDraft: $piCodingAgentDirDraft,

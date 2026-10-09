@@ -113,6 +113,8 @@ export interface RemoteMainTask {
   /** The daemon decides, not the phone: these drive the Stop and Resume buttons. */
   canStop: boolean;
   canResume: boolean;
+  /** How demanding the work was judged, which picks its model. Absent until chosen. */
+  tier?: "fast" | "balanced" | "powerful";
   /** First instruction line, for the expanded row. */
   instructions?: string;
   report?: { status: "success" | "failed" | "blocked"; summary: string; blockers: string[] };

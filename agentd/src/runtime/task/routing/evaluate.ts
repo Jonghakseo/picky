@@ -259,12 +259,12 @@ function resolvePreset(ctx: EvaluationCtx, config: TaskConfig, tier: TaskTier): 
   const model = ctx.modelRegistry.find(selection.provider, selection.model);
   if (!model) {
     throw new TaskEvaluationError(
-      `Preset for tier "${tier}" (${selection.provider}/${selection.model}) is not in the model catalog. Update task.presets.${tier}.`,
+      `The model for tier "${tier}" (${selection.provider}/${selection.model}) is not in the model catalog. Choose another model for this level under Settings > Accounts and agents > Picky > Task models.`,
     );
   }
   if (!ctx.modelRegistry.hasConfiguredAuth(model)) {
     throw new TaskEvaluationError(
-      `Preset for tier "${tier}" (${selection.provider}/${selection.model}) has no configured credentials. Authenticate ${selection.provider} or update task.presets.${tier}.`,
+      `The model for tier "${tier}" (${selection.provider}/${selection.model}) has no configured credentials. Sign in to ${selection.provider}, or choose another model for this level under Settings > Accounts and agents > Picky > Task models.`,
     );
   }
   return selection;

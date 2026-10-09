@@ -17,6 +17,7 @@ import { ChevronDown, ChevronUp, NotifyError, QuestionCircle } from "./icons";
 import { t } from "./i18n";
 import {
   TASK_STATUS_KEY,
+  TASK_TIER_KEY,
   decisionCreatingPickle,
   decisionFailed,
   decisionNeedsUser,
@@ -66,6 +67,7 @@ function TaskBlock({ task, send }: { task: RemoteMainTask; send: Send }): JSX.El
           onClick={() => setOpen((value) => !value)}
         >
           <span class="main-task-title">{task.title}</span>
+          {task.tier ? <span class="main-task-tier">{t(TASK_TIER_KEY[task.tier])}</span> : null}
           {/* The state is named, not only colored. */}
           <span class={`main-task-state is-${taskTone(task)}`}>{t(TASK_STATUS_KEY[task.status])}</span>
           {expandable ? (

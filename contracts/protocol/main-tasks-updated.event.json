@@ -19,6 +19,7 @@
       "updatedAt": "2026-10-08T11:59:30.000Z",
       "revisionStartedAt": "2026-10-08T11:59:31.000Z",
       "tier": "fast",
+      "selection": { "provider": "openai-codex", "model": "gpt-6-luna", "thinking": "low" },
       "canStop": true,
       "canResume": false
     },

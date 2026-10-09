@@ -100,6 +100,10 @@ struct PickyMainTaskRowModel: Equatable, Identifiable {
     let detailNoteKey: String?
 
     var id: String { task.id }
+
+    /// How demanding the work was judged (Fast, Balanced, Powerful), which picks
+    /// its model. Nil while the level is still being chosen.
+    var tierLabelKey: String? { PickyMainTaskPresentation.tierLabelKey(task.tier) }
 }
 
 /// What the user chose for a delegation question.
@@ -308,6 +312,23 @@ enum PickyMainTaskPresentation {
         if let said = replies.lastIndex(where: { $0.createdAt <= anchor }) { return said + 1 }
         if let announced = replies.firstIndex(where: { $0.createdAt > anchor }) { return announced + 1 }
         return turnEnd
+    }
+
+    /// The level names Settings and every Task surface use.
+    static func tierLabelKey(_ tier: PickyMainTaskTier?) -> String? {
+        switch tier {
+        case .fast: "hub.tasks.tier.fast"
+        case .balanced: "hub.tasks.tier.balanced"
+        case .powerful: "hub.tasks.tier.powerful"
+        case .unknown, .none: nil
+        }
+    }
+
+    /// `provider/model · reasoning` for a Task's details, or nil before a model is chosen.
+    static func modelText(for selection: PickyMainTaskModelSelection?) -> String? {
+        guard let selection else { return nil }
+        let thinking = selection.thinkingLevel?.displayName ?? selection.thinking
+        return L10n.t("hub.tasks.detail.modelValue", selection.pattern, thinking)
     }
 
     /// `m:ss` under an hour, `h:mm:ss` above it. Digits only, so it needs no

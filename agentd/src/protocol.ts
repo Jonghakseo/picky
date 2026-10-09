@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AgentCycleSchema, AsyncWorkSummarySchema, AsyncTaskSchema, CompletionTicketSchema, AsyncTaskDetailSchema, AsyncControlStateSchema, AsyncTaskCommandSchema, AsyncTaskCommandResultSchema, ReleaseApprovalSchema } from "./domain/async-task-contract.js";
 import { ANNOTATION_TEXT_MAX_LENGTH } from "./domain/annotation-validation.js";
 import { PICKY_CLIENT_PROFILES } from "./domain/client-profile.js";
-import { CommandBaseSchema, EventBaseSchema, isoTimestamp, PROTOCOL_VERSION } from "./protocol-base.js";
+import { CommandBaseSchema, EventBaseSchema, isoTimestamp, PROTOCOL_VERSION, ThinkingLevelSchema } from "./protocol-base.js";
 import { isClearableMetaPatchField, metaPatchFields, type ClearableMetaPatchField, type MetaPatchField } from "./protocol-session-fields.js";
 import { settingsCommandSchemas, settingsEventSchemas } from "./features/settings/schema.js";
 import { packageCommandSchemas, packageEventSchemas } from "./features/package/schema.js";
@@ -110,8 +110,7 @@ export const PickyMainAgentStateSchema = z.object({
 });
 export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
 
-export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
+export { ThinkingLevelSchema, type ThinkingLevel } from "./protocol-base.js";
 export const ModelCycleDirectionSchema = z.enum(["forward", "backward"]);
 export type ModelCycleDirection = z.infer<typeof ModelCycleDirectionSchema>;
 const PickySlashCommandSourceSchema = z.enum(["extension", "prompt", "skill", "builtin"]);

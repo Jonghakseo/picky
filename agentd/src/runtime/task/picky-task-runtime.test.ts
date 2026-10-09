@@ -40,4 +40,45 @@ describe("MainTaskEvaluationContext", () => {
   it("fails visibly instead of guessing a model for a new Task before the main model is ready", async () => {
     await expect(new MainTaskEvaluationContext().evaluate(record(), { brief: "", entries: [] }, signal)).rejects.toThrow(/main model is not ready/);
   });
+
+  /** A main context whose evaluator answers `tier` and whose catalog knows every model. */
+  function mainContext(tier: string, main = { provider: "openai-codex", id: "gpt-6-sol" }) {
+    return {
+      model: main,
+      modelRegistry: {
+        find: (provider: string, id: string) => ({ provider, id }),
+        hasConfiguredAuth: () => true,
+        streamSimple: () => ({ result: async () => ({ content: [{ type: "text", text: `{"tier":"${tier}"}` }], stopReason: "stop" }) }),
+      },
+    } as unknown as Parameters<MainTaskEvaluationContext["update"]>[0];
+  }
+
+  it("runs a new revision on the model the user chose for its level", async () => {
+    const evaluation = new MainTaskEvaluationContext();
+    evaluation.update(mainContext("fast"));
+    evaluation.setPresetOverrides({ fast: { model: { provider: "anthropic", id: "claude-haiku-5-5" }, thinking: "minimal" } });
+    await expect(evaluation.evaluate(record(), { brief: "", entries: [] }, signal)).resolves.toMatchObject({
+      tier: "fast",
+      selection: { provider: "anthropic", model: "claude-haiku-5-5", thinking: "minimal" },
+    });
+
+    // Back on automatic, the same level follows the main model's provider again.
+    evaluation.setPresetOverrides({});
+    await expect(evaluation.evaluate(record(), { brief: "", entries: [] }, signal)).resolves.toMatchObject({
+      selection: { provider: "openai-codex", model: "gpt-6-luna", thinking: "low" },
+    });
+  });
+
+  it("describes automatic for the current main model, and nothing before the main agent starts", () => {
+    const evaluation = new MainTaskEvaluationContext();
+    expect(evaluation.automaticPresets()).toBeUndefined();
+    evaluation.update(mainContext("balanced", { provider: "anthropic", id: "claude-opus-5-5" }));
+    // Settings show what automatic would run, not the user's own choices.
+    evaluation.setPresetOverrides({ balanced: { thinking: "max" } });
+    expect(evaluation.automaticPresets()).toEqual({
+      fast: { provider: "anthropic", model: "claude-haiku-5-5", thinking: "low" },
+      balanced: { provider: "anthropic", model: "claude-sonnet-5-5", thinking: "medium" },
+      powerful: { provider: "anthropic", model: "claude-opus-5-5", thinking: "high" },
+    });
+  });
 });

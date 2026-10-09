@@ -6,6 +6,8 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
     let presentation: CompanionPanelSettingsPresentation
     let modelOptions: [PickyMainAgentModelOption]
     let isLoadingModelOptions: Bool
+    /// What each Task level runs on automatic; nil until the daemon reports it.
+    let automaticTaskModels: PickyMainTaskAutomaticModels?
     let onMainAgentCwdChanged: (String) -> Void
     let onPiBinaryPathChanged: (String) -> Void
     let onPiCodingAgentDirChanged: (String) -> Void
@@ -24,6 +26,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
     @Binding var mainAgentModelPattern: String
     @Binding var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
     @Binding var mainAgentFastMode: Bool
+    @Binding var taskModelPresets: PickyTaskModelPresetSettings
     @Binding var screenContextScope: PickyScreenContextScope
     @Binding var attachScreenshotsOnlyWhenInked: Bool
     @Binding var screenshotQuality: PickyScreenshotQuality
@@ -33,6 +36,7 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
         presentation: CompanionPanelSettingsPresentation,
         modelOptions: [PickyMainAgentModelOption],
         isLoadingModelOptions: Bool,
+        automaticTaskModels: PickyMainTaskAutomaticModels?,
         mainAgentCwdDraft: Binding<String>,
         piBinaryPathDraft: Binding<String>,
         piCodingAgentDirDraft: Binding<String>,
@@ -52,12 +56,14 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
         self.presentation = presentation
         self.modelOptions = modelOptions
         self.isLoadingModelOptions = isLoadingModelOptions
+        self.automaticTaskModels = automaticTaskModels
         _mainAgentCwdDraft = mainAgentCwdDraft
         _piBinaryPathDraft = piBinaryPathDraft
         _piCodingAgentDirDraft = piCodingAgentDirDraft
         _mainAgentModelPattern = settings.mainAgentModelPattern
         _mainAgentThinkingLevel = settings.mainAgentThinkingLevel
         _mainAgentFastMode = settings.mainAgentFastMode
+        _taskModelPresets = settings.taskModelPresets
         _screenContextScope = settings.screenContextScope
         _attachScreenshotsOnlyWhenInked = settings.attachScreenshotsOnlyWhenInked
         _screenshotQuality = settings.screenshotQuality
@@ -135,6 +141,23 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
 
                     fastModeField
                 }
+            }
+
+            settingsGroup(
+                "settings.taskModels.title",
+                summary: "settings.taskModels.summary",
+                details: [
+                    "settings.taskModels.details.level",
+                    "settings.taskModels.details.automatic",
+                    "settings.taskModels.details.apply"
+                ]
+            ) {
+                VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                    ForEach(PickyTaskModelPresetSettings.tiers, id: \.self) { tier in
+                        taskModelRow(tier)
+                    }
+                }
+                .onChange(of: taskModelPresets) { _, _ in save() }
             }
 
             settingsGroup(
@@ -275,6 +298,55 @@ struct PickyMainAgentSettingsContent<OpenAgentsFile: View>: View {
                     .onChange(of: mainAgentFastMode) { _, _ in save() }
             }
             standaloneNote(isFastModeUnavailable ? "settings.field.mainAgentFastMode.unsupported" : "settings.field.mainAgentFastMode.note")
+        }
+    }
+
+    /// One Task level: its name and the work it gets, then its model and reasoning level.
+    private func taskModelRow(_ tier: PickyMainTaskTier) -> some View {
+        let automatic = automaticTaskModels?[tier]
+        let saved = taskModelPresets[tier].modelPattern
+        let showsSavedOption = !saved.isEmpty && !modelOptions.contains { $0.pattern == saved }
+        let automaticModelTitle = automatic.map { L10n.t("settings.taskModels.option.automaticValue", $0.pattern) }
+            ?? L10n.t("settings.taskModels.option.automatic")
+        let automaticThinkingTitle = automatic?.thinkingLevel.map { L10n.t("settings.taskModels.option.automaticValue", $0.displayName) }
+            ?? L10n.t("settings.taskModels.option.automatic")
+        return VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.space2) {
+                fieldLabel(LocalizedStringKey(PickyMainTaskPresentation.tierLabelKey(tier) ?? ""))
+                Text(LocalizedStringKey(Self.taskTierNoteKey(tier)))
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(supportingTextColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(alignment: .center, spacing: DS.Spacing.space2) {
+                PickyNativeMenuPicker(
+                    title: L10n.t("settings.taskModels.model"),
+                    selection: $taskModelPresets[tier].modelPattern,
+                    options: [PickyNativeMenuOption(value: "", title: automaticModelTitle)]
+                        + (showsSavedOption ? [.init(value: saved, title: L10n.t("settings.field.modelOption.saved", saved))] : [])
+                        + modelOptions.map { .init(value: $0.pattern, title: $0.displayName) }
+                )
+                .frame(maxWidth: menuMaximumWidth, alignment: .leading)
+                PickyNativeMenuPicker(
+                    title: L10n.t("settings.field.reasoningLevel"),
+                    selection: $taskModelPresets[tier].thinkingLevel,
+                    options: [PickyNativeMenuOption<PickyMainAgentThinkingLevel?>(value: nil, title: automaticThinkingTitle)]
+                        + PickyMainAgentThinkingLevel.allCases.map { .init(value: $0, title: $0.displayName) }
+                )
+                // design-token-exception: half of the 320pt model menu measure keeps both menus on one line in a Hub card
+                .frame(maxWidth: 180, alignment: .leading)
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(Text(LocalizedStringKey(PickyMainTaskPresentation.tierLabelKey(tier) ?? "")))
+        }
+    }
+
+    private static func taskTierNoteKey(_ tier: PickyMainTaskTier) -> String {
+        switch tier {
+        case .fast: "settings.taskModels.tier.fast.note"
+        case .balanced: "settings.taskModels.tier.balanced.note"
+        case .powerful, .unknown: "settings.taskModels.tier.powerful.note"
         }
     }
 

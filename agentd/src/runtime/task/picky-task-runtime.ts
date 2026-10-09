@@ -1,9 +1,9 @@
 import path from "node:path";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { createRpcWorker } from "./rpc-worker.js";
-import { buildTaskConfig } from "./routing/config.js";
+import { buildTaskConfig, resolveDefaultPresets, type TaskPresetOverrides } from "./routing/config.js";
 import { evaluateTask } from "./routing/evaluate.js";
-import type { EvaluationContext, EvaluationResult, TaskContextSnapshot, TaskRecord, WorkerFactory } from "./types.js";
+import type { EvaluationContext, EvaluationResult, ModelSelection, TaskContextSnapshot, TaskRecord, TaskTier, WorkerFactory } from "./types.js";
 
 /**
  * Interactive tools that cannot work in an unattended worker. A worker that asks the user directly
@@ -51,13 +51,37 @@ export function createPickyTaskWorkerFactory(options: PickyTaskWorkerOptions): W
 
 /**
  * Holds the main agent's latest extension context so Task routing uses the same model registry,
- * credentials, and current model the main agent runs with.
+ * credentials, and current model the main agent runs with, plus the user's per-tier model choices
+ * from Picky's settings.
  */
 export class MainTaskEvaluationContext {
   private current?: EvaluationContext;
+  private presetOverrides: TaskPresetOverrides = {};
 
   update(context: EvaluationContext | undefined): void {
     if (context?.modelRegistry) this.current = context;
+  }
+
+  /** Replaces the user's choices. Applies to the next evaluation; a running revision keeps its model. */
+  setPresetOverrides(overrides: TaskPresetOverrides): void {
+    this.presetOverrides = structuredClone(overrides);
+  }
+
+  /**
+   * What each tier uses when the user leaves it on automatic, for the current main model. Undefined
+   * until the main agent has started, because the defaults follow the main model's provider.
+   */
+  automaticPresets(): Record<TaskTier, ModelSelection> | undefined {
+    const model = this.currentModel();
+    return model ? resolveDefaultPresets({ provider: model.provider, id: model.id }).presets : undefined;
+  }
+
+  private currentModel(): EvaluationContext["model"] {
+    try {
+      return this.current?.model;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Captures the context on every main session start and turn. */
@@ -81,16 +105,12 @@ export class MainTaskEvaluationContext {
    */
   async evaluate(record: Readonly<TaskRecord>, snapshot: TaskContextSnapshot, signal: AbortSignal): Promise<EvaluationResult> {
     const context = this.current;
-    let model: EvaluationContext["model"];
-    try {
-      model = context?.model;
-    } catch {
-      model = undefined;
-    }
+    const model = this.currentModel();
     if (!context || !model) {
       if (record.selection && record.tier) return { tier: record.tier, selection: record.selection, evaluator: "previous selection" };
       throw new Error("Picky's main model is not ready yet, so this Task could not choose a model. Ask Picky to resume it.");
     }
-    return evaluateTask(record.instructions, snapshot, buildTaskConfig({ provider: model.provider, id: model.id }), context, signal);
+    const config = buildTaskConfig({ provider: model.provider, id: model.id }, this.presetOverrides);
+    return evaluateTask(record.instructions, snapshot, config, context, signal);
   }
 }

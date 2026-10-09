@@ -1,0 +1,24 @@
+{
+  "id": "evt-main-task-model-presets",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-09T05:00:00.000Z",
+  "type": "mainTaskModelPresets",
+  "commandId": "cmd-get-main-task-model-presets",
+  "automatic": {
+    "fast": {
+      "provider": "openai-codex",
+      "model": "gpt-6-luna",
+      "thinking": "low"
+    },
+    "balanced": {
+      "provider": "openai-codex",
+      "model": "gpt-6-sol",
+      "thinking": "medium"
+    },
+    "powerful": {
+      "provider": "openai-codex",
+      "model": "gpt-6-astra",
+      "thinking": "high"
+    }
+  }
+}

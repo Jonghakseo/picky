@@ -66,6 +66,7 @@ export function projectMainTask(record: TaskRecord): MainTask {
     updatedAt: record.updatedAt,
     ...(record.revisionStartedAt ? { revisionStartedAt: record.revisionStartedAt } : {}),
     ...(record.tier ? { tier: record.tier } : {}),
+    ...(record.selection ? { selection: { provider: record.selection.provider, model: record.selection.model, thinking: record.selection.thinking } } : {}),
     ...(record.report ? {
       report: {
         status: record.report.status,
